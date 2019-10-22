@@ -20,7 +20,7 @@ class Context final {
   Context& operator=(Context&&) = default;
   ~Context() { Reset(); }
 
-  bool IsEmpty() const { return values_.empty(); }
+  bool Empty() const { return values_.empty(); }
 
   void Reset();
 
@@ -37,7 +37,7 @@ class Context final {
 
   template <typename Type>
   void SetPtr(Type* value) {
-    SetImpl(ContextType::Get<Type>(), value.release(), false);
+    SetImpl(ContextType::Get<Type>(), value, false);
   }
 
   template <typename Type>
@@ -48,15 +48,15 @@ class Context final {
   }
 
   template <typename Type>
-  Type* Get() const {
+  Type* GetPtr() const {
     auto it = values_.find(ContextType::Get<Type>());
     return it != values_.end() ? static_cast<Type*>(it->second.value) : nullptr;
   }
 
   template <typename Type>
   Type GetValue() const {
-    Type* value = Get<Type>();
-    return value != nullptr ? *value : {};
+    Type* value = GetPtr<Type>();
+    return value != nullptr ? *value : Type{};
   }
 
   template <typename Type>
@@ -72,7 +72,7 @@ class Context final {
 
   template <typename Type>
   std::unique_ptr<Type> Release() {
-    return std::unique_ptr<Type>(ReleaseImpl(ContextType::Get<Type>()));
+    return std::unique_ptr<Type>(static_cast<Type*>(ReleaseImpl(ContextType::Get<Type>())));
   }
 
   template <typename Type>
