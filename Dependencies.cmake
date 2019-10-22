@@ -1,0 +1,109 @@
+###############################################################################
+## GBits Dependency macros
+##
+## Every third party library used by any gbits library has its library and
+## include paths set here.
+###############################################################################
+
+set(GBITS_ABSL_SOURCE_DIR ${GBITS_DIR}/third_party/abseil-cpp)
+set(GBITS_ABSL_BUILD_DIR ${GBITS_DIR}/third_party/build/abseil-cpp)
+set(GBITS_ABSL_INCLUDE ${GBITS_ABSL_SOURCE_DIR})
+set(GBITS_ABSL_LIB_BASE
+	${GBITS_ABSL_BUILD_DIR}/absl/base/$(Configuration)/absl_base.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/base/$(Configuration)/absl_dynamic_annotations.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/base/$(Configuration)/absl_log_severity.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/base/$(Configuration)/absl_malloc_internal.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/base/$(Configuration)/absl_raw_logging_internal.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/base/$(Configuration)/absl_scoped_set_env.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/base/$(Configuration)/absl_spinlock_wait.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/base/$(Configuration)/absl_throw_delegate.lib
+)
+set(GBITS_ABSL_LIB_CONTAINER
+	${GBITS_ABSL_BUILD_DIR}/absl/container/$(Configuration)/absl_hashtablez_sampler.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/container/$(Configuration)/absl_raw_hash_set.lib
+)
+set(GBITS_ABSL_LIB_DEBUGGING
+	${GBITS_ABSL_BUILD_DIR}/absl/debugging/$(Configuration)/absl_debugging_internal.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/debugging/$(Configuration)/absl_demangle_internal.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/debugging/$(Configuration)/absl_examine_stack.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/debugging/$(Configuration)/absl_failure_signal_handler.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/debugging/$(Configuration)/absl_leak_check.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/debugging/$(Configuration)/absl_leak_check_disable.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/debugging/$(Configuration)/absl_stacktrace.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/debugging/$(Configuration)/absl_symbolize.lib
+)
+set(GBITS_ABSL_LIB_FLAGS
+	${GBITS_ABSL_BUILD_DIR}/absl/flags/$(Configuration)/absl_flags.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/flags/$(Configuration)/absl_flags_config.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/flags/$(Configuration)/absl_flags_handle.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/flags/$(Configuration)/absl_flags_internal.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/flags/$(Configuration)/absl_flags_marshalling.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/flags/$(Configuration)/absl_flags_parse.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/flags/$(Configuration)/absl_flags_program_name.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/flags/$(Configuration)/absl_flags_registry.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/flags/$(Configuration)/absl_flags_usage.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/flags/$(Configuration)/absl_flags_usage_internal.lib
+)
+set(GBITS_ABSL_LIB_HASH
+	${GBITS_ABSL_BUILD_DIR}/absl/hash/$(Configuration)/absl_city.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/hash/$(Configuration)/absl_hash.lib
+)
+set(GBITS_ABSL_LIB_NUMERIC
+	${GBITS_ABSL_BUILD_DIR}/absl/numeric/$(Configuration)/absl_int128.lib
+)
+set(GBITS_ABSL_LIB_RANDOM
+	${GBITS_ABSL_BUILD_DIR}/absl/random/$(Configuration)/absl_random_distributions.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/random/$(Configuration)/absl_random_internal_pool_urbg.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/random/$(Configuration)/absl_random_internal_randen.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/random/$(Configuration)/absl_random_internal_randen_hwaes.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/random/$(Configuration)/absl_random_internal_randen_hwaes_impl.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/random/$(Configuration)/absl_random_internal_randen_slow.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/random/$(Configuration)/absl_random_internal_seed_material.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/random/$(Configuration)/absl_random_seed_gen_exception.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/random/$(Configuration)/absl_random_seed_sequences.lib
+)
+set(GBITS_ABSL_LIB_STRINGS
+	${GBITS_ABSL_BUILD_DIR}/absl/strings/$(Configuration)/absl_str_format_internal.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/strings/$(Configuration)/absl_strings.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/strings/$(Configuration)/absl_strings_internal.lib
+)
+set(GBITS_ABSL_LIB_SYNCHRONIZATION
+	${GBITS_ABSL_BUILD_DIR}/absl/synchronization/$(Configuration)/absl_graphcycles_internal.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/synchronization/$(Configuration)/absl_synchronization.lib
+)
+set(GBITS_ABSL_LIB_TIME
+	${GBITS_ABSL_BUILD_DIR}/absl/time/$(Configuration)/absl_civil_time.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/time/$(Configuration)/absl_time.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/time/$(Configuration)/absl_time_zone.lib
+)
+set(GBITS_ABSL_LIB_TYPES
+	${GBITS_ABSL_BUILD_DIR}/absl/types/$(Configuration)/absl_bad_any_cast_impl.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/types/$(Configuration)/absl_bad_optional_access.lib
+	${GBITS_ABSL_BUILD_DIR}/absl/types/$(Configuration)/absl_bad_variant_access.lib
+)
+set(GBITS_ABSL_LIB
+	${GBITS_ABSL_LIB_BASE}
+	${GBITS_ABSL_LIB_CONTAINER}
+	${GBITS_ABSL_LIB_DEBUGGING}
+	${GBITS_ABSL_LIB_FLAGS}
+	${GBITS_ABSL_LIB_HASH}
+	${GBITS_ABSL_LIB_NUMERIC}
+	${GBITS_ABSL_LIB_RANDOM}
+	${GBITS_ABSL_LIB_STRINGS}
+	${GBITS_ABSL_LIB_SYNCHRONIZATION}
+	${GBITS_ABSL_LIB_TIME}
+	${GBITS_ABSL_LIB_TYPES}
+)
+
+set(GBITS_GTEST_SOURCE_DIR ${GBITS_DIR}/third_party/googletest)
+set(GBITS_GTEST_BUILD_DIR ${GBITS_DIR}/third_party/build/googletest)
+set(GBITS_GTEST_INCLUDE 
+	${GBITS_GTEST_SOURCE_DIR}/googletest/include
+	${GBITS_GTEST_SOURCE_DIR}/googlemock/include
+)
+set(GBITS_GTEST_LIB_MAIN
+	${GBITS_GTEST_BUILD_DIR}/lib/$(Configuration)/gmock_main$<$<CONFIG:Debug>:d>.lib
+)
+set(GBITS_GTEST_LIB
+	${GBITS_GTEST_BUILD_DIR}/lib/$(Configuration)/gmock$<$<CONFIG:Debug>:d>.lib
+)
