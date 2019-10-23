@@ -139,7 +139,7 @@ class Context final {
 
   // Returns true if a value of the specified Type exists in the context.
   //
-  // This is equivalend to (GetPtr<Type>() != nullptr)
+  // This is equivalent to (GetPtr<Type>() != nullptr)
   template <typename Type>
   bool Exists() const {
     return values_.find(ContextType::Get<Type>()) != values_.end();
