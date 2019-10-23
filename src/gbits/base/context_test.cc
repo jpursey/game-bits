@@ -8,11 +8,110 @@
 namespace gb {
 namespace {
 
-// Helper item to track when and if it is deleted.
-struct Item {
-  Item(bool* deleted) : deleted(deleted) {}
-  ~Item() { *deleted = true; }
-  bool* deleted;
+struct Counts {
+  Counts() = default;
+  int destruct = 0;
+  int construct = 0;
+  int copy_construct = 0;
+  int move_construct = 0;
+  int copy_assign = 0;
+  int move_assign = 0;
+};
+
+class Item {
+ public:
+  Item(Counts* counts) : counts(counts) { ++counts->construct; }
+  Item(const Item& other) : counts(other.counts) { ++counts->copy_construct; }
+  Item(Item&& other) : counts(other.counts) { ++counts->move_construct; }
+  Item& operator=(const Item& other) {
+    ++counts->copy_assign;
+    return *this;
+  }
+  Item& operator=(Item&& other) {
+    ++counts->move_assign;
+    return *this;
+  }
+  ~Item() { ++counts->destruct; }
+
+ private:
+  Counts* counts;
+};
+
+class ConstructOnlyItem {
+ public:
+  ConstructOnlyItem(Counts* counts) : counts(counts) { ++counts->construct; }
+  ConstructOnlyItem(const ConstructOnlyItem& other) : counts(other.counts) {
+    ++counts->copy_construct;
+  }
+  ConstructOnlyItem(ConstructOnlyItem&& other) : counts(other.counts) {
+    ++counts->move_construct;
+  }
+  ConstructOnlyItem& operator=(const ConstructOnlyItem& other) = delete;
+  ConstructOnlyItem& operator=(ConstructOnlyItem&& other) = delete;
+  ~ConstructOnlyItem() { ++counts->destruct; }
+
+ private:
+  Counts* counts;
+};
+
+class MoveOnlyItem {
+ public:
+  MoveOnlyItem(Counts* counts) : counts(counts) { ++counts->construct; }
+  MoveOnlyItem(const MoveOnlyItem& other) = delete;
+  MoveOnlyItem(MoveOnlyItem&& other) : counts(other.counts) {
+    ++counts->move_construct;
+  }
+  MoveOnlyItem& operator=(const MoveOnlyItem& other) = delete;
+  MoveOnlyItem& operator=(MoveOnlyItem&& other) {
+    ++counts->move_assign;
+    return *this;
+  }
+  ~MoveOnlyItem() { ++counts->destruct; }
+
+ private:
+  Counts* counts;
+};
+
+class CopyOnlyItem {
+ public:
+  CopyOnlyItem(Counts* counts) : counts(counts) { ++counts->construct; }
+  CopyOnlyItem(const CopyOnlyItem& other) { ++counts->copy_construct; }
+  CopyOnlyItem(CopyOnlyItem&& other) = delete;
+  CopyOnlyItem& operator=(const CopyOnlyItem& other) {
+    ++counts->copy_assign;
+    return *this;
+  }
+  CopyOnlyItem& operator=(CopyOnlyItem&& other) = delete;
+  ~CopyOnlyItem() { ++counts->destruct; }
+
+ private:
+  Counts* counts;
+};
+
+class DeleteOnlyItem {
+ public:
+  DeleteOnlyItem(const DeleteOnlyItem&) = delete;
+  DeleteOnlyItem(DeleteOnlyItem&&) = delete;
+  DeleteOnlyItem& operator=(const DeleteOnlyItem&) = delete;
+  DeleteOnlyItem& operator=(DeleteOnlyItem&&) = delete;
+  ~DeleteOnlyItem() = default;
+
+  static std::unique_ptr<DeleteOnlyItem> New() {
+    return std::unique_ptr<DeleteOnlyItem>(new DeleteOnlyItem());
+  }
+
+ private:
+  DeleteOnlyItem() = default;
+};
+
+class DefaultConstructItem {
+ public:
+  DefaultConstructItem() = default;
+  DefaultConstructItem(const DefaultConstructItem&) = delete;
+  DefaultConstructItem(DefaultConstructItem&&) = delete;
+  DefaultConstructItem& operator=(const DefaultConstructItem&) = delete;
+  DefaultConstructItem& operator=(DefaultConstructItem&&) = delete;
+  ~DefaultConstructItem() = default;
 };
 
 TEST(ContextTest, ConstructEmpty) {
@@ -85,6 +184,46 @@ TEST(ContextTest, GetMissingValueIsDefault) {
   EXPECT_EQ(context.GetValue<int>(), 0);
 }
 
+TEST(ContextTest, GetMissingValueReturnsSpecifiedDefault) {
+  Context context;
+  EXPECT_EQ(context.GetValue<int>(5), 5);
+}
+
+TEST(ContextTest, GetMissingValueReturnsCopyConstruct) {
+  Counts counts;
+  Context context;
+  Item item(&counts);
+  context.GetValue<Item>(item);
+  EXPECT_EQ(counts.construct, 1);
+  EXPECT_EQ(counts.move_construct, 0);
+  EXPECT_EQ(counts.copy_construct, 1);
+  EXPECT_EQ(counts.move_assign, 0);
+  EXPECT_EQ(counts.copy_assign, 0);
+}
+
+TEST(ContextTest, GetMissingValueReturnsMoveConstruct) {
+  Counts counts;
+  Context context;
+  Item item(&counts);
+  context.GetValue<Item>(std::move(item));
+  EXPECT_EQ(counts.construct, 1);
+  EXPECT_EQ(counts.move_construct, 1);
+  EXPECT_EQ(counts.copy_construct, 0);
+  EXPECT_EQ(counts.move_assign, 0);
+  EXPECT_EQ(counts.copy_assign, 0);
+}
+
+TEST(ContextTest, GetMissingValueReturnsCustomConstruct) {
+  Counts counts;
+  Context context;
+  context.GetValue<Item>(&counts);
+  EXPECT_EQ(counts.construct, 1);
+  EXPECT_EQ(counts.move_construct, 0);
+  EXPECT_EQ(counts.copy_construct, 0);
+  EXPECT_EQ(counts.move_assign, 0);
+  EXPECT_EQ(counts.copy_assign, 0);
+}
+
 TEST(ContextTest, GetValueDoesNotCreate) {
   Context context;
   context.GetValue<int>();
@@ -103,7 +242,7 @@ TEST(ContextTest, GetValueDoesNotRemove) {
   context.SetNew<int>(5);
   context.GetValue<int>();
   EXPECT_TRUE(context.Exists<int>());
-  EXPECT_FALSE(context.Empty()); 
+  EXPECT_FALSE(context.Empty());
 }
 
 TEST(ContextTest, SetNewWithMultipleArgsWorks) {
@@ -169,129 +308,272 @@ TEST(ContextTest, SetPtrDoesNotPassOwnership) {
   EXPECT_EQ(context.GetPtr<int>(), value.get());
 }
 
+TEST(ContextTest, SetNewUsesDefaultConstructor) {
+  Context context;
+  context.SetNew<DefaultConstructItem>();
+}
+
+TEST(ContextTest, SetNewUsesCopyConstructor) {
+  Counts counts;
+  Context context;
+  Item item(&counts);
+  context.SetNew<Item>(item);
+  EXPECT_EQ(counts.construct, 1);
+  EXPECT_EQ(counts.copy_construct, 1);
+  EXPECT_EQ(counts.move_construct, 0);
+}
+
+TEST(ContextTest, SetNewUsesMoveConstructor) {
+  Counts counts;
+  Context context;
+  Item item(&counts);
+  context.SetNew<Item>(std::move(item));
+  EXPECT_EQ(counts.construct, 1);
+  EXPECT_EQ(counts.copy_construct, 0);
+  EXPECT_EQ(counts.move_construct, 1);
+}
+
+TEST(ContextTest, SetNewUsesCustomConstructor) {
+  Counts counts;
+  Context context;
+  context.SetNew<Item>(&counts);
+  EXPECT_EQ(counts.construct, 1);
+  EXPECT_EQ(counts.copy_construct, 0);
+  EXPECT_EQ(counts.move_construct, 0);
+}
+
+TEST(ContextTest, SetOwnedDoesNotConstruct) {
+  Context context;
+  context.SetOwned<DeleteOnlyItem>(DeleteOnlyItem::New());
+}
+
+TEST(ContextTest, SetPtrDoesNotConstruct) {
+  auto item = DeleteOnlyItem::New();
+  Context context;
+  context.SetPtr<DeleteOnlyItem>(item.get());
+}
+
+TEST(ContextTest, SetValueUsesCopyConstructorWhenNew) {
+  Counts counts;
+  ConstructOnlyItem item(&counts);
+  Context context;
+  context.SetValue<ConstructOnlyItem>(item);
+  EXPECT_EQ(counts.construct, 1);
+  EXPECT_EQ(counts.copy_construct, 1);
+  EXPECT_EQ(counts.move_construct, 0);
+}
+
+TEST(ContextTest, SetValueUsesMoveConstructorWhenNew) {
+  Counts counts;
+  ConstructOnlyItem item(&counts);
+  Context context;
+  context.SetValue<ConstructOnlyItem>(std::move(item));
+  EXPECT_EQ(counts.construct, 1);
+  EXPECT_EQ(counts.copy_construct, 0);
+  EXPECT_EQ(counts.move_construct, 1);
+}
+
+TEST(ContextTest, SetValueUsesCopyConstructorWhenExists) {
+  Counts counts;
+  ConstructOnlyItem item(&counts);
+  Context context;
+  context.SetNew<ConstructOnlyItem>(&counts);
+  context.SetValue<ConstructOnlyItem>(item);
+  EXPECT_EQ(counts.construct, 2);
+  EXPECT_EQ(counts.copy_construct, 1);
+  EXPECT_EQ(counts.move_construct, 0);
+}
+
+TEST(ContextTest, SetValueUsesMoveConstructorWhenExists) {
+  Counts counts;
+  ConstructOnlyItem item(&counts);
+  Context context;
+  context.SetNew<ConstructOnlyItem>(&counts);
+  context.SetValue<ConstructOnlyItem>(std::move(item));
+  EXPECT_EQ(counts.construct, 2);
+  EXPECT_EQ(counts.copy_construct, 0);
+  EXPECT_EQ(counts.move_construct, 1);
+}
+
+TEST(ContextTest, SetValueUsesCopyAssignment) {
+  Counts counts;
+  CopyOnlyItem item(&counts);
+  Context context;
+  context.SetNew<CopyOnlyItem>(&counts);
+  context.SetValue<CopyOnlyItem>(item);
+  EXPECT_EQ(counts.construct, 2);
+  EXPECT_EQ(counts.copy_construct, 0);
+  EXPECT_EQ(counts.copy_assign, 1);
+}
+
+TEST(ContextTest, SetValueUsesMoveAssignment) {
+  Counts counts;
+  MoveOnlyItem item(&counts);
+  Context context;
+  context.SetNew<MoveOnlyItem>(&counts);
+  context.SetValue<MoveOnlyItem>(std::move(item));
+  EXPECT_EQ(counts.construct, 2);
+  EXPECT_EQ(counts.move_construct, 0);
+  EXPECT_EQ(counts.move_assign, 1);
+}
+
 TEST(ContextTest, DestructorDeletesOwnedItems) {
-  bool deleted = false;
+  Counts counts;
   {
     Context context;
-    context.SetNew<Item>(&deleted);
-    EXPECT_FALSE(deleted);
+    context.SetNew<Item>(&counts);
+    EXPECT_EQ(counts.destruct, 0);
   }
-  EXPECT_TRUE(deleted);
+  EXPECT_EQ(counts.destruct, 1);
 }
 
 TEST(ContextTest, ResetDeletesOwnedItems) {
-  bool deleted = false;
+  Counts counts;
   Context context;
-  context.SetNew<Item>(&deleted);
-  EXPECT_FALSE(deleted);
+  context.SetNew<Item>(&counts);
+  EXPECT_EQ(counts.destruct, 0);
   context.Reset();
-  EXPECT_TRUE(deleted);
+  EXPECT_EQ(counts.destruct, 1);
 }
 
 TEST(ContextTest, ClearDeletesOwnedItems) {
-  bool deleted = false;
+  Counts counts;
   Context context;
-  context.SetNew<Item>(&deleted);
-  EXPECT_FALSE(deleted);
+  context.SetNew<Item>(&counts);
+  EXPECT_EQ(counts.destruct, 0);
   context.Clear<Item>();
-  EXPECT_TRUE(deleted);
+  EXPECT_EQ(counts.destruct, 1);
 }
 
 TEST(ContextTest, SetNewDeletesPreviousOwnedItems) {
-  bool deleted1 = false;
-  bool deleted2 = false;
+  Counts counts1;
+  Counts counts2;
   Context context;
-  context.SetNew<Item>(&deleted1);
-  context.SetNew<Item>(&deleted2);
-  EXPECT_TRUE(deleted1);
-  EXPECT_FALSE(deleted2);
+  context.SetNew<Item>(&counts1);
+  context.SetNew<Item>(&counts2);
+  EXPECT_EQ(counts1.destruct, 1);
+  EXPECT_EQ(counts2.destruct, 0);
 }
 
 TEST(ContextTest, SetOwnedDeletesPreviousOwnedItems) {
-  bool deleted1 = false;
-  bool deleted2 = false;
+  Counts counts1;
+  Counts counts2;
   Context context;
-  context.SetNew<Item>(&deleted1);
-  context.SetOwned<Item>(std::make_unique<Item>(&deleted2));
-  EXPECT_TRUE(deleted1);
-  EXPECT_FALSE(deleted2);
+  context.SetNew<Item>(&counts1);
+  context.SetOwned<Item>(std::make_unique<Item>(&counts2));
+  EXPECT_EQ(counts1.destruct, 1);
+  EXPECT_EQ(counts2.destruct, 0);
 }
 
 TEST(ContextTest, SetPtrDeletesPreviousOwnedItems) {
-  bool deleted1 = false;
-  bool deleted2 = false;
-  Item unowned_item(&deleted2);
+  Counts counts1;
+  Counts counts2;
+  Item item(&counts2);
   Context context;
-  context.SetNew<Item>(&deleted1);
-  context.SetPtr<Item>(&unowned_item);
-  EXPECT_TRUE(deleted1);
-  EXPECT_FALSE(deleted2);
+  context.SetNew<Item>(&counts1);
+  context.SetPtr<Item>(&item);
+  EXPECT_EQ(counts1.destruct, 1);
+  EXPECT_EQ(counts2.destruct, 0);
+}
+
+TEST(ContextTest, SetValueDeletesPreviousOwnedItems) {
+  Counts counts1;
+  Counts counts2;
+  ConstructOnlyItem item(&counts2);
+  Context context;
+  context.SetNew<ConstructOnlyItem>(&counts1);
+  context.SetValue<ConstructOnlyItem>(item);
+  EXPECT_EQ(counts1.destruct, 1);
+  EXPECT_EQ(counts2.destruct, 0);
+}
+
+TEST(ContextTest, SetValueDoesNotDeleteExistingItem) {
+  Counts counts1;
+  Counts counts2;
+  Item item(&counts2);
+  Context context;
+  context.SetNew<Item>(&counts1);
+  context.SetValue<Item>(item);
+  EXPECT_EQ(counts1.destruct, 0);
+  EXPECT_EQ(counts2.destruct, 0);
 }
 
 TEST(ContextTest, DestructorDoesNotDeleteUnownedItems) {
-  bool deleted = false;
-  auto unowned_item = std::make_unique<Item>(&deleted);
+  Counts counts;
+  auto item = std::make_unique<Item>(&counts);
   {
     Context context;
-    context.SetPtr<Item>(unowned_item.get());
-    EXPECT_FALSE(deleted);
+    context.SetPtr<Item>(item.get());
+    EXPECT_EQ(counts.destruct, 0);
   }
-  EXPECT_FALSE(deleted);
+  EXPECT_EQ(counts.destruct, 0);
 }
 
 TEST(ContextTest, ResetDoesNotDeleteUnownedItems) {
-  bool deleted = false;
-  auto unowned_item = std::make_unique<Item>(&deleted);
+  Counts counts;
+  auto item = std::make_unique<Item>(&counts);
   Context context;
-  context.SetPtr<Item>(unowned_item.get());
-  EXPECT_FALSE(deleted);
+  context.SetPtr<Item>(item.get());
+  EXPECT_EQ(counts.destruct, 0);
   context.Reset();
-  EXPECT_FALSE(deleted);
+  EXPECT_EQ(counts.destruct, 0);
 }
 
 TEST(ContextTest, ClearDoesNotDeleteUnownedItems) {
-  bool deleted = false;
-  auto unowned_item = std::make_unique<Item>(&deleted);
+  Counts counts;
+  auto item = std::make_unique<Item>(&counts);
   Context context;
-  context.SetPtr<Item>(unowned_item.get());
-  EXPECT_FALSE(deleted);
+  context.SetPtr<Item>(item.get());
+  EXPECT_EQ(counts.destruct, 0);
   context.Clear<Item>();
-  EXPECT_FALSE(deleted);
+  EXPECT_EQ(counts.destruct, 0);
 }
 
 TEST(ContextTest, SetNewDoesNotDeletePreviousUnownedItems) {
-  bool deleted1 = false;
-  auto unowned_item = std::make_unique<Item>(&deleted1);
-  bool deleted2 = false;
+  Counts counts1;
+  auto item = std::make_unique<Item>(&counts1);
+  Counts counts2;
   Context context;
-  context.SetPtr<Item>(unowned_item.get());
-  context.SetNew<Item>(&deleted2);
-  EXPECT_FALSE(deleted1);
-  EXPECT_FALSE(deleted2);
+  context.SetPtr<Item>(item.get());
+  context.SetNew<Item>(&counts2);
+  EXPECT_EQ(counts1.destruct, 0);
+  EXPECT_EQ(counts2.destruct, 0);
 }
 
 TEST(ContextTest, SetOwnedDoesNotDeletePreviousUnownedItems) {
-  bool deleted1 = false;
-  auto unowned_item = std::make_unique<Item>(&deleted1);
-  bool deleted2 = false;
+  Counts counts1;
+  auto item = std::make_unique<Item>(&counts1);
+  Counts counts2;
   Context context;
-  context.SetPtr<Item>(unowned_item.get());
-  context.SetOwned<Item>(std::make_unique<Item>(&deleted2));
-  EXPECT_FALSE(deleted1);
-  EXPECT_FALSE(deleted2);
+  context.SetPtr<Item>(item.get());
+  context.SetOwned<Item>(std::make_unique<Item>(&counts2));
+  EXPECT_EQ(counts1.destruct, 0);
+  EXPECT_EQ(counts2.destruct, 0);
 }
 
 TEST(ContextTest, SetPtrDoesNotDeletePreviousUnownedItems) {
-  bool deleted1 = false;
-  auto unowned_item1 = std::make_unique<Item>(&deleted1);
-  bool deleted2 = false;
-  auto unowned_item2 = std::make_unique<Item>(&deleted2);
+  Counts counts1;
+  auto item1 = std::make_unique<Item>(&counts1);
+  Counts counts2;
+  auto item2 = std::make_unique<Item>(&counts2);
   Context context;
-  context.SetPtr<Item>(unowned_item1.get());
-  context.SetPtr<Item>(unowned_item2.get());
-  EXPECT_FALSE(deleted1);
-  EXPECT_FALSE(deleted2);
+  context.SetPtr<Item>(item1.get());
+  context.SetPtr<Item>(item2.get());
+  EXPECT_EQ(counts1.destruct, 0);
+  EXPECT_EQ(counts2.destruct, 0);
 }
 
-}  // namespace 
+TEST(ContextTest, SetValueDoesNotDeletePreviousUnownedItems) {
+  Counts counts1;
+  auto item1 = std::make_unique<ConstructOnlyItem>(&counts1);
+  Counts counts2;
+  auto item2 = std::make_unique<ConstructOnlyItem>(&counts2);
+  Context context;
+  context.SetPtr<ConstructOnlyItem>(item1.get());
+  context.SetValue<ConstructOnlyItem>(*item2);
+  EXPECT_EQ(counts1.destruct, 0);
+  EXPECT_EQ(counts2.destruct, 0);
+}
+
+}  // namespace
 }  // namespace gb
