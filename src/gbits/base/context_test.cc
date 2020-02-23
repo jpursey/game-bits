@@ -122,6 +122,8 @@ TEST(ContextTest, ConstructEmpty) {
 TEST(ContextTest, NothingExistsInitially) {
   Context context;
   EXPECT_FALSE(context.Exists<int>());
+  EXPECT_FALSE(context.NameExists({}));
+  EXPECT_FALSE(context.Exists<int>("int"));
 }
 
 TEST(ContextTest, ResetWhenEmptyIsEmpty) {
@@ -136,10 +138,22 @@ TEST(ContextTest, SetNewIsNotEmpty) {
   EXPECT_FALSE(context.Empty());
 }
 
+TEST(ContextTest, SetNewNameDoesNotExist) {
+  Context context;
+  context.SetNew<int>();
+  EXPECT_FALSE(context.NameExists({}));
+}
+
 TEST(ContextTest, SetNewExists) {
   Context context;
   context.SetNew<int>();
   EXPECT_TRUE(context.Exists<int>());
+}
+
+TEST(ContextTest, SetNewExistsByContextType) {
+  Context context;
+  context.SetNew<int>();
+  EXPECT_TRUE(context.Exists(ContextKey::Get<int>()));
 }
 
 TEST(ContextTest, SetNewOfDifferentTypesWork) {
@@ -150,17 +164,74 @@ TEST(ContextTest, SetNewOfDifferentTypesWork) {
   EXPECT_EQ(context.GetValue<std::string>(), "ten");
 }
 
-TEST(ContextTest, ResetMultipleValuesWork) {
+TEST(ContextTest, SetNamedNewIsNotEmpty) {
   Context context;
-  context.SetNew<int>(10);
-  context.SetNew<std::string>("ten");
+  context.SetNamedNew<int>("zero");
+  EXPECT_FALSE(context.Empty());
+}
+
+TEST(ContextTest, SetNamedNewExists) {
+  Context context;
+  context.SetNamedNew<int>("zero");
+  EXPECT_TRUE(context.Exists<int>("zero"));
+  EXPECT_TRUE(context.NameExists("zero"));
+}
+
+TEST(ContextTest, SetNamedNewExistsByContextType) {
+  Context context;
+  context.SetNamedNew<int>("zero");
+  EXPECT_TRUE(context.Exists("zero", ContextKey::Get<int>()));
+}
+
+TEST(ContextTest, SetValueOfDifferentTypesWork) {
+  Context context;
+  context.SetValue<int>(10);
+  context.SetValue<std::string>("ten");
+  EXPECT_EQ(context.GetValue<int>(), 10);
+  EXPECT_EQ(context.GetValue<std::string>(), "ten");
+}
+
+TEST(ContextTest, SetNamedValueIsNotEmpty) {
+  Context context;
+  context.SetValue<int>("zero", 0);
+  EXPECT_FALSE(context.Empty());
+}
+
+TEST(ContextTest, SetNamedValueExists) {
+  Context context;
+  context.SetValue<int>("zero", 0);
+  EXPECT_TRUE(context.Exists<int>("zero"));
+  EXPECT_TRUE(context.NameExists("zero"));
+}
+
+TEST(ContextTest, SetNamedValueIsNotUnnamedValue) {
+  Context context;
+  context.SetValue<int>("ten", 10);
+  EXPECT_FALSE(context.Exists<int>());
+  EXPECT_TRUE(context.Exists<int>("ten"));
+  EXPECT_EQ(context.GetValue<int>(), 0);
+  EXPECT_EQ(context.GetValue<int>("ten"), 10);
+}
+
+TEST(ContextTest, SetValueOfDifferentNamesWork) {
+  Context context;
+  context.SetValue<int>("ten", 10);
+  context.SetValue<int>("twenty", 20);
+  EXPECT_EQ(context.GetValue<int>("ten"), 10);
+  EXPECT_EQ(context.GetValue<int>("twenty"), 20);
+}
+
+TEST(ContextTest, ResetEmptyWorks) {
+  Context context;
   context.Reset();
   EXPECT_TRUE(context.Empty());
 }
 
-TEST(ContextTest, ResetIsEmpty) {
+TEST(ContextTest, ResetMultipleValuesWork) {
   Context context;
-  context.SetNew<int>();
+  context.SetNew<int>(10);
+  context.SetValue<int>("twenty", 20);
+  context.SetNew<std::string>("ten");
   context.Reset();
   EXPECT_TRUE(context.Empty());
 }
@@ -172,10 +243,31 @@ TEST(ContextTest, ClearItemWorks) {
   EXPECT_FALSE(context.Exists<int>());
 }
 
+TEST(ContextTest, ClearNamedItemWorks) {
+  Context context;
+  context.SetNamedNew<int>("int");
+  context.Clear<int>("int");
+  EXPECT_FALSE(context.Exists<int>("int"));
+}
+
+TEST(ContextTest, ClearItemDoesNotClearNamedItem) {
+  Context context;
+  context.SetValue<int>("ten", 10);
+  context.Clear<int>();
+  EXPECT_TRUE(context.Exists<int>("ten"));
+}
+
 TEST(ContextTest, ClearLastItemIsEmpty) {
   Context context;
   context.SetNew<int>();
   context.Clear<int>();
+  EXPECT_TRUE(context.Empty());
+}
+
+TEST(ContextTest, ClearLastNamedItemIsEmpty) {
+  Context context;
+  context.SetNamedNew<int>("int");
+  context.Clear<int>("int");
   EXPECT_TRUE(context.Empty());
 }
 
@@ -184,16 +276,38 @@ TEST(ContextTest, GetMissingValueIsDefault) {
   EXPECT_EQ(context.GetValue<int>(), 0);
 }
 
+TEST(ContextTest, GetMissingNamedValueIsDefault) {
+  Context context;
+  EXPECT_EQ(context.GetValue<int>("ten"), 0);
+}
+
 TEST(ContextTest, GetMissingValueReturnsSpecifiedDefault) {
   Context context;
-  EXPECT_EQ(context.GetValue<int>(5), 5);
+  EXPECT_EQ(context.GetValueOrDefault<int>(5), 5);
+}
+
+TEST(ContextTest, GetMissingNamedValueReturnsSpecifiedDefault) {
+  Context context;
+  EXPECT_EQ(context.GetValueOrDefault<int>("five", 5), 5);
 }
 
 TEST(ContextTest, GetMissingValueReturnsCopyConstruct) {
   Counts counts;
   Context context;
   Item item(&counts);
-  context.GetValue<Item>(item);
+  context.GetValueOrDefault<Item>(item);
+  EXPECT_EQ(counts.construct, 1);
+  EXPECT_EQ(counts.move_construct, 0);
+  EXPECT_EQ(counts.copy_construct, 1);
+  EXPECT_EQ(counts.move_assign, 0);
+  EXPECT_EQ(counts.copy_assign, 0);
+}
+
+TEST(ContextTest, GetMissingNamedValueReturnsCopyConstruct) {
+  Counts counts;
+  Context context;
+  Item item(&counts);
+  context.GetValueOrDefault<Item>("item", item);
   EXPECT_EQ(counts.construct, 1);
   EXPECT_EQ(counts.move_construct, 0);
   EXPECT_EQ(counts.copy_construct, 1);
@@ -205,7 +319,19 @@ TEST(ContextTest, GetMissingValueReturnsMoveConstruct) {
   Counts counts;
   Context context;
   Item item(&counts);
-  context.GetValue<Item>(std::move(item));
+  context.GetValueOrDefault<Item>(std::move(item));
+  EXPECT_EQ(counts.construct, 1);
+  EXPECT_EQ(counts.move_construct, 1);
+  EXPECT_EQ(counts.copy_construct, 0);
+  EXPECT_EQ(counts.move_assign, 0);
+  EXPECT_EQ(counts.copy_assign, 0);
+}
+
+TEST(ContextTest, GetMissingNamedValueReturnsMoveConstruct) {
+  Counts counts;
+  Context context;
+  Item item(&counts);
+  context.GetValueOrDefault<Item>("item", std::move(item));
   EXPECT_EQ(counts.construct, 1);
   EXPECT_EQ(counts.move_construct, 1);
   EXPECT_EQ(counts.copy_construct, 0);
@@ -216,7 +342,18 @@ TEST(ContextTest, GetMissingValueReturnsMoveConstruct) {
 TEST(ContextTest, GetMissingValueReturnsCustomConstruct) {
   Counts counts;
   Context context;
-  context.GetValue<Item>(&counts);
+  context.GetValueOrDefault<Item>(&counts);
+  EXPECT_EQ(counts.construct, 1);
+  EXPECT_EQ(counts.move_construct, 0);
+  EXPECT_EQ(counts.copy_construct, 0);
+  EXPECT_EQ(counts.move_assign, 0);
+  EXPECT_EQ(counts.copy_assign, 0);
+}
+
+TEST(ContextTest, GetMissingNamedValueReturnsCustomConstruct) {
+  Counts counts;
+  Context context;
+  context.GetValueOrDefault<Item>("item", &counts);
   EXPECT_EQ(counts.construct, 1);
   EXPECT_EQ(counts.move_construct, 0);
   EXPECT_EQ(counts.copy_construct, 0);
@@ -231,10 +368,23 @@ TEST(ContextTest, GetValueDoesNotCreate) {
   EXPECT_TRUE(context.Empty());
 }
 
+TEST(ContextTest, GetNamedValueDoesNotCreate) {
+  Context context;
+  context.GetValue<int>("int");
+  EXPECT_FALSE(context.Exists<int>());
+  EXPECT_TRUE(context.Empty());
+}
+
 TEST(ContextTest, GetValueReturnsValue) {
   Context context;
   context.SetNew<int>(5);
   EXPECT_EQ(context.GetValue<int>(), 5);
+}
+
+TEST(ContextTest, GetNamedValueReturnsValue) {
+  Context context;
+  context.SetNamedNew<int>("five", 5);
+  EXPECT_EQ(context.GetValue<int>("five"), 5);
 }
 
 TEST(ContextTest, GetValueDoesNotRemove) {
@@ -242,6 +392,14 @@ TEST(ContextTest, GetValueDoesNotRemove) {
   context.SetNew<int>(5);
   context.GetValue<int>();
   EXPECT_TRUE(context.Exists<int>());
+  EXPECT_FALSE(context.Empty());
+}
+
+TEST(ContextTest, GetNamedValueDoesNotRemove) {
+  Context context;
+  context.SetNamedNew<int>("five", 5);
+  context.GetValue<int>("five");
+  EXPECT_TRUE(context.Exists<int>("five"));
   EXPECT_FALSE(context.Empty());
 }
 
@@ -258,6 +416,11 @@ TEST(ContextTest, MissingItemIsNotOwned) {
   EXPECT_FALSE(context.Owned<int>());
 }
 
+TEST(ContextTest, MissingNamedItemIsNotOwned) {
+  Context context;
+  EXPECT_FALSE(context.Owned<int>("int"));
+}
+
 TEST(ContextTest, SetNewIsOwned) {
   Context context;
   context.SetNew<int>();
@@ -267,6 +430,11 @@ TEST(ContextTest, SetNewIsOwned) {
 TEST(ContextTest, GetPtrIsNullForMissingItem) {
   Context context;
   EXPECT_EQ(context.GetPtr<int>(), nullptr);
+}
+
+TEST(ContextTest, GetPtrIsNullForMissingNamedItem) {
+  Context context;
+  EXPECT_EQ(context.GetPtr<int>("int"), nullptr);
 }
 
 TEST(ContextTest, GetPtrReturnsOwnedItem) {
@@ -287,6 +455,17 @@ TEST(ContextTest, SetOwnedPassesOwnership) {
   EXPECT_EQ(*context.GetPtr<int>(), 5);
 }
 
+TEST(ContextTest, SetNamedOwnedPassesOwnership) {
+  Context context;
+  auto value = std::make_unique<int>(5);
+  auto value_ptr = value.get();
+  context.SetOwned("five", std::move(value));
+  EXPECT_TRUE(context.Owned<int>("five"));
+  EXPECT_EQ(value.get(), nullptr);
+  EXPECT_EQ(context.GetPtr<int>("five"), value_ptr);
+  EXPECT_EQ(*context.GetPtr<int>("five"), 5);
+}
+
 TEST(ContextTest, ReleaseOwnership) {
   Context context;
   context.SetNew<int>(5);
@@ -295,6 +474,18 @@ TEST(ContextTest, ReleaseOwnership) {
   EXPECT_FALSE(context.Owned<int>());
   EXPECT_FALSE(context.Exists<int>());
   EXPECT_EQ(context.GetPtr<int>(), nullptr);
+  EXPECT_EQ(value.get(), value_ptr);
+  EXPECT_EQ(*value, 5);
+}
+
+TEST(ContextTest, ReleaseNamedOwnership) {
+  Context context;
+  context.SetNamedNew<int>("int", 5);
+  auto value_ptr = context.GetPtr<int>("int");
+  auto value = context.Release<int>("int");
+  EXPECT_FALSE(context.Owned<int>("int"));
+  EXPECT_FALSE(context.Exists<int>("int"));
+  EXPECT_EQ(context.GetPtr<int>("int"), nullptr);
   EXPECT_EQ(value.get(), value_ptr);
   EXPECT_EQ(*value, 5);
 }
@@ -308,9 +499,23 @@ TEST(ContextTest, SetPtrDoesNotPassOwnership) {
   EXPECT_EQ(context.GetPtr<int>(), value.get());
 }
 
+TEST(ContextTest, SetNamedPtrDoesNotPassOwnership) {
+  Context context;
+  auto value = std::make_unique<int>(5);
+  context.SetPtr<int>("int", value.get());
+  EXPECT_TRUE(context.Exists<int>("int"));
+  EXPECT_FALSE(context.Owned<int>("int"));
+  EXPECT_EQ(context.GetPtr<int>("int"), value.get());
+}
+
 TEST(ContextTest, SetNewUsesDefaultConstructor) {
   Context context;
   context.SetNew<DefaultConstructItem>();
+}
+
+TEST(ContextTest, SetNamedNewUsesDefaultConstructor) {
+  Context context;
+  context.SetNamedNew<DefaultConstructItem>("item");
 }
 
 TEST(ContextTest, SetNewUsesCopyConstructor) {
@@ -318,6 +523,16 @@ TEST(ContextTest, SetNewUsesCopyConstructor) {
   Context context;
   Item item(&counts);
   context.SetNew<Item>(item);
+  EXPECT_EQ(counts.construct, 1);
+  EXPECT_EQ(counts.copy_construct, 1);
+  EXPECT_EQ(counts.move_construct, 0);
+}
+
+TEST(ContextTest, SetNamedNewUsesCopyConstructor) {
+  Counts counts;
+  Context context;
+  Item item(&counts);
+  context.SetNamedNew<Item>("item", item);
   EXPECT_EQ(counts.construct, 1);
   EXPECT_EQ(counts.copy_construct, 1);
   EXPECT_EQ(counts.move_construct, 0);
@@ -333,10 +548,29 @@ TEST(ContextTest, SetNewUsesMoveConstructor) {
   EXPECT_EQ(counts.move_construct, 1);
 }
 
+TEST(ContextTest, SetNamedNewUsesMoveConstructor) {
+  Counts counts;
+  Context context;
+  Item item(&counts);
+  context.SetNamedNew<Item>("item", std::move(item));
+  EXPECT_EQ(counts.construct, 1);
+  EXPECT_EQ(counts.copy_construct, 0);
+  EXPECT_EQ(counts.move_construct, 1);
+}
+
 TEST(ContextTest, SetNewUsesCustomConstructor) {
   Counts counts;
   Context context;
   context.SetNew<Item>(&counts);
+  EXPECT_EQ(counts.construct, 1);
+  EXPECT_EQ(counts.copy_construct, 0);
+  EXPECT_EQ(counts.move_construct, 0);
+}
+
+TEST(ContextTest, SetNamedNewUsesCustomConstructor) {
+  Counts counts;
+  Context context;
+  context.SetNamedNew<Item>("item", &counts);
   EXPECT_EQ(counts.construct, 1);
   EXPECT_EQ(counts.copy_construct, 0);
   EXPECT_EQ(counts.move_construct, 0);
@@ -347,10 +581,21 @@ TEST(ContextTest, SetOwnedDoesNotConstruct) {
   context.SetOwned<DeleteOnlyItem>(DeleteOnlyItem::New());
 }
 
+TEST(ContextTest, SetNamedOwnedDoesNotConstruct) {
+  Context context;
+  context.SetOwned<DeleteOnlyItem>("item", DeleteOnlyItem::New());
+}
+
 TEST(ContextTest, SetPtrDoesNotConstruct) {
   auto item = DeleteOnlyItem::New();
   Context context;
   context.SetPtr<DeleteOnlyItem>(item.get());
+}
+
+TEST(ContextTest, SetNamedPtrDoesNotConstruct) {
+  auto item = DeleteOnlyItem::New();
+  Context context;
+  context.SetPtr<DeleteOnlyItem>("item", item.get());
 }
 
 TEST(ContextTest, SetValueUsesCopyConstructorWhenNew) {
@@ -363,11 +608,31 @@ TEST(ContextTest, SetValueUsesCopyConstructorWhenNew) {
   EXPECT_EQ(counts.move_construct, 0);
 }
 
+TEST(ContextTest, SetNamedValueUsesCopyConstructorWhenNew) {
+  Counts counts;
+  ConstructOnlyItem item(&counts);
+  Context context;
+  context.SetValue<ConstructOnlyItem>("item", item);
+  EXPECT_EQ(counts.construct, 1);
+  EXPECT_EQ(counts.copy_construct, 1);
+  EXPECT_EQ(counts.move_construct, 0);
+}
+
 TEST(ContextTest, SetValueUsesMoveConstructorWhenNew) {
   Counts counts;
   ConstructOnlyItem item(&counts);
   Context context;
   context.SetValue<ConstructOnlyItem>(std::move(item));
+  EXPECT_EQ(counts.construct, 1);
+  EXPECT_EQ(counts.copy_construct, 0);
+  EXPECT_EQ(counts.move_construct, 1);
+}
+
+TEST(ContextTest, SetNamedValueUsesMoveConstructorWhenNew) {
+  Counts counts;
+  ConstructOnlyItem item(&counts);
+  Context context;
+  context.SetValue<ConstructOnlyItem>("item", std::move(item));
   EXPECT_EQ(counts.construct, 1);
   EXPECT_EQ(counts.copy_construct, 0);
   EXPECT_EQ(counts.move_construct, 1);
@@ -384,12 +649,34 @@ TEST(ContextTest, SetValueUsesCopyConstructorWhenExists) {
   EXPECT_EQ(counts.move_construct, 0);
 }
 
+TEST(ContextTest, SetNamedValueUsesCopyConstructorWhenExists) {
+  Counts counts;
+  ConstructOnlyItem item(&counts);
+  Context context;
+  context.SetNamedNew<ConstructOnlyItem>("item", &counts);
+  context.SetValue<ConstructOnlyItem>("item", item);
+  EXPECT_EQ(counts.construct, 2);
+  EXPECT_EQ(counts.copy_construct, 1);
+  EXPECT_EQ(counts.move_construct, 0);
+}
+
 TEST(ContextTest, SetValueUsesMoveConstructorWhenExists) {
   Counts counts;
   ConstructOnlyItem item(&counts);
   Context context;
   context.SetNew<ConstructOnlyItem>(&counts);
   context.SetValue<ConstructOnlyItem>(std::move(item));
+  EXPECT_EQ(counts.construct, 2);
+  EXPECT_EQ(counts.copy_construct, 0);
+  EXPECT_EQ(counts.move_construct, 1);
+}
+
+TEST(ContextTest, SetNamedValueUsesMoveConstructorWhenExists) {
+  Counts counts;
+  ConstructOnlyItem item(&counts);
+  Context context;
+  context.SetNamedNew<ConstructOnlyItem>("item", &counts);
+  context.SetValue<ConstructOnlyItem>("item", std::move(item));
   EXPECT_EQ(counts.construct, 2);
   EXPECT_EQ(counts.copy_construct, 0);
   EXPECT_EQ(counts.move_construct, 1);
@@ -406,12 +693,34 @@ TEST(ContextTest, SetValueUsesCopyAssignment) {
   EXPECT_EQ(counts.copy_assign, 1);
 }
 
+TEST(ContextTest, SetNamedValueUsesCopyAssignment) {
+  Counts counts;
+  CopyOnlyItem item(&counts);
+  Context context;
+  context.SetNamedNew<CopyOnlyItem>("item", &counts);
+  context.SetValue<CopyOnlyItem>("item", item);
+  EXPECT_EQ(counts.construct, 2);
+  EXPECT_EQ(counts.copy_construct, 0);
+  EXPECT_EQ(counts.copy_assign, 1);
+}
+
 TEST(ContextTest, SetValueUsesMoveAssignment) {
   Counts counts;
   MoveOnlyItem item(&counts);
   Context context;
   context.SetNew<MoveOnlyItem>(&counts);
   context.SetValue<MoveOnlyItem>(std::move(item));
+  EXPECT_EQ(counts.construct, 2);
+  EXPECT_EQ(counts.move_construct, 0);
+  EXPECT_EQ(counts.move_assign, 1);
+}
+
+TEST(ContextTest, SetNamedValueUsesMoveAssignment) {
+  Counts counts;
+  MoveOnlyItem item(&counts);
+  Context context;
+  context.SetNamedNew<MoveOnlyItem>("item", &counts);
+  context.SetValue<MoveOnlyItem>("item", std::move(item));
   EXPECT_EQ(counts.construct, 2);
   EXPECT_EQ(counts.move_construct, 0);
   EXPECT_EQ(counts.move_assign, 1);
@@ -427,10 +736,29 @@ TEST(ContextTest, DestructorDeletesOwnedItems) {
   EXPECT_EQ(counts.destruct, 1);
 }
 
+TEST(ContextTest, DestructorDeletesOwnedNamedItems) {
+  Counts counts;
+  {
+    Context context;
+    context.SetNamedNew<Item>("item", &counts);
+    EXPECT_EQ(counts.destruct, 0);
+  }
+  EXPECT_EQ(counts.destruct, 1);
+}
+
 TEST(ContextTest, ResetDeletesOwnedItems) {
   Counts counts;
   Context context;
   context.SetNew<Item>(&counts);
+  EXPECT_EQ(counts.destruct, 0);
+  context.Reset();
+  EXPECT_EQ(counts.destruct, 1);
+}
+
+TEST(ContextTest, ResetDeletesOwnedNamedItems) {
+  Counts counts;
+  Context context;
+  context.SetNamedNew<Item>("item", &counts);
   EXPECT_EQ(counts.destruct, 0);
   context.Reset();
   EXPECT_EQ(counts.destruct, 1);
@@ -442,6 +770,15 @@ TEST(ContextTest, ClearDeletesOwnedItems) {
   context.SetNew<Item>(&counts);
   EXPECT_EQ(counts.destruct, 0);
   context.Clear<Item>();
+  EXPECT_EQ(counts.destruct, 1);
+}
+
+TEST(ContextTest, ClearDeletesOwnedNamedItems) {
+  Counts counts;
+  Context context;
+  context.SetNamedNew<Item>("item", &counts);
+  EXPECT_EQ(counts.destruct, 0);
+  context.Clear<Item>("item");
   EXPECT_EQ(counts.destruct, 1);
 }
 
@@ -573,6 +910,228 @@ TEST(ContextTest, SetValueDoesNotDeletePreviousUnownedItems) {
   context.SetValue<ConstructOnlyItem>(*item2);
   EXPECT_EQ(counts1.destruct, 0);
   EXPECT_EQ(counts2.destruct, 0);
+}
+
+TEST(ContextTest, NameCanBeString) {
+  std::string key("key");
+  Context context;
+  context.SetValue<int>(key, 5);
+  EXPECT_EQ(context.GetValue<int>(key), 5);
+}
+
+TEST(ContextTest, NameCanBeStringView) {
+  std::string_view key("key");
+  Context context;
+  context.SetValue<int>(key, 5);
+  EXPECT_EQ(context.GetValue<int>(key), 5);
+}
+
+TEST(ContextTest, ContextTakesOwnershipOfName) {
+  std::string key("key");
+  Context context;
+  context.SetValue<int>(key, 5);
+  key = "not_key";
+  EXPECT_FALSE(context.Exists<int>(key));
+  EXPECT_TRUE(context.Exists<int>("key"));
+}
+
+TEST(ContextTest, SetNamedValueReplacesPreviousType) {
+  Counts counts;
+  Context context;
+  context.SetNamedNew<Item>("item", &counts);
+  context.SetNamedNew<int>("item", 5);
+  EXPECT_TRUE(context.NameExists("item"));
+  EXPECT_FALSE(context.Exists<Item>("item"));
+  EXPECT_TRUE(context.Exists<int>("item"));
+  EXPECT_EQ(counts.destruct, 1);
+}
+
+TEST(ContextTest, ClearByNameWorks) {
+  Context context;
+  context.SetValue<int>("int", 10);
+  context.ClearName("int");
+  EXPECT_FALSE(context.NameExists("int"));
+  EXPECT_FALSE(context.Exists<int>("int"));
+}
+
+TEST(ContextTest, ClearByNameOnlyAffectsThatName) {
+  Context context;
+  context.SetValue<int>("int", 10);
+  context.ClearName("float");
+  EXPECT_TRUE(context.NameExists("int"));
+  EXPECT_TRUE(context.Exists<int>("int"));
+}
+
+TEST(ContextTest, SetAnyFailsIfWrongType) {
+  Context context;
+  double value = 10.0;
+  std::any any_value(value);
+  context.SetAny(ContextType::Get<int>(), any_value);
+  EXPECT_FALSE(context.Exists<int>());
+  EXPECT_FALSE(context.Exists<double>());
+}
+
+TEST(ContextTest, SetAnyClearsIfWrongType) {
+  Context context;
+  double value = 10.0;
+  std::any any_value(value);
+  context.SetValue<int>(100);
+  context.SetValue<double>(200.0);
+  context.SetAny(ContextType::Get<int>(), any_value);
+  EXPECT_FALSE(context.Exists<int>());
+  EXPECT_EQ(context.GetValue<double>(), 200.0);
+}
+
+TEST(ContextTest, SetAnySucceeds) {
+  Counts counts;
+  Context context;
+  std::any any_value(Item{&counts});
+  Counts init_counts = counts;
+  context.SetAny(ContextType::Get<Item>(), any_value);
+  EXPECT_TRUE(context.Exists<Item>());
+  EXPECT_EQ(counts.destruct, init_counts.destruct);
+  EXPECT_EQ(counts.construct, init_counts.construct);
+  EXPECT_EQ(counts.copy_construct, init_counts.copy_construct + 1);
+  EXPECT_EQ(counts.move_construct, init_counts.move_construct);
+  EXPECT_EQ(counts.copy_assign, init_counts.copy_assign);
+  EXPECT_EQ(counts.move_assign, init_counts.move_assign);
+}
+
+TEST(ContextTest, SetAnyNamedFailsIfWrongType) {
+  Context context;
+  double value = 10.0;
+  std::any any_value(value);
+  context.SetAny("any", ContextType::Get<int>(), any_value);
+  EXPECT_FALSE(context.NameExists("any"));
+}
+
+TEST(ContextTest, SetAnyClearsNameIfWrongType) {
+  Context context;
+  double value = 10.0;
+  std::any any_value(value);
+  context.SetValue<double>("any", 200.0);
+  context.SetAny("any", ContextType::Get<int>(), any_value);
+  EXPECT_FALSE(context.NameExists("any"));
+}
+
+TEST(ContextTest, SetAnyNamedSucceeds) {
+  Counts counts;
+  Context context;
+  std::any any_value(Item{&counts});
+  Counts init_counts = counts;
+  context.SetAny("any", ContextType::Get<Item>(), any_value);
+  EXPECT_TRUE(context.Exists<Item>("any"));
+  EXPECT_EQ(counts.destruct, init_counts.destruct);
+  EXPECT_EQ(counts.construct, init_counts.construct);
+  EXPECT_EQ(counts.copy_construct, init_counts.copy_construct + 1);
+  EXPECT_EQ(counts.move_construct, init_counts.move_construct);
+  EXPECT_EQ(counts.copy_assign, init_counts.copy_assign);
+  EXPECT_EQ(counts.move_assign, init_counts.move_assign);
+}
+
+TEST(ContextTest, SetAnyReplacesNamedValueOfDifferentType) {
+  Context context;
+  context.SetValue<double>("any", 200.0);
+  int value = 10;
+  context.SetAny("any", ContextType::Get<int>(), std::any(value));
+  EXPECT_EQ(context.GetValue<int>("any"), 10);
+  EXPECT_FALSE(context.Exists<double>("any"));
+}
+
+TEST(ContextTest, SetNewAccessibleInAllWays) {
+  Context context;
+
+  context.SetNew<int>(10);
+  EXPECT_TRUE(context.Exists<int>());
+  EXPECT_EQ(context.GetValue<int>(), 10);
+  ASSERT_NE(context.GetPtr<int>(), nullptr);
+  EXPECT_EQ(*context.GetPtr<int>(), 10);
+
+  context.SetNamedNew<int>("name", 20);
+  EXPECT_TRUE(context.NameExists("name"));
+  EXPECT_TRUE(context.Exists<int>("name"));
+  EXPECT_EQ(context.GetValue<int>("name"), 20);
+  ASSERT_NE(context.GetPtr<int>("name"), nullptr);
+  EXPECT_EQ(*context.GetPtr<int>("name"), 20);
+}
+
+TEST(ContextTest, SetOwnedAccessibleInAllWays) {
+  Context context;
+
+  context.SetOwned<int>(std::make_unique<int>(10));
+  EXPECT_TRUE(context.Exists<int>());
+  EXPECT_EQ(context.GetValue<int>(), 10);
+  ASSERT_NE(context.GetPtr<int>(), nullptr);
+  EXPECT_EQ(*context.GetPtr<int>(), 10);
+
+  context.SetOwned<int>("name", std::make_unique<int>(20));
+  EXPECT_TRUE(context.NameExists("name"));
+  EXPECT_TRUE(context.Exists<int>("name"));
+  EXPECT_EQ(context.GetValue<int>("name"), 20);
+  ASSERT_NE(context.GetPtr<int>("name"), nullptr);
+  EXPECT_EQ(*context.GetPtr<int>("name"), 20);
+}
+
+TEST(ContextTest, SetPtrAccessibleInAllWays) {
+  Context context;
+
+  int value = 10;
+  context.SetPtr<int>(&value);
+  EXPECT_TRUE(context.Exists<int>());
+  EXPECT_EQ(context.GetValue<int>(), 10);
+  ASSERT_NE(context.GetPtr<int>(), nullptr);
+  EXPECT_EQ(*context.GetPtr<int>(), 10);
+
+  int named_value = 20;
+  context.SetPtr<int>("name", &named_value);
+  EXPECT_TRUE(context.NameExists("name"));
+  EXPECT_TRUE(context.Exists<int>("name"));
+  EXPECT_EQ(context.GetValue<int>("name"), 20);
+  ASSERT_NE(context.GetPtr<int>("name"), nullptr);
+  EXPECT_EQ(*context.GetPtr<int>("name"), 20);
+}
+
+TEST(ContextTest, SetValueAccessibleInAllWays) {
+  Context context;
+
+  context.SetValue<int>(10);
+  EXPECT_TRUE(context.Exists<int>());
+  EXPECT_EQ(context.GetValue<int>(), 10);
+  ASSERT_NE(context.GetPtr<int>(), nullptr);
+  EXPECT_EQ(*context.GetPtr<int>(), 10);
+
+  context.SetValue<int>("name", 20);
+  EXPECT_TRUE(context.NameExists("name"));
+  EXPECT_TRUE(context.Exists<int>("name"));
+  EXPECT_EQ(context.GetValue<int>("name"), 20);
+  ASSERT_NE(context.GetPtr<int>("name"), nullptr);
+  EXPECT_EQ(*context.GetPtr<int>("name"), 20);
+}
+
+TEST(ContextTest, SetPtrSupportsForwardDeclaredTypes) {
+  int dummy = 10;  // Value does not matter.
+  struct ForwardDeclaredType;
+  ForwardDeclaredType* ptr = reinterpret_cast<ForwardDeclaredType*>(&dummy);
+
+  Context context;
+
+  context.SetPtr<ForwardDeclaredType>(ptr);
+  EXPECT_TRUE(context.Exists<ForwardDeclaredType>());
+  EXPECT_EQ(context.GetPtr<ForwardDeclaredType>(), ptr);
+  context.Clear<ForwardDeclaredType>();
+  EXPECT_FALSE(context.Exists<ForwardDeclaredType>());
+
+  context.SetPtr<ForwardDeclaredType>("name", ptr);
+  EXPECT_TRUE(context.Exists<ForwardDeclaredType>("name"));
+  EXPECT_EQ(context.GetPtr<ForwardDeclaredType>("name"), ptr);
+  context.Clear<ForwardDeclaredType>("name");
+  EXPECT_FALSE(context.Exists<ForwardDeclaredType>("name"));
+
+  context.SetPtr<ForwardDeclaredType>("name", ptr);
+  EXPECT_TRUE(context.NameExists("name"));
+  context.ClearName("name");
+  EXPECT_FALSE(context.Exists<ForwardDeclaredType>("name"));
+  EXPECT_FALSE(context.NameExists("name"));
 }
 
 }  // namespace

@@ -1,28 +1,59 @@
-setlocal
 @echo off
 
-if "%GB_3RDPARTY%" == "" (
-	set GB_3RDPARTY="%~dp0\3rdparty"
-)
-
-REM ===========================================================================
+rem ===========================================================================
 pushd "%~dp0"
-REM ===========================================================================
+rem ===========================================================================
 
-REM ---------------------------------------------------------------------------
-REM Create Build directory tree if it doesn't already exist
+rem ---------------------------------------------------------------------------
+rem Create build directory tree if it doesn't already exist
 
 if not exist build (
 	mkdir build
 )
 cd build
 
-REM ---------------------------------------------------------------------------
-REM Build GBits Source
+rem ---------------------------------------------------------------------------
+rem Build third_party Source
 
-echo ======== BUILDING GBits Source ========
+if not exist third_party (
+	mkdir third_party
+)
+pushd third_party
+
+echo ======== BUILDING googletest ========
+if not exist googletest (
+	mkdir googletest
+)
+pushd googletest
+cmake ..\..\..\third_party\googletest -Dgtest_force_shared_crt=ON %*
+cmake --build . --config Release
+cmake --build . --config Debug
+cmake --build . --config MinSizeRel
+cmake --build . --config RelWithDebInfo
+popd
+
+echo ======== BUILDING glog ========
+if not exist glog (
+  mkdir glog
+)
+pushd glog
+cmake ..\..\..\third_party\glog %*
+cmake --build . --config Release
+cmake --build . --config Debug
+cmake --build . --config MinSizeRel
+cmake --build . --config RelWithDebInfo
+popd
+
+rem Back to build/ directory
+popd
+
+rem ---------------------------------------------------------------------------
+rem Build Source
+
+echo ======== BUILDING Source ========
 cmake .. %*
 
-REM ===========================================================================
+rem ===========================================================================
+rem Back to calling directory
 popd
-REM ===========================================================================
+rem ===========================================================================

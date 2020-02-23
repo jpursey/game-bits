@@ -14,4 +14,4 @@ set(game_LIBS
 	${GBITS_ABSL_LIB_TIME}
 )
 
-add_gbits_library(game)
+gbits_add_library(game)

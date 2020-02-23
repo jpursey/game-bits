@@ -1,17 +1,19 @@
 #ifndef GBITS_BASE_CONTEXT_H_
 #define GBITS_BASE_CONTEXT_H_
 
-#include "absl/container/flat_hash_map.h"
+#include <string_view>
+#include <tuple>
 
+#include "absl/container/flat_hash_map.h"
 #include "gbits/base/context_type.h"
 
 namespace gb {
 
-// This class contains a set of values keyed by type.
+// This class contains a set of values keyed by type and an optional name.
 //
-// Only one value of each type may be stored. The values stored in the context
-// are never const. The only requirement for value types stored in the context
-// is that they have a public destructor.
+// Only one anonymous value (no name) of each type may be stored, and only one
+// value of each name (regardless of the type) may be stored. The values stored
+// in the context are never const.
 //
 // Context is a move-only type. This class is thread-compatible.
 class Context final {
@@ -36,8 +38,13 @@ class Context final {
   // value.
   template <typename Type, class... Args>
   void SetNew(Args&&... args) {
-    SetImpl(ContextType::Get<Type>(), new Type(std::forward<Args>(args)...),
+    SetImpl({}, ContextType::Get<Type>(), new Type(std::forward<Args>(args)...),
             true);
+  }
+  template <typename Type, class... Args>
+  void SetNamedNew(std::string_view name, Args&&... args) {
+    SetImpl(name, ContextType::Get<Type>(),
+            new Type(std::forward<Args>(args)...), true);
   }
 
   // Sets the value of the specified Type with the context taking ownership.
@@ -52,7 +59,11 @@ class Context final {
   // specification as it is unambiguous.
   template <typename Type>
   void SetOwned(std::unique_ptr<Type> value) {
-    SetImpl(ContextType::Get<Type>(), value.release(), true);
+    SetImpl({}, ContextType::Get<Type>(), value.release(), true);
+  }
+  template <typename Type>
+  void SetOwned(std::string_view name, std::unique_ptr<Type> value) {
+    SetImpl(name, ContextType::Get<Type>(), value.release(), true);
   }
 
   // Sets the value of the specified Type without the context taking ownership.
@@ -63,11 +74,15 @@ class Context final {
   // a null is passed in, this is equivalent to calling Clear<Type> with no
   // value being stored.
   //
-  // Unlike SetNew and SetValue, SetOwned does not require explicit Type
+  // Unlike SetNew and SetValue, SetPtr does not require explicit Type
   // specification as it is unambiguous.
   template <typename Type>
   void SetPtr(Type* value) {
-    SetImpl(ContextType::Get<Type>(), value, false);
+    SetImpl({}, ContextType::GetPlaceholder<Type>(), value, false);
+  }
+  template <typename Type>
+  void SetPtr(std::string_view name, Type* value) {
+    SetImpl(name, ContextType::GetPlaceholder<Type>(), value, false);
   }
 
   // Updates the value of the specified Type in the context with the new value.
@@ -92,7 +107,20 @@ class Context final {
     if (old_value != nullptr) {
       *old_value = std::forward<OtherType>(value);
     } else {
-      SetImpl(ContextType::Get<Type>(),
+      SetImpl({}, ContextType::Get<Type>(),
+              new Type(std::forward<OtherType>(value)), true);
+    }
+  }
+  template <
+      typename Type, typename OtherType,
+      std::enable_if_t<std::is_assignable<std::decay_t<Type>, OtherType>::value,
+                       int> = 0>
+  void SetValue(std::string_view name, OtherType&& value) {
+    Type* old_value = GetPtr<Type>(name);
+    if (old_value != nullptr) {
+      *old_value = std::forward<OtherType>(value);
+    } else {
+      SetImpl(name, ContextType::Get<Type>(),
               new Type(std::forward<OtherType>(value)), true);
     }
   }
@@ -101,15 +129,37 @@ class Context final {
                                  std::decay_t<Type>, OtherType>>::value,
                              int> = 0>
   void SetValue(OtherType&& value) {
-    SetImpl(ContextType::Get<Type>(), new Type(std::forward<OtherType>(value)),
-            true);
+    SetImpl({}, ContextType::Get<Type>(),
+            new Type(std::forward<OtherType>(value)), true);
+  }
+  template <typename Type, typename OtherType,
+            std::enable_if_t<std::negation<std::is_assignable<
+                                 std::decay_t<Type>, OtherType>>::value,
+                             int> = 0>
+  void SetValue(std::string_view name, OtherType&& value) {
+    SetImpl(name, ContextType::Get<Type>(),
+            new Type(std::forward<OtherType>(value)), true);
+  }
+
+  // Sets a value based on an std::any and pre-determined ContextType.
+  //
+  // If the std::any does not have a value, or it is not of the exact same type
+  // as the ContextType represents, then this set the value to null (equivalent
+  // to calling Clear<Type>()).
+  void SetAny(ContextType* type, const std::any& value) {
+    return SetAny({}, type, value);
+  }
+  void SetAny(std::string_view name, ContextType* type, const std::any& value) {
+    if (type != nullptr) {
+      SetImpl(name, type, type->Clone(value), true);
+    }
   }
 
   // Returns a pointer to the stored value of the specified Type if there is
   // one, or null otherwise.
   template <typename Type>
-  Type* GetPtr() const {
-    auto it = values_.find(ContextType::Get<Type>());
+  Type* GetPtr(std::string_view name = {}) const {
+    auto it = values_.find({name, ContextKey::Get<Type>()});
     return it != values_.end() ? static_cast<Type*>(it->second.value) : nullptr;
   }
 
@@ -117,8 +167,8 @@ class Context final {
   // default constructed value if there isn't. The Type must support copy
   // construction.
   template <typename Type>
-  Type GetValue() const {
-    Type* value = GetPtr<Type>();
+  Type GetValue(std::string_view name = {}) const {
+    Type* value = GetPtr<Type>(name);
     if (value != nullptr) {
       return *value;
     }
@@ -129,8 +179,17 @@ class Context final {
   // specified default value if there isn't. The Type must support copy
   // construction.
   template <typename Type, typename DefaultType>
-  Type GetValue(DefaultType&& default_value) const {
+  Type GetValueOrDefault(DefaultType&& default_value) const {
     Type* value = GetPtr<Type>();
+    if (value != nullptr) {
+      return *value;
+    }
+    return std::forward<DefaultType>(default_value);
+  }
+  template <typename Type, typename DefaultType>
+  Type GetValueOrDefault(std::string_view name,
+                         DefaultType&& default_value) const {
+    Type* value = GetPtr<Type>(name);
     if (value != nullptr) {
       return *value;
     }
@@ -141,15 +200,26 @@ class Context final {
   //
   // This is equivalent to (GetPtr<Type>() != nullptr)
   template <typename Type>
-  bool Exists() const {
-    return values_.find(ContextType::Get<Type>()) != values_.end();
+  bool Exists(std::string_view name = {}) const {
+    return Exists(name, ContextKey::Get<Type>());
+  }
+  bool Exists(ContextKey* key) const { return Exists({}, key); }
+  bool Exists(std::string_view name, ContextKey* key) const {
+    return values_.find({name, key}) != values_.end();
+  }
+
+  // Returns true if a value of the specified name exists in the context.
+  //
+  // If the name is empty, this always returns false.
+  bool NameExists(std::string_view name) const {
+    return names_.find(name) != names_.end();
   }
 
   // Returns true if a value of the specified Type exists in the context AND it
   // is owned by the context.
   template <typename Type>
-  bool Owned() const {
-    auto it = values_.find(ContextType::Get<Type>());
+  bool Owned(std::string_view name = {}) const {
+    auto it = values_.find({name, ContextKey::Get<Type>()});
     return it != values_.end() && it->second.owned;
   }
 
@@ -158,30 +228,48 @@ class Context final {
   // If the value does not exist or is not owned (Owned<Type>() would return
   // false), then this will return null.
   template <typename Type>
-  std::unique_ptr<Type> Release() {
+  std::unique_ptr<Type> Release(std::string_view name = {}) {
     return std::unique_ptr<Type>(
-        static_cast<Type*>(ReleaseImpl(ContextType::Get<Type>())));
+        static_cast<Type*>(ReleaseImpl(name, ContextType::Get<Type>())));
   }
 
   // Clears any value of the specified Type from the context (if one existed).
   //
   // If the value exists and is owned, it will be destructed.
   template <typename Type>
-  void Clear() {
-    SetImpl(ContextType::Get<Type>(), nullptr, false);
+  void Clear(std::string_view name = {}) {
+    return Clear(name, ContextKey::Get<Type>());
+  }
+  void Clear(ContextKey* key) { return Clear({}, key); }
+  void Clear(std::string_view name, ContextKey* key) {
+    SetImpl(name, key->GetPlaceholderType(), nullptr, false);
+  }
+
+  // Clears any value of the specified name from the context (if one existed).
+  //
+  // If the name is empty, this has no effect.
+  void ClearName(std::string_view name) {
+    auto name_it = names_.find(name);
+    if (name_it != names_.end()) {
+      SetImpl(name, name_it->second, nullptr, false);
+    }
   }
 
  private:
   struct Value {
     Value() = default;
+    ContextType* type = nullptr;
+    char* name = nullptr;
     void* value = nullptr;
     bool owned = false;
   };
 
-  void SetImpl(ContextType* type, void* new_value, bool owned);
-  void* ReleaseImpl(ContextType* type);
+  void SetImpl(std::string_view name, ContextType* type, void* new_value,
+               bool owned);
+  void* ReleaseImpl(std::string_view name, ContextType* type);
 
-  absl::flat_hash_map<ContextType*, Value> values_;
+  absl::flat_hash_map<std::tuple<std::string_view, ContextKey*>, Value> values_;
+  absl::flat_hash_map<std::string_view, ContextType*> names_;
 };
 
 }  // namespace gb
