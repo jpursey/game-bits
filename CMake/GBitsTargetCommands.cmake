@@ -10,7 +10,7 @@
 ###############################################################################
 
 function(gbits_set_target_properties NAME)
-  target_include_directories(${NAME} PUBLIC ${GBITS_DIR}/src)
+  target_include_directories(${NAME} PUBLIC "${GBITS_DIR}/src" ${GBITS_INCLUDE_DIRS})
 	if(DEFINED VS_FOLDER)
 		set_target_properties(${NAME} PROPERTIES FOLDER ${VS_FOLDER})
 	endif()
