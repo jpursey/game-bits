@@ -14,11 +14,13 @@ class TestGame : public Game {
   ~TestGame() override = default;
 
   void SetInitResult(bool init_result) { init_result_ = init_result; }
+  void SetUpdateCount(int update_count) { update_count_ = update_count; }
 
   const std::vector<std::string_view>& GetInitArgs() const {
     return init_args_;
   }
   absl::Duration GetLastDeltaTime() const { return last_delta_time_; }
+  absl::Duration GetTotalUpdateTime() const { return total_update_time_; }
   bool InitRun() const { return init_run_; }
   bool UpdateRun() const { return update_run_; }
   bool CleanupRun() const { return cleanup_run_; }
@@ -33,17 +35,20 @@ class TestGame : public Game {
   bool Update(absl::Duration delta_time) override {
     update_run_ = true;
     last_delta_time_ = delta_time;
-    return false;
+    total_update_time_ += delta_time;
+    return --update_count_ > 0;
   }
 
   void CleanUp() override { cleanup_run_ = true; }
 
  private:
+  int update_count_ = 1;
   bool init_result_ = true;
   bool init_run_ = false;
   bool update_run_ = false;
   bool cleanup_run_ = false;
   absl::Duration last_delta_time_;
+  absl::Duration total_update_time_;
   std::vector<std::string_view> init_args_;
 };
 
@@ -135,6 +140,21 @@ TEST(GameTest, RunWithInitFailure) {
   EXPECT_TRUE(game.InitRun());
   EXPECT_FALSE(game.UpdateRun());
   EXPECT_TRUE(game.CleanupRun());
+}
+
+TEST(GameTest, GameTimesDoNotDrift) {
+  Context context;
+  context.SetValue<int>(Game::kKeyMaxFps, 100);
+  TestGame game;
+  game.SetUpdateCount(500);  // Five seconds at 100 fps
+  absl::Time start = absl::Now();
+  EXPECT_TRUE(game.Run(&context, {}));
+  absl::Duration time = absl::Now() - start;
+  EXPECT_GE(time, absl::Seconds(5));
+  EXPECT_LT(time, absl::Seconds(5) + absl::Milliseconds(1));
+  EXPECT_GE(game.GetTotalUpdateTime(), absl::Seconds(5));
+  EXPECT_LT(game.GetTotalUpdateTime(),
+            absl::Seconds(5) + absl::Milliseconds(1));
 }
 
 }  // namespace
