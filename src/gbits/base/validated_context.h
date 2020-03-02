@@ -504,6 +504,8 @@ class ValidatedContext final {
 //
 //     ...
 //   };
+//
+// This class is thread-compatible.
 template <const ContextConstraint&... Constraints>
 class ContextContract final {
  public:
