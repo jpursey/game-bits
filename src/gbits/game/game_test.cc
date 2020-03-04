@@ -1,5 +1,6 @@
 #include "gbits/game/game.h"
 
+#include "gbits/base/fake_clock.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
@@ -10,11 +11,14 @@ using ::testing::IsEmpty;
 
 class TestGame : public Game {
  public:
-  TestGame() = default;
+  explicit TestGame(FakeClock* clock = nullptr) : clock_(clock) {}
   ~TestGame() override = default;
 
   void SetInitResult(bool init_result) { init_result_ = init_result; }
   void SetUpdateCount(int update_count) { update_count_ = update_count; }
+  void SetUpdateDelay(absl::Duration update_delay) {
+    update_delay_ = update_delay;
+  }
 
   const std::vector<std::string_view>& GetInitArgs() const {
     return init_args_;
@@ -36,17 +40,22 @@ class TestGame : public Game {
     update_run_ = true;
     last_delta_time_ = delta_time;
     total_update_time_ += delta_time;
+    if (clock_ != nullptr) {
+      clock_->AdvanceTime(update_delay_);
+    }
     return --update_count_ > 0;
   }
 
   void CleanUp() override { cleanup_run_ = true; }
 
  private:
+  FakeClock* clock_ = nullptr;
   int update_count_ = 1;
   bool init_result_ = true;
   bool init_run_ = false;
   bool update_run_ = false;
   bool cleanup_run_ = false;
+  absl::Duration update_delay_;
   absl::Duration last_delta_time_;
   absl::Duration total_update_time_;
   std::vector<std::string_view> init_args_;
@@ -143,18 +152,55 @@ TEST(GameTest, RunWithInitFailure) {
 }
 
 TEST(GameTest, GameTimesDoNotDrift) {
+  // Pick two prime numbers that are never going to line up perfecting to 10
+  // millisecond frame times.
+  FakeClock clock;
+  clock.SetAutoAdvance(absl::Microseconds(3001));
+  clock.SetSleepOffset(absl::Microseconds(1009));
+  const absl::Duration max_drift = absl::Milliseconds(10);
+
   Context context;
+  context.SetPtr<Clock>(&clock);
   context.SetValue<int>(Game::kKeyMaxFps, 100);
+
+  // Run for enough time to detect drift.
   TestGame game;
-  game.SetUpdateCount(500);  // Five seconds at 100 fps
-  absl::Time start = absl::Now();
+  const absl::Duration expected_duration = absl::Minutes(1);
+  game.SetUpdateCount(6000);  // One minutes at 100 fps
+
+  const absl::Time start = clock.GetTime();
   EXPECT_TRUE(game.Run(&context, {}));
-  absl::Duration time = absl::Now() - start;
-  EXPECT_GE(time, absl::Seconds(5));
-  EXPECT_LT(time, absl::Seconds(5) + absl::Milliseconds(1));
-  EXPECT_GE(game.GetTotalUpdateTime(), absl::Seconds(5));
-  EXPECT_LT(game.GetTotalUpdateTime(),
-            absl::Seconds(5) + absl::Milliseconds(1));
+  const absl::Duration time = clock.GetTime() - start;
+  EXPECT_GE(time, expected_duration);
+  EXPECT_LE(time, expected_duration + max_drift);
+  EXPECT_GE(game.GetTotalUpdateTime(), expected_duration);
+  EXPECT_LE(game.GetTotalUpdateTime(), expected_duration + max_drift);
+}
+
+TEST(GameTest, GameFrameRateSlows) {
+  FakeClock clock;
+  clock.SetAutoAdvance(absl::Microseconds(10));
+  const absl::Duration max_drift = absl::Milliseconds(10);
+
+  Context context;
+  context.SetPtr<Clock>(&clock);
+  context.SetValue<int>(Game::kKeyMaxFps, 100);
+
+  TestGame game(&clock);
+  const absl::Duration expected_duration =
+      absl::Seconds(100) + absl::Milliseconds(10);
+  const absl::Duration update_delay = absl::Seconds(1);
+  game.SetUpdateDelay(update_delay);
+  game.SetUpdateCount(100);
+
+  const absl::Time start = clock.GetTime();
+  EXPECT_TRUE(game.Run(&context, {}));
+  const absl::Duration time = clock.GetTime() - start;
+  EXPECT_GE(time, expected_duration);
+  EXPECT_LE(time, expected_duration + max_drift);
+  EXPECT_GE(game.GetTotalUpdateTime(), expected_duration - update_delay);
+  EXPECT_LE(game.GetTotalUpdateTime(),
+            expected_duration - update_delay + max_drift);
 }
 
 }  // namespace

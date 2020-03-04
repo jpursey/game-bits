@@ -13,6 +13,10 @@ bool Game::Run(GameContract contract,
   }
   context_ = std::move(contract);
   context_.SetPtr<Game>(this);
+  clock_ = context_.GetPtr<Clock>();
+  if (clock_ == nullptr) {
+    clock_ = RealtimeClock::GetClock();
+  }
   bool init_succeeded = Init(args);
   if (init_succeeded) {
     GameLoop();
@@ -29,11 +33,11 @@ void Game::GameLoop() {
     min_delta_time = absl::Nanoseconds(1000000000LL / max_fps);
   }
 
-  absl::Time last_time = absl::Now();
+  absl::Time last_time = clock_->Now();
   absl::Time next_time = last_time + min_delta_time;
   absl::Duration delta_time;
   do {
-    absl::Time now = absl::Now();
+    absl::Time now = clock_->Now();
     delta_time = now - last_time;
     absl::Duration time_remaining = next_time - now;
     if (time_remaining < absl::ZeroDuration()) {
@@ -44,22 +48,22 @@ void Game::GameLoop() {
       // more time. This is important when a single frame may take many seconds
       // (for instance loading a level).
       if (time_remaining < -absl::Milliseconds(1)) {
-        next_time += min_delta_time;
-      } else {
         next_time = now;
+      } else {
+        next_time += min_delta_time;
       }
     } else {
       // We have extra time on our hands. Be nice first, and yield time to the
       // system if we need to wait more than a millisecond.
       while (time_remaining > absl::Milliseconds(1)) {
-        absl::SleepFor(time_remaining);
-        now = absl::Now();
+        clock_->SleepFor(time_remaining - absl::Milliseconds(1));
+        now = clock_->Now();
         time_remaining = next_time - now;
       }
 
       // Busy loop the rest of the time, if there is any.
       while (time_remaining > absl::ZeroDuration()) {
-        now = absl::Now();
+        now = clock_->Now();
         time_remaining = next_time - now;
       }
 

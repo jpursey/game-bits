@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "absl/time/time.h"
+#include "gbits/base/clock.h"
 #include "gbits/base/context.h"
 #include "gbits/base/validated_context.h"
 
@@ -24,12 +25,18 @@ class Game {
   static GB_CONTEXT_CONSTRAINT_NAMED_DEFAULT(kConstraintMaxFps, kInOptional,
                                              int, kKeyMaxFps, kDefaultMaxFps);
 
+  // Optional clock class that is used for doing all timing. Mainly this is
+  // useful for tests where the time needs to be precisely controlled. If this
+  // is not set, then the realtime clock will be used.
+  static GB_CONTEXT_CONSTRAINT(kConstraintClock, kInOptional, Clock);
+
   // Pointer to this class. This is always set while the game is running.
   static GB_CONTEXT_CONSTRAINT(kConstraintGame, kOutRequired, Game);
 
   // Contract guaranteed by this class. Derived classes may provide additional
   // constraints.
-  using GameContract = gb::ContextContract<kConstraintMaxFps, kConstraintGame>;
+  using GameContract =
+      gb::ContextContract<kConstraintMaxFps, kConstraintClock, kConstraintGame>;
 
   // Default constructor and destructor.
   explicit Game() = default;
@@ -73,7 +80,8 @@ class Game {
  private:
   void GameLoop();
 
-  gb::ValidatedContext context_;
+  Clock* clock_;
+  ValidatedContext context_;
 };
 
 }  // namespace gb
