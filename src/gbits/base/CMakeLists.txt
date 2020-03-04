@@ -1,11 +1,14 @@
 set(gbits_base_SOURCE
+  clock.h
   context.cc context.h
   context_builder.h
   context_type.h
+  fake_clock.h
   validated_context.cc validated_context.h
 )
 
 set(gbits_base_TEST_SOURCE
+  clock_test.cc
   context_test.cc
   validated_context_test.cc
 )
@@ -17,6 +20,7 @@ set(gbits_base_DEPS
   absl::flat_hash_map
   absl::memory
   absl::strings
+  absl::time
 )
 
 set(gbits_base_LIBS
