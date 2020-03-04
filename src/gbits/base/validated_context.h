@@ -73,11 +73,10 @@ struct ContextConstraint {
 // common pattern). When used in a class, be sure to add "static" before the
 // macro. See ValidatedContext for example uses.
 
-#define GB_CONTEXT_CONSTRAINT(ConstantName, Presence, Type) \
-  inline const gb::ContextConstraint ConstantName = {       \
-      gb::ContextConstraint::Presence,                      \
-      gb::ContextKey::Get<Type>(),                          \
-      gb::ContextTypeName<Type>(nullptr, #Type, true),      \
+#define GB_CONTEXT_CONSTRAINT(ConstantName, Presence, Type)         \
+  inline const gb::ContextConstraint ConstantName = {               \
+      gb::ContextConstraint::Presence, gb::ContextKey::Get<Type>(), \
+      gb::ContextTypeName<Type>(nullptr, #Type, true),              \
   }
 
 #define GB_CONTEXT_CONSTRAINT_DEFAULT(ConstantName, Presence, Type, Default) \
@@ -92,10 +91,8 @@ struct ContextConstraint {
 
 #define GB_CONTEXT_CONSTRAINT_NAMED(ConstantName, Presence, Type, Name) \
   inline const gb::ContextConstraint ConstantName = {                   \
-      gb::ContextConstraint::Presence,                                  \
-      gb::ContextKey::Get<Type>(),                                      \
-      gb::ContextTypeName<Type>(nullptr, #Type, true),                  \
-      Name,                                                             \
+      gb::ContextConstraint::Presence, gb::ContextKey::Get<Type>(),     \
+      gb::ContextTypeName<Type>(nullptr, #Type, true), Name,            \
   }
 
 #define GB_CONTEXT_CONSTRAINT_NAMED_DEFAULT(ConstantName, Presence, Type, \
@@ -562,6 +559,11 @@ class ContextContract final {
   // True if the contract was met and the resulting ValidaredContext will be
   // valid.
   bool IsValid() const { return context_.IsValid(); }
+
+  // Statically returns the constraints that this contract enforces.
+  static std::vector<ContextConstraint> GetConstraints() {
+    return {Constraints...};
+  }
 
  private:
   friend class ValidatedContext;
