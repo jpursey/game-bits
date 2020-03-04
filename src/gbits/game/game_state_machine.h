@@ -32,12 +32,12 @@ class GameStateMachine final {
   // is registered, it can be used with the ChangeState() function.
   template <typename StateType>
   void Register() {
-    DoRegister(ContextType<StateType>::Get()->Key(), StateType::Lifetime::kType,
+    DoRegister(id, StateType::Lifetime::kType,
                StateType::ParentStates::kType,
                StateType::ParentStates::GetIds(),
                StateType::Contract::GetConstraints(),
                []() -> std::unique_ptr<GameState> {
-                 return std::make_unique<StateType>();
+                 auto state = std::make_unique<StateType>();
                });
   }
 
@@ -111,7 +111,8 @@ class GameStateMachine final {
     bool active = false;
   };
 
-  void DoRegister(GameStateId key, GameStateLifetime::Type lifetime,
+  void CreateInstance(GameStateId id, GameStateInfo* state_info);
+  void DoRegister(GameStateId id, GameStateLifetime::Type lifetime,
                   GameStateList::Type valid_parents_type,
                   std::vector<GameStateId> valid_parents,
                   std::vector<ContextConstraint> constraints,
