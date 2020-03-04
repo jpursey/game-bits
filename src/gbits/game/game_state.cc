@@ -46,6 +46,11 @@ bool GameState::ExitState() {
                << ": Cannot exit state as the state is not active.";
     return false;
   }
+  if (parent_ == nullptr) {
+    return machine_->ChangeTopState(kNoGameState);
+  }
+  GameStateId parent = (parent_ != nullptr ? parent_->id_ : kNoGameState);
+  return machine_->ChangeState(parent, kNoGameState);
 }
 
 }  // namespace gb

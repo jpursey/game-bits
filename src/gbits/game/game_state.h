@@ -38,33 +38,32 @@ const char* GetGameStateName(GameStateId id);
 // A GameStateList defines a set of GameStateIds as a type. To define a list of
 // states, use one of the derived types: NoGameStates, AllGameStates, or
 // GameStates<StateType...>.
-struct GameStateList {};
-
-// The type of game state list.
-enum class GameStateListType {
-  kNone,      // The list contains no game states.
-  kAll,       // The list implicitly includes all game states.
-  kExplicit,  // The list explicitly includes specific game states retrievable
-              // via GetStateIds().
+struct GameStateList {
+  enum Type {
+    kNone,      // The list contains no game states.
+    kAll,       // The list implicitly includes all game states.
+    kExplicit,  // The list explicitly includes specific game states retrievable
+                // via GetIds().
+  };
 };
 
 // GameStateList that represents no states.
 struct NoGameStates : GameStateList {
-  static GameStateListType GetType() { return GameStateListType::kNone; }
-  static std::vector<GameStateId> GetStateIds() { return {}; }
+  static inline constexpr Type kType = kNone;
+  static std::vector<GameStateId> GetIds() { return {}; }
 };
 
 // GameStateList that implicitly represents all states.
 struct AllGameStates : GameStateList {
-  static GameStateListType GetType() { return GameStateListType::kAll; }
-  static std::vector<GameStateId> GetStateIds() { return {}; }
+  static inline constexpr Type kType = kAll;
+  static std::vector<GameStateId> GetIds() { return {}; }
 };
 
 // GameStateList that explicitly specifies game states.
 template <typename... StateTypes>
 struct GameStates : GameStateList {
-  static GameStateListType GetType() { return GameStateListType::kExplicit; }
-  static std::vector<GameStateId> GetStateIds() {
+  static inline constexpr Type kType = kExplicit;
+  static std::vector<GameStateId> GetIds() {
     return {GetGameStateId(StateTypes)...};
   }
 };
@@ -87,13 +86,13 @@ struct GameStateLifetime {
 // GameStateMachine, and destructed when the corresponding state machine is
 // destroyed.
 struct GlobalGameStateLifetime : GameStateLifetime {
-  static inline Type kType = kGlobal;
+  static inline constexpr Type kType = kGlobal;
 };
 
 // This lifetime specifies the state will be constructed immediately before
 // OnEnter is called and destructed after OnExit returns.
 struct ActiveGameStateLifetime : GameStateLifetime {
-  static inline Type kType = kActive;
+  static inline constexpr Type kType = kActive;
 };
 
 //------------------------------------------------------------------------------

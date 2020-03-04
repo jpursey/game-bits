@@ -31,12 +31,16 @@ void GameStateMachine::Update(absl::Duration delta_time) {
 
 void GameStateMachine::DoRegister(
     GameStateId key, GameStateLifetime::Type lifetime,
+    GameStateList::Type valid_parents_type,
+    std::vector<GameStateId> valid_parents,
     std::vector<ContextConstraint> constraints,
     std::function<std::unique_ptr<GameState>()> factory) {
   CHECK(states_.find(key) != states_.end())
       << "State " << GetGameStateName(key) << " already registered.";
   auto& state_info = states_[key];
   state_info.lifetime = lifetime;
+  state_info.valid_parents_type = valid_parents_type;
+  state_info.valid_parents = std::move(valid_parents);
   state_info.constraints = std::move(constraints);
   state_info.factory = std::move(factory);
   if (lifetime == GameStateLifetime::kGlobal) {

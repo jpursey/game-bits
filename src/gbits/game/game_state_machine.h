@@ -33,6 +33,8 @@ class GameStateMachine final {
   template <typename StateType>
   void Register() {
     DoRegister(ContextType<StateType>::Get()->Key(), StateType::Lifetime::kType,
+               StateType::ParentStates::kType,
+               StateType::ParentStates::GetIds(),
                StateType::Contract::GetConstraints(),
                []() -> std::unique_ptr<GameState> {
                  return std::make_unique<StateType>();
@@ -101,6 +103,8 @@ class GameStateMachine final {
  private:
   struct GameStateInfo {
     GameStateLifetime::Type lifetime = GameStateLifetime::Type::kGlobal;
+    GameStateList::Type valid_parents_type = GameStateList::kNone;
+    std::vector<GameStateId> valid_parents;
     std::vector<ContextConstraint> constraints;
     std::function<std::unique_ptr<GameState>()> factory;
     std::unique_ptr<GameState> instance;
@@ -108,6 +112,8 @@ class GameStateMachine final {
   };
 
   void DoRegister(GameStateId key, GameStateLifetime::Type lifetime,
+                  GameStateList::Type valid_parents_type,
+                  std::vector<GameStateId> valid_parents,
                   std::vector<ContextConstraint> constraints,
                   std::function<std::unique_ptr<GameState>()> factory);
 
