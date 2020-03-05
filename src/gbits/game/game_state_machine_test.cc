@@ -23,21 +23,29 @@ template <typename DerivedState>
 class TestState : public GameState {
  public:
   static void Reset() { Info() = {}; }
-  static TestStateInfo& Info() { 
+  static TestStateInfo& Info() {
     static TestStateInfo info = {};
-    return info; 
+    return info;
+  }
+  static GameState*& Instance() {
+    static GameState* instance = nullptr;
+    return instance;
   }
 
   explicit TestState() {
     Info().current_state = this;
     Info().construct_count += 1;
+    EXPECT_EQ(Instance(), nullptr) << GetGameStateName<DerivedState>()
+                                   << " has multiple instances";
+    Instance() = this;
   }
   ~TestState() override {
+    EXPECT_EQ(Instance(), this) << GetGameStateName<DerivedState>()
+                                << " destructing mismatched instance";
+    Instance() = nullptr;
     Info().current_state = nullptr;
     Info().destruct_count += 1;
   }
-
-  ValidatedContext* GetContext() { return &Context(); }
 
  protected:
   void OnUpdate(absl::Duration delta_time) override {
@@ -54,9 +62,6 @@ class TestState : public GameState {
     Info().child_exit_count += 1;
     Info().last_child_exit_id = child;
   }
-
- private:
-  static TestStateInfo info_;
 };
 
 struct DefaultState : TestState<DefaultState> {};
@@ -87,138 +92,238 @@ struct ActiveState : TestState<ActiveState> {
   using Lifetime = ActiveGameStateLifetime;
 };
 
-TEST(GameStateMachineTest, DefaultConstruct) {
-  auto state_machine = GameStateMachine::Create();
-  ASSERT_NE(state_machine, nullptr);
-  EXPECT_EQ(state_machine->GetTopState(), nullptr);
+class GameStateMachineTest : public ::testing::Test {
+ protected:
+  GameStateMachineTest() {
+    state_machine_ = GameStateMachine::Create();
+    state_machine_->SetErrorCallback([this](const GameStateErrorInfo& info) {
+      ++error_count_;
+      last_error_ = info;
+    });
+  }
+
+  int error_count_ = 0;
+  GameStateErrorInfo last_error_;
+  std::unique_ptr<GameStateMachine> state_machine_;
+};
+
+TEST_F(GameStateMachineTest, DefaultConstruct) {
+  EXPECT_EQ(state_machine_->GetTopState(), nullptr);
 }
 
-TEST(GameStateMachineTest, RegisterDefaultLifetime) {
+TEST_F(GameStateMachineTest, RegisterDefaultLifetime) {
   DefaultState::Reset();
-  auto state_machine = GameStateMachine::Create();
 
-  state_machine->Register<DefaultState>();
+  state_machine_->Register<DefaultState>();
   EXPECT_EQ(DefaultState::Info().construct_count, 1);
   EXPECT_EQ(DefaultState::Info().destruct_count, 0);
+  EXPECT_NE(state_machine_->GetState<DefaultState>(), nullptr);
+  EXPECT_FALSE(state_machine_->IsActive<DefaultState>());
 
-  state_machine.reset();
+  state_machine_.reset();
   EXPECT_EQ(DefaultState::Info().construct_count, 1);
   EXPECT_EQ(DefaultState::Info().destruct_count, 1);
+  EXPECT_EQ(error_count_, 0);
 }
 
-TEST(GameStateMachineTest, RegisterGlobalLifetime) {
+TEST_F(GameStateMachineTest, RegisterGlobalLifetime) {
   GlobalState::Reset();
-  auto state_machine = GameStateMachine::Create();
 
-  state_machine->Register<GlobalState>();
+  state_machine_->Register<GlobalState>();
   EXPECT_EQ(GlobalState::Info().construct_count, 1);
   EXPECT_EQ(GlobalState::Info().destruct_count, 0);
+  EXPECT_NE(state_machine_->GetState<GlobalState>(), nullptr);
+  EXPECT_FALSE(state_machine_->IsActive<GlobalState>());
 
-  state_machine.reset();
+  state_machine_.reset();
   EXPECT_EQ(GlobalState::Info().construct_count, 1);
   EXPECT_EQ(GlobalState::Info().destruct_count, 1);
+  EXPECT_EQ(error_count_, 0);
 }
 
-TEST(GameStateMachineTest, RegisterActiveLifetime) {
+TEST_F(GameStateMachineTest, RegisterActiveLifetime) {
   ActiveState::Reset();
-  auto state_machine = GameStateMachine::Create();
 
-  state_machine->Register<ActiveState>();
+  state_machine_->Register<ActiveState>();
   EXPECT_EQ(ActiveState::Info().construct_count, 0);
   EXPECT_EQ(ActiveState::Info().destruct_count, 0);
+  EXPECT_EQ(state_machine_->GetState<ActiveState>(), nullptr);
+  EXPECT_FALSE(state_machine_->IsActive<ActiveState>());
 
-  state_machine.reset();
+  state_machine_.reset();
   EXPECT_EQ(ActiveState::Info().construct_count, 0);
   EXPECT_EQ(ActiveState::Info().destruct_count, 0);
+  EXPECT_EQ(error_count_, 0);
 }
 
-TEST(GameStateMachineTest, UpdateInactiveState) {
+TEST_F(GameStateMachineTest, UpdateInactiveState) {
   DefaultState::Reset();
-  auto state_machine = GameStateMachine::Create();
-  state_machine->Register<DefaultState>();
-  state_machine->Update(absl::Milliseconds(1));
+
+  state_machine_->Register<DefaultState>();
+  state_machine_->Update(absl::Milliseconds(1));
   EXPECT_EQ(DefaultState::Info().update_count, 0);
+  EXPECT_EQ(error_count_, 0);
 }
 
-TEST(GameStateMachineTest, ChangeTopStateNoUpdate) {
+TEST_F(GameStateMachineTest, ChangeTopStateNoUpdate) {
   DefaultState::Reset();
-  auto state_machine = GameStateMachine::Create();
-  state_machine->Register<DefaultState>();
-  EXPECT_TRUE(state_machine->ChangeTopState<DefaultState>());
+
+  state_machine_->Register<DefaultState>();
+  EXPECT_TRUE(state_machine_->ChangeTopState<DefaultState>());
+  EXPECT_FALSE(state_machine_->IsActive<DefaultState>());
   EXPECT_EQ(DefaultState::Info().update_count, 0);
   EXPECT_EQ(DefaultState::Info().enter_count, 0);
   EXPECT_EQ(DefaultState::Info().exit_count, 0);
   EXPECT_EQ(DefaultState::Info().child_enter_count, 0);
   EXPECT_EQ(DefaultState::Info().child_exit_count, 0);
+  EXPECT_EQ(error_count_, 0);
 }
 
-TEST(GameStateMachineTest, ChangeTopStateInvalidState) {
+TEST_F(GameStateMachineTest, ChangeTopStateInvalidState) {
   DefaultState::Reset();
-  auto state_machine = GameStateMachine::Create();
-  EXPECT_FALSE(state_machine->ChangeTopState<DefaultState>());
-  state_machine->Update(absl::Milliseconds(1));
+
+  EXPECT_FALSE(state_machine_->ChangeTopState<DefaultState>());
+  EXPECT_EQ(error_count_, 1);
+  EXPECT_EQ(last_error_.type, GameStateErrorInfo::kInvalidState);
+  EXPECT_EQ(last_error_.parent, kNoGameState);
+  EXPECT_EQ(last_error_.state, GetGameStateId<DefaultState>());
+  state_machine_->Update(absl::Milliseconds(1));
+  EXPECT_FALSE(state_machine_->IsActive<DefaultState>());
   EXPECT_EQ(DefaultState::Info().update_count, 0);
   EXPECT_EQ(DefaultState::Info().enter_count, 0);
   EXPECT_EQ(DefaultState::Info().exit_count, 0);
   EXPECT_EQ(DefaultState::Info().child_enter_count, 0);
   EXPECT_EQ(DefaultState::Info().child_exit_count, 0);
+  EXPECT_EQ(error_count_, 1);
 }
 
-TEST(GameStateMachineTest, ChangeTopState) {
+TEST_F(GameStateMachineTest, ChangeTopState) {
   DefaultState::Reset();
-  auto state_machine = GameStateMachine::Create();
-  state_machine->Register<DefaultState>();
-  EXPECT_TRUE(state_machine->ChangeTopState<DefaultState>());
-  state_machine->Update(absl::Milliseconds(1));
+
+  state_machine_->Register<DefaultState>();
+  EXPECT_TRUE(state_machine_->ChangeTopState<DefaultState>());
+  state_machine_->Update(absl::Milliseconds(1));
+  EXPECT_TRUE(state_machine_->IsActive<DefaultState>());
+  EXPECT_EQ(state_machine_->GetTopState(),
+            state_machine_->GetState<DefaultState>());
   EXPECT_EQ(DefaultState::Info().update_count, 1);
   EXPECT_EQ(DefaultState::Info().update_time, absl::Milliseconds(1));
   EXPECT_EQ(DefaultState::Info().enter_count, 1);
   EXPECT_EQ(DefaultState::Info().exit_count, 0);
   EXPECT_EQ(DefaultState::Info().child_enter_count, 0);
   EXPECT_EQ(DefaultState::Info().child_exit_count, 0);
+  EXPECT_EQ(error_count_, 0);
 }
 
-TEST(GameStateMachineTest, ChangeTopStateTwice) {
+TEST_F(GameStateMachineTest, ChangeTopStateTwice) {
   TopStateA::Reset();
   TopStateB::Reset();
-  auto state_machine = GameStateMachine::Create();
-  state_machine->Register<TopStateA>();
-  state_machine->Register<TopStateB>();
-  EXPECT_TRUE(state_machine->ChangeTopState<TopStateA>());
-  EXPECT_TRUE(state_machine->ChangeTopState<TopStateB>());
-  state_machine->Update(absl::Milliseconds(1));
+
+  state_machine_->Register<TopStateA>();
+  state_machine_->Register<TopStateB>();
+  EXPECT_TRUE(state_machine_->ChangeTopState<TopStateA>());
+  EXPECT_TRUE(state_machine_->ChangeTopState<TopStateB>());
+  state_machine_->Update(absl::Milliseconds(1));
+  EXPECT_FALSE(state_machine_->IsActive<TopStateA>());
   EXPECT_EQ(TopStateA::Info().update_count, 0);
   EXPECT_EQ(TopStateA::Info().enter_count, 0);
   EXPECT_EQ(TopStateA::Info().exit_count, 0);
   EXPECT_EQ(TopStateA::Info().child_enter_count, 0);
   EXPECT_EQ(TopStateA::Info().child_exit_count, 0);
+  EXPECT_TRUE(state_machine_->IsActive<TopStateB>());
+  EXPECT_EQ(state_machine_->GetTopState(),
+            state_machine_->GetState<TopStateB>());
   EXPECT_EQ(TopStateB::Info().update_count, 1);
   EXPECT_EQ(TopStateB::Info().update_time, absl::Milliseconds(1));
   EXPECT_EQ(TopStateB::Info().enter_count, 1);
   EXPECT_EQ(TopStateB::Info().exit_count, 0);
   EXPECT_EQ(TopStateB::Info().child_enter_count, 0);
   EXPECT_EQ(TopStateB::Info().child_exit_count, 0);
+  EXPECT_EQ(error_count_, 0);
 }
 
-TEST(GameStateMachineTest, ChangeToInvalidStateDoesNotStopPreviousChange) {
+TEST_F(GameStateMachineTest, ChangeToInvalidStateDoesNotStopPreviousChange) {
   TopStateA::Reset();
   TopStateB::Reset();
-  auto state_machine = GameStateMachine::Create();
-  state_machine->Register<TopStateA>();
-  EXPECT_TRUE(state_machine->ChangeTopState<TopStateA>());
-  EXPECT_FALSE(state_machine->ChangeTopState<TopStateB>());
-  state_machine->Update(absl::Milliseconds(1));
+
+  state_machine_->Register<TopStateA>();
+  EXPECT_TRUE(state_machine_->ChangeTopState<TopStateA>());
+  EXPECT_FALSE(state_machine_->ChangeTopState<TopStateB>());
+  EXPECT_EQ(error_count_, 1);
+  EXPECT_EQ(last_error_.type, GameStateErrorInfo::kInvalidState);
+  EXPECT_EQ(last_error_.parent, kNoGameState);
+  EXPECT_EQ(last_error_.state, GetGameStateId<TopStateB>());
+  state_machine_->Update(absl::Milliseconds(1));
+  EXPECT_TRUE(state_machine_->IsActive<TopStateA>());
+  EXPECT_EQ(state_machine_->GetTopState(),
+            state_machine_->GetState<TopStateA>());
   EXPECT_EQ(TopStateA::Info().update_count, 1);
   EXPECT_EQ(TopStateA::Info().update_time, absl::Milliseconds(1));
   EXPECT_EQ(TopStateA::Info().enter_count, 1);
   EXPECT_EQ(TopStateA::Info().exit_count, 0);
   EXPECT_EQ(TopStateA::Info().child_enter_count, 0);
   EXPECT_EQ(TopStateA::Info().child_exit_count, 0);
+  EXPECT_FALSE(state_machine_->IsActive<TopStateB>());
   EXPECT_EQ(TopStateB::Info().update_count, 0);
   EXPECT_EQ(TopStateB::Info().enter_count, 0);
   EXPECT_EQ(TopStateB::Info().exit_count, 0);
   EXPECT_EQ(TopStateB::Info().child_enter_count, 0);
   EXPECT_EQ(TopStateB::Info().child_exit_count, 0);
+  EXPECT_EQ(error_count_, 1);
+}
+
+TEST_F(GameStateMachineTest, ChangeBetweenTopStates) {
+  TopStateA::Reset();
+  TopStateB::Reset();
+
+  state_machine_->Register<TopStateA>();
+  state_machine_->Register<TopStateB>();
+  EXPECT_TRUE(state_machine_->ChangeTopState<TopStateA>());
+  state_machine_->Update(absl::Milliseconds(1));
+  EXPECT_TRUE(state_machine_->ChangeTopState<TopStateB>());
+  state_machine_->Update(absl::Milliseconds(2));
+  EXPECT_FALSE(state_machine_->IsActive<TopStateA>());
+  EXPECT_EQ(TopStateA::Info().update_count, 1);
+  EXPECT_EQ(TopStateA::Info().update_time, absl::Milliseconds(1));
+  EXPECT_EQ(TopStateA::Info().enter_count, 1);
+  EXPECT_EQ(TopStateA::Info().exit_count, 1);
+  EXPECT_EQ(TopStateA::Info().child_enter_count, 0);
+  EXPECT_EQ(TopStateA::Info().child_exit_count, 0);
+  EXPECT_TRUE(state_machine_->IsActive<TopStateB>());
+  EXPECT_EQ(state_machine_->GetTopState(),
+            state_machine_->GetState<TopStateB>());
+  EXPECT_EQ(TopStateB::Info().update_count, 1);
+  EXPECT_EQ(TopStateB::Info().update_time, absl::Milliseconds(2));
+  EXPECT_EQ(TopStateB::Info().enter_count, 1);
+  EXPECT_EQ(TopStateB::Info().exit_count, 0);
+  EXPECT_EQ(TopStateB::Info().child_enter_count, 0);
+  EXPECT_EQ(TopStateB::Info().child_exit_count, 0);
+  EXPECT_EQ(error_count_, 0);
+}
+
+TEST_F(GameStateMachineTest, ExitTopState) {
+  TopStateA::Reset();
+
+  state_machine_->Register<TopStateA>();
+  EXPECT_TRUE(state_machine_->ChangeTopState<TopStateA>());
+  state_machine_->Update(absl::Milliseconds(1));
+  EXPECT_TRUE(state_machine_->ChangeTopState(kNoGameState));
+  state_machine_->Update(absl::Milliseconds(2));
+  EXPECT_FALSE(state_machine_->IsActive<TopStateA>());
+  EXPECT_EQ(state_machine_->GetTopState(), nullptr);
+  EXPECT_EQ(TopStateA::Info().update_count, 1);
+  EXPECT_EQ(TopStateA::Info().update_time, absl::Milliseconds(1));
+  EXPECT_EQ(TopStateA::Info().enter_count, 1);
+  EXPECT_EQ(TopStateA::Info().exit_count, 1);
+  EXPECT_EQ(TopStateA::Info().child_enter_count, 0);
+  EXPECT_EQ(TopStateA::Info().child_exit_count, 0);
+  EXPECT_EQ(error_count_, 0);
+}
+
+TEST_F(GameStateMachineTest, ExitTopStateThatDoesNotExist) {
+  EXPECT_TRUE(state_machine_->ChangeTopState(kNoGameState));
+  state_machine_->Update(absl::Milliseconds(1));
+  EXPECT_EQ(error_count_, 0);
 }
 
 }  // namespace

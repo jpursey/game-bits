@@ -32,6 +32,11 @@ inline constexpr GameStateId kNoGameState = nullptr;
 // value (even if kNoGameState is passed in).
 const char* GetGameStateName(GameStateId id);
 
+template <typename StateType>
+const char* GetGameStateName() {
+  return GetGameStateName(GetGameStateId<StateType>());
+}
+
 //------------------------------------------------------------------------------
 // GameStateList
 //------------------------------------------------------------------------------

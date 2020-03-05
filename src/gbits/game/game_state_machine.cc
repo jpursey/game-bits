@@ -40,9 +40,9 @@ bool GameStateMachine::IsActive(GameStateId state) const {
   return state_info != nullptr ? state_info->active : false;
 }
 
-GameState* GameStateMachine::GetActiveState(GameStateId state) {
+GameState* GameStateMachine::GetState(GameStateId state) {
   auto state_info = GetStateInfo(state);
-  if (state_info == nullptr || !state_info->active) {
+  if (state_info == nullptr) {
     return nullptr;
   }
   return state_info->instance.get();

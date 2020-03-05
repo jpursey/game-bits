@@ -18,17 +18,19 @@ class GameStateMachine;
 
 struct GameStateErrorInfo {
   enum Type {
+    kUnknown,        // Initial value when default constructed.
     kInvalidState,   // The new state is not registered or is already active.
     kInvalidParent,  // The parent state is not registered or is not active.
     kConstraintFailure,  // The context constraints were not met.
   };
 
+  GameStateErrorInfo() = default;
   GameStateErrorInfo(Type type, GameStateId parent, GameStateId state)
       : type(type), parent(parent), state(state) {}
 
-  Type type;
-  GameStateId parent;
-  GameStateId state;
+  Type type = kUnknown;
+  GameStateId parent = kNoGameState;
+  GameStateId state = kNoGameState;
 };
 
 using GameStateErrorCallback = std::function<void(const GameStateErrorInfo&)>;
@@ -115,17 +117,19 @@ class GameStateMachine final {
 
   // Returns true if the specified state is currently active.
   bool IsActive(GameStateId state) const;
+  
   template <typename StateType>
   bool IsActive() const {
     return IsActive(GetGameStateId<StateType>());
   }
 
-  // Get the requested active state. If the state is not active, this will
-  // return nullptr.
-  GameState* GetActiveState(GameStateId state);
+  // Get the requested state instance. If the state is not global or active,
+  // this will return nullptr.
+  GameState* GetState(GameStateId state);
+
   template <typename StateType>
-  GameState* GetActiveState() {
-    return GetActiveState(GetGameStateId<StateType>);
+  StateType* GetState() {
+    return static_cast<StateType*>(GetState(GetGameStateId<StateType>()));
   }
 
   // Returns the top state, or null if no states are active.
