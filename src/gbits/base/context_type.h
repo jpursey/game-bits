@@ -28,6 +28,11 @@ class ContextKey {
   // is a complete type. Otherwise, this will return an empty string.
   virtual const char* GetTypeName() = 0;
 
+  // Explicitly overrides the default type name with the name provided. 'name'
+  // must be a pointer that remains valid for as long as it is the type name for
+  // this key.
+  virtual void SetTypeName(const char* name) = 0;
+
  protected:
   ContextKey() = default;
   virtual ~ContextKey() = default;
@@ -62,6 +67,11 @@ class ContextType {
   // by calling ContextType::Get<Type>(). If neither of these have happened,
   // this will return an empty string.
   const char* GetTypeName() { return Key()->GetTypeName(); }
+
+  // Explicitly overrides the default type name with the name provided. 'name'
+  // must be a pointer that remains valid for as long as it is the type name for
+  // this key.
+  void SetTypeName(const char* name) { Key()->SetTypeName(name); }
 
  protected:
   friend class Context;
@@ -132,6 +142,10 @@ class ContextKey::Impl : public ContextKey {
   }
 
   const char* GetTypeName() override { return ContextTypeName<Type>(nullptr); }
+  
+  void SetTypeName(const char* name) override {
+    ContextTypeName<Type>(nullptr, name, true);
+  }
 };
 
 template <typename Type>
