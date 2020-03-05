@@ -5,6 +5,7 @@ set(gbits_game_SOURCE
 )
 
 set(gbits_game_TEST_SOURCE
+  game_state_machine_test.cc
   game_test.cc
 )
 

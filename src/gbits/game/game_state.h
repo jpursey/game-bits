@@ -22,7 +22,7 @@ using GameStateId = ContextKey*;
 // required).
 template <typename StateType>
 GameStateId GetGameStateId() {
-  return ContextKey<StateType>::Get();
+  return ContextKey::Get<StateType>();
 }
 
 // Constant that represents the GameStateId for no state.

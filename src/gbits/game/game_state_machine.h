@@ -39,10 +39,10 @@ using GameStateErrorCallback = std::function<void(const GameStateErrorInfo&)>;
 
 // Internal class used by GameStateMachine to track game states.
 class GameStateInfo {
-public:
+ public:
   GameStateInfo() = default;
 
-private:
+ private:
   friend class GameState;
   friend class GameStateMachine;
 
@@ -87,7 +87,8 @@ class GameStateMachine final {
   using Contract = ContextContract<>;
 
   // Creates a new GameStateMachine.
-  static std::unique_ptr<GameStateMachine> Create(Contract contract);
+  static std::unique_ptr<GameStateMachine> Create(
+      Contract contract = std::make_unique<Context>());
 
   // Sets an optional error callback for this state machine. See GameStateError
   // for more information.
@@ -103,11 +104,12 @@ class GameStateMachine final {
   // is registered, it can be used with the ChangeState() function.
   template <typename StateType>
   void Register() {
-    DoRegister(id, StateType::Lifetime::kType, StateType::ParentStates::kType,
+    DoRegister(ContextType::Get<StateType>()->Key(), StateType::Lifetime::kType,
+               StateType::ParentStates::kType,
                StateType::ParentStates::GetIds(),
                StateType::Contract::GetConstraints(),
                []() -> std::unique_ptr<GameState> {
-                 auto state = std::make_unique<StateType>();
+                 return std::make_unique<StateType>();
                });
   }
 
@@ -127,7 +129,9 @@ class GameStateMachine final {
   }
 
   // Returns the top state, or null if no states are active.
-  GameState* GetTopState() { return top_state_ != nullptr ? top_state_->instance.get() : nullptr; }
+  GameState* GetTopState() {
+    return top_state_ != nullptr ? top_state_->instance.get() : nullptr;
+  }
 
   // Changes the current state to the specified state.
   //

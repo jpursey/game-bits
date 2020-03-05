@@ -166,6 +166,8 @@ void GameStateMachine::ProcessTransition() {
   GameStateInfo* parent_info = transition_parent_;
   GameStateInfo* new_state_info = transition_state_;
   transition_ = false;
+  transition_parent_ = nullptr;
+  transition_state_ = nullptr;
 
   // Find states that need to exit.
   GameStateInfo* exit_info = top_state_;
@@ -203,6 +205,8 @@ void GameStateMachine::ProcessTransition() {
     exit_info->parent = nullptr;
     if (exit_parent != nullptr) {
       exit_parent->child = nullptr;
+    } else {
+      top_state_ = nullptr;
     }
     exit_info->update_id = 0;
     if (exit_info->lifetime == GameStateLifetime::Type::kActive) {
@@ -260,6 +264,8 @@ void GameStateMachine::ProcessTransition() {
   new_state_info->parent = parent_info;
   if (parent_info != nullptr) {
     parent_info->child = new_state_info;
+  } else {
+    top_state_ = new_state_info;
   }
   if (new_state_info->lifetime == GameStateLifetime::Type::kActive) {
     CreateInstance(new_state_info);
@@ -286,8 +292,8 @@ void GameStateMachine::DoRegister(
     std::vector<GameStateId> valid_parents,
     std::vector<ContextConstraint> constraints,
     std::function<std::unique_ptr<GameState>()> factory) {
-  CHECK(states_.find(id) != states_.end()) << "State " << GetGameStateName(id)
-                                           << " already registered.";
+  CHECK(states_.find(id) == states_.end())
+      << "State " << GetGameStateName(id) << " already registered.";
   auto& state_info = states_[id];
   state_info.id = id;
   state_info.lifetime = lifetime;
