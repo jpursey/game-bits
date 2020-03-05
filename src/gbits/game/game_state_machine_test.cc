@@ -94,16 +94,32 @@ struct ActiveState : TestState<ActiveState> {
 
 class GameStateMachineTest : public ::testing::Test {
  protected:
+  static void SetUpTestSuite() {
+    // Force names for nicer output.
+    SetGameStateName<DefaultState>("DefaultState");
+    SetGameStateName<TopStateA>("TopStateA");
+    SetGameStateName<TopStateB>("TopStateB");
+    SetGameStateName<ChildStateA>("ChildStateA");
+    SetGameStateName<ChildStateB>("ChildStateB");
+    SetGameStateName<GlobalState>("GlobalState");
+    SetGameStateName<ActiveState>("ActiveState");
+  }
+
   GameStateMachineTest() {
     state_machine_ = GameStateMachine::Create();
-    state_machine_->SetErrorCallback([this](const GameStateErrorInfo& info) {
-      ++error_count_;
-      last_error_ = info;
+    state_machine_->SetTraceLevel(GameStateTraceLevel::kVerbose);
+    state_machine_->AddTraceHandler([this](const GameStateTrace& trace) {
+      if (trace.IsError()) {
+        ++error_count_;
+        last_error_ = trace;
+      }
+      traces_.push_back(trace);
     });
   }
 
   int error_count_ = 0;
-  GameStateErrorInfo last_error_;
+  GameStateTrace last_error_;
+  std::vector<GameStateTrace> traces_;
   std::unique_ptr<GameStateMachine> state_machine_;
 };
 
@@ -184,7 +200,7 @@ TEST_F(GameStateMachineTest, ChangeTopStateInvalidState) {
 
   EXPECT_FALSE(state_machine_->ChangeTopState<DefaultState>());
   EXPECT_EQ(error_count_, 1);
-  EXPECT_EQ(last_error_.type, GameStateErrorInfo::kInvalidState);
+  EXPECT_EQ(last_error_.type, GameStateTraceType::kInvalidState);
   EXPECT_EQ(last_error_.parent, kNoGameState);
   EXPECT_EQ(last_error_.state, GetGameStateId<DefaultState>());
   state_machine_->Update(absl::Milliseconds(1));
@@ -250,7 +266,7 @@ TEST_F(GameStateMachineTest, ChangeToInvalidStateDoesNotStopPreviousChange) {
   EXPECT_TRUE(state_machine_->ChangeTopState<TopStateA>());
   EXPECT_FALSE(state_machine_->ChangeTopState<TopStateB>());
   EXPECT_EQ(error_count_, 1);
-  EXPECT_EQ(last_error_.type, GameStateErrorInfo::kInvalidState);
+  EXPECT_EQ(last_error_.type, GameStateTraceType::kInvalidState);
   EXPECT_EQ(last_error_.parent, kNoGameState);
   EXPECT_EQ(last_error_.state, GetGameStateId<TopStateB>());
   state_machine_->Update(absl::Milliseconds(1));

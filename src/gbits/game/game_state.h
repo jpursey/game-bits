@@ -37,6 +37,16 @@ const char* GetGameStateName() {
   return GetGameStateName(GetGameStateId<StateType>());
 }
 
+// Sets the state name for the specified state. The 'name' passed in must remain
+// valid as long as it is used for the game state name. It is invalid to set the
+// name for kNoGameState.
+void SetGameStateName(GameStateId id, const char* name);
+
+template <typename StateType>
+void SetGameStateName(const char* name) {
+  return SetGameStateName(GetGameStateId<StateType>(), name);
+}
+
 //------------------------------------------------------------------------------
 // GameStateList
 //------------------------------------------------------------------------------

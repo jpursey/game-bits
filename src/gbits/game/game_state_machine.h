@@ -2,6 +2,8 @@
 #define GBITS_GAME_GAME_STATE_MACHINE_H_
 
 #include <memory>
+#include <string>
+#include <string_view>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
@@ -13,30 +15,71 @@ namespace gb {
 class GameStateMachine;
 
 //------------------------------------------------------------------------------
-// GameStateError
+// GameStateTrace
 //------------------------------------------------------------------------------
 
-struct GameStateErrorInfo {
-  enum Type {
-    kUnknown,        // Initial value when default constructed.
-    kInvalidState,   // The new state is not registered or is already active.
-    kInvalidParent,  // The parent state is not registered or is not active.
-    kConstraintFailure,  // The context constraints were not met.
-  };
-
-  GameStateErrorInfo() = default;
-  GameStateErrorInfo(Type type, GameStateId parent, GameStateId state)
-      : type(type), parent(parent), state(state) {}
-
-  Type type = kUnknown;
-  GameStateId parent = kNoGameState;
-  GameStateId state = kNoGameState;
+// Defines the trace level for trace output from the state machine. Levels are
+// cumulative, so a higher level will always include traces of a lower level.
+enum class GameStateTraceLevel {
+  kNone,     // No trace output at all.
+  kError,    // Only error trace output. This is the default.
+  kInfo,     // Error and info trace output.
+  kVerbose,  // Verbose trace output, very spammy.
 };
 
-using GameStateErrorCallback = std::function<void(const GameStateErrorInfo&)>;
+// Type of trace.
+enum class GameStateTraceType : int {
+  kUnknown,  // Initial value for a default constructed trace.
+
+  // Error trace
+  kInvalidState,       // The new state is not registered or is already active.
+  kInvalidParent,      // The parent state is not registered or is not active.
+  kConstraintFailure,  // The context constraints were not met.
+
+  // Info trace
+  kRequestChange,  // Change state requested.
+  kAbortChange,    // Abort state change.
+  kOnEnter,        // State is about to be entered.
+  kOnExit,         // State is about to be exited.
+  kOnChildEnter,   // Child state was entered.
+  kOnChildExit,    // Child state was exited.
+
+  // Verbose trace
+  kOnUpdate,  // Child state is being updated.
+};
+
+// Trace record for game states.
+struct GameStateTrace {
+  GameStateTrace() = default;
+  GameStateTrace(GameStateTraceType type, GameStateId parent, GameStateId state,
+                 std::string_view method, std::string message)
+      : type(type),
+        parent(parent),
+        state(state),
+        method(method),
+        message(message) {}
+
+  bool IsError() const {
+    return type > GameStateTraceType::kUnknown &&
+           type <= GameStateTraceType::kConstraintFailure;
+  }
+  bool IsVerbose() const { return type >= GameStateTraceType::kOnUpdate; }
+
+  GameStateTraceType type = GameStateTraceType::kUnknown;
+  GameStateId parent = kNoGameState;
+  GameStateId state = kNoGameState;
+  std::string_view method;
+  std::string message;
+};
+
+using GameStateTraceHandler = std::function<void(const GameStateTrace&)>;
+
+// Helpers to stringify traces.
+std::string ToString(GameStateTraceType trace_type);
+std::string ToString(const GameStateTrace& trace);
 
 //------------------------------------------------------------------------------
-// GameStateMachine
+// GameStateInfo
 //------------------------------------------------------------------------------
 
 // Internal class used by GameStateMachine to track game states.
@@ -47,6 +90,7 @@ class GameStateInfo {
  private:
   friend class GameState;
   friend class GameStateMachine;
+  friend GameStateId GetGameStateId(GameStateInfo* info);
 
   // Set at registration.
   GameStateId id = kNoGameState;
@@ -63,6 +107,10 @@ class GameStateInfo {
   GameStateInfo* child = nullptr;
   int64_t update_id = 0;
 };
+
+inline GameStateId GetGameStateId(GameStateInfo* info) {
+  return info != nullptr ? info->id : kNoGameState;
+}
 
 //------------------------------------------------------------------------------
 // GameStateMachine
@@ -92,15 +140,34 @@ class GameStateMachine final {
   static std::unique_ptr<GameStateMachine> Create(
       Contract contract = std::make_unique<Context>());
 
-  // Sets an optional error callback for this state machine. See GameStateError
-  // for more information.
-  void SetErrorCallback(GameStateErrorCallback callback) {
-    error_callback_ = callback;
+  // Sets the trace level for the state machine. The default trace level is
+  // kError.
+  void SetTraceLevel(GameStateTraceLevel trace_level) {
+    trace_level_ = trace_level;
   }
 
-  // Enables logging of state transitions.
-  void EnableLogging() { logging_enabled_ = true; }
-  void DisableLogging() { logging_enabled_ = false; }
+  // Set the trace handler for this state machine.
+  //
+  // This completely replaces any prior handler, including the default hander
+  // (which logs the trace). To add an additional handler, call AddTraceHandler
+  // instead. See GameStateTrace for more information on trace output.
+  void SetTraceHandler(GameStateTraceHandler handler) {
+    trace_handler_ = std::move(handler);
+  }
+
+  // Adds an additional trace handler for this state machine.
+  //
+  // This leaves any existing handlers in place, and adds this handler in
+  // addition. See GameStateTrace for more information on trace output.
+  void AddTraceHandler(GameStateTraceHandler handler) {
+    auto new_handler = [handler_1 = std::move(trace_handler_),
+                        handler_2 =
+                            std::move(handler)](const GameStateTrace& trace) {
+      handler_1(trace);
+      handler_2(trace);
+    };
+    trace_handler_ = new_handler;
+  }
 
   // Registers a GameState derived class with the state machine. After a state
   // is registered, it can be used with the ChangeState() function.
@@ -117,7 +184,7 @@ class GameStateMachine final {
 
   // Returns true if the specified state is currently active.
   bool IsActive(GameStateId state) const;
-  
+
   template <typename StateType>
   bool IsActive() const {
     return IsActive(GetGameStateId<StateType>());
@@ -188,6 +255,7 @@ class GameStateMachine final {
  private:
   explicit GameStateMachine(ValidatedContext context);
 
+  void LogTrace(const GameStateTrace& trace);
   std::string GetStatePath(GameStateId parent, GameStateId state);
   std::string GetCurrentStatePath();
   const GameStateInfo* GetStateInfo(GameStateId id) const;
@@ -201,8 +269,8 @@ class GameStateMachine final {
   void ProcessTransition();
 
   ValidatedContext context_;
-  bool logging_enabled_ = false;
-  GameStateErrorCallback error_callback_;
+  GameStateTraceLevel trace_level_ = GameStateTraceLevel::kError;
+  GameStateTraceHandler trace_handler_;
   absl::flat_hash_map<GameStateId, GameStateInfo> states_;
   GameStateInfo* top_state_ = nullptr;
   bool transition_ = false;

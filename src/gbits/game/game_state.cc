@@ -12,6 +12,10 @@ const char* GetGameStateName(GameStateId id) {
   return id->GetTypeName();
 }
 
+void SetGameStateName(GameStateId id, const char* name) {
+  id->SetTypeName(name);
+}
+
 GameStateId GameState::GetId() const { return info_->id; }
 GameStateId GameState::GetParentId() const {
   return info_->parent != nullptr ? info_->parent->id : kNoGameState;

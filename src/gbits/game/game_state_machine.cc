@@ -2,10 +2,52 @@
 
 #include <algorithm>
 
+#include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
 #include "glog/logging.h"
 
 namespace gb {
+
+std::string ToString(GameStateTraceType trace_type) {
+  switch (trace_type) {
+    case GameStateTraceType::kUnknown:
+      return "Unknown";
+    case GameStateTraceType::kInvalidState:
+      return "InvalidState";
+    case GameStateTraceType::kInvalidParent:
+      return "InvalidParent";
+    case GameStateTraceType::kConstraintFailure:
+      return "ConstraintFailure";
+    case GameStateTraceType::kRequestChange:
+      return "RequestChange";
+    case GameStateTraceType::kAbortChange:
+      return "AbortChange";
+    case GameStateTraceType::kOnEnter:
+      return "OnEnter";
+    case GameStateTraceType::kOnExit:
+      return "OnExit";
+    case GameStateTraceType::kOnChildEnter:
+      return "OnChildEnter";
+    case GameStateTraceType::kOnChildExit:
+      return "OnChildExit";
+    case GameStateTraceType::kOnUpdate:
+      return "OnUpdate";
+  }
+  return absl::StrCat("GameStateTraceType(", static_cast<int>(trace_type), ")");
+}
+
+std::string ToString(const GameStateTrace& trace) {
+  std::string result = absl::StrCat("[GameState] ", trace.method, ": ",
+                                    ToString(trace.type), "(");
+  if (trace.parent != kNoGameState) {
+    result = absl::StrCat(result, "p=", GetGameStateName(trace.parent), ",");
+  }
+  result = absl::StrCat(result, "s=", GetGameStateName(trace.state), ")");
+  if (!trace.message.empty()) {
+    result = absl::StrCat(result, " ", trace.message);
+  }
+  return result;
+}
 
 std::unique_ptr<GameStateMachine> GameStateMachine::Create(Contract contract) {
   if (!contract.IsValid()) {
@@ -17,7 +59,17 @@ std::unique_ptr<GameStateMachine> GameStateMachine::Create(Contract contract) {
 }
 
 GameStateMachine::GameStateMachine(ValidatedContext context)
-    : context_(std::move(context)) {}
+    : context_(std::move(context)) {
+  trace_handler_ = [this](const GameStateTrace& trace) { LogTrace(trace); };
+}
+
+void GameStateMachine::LogTrace(const GameStateTrace& trace) {
+  if (trace.IsError()) {
+    LOG(ERROR) << ToString(trace);
+  } else {
+    LOG(INFO) << ToString(trace);
+  }
+}
 
 const GameStateInfo* GameStateMachine::GetStateInfo(GameStateId id) const {
   auto it = states_.find(id);
@@ -54,20 +106,16 @@ bool GameStateMachine::ChangeState(GameStateId parent, GameStateId state) {
   if (parent != kNoGameState) {
     parent_info = GetStateInfo(parent);
     if (parent_info == nullptr) {
-      LOG(ERROR) << "GameStateMachine::ChangeState(" << GetGameStateName(parent)
-                 << ", " << GetGameStateName(state)
-                 << "): Parent state is not registered.";
-      if (error_callback_ != nullptr) {
-        error_callback_({GameStateErrorInfo::kInvalidParent, parent, state});
+      if (trace_level_ >= GameStateTraceLevel::kError) {
+        trace_handler_({GameStateTraceType::kInvalidParent, parent, state,
+                        "ChangeState", "Parent state is not registered"});
       }
       return false;
     }
     if (!parent_info->active) {
-      LOG(ERROR) << "GameStateMachine::ChangeState(" << GetGameStateName(parent)
-                 << ", " << GetGameStateName(state)
-                 << "): Parent state is not active.";
-      if (error_callback_ != nullptr) {
-        error_callback_({GameStateErrorInfo::kInvalidParent, parent, state});
+      if (trace_level_ >= GameStateTraceLevel::kError) {
+        trace_handler_({GameStateTraceType::kInvalidParent, parent, state,
+                        "ChangeState", "Parent state is not active"});
       }
       return false;
     }
@@ -78,20 +126,16 @@ bool GameStateMachine::ChangeState(GameStateId parent, GameStateId state) {
   if (state != kNoGameState) {
     state_info = GetStateInfo(state);
     if (state_info == nullptr) {
-      LOG(ERROR) << "GameStateMachine::ChangeState(" << GetGameStateName(parent)
-                 << ", " << GetGameStateName(state)
-                 << "): new state is not registered.";
-      if (error_callback_ != nullptr) {
-        error_callback_({GameStateErrorInfo::kInvalidState, parent, state});
+      if (trace_level_ >= GameStateTraceLevel::kError) {
+        trace_handler_({GameStateTraceType::kInvalidState, parent, state,
+                        "ChangeState", "new state is not registered"});
       }
       return false;
     }
     if (state_info->active) {
-      LOG(ERROR) << "GameStateMachine::ChangeState(" << GetGameStateName(parent)
-                 << ", " << GetGameStateName(state)
-                 << "): new state is already active.";
-      if (error_callback_ != nullptr) {
-        error_callback_({GameStateErrorInfo::kInvalidState, parent, state});
+      if (trace_level_ >= GameStateTraceLevel::kError) {
+        trace_handler_({GameStateTraceType::kInvalidState, parent, state,
+                        "ChangeState", "new state is already active"});
       }
       return false;
     }
@@ -110,22 +154,25 @@ bool GameStateMachine::ChangeState(GameStateId parent, GameStateId state) {
                          parent) != state_info->valid_parents.end());
     }
     if (!valid) {
-      LOG(ERROR) << "GameStateMachine::ChangeState(" << GetGameStateName(parent)
-                 << ", " << GetGameStateName(state)
-                 << "): parent is not valid for new state.";
-      if (error_callback_ != nullptr) {
-        error_callback_({GameStateErrorInfo::kInvalidParent, parent, state});
+      if (trace_level_ >= GameStateTraceLevel::kError) {
+        trace_handler_({GameStateTraceType::kInvalidParent, parent, state,
+                        "ChangeState",
+                        "Parent state is not valid for new state"});
       }
       return false;
     }
   }
 
-  if (logging_enabled_) {
+  if (trace_level_ >= GameStateTraceLevel::kInfo) {
     if (transition_) {
-      LOG(INFO) << "GameState: Aborting " << GetStatePath(parent, state);
+      trace_handler_({GameStateTraceType::kAbortChange,
+                      GetGameStateId(transition_parent_),
+                      GetGameStateId(transition_state_), "ChangeState",
+                      "abort due to new request"});
     }
-    LOG(INFO) << "GameState: Request " << GetCurrentStatePath() << " to "
-              << GetStatePath(parent, state);
+    trace_handler_({GameStateTraceType::kRequestChange, parent, state,
+                    "ChangeState",
+                    absl::StrCat("current=", GetCurrentStatePath())});
   }
   transition_ = true;
   transition_parent_ = parent_info;
@@ -150,6 +197,13 @@ void GameStateMachine::Update(absl::Duration delta_time) {
     GameStateInfo* state_info = top_state_;
     while (state_info != nullptr) {
       if (state_info->update_id != update_id) {
+        if (trace_level_ >= GameStateTraceLevel::kVerbose) {
+          trace_handler_(
+              {GameStateTraceType::kOnUpdate, kNoGameState,
+               GetGameStateId(state_info), "Update",
+               absl::StrCat("path=", GetStatePath(GetGameStateId(state_info),
+                                                  kNoGameState))});
+        }
         state_info->instance->OnUpdate(delta_time);
       }
       if (transition_) {
@@ -179,22 +233,21 @@ void GameStateMachine::ProcessTransition() {
 
   // Exit all the states, aborting if a new transition is initiated.
   while (exit_info != parent_info) {
-    if (logging_enabled_) {
-      LOG(INFO) << "GameState: OnExit "
-                << GetStatePath(exit_info->id, kNoGameState);
+    if (trace_level_ >= GameStateTraceLevel::kInfo) {
+      trace_handler_(
+          {GameStateTraceType::kOnExit, kNoGameState, GetGameStateId(exit_info),
+           "Update",
+           absl::StrCat("path=", GetStatePath(exit_info->id, kNoGameState))});
     }
     exit_info->instance->OnExit();
 
     // Complete the context.
     if (!exit_info->instance->context_.Assign(ValidatedContext{})) {
-      LOG(ERROR) << "GameStateMachine::ProcessTransition: "
-                 << GetGameStateName(exit_info->id)
-                 << ".OnExit: Context could not complete.";
-      if (error_callback_ != nullptr) {
-        error_callback_({GameStateErrorInfo::kConstraintFailure,
-                         (exit_info->parent != nullptr ? exit_info->parent->id
-                                                       : kNoGameState),
-                         exit_info->id});
+      if (trace_level_ >= GameStateTraceLevel::kError) {
+        trace_handler_({GameStateTraceType::kConstraintFailure,
+                        GetGameStateId(exit_info->parent),
+                        GetGameStateId(exit_info), "Update",
+                        "exit context could not complete"});
       }
     }
 
@@ -215,9 +268,12 @@ void GameStateMachine::ProcessTransition() {
 
     // Now notify the parent that the child exited.
     if (exit_parent != nullptr) {
-      if (logging_enabled_) {
-        LOG(INFO) << "GameState: OnChildExit "
-                  << GetStatePath(exit_parent->id, exit_info->id);
+      if (trace_level_ >= GameStateTraceLevel::kInfo) {
+        trace_handler_(
+            {GameStateTraceType::kOnChildExit, GetGameStateId(exit_parent),
+             GetGameStateId(exit_info), "Update",
+             absl::StrCat("path=", GetStatePath(GetGameStateId(exit_info),
+                                                kNoGameState))});
       }
       exit_parent->instance->OnChildExit(exit_info->id);
     }
@@ -238,23 +294,24 @@ void GameStateMachine::ProcessTransition() {
   // Validate the context for the new state.
   ValidatedContext new_context(context_, new_state_info->constraints);
   if (!new_context.IsValid()) {
-    LOG(ERROR) << "GameStateMachine::ProcessTransition: "
-               << GetGameStateName(new_state_info->id)
-               << ".OnEnter: Context is not valid.";
-    if (error_callback_ != nullptr) {
-      error_callback_(
-          {GameStateErrorInfo::kConstraintFailure,
-           (parent_info != nullptr ? parent_info->id : kNoGameState),
-           new_state_info->id});
+    if (trace_level_ >= GameStateTraceLevel::kError) {
+      trace_handler_({GameStateTraceType::kConstraintFailure,
+                      GetGameStateId(parent_info),
+                      GetGameStateId(new_state_info), "Update",
+                      "enter context is not valid"});
     }
     return;
   }
 
   // Notify the parent the new state is going to get created.
   if (parent_info != nullptr) {
-    if (logging_enabled_) {
-      LOG(INFO) << "GameState: OnChildEnter "
-                << GetStatePath(parent_info->id, new_state_info->id);
+    if (trace_level_ >= GameStateTraceLevel::kInfo) {
+      trace_handler_(
+          {GameStateTraceType::kOnChildEnter, GetGameStateId(parent_info),
+           GetGameStateId(new_state_info), "Update",
+           absl::StrCat("path=",
+                        GetStatePath(GetGameStateId(parent_info),
+                                     GetGameStateId(new_state_info)))});
     }
     parent_info->instance->OnChildEnter(new_state_info->id);
   }
@@ -272,9 +329,12 @@ void GameStateMachine::ProcessTransition() {
   }
 
   // Notify the new state that it is entered.
-  if (logging_enabled_) {
-    LOG(INFO) << "GameState: OnChildEnter "
-              << GetStatePath(new_state_info->id, kNoGameState);
+  if (trace_level_ >= GameStateTraceLevel::kInfo) {
+    trace_handler_(
+        {GameStateTraceType::kOnEnter, kNoGameState,
+         GetGameStateId(new_state_info), "Update",
+         absl::StrCat("path=", GetStatePath(GetGameStateId(new_state_info),
+                                            kNoGameState))});
   }
   new_state_info->instance->OnEnter();
 }
@@ -321,7 +381,7 @@ std::string GameStateMachine::GetStatePath(GameStateId parent,
     names.emplace_back(GetGameStateName(state));
   }
   if (names.empty()) {
-    return "<none>";
+    return "none";
   }
   return absl::StrJoin(names, ".");
 }
@@ -334,7 +394,7 @@ std::string GameStateMachine::GetCurrentStatePath() {
     current_state = current_state->child;
   }
   if (names.empty()) {
-    return "<none>";
+    return "none";
   }
   return absl::StrJoin(names, ".");
 }
