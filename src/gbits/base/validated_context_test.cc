@@ -206,7 +206,7 @@ struct ValidatedContextAssignMethodTestType {
       bool result = validated_context.Assign(std::move(in_validated_context));
       EXPECT_EQ(input_valid, validated_context.IsValid());
       EXPECT_FALSE(in_validated_context.IsValid());
-      return result;
+      return result && input_valid;
     } else if (SubType == kWithMoveContract) {
       ContextContract<Constraints...> contract(context);
       bool input_valid = contract.IsValid();
@@ -214,7 +214,7 @@ struct ValidatedContextAssignMethodTestType {
       bool result = validated_context.Assign(std::move(contract));
       EXPECT_EQ(input_valid, validated_context.IsValid());
       EXPECT_FALSE(contract.IsValid());
-      return result;
+      return result && input_valid;
     }
     LOG(FATAL) << "Invalid type parameter";
     return false;

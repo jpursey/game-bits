@@ -107,10 +107,6 @@ bool ValidatedContext::Assign(ValidatedContext&& context) {
   context_ = context.context_;
   context.context_ = nullptr;
   constraints_ = std::move(context.constraints_);
-  if (context_ == nullptr) {
-    ReportError("Context passed to ValidatedContext was null");
-    return false;
-  }
   return result;
 }
 
