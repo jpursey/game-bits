@@ -6,6 +6,7 @@
 
 namespace gb {
 
+class GameStateInfo;
 class GameStateMachine;
 
 //------------------------------------------------------------------------------
@@ -140,9 +141,11 @@ class GameState {
   // The following attributes are only set if the state is active (during
   // OnEnter and OnExit and any time in between these two calls). Notably these
   // will return null in the constructor and destructor.
-  GameStateId GetId() const { return id_; }
-  GameState* GetParent() const { return parent_; }
-  GameState* GetChild() const { return child_; }
+  GameStateId GetId() const;
+  GameStateId GetParentId() const;
+  GameState* GetParent() const;
+  GameStateId GetChildId() const;
+  GameState* GetChild() const;
 
   // Changes the child for this state. See GameStateMachine::ChangeState() for
   // details on state change handling.
@@ -187,19 +190,17 @@ class GameState {
   // Called immediately before a child state is entered. If the state is changed
   // during this call, it can result in original child state never being
   // entered.
-  virtual void OnChildEnter(GameStateId id) {}
+  virtual void OnChildEnter(GameStateId child) {}
 
   // Called immediately after a child state has exited.
-  virtual void OnChildExit(GameStateId id) {}
+  virtual void OnChildExit(GameStateId child) {}
 
  private:
   friend class GameStateMachine;
 
   // These are managed directly by GameStateMachine.
-  GameStateId id_ = kNoGameState;
+  GameStateInfo* info_ = nullptr;
   GameStateMachine* machine_ = nullptr;
-  GameState* parent_ = nullptr;
-  GameState* child_ = nullptr;
   ValidatedContext context_;
 };
 

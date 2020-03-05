@@ -273,7 +273,7 @@ class ValidatedContext final {
   // returns false, and the underlying context remains unmodified.
   //
   // If the context is already uninitialized (IsValid() returns false),
-  // Complete() will trivially succeed and return true;
+  // Complete() will trivially succeed and return true.
   bool Complete();
 
   // Returns true if the ValidatedContext is valid. If this is false, all

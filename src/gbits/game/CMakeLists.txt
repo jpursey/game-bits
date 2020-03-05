@@ -10,6 +10,7 @@ set(gbits_game_TEST_SOURCE
 
 set(gbits_game_DEPS
   absl::flat_hash_map
+  absl::strings
   absl::time
   gbits_base
 )

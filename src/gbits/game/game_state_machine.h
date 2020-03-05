@@ -10,6 +10,62 @@
 
 namespace gb {
 
+class GameStateMachine;
+
+//------------------------------------------------------------------------------
+// GameStateError
+//------------------------------------------------------------------------------
+
+struct GameStateErrorInfo {
+  enum Type {
+    kInvalidState,   // The new state is not registered or is already active.
+    kInvalidParent,  // The parent state is not registered or is not active.
+    kConstraintFailure,  // The context constraints were not met.
+  };
+
+  GameStateErrorInfo(Type type, GameStateId parent, GameStateId state)
+      : type(type), parent(parent), state(state) {}
+
+  Type type;
+  GameStateId parent;
+  GameStateId state;
+};
+
+using GameStateErrorCallback = std::function<void(const GameStateErrorInfo&)>;
+
+//------------------------------------------------------------------------------
+// GameStateMachine
+//------------------------------------------------------------------------------
+
+// Internal class used by GameStateMachine to track game states.
+class GameStateInfo {
+public:
+  GameStateInfo() = default;
+
+private:
+  friend class GameState;
+  friend class GameStateMachine;
+
+  // Set at registration.
+  GameStateId id = kNoGameState;
+  GameStateLifetime::Type lifetime = GameStateLifetime::Type::kGlobal;
+  GameStateList::Type valid_parents_type = GameStateList::kNone;
+  std::vector<GameStateId> valid_parents;
+  std::vector<ContextConstraint> constraints;
+  std::function<std::unique_ptr<GameState>()> factory;
+
+  // Working state.
+  std::unique_ptr<GameState> instance;
+  bool active = false;
+  GameStateInfo* parent = nullptr;
+  GameStateInfo* child = nullptr;
+  int64_t update_id = 0;
+};
+
+//------------------------------------------------------------------------------
+// GameStateMachine
+//------------------------------------------------------------------------------
+
 // This class manages a hierarchical state machine for use in games.
 //
 // Game states are uniquely defined by a subclass of GameState. The state
@@ -23,17 +79,31 @@ namespace gb {
 //
 class GameStateMachine final {
  public:
-  GameStateMachine() = default;
   GameStateMachine(const GameStateMachine&) = delete;
   GameStateMachine& operator=(const GameStateMachine&) = delete;
   ~GameStateMachine() = default;
+
+  // Context contract for the state machine itself.
+  using Contract = ContextContract<>;
+
+  // Creates a new GameStateMachine.
+  static std::unique_ptr<GameStateMachine> Create(Contract contract);
+
+  // Sets an optional error callback for this state machine. See GameStateError
+  // for more information.
+  void SetErrorCallback(GameStateErrorCallback callback) {
+    error_callback_ = callback;
+  }
+
+  // Enables logging of state transitions.
+  void EnableLogging() { logging_enabled_ = true; }
+  void DisableLogging() { logging_enabled_ = false; }
 
   // Registers a GameState derived class with the state machine. After a state
   // is registered, it can be used with the ChangeState() function.
   template <typename StateType>
   void Register() {
-    DoRegister(id, StateType::Lifetime::kType,
-               StateType::ParentStates::kType,
+    DoRegister(id, StateType::Lifetime::kType, StateType::ParentStates::kType,
                StateType::ParentStates::GetIds(),
                StateType::Contract::GetConstraints(),
                []() -> std::unique_ptr<GameState> {
@@ -57,7 +127,7 @@ class GameStateMachine final {
   }
 
   // Returns the top state, or null if no states are active.
-  GameState* GetTopState() { return top_state_; }
+  GameState* GetTopState() { return top_state_ != nullptr ? top_state_->instance.get() : nullptr; }
 
   // Changes the current state to the specified state.
   //
@@ -77,8 +147,15 @@ class GameStateMachine final {
   // time this was called. A state change is valid if all of the following are
   // true:
   //   - 'parent' is kNoGameState or is an active state.
-  //   - All states that would be entered or exited as a result have met their
-  //     context constraints.
+  //   - 'parent' is one of the allowed parent states for 'state'
+  //   - 'state' is not currently active.
+  //
+  // This function does *not* pre-validate context constraints, as constraints
+  // may be met (or broken) as a side effect of the state transition process
+  // itself. However, no state will actually be entered unless its context input
+  // constraints are met. If a state context constraint failure occurs (exit or
+  // enter), then an error will be logged and any registered error handler will
+  // be logged.
   bool ChangeState(GameStateId parent, GameStateId state);
   template <typename StateType>
   bool ChangeState(GameStateId parent) {
@@ -101,25 +178,28 @@ class GameStateMachine final {
   void Update(absl::Duration delta_time);
 
  private:
-  struct GameStateInfo {
-    GameStateLifetime::Type lifetime = GameStateLifetime::Type::kGlobal;
-    GameStateList::Type valid_parents_type = GameStateList::kNone;
-    std::vector<GameStateId> valid_parents;
-    std::vector<ContextConstraint> constraints;
-    std::function<std::unique_ptr<GameState>()> factory;
-    std::unique_ptr<GameState> instance;
-    bool active = false;
-  };
+  explicit GameStateMachine(ValidatedContext context);
 
-  void CreateInstance(GameStateId id, GameStateInfo* state_info);
+  std::string GetStatePath(GameStateId parent, GameStateId state);
+  std::string GetCurrentStatePath();
+  const GameStateInfo* GetStateInfo(GameStateId id) const;
+  GameStateInfo* GetStateInfo(GameStateId id);
+  void CreateInstance(GameStateInfo* state_info);
   void DoRegister(GameStateId id, GameStateLifetime::Type lifetime,
                   GameStateList::Type valid_parents_type,
                   std::vector<GameStateId> valid_parents,
                   std::vector<ContextConstraint> constraints,
                   std::function<std::unique_ptr<GameState>()> factory);
+  void ProcessTransition();
 
+  ValidatedContext context_;
+  bool logging_enabled_ = false;
+  GameStateErrorCallback error_callback_;
   absl::flat_hash_map<GameStateId, GameStateInfo> states_;
-  GameState* top_state_ = nullptr;
+  GameStateInfo* top_state_ = nullptr;
+  bool transition_ = false;
+  GameStateInfo* transition_parent_ = nullptr;
+  GameStateInfo* transition_state_ = nullptr;
 };
 
 }  // namespace gb
