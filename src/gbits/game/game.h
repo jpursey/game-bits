@@ -31,7 +31,7 @@ class Game {
   static GB_CONTEXT_CONSTRAINT(kConstraintClock, kInOptional, Clock);
 
   // Pointer to this class. This is always set while the game is running.
-  static GB_CONTEXT_CONSTRAINT(kConstraintGame, kOutRequired, Game);
+  static GB_CONTEXT_CONSTRAINT(kConstraintGame, kScoped, Game);
 
   // Contract guaranteed by this class. Derived classes may provide additional
   // constraints.
