@@ -138,11 +138,11 @@ class GameState {
   // 'Contract' type in order to specify their context constraints.
   using Contract = ContextContract<>;
 
-  // ParentStates define which states in the hierarchy this state must have as a
-  // parent. By default a game state can only exist as a top level state
-  // with no child states. Other options are AllGameStates, or list specific
-  // states with GameStates<A, B, C, ...>.
-  using ParentStates = NoGameStates;
+  // ParentStates define which states (in addition to the root) this state must
+  // have as a parent. By default a game state may exist anywhere in the
+  // hierarchy. Other options are NoGameStates, or list specific states with
+  // GameStates<A, B, C, ...>.
+  using ParentStates = AllGameStates;
 
   // Lifetime defines when the class will be created and deleted. By default, a
   // game state has a global lifetime, which means it will be constructed once
