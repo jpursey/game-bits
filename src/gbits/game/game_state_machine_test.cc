@@ -108,13 +108,38 @@ class GameStateMachineTest : public ::testing::Test {
   GameStateMachineTest() {
     state_machine_ = GameStateMachine::Create();
     state_machine_->SetTraceLevel(GameStateTraceLevel::kVerbose);
-    state_machine_->AddTraceHandler([this](const GameStateTrace& trace) {
+    state_machine_->SetTraceHandler([this](const GameStateTrace& trace) {
       if (trace.IsError()) {
         ++error_count_;
         last_error_ = trace;
       }
       traces_.push_back(trace);
     });
+  }
+
+  void ExpectTraceMatches(int index, GameStateTraceType type,
+                          GameStateId parent, GameStateId state) {
+    if (index > static_cast<int>(traces_.size())) {
+      EXPECT_LT(index, static_cast<int>(traces_.size()));
+      return;
+    }
+    const auto& trace = traces_[index];
+    EXPECT_EQ(ToString(trace.type), ToString(type))
+        << std::to_string(index) << ": " << ToString(traces_[index]);
+    if (trace.type != type) {
+      return;
+    }
+    EXPECT_EQ(GetGameStateName(trace.parent), GetGameStateName(parent))
+        << std::to_string(index) << ": " << ToString(traces_[index]);
+    if (trace.parent != parent) {
+      return;
+    }
+    EXPECT_EQ(GetGameStateName(trace.state), GetGameStateName(state))
+        << std::to_string(index) << ": " << ToString(traces_[index]);
+  }
+  void ExpectTraceMatches(int index, GameStateTraceType type,
+                          GameStateId state) {
+    ExpectTraceMatches(index, type, kNoGameState, state);
   }
 
   int error_count_ = 0;
@@ -192,7 +217,9 @@ TEST_F(GameStateMachineTest, ChangeTopStateNoUpdate) {
   EXPECT_EQ(DefaultState::Info().exit_count, 0);
   EXPECT_EQ(DefaultState::Info().child_enter_count, 0);
   EXPECT_EQ(DefaultState::Info().child_exit_count, 0);
-  EXPECT_EQ(error_count_, 0);
+  EXPECT_EQ(traces_.size(), 1);
+  ExpectTraceMatches(0, GameStateTraceType::kRequestChange,
+                     GetGameStateId<DefaultState>());
 }
 
 TEST_F(GameStateMachineTest, ChangeTopStateInvalidState) {
@@ -200,9 +227,6 @@ TEST_F(GameStateMachineTest, ChangeTopStateInvalidState) {
 
   EXPECT_FALSE(state_machine_->ChangeTopState<DefaultState>());
   EXPECT_EQ(error_count_, 1);
-  EXPECT_EQ(last_error_.type, GameStateTraceType::kInvalidState);
-  EXPECT_EQ(last_error_.parent, kNoGameState);
-  EXPECT_EQ(last_error_.state, GetGameStateId<DefaultState>());
   state_machine_->Update(absl::Milliseconds(1));
   EXPECT_FALSE(state_machine_->IsActive<DefaultState>());
   EXPECT_EQ(DefaultState::Info().update_count, 0);
@@ -210,7 +234,9 @@ TEST_F(GameStateMachineTest, ChangeTopStateInvalidState) {
   EXPECT_EQ(DefaultState::Info().exit_count, 0);
   EXPECT_EQ(DefaultState::Info().child_enter_count, 0);
   EXPECT_EQ(DefaultState::Info().child_exit_count, 0);
-  EXPECT_EQ(error_count_, 1);
+  EXPECT_EQ(traces_.size(), 1);
+  ExpectTraceMatches(0, GameStateTraceType::kInvalidState,
+                     GetGameStateId<DefaultState>());
 }
 
 TEST_F(GameStateMachineTest, ChangeTopState) {
@@ -228,7 +254,13 @@ TEST_F(GameStateMachineTest, ChangeTopState) {
   EXPECT_EQ(DefaultState::Info().exit_count, 0);
   EXPECT_EQ(DefaultState::Info().child_enter_count, 0);
   EXPECT_EQ(DefaultState::Info().child_exit_count, 0);
-  EXPECT_EQ(error_count_, 0);
+  EXPECT_EQ(traces_.size(), 3);
+  ExpectTraceMatches(0, GameStateTraceType::kRequestChange,
+                     GetGameStateId<DefaultState>());
+  ExpectTraceMatches(1, GameStateTraceType::kOnEnter,
+                     GetGameStateId<DefaultState>());
+  ExpectTraceMatches(2, GameStateTraceType::kOnUpdate,
+                     GetGameStateId<DefaultState>());
 }
 
 TEST_F(GameStateMachineTest, ChangeTopStateTwice) {
@@ -255,7 +287,17 @@ TEST_F(GameStateMachineTest, ChangeTopStateTwice) {
   EXPECT_EQ(TopStateB::Info().exit_count, 0);
   EXPECT_EQ(TopStateB::Info().child_enter_count, 0);
   EXPECT_EQ(TopStateB::Info().child_exit_count, 0);
-  EXPECT_EQ(error_count_, 0);
+  EXPECT_EQ(traces_.size(), 5);
+  ExpectTraceMatches(0, GameStateTraceType::kRequestChange,
+                     GetGameStateId<TopStateA>());
+  ExpectTraceMatches(1, GameStateTraceType::kAbortChange,
+                     GetGameStateId<TopStateA>());
+  ExpectTraceMatches(2, GameStateTraceType::kRequestChange,
+                     GetGameStateId<TopStateB>());
+  ExpectTraceMatches(3, GameStateTraceType::kOnEnter,
+                     GetGameStateId<TopStateB>());
+  ExpectTraceMatches(4, GameStateTraceType::kOnUpdate,
+                     GetGameStateId<TopStateB>());
 }
 
 TEST_F(GameStateMachineTest, ChangeToInvalidStateDoesNotStopPreviousChange) {
@@ -266,9 +308,6 @@ TEST_F(GameStateMachineTest, ChangeToInvalidStateDoesNotStopPreviousChange) {
   EXPECT_TRUE(state_machine_->ChangeTopState<TopStateA>());
   EXPECT_FALSE(state_machine_->ChangeTopState<TopStateB>());
   EXPECT_EQ(error_count_, 1);
-  EXPECT_EQ(last_error_.type, GameStateTraceType::kInvalidState);
-  EXPECT_EQ(last_error_.parent, kNoGameState);
-  EXPECT_EQ(last_error_.state, GetGameStateId<TopStateB>());
   state_machine_->Update(absl::Milliseconds(1));
   EXPECT_TRUE(state_machine_->IsActive<TopStateA>());
   EXPECT_EQ(state_machine_->GetTopState(),
@@ -285,7 +324,15 @@ TEST_F(GameStateMachineTest, ChangeToInvalidStateDoesNotStopPreviousChange) {
   EXPECT_EQ(TopStateB::Info().exit_count, 0);
   EXPECT_EQ(TopStateB::Info().child_enter_count, 0);
   EXPECT_EQ(TopStateB::Info().child_exit_count, 0);
-  EXPECT_EQ(error_count_, 1);
+  EXPECT_EQ(traces_.size(), 4);
+  ExpectTraceMatches(0, GameStateTraceType::kRequestChange,
+                     GetGameStateId<TopStateA>());
+  ExpectTraceMatches(1, GameStateTraceType::kInvalidState,
+                     GetGameStateId<TopStateB>());
+  ExpectTraceMatches(2, GameStateTraceType::kOnEnter,
+                     GetGameStateId<TopStateA>());
+  ExpectTraceMatches(3, GameStateTraceType::kOnUpdate,
+                     GetGameStateId<TopStateA>());
 }
 
 TEST_F(GameStateMachineTest, ChangeBetweenTopStates) {
@@ -314,7 +361,21 @@ TEST_F(GameStateMachineTest, ChangeBetweenTopStates) {
   EXPECT_EQ(TopStateB::Info().exit_count, 0);
   EXPECT_EQ(TopStateB::Info().child_enter_count, 0);
   EXPECT_EQ(TopStateB::Info().child_exit_count, 0);
-  EXPECT_EQ(error_count_, 0);
+  EXPECT_EQ(traces_.size(), 7);
+  ExpectTraceMatches(0, GameStateTraceType::kRequestChange,
+                     GetGameStateId<TopStateA>());
+  ExpectTraceMatches(1, GameStateTraceType::kOnEnter,
+                     GetGameStateId<TopStateA>());
+  ExpectTraceMatches(2, GameStateTraceType::kOnUpdate,
+                     GetGameStateId<TopStateA>());
+  ExpectTraceMatches(3, GameStateTraceType::kRequestChange,
+                     GetGameStateId<TopStateB>());
+  ExpectTraceMatches(4, GameStateTraceType::kOnExit,
+                     GetGameStateId<TopStateA>());
+  ExpectTraceMatches(5, GameStateTraceType::kOnEnter,
+                     GetGameStateId<TopStateB>());
+  ExpectTraceMatches(6, GameStateTraceType::kOnUpdate,
+                     GetGameStateId<TopStateB>());
 }
 
 TEST_F(GameStateMachineTest, ExitTopState) {
@@ -333,13 +394,23 @@ TEST_F(GameStateMachineTest, ExitTopState) {
   EXPECT_EQ(TopStateA::Info().exit_count, 1);
   EXPECT_EQ(TopStateA::Info().child_enter_count, 0);
   EXPECT_EQ(TopStateA::Info().child_exit_count, 0);
-  EXPECT_EQ(error_count_, 0);
+  EXPECT_EQ(traces_.size(), 5);
+  ExpectTraceMatches(0, GameStateTraceType::kRequestChange,
+                     GetGameStateId<TopStateA>());
+  ExpectTraceMatches(1, GameStateTraceType::kOnEnter,
+                     GetGameStateId<TopStateA>());
+  ExpectTraceMatches(2, GameStateTraceType::kOnUpdate,
+                     GetGameStateId<TopStateA>());
+  ExpectTraceMatches(3, GameStateTraceType::kRequestChange, kNoGameState);
+  ExpectTraceMatches(4, GameStateTraceType::kOnExit,
+                     GetGameStateId<TopStateA>());
 }
 
 TEST_F(GameStateMachineTest, ExitTopStateThatDoesNotExist) {
   EXPECT_TRUE(state_machine_->ChangeTopState(kNoGameState));
   state_machine_->Update(absl::Milliseconds(1));
-  EXPECT_EQ(error_count_, 0);
+  EXPECT_EQ(traces_.size(), 1);
+  ExpectTraceMatches(0, GameStateTraceType::kRequestChange, kNoGameState);
 }
 
 }  // namespace
