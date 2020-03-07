@@ -296,7 +296,7 @@ TEST_F(GameStateMachineTest, ChangeTopStateInvalidState) {
   EXPECT_EQ(DefaultState::Info().child_enter_count, 0);
   EXPECT_EQ(DefaultState::Info().child_exit_count, 0);
   MatchTrace({
-      {GameStateTraceType::kInvalidState, GetGameStateId<DefaultState>()},
+      {GameStateTraceType::kInvalidChangeState, GetGameStateId<DefaultState>()},
   });
 }
 
@@ -319,6 +319,7 @@ TEST_F(GameStateMachineTest, ChangeTopState) {
   MatchTrace({
       {GameStateTraceType::kRequestChange, GetGameStateId<DefaultState>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<DefaultState>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<DefaultState>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<DefaultState>()},
   });
 }
@@ -344,8 +345,9 @@ TEST_F(GameStateMachineTest, ChangeToAlreadyActiveState) {
   MatchTrace({
       {GameStateTraceType::kRequestChange, GetGameStateId<DefaultState>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<DefaultState>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<DefaultState>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<DefaultState>()},
-      {GameStateTraceType::kInvalidState, GetGameStateId<DefaultState>()},
+      {GameStateTraceType::kInvalidChangeState, GetGameStateId<DefaultState>()},
   });
 }
 
@@ -380,6 +382,7 @@ TEST_F(GameStateMachineTest, ChangeTopStateTwice) {
       {GameStateTraceType::kAbortChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateB>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<TopStateB>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateB>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateB>()},
   });
 }
@@ -412,8 +415,9 @@ TEST_F(GameStateMachineTest, ChangeToInvalidStateDoesNotStopPreviousChange) {
   EXPECT_EQ(TopStateB::Info().child_exit_count, 0);
   MatchTrace({
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>()},
-      {GameStateTraceType::kInvalidState, GetGameStateId<TopStateB>()},
+      {GameStateTraceType::kInvalidChangeState, GetGameStateId<TopStateB>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<TopStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
   });
 }
@@ -449,10 +453,12 @@ TEST_F(GameStateMachineTest, ChangeBetweenTopStates) {
   MatchTrace({
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<TopStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateB>()},
       {GameStateTraceType::kOnExit, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<TopStateB>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateB>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateB>()},
   });
 }
@@ -477,9 +483,11 @@ TEST_F(GameStateMachineTest, ExitTopState) {
   MatchTrace({
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<TopStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kRequestChange, kNoGameStateId},
       {GameStateTraceType::kOnExit, GetGameStateId<TopStateA>()},
+      {GameStateTraceType::kCompleteChange, kNoGameStateId},
   });
 }
 
@@ -525,7 +533,7 @@ TEST_F(GameStateMachineTest, ChangeToUndefinedParent) {
   state_machine_->Update(absl::Milliseconds(1));
   EXPECT_FALSE(state_machine_->IsActive<AllParentsState>());
   MatchTrace({
-      {GameStateTraceType::kInvalidParent, GetGameStateId<TopStateA>(),
+      {GameStateTraceType::kInvalidChangeParent, GetGameStateId<TopStateA>(),
        GetGameStateId<AllParentsState>()},
   });
 }
@@ -543,7 +551,7 @@ TEST_F(GameStateMachineTest, ChangeToInactiveParent) {
   EXPECT_FALSE(state_machine_->IsActive<TopStateA>());
   EXPECT_FALSE(state_machine_->IsActive<AllParentsState>());
   MatchTrace({
-      {GameStateTraceType::kInvalidParent, GetGameStateId<TopStateA>(),
+      {GameStateTraceType::kInvalidChangeParent, GetGameStateId<TopStateA>(),
        GetGameStateId<AllParentsState>()},
   });
 }
@@ -565,8 +573,9 @@ TEST_F(GameStateMachineTest, ChangeTopOnlyStateToParent) {
   MatchTrace({
       {GameStateTraceType::kRequestChange, GetGameStateId<DefaultState>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<DefaultState>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<DefaultState>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<DefaultState>()},
-      {GameStateTraceType::kInvalidParent, GetGameStateId<DefaultState>(),
+      {GameStateTraceType::kInvalidChangeParent, GetGameStateId<DefaultState>(),
        GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<DefaultState>()},
   });
@@ -589,8 +598,9 @@ TEST_F(GameStateMachineTest, ChangeStateToInvalidParent) {
   MatchTrace({
       {GameStateTraceType::kRequestChange, GetGameStateId<DefaultState>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<DefaultState>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<DefaultState>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<DefaultState>()},
-      {GameStateTraceType::kInvalidParent, GetGameStateId<DefaultState>(),
+      {GameStateTraceType::kInvalidChangeParent, GetGameStateId<DefaultState>(),
        GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<DefaultState>()},
   });
@@ -625,12 +635,15 @@ TEST_F(GameStateMachineTest, AddChildState) {
   MatchTrace({
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<TopStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnChildEnter, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<ChildStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>(),
+       GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<ChildStateA>()},
   });
@@ -668,12 +681,15 @@ TEST_F(GameStateMachineTest, ExitChildState) {
   MatchTrace({
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<TopStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnChildEnter, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<ChildStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>(),
+       GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>(),
@@ -681,6 +697,8 @@ TEST_F(GameStateMachineTest, ExitChildState) {
       {GameStateTraceType::kOnExit, GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnChildExit, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>(),
+       kNoGameStateId},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
   });
 }
@@ -726,12 +744,15 @@ TEST_F(GameStateMachineTest, ChangeChildStates) {
   MatchTrace({
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<TopStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnChildEnter, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<ChildStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>(),
+       GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>(),
@@ -742,6 +763,8 @@ TEST_F(GameStateMachineTest, ChangeChildStates) {
       {GameStateTraceType::kOnChildEnter, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateB>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<ChildStateB>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>(),
+       GetGameStateId<ChildStateB>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<ChildStateB>()},
   });
@@ -791,12 +814,15 @@ TEST_F(GameStateMachineTest, ExitChildStateWithChildren) {
   MatchTrace({
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<TopStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnChildEnter, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<ChildStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>(),
+       GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<ChildStateA>(),
@@ -804,6 +830,8 @@ TEST_F(GameStateMachineTest, ExitChildStateWithChildren) {
       {GameStateTraceType::kOnChildEnter, GetGameStateId<ChildStateA>(),
        GetGameStateId<AllParentsState>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<AllParentsState>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<ChildStateA>(),
+       GetGameStateId<AllParentsState>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<AllParentsState>()},
@@ -815,6 +843,8 @@ TEST_F(GameStateMachineTest, ExitChildStateWithChildren) {
       {GameStateTraceType::kOnExit, GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnChildExit, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>(),
+       kNoGameStateId},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
   });
 }
@@ -872,12 +902,15 @@ TEST_F(GameStateMachineTest, ChangeChildStatesWithChildren) {
   MatchTrace({
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<TopStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnChildEnter, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<ChildStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>(),
+       GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<ChildStateA>(),
@@ -885,6 +918,8 @@ TEST_F(GameStateMachineTest, ChangeChildStatesWithChildren) {
       {GameStateTraceType::kOnChildEnter, GetGameStateId<ChildStateA>(),
        GetGameStateId<AllParentsState>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<AllParentsState>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<ChildStateA>(),
+       GetGameStateId<AllParentsState>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<AllParentsState>()},
@@ -899,6 +934,8 @@ TEST_F(GameStateMachineTest, ChangeChildStatesWithChildren) {
       {GameStateTraceType::kOnChildEnter, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateB>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<ChildStateB>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>(),
+       GetGameStateId<ChildStateB>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<ChildStateB>()},
   });
@@ -945,12 +982,15 @@ TEST_F(GameStateMachineTest, ChangeStateWithChildrenToTopState) {
   MatchTrace({
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<TopStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnChildEnter, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<ChildStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>(),
+       GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kRequestChange, kNoGameStateId,
@@ -960,6 +1000,8 @@ TEST_F(GameStateMachineTest, ChangeStateWithChildrenToTopState) {
        GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnExit, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<TopStateB>()},
+      {GameStateTraceType::kCompleteChange, kNoGameStateId,
+       GetGameStateId<TopStateB>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateB>()},
   });
 }
@@ -991,10 +1033,12 @@ TEST_F(GameStateMachineTest, ChangeStateDuringUpdate) {
   MatchTrace({
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<TopStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateB>()},
       {GameStateTraceType::kOnExit, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<TopStateB>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateB>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateB>()},
   });
 }
@@ -1037,12 +1081,15 @@ TEST_F(GameStateMachineTest, ChangeStateDuringParentUpdate) {
   MatchTrace({
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<TopStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnChildEnter, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<ChildStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>(),
+       GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateB>()},
       {GameStateTraceType::kOnExit, GetGameStateId<ChildStateA>()},
@@ -1050,6 +1097,7 @@ TEST_F(GameStateMachineTest, ChangeStateDuringParentUpdate) {
        GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnExit, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<TopStateB>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateB>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateB>()},
   });
 }
@@ -1080,9 +1128,11 @@ TEST_F(GameStateMachineTest, ChangeStateDuringOnEnter) {
   MatchTrace({
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<TopStateA>()},
+      {GameStateTraceType::kAbortChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateB>()},
       {GameStateTraceType::kOnExit, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<TopStateB>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateB>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateB>()},
   });
 }
@@ -1125,18 +1175,22 @@ TEST_F(GameStateMachineTest, ChangeStateDuringChildOnEnter) {
   MatchTrace({
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<TopStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnChildEnter, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<ChildStateA>()},
+      {GameStateTraceType::kAbortChange, GetGameStateId<TopStateA>(),
+       GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateB>()},
       {GameStateTraceType::kOnExit, GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnChildExit, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnExit, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<TopStateB>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateB>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateB>()},
   });
 }
@@ -1178,11 +1232,14 @@ TEST_F(GameStateMachineTest, ChangeStateDuringOnExit) {
   MatchTrace({
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<TopStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<DefaultState>()},
       {GameStateTraceType::kOnExit, GetGameStateId<TopStateA>()},
+      {GameStateTraceType::kAbortChange, GetGameStateId<DefaultState>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateB>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<TopStateB>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateB>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateB>()},
   });
 }
@@ -1236,21 +1293,26 @@ TEST_F(GameStateMachineTest, ChangeStateDuringChildOnExit) {
   MatchTrace({
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<TopStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnChildEnter, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<ChildStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>(),
+       GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<DefaultState>()},
       {GameStateTraceType::kOnExit, GetGameStateId<ChildStateA>()},
+      {GameStateTraceType::kAbortChange, GetGameStateId<DefaultState>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateB>()},
       {GameStateTraceType::kOnChildExit, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnExit, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<TopStateB>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateB>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateB>()},
   });
 }
@@ -1294,10 +1356,13 @@ TEST_F(GameStateMachineTest, ChangeStateDuringOnChildEnter) {
   MatchTrace({
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<TopStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnChildEnter, GetGameStateId<TopStateA>(),
+       GetGameStateId<ChildStateA>()},
+      {GameStateTraceType::kAbortChange, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateB>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<ChildStateA>()},
@@ -1306,6 +1371,7 @@ TEST_F(GameStateMachineTest, ChangeStateDuringOnChildEnter) {
        GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnExit, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<TopStateB>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateB>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateB>()},
   });
 }
@@ -1360,21 +1426,26 @@ TEST_F(GameStateMachineTest, ChangeStateDuringOnChildExit) {
   MatchTrace({
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<TopStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnChildEnter, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<ChildStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>(),
+       GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<DefaultState>()},
       {GameStateTraceType::kOnExit, GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnChildExit, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateA>()},
+      {GameStateTraceType::kAbortChange, GetGameStateId<DefaultState>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateB>()},
       {GameStateTraceType::kOnExit, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<TopStateB>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateB>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateB>()},
   });
 }
@@ -1399,6 +1470,7 @@ TEST_F(GameStateMachineTest, EnterContextValidationFails) {
       {GameStateTraceType::kRequestChange, GetGameStateId<InputContextState>()},
       {GameStateTraceType::kConstraintFailure,
        GetGameStateId<InputContextState>()},
+      {GameStateTraceType::kAbortChange, GetGameStateId<InputContextState>()},
   });
 }
 
@@ -1424,6 +1496,7 @@ TEST_F(GameStateMachineTest, EnterContextValidationSucceeds) {
   MatchTrace({
       {GameStateTraceType::kRequestChange, GetGameStateId<InputContextState>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<InputContextState>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<InputContextState>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<InputContextState>()},
   });
 }
@@ -1462,12 +1535,15 @@ TEST_F(GameStateMachineTest, ExitContextValidationFails) {
       {GameStateTraceType::kRequestChange,
        GetGameStateId<OutputContextState>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<OutputContextState>()},
+      {GameStateTraceType::kCompleteChange,
+       GetGameStateId<OutputContextState>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<OutputContextState>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<DefaultState>()},
       {GameStateTraceType::kOnExit, GetGameStateId<OutputContextState>()},
       {GameStateTraceType::kConstraintFailure,
        GetGameStateId<OutputContextState>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<DefaultState>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<DefaultState>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<DefaultState>()},
   });
 }
@@ -1510,10 +1586,13 @@ TEST_F(GameStateMachineTest, ExitContextValidationSucceeds) {
       {GameStateTraceType::kRequestChange,
        GetGameStateId<OutputContextState>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<OutputContextState>()},
+      {GameStateTraceType::kCompleteChange,
+       GetGameStateId<OutputContextState>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<OutputContextState>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<DefaultState>()},
       {GameStateTraceType::kOnExit, GetGameStateId<OutputContextState>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<DefaultState>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<DefaultState>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<DefaultState>()},
   });
 }
@@ -1590,12 +1669,15 @@ TEST_F(GameStateMachineTest, GameStateChangeChildState) {
   MatchTrace({
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<TopStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnChildEnter, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<ChildStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>(),
+       GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>(),
@@ -1606,6 +1688,8 @@ TEST_F(GameStateMachineTest, GameStateChangeChildState) {
       {GameStateTraceType::kOnChildEnter, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateB>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<ChildStateB>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>(),
+       GetGameStateId<ChildStateB>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<ChildStateB>()},
   });
@@ -1635,12 +1719,15 @@ TEST_F(GameStateMachineTest, GameStateChangeState) {
   MatchTrace({
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<TopStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnChildEnter, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<ChildStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>(),
+       GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>(),
@@ -1651,6 +1738,8 @@ TEST_F(GameStateMachineTest, GameStateChangeState) {
       {GameStateTraceType::kOnChildEnter, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateB>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<ChildStateB>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>(),
+       GetGameStateId<ChildStateB>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<ChildStateB>()},
   });
@@ -1677,12 +1766,15 @@ TEST_F(GameStateMachineTest, GameStateChangeExitState) {
   MatchTrace({
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<TopStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnChildEnter, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<ChildStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>(),
+       GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>(),
@@ -1690,6 +1782,8 @@ TEST_F(GameStateMachineTest, GameStateChangeExitState) {
       {GameStateTraceType::kOnExit, GetGameStateId<ChildStateA>()},
       {GameStateTraceType::kOnChildExit, GetGameStateId<TopStateA>(),
        GetGameStateId<ChildStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>(),
+       kNoGameStateId},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
   });
 }

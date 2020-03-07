@@ -12,16 +12,18 @@ std::string ToString(GameStateTraceType trace_type) {
   switch (trace_type) {
     case GameStateTraceType::kUnknown:
       return "Unknown";
-    case GameStateTraceType::kInvalidState:
-      return "InvalidState";
-    case GameStateTraceType::kInvalidParent:
-      return "InvalidParent";
+    case GameStateTraceType::kInvalidChangeState:
+      return "InvalidChangeState";
+    case GameStateTraceType::kInvalidChangeParent:
+      return "InvalidChangeParent";
     case GameStateTraceType::kConstraintFailure:
       return "ConstraintFailure";
     case GameStateTraceType::kRequestChange:
       return "RequestChange";
     case GameStateTraceType::kAbortChange:
       return "AbortChange";
+    case GameStateTraceType::kCompleteChange:
+      return "CompleteChange";
     case GameStateTraceType::kOnEnter:
       return "OnEnter";
     case GameStateTraceType::kOnExit:
@@ -107,14 +109,14 @@ bool GameStateMachine::ChangeState(GameStateId parent, GameStateId state) {
     parent_info = GetStateInfo(parent);
     if (parent_info == nullptr) {
       if (trace_level_ >= GameStateTraceLevel::kError) {
-        trace_handler_({GameStateTraceType::kInvalidParent, parent, state,
+        trace_handler_({GameStateTraceType::kInvalidChangeParent, parent, state,
                         "ChangeState", "Parent state is not registered"});
       }
       return false;
     }
     if (!parent_info->active) {
       if (trace_level_ >= GameStateTraceLevel::kError) {
-        trace_handler_({GameStateTraceType::kInvalidParent, parent, state,
+        trace_handler_({GameStateTraceType::kInvalidChangeParent, parent, state,
                         "ChangeState", "Parent state is not active"});
       }
       return false;
@@ -127,14 +129,14 @@ bool GameStateMachine::ChangeState(GameStateId parent, GameStateId state) {
     state_info = GetStateInfo(state);
     if (state_info == nullptr) {
       if (trace_level_ >= GameStateTraceLevel::kError) {
-        trace_handler_({GameStateTraceType::kInvalidState, parent, state,
+        trace_handler_({GameStateTraceType::kInvalidChangeState, parent, state,
                         "ChangeState", "new state is not registered"});
       }
       return false;
     }
     if (state_info->active) {
       if (trace_level_ >= GameStateTraceLevel::kError) {
-        trace_handler_({GameStateTraceType::kInvalidState, parent, state,
+        trace_handler_({GameStateTraceType::kInvalidChangeState, parent, state,
                         "ChangeState", "new state is already active"});
       }
       return false;
@@ -164,7 +166,7 @@ bool GameStateMachine::ChangeState(GameStateId parent, GameStateId state) {
     }
     if (!valid) {
       if (trace_level_ >= GameStateTraceLevel::kError) {
-        trace_handler_({GameStateTraceType::kInvalidParent, parent, state,
+        trace_handler_({GameStateTraceType::kInvalidChangeParent, parent, state,
                         "ChangeState",
                         "Parent state is not valid for new state"});
       }
@@ -228,9 +230,6 @@ void GameStateMachine::ProcessTransition() {
   // Cache current request
   GameStateInfo* parent_info = transition_parent_;
   GameStateInfo* new_state_info = transition_state_;
-  transition_ = false;
-  transition_parent_ = nullptr;
-  transition_state_ = nullptr;
 
   // Find states that need to exit.
   GameStateInfo* exit_info = top_state_;
@@ -244,8 +243,8 @@ void GameStateMachine::ProcessTransition() {
   while (exit_info != parent_info) {
     if (trace_level_ >= GameStateTraceLevel::kInfo) {
       trace_handler_(
-          {GameStateTraceType::kOnExit, kNoGameStateId, GetGameStateId(exit_info),
-           "Update",
+          {GameStateTraceType::kOnExit, kNoGameStateId,
+           GetGameStateId(exit_info), "Update",
            absl::StrCat("path=", GetStatePath(exit_info->id, kNoGameStateId))});
     }
     exit_info->instance->OnExit();
@@ -287,7 +286,8 @@ void GameStateMachine::ProcessTransition() {
     }
 
     // If a new transition was queued, start over.
-    if (transition_) {
+    if (transition_parent_ != parent_info ||
+        transition_state_ != new_state_info) {
       return;
     }
 
@@ -296,6 +296,15 @@ void GameStateMachine::ProcessTransition() {
 
   // Is there a new state?
   if (new_state_info == nullptr) {
+    if (trace_level_ >= GameStateTraceLevel::kInfo) {
+      trace_handler_({GameStateTraceType::kCompleteChange,
+                      GetGameStateId(parent_info),
+                      GetGameStateId(new_state_info), "Update",
+                      absl::StrCat("path=", GetCurrentStatePath())});
+    }
+    transition_ = false;
+    transition_parent_ = nullptr;
+    transition_state_ = nullptr;
     return;
   }
 
@@ -307,6 +316,15 @@ void GameStateMachine::ProcessTransition() {
                       GetGameStateId(new_state_info), "Update",
                       "enter context is not valid"});
     }
+    if (trace_level_ >= GameStateTraceLevel::kInfo) {
+      trace_handler_({GameStateTraceType::kAbortChange,
+                      GetGameStateId(parent_info),
+                      GetGameStateId(new_state_info), "Update",
+                      "enter context is not valid"});
+    }
+    transition_ = false;
+    transition_parent_ = nullptr;
+    transition_state_ = nullptr;
     return;
   }
 
@@ -345,6 +363,20 @@ void GameStateMachine::ProcessTransition() {
                                             kNoGameStateId))});
   }
   new_state_info->instance->OnEnter();
+
+  // Reset transition if we are done.
+  if (transition_parent_ == parent_info &&
+      transition_state_ == new_state_info) {
+    if (trace_level_ >= GameStateTraceLevel::kInfo) {
+      trace_handler_({GameStateTraceType::kCompleteChange,
+                      GetGameStateId(parent_info),
+                      GetGameStateId(new_state_info), "Update",
+                      absl::StrCat("path=", GetCurrentStatePath())});
+    }
+    transition_ = false;
+    transition_parent_ = nullptr;
+    transition_state_ = nullptr;
+  }
 }
 
 void GameStateMachine::CreateInstance(GameStateInfo* state_info) {
@@ -360,8 +392,8 @@ void GameStateMachine::DoRegister(
     std::vector<GameStateId> valid_parents,
     std::vector<ContextConstraint> constraints,
     std::function<std::unique_ptr<GameState>()> factory) {
-  CHECK(states_.find(id) == states_.end()) << "State " << GetGameStateName(id)
-                                           << " already registered.";
+  CHECK(states_.find(id) == states_.end())
+      << "State " << GetGameStateName(id) << " already registered.";
   auto& state_info = states_[id];
   state_info = std::make_unique<GameStateInfo>();
   state_info->id = id;

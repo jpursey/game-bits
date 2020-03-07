@@ -32,17 +32,18 @@ enum class GameStateTraceType : int {
   kUnknown,  // Initial value for a default constructed trace.
 
   // Error trace
-  kInvalidState,       // The new state is not registered or is already active.
-  kInvalidParent,      // The parent state is not registered or is not active.
-  kConstraintFailure,  // The context constraints were not met.
+  kInvalidChangeState,  // The new state is not registered or is already active.
+  kInvalidChangeParent,  // The parent state is not registered or is not active.
+  kConstraintFailure,    // The context constraints were not met.
 
   // Info trace
-  kRequestChange,  // Change state requested.
-  kAbortChange,    // Abort state change.
-  kOnEnter,        // State is about to be entered.
-  kOnExit,         // State is about to be exited.
-  kOnChildEnter,   // Child state was entered.
-  kOnChildExit,    // Child state was exited.
+  kRequestChange,   // Change state requested.
+  kAbortChange,     // Abort state change.
+  kCompleteChange,  // State change is completed.
+  kOnEnter,         // State is about to be entered.
+  kOnExit,          // State is about to be exited.
+  kOnChildEnter,    // Child state was entered.
+  kOnChildExit,     // Child state was exited.
 
   // Verbose trace
   kOnUpdate,  // Child state is being updated.
@@ -68,12 +69,12 @@ struct GameStateTrace {
   // The type of record this trace represents.
   GameStateTraceType type = GameStateTraceType::kUnknown;
 
-  // Parent state for the trace. This is set only for kInvalidState,
-  // kInvalidParent, kRequestChange, kAbortChange, kOnChildEnter, and
-  // kOnChildExit.
+  // Parent state for the trace. This is set only for kInvalidChangeState,
+  // kInvalidChangeParent, kRequestChange, kAbortChange, kCompleteChange,
+  // kOnChildEnter, and kOnChildExit.
   GameStateId parent = kNoGameStateId;
 
-  // State for the trace. This is always set. 
+  // State for the trace. This is always set.
   GameStateId state = kNoGameStateId;
 
   // GameStateMachine public method that the trace occurred in.
@@ -217,8 +218,8 @@ class GameStateMachine final {
 
   // Changes the current state to the specified state.
   //
-  // If 'parent' is kNoGameStateId, this will change the top most state, otherwise
-  // 'parent' must be a state that already is active. If 'state' is
+  // If 'parent' is kNoGameStateId, this will change the top most state,
+  // otherwise 'parent' must be a state that already is active. If 'state' is
   // kNoGameStateId, then the child state of 'parent' will exit (leaving the
   // parent with no children). If 'state' is not kNoGameStateId, then it will
   // become the new child of 'parent'.
