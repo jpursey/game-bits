@@ -39,7 +39,7 @@ std::string ToString(GameStateTraceType trace_type) {
 std::string ToString(const GameStateTrace& trace) {
   std::string result = absl::StrCat("[GameState] ", trace.method, ": ",
                                     ToString(trace.type), "(");
-  if (trace.parent != kNoGameState) {
+  if (trace.parent != kNoGameStateId) {
     result = absl::StrCat(result, "p=", GetGameStateName(trace.parent), ",");
   }
   result = absl::StrCat(result, "s=", GetGameStateName(trace.state), ")");
@@ -103,7 +103,7 @@ GameState* GameStateMachine::GetState(GameStateId state) {
 bool GameStateMachine::ChangeState(GameStateId parent, GameStateId state) {
   // Validate the parent.
   GameStateInfo* parent_info = nullptr;
-  if (parent != kNoGameState) {
+  if (parent != kNoGameStateId) {
     parent_info = GetStateInfo(parent);
     if (parent_info == nullptr) {
       if (trace_level_ >= GameStateTraceLevel::kError) {
@@ -123,7 +123,7 @@ bool GameStateMachine::ChangeState(GameStateId parent, GameStateId state) {
 
   // Validate the new state.
   GameStateInfo* state_info = nullptr;
-  if (state != kNoGameState) {
+  if (state != kNoGameStateId) {
     state_info = GetStateInfo(state);
     if (state_info == nullptr) {
       if (trace_level_ >= GameStateTraceLevel::kError) {
@@ -142,7 +142,7 @@ bool GameStateMachine::ChangeState(GameStateId parent, GameStateId state) {
   }
 
   // Make sure that it is actually a change.
-  if (parent == kNoGameState) {
+  if (parent == kNoGameStateId) {
     if (top_state_ == state_info) {
       return true;
     }
@@ -151,7 +151,7 @@ bool GameStateMachine::ChangeState(GameStateId parent, GameStateId state) {
   }
 
   // Validate the new state can be parented as requested.
-  if (parent != kNoGameState && state != kNoGameState &&
+  if (parent != kNoGameStateId && state != kNoGameStateId &&
       state_info->valid_parents_type != GameStateList::kAll) {
     bool valid = true;
     if (state_info->valid_parents_type == GameStateList::kNone) {
@@ -208,10 +208,10 @@ void GameStateMachine::Update(absl::Duration delta_time) {
       if (state_info->update_id != update_id) {
         if (trace_level_ >= GameStateTraceLevel::kVerbose) {
           trace_handler_(
-              {GameStateTraceType::kOnUpdate, kNoGameState,
+              {GameStateTraceType::kOnUpdate, kNoGameStateId,
                GetGameStateId(state_info), "Update",
                absl::StrCat("path=", GetStatePath(GetGameStateId(state_info),
-                                                  kNoGameState))});
+                                                  kNoGameStateId))});
         }
         state_info->instance->OnUpdate(delta_time);
       }
@@ -244,16 +244,16 @@ void GameStateMachine::ProcessTransition() {
   while (exit_info != parent_info) {
     if (trace_level_ >= GameStateTraceLevel::kInfo) {
       trace_handler_(
-          {GameStateTraceType::kOnExit, kNoGameState, GetGameStateId(exit_info),
+          {GameStateTraceType::kOnExit, kNoGameStateId, GetGameStateId(exit_info),
            "Update",
-           absl::StrCat("path=", GetStatePath(exit_info->id, kNoGameState))});
+           absl::StrCat("path=", GetStatePath(exit_info->id, kNoGameStateId))});
     }
     exit_info->instance->OnExit();
 
     // Complete the context.
     if (!exit_info->instance->context_.Assign(ValidatedContext{})) {
       if (trace_level_ >= GameStateTraceLevel::kError) {
-        trace_handler_({GameStateTraceType::kConstraintFailure, kNoGameState,
+        trace_handler_({GameStateTraceType::kConstraintFailure, kNoGameStateId,
                         GetGameStateId(exit_info), "Update",
                         "exit context could not complete"});
       }
@@ -281,7 +281,7 @@ void GameStateMachine::ProcessTransition() {
             {GameStateTraceType::kOnChildExit, GetGameStateId(exit_parent),
              GetGameStateId(exit_info), "Update",
              absl::StrCat("path=", GetStatePath(GetGameStateId(exit_info),
-                                                kNoGameState))});
+                                                kNoGameStateId))});
       }
       exit_parent->instance->OnChildExit(exit_info->id);
     }
@@ -303,7 +303,7 @@ void GameStateMachine::ProcessTransition() {
   ValidatedContext new_context(context_, new_state_info->constraints);
   if (!new_context.IsValid()) {
     if (trace_level_ >= GameStateTraceLevel::kError) {
-      trace_handler_({GameStateTraceType::kConstraintFailure, kNoGameState,
+      trace_handler_({GameStateTraceType::kConstraintFailure, kNoGameStateId,
                       GetGameStateId(new_state_info), "Update",
                       "enter context is not valid"});
     }
@@ -339,10 +339,10 @@ void GameStateMachine::ProcessTransition() {
   // Notify the new state that it is entered.
   if (trace_level_ >= GameStateTraceLevel::kInfo) {
     trace_handler_(
-        {GameStateTraceType::kOnEnter, kNoGameState,
+        {GameStateTraceType::kOnEnter, kNoGameStateId,
          GetGameStateId(new_state_info), "Update",
          absl::StrCat("path=", GetStatePath(GetGameStateId(new_state_info),
-                                            kNoGameState))});
+                                            kNoGameStateId))});
   }
   new_state_info->instance->OnEnter();
 }
@@ -378,7 +378,7 @@ void GameStateMachine::DoRegister(
 std::string GameStateMachine::GetStatePath(GameStateId parent,
                                            GameStateId state) {
   std::vector<std::string> names;
-  if (parent != kNoGameState) {
+  if (parent != kNoGameStateId) {
     GameStateInfo* current_state = top_state_;
     while (current_state != nullptr && current_state->id != parent) {
       names.emplace_back(GetGameStateName(current_state->id));
@@ -386,7 +386,7 @@ std::string GameStateMachine::GetStatePath(GameStateId parent,
     }
     names.emplace_back(GetGameStateName(parent));
   }
-  if (state != kNoGameState) {
+  if (state != kNoGameStateId) {
     names.emplace_back(GetGameStateName(state));
   }
   if (names.empty()) {

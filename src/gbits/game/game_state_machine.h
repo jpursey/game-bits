@@ -71,10 +71,10 @@ struct GameStateTrace {
   // Parent state for the trace. This is set only for kInvalidState,
   // kInvalidParent, kRequestChange, kAbortChange, kOnChildEnter, and
   // kOnChildExit.
-  GameStateId parent = kNoGameState;
+  GameStateId parent = kNoGameStateId;
 
   // State for the trace. This is always set. 
-  GameStateId state = kNoGameState;
+  GameStateId state = kNoGameStateId;
 
   // GameStateMachine public method that the trace occurred in.
   std::string_view method;
@@ -104,7 +104,7 @@ class GameStateInfo {
   friend GameStateId GetGameStateId(GameStateInfo* info);
 
   // Set at registration.
-  GameStateId id = kNoGameState;
+  GameStateId id = kNoGameStateId;
   GameStateLifetime::Type lifetime = GameStateLifetime::Type::kGlobal;
   GameStateList::Type valid_parents_type = GameStateList::kNone;
   std::vector<GameStateId> valid_parents;
@@ -120,7 +120,7 @@ class GameStateInfo {
 };
 
 inline GameStateId GetGameStateId(GameStateInfo* info) {
-  return info != nullptr ? info->id : kNoGameState;
+  return info != nullptr ? info->id : kNoGameStateId;
 }
 
 //------------------------------------------------------------------------------
@@ -217,10 +217,10 @@ class GameStateMachine final {
 
   // Changes the current state to the specified state.
   //
-  // If 'parent' is kNoGameState, this will change the top most state, otherwise
+  // If 'parent' is kNoGameStateId, this will change the top most state, otherwise
   // 'parent' must be a state that already is active. If 'state' is
-  // kNoGameState, then the child state of 'parent' will exit (leaving the
-  // parent with no children). If 'state' is not kNoGameState, then it will
+  // kNoGameStateId, then the child state of 'parent' will exit (leaving the
+  // parent with no children). If 'state' is not kNoGameStateId, then it will
   // become the new child of 'parent'.
   //
   // This function does not make the state change immediately. It will happen
@@ -232,7 +232,7 @@ class GameStateMachine final {
   // This function returns true if the requested state change is valid at the
   // time this was called. A state change is valid if all of the following are
   // true:
-  //   - 'parent' is kNoGameState or is an active state.
+  //   - 'parent' is kNoGameStateId or is an active state.
   //   - 'parent' is one of the allowed parent states for 'state'
   //   - 'state' is not currently active.
   //

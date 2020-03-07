@@ -26,10 +26,10 @@ GameStateId GetGameStateId() {
 }
 
 // Constant that represents the GameStateId for no state.
-inline constexpr GameStateId kNoGameState = nullptr;
+inline constexpr GameStateId kNoGameStateId = nullptr;
 
 // Returns the state name for the specified state. This always returns a valid
-// value (even if kNoGameState is passed in).
+// value (even if kNoGameStateId is passed in).
 const char* GetGameStateName(GameStateId id);
 
 template <typename StateType>
@@ -39,7 +39,7 @@ const char* GetGameStateName() {
 
 // Sets the state name for the specified state. The 'name' passed in must remain
 // valid as long as it is used for the game state name. It is invalid to set the
-// name for kNoGameState.
+// name for kNoGameStateId.
 void SetGameStateName(GameStateId id, const char* name);
 
 template <typename StateType>
