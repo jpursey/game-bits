@@ -43,7 +43,7 @@ std::string ContextConstraint::ToString() const {
       result << "out-optional ";
       break;
     case kOutRequired:
-      result << "out-required";
+      result << "out-required ";
       break;
     case kScoped:
       result << "scoped ";
