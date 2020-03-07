@@ -65,10 +65,21 @@ struct GameStateTrace {
   }
   bool IsVerbose() const { return type >= GameStateTraceType::kOnUpdate; }
 
+  // The type of record this trace represents.
   GameStateTraceType type = GameStateTraceType::kUnknown;
+
+  // Parent state for the trace. This is set only for kInvalidState,
+  // kInvalidParent, kRequestChange, kAbortChange, kOnChildEnter, and
+  // kOnChildExit.
   GameStateId parent = kNoGameState;
+
+  // State for the trace. This is always set. 
   GameStateId state = kNoGameState;
+
+  // GameStateMachine public method that the trace occurred in.
   std::string_view method;
+
+  // Human readable message with additional information.
   std::string message;
 };
 
@@ -232,19 +243,6 @@ class GameStateMachine final {
   // enter), then an error will be logged and any registered error handler will
   // be logged.
   bool ChangeState(GameStateId parent, GameStateId state);
-  template <typename StateType>
-  bool ChangeState(GameStateId parent) {
-    return ChangeState(parent, GetGameStateId<StateType>());
-  }
-
-  // Convenience method for ChangeState which always changes the top state.
-  bool ChangeTopState(GameStateId state) {
-    return ChangeState(kNoGameState, state);
-  }
-  template <typename StateType>
-  bool ChangeTopState() {
-    return ChangeState(kNoGameState, GetGameStateId<StateType>());
-  }
 
   // Updates the state machine, performing any requested state changes and
   // calling update on all active states. States are updated from parent to
@@ -271,7 +269,7 @@ class GameStateMachine final {
   ValidatedContext context_;
   GameStateTraceLevel trace_level_ = GameStateTraceLevel::kError;
   GameStateTraceHandler trace_handler_;
-  absl::flat_hash_map<GameStateId, GameStateInfo> states_;
+  absl::flat_hash_map<GameStateId, std::unique_ptr<GameStateInfo>> states_;
   GameStateInfo* top_state_ = nullptr;
   bool transition_ = false;
   GameStateInfo* transition_parent_ = nullptr;

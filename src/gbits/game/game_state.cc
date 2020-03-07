@@ -50,16 +50,6 @@ bool GameState::ChangeState(GameStateId state) {
   return machine_->ChangeState(GetParentId(), state);
 }
 
-bool GameState::ChangeTopState(GameStateId state) {
-  if (machine_ == nullptr) {
-    LOG(ERROR) << "GameState::ChangeTopState: " << GetGameStateName(info_->id)
-               << ": Cannot change to sibling state " << GetGameStateName(state)
-               << " as the state is not active.";
-    return false;
-  }
-  return machine_->ChangeTopState(state);
-}
-
 bool GameState::ExitState() {
   if (machine_ == nullptr) {
     LOG(ERROR) << "GameState::ExitState: " << GetGameStateName(info_->id)

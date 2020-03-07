@@ -80,7 +80,7 @@ template <typename... StateTypes>
 struct GameStates : GameStateList {
   static inline constexpr Type kType = kExplicit;
   static std::vector<GameStateId> GetIds() {
-    return {GetGameStateId(StateTypes)...};
+    return {GetGameStateId<StateTypes>()...};
   }
 };
 
@@ -161,22 +161,25 @@ class GameState {
   GameState* GetParent() const;
   GameStateId GetChildId() const;
   GameState* GetChild() const;
+  GameStateMachine* GetStateMachine() const {
+    return machine_;
+  }
 
   // Changes the child for this state. See GameStateMachine::ChangeState() for
   // details on state change handling.
   bool ChangeChildState(GameStateId state);
   template <typename StateType>
   bool ChangeChildState() {
-    return ChangeChild(GetGameStateId<StateType>());
+    return ChangeChildState(GetGameStateId<StateType>());
   }
 
-  // Exits this state and switches to the specified state. See
-  // GameStateMachine::ChangeState() for details on state change handling.
+  // Exits this state and switches to the specified state under the same parent.
+  // See GameStateMachine::ChangeState() for details on state change handling.
   bool ChangeState(GameStateId state);
-
-  // Changes the top state for the state machine. See
-  // GameStateMachine::ChangeState() for details on state change handling.
-  bool ChangeTopState(GameStateId state);
+  template <typename StateType>
+  bool ChangeState() {
+    return ChangeState(GetGameStateId<StateType>());
+  }
 
   // Exits this state. See GameStateMachine::ChangeState() for details on state
   // change handling.

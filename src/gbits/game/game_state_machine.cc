@@ -76,7 +76,7 @@ const GameStateInfo* GameStateMachine::GetStateInfo(GameStateId id) const {
   if (it == states_.end()) {
     return nullptr;
   }
-  return &it->second;
+  return it->second.get();
 }
 
 GameStateInfo* GameStateMachine::GetStateInfo(GameStateId id) {
@@ -84,7 +84,7 @@ GameStateInfo* GameStateMachine::GetStateInfo(GameStateId id) {
   if (it == states_.end()) {
     return nullptr;
   }
-  return &it->second;
+  return it->second.get();
 }
 
 bool GameStateMachine::IsActive(GameStateId state) const {
@@ -141,8 +141,17 @@ bool GameStateMachine::ChangeState(GameStateId parent, GameStateId state) {
     }
   }
 
+  // Make sure that it is actually a change.
+  if (parent == kNoGameState) {
+    if (top_state_ == state_info) {
+      return true;
+    }
+  } else if (parent_info->child == state_info) {
+    return true;
+  }
+
   // Validate the new state can be parented as requested.
-  if (parent != kNoGameState &&
+  if (parent != kNoGameState && state != kNoGameState &&
       state_info->valid_parents_type != GameStateList::kAll) {
     bool valid = true;
     if (state_info->valid_parents_type == GameStateList::kNone) {
@@ -244,8 +253,7 @@ void GameStateMachine::ProcessTransition() {
     // Complete the context.
     if (!exit_info->instance->context_.Assign(ValidatedContext{})) {
       if (trace_level_ >= GameStateTraceLevel::kError) {
-        trace_handler_({GameStateTraceType::kConstraintFailure,
-                        GetGameStateId(exit_info->parent),
+        trace_handler_({GameStateTraceType::kConstraintFailure, kNoGameState,
                         GetGameStateId(exit_info), "Update",
                         "exit context could not complete"});
       }
@@ -295,8 +303,7 @@ void GameStateMachine::ProcessTransition() {
   ValidatedContext new_context(context_, new_state_info->constraints);
   if (!new_context.IsValid()) {
     if (trace_level_ >= GameStateTraceLevel::kError) {
-      trace_handler_({GameStateTraceType::kConstraintFailure,
-                      GetGameStateId(parent_info),
+      trace_handler_({GameStateTraceType::kConstraintFailure, kNoGameState,
                       GetGameStateId(new_state_info), "Update",
                       "enter context is not valid"});
     }
@@ -327,6 +334,7 @@ void GameStateMachine::ProcessTransition() {
   if (new_state_info->lifetime == GameStateLifetime::Type::kActive) {
     CreateInstance(new_state_info);
   }
+  new_state_info->instance->context_ = std::move(new_context);
 
   // Notify the new state that it is entered.
   if (trace_level_ >= GameStateTraceLevel::kInfo) {
@@ -352,17 +360,18 @@ void GameStateMachine::DoRegister(
     std::vector<GameStateId> valid_parents,
     std::vector<ContextConstraint> constraints,
     std::function<std::unique_ptr<GameState>()> factory) {
-  CHECK(states_.find(id) == states_.end())
-      << "State " << GetGameStateName(id) << " already registered.";
+  CHECK(states_.find(id) == states_.end()) << "State " << GetGameStateName(id)
+                                           << " already registered.";
   auto& state_info = states_[id];
-  state_info.id = id;
-  state_info.lifetime = lifetime;
-  state_info.valid_parents_type = valid_parents_type;
-  state_info.valid_parents = std::move(valid_parents);
-  state_info.constraints = std::move(constraints);
-  state_info.factory = std::move(factory);
+  state_info = std::make_unique<GameStateInfo>();
+  state_info->id = id;
+  state_info->lifetime = lifetime;
+  state_info->valid_parents_type = valid_parents_type;
+  state_info->valid_parents = std::move(valid_parents);
+  state_info->constraints = std::move(constraints);
+  state_info->factory = std::move(factory);
   if (lifetime == GameStateLifetime::kGlobal) {
-    CreateInstance(&state_info);
+    CreateInstance(state_info.get());
   }
 }
 
