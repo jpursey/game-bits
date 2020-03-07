@@ -32,9 +32,13 @@ enum class GameStateTraceType : int {
   kUnknown,  // Initial value for a default constructed trace.
 
   // Error trace
-  kInvalidChangeState,  // The new state is not registered or is already active.
-  kInvalidChangeParent,  // The parent state is not registered or is not active.
-  kConstraintFailure,    // The context constraints were not met.
+  kInvalidChangeState,    // The new state is not registered or is already
+                          // active.
+  kInvalidChangeParent,   // The parent state is not registered, not active, or
+                          // not allowed.
+  kInvalidChangeSibling,  // The sibling state is not registered or is not
+                          // allowed.
+  kConstraintFailure,     // The context constraints were not met.
 
   // Info trace
   kRequestChange,   // Change state requested.
@@ -109,6 +113,8 @@ class GameStateInfo {
   GameStateLifetime::Type lifetime = GameStateLifetime::Type::kGlobal;
   GameStateList::Type valid_parents_type = GameStateList::kNone;
   std::vector<GameStateId> valid_parents;
+  GameStateList::Type valid_siblings_type = GameStateList::kNone;
+  std::vector<GameStateId> valid_siblings;
   std::vector<ContextConstraint> constraints;
   std::function<std::unique_ptr<GameState>()> factory;
 
@@ -187,7 +193,8 @@ class GameStateMachine final {
   void Register() {
     DoRegister(ContextType::Get<StateType>()->Key(), StateType::Lifetime::kType,
                StateType::ParentStates::kType,
-               StateType::ParentStates::GetIds(),
+               StateType::ParentStates::GetIds(), StateType::SiblingStates::kType,
+               StateType::SiblingStates::GetIds(),
                StateType::Contract::GetConstraints(),
                []() -> std::unique_ptr<GameState> {
                  return std::make_unique<StateType>();
@@ -263,6 +270,8 @@ class GameStateMachine final {
   void DoRegister(GameStateId id, GameStateLifetime::Type lifetime,
                   GameStateList::Type valid_parents_type,
                   std::vector<GameStateId> valid_parents,
+                  GameStateList::Type valid_siblings_type,
+                  std::vector<GameStateId> valid_siblings,
                   std::vector<ContextConstraint> constraints,
                   std::function<std::unique_ptr<GameState>()> factory);
   void ProcessTransition();

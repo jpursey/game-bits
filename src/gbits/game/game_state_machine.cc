@@ -16,6 +16,8 @@ std::string ToString(GameStateTraceType trace_type) {
       return "InvalidChangeState";
     case GameStateTraceType::kInvalidChangeParent:
       return "InvalidChangeParent";
+    case GameStateTraceType::kInvalidChangeSibling:
+      return "InvalidChangeSibling";
     case GameStateTraceType::kConstraintFailure:
       return "ConstraintFailure";
     case GameStateTraceType::kRequestChange:
@@ -103,6 +105,14 @@ GameState* GameStateMachine::GetState(GameStateId state) {
 }
 
 bool GameStateMachine::ChangeState(GameStateId parent, GameStateId state) {
+  // If a transition is in progress, make sure it is different.
+  if (transition_) {
+    if (parent == GetGameStateId(transition_parent_) &&
+        state == GetGameStateId(transition_state_)) {
+      return true;
+    }
+  }
+
   // Validate the parent.
   GameStateInfo* parent_info = nullptr;
   if (parent != kNoGameStateId) {
@@ -144,27 +154,39 @@ bool GameStateMachine::ChangeState(GameStateId parent, GameStateId state) {
   }
 
   // Make sure that it is actually a change.
-  if (parent == kNoGameStateId) {
-    if (top_state_ == state_info) {
+  if (!transition_) {
+    if (parent == kNoGameStateId) {
+      if (top_state_ == state_info) {
+        return true;
+      }
+    } else if (parent_info->child == state_info) {
       return true;
     }
-  } else if (parent_info->child == state_info) {
-    return true;
+  }
+
+  // Validate the new state can be the next state.
+  GameStateInfo* sibling_info =
+      (parent_info == nullptr ? top_state_ : parent_info->child);
+  if (state_info != nullptr && sibling_info != nullptr &&
+      sibling_info->valid_siblings_type != GameStateList::kAll) {
+    if (std::find(sibling_info->valid_siblings.begin(),
+                  sibling_info->valid_siblings.end(),
+                  state) == sibling_info->valid_siblings.end()) {
+      if (trace_level_ >= GameStateTraceLevel::kError) {
+        trace_handler_({GameStateTraceType::kInvalidChangeSibling, parent, state,
+                        "ChangeState",
+                        "Sibling state is not valid for new state"});
+      }
+      return false;
+    }
   }
 
   // Validate the new state can be parented as requested.
   if (parent != kNoGameStateId && state != kNoGameStateId &&
       state_info->valid_parents_type != GameStateList::kAll) {
-    bool valid = true;
-    if (state_info->valid_parents_type == GameStateList::kNone) {
-      valid = false;
-    } else {
-      CHECK_EQ(state_info->valid_parents_type, GameStateList::kExplicit);
-      valid = (std::find(state_info->valid_parents.begin(),
-                         state_info->valid_parents.end(),
-                         parent) != state_info->valid_parents.end());
-    }
-    if (!valid) {
+    if (std::find(state_info->valid_parents.begin(),
+                  state_info->valid_parents.end(),
+                  parent) == state_info->valid_parents.end()) {
       if (trace_level_ >= GameStateTraceLevel::kError) {
         trace_handler_({GameStateTraceType::kInvalidChangeParent, parent, state,
                         "ChangeState",
@@ -390,6 +412,8 @@ void GameStateMachine::DoRegister(
     GameStateId id, GameStateLifetime::Type lifetime,
     GameStateList::Type valid_parents_type,
     std::vector<GameStateId> valid_parents,
+    GameStateList::Type valid_siblings_type,
+    std::vector<GameStateId> valid_siblings,
     std::vector<ContextConstraint> constraints,
     std::function<std::unique_ptr<GameState>()> factory) {
   CHECK(states_.find(id) == states_.end())
@@ -400,6 +424,8 @@ void GameStateMachine::DoRegister(
   state_info->lifetime = lifetime;
   state_info->valid_parents_type = valid_parents_type;
   state_info->valid_parents = std::move(valid_parents);
+  state_info->valid_siblings_type = valid_siblings_type;
+  state_info->valid_siblings = std::move(valid_siblings);
   state_info->constraints = std::move(constraints);
   state_info->factory = std::move(factory);
   if (lifetime == GameStateLifetime::kGlobal) {

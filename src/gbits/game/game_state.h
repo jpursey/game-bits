@@ -118,12 +118,14 @@ struct ActiveGameStateLifetime : GameStateLifetime {
 // Represents a game state in the game.
 //
 // Each game state should derive from GameState and override the relevant
-// functions. The derived class must conform to the following requirements:
+// functions. The derived class must conform to the following:
 //   - It should declare its context contract by defining a Contract alias
 //     of type ContextContract<> in their public section. Without this, the
 //     Context() method is not useful.
-//   - It should declare a ParentStates alias if it is intended to be used as a
-//     child state in the hierarchy.
+//   - It should declare a ParentStates alias if it limited where it is valid as
+//     a child state in the hierarchy.
+//   - It should declare a SiblingStates alias if it limited which sibling
+//     states can be switched to.
 //   - It should declare a Lifetime alias if the state has specific lifetime
 //     requirements.
 //   - It must have a default constructor (no parameters). This is called by the
@@ -144,6 +146,12 @@ class GameState {
   // GameStates<A, B, C, ...>.
   using ParentStates = AllGameStates;
 
+  // SiblingStates define which states (in addition to the root) this state can
+  // switch to under the same parent. By default a game state may switch to any
+  // other state. Other options are NoGameStates, or list specific states with
+  // GameStates<A, B, C, ...>.
+  using SiblingStates = AllGameStates;
+
   // Lifetime defines when the class will be created and deleted. By default, a
   // game state has a global lifetime, which means it will be constructed once
   // at state machine registration and deleted when the state machine is
@@ -161,9 +169,7 @@ class GameState {
   GameState* GetParent() const;
   GameStateId GetChildId() const;
   GameState* GetChild() const;
-  GameStateMachine* GetStateMachine() const {
-    return machine_;
-  }
+  GameStateMachine* GetStateMachine() const { return machine_; }
 
   // Changes the child for this state. See GameStateMachine::ChangeState() for
   // details on state change handling.

@@ -108,6 +108,13 @@ struct ChildStateA : TestState<ChildStateA> {
 struct ChildStateB : TestState<ChildStateB> {
   using ParentStates = GameStates<TopStateA, TopStateB>;
 };
+struct SiblingStateB;
+struct SiblingStateA : TestState<SiblingStateA> {
+  using SiblingStates = GameStates<SiblingStateB>;
+};
+struct SiblingStateB : TestState<SiblingStateB> {
+  using SiblingStates = GameStates<SiblingStateA>;
+};
 struct GlobalState : TestState<GlobalState> {
   using Lifetime = GlobalGameStateLifetime;
 };
@@ -144,6 +151,8 @@ class GameStateMachineTest : public ::testing::Test {
     SetGameStateName<TopStateB>("TopStateB");
     SetGameStateName<ChildStateA>("ChildStateA");
     SetGameStateName<ChildStateB>("ChildStateB");
+    SetGameStateName<SiblingStateA>("SiblingStateA");
+    SetGameStateName<SiblingStateB>("SiblingStateB");
     SetGameStateName<GlobalState>("GlobalState");
     SetGameStateName<ActiveState>("ActiveState");
     SetGameStateName<AllParentsState>("AllParentsState");
