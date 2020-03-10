@@ -178,9 +178,9 @@ class GameStateMachine final {
   // This leaves any existing handlers in place, and adds this handler in
   // addition. See GameStateTrace for more information on trace output.
   void AddTraceHandler(GameStateTraceHandler handler) {
-    auto new_handler = [handler_1 = std::move(trace_handler_),
-                        handler_2 =
-                            std::move(handler)](const GameStateTrace& trace) {
+    auto new_handler = [
+      handler_1 = std::move(trace_handler_), handler_2 = std::move(handler)
+    ](const GameStateTrace& trace) {
       handler_1(trace);
       handler_2(trace);
     };
@@ -191,14 +191,14 @@ class GameStateMachine final {
   // is registered, it can be used with the ChangeState() function.
   template <typename StateType>
   void Register() {
-    DoRegister(ContextType::Get<StateType>()->Key(), StateType::Lifetime::kType,
-               StateType::ParentStates::kType,
-               StateType::ParentStates::GetIds(), StateType::SiblingStates::kType,
-               StateType::SiblingStates::GetIds(),
-               StateType::Contract::GetConstraints(),
-               []() -> std::unique_ptr<GameState> {
-                 return std::make_unique<StateType>();
-               });
+    DoRegister(
+        ContextType::Get<StateType>()->Key(), StateType::Lifetime::kType,
+        StateType::ParentStates::kType, StateType::ParentStates::GetIds(),
+        StateType::SiblingStates::kType, StateType::SiblingStates::GetIds(),
+        StateType::Contract::GetConstraints(),
+        []() -> std::unique_ptr<GameState> {
+          return std::make_unique<StateType>();
+        });
   }
 
   // Returns true if the specified state is currently active.

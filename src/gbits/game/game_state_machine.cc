@@ -173,8 +173,8 @@ bool GameStateMachine::ChangeState(GameStateId parent, GameStateId state) {
                   sibling_info->valid_siblings.end(),
                   state) == sibling_info->valid_siblings.end()) {
       if (trace_level_ >= GameStateTraceLevel::kError) {
-        trace_handler_({GameStateTraceType::kInvalidChangeSibling, parent, state,
-                        "ChangeState",
+        trace_handler_({GameStateTraceType::kInvalidChangeSibling, parent,
+                        state, "ChangeState",
                         "Sibling state is not valid for new state"});
       }
       return false;
@@ -416,8 +416,8 @@ void GameStateMachine::DoRegister(
     std::vector<GameStateId> valid_siblings,
     std::vector<ContextConstraint> constraints,
     std::function<std::unique_ptr<GameState>()> factory) {
-  CHECK(states_.find(id) == states_.end())
-      << "State " << GetGameStateName(id) << " already registered.";
+  CHECK(states_.find(id) == states_.end()) << "State " << GetGameStateName(id)
+                                           << " already registered.";
   auto& state_info = states_[id];
   state_info = std::make_unique<GameStateInfo>();
   state_info->id = id;
