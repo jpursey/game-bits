@@ -333,6 +333,83 @@ TEST_F(GameStateMachineTest, ChangeTopState) {
   });
 }
 
+TEST_F(GameStateMachineTest, ChangeTopStateInvalidSibling) {
+  DefaultState::Reset();
+  SiblingStateA::Reset();
+
+  state_machine_->Register<DefaultState>();
+  state_machine_->Register<SiblingStateA>();
+  EXPECT_TRUE(state_machine_->ChangeState(kNoGameStateId,
+                                          GetGameStateId<SiblingStateA>()));
+  state_machine_->Update(absl::Milliseconds(1));
+  EXPECT_FALSE(state_machine_->ChangeState(kNoGameStateId,
+                                           GetGameStateId<DefaultState>()));
+  EXPECT_TRUE(state_machine_->IsActive<SiblingStateA>());
+  EXPECT_FALSE(state_machine_->IsActive<DefaultState>());
+  MatchTrace({
+      {GameStateTraceType::kRequestChange, GetGameStateId<SiblingStateA>()},
+      {GameStateTraceType::kOnEnter, GetGameStateId<SiblingStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<SiblingStateA>()},
+      {GameStateTraceType::kOnUpdate, GetGameStateId<SiblingStateA>()},
+      {GameStateTraceType::kInvalidChangeSibling,
+       GetGameStateId<DefaultState>()},
+  });
+}
+
+TEST_F(GameStateMachineTest, ChangeTopStateValidSibling) {
+  SiblingStateA::Reset();
+  SiblingStateB::Reset();
+
+  state_machine_->Register<SiblingStateA>();
+  state_machine_->Register<SiblingStateB>();
+  EXPECT_TRUE(state_machine_->ChangeState(kNoGameStateId,
+                                          GetGameStateId<SiblingStateA>()));
+  state_machine_->Update(absl::Milliseconds(1));
+  EXPECT_TRUE(state_machine_->ChangeState(kNoGameStateId,
+                                          GetGameStateId<SiblingStateB>()));
+  state_machine_->Update(absl::Milliseconds(1));
+  EXPECT_FALSE(state_machine_->IsActive<SiblingStateA>());
+  EXPECT_TRUE(state_machine_->IsActive<SiblingStateB>());
+  MatchTrace({
+      {GameStateTraceType::kRequestChange, GetGameStateId<SiblingStateA>()},
+      {GameStateTraceType::kOnEnter, GetGameStateId<SiblingStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<SiblingStateA>()},
+      {GameStateTraceType::kOnUpdate, GetGameStateId<SiblingStateA>()},
+      {GameStateTraceType::kRequestChange, GetGameStateId<SiblingStateB>()},
+      {GameStateTraceType::kOnExit, GetGameStateId<SiblingStateA>()},
+      {GameStateTraceType::kOnEnter, GetGameStateId<SiblingStateB>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<SiblingStateB>()},
+      {GameStateTraceType::kOnUpdate, GetGameStateId<SiblingStateB>()},
+  });
+}
+
+TEST_F(GameStateMachineTest, ChangeTopStateToStateWithSiblingRestrictions) {
+  DefaultState::Reset();
+  SiblingStateB::Reset();
+
+  state_machine_->Register<DefaultState>();
+  state_machine_->Register<SiblingStateB>();
+  EXPECT_TRUE(state_machine_->ChangeState(kNoGameStateId,
+                                          GetGameStateId<DefaultState>()));
+  state_machine_->Update(absl::Milliseconds(1));
+  EXPECT_TRUE(state_machine_->ChangeState(kNoGameStateId,
+                                          GetGameStateId<SiblingStateB>()));
+  state_machine_->Update(absl::Milliseconds(1));
+  EXPECT_FALSE(state_machine_->IsActive<DefaultState>());
+  EXPECT_TRUE(state_machine_->IsActive<SiblingStateB>());
+  MatchTrace({
+      {GameStateTraceType::kRequestChange, GetGameStateId<DefaultState>()},
+      {GameStateTraceType::kOnEnter, GetGameStateId<DefaultState>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<DefaultState>()},
+      {GameStateTraceType::kOnUpdate, GetGameStateId<DefaultState>()},
+      {GameStateTraceType::kRequestChange, GetGameStateId<SiblingStateB>()},
+      {GameStateTraceType::kOnExit, GetGameStateId<DefaultState>()},
+      {GameStateTraceType::kOnEnter, GetGameStateId<SiblingStateB>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<SiblingStateB>()},
+      {GameStateTraceType::kOnUpdate, GetGameStateId<SiblingStateB>()},
+  });
+}
+
 TEST_F(GameStateMachineTest, ChangeToAlreadyActiveState) {
   DefaultState::Reset();
 
@@ -510,8 +587,8 @@ TEST_F(GameStateMachineTest, EnterActiveLifetimeState) {
   ActiveState::Reset();
 
   state_machine_->Register<ActiveState>();
-  EXPECT_TRUE(
-      state_machine_->ChangeState(kNoGameStateId, GetGameStateId<ActiveState>()));
+  EXPECT_TRUE(state_machine_->ChangeState(kNoGameStateId,
+                                          GetGameStateId<ActiveState>()));
   state_machine_->Update(absl::Milliseconds(1));
   EXPECT_NE(state_machine_->GetState<ActiveState>(), nullptr);
   EXPECT_EQ(state_machine_->GetState<ActiveState>(), ActiveState::Instance());
@@ -522,8 +599,8 @@ TEST_F(GameStateMachineTest, ExitActiveLifetimeState) {
   ActiveState::Reset();
 
   state_machine_->Register<ActiveState>();
-  EXPECT_TRUE(
-      state_machine_->ChangeState(kNoGameStateId, GetGameStateId<ActiveState>()));
+  EXPECT_TRUE(state_machine_->ChangeState(kNoGameStateId,
+                                          GetGameStateId<ActiveState>()));
   state_machine_->Update(absl::Milliseconds(1));
   EXPECT_TRUE(state_machine_->ChangeState(kNoGameStateId, kNoGameStateId));
   state_machine_->Update(absl::Milliseconds(1));
@@ -1023,7 +1100,8 @@ TEST_F(GameStateMachineTest, ChangeStateDuringUpdate) {
   state_machine_->Register<TopStateB>();
   state_machine_->ChangeState(kNoGameStateId, GetGameStateId<TopStateA>());
   state_machine_->GetState<TopStateA>()->QueueChangeState(
-      GameStateTraceType::kOnUpdate, kNoGameStateId, GetGameStateId<TopStateB>());
+      GameStateTraceType::kOnUpdate, kNoGameStateId,
+      GetGameStateId<TopStateB>());
   state_machine_->Update(absl::Milliseconds(1));
   EXPECT_FALSE(state_machine_->IsActive<TopStateA>());
   EXPECT_EQ(TopStateA::Info().update_count, 1);
@@ -1065,7 +1143,8 @@ TEST_F(GameStateMachineTest, ChangeStateDuringParentUpdate) {
   state_machine_->ChangeState(GetGameStateId<TopStateA>(),
                               GetGameStateId<ChildStateA>());
   state_machine_->GetState<TopStateA>()->QueueChangeState(
-      GameStateTraceType::kOnUpdate, kNoGameStateId, GetGameStateId<TopStateB>());
+      GameStateTraceType::kOnUpdate, kNoGameStateId,
+      GetGameStateId<TopStateB>());
   state_machine_->Update(absl::Milliseconds(1));
   EXPECT_FALSE(state_machine_->IsActive<TopStateA>());
   EXPECT_EQ(TopStateA::Info().update_count, 2);
@@ -1119,7 +1198,8 @@ TEST_F(GameStateMachineTest, ChangeStateDuringOnEnter) {
   state_machine_->Register<TopStateB>();
   state_machine_->ChangeState(kNoGameStateId, GetGameStateId<TopStateA>());
   state_machine_->GetState<TopStateA>()->QueueChangeState(
-      GameStateTraceType::kOnEnter, kNoGameStateId, GetGameStateId<TopStateB>());
+      GameStateTraceType::kOnEnter, kNoGameStateId,
+      GetGameStateId<TopStateB>());
   state_machine_->Update(absl::Milliseconds(1));
   EXPECT_FALSE(state_machine_->IsActive<TopStateA>());
   EXPECT_EQ(TopStateA::Info().update_count, 0);
@@ -1159,7 +1239,8 @@ TEST_F(GameStateMachineTest, ChangeStateDuringChildOnEnter) {
   state_machine_->ChangeState(GetGameStateId<TopStateA>(),
                               GetGameStateId<ChildStateA>());
   state_machine_->GetState<ChildStateA>()->QueueChangeState(
-      GameStateTraceType::kOnEnter, kNoGameStateId, GetGameStateId<TopStateB>());
+      GameStateTraceType::kOnEnter, kNoGameStateId,
+      GetGameStateId<TopStateB>());
   state_machine_->Update(absl::Milliseconds(1));
   EXPECT_FALSE(state_machine_->IsActive<TopStateA>());
   EXPECT_EQ(TopStateA::Info().update_count, 1);
@@ -1505,7 +1586,8 @@ TEST_F(GameStateMachineTest, EnterContextValidationSucceeds) {
   MatchTrace({
       {GameStateTraceType::kRequestChange, GetGameStateId<InputContextState>()},
       {GameStateTraceType::kOnEnter, GetGameStateId<InputContextState>()},
-      {GameStateTraceType::kCompleteChange, GetGameStateId<InputContextState>()},
+      {GameStateTraceType::kCompleteChange,
+       GetGameStateId<InputContextState>()},
       {GameStateTraceType::kOnUpdate, GetGameStateId<InputContextState>()},
   });
 }
