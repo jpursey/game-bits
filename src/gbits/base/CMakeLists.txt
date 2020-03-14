@@ -20,6 +20,7 @@ set(gbits_base_DEPS
   absl::flat_hash_map
   absl::memory
   absl::strings
+  absl::synchronization
   absl::time
 )
 

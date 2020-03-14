@@ -4,6 +4,16 @@
 
 namespace gb {
 
+Context::Context(Context&& other) { *this = std::move(other); }
+
+Context& Context::operator=(Context&& other) {
+  absl::WriterMutexLock other_lock(&other.mutex_);
+  absl::WriterMutexLock this_lock(&mutex_);
+  values_ = std::move(other.values_);
+  names_ = std::move(other.names_);
+  return *this;
+}
+
 void Context::SetImpl(std::string_view name, ContextType* type, void* new_value,
                       bool owned) {
   auto key = std::make_tuple(name, type->Key());
@@ -78,10 +88,17 @@ void* Context::ReleaseImpl(std::string_view name, ContextType* type) {
 }
 
 void Context::Reset() {
-  std::vector<char*> names;
-  names.reserve(values_.size());
+  Values old_values;
+  {
+    absl::WriterMutexLock lock(&mutex_);
+    old_values = std::move(values_);
+    names_.clear();
+  }
 
-  for (auto& value : values_) {
+  std::vector<char*> names;
+  names.reserve(old_values.size());
+
+  for (auto& value : old_values) {
     if (value.second.name != nullptr) {
       names.push_back(value.second.name);
     }
@@ -89,8 +106,6 @@ void Context::Reset() {
       value.second.type->Destroy(value.second.value);
     }
   }
-  values_.clear();
-  names_.clear();
 
   // Must be after clear.
   for (char* name : names) {

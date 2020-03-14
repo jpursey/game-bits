@@ -4,6 +4,8 @@
 #include <any>
 #include <type_traits>
 
+#include "absl/synchronization/mutex.h"
+
 namespace gb {
 
 // Forward declarations.
@@ -11,11 +13,14 @@ class Context;
 class ContextType;
 
 // Defines a unique key for a type used in a context.
+//
+// This class is thread-safe.
 class ContextKey {
  public:
   ContextKey(const ContextKey&) = delete;
   ContextKey& operator=(const ContextKey&) = delete;
 
+  // Returns the ContextKey for the specified type.
   template <typename Type>
   static ContextKey* Get();
 
@@ -44,6 +49,8 @@ class ContextKey {
 
 // A ContextType defines all the operations necessary for using a type with a
 // Context. It is an opaque type used only by the Context class.
+//
+// This class is thread-safe.
 class ContextType {
  public:
   ContextType(const ContextType&) = delete;
@@ -114,12 +121,16 @@ class ContextType {
   class PlaceholderImpl;
 };
 
+namespace internal {
+
 template <typename Type>
 const char* ContextTypeName(Type* stub, const char* new_name = nullptr,
                             bool force_new_name = false) {
   static_assert(std::is_same_v<Type, std::decay_t<Type>>,
                 "Invalid type for Context. It is likely const, a function "
                 "reference (instead of a pointer), or an array.");
+  ABSL_CONST_INIT static absl::Mutex mutex(absl::kConstInit);
+  absl::MutexLock lock(&mutex);
 
   // Stub is typed to force a new instance of the functon per type, to prevent
   // linker optimizations that could collapse the functions. Note: This is pure
@@ -131,6 +142,8 @@ const char* ContextTypeName(Type* stub, const char* new_name = nullptr,
   return (info.second != nullptr ? info.second : "");
 }
 
+}  // namespace internal
+
 template <typename Type>
 class ContextKey::Impl : public ContextKey {
  public:
@@ -141,10 +154,12 @@ class ContextKey::Impl : public ContextKey {
     return ContextType::GetPlaceholder<Type>();
   }
 
-  const char* GetTypeName() override { return ContextTypeName<Type>(nullptr); }
-  
+  const char* GetTypeName() override {
+    return internal::ContextTypeName<Type>(nullptr);
+  }
+
   void SetTypeName(const char* name) override {
-    ContextTypeName<Type>(nullptr, name, true);
+    internal::ContextTypeName<Type>(nullptr, name, true);
   }
 };
 
@@ -160,7 +175,7 @@ ContextKey* ContextKey::Get() {
 template <typename Type>
 class ContextType::Impl : public ContextType {
  public:
-  Impl() : type_name(ContextTypeName<Type>(nullptr, typeid(Type).name())) {}
+  Impl() { internal::ContextTypeName<Type>(nullptr, typeid(Type).name()); }
   ~Impl() override = default;
 
   ContextKey* Key() override { return ContextKey::Get<Type>(); }
@@ -168,9 +183,6 @@ class ContextType::Impl : public ContextType {
  protected:
   void* Clone(const std::any& value) override { return DoCreate<Type>(value); }
   void Destroy(void* value) override { delete static_cast<Type*>(value); }
-
- private:
-  const char* const type_name;
 };
 
 template <typename Type>

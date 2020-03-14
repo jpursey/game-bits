@@ -5,6 +5,7 @@
 #include <tuple>
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/synchronization/mutex.h"
 #include "gbits/base/context_type.h"
 
 namespace gb {
@@ -15,18 +16,26 @@ namespace gb {
 // value of each name (regardless of the type) may be stored. The values stored
 // in the context are never const.
 //
-// Context is a move-only type. This class is thread-compatible.
+// This class is thread-safe. This class is not reentrant, however. If any
+// method is called during construction or destruction of contained types in the
+// context, this will result in a deadlock. As a general rule, do not access
+// Context instances in constructors or destructors for types that may get
+// constructed or deleted via calling the Set or Clear functions. The Context
+// destructor and Reset methods will never result in reentrant behavior.
 class Context final {
  public:
   Context() = default;
   Context(const Context&) = delete;
-  Context(Context&&) = default;
+  Context(Context&&);
   Context& operator=(const Context&) = delete;
-  Context& operator=(Context&&) = default;
+  Context& operator=(Context&&);
   ~Context() { Reset(); }
 
   // Returns true if there are no values stored in the context.
-  bool Empty() const { return values_.empty(); }
+  bool Empty() const {
+    absl::ReaderMutexLock lock(&mutex_);
+    return values_.empty();
+  }
 
   // Resets the context to be empty. All owned values are destructed.
   void Reset();
@@ -38,11 +47,13 @@ class Context final {
   // value.
   template <typename Type, class... Args>
   void SetNew(Args&&... args) {
+    absl::WriterMutexLock lock(&mutex_);
     SetImpl({}, ContextType::Get<Type>(), new Type(std::forward<Args>(args)...),
             true);
   }
   template <typename Type, class... Args>
   void SetNamedNew(std::string_view name, Args&&... args) {
+    absl::WriterMutexLock lock(&mutex_);
     SetImpl(name, ContextType::Get<Type>(),
             new Type(std::forward<Args>(args)...), true);
   }
@@ -59,10 +70,12 @@ class Context final {
   // specification as it is unambiguous.
   template <typename Type>
   void SetOwned(std::unique_ptr<Type> value) {
+    absl::WriterMutexLock lock(&mutex_);
     SetImpl({}, ContextType::Get<Type>(), value.release(), true);
   }
   template <typename Type>
   void SetOwned(std::string_view name, std::unique_ptr<Type> value) {
+    absl::WriterMutexLock lock(&mutex_);
     SetImpl(name, ContextType::Get<Type>(), value.release(), true);
   }
 
@@ -78,10 +91,12 @@ class Context final {
   // specification as it is unambiguous.
   template <typename Type>
   void SetPtr(Type* value) {
+    absl::WriterMutexLock lock(&mutex_);
     SetImpl({}, ContextType::GetPlaceholder<Type>(), value, false);
   }
   template <typename Type>
   void SetPtr(std::string_view name, Type* value) {
+    absl::WriterMutexLock lock(&mutex_);
     SetImpl(name, ContextType::GetPlaceholder<Type>(), value, false);
   }
 
@@ -103,7 +118,8 @@ class Context final {
       std::enable_if_t<std::is_assignable<std::decay_t<Type>, OtherType>::value,
                        int> = 0>
   void SetValue(OtherType&& value) {
-    Type* old_value = GetPtr<Type>();
+    absl::WriterMutexLock lock(&mutex_);
+    Type* old_value = GetPtrImpl<Type>();
     if (old_value != nullptr) {
       *old_value = std::forward<OtherType>(value);
     } else {
@@ -116,7 +132,8 @@ class Context final {
       std::enable_if_t<std::is_assignable<std::decay_t<Type>, OtherType>::value,
                        int> = 0>
   void SetValue(std::string_view name, OtherType&& value) {
-    Type* old_value = GetPtr<Type>(name);
+    absl::WriterMutexLock lock(&mutex_);
+    Type* old_value = GetPtrImpl<Type>(name);
     if (old_value != nullptr) {
       *old_value = std::forward<OtherType>(value);
     } else {
@@ -129,6 +146,7 @@ class Context final {
                                  std::decay_t<Type>, OtherType>>::value,
                              int> = 0>
   void SetValue(OtherType&& value) {
+    absl::WriterMutexLock lock(&mutex_);
     SetImpl({}, ContextType::Get<Type>(),
             new Type(std::forward<OtherType>(value)), true);
   }
@@ -137,6 +155,7 @@ class Context final {
                                  std::decay_t<Type>, OtherType>>::value,
                              int> = 0>
   void SetValue(std::string_view name, OtherType&& value) {
+    absl::WriterMutexLock lock(&mutex_);
     SetImpl(name, ContextType::Get<Type>(),
             new Type(std::forward<OtherType>(value)), true);
   }
@@ -151,6 +170,7 @@ class Context final {
   }
   void SetAny(std::string_view name, ContextType* type, const std::any& value) {
     if (type != nullptr) {
+      absl::WriterMutexLock lock(&mutex_);
       SetImpl(name, type, type->Clone(value), true);
     }
   }
@@ -159,8 +179,8 @@ class Context final {
   // one, or null otherwise.
   template <typename Type>
   Type* GetPtr(std::string_view name = {}) const {
-    auto it = values_.find({name, ContextKey::Get<Type>()});
-    return it != values_.end() ? static_cast<Type*>(it->second.value) : nullptr;
+    absl::ReaderMutexLock lock(&mutex_);
+    return GetPtrImpl<Type>(name);
   }
 
   // Returns the stored value of the specified Type if there is one, or a
@@ -205,6 +225,7 @@ class Context final {
   }
   bool Exists(ContextKey* key) const { return Exists({}, key); }
   bool Exists(std::string_view name, ContextKey* key) const {
+    absl::ReaderMutexLock lock(&mutex_);
     return values_.find({name, key}) != values_.end();
   }
 
@@ -212,6 +233,7 @@ class Context final {
   //
   // If the name is empty, this always returns false.
   bool NameExists(std::string_view name) const {
+    absl::ReaderMutexLock lock(&mutex_);
     return names_.find(name) != names_.end();
   }
 
@@ -219,6 +241,7 @@ class Context final {
   // is owned by the context.
   template <typename Type>
   bool Owned(std::string_view name = {}) const {
+    absl::ReaderMutexLock lock(&mutex_);
     auto it = values_.find({name, ContextKey::Get<Type>()});
     return it != values_.end() && it->second.owned;
   }
@@ -229,6 +252,7 @@ class Context final {
   // false), then this will return null.
   template <typename Type>
   std::unique_ptr<Type> Release(std::string_view name = {}) {
+    absl::WriterMutexLock lock(&mutex_);
     return std::unique_ptr<Type>(
         static_cast<Type*>(ReleaseImpl(name, ContextType::Get<Type>())));
   }
@@ -242,6 +266,7 @@ class Context final {
   }
   void Clear(ContextKey* key) { return Clear({}, key); }
   void Clear(std::string_view name, ContextKey* key) {
+    absl::WriterMutexLock lock(&mutex_);
     SetImpl(name, key->GetPlaceholderType(), nullptr, false);
   }
 
@@ -249,6 +274,7 @@ class Context final {
   //
   // If the name is empty, this has no effect.
   void ClearName(std::string_view name) {
+    absl::WriterMutexLock lock(&mutex_);
     auto name_it = names_.find(name);
     if (name_it != names_.end()) {
       SetImpl(name, name_it->second, nullptr, false);
@@ -263,13 +289,24 @@ class Context final {
     void* value = nullptr;
     bool owned = false;
   };
+  using Values =
+      absl::flat_hash_map<std::tuple<std::string_view, ContextKey*>, Value>;
+  using Names = absl::flat_hash_map<std::string_view, ContextType*>;
 
+  template <typename Type>
+  Type* GetPtrImpl(std::string_view name = {}) const
+      ABSL_SHARED_LOCKS_REQUIRED(mutex_) {
+    auto it = values_.find({name, ContextKey::Get<Type>()});
+    return it != values_.end() ? static_cast<Type*>(it->second.value) : nullptr;
+  }
   void SetImpl(std::string_view name, ContextType* type, void* new_value,
-               bool owned);
-  void* ReleaseImpl(std::string_view name, ContextType* type);
+               bool owned) ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+  void* ReleaseImpl(std::string_view name, ContextType* type)
+      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
-  absl::flat_hash_map<std::tuple<std::string_view, ContextKey*>, Value> values_;
-  absl::flat_hash_map<std::string_view, ContextType*> names_;
+  mutable absl::Mutex mutex_;
+  Values values_ ABSL_GUARDED_BY(mutex_);
+  Names names_ ABSL_GUARDED_BY(mutex_);
 };
 
 }  // namespace gb

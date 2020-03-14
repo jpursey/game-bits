@@ -73,17 +73,18 @@ struct ContextConstraint {
 // common pattern). When used in a class, be sure to add "static" before the
 // macro. See ValidatedContext for example uses.
 
-#define GB_CONTEXT_CONSTRAINT(ConstantName, Presence, Type)         \
-  inline const gb::ContextConstraint ConstantName = {               \
-      gb::ContextConstraint::Presence, gb::ContextKey::Get<Type>(), \
-      gb::ContextTypeName<Type>(nullptr, #Type, true),              \
+#define GB_CONTEXT_CONSTRAINT(ConstantName, Presence, Type)      \
+  inline const gb::ContextConstraint ConstantName = {            \
+      gb::ContextConstraint::Presence,                           \
+      gb::ContextKey::Get<Type>(),                               \
+      gb::internal::ContextTypeName<Type>(nullptr, #Type, true), \
   }
 
 #define GB_CONTEXT_CONSTRAINT_DEFAULT(ConstantName, Presence, Type, Default) \
   inline const gb::ContextConstraint ConstantName = {                        \
       gb::ContextConstraint::Presence,                                       \
       gb::ContextKey::Get<Type>(),                                           \
-      gb::ContextTypeName<Type>(nullptr, #Type, true),                       \
+      gb::internal::ContextTypeName<Type>(nullptr, #Type, true),             \
       {},                                                                    \
       gb::ContextType::Get<Type>(),                                          \
       Default,                                                               \
@@ -91,8 +92,10 @@ struct ContextConstraint {
 
 #define GB_CONTEXT_CONSTRAINT_NAMED(ConstantName, Presence, Type, Name) \
   inline const gb::ContextConstraint ConstantName = {                   \
-      gb::ContextConstraint::Presence, gb::ContextKey::Get<Type>(),     \
-      gb::ContextTypeName<Type>(nullptr, #Type, true), Name,            \
+      gb::ContextConstraint::Presence,                                  \
+      gb::ContextKey::Get<Type>(),                                      \
+      gb::internal::ContextTypeName<Type>(nullptr, #Type, true),        \
+      Name,                                                             \
   }
 
 #define GB_CONTEXT_CONSTRAINT_NAMED_DEFAULT(ConstantName, Presence, Type, \
@@ -100,7 +103,7 @@ struct ContextConstraint {
   inline const gb::ContextConstraint ConstantName = {                     \
       gb::ContextConstraint::Presence,                                    \
       gb::ContextKey::Get<Type>(),                                        \
-      gb::ContextTypeName<Type>(nullptr, #Type, true),                    \
+      gb::internal::ContextTypeName<Type>(nullptr, #Type, true),          \
       Name,                                                               \
       gb::ContextType::Get<Type>(),                                       \
       Default,                                                            \
@@ -120,7 +123,12 @@ class ContextContract;
 // the ContextConstraint parameters defined as part of the ValidatedContext type
 // definition.
 //
-// This class is thread-compatible.
+// This class is thread-compatible, however all access to the underlying context
+// is thread-safe. What this means in practice, is access to all member
+// functions (including those that access the underlying context) must have
+// external synchronization if they could get into a race with assignment to
+// this context or if this context is moved-from (via assignment or
+// constructor).
 class ValidatedContext final {
  public:
   using ErrorCallback = std::function<void(const std::string& message)>;
