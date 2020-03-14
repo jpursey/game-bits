@@ -132,6 +132,8 @@ struct ActiveGameStateLifetime : GameStateLifetime {
 //     requirements.
 //   - It must have a default constructor (no parameters). This is called by the
 //     GameStateMachine to instantiate the class.
+//
+// This class is thread-compatible.
 class GameState {
  public:
   GameState(const GameState&) = delete;

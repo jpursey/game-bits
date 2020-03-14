@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/synchronization/mutex.h"
 #include "absl/time/time.h"
 #include "gbits/game/game_state.h"
 
@@ -173,6 +174,8 @@ inline GameStateId GetGameStateId(GameStateInfo* info) {
 // active state's callbacks). However, the the actual state transition always
 // happens directly with in the GameStateMachine::Update call (never while
 // executing any GameState callback).
+//
+// This class is thread-safe except as noted.
 class GameStateMachine final {
  public:
   GameStateMachine(const GameStateMachine&) = delete;
@@ -195,32 +198,38 @@ class GameStateMachine final {
 
   // Sets the trace level for the state machine. The default trace level is
   // kError.
-  void SetTraceLevel(GameStateTraceLevel trace_level) {
-    trace_level_ = trace_level;
-  }
+  //
+  // This function is thread-compatible. External synchronization is required if
+  // this function could be called while this or any other member function is
+  // executing in a different thread.
+  void SetTraceLevel(GameStateTraceLevel trace_level);
 
   // Set the trace handler for this state machine.
   //
   // This completely replaces any prior handler, including the default hander
   // (which logs the trace). To add an additional handler, call AddTraceHandler
   // instead. See GameStateTrace for more information on trace output.
-  void SetTraceHandler(GameStateTraceHandler handler) {
-    trace_handler_ = std::move(handler);
-  }
+  //
+  // This GameStateMachine instance must not be called from within the
+  // registered handler, or deadlock will occur.
+  //
+  // This function is thread-compatible. External synchronization is required if
+  // this function could be called while this or any other member function is
+  // executing in a different thread.
+  void SetTraceHandler(GameStateTraceHandler handler);
 
   // Adds an additional trace handler for this state machine.
   //
   // This leaves any existing handlers in place, and adds this handler in
   // addition. See GameStateTrace for more information on trace output.
-  void AddTraceHandler(GameStateTraceHandler handler) {
-    auto new_handler = [
-      handler_1 = std::move(trace_handler_), handler_2 = std::move(handler)
-    ](const GameStateTrace& trace) {
-      handler_1(trace);
-      handler_2(trace);
-    };
-    trace_handler_ = new_handler;
-  }
+  //
+  // This GameStateMachine instance must not be called from within the
+  // registered handler, or deadlock will occur.
+  //
+  // This function is thread-compatible. External synchronization is required if
+  // this function could be called while this or any other member function is
+  // executing in a different thread.
+  void AddTraceHandler(GameStateTraceHandler handler);
 
   // Registers a GameState derived class with the state machine.
   //
@@ -261,6 +270,7 @@ class GameStateMachine final {
 
   // Returns the top state, or null if no states are active.
   GameState* GetTopState() {
+    absl::MutexLock lock(&transition_mutex_);
     return top_state_ != nullptr ? top_state_->instance.get() : nullptr;
   }
 
@@ -301,6 +311,9 @@ class GameStateMachine final {
   // States are updated from parent to child. State changes may be requested at
   // any point during Update (even -- and commonly -- within state callbacks),
   // and they will be performed as soon possible.
+  //
+  // Update is not reentrant. If it is called while it is still executing, a
+  // warning is logged and the Update call will be ignored.
   void Update(absl::Duration delta_time);
 
  private:
@@ -310,8 +323,10 @@ class GameStateMachine final {
   void LogTrace(const GameStateTrace& trace);
 
   // Returns human-readable debug strings for the requested state paths.
-  std::string GetStatePath(GameStateId parent, GameStateId state);
-  std::string GetCurrentStatePath();
+  std::string GetStatePath(GameStateId parent, GameStateId state)
+      ABSL_SHARED_LOCKS_REQUIRED(transition_mutex_);
+  std::string GetCurrentStatePath()
+      ABSL_SHARED_LOCKS_REQUIRED(transition_mutex_);
 
   // Helper to return the GameStateInfo* for the specified ID. This will return
   // null if the ID is kNoGameStateId, or is not registered with the state
@@ -329,14 +344,21 @@ class GameStateMachine final {
                   GameStateList::Type valid_siblings_type,
                   std::vector<GameStateId> valid_siblings,
                   std::vector<ContextConstraint> constraints,
-                  std::function<std::unique_ptr<GameState>()> factory);
+                  std::function<std::unique_ptr<GameState>()> factory)
+      ABSL_LOCKS_EXCLUDED(mutex_);
 
   // Performs any state transitions previously requested via ChangeState. If a
   // ChangeState is called during this funciton, it will return early without
   // completing the previous transition.
-  void ProcessTransition();
+  void ProcessTransition() ABSL_EXCLUSIVE_LOCKS_REQUIRED(transition_mutex_);
 
-  // Context used for this state machine and all game states.
+  mutable absl::Mutex update_mutex_;      // Reentrance guard for Update.
+  mutable absl::Mutex states_mutex_;      // Mutex for accessing states_.
+  mutable absl::Mutex transition_mutex_;  // Mutex for transition variables.
+
+  // Context used for this state machine and all game states. This is not
+  // guarded by any mutex as it is only ever changed at state machine
+  // construction.
   ValidatedContext context_;
 
   // Trace information.
@@ -344,20 +366,17 @@ class GameStateMachine final {
   GameStateTraceHandler trace_handler_;
 
   // Map of all registered states.
-  absl::flat_hash_map<GameStateId, std::unique_ptr<GameStateInfo>> states_;
+  absl::flat_hash_map<GameStateId, std::unique_ptr<GameStateInfo>> states_
+      GUARDED_BY(states_mutex_);
 
   // The current top state that is active.
-  GameStateInfo* top_state_ = nullptr;
-
-  // True iff Update() is currently running. This is used to catch (and abort)
-  // recursive calls into Update.
-  bool updating_ = false;
+  GameStateInfo* top_state_ GUARDED_BY(transition_mutex_) = nullptr;
 
   // Current pending transition as specified by ChangeState and reset by
   // ProcessTransition.
-  bool transition_ = false;
-  GameStateInfo* transition_parent_ = nullptr;
-  GameStateInfo* transition_state_ = nullptr;
+  bool transition_ GUARDED_BY(transition_mutex_) = false;
+  GameStateInfo* transition_parent_ GUARDED_BY(transition_mutex_) = nullptr;
+  GameStateInfo* transition_state_ GUARDED_BY(transition_mutex_) = nullptr;
 };
 
 }  // namespace gb

@@ -15,7 +15,7 @@ namespace gb {
 // The class provides a framework for the most basic game loop. It provides
 // support for a fixed or variable frame rate game loop.
 //
-// This class is thread-compatible.
+// This class is thread-safe.
 class Game {
  public:
   // Maximum frame rate that the game will run at. This can be set to zero to
@@ -71,7 +71,8 @@ class Game {
   virtual bool Init(const std::vector<std::string_view>& args) { return true; }
 
   // Updates the game no faster than the max frame rate. Update should return
-  // true to indicate
+  // true to indicate the game should continue, and false if the game should
+  // exit.
   virtual bool Update(absl::Duration delta_time) { return true; }
 
   // This is called right before the game exits.
