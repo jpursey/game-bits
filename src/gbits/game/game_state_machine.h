@@ -23,13 +23,15 @@ class GameStateMachine;
 enum class GameStateTraceLevel {
   kNone,     // No trace output at all.
   kError,    // Only error trace output. This is the default.
-  kInfo,     // Error and info trace output.
-  kVerbose,  // Verbose trace output, very spammy.
+  kInfo,     // Error and info trace output. Info output only occurs during
+             // state transitions.
+  kVerbose,  // All trace output, very spammy. This includes trace output every
+             // frame.
 };
 
 // Type of trace.
 enum class GameStateTraceType : int {
-  kUnknown,  // Initial value for a default constructed trace.
+  kUnknown,  // Initial value for a default constructed GameStateTrace.
 
   // Error trace
   kInvalidChangeState,    // The new state is not registered or is already
@@ -42,18 +44,28 @@ enum class GameStateTraceType : int {
 
   // Info trace
   kRequestChange,   // Change state requested.
-  kAbortChange,     // Abort state change.
-  kCompleteChange,  // State change is completed.
-  kOnEnter,         // State is about to be entered.
-  kOnExit,          // State is about to be exited.
-  kOnChildEnter,    // Child state was entered.
-  kOnChildExit,     // Child state was exited.
+  kAbortChange,     // Abort state change (the prior request has not yet
+                    // completed when the next request was made).
+  kCompleteChange,  // State change is completed (the prior request completed as
+                    // initially requested).
+  kOnEnter,         // State is about to be entered (immediately before
+                    // GameState::OnEnter).
+  kOnExit,          // State is about to be exited (immediately before
+                    // GameState::OnExit).
+  kOnChildEnter,    // Child state was entered (immediately before
+                    // GameState::OnChildEnter).
+  kOnChildExit,     // Child state was exited (immediately before
+                    // GameState::OnChildExit).
 
   // Verbose trace
-  kOnUpdate,  // Child state is being updated.
+  kOnUpdate,  // Child state is being updated (immediately before
+              // GameState::OnUpdate).
 };
 
 // Trace record for game states.
+//
+// Trace records are received by registering a trace handler with a
+// GameStateMachine instance (via SetTraceHandler or AddTraceHandler).
 struct GameStateTrace {
   GameStateTrace() = default;
   GameStateTrace(GameStateTraceType type, GameStateId parent, GameStateId state,
@@ -64,10 +76,19 @@ struct GameStateTrace {
         method(method),
         message(message) {}
 
+  // Returns true if this trace represents an error level trace only.
   bool IsError() const {
-    return type > GameStateTraceType::kUnknown &&
+    return type >= GameStateTraceType::kInvalidChangeState &&
            type <= GameStateTraceType::kConstraintFailure;
   }
+
+  // Returns true if this trace represents an info level trace only.
+  bool IsInfo() const {
+    return type >= GameStateTraceType::kRequestChange &&
+           type <= GameStateTraceType::kOnChildExit;
+  }
+
+  // Returns true if this trace represents a verbose level trace only.
   bool IsVerbose() const { return type >= GameStateTraceType::kOnUpdate; }
 
   // The type of record this trace represents.
@@ -75,7 +96,8 @@ struct GameStateTrace {
 
   // Parent state for the trace. This is set only for kInvalidChangeState,
   // kInvalidChangeParent, kRequestChange, kAbortChange, kCompleteChange,
-  // kOnChildEnter, and kOnChildExit.
+  // kOnChildEnter, and kOnChildExit. For all other trace types it is always
+  // kNoGameStateId.
   GameStateId parent = kNoGameStateId;
 
   // State for the trace. This is always set.
@@ -84,10 +106,11 @@ struct GameStateTrace {
   // GameStateMachine public method that the trace occurred in.
   std::string_view method;
 
-  // Human readable message with additional information.
+  // Human readable message with additional information about the trace event.
   std::string message;
 };
 
+// Handler definition of the callback that receives a GameStateTrace.
 using GameStateTraceHandler = std::function<void(const GameStateTrace&)>;
 
 // Helpers to stringify traces.
@@ -140,11 +163,16 @@ inline GameStateId GetGameStateId(GameStateInfo* info) {
 // machine instance manages a pool these states which are either active or
 // inactive.
 //
-// The structure of the state hierarchy is defined by the ParentStates type
-// defined in each GameState subclass. Only one branch (or partial branch) of
-// the implied hierarchy may be active at any given time. In addition, only one
-// instance of a state can be active at a time within the same branch.
+// The structure of the state hierarchy is defined by the ParentStates and
+// SiblingStates attribute types defined in each GameState subclass. Only one
+// branch (or partial branch) of the implied hierarchy may be active at any
+// given time. In addition, only one instance of a state can be active at a time
+// within the same branch.
 //
+// State transitions can be requested at any time (generally within one of the
+// active state's callbacks). However, the the actual state transition always
+// happens directly with in the GameStateMachine::Update call (never while
+// executing any GameState callback).
 class GameStateMachine final {
  public:
   GameStateMachine(const GameStateMachine&) = delete;
@@ -152,9 +180,16 @@ class GameStateMachine final {
   ~GameStateMachine() = default;
 
   // Context contract for the state machine itself.
+  //
+  // GameStateMachine instances do not require anything in its context, it is
+  // just used to pass to GameState classes.
   using Contract = ContextContract<>;
 
   // Creates a new GameStateMachine.
+  //
+  // An optional context may be passed to GameStateMachine, if it is shared by
+  // other parts of the game. The context passed in will also be passed to all
+  // active game states.
   static std::unique_ptr<GameStateMachine> Create(
       Contract contract = std::make_unique<Context>());
 
@@ -187,8 +222,14 @@ class GameStateMachine final {
     trace_handler_ = new_handler;
   }
 
-  // Registers a GameState derived class with the state machine. After a state
-  // is registered, it can be used with the ChangeState() function.
+  // Registers a GameState derived class with the state machine.
+  //
+  // After a state is registered, it can be used with the ChangeState()
+  // function. A state may not be registered more than once (a warning will be
+  // logged and the duplicate registration is ignored).
+  //
+  // If a state's Lifetime attribute is GlobalGameStateLifetime (the default),
+  // then the state will be constructed during registration.
   template <typename StateType>
   void Register() {
     DoRegister(
@@ -223,7 +264,7 @@ class GameStateMachine final {
     return top_state_ != nullptr ? top_state_->instance.get() : nullptr;
   }
 
-  // Changes the current state to the specified state.
+  // Requests to change the current state to the specified state.
   //
   // If 'parent' is kNoGameStateId, this will change the top most state,
   // otherwise 'parent' must be a state that already is active. If 'state' is
@@ -235,7 +276,8 @@ class GameStateMachine final {
   // when the state machine is next updated (or if an update is in progress,
   // before Update() returns). If ChangeState is called multiple times before
   // the state can actually be changed, only the final change will happen
-  // (changes are not queued).
+  // (changes are not queued). State changes never take place while any state
+  // callback of this state machine's states is executing.
   //
   // This function returns true if the requested state change is valid at the
   // time this was called. A state change is valid if all of the following are
@@ -243,30 +285,44 @@ class GameStateMachine final {
   //   - 'parent' is kNoGameStateId or is an active state.
   //   - 'parent' is one of the allowed parent states for 'state'
   //   - 'state' is not currently active.
+  //   - 'state' is a valid sibling state to the current child of 'parent', or
+  //     'parent' has no child state.
   //
   // This function does *not* pre-validate context constraints, as constraints
   // may be met (or broken) as a side effect of the state transition process
-  // itself. However, no state will actually be entered unless its context input
+  // itself. However, no state will actually be entered unless its input context
   // constraints are met. If a state context constraint failure occurs (exit or
-  // enter), then an error will be logged and any registered error handler will
-  // be logged.
+  // enter).
   bool ChangeState(GameStateId parent, GameStateId state);
 
   // Updates the state machine, performing any requested state changes and
-  // calling update on all active states. States are updated from parent to
-  // child. State changes may be requested at any point during Update(), and
-  // they will be performed as soon possible.
+  // calling update on all active states.
+  //
+  // States are updated from parent to child. State changes may be requested at
+  // any point during Update (even -- and commonly -- within state callbacks),
+  // and they will be performed as soon possible.
   void Update(absl::Duration delta_time);
 
  private:
   explicit GameStateMachine(ValidatedContext context);
 
+  // Dumps the trace to glog.
   void LogTrace(const GameStateTrace& trace);
+
+  // Returns human-readable debug strings for the requested state paths.
   std::string GetStatePath(GameStateId parent, GameStateId state);
   std::string GetCurrentStatePath();
+
+  // Helper to return the GameStateInfo* for the specified ID. This will return
+  // null if the ID is kNoGameStateId, or is not registered with the state
+  // machine.
   const GameStateInfo* GetStateInfo(GameStateId id) const;
   GameStateInfo* GetStateInfo(GameStateId id);
+
+  // Constructs the GameState instance for the specified state_info.
   void CreateInstance(GameStateInfo* state_info);
+
+  // Implementation for the Register<> public function.
   void DoRegister(GameStateId id, GameStateLifetime::Type lifetime,
                   GameStateList::Type valid_parents_type,
                   std::vector<GameStateId> valid_parents,
@@ -274,13 +330,31 @@ class GameStateMachine final {
                   std::vector<GameStateId> valid_siblings,
                   std::vector<ContextConstraint> constraints,
                   std::function<std::unique_ptr<GameState>()> factory);
+
+  // Performs any state transitions previously requested via ChangeState. If a
+  // ChangeState is called during this funciton, it will return early without
+  // completing the previous transition.
   void ProcessTransition();
 
+  // Context used for this state machine and all game states.
   ValidatedContext context_;
+
+  // Trace information.
   GameStateTraceLevel trace_level_ = GameStateTraceLevel::kError;
   GameStateTraceHandler trace_handler_;
+
+  // Map of all registered states.
   absl::flat_hash_map<GameStateId, std::unique_ptr<GameStateInfo>> states_;
+
+  // The current top state that is active.
   GameStateInfo* top_state_ = nullptr;
+
+  // True iff Update() is currently running. This is used to catch (and abort)
+  // recursive calls into Update.
+  bool updating_ = false;
+
+  // Current pending transition as specified by ChangeState and reset by
+  // ProcessTransition.
   bool transition_ = false;
   GameStateInfo* transition_parent_ = nullptr;
   GameStateInfo* transition_state_ = nullptr;

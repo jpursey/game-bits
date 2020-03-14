@@ -214,6 +214,12 @@ bool GameStateMachine::ChangeState(GameStateId parent, GameStateId state) {
 }
 
 void GameStateMachine::Update(absl::Duration delta_time) {
+  if (updating_) {
+    LOG(WARNING) << "Update called recursively, ignoring request.";
+    return;
+  }
+  updating_ = true;
+
   static int64_t update_id = 0;
   ++update_id;
 
@@ -246,10 +252,12 @@ void GameStateMachine::Update(absl::Duration delta_time) {
       state_info = state_info->child;
     }
   } while (needs_update);
+
+  updating_ = false;
 }
 
 void GameStateMachine::ProcessTransition() {
-  // Cache current request
+  // Cache current request.
   GameStateInfo* parent_info = transition_parent_;
   GameStateInfo* new_state_info = transition_state_;
 
@@ -416,8 +424,10 @@ void GameStateMachine::DoRegister(
     std::vector<GameStateId> valid_siblings,
     std::vector<ContextConstraint> constraints,
     std::function<std::unique_ptr<GameState>()> factory) {
-  CHECK(states_.find(id) == states_.end()) << "State " << GetGameStateName(id)
-                                           << " already registered.";
+  if (states_.find(id) != states_.end()) {
+    LOG(WARNING) << "State " << GetGameStateName(id) << " already registered.";
+    return;
+  }
   auto& state_info = states_[id];
   state_info = std::make_unique<GameStateInfo>();
   state_info->id = id;

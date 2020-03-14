@@ -93,8 +93,10 @@ struct GameStates : GameStateList {
 // one of the derived types: GlobalGameStateLifetime or ActiveGameStateLifetime.
 struct GameStateLifetime {
   enum Type {
-    kGlobal,
-    kActive,
+    kGlobal,  // The state is constructed at regististration and destructed at
+              // state machine destruction.
+    kActive,  // The state is constructed and destructed when the state is
+              // entered and exited respectively.
   };
 };
 
@@ -122,10 +124,10 @@ struct ActiveGameStateLifetime : GameStateLifetime {
 //   - It should declare its context contract by defining a Contract alias
 //     of type ContextContract<> in their public section. Without this, the
 //     Context() method is not useful.
-//   - It should declare a ParentStates alias if it limited where it is valid as
-//     a child state in the hierarchy.
-//   - It should declare a SiblingStates alias if it limited which sibling
-//     states can be switched to.
+//   - It should declare a ParentStates alias to limit where it is valid as a
+//     child state in the hierarchy.
+//   - It should declare a SiblingStates alias to limit which sibling states can
+//     be switched to from this state.
 //   - It should declare a Lifetime alias if the state has specific lifetime
 //     requirements.
 //   - It must have a default constructor (no parameters). This is called by the
@@ -161,18 +163,22 @@ class GameState {
   // override the default behavior.
   using Lifetime = GlobalGameStateLifetime;
 
+  // The following attributes are set immediately *after* construction (ie. they
+  // are not available in the constructor).
+  GameStateId GetId() const;
+  GameStateMachine* GetStateMachine() const { return machine_; }
+
   // The following attributes are only set if the state is active (during
   // OnEnter and OnExit and any time in between these two calls). Notably these
-  // will return null in the constructor and destructor.
-  GameStateId GetId() const;
+  // will return kNoGameStateId or null in the constructor and destructor.
   GameStateId GetParentId() const;
   GameState* GetParent() const;
   GameStateId GetChildId() const;
   GameState* GetChild() const;
-  GameStateMachine* GetStateMachine() const { return machine_; }
 
   // Changes the child for this state. See GameStateMachine::ChangeState() for
-  // details on state change handling.
+  // details on state change handling. This state must be a valid parent as
+  // controlled by the childs ParentStates attribute.
   bool ChangeChildState(GameStateId state);
   template <typename StateType>
   bool ChangeChildState() {
@@ -181,6 +187,8 @@ class GameState {
 
   // Exits this state and switches to the specified state under the same parent.
   // See GameStateMachine::ChangeState() for details on state change handling.
+  // The new state must be a valid sibling as controlled by this states
+  // SiblingStates attribute.
   bool ChangeState(GameStateId state);
   template <typename StateType>
   bool ChangeState() {
@@ -195,28 +203,56 @@ class GameState {
   GameState() = default;
 
   // Returns the validated context, whose contract was defined by Contract in
-  // the registered type.
+  // the registered type. This context is *always* valid when the state is
+  // entered (OnEnter is called), and is *always* invalid when the state is not
+  // active.
   const ValidatedContext& Context() const { return context_; }
   ValidatedContext& Context() { return context_; }
 
   // Gets called once every frame if the state is active.
+  //
+  // States are always updated before their child state (if they have one). If a
+  // parent state switches states (or child states), then any existing child
+  // state will not get its update, and instead the new state will be switched
+  // to and updated this frame.
   virtual void OnUpdate(absl::Duration delta_time) {}
 
-  // Called when the state is entered. A state will only be entered iff its
-  // contract is satisfied.
+  // Called when the state is entered.
+  //
+  // A state will only be entered iff its context contract is satisfied.
+  //
+  // After OnEnter returns, OnUpdate will be called this frame unless the state
+  // is changed before then. If the state is changed within this callback, then
+  // the state will be exited and the new state entered on this frame (after
+  // OnEnter returns).
   virtual void OnEnter() {}
 
-  // Called when the state is exited. If the state is not persistent, it will be
-  // deleted after OnExit returns. This is called at most once for each time
-  // OnEnter is called.
+  // Called when the state is exited. 
+  //
+  // If the Lifetime attribute is ActiveGameStateLifetime, it will be destructed
+  // immediately after OnExit returns.
+  //
+  // If the state is changed within this callback, then that state will be
+  // switched to instead of whatever state change caused OnExit in the first
+  // place. The parent state (if there is one), may still change the state in
+  // OnChildExit.
   virtual void OnExit() {}
 
-  // Called immediately before a child state is entered. If the state is changed
-  // during this call, it can result in original child state never being
-  // entered.
+  // Called immediately before a child state is entered.
+  //
+  // The specified child state will always be entered when this call returns (it
+  // will receives its OnEnter call). If the state is changed during
+  // OnChildEnter, then the child specified here will be entered and then
+  // immediately exited (and OnChildExit will be called on this state). Then the
+  // new state will be switched to.
   virtual void OnChildEnter(GameStateId child) {}
 
   // Called immediately after a child state has exited.
+  //
+  // If the child state's Lifetime attribute is ActiveGameStateLifetime, then it
+  // will already be deleted when this is called. If the state is changed within
+  // this callback, then that state will be switched to instead of whatever
+  // state change is currently in progress.
   virtual void OnChildExit(GameStateId child) {}
 
  private:
