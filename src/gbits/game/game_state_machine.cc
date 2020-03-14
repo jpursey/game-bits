@@ -98,8 +98,7 @@ GameStateMachine::~GameStateMachine() {
   States old_states;
   {
     // Lock order here is deliberate.
-    absl::MutexLock transition_lock(&transition_mutex_);
-    absl::MutexLock states_lock(&states_mutex_);
+    absl::MutexLock lock(&mutex_);
     CHECK(!transition_)
         << "Transition was queued while GameStateMachine was being destructed.";
     old_states = std::move(states_);
@@ -126,7 +125,6 @@ void GameStateMachine::LogTrace(const GameStateTrace& trace) {
 }
 
 const GameStateInfo* GameStateMachine::GetStateInfo(GameStateId id) const {
-  absl::MutexLock states_lock(&states_mutex_);
   auto it = states_.find(id);
   if (it == states_.end()) {
     return nullptr;
@@ -135,7 +133,6 @@ const GameStateInfo* GameStateMachine::GetStateInfo(GameStateId id) const {
 }
 
 GameStateInfo* GameStateMachine::GetStateInfo(GameStateId id) {
-  absl::MutexLock states_lock(&states_mutex_);
   auto it = states_.find(id);
   if (it == states_.end()) {
     return nullptr;
@@ -144,11 +141,13 @@ GameStateInfo* GameStateMachine::GetStateInfo(GameStateId id) {
 }
 
 bool GameStateMachine::IsActive(GameStateId state) const {
+  absl::MutexLock lock(&mutex_);
   auto state_info = GetStateInfo(state);
   return state_info != nullptr ? state_info->active : false;
 }
 
 GameState* GameStateMachine::GetState(GameStateId state) {
+  absl::MutexLock lock(&mutex_);
   auto state_info = GetStateInfo(state);
   if (state_info == nullptr) {
     return nullptr;
@@ -157,7 +156,7 @@ GameState* GameStateMachine::GetState(GameStateId state) {
 }
 
 bool GameStateMachine::ChangeState(GameStateId parent, GameStateId state) {
-  absl::MutexLock lock(&transition_mutex_);
+  absl::MutexLock lock(&mutex_);
 
   // If a transition is in progress, make sure it is different.
   if (transition_) {
@@ -280,7 +279,7 @@ void GameStateMachine::DoUpdate(absl::Duration delta_time) {
   static int64_t update_id = 0;
   ++update_id;
 
-  absl::MutexLock transition_lock(&transition_mutex_);
+  absl::MutexLock lock(&mutex_);
   bool needs_update = false;
   do {
     needs_update = false;
@@ -301,9 +300,9 @@ void GameStateMachine::DoUpdate(absl::Duration delta_time) {
                absl::StrCat("path=", GetStatePath(GetGameStateId(state_info),
                                                   kNoGameStateId))});
         }
-        transition_mutex_.Unlock();
+        mutex_.Unlock();
         state_info->instance->OnUpdate(delta_time);
-        transition_mutex_.Lock();
+        mutex_.Lock();
       }
       if (transition_) {
         needs_update = true;
@@ -341,7 +340,7 @@ void GameStateMachine::ProcessTransition() {
            absl::StrCat("path=", GetStatePath(exit_info->id, kNoGameStateId))});
     }
 
-    transition_mutex_.Unlock();
+    mutex_.Unlock();
     exit_info->instance->OnExit();
     if (!exit_info->instance->context_.Assign(ValidatedContext{})) {
       if (trace_level_ >= GameStateTraceLevel::kError) {
@@ -350,7 +349,7 @@ void GameStateMachine::ProcessTransition() {
                         "exit context could not complete"});
       }
     }
-    transition_mutex_.Lock();
+    mutex_.Lock();
 
     // Clear all the state. If anything happens related to the instance now, it
     // should be treated as exited.
@@ -364,9 +363,9 @@ void GameStateMachine::ProcessTransition() {
     }
     exit_info->update_id = 0;
     if (exit_info->lifetime == GameStateLifetime::Type::kActive) {
-      transition_mutex_.Unlock();
+      mutex_.Unlock();
       exit_info->instance.reset();
-      transition_mutex_.Lock();
+      mutex_.Lock();
     }
 
     // Now notify the parent that the child exited.
@@ -378,9 +377,9 @@ void GameStateMachine::ProcessTransition() {
              absl::StrCat("path=", GetStatePath(GetGameStateId(exit_info),
                                                 kNoGameStateId))});
       }
-      transition_mutex_.Unlock();
+      mutex_.Unlock();
       exit_parent->instance->OnChildExit(exit_info->id);
-      transition_mutex_.Lock();
+      mutex_.Lock();
     }
 
     // If a new transition was queued, start over.
@@ -407,9 +406,9 @@ void GameStateMachine::ProcessTransition() {
   }
 
   // Validate the context for the new state.
-  transition_mutex_.Unlock();
+  mutex_.Unlock();
   ValidatedContext new_context(context_, new_state_info->constraints);
-  transition_mutex_.Lock();
+  mutex_.Lock();
   if (!new_context.IsValid()) {
     if (trace_level_ >= GameStateTraceLevel::kError) {
       trace_handler_({GameStateTraceType::kConstraintFailure, kNoGameStateId,
@@ -438,9 +437,9 @@ void GameStateMachine::ProcessTransition() {
                         GetStatePath(GetGameStateId(parent_info),
                                      GetGameStateId(new_state_info)))});
     }
-    transition_mutex_.Unlock();
+    mutex_.Unlock();
     parent_info->instance->OnChildEnter(new_state_info->id);
-    transition_mutex_.Lock();
+    mutex_.Lock();
   }
 
   // Update the state info.
@@ -452,9 +451,9 @@ void GameStateMachine::ProcessTransition() {
     top_state_ = new_state_info;
   }
   if (new_state_info->lifetime == GameStateLifetime::Type::kActive) {
-    transition_mutex_.Unlock();
+    mutex_.Unlock();
     CreateInstance(new_state_info);
-    transition_mutex_.Lock();
+    mutex_.Lock();
   }
   new_state_info->instance->context_ = std::move(new_context);
 
@@ -466,9 +465,9 @@ void GameStateMachine::ProcessTransition() {
          absl::StrCat("path=", GetStatePath(GetGameStateId(new_state_info),
                                             kNoGameStateId))});
   }
-  transition_mutex_.Unlock();
+  mutex_.Unlock();
   new_state_info->instance->OnEnter();
-  transition_mutex_.Lock();
+  mutex_.Lock();
 
   // Reset transition if we are done.
   if (transition_parent_ == parent_info &&
@@ -503,7 +502,7 @@ void GameStateMachine::DoRegister(
     std::function<std::unique_ptr<GameState>()> factory) {
   GameStateInfo* state_info = nullptr;
   {
-    absl::MutexLock states_lock(&states_mutex_);
+    absl::MutexLock lock(&mutex_);
     if (states_.find(id) != states_.end()) {
       LOG(WARNING) << "State " << GetGameStateName(id)
                    << " already registered.";

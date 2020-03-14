@@ -270,7 +270,7 @@ class GameStateMachine final {
 
   // Returns the top state, or null if no states are active.
   GameState* GetTopState() {
-    absl::MutexLock lock(&transition_mutex_);
+    absl::MutexLock lock(&mutex_);
     return top_state_ != nullptr ? top_state_->instance.get() : nullptr;
   }
 
@@ -327,15 +327,16 @@ class GameStateMachine final {
 
   // Returns human-readable debug strings for the requested state paths.
   std::string GetStatePath(GameStateId parent, GameStateId state)
-      ABSL_SHARED_LOCKS_REQUIRED(transition_mutex_);
-  std::string GetCurrentStatePath()
-      ABSL_SHARED_LOCKS_REQUIRED(transition_mutex_);
+      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+  std::string GetCurrentStatePath() ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   // Helper to return the GameStateInfo* for the specified ID. This will return
   // null if the ID is kNoGameStateId, or is not registered with the state
   // machine.
-  const GameStateInfo* GetStateInfo(GameStateId id) const;
-  GameStateInfo* GetStateInfo(GameStateId id);
+  const GameStateInfo* GetStateInfo(GameStateId id) const
+      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+  GameStateInfo* GetStateInfo(GameStateId id)
+      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   // Constructs the GameState instance for the specified state_info.
   void CreateInstance(GameStateInfo* state_info);
@@ -357,11 +358,10 @@ class GameStateMachine final {
   // Performs any state transitions previously requested via ChangeState. If a
   // ChangeState is called during this funciton, it will return early without
   // completing the previous transition.
-  void ProcessTransition() ABSL_EXCLUSIVE_LOCKS_REQUIRED(transition_mutex_);
+  void ProcessTransition() ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
-  mutable absl::Mutex update_mutex_;      // Reentrance guard for Update.
-  mutable absl::Mutex states_mutex_;      // Mutex for accessing states_.
-  mutable absl::Mutex transition_mutex_;  // Mutex for transition variables.
+  mutable absl::Mutex update_mutex_;  // Reentrance guard for Update method.
+  mutable absl::Mutex mutex_;         // Mutex for execution state.
 
   // Context used for this state machine and all game states. This is not
   // guarded by any mutex as it is only ever changed at state machine
@@ -373,16 +373,16 @@ class GameStateMachine final {
   GameStateTraceHandler trace_handler_;
 
   // Map of all registered states.
-  States states_ GUARDED_BY(states_mutex_);
+  States states_ GUARDED_BY(mutex_);
 
   // The current top state that is active.
-  GameStateInfo* top_state_ GUARDED_BY(transition_mutex_) = nullptr;
+  GameStateInfo* top_state_ GUARDED_BY(mutex_) = nullptr;
 
   // Current pending transition as specified by ChangeState and reset by
   // ProcessTransition.
-  bool transition_ GUARDED_BY(transition_mutex_) = false;
-  GameStateInfo* transition_parent_ GUARDED_BY(transition_mutex_) = nullptr;
-  GameStateInfo* transition_state_ GUARDED_BY(transition_mutex_) = nullptr;
+  bool transition_ GUARDED_BY(mutex_) = false;
+  GameStateInfo* transition_parent_ GUARDED_BY(mutex_) = nullptr;
+  GameStateInfo* transition_state_ GUARDED_BY(mutex_) = nullptr;
 };
 
 }  // namespace gb
