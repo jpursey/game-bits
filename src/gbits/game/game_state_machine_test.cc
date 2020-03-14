@@ -9,6 +9,7 @@ struct TestStateInfo {
   GameState* current_state = nullptr;
   int construct_count = 0;
   int destruct_count = 0;
+  int init_count = 0;
   int update_count = 0;
   int enter_count = 0;
   int exit_count = 0;
@@ -35,9 +36,15 @@ class TestState : public GameState {
   explicit TestState() {
     Info().current_state = this;
     Info().construct_count += 1;
-    EXPECT_EQ(Instance(), nullptr) << GetGameStateName<DerivedState>()
-                                   << " has multiple instances";
+    EXPECT_EQ(Instance(), nullptr)
+        << GetGameStateName<DerivedState>() << " has multiple instances";
     Instance() = this;
+    EXPECT_EQ(GetId(), kNoGameStateId);
+    EXPECT_EQ(GetStateMachine(), nullptr);
+    EXPECT_EQ(GetParentId(), kNoGameStateId);
+    EXPECT_EQ(GetParent(), nullptr);
+    EXPECT_EQ(GetChildId(), kNoGameStateId);
+    EXPECT_EQ(GetChild(), nullptr);
   }
   ~TestState() override {
     EXPECT_EQ(Instance(), this) << GetGameStateName<DerivedState>()
@@ -45,6 +52,12 @@ class TestState : public GameState {
     Instance() = nullptr;
     Info().current_state = nullptr;
     Info().destruct_count += 1;
+    EXPECT_EQ(GetId(), GetGameStateId<DerivedState>());
+    EXPECT_NE(GetStateMachine(), nullptr);
+    EXPECT_EQ(GetParentId(), kNoGameStateId);
+    EXPECT_EQ(GetParent(), nullptr);
+    EXPECT_EQ(GetChildId(), kNoGameStateId);
+    EXPECT_EQ(GetChild(), nullptr);
   }
 
   void QueueChangeState(GameStateTraceType event, GameStateId parent,
@@ -55,6 +68,15 @@ class TestState : public GameState {
   }
 
  protected:
+  void OnInit() override {
+    Info().init_count += 1;
+    EXPECT_EQ(GetId(), GetGameStateId<DerivedState>());
+    EXPECT_NE(GetStateMachine(), nullptr);
+    EXPECT_EQ(GetParentId(), kNoGameStateId);
+    EXPECT_EQ(GetParent(), nullptr);
+    EXPECT_EQ(GetChildId(), kNoGameStateId);
+    EXPECT_EQ(GetChild(), nullptr);
+  }
   void OnUpdate(absl::Duration delta_time) override {
     Info().update_count += 1;
     Info().update_time += delta_time;
@@ -225,12 +247,16 @@ TEST_F(GameStateMachineTest, RegisterDefaultLifetime) {
 
   state_machine_->Register<DefaultState>();
   EXPECT_EQ(DefaultState::Info().construct_count, 1);
+  EXPECT_EQ(DefaultState::Info().init_count,
+            DefaultState::Info().construct_count);
   EXPECT_EQ(DefaultState::Info().destruct_count, 0);
   EXPECT_NE(state_machine_->GetState<DefaultState>(), nullptr);
   EXPECT_FALSE(state_machine_->IsActive<DefaultState>());
 
   state_machine_.reset();
   EXPECT_EQ(DefaultState::Info().construct_count, 1);
+  EXPECT_EQ(DefaultState::Info().init_count,
+            DefaultState::Info().construct_count);
   EXPECT_EQ(DefaultState::Info().destruct_count, 1);
   EXPECT_EQ(error_count_, 0);
 }
@@ -240,12 +266,16 @@ TEST_F(GameStateMachineTest, RegisterGlobalLifetime) {
 
   state_machine_->Register<GlobalState>();
   EXPECT_EQ(GlobalState::Info().construct_count, 1);
+  EXPECT_EQ(GlobalState::Info().init_count,
+            GlobalState::Info().construct_count);
   EXPECT_EQ(GlobalState::Info().destruct_count, 0);
   EXPECT_NE(state_machine_->GetState<GlobalState>(), nullptr);
   EXPECT_FALSE(state_machine_->IsActive<GlobalState>());
 
   state_machine_.reset();
   EXPECT_EQ(GlobalState::Info().construct_count, 1);
+  EXPECT_EQ(GlobalState::Info().init_count,
+            GlobalState::Info().construct_count);
   EXPECT_EQ(GlobalState::Info().destruct_count, 1);
   EXPECT_EQ(error_count_, 0);
 }
@@ -255,12 +285,16 @@ TEST_F(GameStateMachineTest, RegisterActiveLifetime) {
 
   state_machine_->Register<ActiveState>();
   EXPECT_EQ(ActiveState::Info().construct_count, 0);
+  EXPECT_EQ(ActiveState::Info().init_count,
+            ActiveState::Info().construct_count);
   EXPECT_EQ(ActiveState::Info().destruct_count, 0);
   EXPECT_EQ(state_machine_->GetState<ActiveState>(), nullptr);
   EXPECT_FALSE(state_machine_->IsActive<ActiveState>());
 
   state_machine_.reset();
   EXPECT_EQ(ActiveState::Info().construct_count, 0);
+  EXPECT_EQ(ActiveState::Info().init_count,
+            ActiveState::Info().construct_count);
   EXPECT_EQ(ActiveState::Info().destruct_count, 0);
   EXPECT_EQ(error_count_, 0);
 }
@@ -593,6 +627,8 @@ TEST_F(GameStateMachineTest, EnterActiveLifetimeState) {
   EXPECT_NE(state_machine_->GetState<ActiveState>(), nullptr);
   EXPECT_EQ(state_machine_->GetState<ActiveState>(), ActiveState::Instance());
   EXPECT_EQ(ActiveState::Info().construct_count, 1);
+  EXPECT_EQ(ActiveState::Info().init_count,
+            ActiveState::Info().construct_count);
 }
 
 TEST_F(GameStateMachineTest, ExitActiveLifetimeState) {
@@ -1550,6 +1586,8 @@ TEST_F(GameStateMachineTest, EnterContextValidationFails) {
   EXPECT_EQ(state_machine_->GetTopState(), nullptr);
   EXPECT_FALSE(state_machine_->IsActive<InputContextState>());
   EXPECT_EQ(InputContextState::Info().construct_count, 0);
+  EXPECT_EQ(InputContextState::Info().init_count,
+            InputContextState::Info().construct_count);
   EXPECT_EQ(InputContextState::Info().destruct_count, 0);
   EXPECT_EQ(InputContextState::Info().update_count, 0);
   EXPECT_EQ(InputContextState::Info().enter_count, 0);
@@ -1576,6 +1614,8 @@ TEST_F(GameStateMachineTest, EnterContextValidationSucceeds) {
   EXPECT_EQ(state_machine_->GetTopState(), InputContextState::Instance());
   EXPECT_TRUE(state_machine_->IsActive<InputContextState>());
   EXPECT_EQ(InputContextState::Info().construct_count, 1);
+  EXPECT_EQ(InputContextState::Info().init_count,
+            InputContextState::Info().construct_count);
   EXPECT_EQ(InputContextState::Info().destruct_count, 0);
   EXPECT_EQ(InputContextState::Info().update_count, 1);
   EXPECT_EQ(InputContextState::Info().enter_count, 1);
@@ -1608,6 +1648,8 @@ TEST_F(GameStateMachineTest, ExitContextValidationFails) {
   EXPECT_EQ(state_machine_->GetTopState(), DefaultState::Instance());
   EXPECT_FALSE(state_machine_->IsActive<OutputContextState>());
   EXPECT_EQ(OutputContextState::Info().construct_count, 1);
+  EXPECT_EQ(OutputContextState::Info().init_count,
+            OutputContextState::Info().construct_count);
   EXPECT_EQ(OutputContextState::Info().destruct_count, 1);
   EXPECT_EQ(OutputContextState::Info().update_count, 1);
   EXPECT_EQ(OutputContextState::Info().enter_count, 1);
@@ -1616,6 +1658,8 @@ TEST_F(GameStateMachineTest, ExitContextValidationFails) {
   EXPECT_EQ(OutputContextState::Info().child_exit_count, 0);
   EXPECT_TRUE(state_machine_->IsActive<DefaultState>());
   EXPECT_EQ(DefaultState::Info().construct_count, 1);
+  EXPECT_EQ(DefaultState::Info().init_count,
+            DefaultState::Info().construct_count);
   EXPECT_EQ(DefaultState::Info().destruct_count, 0);
   EXPECT_EQ(DefaultState::Info().update_count, 1);
   EXPECT_EQ(DefaultState::Info().enter_count, 1);
@@ -1657,6 +1701,8 @@ TEST_F(GameStateMachineTest, ExitContextValidationSucceeds) {
   EXPECT_EQ(state_machine_->GetTopState(), DefaultState::Instance());
   EXPECT_FALSE(state_machine_->IsActive<OutputContextState>());
   EXPECT_EQ(OutputContextState::Info().construct_count, 1);
+  EXPECT_EQ(OutputContextState::Info().init_count,
+            OutputContextState::Info().construct_count);
   EXPECT_EQ(OutputContextState::Info().destruct_count, 1);
   EXPECT_EQ(OutputContextState::Info().update_count, 1);
   EXPECT_EQ(OutputContextState::Info().enter_count, 1);
@@ -1665,6 +1711,8 @@ TEST_F(GameStateMachineTest, ExitContextValidationSucceeds) {
   EXPECT_EQ(OutputContextState::Info().child_exit_count, 0);
   EXPECT_TRUE(state_machine_->IsActive<DefaultState>());
   EXPECT_EQ(DefaultState::Info().construct_count, 1);
+  EXPECT_EQ(DefaultState::Info().init_count,
+            DefaultState::Info().construct_count);
   EXPECT_EQ(DefaultState::Info().destruct_count, 0);
   EXPECT_EQ(DefaultState::Info().update_count, 1);
   EXPECT_EQ(DefaultState::Info().enter_count, 1);
@@ -1877,6 +1925,45 @@ TEST_F(GameStateMachineTest, GameStateChangeExitState) {
        kNoGameStateId},
       {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
   });
+}
+
+TEST_F(GameStateMachineTest, StatesShutDownCleanlyAtStateMachineDestruction) {
+  TopStateA::Reset();
+  ChildStateA::Reset();
+
+  state_machine_->Register<TopStateA>();
+  state_machine_->Register<ChildStateA>();
+  EXPECT_TRUE(
+      state_machine_->ChangeState(kNoGameStateId, GetGameStateId<TopStateA>()));
+  state_machine_->Update(absl::Milliseconds(1));
+  EXPECT_TRUE(state_machine_->ChangeState(GetGameStateId<TopStateA>(),
+                                          GetGameStateId<ChildStateA>()));
+  state_machine_->Update(absl::Milliseconds(1));
+  state_machine_.reset();
+
+  MatchTrace({
+      {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>()},
+      {GameStateTraceType::kOnEnter, GetGameStateId<TopStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>()},
+      {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
+      {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>(),
+       GetGameStateId<ChildStateA>()},
+      {GameStateTraceType::kOnChildEnter, GetGameStateId<TopStateA>(),
+       GetGameStateId<ChildStateA>()},
+      {GameStateTraceType::kOnEnter, GetGameStateId<ChildStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>(),
+       GetGameStateId<ChildStateA>()},
+      {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
+      {GameStateTraceType::kOnUpdate, GetGameStateId<ChildStateA>()},
+      {GameStateTraceType::kRequestChange, kNoGameStateId},
+      {GameStateTraceType::kOnExit, GetGameStateId<ChildStateA>()},
+      {GameStateTraceType::kOnChildExit, GetGameStateId<TopStateA>(),
+       GetGameStateId<ChildStateA>()},
+      {GameStateTraceType::kOnExit, GetGameStateId<TopStateA>()},
+      {GameStateTraceType::kCompleteChange, kNoGameStateId},
+  });
+  EXPECT_EQ(TopStateA::Info().destruct_count, 1);
+  EXPECT_EQ(ChildStateA::Info().destruct_count, 1);
 }
 
 }  // namespace

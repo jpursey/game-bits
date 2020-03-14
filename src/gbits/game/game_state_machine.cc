@@ -85,6 +85,38 @@ GameStateMachine::GameStateMachine(ValidatedContext context)
   trace_handler_ = [this](const GameStateTrace& trace) { LogTrace(trace); };
 }
 
+GameStateMachine::~GameStateMachine() {
+  // Make sure we are not in the middle of an Update(), that would be dire!
+  CHECK(update_mutex_.TryLock())
+      << "GameStateMachine is being destructed while Update is still running.";
+
+  // Make sure there is no top level state
+  ChangeState(kNoGameStateId, kNoGameStateId);
+  DoUpdate(absl::ZeroDuration());
+
+  // Clear internal state.
+  States old_states;
+  {
+    // Lock order here is deliberate.
+    absl::MutexLock transition_lock(&transition_mutex_);
+    absl::MutexLock states_lock(&states_mutex_);
+    CHECK(!transition_)
+        << "Transition was queued while GameStateMachine was being destructed.";
+    old_states = std::move(states_);
+  }
+
+  // Now iterate over each state and delete any active instances. This ensures
+  // that GameStateInfo still exists during the GameState destructor.
+  for (auto& state : old_states) {
+    if (state.second->instance.get() != nullptr) {
+      state.second->instance.reset();
+    }
+  }
+  old_states.clear();
+
+  update_mutex_.Unlock();
+}
+
 void GameStateMachine::LogTrace(const GameStateTrace& trace) {
   if (trace.IsError()) {
     LOG(ERROR) << ToString(trace);
@@ -94,7 +126,7 @@ void GameStateMachine::LogTrace(const GameStateTrace& trace) {
 }
 
 const GameStateInfo* GameStateMachine::GetStateInfo(GameStateId id) const {
-  absl::ReaderMutexLock states_lock(&states_mutex_);
+  absl::MutexLock states_lock(&states_mutex_);
   auto it = states_.find(id);
   if (it == states_.end()) {
     return nullptr;
@@ -103,7 +135,7 @@ const GameStateInfo* GameStateMachine::GetStateInfo(GameStateId id) const {
 }
 
 GameStateInfo* GameStateMachine::GetStateInfo(GameStateId id) {
-  absl::ReaderMutexLock states_lock(&states_mutex_);
+  absl::MutexLock states_lock(&states_mutex_);
   auto it = states_.find(id);
   if (it == states_.end()) {
     return nullptr;
@@ -240,7 +272,11 @@ void GameStateMachine::Update(absl::Duration delta_time) {
     LOG(WARNING) << "Update called recursively, ignoring request.";
     return;
   }
+  DoUpdate(delta_time);
+  update_mutex_.Unlock();
+}
 
+void GameStateMachine::DoUpdate(absl::Duration delta_time) {
   static int64_t update_id = 0;
   ++update_id;
 
@@ -276,8 +312,6 @@ void GameStateMachine::Update(absl::Duration delta_time) {
       state_info = state_info->child;
     }
   } while (needs_update);
-
-  update_mutex_.Unlock();
 }
 
 void GameStateMachine::ProcessTransition() {
@@ -456,6 +490,7 @@ void GameStateMachine::CreateInstance(GameStateInfo* state_info) {
   state->info_ = state_info;
   state->machine_ = this;
   state_info->instance = std::move(state);
+  state_info->instance->OnInit();
 }
 
 void GameStateMachine::DoRegister(
@@ -468,7 +503,7 @@ void GameStateMachine::DoRegister(
     std::function<std::unique_ptr<GameState>()> factory) {
   GameStateInfo* state_info = nullptr;
   {
-    absl::WriterMutexLock states_lock(&states_mutex_);
+    absl::MutexLock states_lock(&states_mutex_);
     if (states_.find(id) != states_.end()) {
       LOG(WARNING) << "State " << GetGameStateName(id)
                    << " already registered.";

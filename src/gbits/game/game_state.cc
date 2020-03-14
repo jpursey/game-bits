@@ -16,18 +16,26 @@ void SetGameStateName(GameStateId id, const char* name) {
   id->SetTypeName(name);
 }
 
-GameStateId GameState::GetId() const { return info_->id; }
+GameStateId GameState::GetId() const {
+  return info_ == nullptr ? kNoGameStateId : info_->id;
+}
 GameStateId GameState::GetParentId() const {
-  return info_->parent != nullptr ? info_->parent->id : kNoGameStateId;
+  return info_ != nullptr && info_->parent != nullptr ? info_->parent->id
+                                                      : kNoGameStateId;
 }
 GameState* GameState::GetParent() const {
-  return info_->parent != nullptr ? info_->parent->instance.get() : nullptr;
+  return info_ != nullptr && info_->parent != nullptr
+             ? info_->parent->instance.get()
+             : nullptr;
 }
 GameStateId GameState::GetChildId() const {
-  return info_->child != nullptr ? info_->child->id : kNoGameStateId;
+  return info_ != nullptr && info_->child != nullptr ? info_->child->id
+                                                     : kNoGameStateId;
 }
 GameState* GameState::GetChild() const {
-  return info_->child != nullptr ? info_->child->instance.get() : nullptr;
+  return info_ != nullptr && info_->child != nullptr
+             ? info_->child->instance.get()
+             : nullptr;
 }
 
 bool GameState::ChangeChildState(GameStateId state) {

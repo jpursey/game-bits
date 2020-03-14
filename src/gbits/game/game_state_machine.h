@@ -180,7 +180,7 @@ class GameStateMachine final {
  public:
   GameStateMachine(const GameStateMachine&) = delete;
   GameStateMachine& operator=(const GameStateMachine&) = delete;
-  ~GameStateMachine() = default;
+  ~GameStateMachine();
 
   // Context contract for the state machine itself.
   //
@@ -317,6 +317,9 @@ class GameStateMachine final {
   void Update(absl::Duration delta_time);
 
  private:
+  using States =
+      absl::flat_hash_map<GameStateId, std::unique_ptr<GameStateInfo>>;
+
   explicit GameStateMachine(ValidatedContext context);
 
   // Dumps the trace to glog.
@@ -347,6 +350,10 @@ class GameStateMachine final {
                   std::function<std::unique_ptr<GameState>()> factory)
       ABSL_LOCKS_EXCLUDED(mutex_);
 
+  // Performs the actual update.
+  void DoUpdate(absl::Duration delta_time)
+      ABSL_EXCLUSIVE_LOCKS_REQUIRED(update_mutex_);
+
   // Performs any state transitions previously requested via ChangeState. If a
   // ChangeState is called during this funciton, it will return early without
   // completing the previous transition.
@@ -366,8 +373,7 @@ class GameStateMachine final {
   GameStateTraceHandler trace_handler_;
 
   // Map of all registered states.
-  absl::flat_hash_map<GameStateId, std::unique_ptr<GameStateInfo>> states_
-      GUARDED_BY(states_mutex_);
+  States states_ GUARDED_BY(states_mutex_);
 
   // The current top state that is active.
   GameStateInfo* top_state_ GUARDED_BY(transition_mutex_) = nullptr;

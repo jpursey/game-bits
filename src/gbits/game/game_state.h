@@ -166,7 +166,8 @@ class GameState {
   using Lifetime = GlobalGameStateLifetime;
 
   // The following attributes are set immediately *after* construction (ie. they
-  // are not available in the constructor).
+  // are not available in the constructor). Override OnInit(), if further
+  // one-time initialization is needed that requires these attributes.
   GameStateId GetId() const;
   GameStateMachine* GetStateMachine() const { return machine_; }
 
@@ -211,6 +212,14 @@ class GameState {
   const ValidatedContext& Context() const { return context_; }
   ValidatedContext& Context() { return context_; }
 
+  // Get called once after the state's ID and state machine are initialized.
+  //
+  // This occurs immediately after the state is constructed (when that occurs
+  // depends on the state's Lifetime attribute). While it is valid to request
+  // state changes inside OnInit, it is generally not recommended as not all
+  // states may be registered yet, so the state transition may fail.
+  virtual void OnInit() {}
+
   // Gets called once every frame if the state is active.
   //
   // States are always updated before their child state (if they have one). If a
@@ -229,7 +238,7 @@ class GameState {
   // OnEnter returns).
   virtual void OnEnter() {}
 
-  // Called when the state is exited. 
+  // Called when the state is exited.
   //
   // If the Lifetime attribute is ActiveGameStateLifetime, it will be destructed
   // immediately after OnExit returns.
