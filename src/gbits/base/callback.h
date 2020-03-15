@@ -27,6 +27,8 @@ class Callback;
 template <typename Return, typename... Args>
 class Callback<Return(Args...)> final {
  public:
+  using ReturnType = Return;
+
   // Constructs a null callback.
   Callback() = default;
   Callback(std::nullptr_t) {}
