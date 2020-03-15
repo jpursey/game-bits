@@ -1,4 +1,5 @@
 set(gbits_base_SOURCE
+  callback.h
   clock.h
   context.cc context.h
   context_builder.h
@@ -8,6 +9,7 @@ set(gbits_base_SOURCE
 )
 
 set(gbits_base_TEST_SOURCE
+  callback_test.cc
   clock_test.cc
   context_test.cc
   validated_context_test.cc
