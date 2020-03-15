@@ -1,5 +1,5 @@
-#ifndef GBITS_BASE_SCOPED_CALLBACK_H_
-#define GBITS_BASE_SCOPED_CALLBACK_H_
+#ifndef GBITS_BASE_CALLBACK_SCOPE_H_
+#define GBITS_BASE_CALLBACK_SCOPE_H_
 
 #include <memory>
 
@@ -110,4 +110,4 @@ class CallbackScope final {
 
 }  // namespace gb
 
-#endif  // GBITS_BASE_SCOPED_CALLBACK_H_
+#endif  // GBITS_BASE_CALLBACK_SCOPE_H_
