@@ -1,7 +1,6 @@
 #ifndef GBITS_BASE_CALLBACK_H_
 #define GBITS_BASE_CALLBACK_H_
 
-#include <functional>
 #include <memory>
 
 namespace gb {
@@ -42,8 +41,8 @@ class Callback<Return(Args...)> final {
         delete_callback_(std::exchange(other.delete_callback_, nullptr)) {}
 
   // Construct from any callable type that supports move construction.
-  template <typename Callable, typename = std::enable_if_t<!std::is_same<
-                                   std::decay<Callable>, Callback>::value>>
+  template <typename Callable, typename = std::enable_if_t<!std::is_convertible<
+                                   Callable, Return (*)(Args...)>::value>>
   Callback(Callable&& callable) {
     using CallableType = typename std::decay<Callable>::type;
     callback_ = new CallableType(std::move(callable));
@@ -60,13 +59,19 @@ class Callback<Return(Args...)> final {
   // that do not support move construction, but ownership should be passed.
   template <typename CallableType, typename Deleter>
   Callback(std::unique_ptr<CallableType, Deleter> callable) {
+    // Supporting custom deleters generically would require additional overhead
+    // in Callback to store the deleter value. This is a rare use case for
+    // callbacks, so the current decision is to not support custom deleters.
+    static_assert(
+        std::is_same<Deleter, std::default_delete<CallableType>>::value,
+        "Custom deleters are not supported in Callback.");
     callback_ = callable.release();
     call_callback_ = [](void* callable, Args&&... args) -> Return {
       return (*static_cast<CallableType*>(callable))(
           std::forward<Args>(args)...);
     };
     delete_callback_ = [](void* callable) {
-      Deleter()(static_cast<CallableType*>(callable));
+      delete static_cast<CallableType*>(callable);
     };
   }
 
@@ -79,6 +84,21 @@ class Callback<Return(Args...)> final {
     callback_ = callable;
     call_callback_ = [](void* callable, Args&&... args) -> Return {
       return (*static_cast<CallableType*>(callable))(
+          std::forward<Args>(args)...);
+    };
+    delete_callback_ = nullptr;
+  }
+
+  // Construct from a function pointer.
+  //
+  // Note: This is here explicitly to allow lambdas with no capture to match
+  // this overload instead of the generic one which will result in a
+  // needless allocation. Non-template overloads are always chosen over template
+  // overloads for resolution purposes.
+  Callback(Return (*callable)(Args...)) {
+    callback_ = callable;
+    call_callback_ = [](void* callable, Args&&... args) -> Return {
+      return (*static_cast<Return (*)(Args...)>(callable))(
           std::forward<Args>(args)...);
     };
     delete_callback_ = nullptr;
@@ -110,6 +130,15 @@ class Callback<Return(Args...)> final {
     call_callback_ = nullptr;
     delete_callback_ = nullptr;
     return *this;
+  }
+
+  // Explicit construction from a function pointer.
+  //
+  // Note: This is here explicitly, as for some reason Visual Studio 2017 does
+  // not find the conversion from a no-capture lambda to a Callback, even though
+  // it will for explicit construction.
+  Callback& operator=(Return (*callable)(Args...)) {
+    return operator=(Callback(callable));
   }
 
   // Destructs the callback.

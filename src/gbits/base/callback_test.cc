@@ -55,13 +55,6 @@ class MethodCounter {
   void operator()() { Info().call_count_ += 1; }
 };
 
-struct CustomMethodCounterDeleter {
-  void operator()(MethodCounter* counter) {
-    MethodCounter::Info().custom_destructor_count_ += 1;
-    delete counter;
-  }
-};
-
 TEST(CallbackTest, DefaultConstruct) {
   Callback<void()> callback;
   EXPECT_FALSE(callback);
@@ -150,6 +143,11 @@ TEST(CallbackTest, MoveOnlyLambdaConstruct) {
   EXPECT_EQ(callback(2), 3);
 }
 
+TEST(CallbackTest, StatelessLambdaConstruct) {
+  Callback<int(int)> callback{[](int value) { return value + 1; }};
+  EXPECT_EQ(callback(2), 3);
+}
+
 TEST(CallbackTest, PointerAssignSetValueTo42) {
   g_value = 0;
   Callback<void()> callback;
@@ -225,6 +223,12 @@ TEST(CallbackTest, MoveOnlyLambdaAssign) {
   EXPECT_EQ(callback(2), 3);
 }
 
+TEST(CallbackTest, StatelessLambdaAssign) {
+  Callback<int(int)> callback;
+  callback = [](int value) { return value + 1; };
+  EXPECT_EQ(callback(2), 3);
+}
+
 TEST(CallbackTest, MoveConstructMethodCounter) {
   MethodCounter::Reset();
   { Callback<void(void)> callback(MethodCounter{}); }
@@ -248,21 +252,6 @@ TEST(CallbackTest, UniquePointerConstructMethodCounter) {
   EXPECT_EQ(MethodCounter::Info().move_assign_count_, 0);
   EXPECT_EQ(MethodCounter::Info().destructor_count_, 1);
   EXPECT_EQ(MethodCounter::Info().custom_destructor_count_, 0);
-  EXPECT_EQ(MethodCounter::Info().call_count_, 0);
-}
-
-TEST(CallbackTest, UniquePointerConstructCustomMethodCounter) {
-  MethodCounter::Reset();
-  std::unique_ptr<MethodCounter, CustomMethodCounterDeleter> ptr(
-      new MethodCounter);
-  { Callback<void(void)> callback(std::move(ptr)); }
-  EXPECT_EQ(MethodCounter::Info().default_constructor_count_, 1);
-  EXPECT_EQ(MethodCounter::Info().copy_constructor_count_, 0);
-  EXPECT_EQ(MethodCounter::Info().move_constructor_count_, 0);
-  EXPECT_EQ(MethodCounter::Info().copy_assign_count_, 0);
-  EXPECT_EQ(MethodCounter::Info().move_assign_count_, 0);
-  EXPECT_EQ(MethodCounter::Info().destructor_count_, 1);
-  EXPECT_EQ(MethodCounter::Info().custom_destructor_count_, 1);
   EXPECT_EQ(MethodCounter::Info().call_count_, 0);
 }
 
@@ -319,22 +308,6 @@ TEST(CallbackTest, UniquePointerAssignMethodCounter) {
   EXPECT_EQ(MethodCounter::Info().move_assign_count_, 0);
   EXPECT_EQ(MethodCounter::Info().destructor_count_, 1);
   EXPECT_EQ(MethodCounter::Info().custom_destructor_count_, 0);
-  EXPECT_EQ(MethodCounter::Info().call_count_, 0);
-}
-
-TEST(CallbackTest, UniquePointerAssignCustomMethodCounter) {
-  MethodCounter::Reset();
-  std::unique_ptr<MethodCounter, CustomMethodCounterDeleter> ptr(
-      new MethodCounter);
-  Callback<void(void)> callback(std::move(ptr));
-  callback = std::make_unique<MethodCounter>();
-  EXPECT_EQ(MethodCounter::Info().default_constructor_count_, 2);
-  EXPECT_EQ(MethodCounter::Info().copy_constructor_count_, 0);
-  EXPECT_EQ(MethodCounter::Info().move_constructor_count_, 0);
-  EXPECT_EQ(MethodCounter::Info().copy_assign_count_, 0);
-  EXPECT_EQ(MethodCounter::Info().move_assign_count_, 0);
-  EXPECT_EQ(MethodCounter::Info().destructor_count_, 1);
-  EXPECT_EQ(MethodCounter::Info().custom_destructor_count_, 1);
   EXPECT_EQ(MethodCounter::Info().call_count_, 0);
 }
 
