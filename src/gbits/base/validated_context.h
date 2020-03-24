@@ -42,7 +42,7 @@ struct ContextConstraint {
   const Presence presence;
 
   // Type key of the value. This must not be null.
-  ContextKey* const type_key;
+  TypeKey* const type_key;
 
   // String name for the type. This is used only for debug printing of
   // constraints.
@@ -54,7 +54,7 @@ struct ContextConstraint {
   // Type used to set the default value. This MUST match the type used for
   // type_key, or the wrong type of value will be set for that key. This must be
   // set if default_value is set.
-  ContextType* const any_type = nullptr;
+  TypeInfo* const any_type = nullptr;
 
   // If this is set for a kInOptional or kOutOptional constraint, and it is not
   // specified during assignment or completion (resepctively) of the
@@ -73,28 +73,28 @@ struct ContextConstraint {
 // common pattern). When used in a class, be sure to add "static" before the
 // macro. See ValidatedContext for example uses.
 
-#define GB_CONTEXT_CONSTRAINT(ConstantName, Presence, Type)      \
-  inline const gb::ContextConstraint ConstantName = {            \
-      gb::ContextConstraint::Presence,                           \
-      gb::ContextKey::Get<Type>(),                               \
-      gb::internal::ContextTypeName<Type>(nullptr, #Type, true), \
+#define GB_CONTEXT_CONSTRAINT(ConstantName, Presence, Type)   \
+  inline const gb::ContextConstraint ConstantName = {         \
+      gb::ContextConstraint::Presence,                        \
+      gb::TypeKey::Get<Type>(),                               \
+      gb::internal::TypeInfoName<Type>(nullptr, #Type, true), \
   }
 
 #define GB_CONTEXT_CONSTRAINT_DEFAULT(ConstantName, Presence, Type, Default) \
   inline const gb::ContextConstraint ConstantName = {                        \
       gb::ContextConstraint::Presence,                                       \
-      gb::ContextKey::Get<Type>(),                                           \
-      gb::internal::ContextTypeName<Type>(nullptr, #Type, true),             \
+      gb::TypeKey::Get<Type>(),                                              \
+      gb::internal::TypeInfoName<Type>(nullptr, #Type, true),                \
       {},                                                                    \
-      gb::ContextType::Get<Type>(),                                          \
+      gb::TypeInfo::Get<Type>(),                                             \
       Default,                                                               \
   }
 
 #define GB_CONTEXT_CONSTRAINT_NAMED(ConstantName, Presence, Type, Name) \
   inline const gb::ContextConstraint ConstantName = {                   \
       gb::ContextConstraint::Presence,                                  \
-      gb::ContextKey::Get<Type>(),                                      \
-      gb::internal::ContextTypeName<Type>(nullptr, #Type, true),        \
+      gb::TypeKey::Get<Type>(),                                         \
+      gb::internal::TypeInfoName<Type>(nullptr, #Type, true),           \
       Name,                                                             \
   }
 
@@ -102,10 +102,10 @@ struct ContextConstraint {
                                             Name, Default)                \
   inline const gb::ContextConstraint ConstantName = {                     \
       gb::ContextConstraint::Presence,                                    \
-      gb::ContextKey::Get<Type>(),                                        \
-      gb::internal::ContextTypeName<Type>(nullptr, #Type, true),          \
+      gb::TypeKey::Get<Type>(),                                           \
+      gb::internal::TypeInfoName<Type>(nullptr, #Type, true),             \
       Name,                                                               \
-      gb::ContextType::Get<Type>(),                                       \
+      gb::TypeInfo::Get<Type>(),                                          \
       Default,                                                            \
   }
 
@@ -315,7 +315,7 @@ class ValidatedContext final {
   // documentation on these methods.
   template <typename Type, class... Args>
   bool SetNew(Args&&... args) {
-    if (!CanWriteValue({}, ContextKey::Get<Type>())) {
+    if (!CanWriteValue({}, TypeKey::Get<Type>())) {
       return false;
     }
     context_->SetNew<Type, Args...>(std::forward<Args>(args)...);
@@ -323,7 +323,7 @@ class ValidatedContext final {
   }
   template <typename Type, class... Args>
   bool SetNamedNew(std::string_view name, Args&&... args) {
-    if (!CanWriteValue(name, ContextKey::Get<Type>())) {
+    if (!CanWriteValue(name, TypeKey::Get<Type>())) {
       return false;
     }
     context_->SetNamedNew<Type, Args...>(name, std::forward<Args>(args)...);
@@ -331,7 +331,7 @@ class ValidatedContext final {
   }
   template <typename Type>
   bool SetOwned(std::unique_ptr<Type> value) {
-    if (!CanWriteValue({}, ContextKey::Get<Type>())) {
+    if (!CanWriteValue({}, TypeKey::Get<Type>())) {
       return false;
     }
     context_->SetOwned<Type>(std::move(value));
@@ -339,7 +339,7 @@ class ValidatedContext final {
   }
   template <typename Type>
   bool SetOwned(std::string_view name, std::unique_ptr<Type> value) {
-    if (!CanWriteValue(name, ContextKey::Get<Type>())) {
+    if (!CanWriteValue(name, TypeKey::Get<Type>())) {
       return false;
     }
     context_->SetOwned<Type>(name, std::move(value));
@@ -347,7 +347,7 @@ class ValidatedContext final {
   }
   template <typename Type>
   bool SetPtr(Type* value) {
-    if (!CanWriteValue({}, ContextKey::Get<Type>())) {
+    if (!CanWriteValue({}, TypeKey::Get<Type>())) {
       return false;
     }
     context_->SetPtr<Type>({}, value);
@@ -355,7 +355,7 @@ class ValidatedContext final {
   }
   template <typename Type>
   bool SetPtr(std::string_view name, Type* value) {
-    if (!CanWriteValue(name, ContextKey::Get<Type>())) {
+    if (!CanWriteValue(name, TypeKey::Get<Type>())) {
       return false;
     }
     context_->SetPtr<Type>(name, value);
@@ -363,7 +363,7 @@ class ValidatedContext final {
   }
   template <typename Type, typename OtherType>
   bool SetValue(OtherType&& value) {
-    if (!CanWriteValue({}, ContextKey::Get<Type>())) {
+    if (!CanWriteValue({}, TypeKey::Get<Type>())) {
       return false;
     }
     context_->SetValue<Type>(std::forward<OtherType>(value));
@@ -371,7 +371,7 @@ class ValidatedContext final {
   }
   template <typename Type, typename OtherType>
   bool SetValue(std::string_view name, OtherType&& value) {
-    if (!CanWriteValue(name, ContextKey::Get<Type>())) {
+    if (!CanWriteValue(name, TypeKey::Get<Type>())) {
       return false;
     }
     context_->SetValue<Type>(name, std::forward<OtherType>(value));
@@ -379,21 +379,21 @@ class ValidatedContext final {
   }
   template <typename Type>
   Type* GetPtr(std::string_view name = {}) const {
-    if (!CanReadValue(name, ContextKey::Get<Type>())) {
+    if (!CanReadValue(name, TypeKey::Get<Type>())) {
       return nullptr;
     }
     return context_->GetPtr<Type>(name);
   }
   template <typename Type>
   Type GetValue(std::string_view name = {}) const {
-    if (!CanReadValue(name, ContextKey::Get<Type>())) {
+    if (!CanReadValue(name, TypeKey::Get<Type>())) {
       return Type{};
     }
     return context_->GetValue<Type>(name);
   }
   template <typename Type, typename DefaultType>
   Type GetValueOrDefault(DefaultType&& default_value) const {
-    if (!CanReadValue({}, ContextKey::Get<Type>())) {
+    if (!CanReadValue({}, TypeKey::Get<Type>())) {
       return std::forward<DefaultType>(default_value);
     }
     return context_->GetValueOrDefault<Type>(
@@ -402,7 +402,7 @@ class ValidatedContext final {
   template <typename Type, typename DefaultType>
   Type GetValueOrDefault(std::string_view name,
                          DefaultType&& default_value) const {
-    if (!CanReadValue(name, ContextKey::Get<Type>())) {
+    if (!CanReadValue(name, TypeKey::Get<Type>())) {
       return std::forward<DefaultType>(default_value);
     }
     return context_->GetValueOrDefault<Type>(
@@ -410,18 +410,18 @@ class ValidatedContext final {
   }
   template <typename Type>
   bool Exists(std::string_view name = {}) const {
-    if (!CanReadValue(name, ContextKey::Get<Type>())) {
+    if (!CanReadValue(name, TypeKey::Get<Type>())) {
       return false;
     }
     return context_->Exists<Type>(name);
   }
-  bool Exists(std::string_view name, ContextKey* key) const {
+  bool Exists(std::string_view name, TypeKey* key) const {
     if (!CanReadValue(name, key)) {
       return false;
     }
     return context_->Exists(name, key);
   }
-  bool Exists(ContextKey* key) const {
+  bool Exists(TypeKey* key) const {
     if (!CanReadValue({}, key)) {
       return false;
     }
@@ -436,21 +436,21 @@ class ValidatedContext final {
   }
   template <typename Type>
   bool Owned(std::string_view name = {}) const {
-    if (!CanReadValue(name, ContextKey::Get<Type>())) {
+    if (!CanReadValue(name, TypeKey::Get<Type>())) {
       return false;
     }
     return context_->Owned<Type>(name);
   }
   template <typename Type>
   std::unique_ptr<Type> Release(std::string_view name = {}) {
-    if (!CanWriteValue(name, ContextKey::Get<Type>())) {
+    if (!CanWriteValue(name, TypeKey::Get<Type>())) {
       return nullptr;
     }
     return context_->Release<Type>(name);
   }
   template <typename Type>
   bool Clear(std::string_view name = {}) {
-    if (!CanWriteValue(name, ContextKey::Get<Type>())) {
+    if (!CanWriteValue(name, TypeKey::Get<Type>())) {
       return false;
     }
     context_->Clear<Type>(name);
@@ -468,8 +468,8 @@ class ValidatedContext final {
   template <const ContextConstraint&... Constraints>
   friend class ContextContract;
 
-  bool CanReadValue(std::string_view name, ContextKey* key) const;
-  bool CanWriteValue(std::string_view name, ContextKey* key) const;
+  bool CanReadValue(std::string_view name, TypeKey* key) const;
+  bool CanWriteValue(std::string_view name, TypeKey* key) const;
   bool CanComplete(bool report_errors) const;
   void ReportError(const std::string& message) const;
 

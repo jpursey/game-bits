@@ -15,14 +15,14 @@ class GameStateMachine;
 
 // A GameStateId is a unique used to identify a GameState. It can be determined
 // from a GameState derived class type via GetGameStateId().
-using GameStateId = ContextKey*;
+using GameStateId = TypeKey*;
 
 // Retrieves the GameStateId for the specified state type. It is sufficient for
 // the StateType to only be forward declared (the full class definition is not
 // required).
 template <typename StateType>
 GameStateId GetGameStateId() {
-  return ContextKey::Get<StateType>();
+  return TypeKey::Get<StateType>();
 }
 
 // Constant that represents the GameStateId for no state.

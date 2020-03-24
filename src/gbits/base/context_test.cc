@@ -153,7 +153,7 @@ TEST(ContextTest, SetNewExists) {
 TEST(ContextTest, SetNewExistsByContextType) {
   Context context;
   context.SetNew<int>();
-  EXPECT_TRUE(context.Exists(ContextKey::Get<int>()));
+  EXPECT_TRUE(context.Exists(TypeKey::Get<int>()));
 }
 
 TEST(ContextTest, SetNewOfDifferentTypesWork) {
@@ -180,7 +180,7 @@ TEST(ContextTest, SetNamedNewExists) {
 TEST(ContextTest, SetNamedNewExistsByContextType) {
   Context context;
   context.SetNamedNew<int>("zero");
-  EXPECT_TRUE(context.Exists("zero", ContextKey::Get<int>()));
+  EXPECT_TRUE(context.Exists("zero", TypeKey::Get<int>()));
 }
 
 TEST(ContextTest, SetValueOfDifferentTypesWork) {
@@ -966,7 +966,7 @@ TEST(ContextTest, SetAnyFailsIfWrongType) {
   Context context;
   double value = 10.0;
   std::any any_value(value);
-  context.SetAny(ContextType::Get<int>(), any_value);
+  context.SetAny(TypeInfo::Get<int>(), any_value);
   EXPECT_FALSE(context.Exists<int>());
   EXPECT_FALSE(context.Exists<double>());
 }
@@ -977,7 +977,7 @@ TEST(ContextTest, SetAnyClearsIfWrongType) {
   std::any any_value(value);
   context.SetValue<int>(100);
   context.SetValue<double>(200.0);
-  context.SetAny(ContextType::Get<int>(), any_value);
+  context.SetAny(TypeInfo::Get<int>(), any_value);
   EXPECT_FALSE(context.Exists<int>());
   EXPECT_EQ(context.GetValue<double>(), 200.0);
 }
@@ -987,7 +987,7 @@ TEST(ContextTest, SetAnySucceeds) {
   Context context;
   std::any any_value(Item{&counts});
   Counts init_counts = counts;
-  context.SetAny(ContextType::Get<Item>(), any_value);
+  context.SetAny(TypeInfo::Get<Item>(), any_value);
   EXPECT_TRUE(context.Exists<Item>());
   EXPECT_EQ(counts.destruct, init_counts.destruct);
   EXPECT_EQ(counts.construct, init_counts.construct);
@@ -1001,7 +1001,7 @@ TEST(ContextTest, SetAnyNamedFailsIfWrongType) {
   Context context;
   double value = 10.0;
   std::any any_value(value);
-  context.SetAny("any", ContextType::Get<int>(), any_value);
+  context.SetAny("any", TypeInfo::Get<int>(), any_value);
   EXPECT_FALSE(context.NameExists("any"));
 }
 
@@ -1010,7 +1010,7 @@ TEST(ContextTest, SetAnyClearsNameIfWrongType) {
   double value = 10.0;
   std::any any_value(value);
   context.SetValue<double>("any", 200.0);
-  context.SetAny("any", ContextType::Get<int>(), any_value);
+  context.SetAny("any", TypeInfo::Get<int>(), any_value);
   EXPECT_FALSE(context.NameExists("any"));
 }
 
@@ -1019,7 +1019,7 @@ TEST(ContextTest, SetAnyNamedSucceeds) {
   Context context;
   std::any any_value(Item{&counts});
   Counts init_counts = counts;
-  context.SetAny("any", ContextType::Get<Item>(), any_value);
+  context.SetAny("any", TypeInfo::Get<Item>(), any_value);
   EXPECT_TRUE(context.Exists<Item>("any"));
   EXPECT_EQ(counts.destruct, init_counts.destruct);
   EXPECT_EQ(counts.construct, init_counts.construct);
@@ -1033,7 +1033,7 @@ TEST(ContextTest, SetAnyReplacesNamedValueOfDifferentType) {
   Context context;
   context.SetValue<double>("any", 200.0);
   int value = 10;
-  context.SetAny("any", ContextType::Get<int>(), std::any(value));
+  context.SetAny("any", TypeInfo::Get<int>(), std::any(value));
   EXPECT_EQ(context.GetValue<int>("any"), 10);
   EXPECT_FALSE(context.Exists<double>("any"));
 }

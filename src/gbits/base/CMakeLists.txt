@@ -4,8 +4,8 @@ set(gbits_base_SOURCE
   clock.h
   context.cc context.h
   context_builder.h
-  context_type.h
   fake_clock.h
+  type_info.h
   validated_context.cc validated_context.h
 )
 

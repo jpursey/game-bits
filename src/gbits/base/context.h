@@ -6,7 +6,7 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/synchronization/mutex.h"
-#include "gbits/base/context_type.h"
+#include "gbits/base/type_info.h"
 
 namespace gb {
 
@@ -48,14 +48,14 @@ class Context final {
   template <typename Type, class... Args>
   void SetNew(Args&&... args) {
     absl::WriterMutexLock lock(&mutex_);
-    SetImpl({}, ContextType::Get<Type>(), new Type(std::forward<Args>(args)...),
+    SetImpl({}, TypeInfo::Get<Type>(), new Type(std::forward<Args>(args)...),
             true);
   }
   template <typename Type, class... Args>
   void SetNamedNew(std::string_view name, Args&&... args) {
     absl::WriterMutexLock lock(&mutex_);
-    SetImpl(name, ContextType::Get<Type>(),
-            new Type(std::forward<Args>(args)...), true);
+    SetImpl(name, TypeInfo::Get<Type>(), new Type(std::forward<Args>(args)...),
+            true);
   }
 
   // Sets the value of the specified Type with the context taking ownership.
@@ -71,12 +71,12 @@ class Context final {
   template <typename Type>
   void SetOwned(std::unique_ptr<Type> value) {
     absl::WriterMutexLock lock(&mutex_);
-    SetImpl({}, ContextType::Get<Type>(), value.release(), true);
+    SetImpl({}, TypeInfo::Get<Type>(), value.release(), true);
   }
   template <typename Type>
   void SetOwned(std::string_view name, std::unique_ptr<Type> value) {
     absl::WriterMutexLock lock(&mutex_);
-    SetImpl(name, ContextType::Get<Type>(), value.release(), true);
+    SetImpl(name, TypeInfo::Get<Type>(), value.release(), true);
   }
 
   // Sets the value of the specified Type without the context taking ownership.
@@ -92,12 +92,12 @@ class Context final {
   template <typename Type>
   void SetPtr(Type* value) {
     absl::WriterMutexLock lock(&mutex_);
-    SetImpl({}, ContextType::GetPlaceholder<Type>(), value, false);
+    SetImpl({}, TypeInfo::GetPlaceholder<Type>(), value, false);
   }
   template <typename Type>
   void SetPtr(std::string_view name, Type* value) {
     absl::WriterMutexLock lock(&mutex_);
-    SetImpl(name, ContextType::GetPlaceholder<Type>(), value, false);
+    SetImpl(name, TypeInfo::GetPlaceholder<Type>(), value, false);
   }
 
   // Updates the value of the specified Type in the context with the new value.
@@ -123,7 +123,7 @@ class Context final {
     if (old_value != nullptr) {
       *old_value = std::forward<OtherType>(value);
     } else {
-      SetImpl({}, ContextType::Get<Type>(),
+      SetImpl({}, TypeInfo::Get<Type>(),
               new Type(std::forward<OtherType>(value)), true);
     }
   }
@@ -137,7 +137,7 @@ class Context final {
     if (old_value != nullptr) {
       *old_value = std::forward<OtherType>(value);
     } else {
-      SetImpl(name, ContextType::Get<Type>(),
+      SetImpl(name, TypeInfo::Get<Type>(),
               new Type(std::forward<OtherType>(value)), true);
     }
   }
@@ -147,8 +147,8 @@ class Context final {
                              int> = 0>
   void SetValue(OtherType&& value) {
     absl::WriterMutexLock lock(&mutex_);
-    SetImpl({}, ContextType::Get<Type>(),
-            new Type(std::forward<OtherType>(value)), true);
+    SetImpl({}, TypeInfo::Get<Type>(), new Type(std::forward<OtherType>(value)),
+            true);
   }
   template <typename Type, typename OtherType,
             std::enable_if_t<std::negation<std::is_assignable<
@@ -156,19 +156,19 @@ class Context final {
                              int> = 0>
   void SetValue(std::string_view name, OtherType&& value) {
     absl::WriterMutexLock lock(&mutex_);
-    SetImpl(name, ContextType::Get<Type>(),
+    SetImpl(name, TypeInfo::Get<Type>(),
             new Type(std::forward<OtherType>(value)), true);
   }
 
-  // Sets a value based on an std::any and pre-determined ContextType.
+  // Sets a value based on an std::any and pre-determined TypeInfo.
   //
   // If the std::any does not have a value, or it is not of the exact same type
-  // as the ContextType represents, then this set the value to null (equivalent
+  // as the TypeInfo represents, then this set the value to null (equivalent
   // to calling Clear<Type>()).
-  void SetAny(ContextType* type, const std::any& value) {
+  void SetAny(TypeInfo* type, const std::any& value) {
     return SetAny({}, type, value);
   }
-  void SetAny(std::string_view name, ContextType* type, const std::any& value) {
+  void SetAny(std::string_view name, TypeInfo* type, const std::any& value) {
     if (type != nullptr) {
       absl::WriterMutexLock lock(&mutex_);
       SetImpl(name, type, type->Clone(value), true);
@@ -221,10 +221,10 @@ class Context final {
   // This is equivalent to (GetPtr<Type>() != nullptr)
   template <typename Type>
   bool Exists(std::string_view name = {}) const {
-    return Exists(name, ContextKey::Get<Type>());
+    return Exists(name, TypeKey::Get<Type>());
   }
-  bool Exists(ContextKey* key) const { return Exists({}, key); }
-  bool Exists(std::string_view name, ContextKey* key) const {
+  bool Exists(TypeKey* key) const { return Exists({}, key); }
+  bool Exists(std::string_view name, TypeKey* key) const {
     absl::ReaderMutexLock lock(&mutex_);
     return values_.find({name, key}) != values_.end();
   }
@@ -242,7 +242,7 @@ class Context final {
   template <typename Type>
   bool Owned(std::string_view name = {}) const {
     absl::ReaderMutexLock lock(&mutex_);
-    auto it = values_.find({name, ContextKey::Get<Type>()});
+    auto it = values_.find({name, TypeKey::Get<Type>()});
     return it != values_.end() && it->second.owned;
   }
 
@@ -254,7 +254,7 @@ class Context final {
   std::unique_ptr<Type> Release(std::string_view name = {}) {
     absl::WriterMutexLock lock(&mutex_);
     return std::unique_ptr<Type>(
-        static_cast<Type*>(ReleaseImpl(name, ContextType::Get<Type>())));
+        static_cast<Type*>(ReleaseImpl(name, TypeInfo::Get<Type>())));
   }
 
   // Clears any value of the specified Type from the context (if one existed).
@@ -262,10 +262,10 @@ class Context final {
   // If the value exists and is owned, it will be destructed.
   template <typename Type>
   void Clear(std::string_view name = {}) {
-    return Clear(name, ContextKey::Get<Type>());
+    return Clear(name, TypeKey::Get<Type>());
   }
-  void Clear(ContextKey* key) { return Clear({}, key); }
-  void Clear(std::string_view name, ContextKey* key) {
+  void Clear(TypeKey* key) { return Clear({}, key); }
+  void Clear(std::string_view name, TypeKey* key) {
     absl::WriterMutexLock lock(&mutex_);
     SetImpl(name, key->GetPlaceholderType(), nullptr, false);
   }
@@ -284,24 +284,24 @@ class Context final {
  private:
   struct Value {
     Value() = default;
-    ContextType* type = nullptr;
+    TypeInfo* type = nullptr;
     char* name = nullptr;
     void* value = nullptr;
     bool owned = false;
   };
   using Values =
-      absl::flat_hash_map<std::tuple<std::string_view, ContextKey*>, Value>;
-  using Names = absl::flat_hash_map<std::string_view, ContextType*>;
+      absl::flat_hash_map<std::tuple<std::string_view, TypeKey*>, Value>;
+  using Names = absl::flat_hash_map<std::string_view, TypeInfo*>;
 
   template <typename Type>
   Type* GetPtrImpl(std::string_view name = {}) const
       ABSL_SHARED_LOCKS_REQUIRED(mutex_) {
-    auto it = values_.find({name, ContextKey::Get<Type>()});
+    auto it = values_.find({name, TypeKey::Get<Type>()});
     return it != values_.end() ? static_cast<Type*>(it->second.value) : nullptr;
   }
-  void SetImpl(std::string_view name, ContextType* type, void* new_value,
+  void SetImpl(std::string_view name, TypeInfo* type, void* new_value,
                bool owned) ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
-  void* ReleaseImpl(std::string_view name, ContextType* type)
+  void* ReleaseImpl(std::string_view name, TypeInfo* type)
       ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   mutable absl::Mutex mutex_;

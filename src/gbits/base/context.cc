@@ -14,7 +14,7 @@ Context& Context::operator=(Context&& other) {
   return *this;
 }
 
-void Context::SetImpl(std::string_view name, ContextType* type, void* new_value,
+void Context::SetImpl(std::string_view name, TypeInfo* type, void* new_value,
                       bool owned) {
   auto key = std::make_tuple(name, type->Key());
   auto it = values_.find(key);
@@ -70,7 +70,7 @@ void Context::SetImpl(std::string_view name, ContextType* type, void* new_value,
   stored_value->owned = owned;
 }
 
-void* Context::ReleaseImpl(std::string_view name, ContextType* type) {
+void* Context::ReleaseImpl(std::string_view name, TypeInfo* type) {
   auto key = std::make_pair(name, type->Key());
   void* released_value = nullptr;
   auto it = values_.find(key);

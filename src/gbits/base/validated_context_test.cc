@@ -359,7 +359,7 @@ GB_CONTEXT_CONSTRAINT_NAMED_DEFAULT(kTestConstraintNamedDefault, kInRequired,
 
 TEST(ConstraintMacroTest, Constraint) {
   EXPECT_EQ(kTestConstraint.presence, ContextConstraint::kInRequired);
-  EXPECT_EQ(kTestConstraint.type_key, ContextKey::Get<int>());
+  EXPECT_EQ(kTestConstraint.type_key, TypeKey::Get<int>());
   EXPECT_EQ(kTestConstraint.type_name, "int");
   EXPECT_EQ(kTestConstraint.name, "");
   EXPECT_EQ(kTestConstraint.any_type, nullptr);
@@ -368,16 +368,16 @@ TEST(ConstraintMacroTest, Constraint) {
 
 TEST(ConstraintMacroTest, ConstraintDefault) {
   EXPECT_EQ(kTestConstraintDefault.presence, ContextConstraint::kInRequired);
-  EXPECT_EQ(kTestConstraintDefault.type_key, ContextKey::Get<int>());
+  EXPECT_EQ(kTestConstraintDefault.type_key, TypeKey::Get<int>());
   EXPECT_EQ(kTestConstraintDefault.type_name, "int");
   EXPECT_EQ(kTestConstraintDefault.name, "");
-  EXPECT_EQ(kTestConstraintDefault.any_type, ContextType::Get<int>());
+  EXPECT_EQ(kTestConstraintDefault.any_type, TypeInfo::Get<int>());
   ASSERT_TRUE(kTestConstraintDefault.default_value.has_value());
 }
 
 TEST(ConstraintMacroTest, ConstraintNamed) {
   EXPECT_EQ(kTestConstraintNamed.presence, ContextConstraint::kInRequired);
-  EXPECT_EQ(kTestConstraintNamed.type_key, ContextKey::Get<int>());
+  EXPECT_EQ(kTestConstraintNamed.type_key, TypeKey::Get<int>());
   EXPECT_EQ(kTestConstraintNamed.type_name, "int");
   EXPECT_EQ(kTestConstraintNamed.name, kTestConstraintName);
   EXPECT_EQ(kTestConstraintNamed.any_type, nullptr);
@@ -387,10 +387,10 @@ TEST(ConstraintMacroTest, ConstraintNamed) {
 TEST(ConstraintMacroTest, ConstraintNamedDefault) {
   EXPECT_EQ(kTestConstraintNamedDefault.presence,
             ContextConstraint::kInRequired);
-  EXPECT_EQ(kTestConstraintNamedDefault.type_key, ContextKey::Get<int>());
+  EXPECT_EQ(kTestConstraintNamedDefault.type_key, TypeKey::Get<int>());
   EXPECT_EQ(kTestConstraintNamedDefault.type_name, "int");
   EXPECT_EQ(kTestConstraintNamedDefault.name, kTestConstraintName);
-  EXPECT_EQ(kTestConstraintNamedDefault.any_type, ContextType::Get<int>());
+  EXPECT_EQ(kTestConstraintNamedDefault.any_type, TypeInfo::Get<int>());
   ASSERT_TRUE(kTestConstraintNamedDefault.default_value.has_value());
 }
 
@@ -916,7 +916,7 @@ TEST_P(ReadFailsTest, Exists) {
 
 TEST_P(ReadFailsTest, ExistsWithContextType) {
   ValidatedContext validated_context(&context, GetParam());
-  EXPECT_FALSE(validated_context.Exists(ContextKey::Get<int>()));
+  EXPECT_FALSE(validated_context.Exists(TypeKey::Get<int>()));
   EXPECT_EQ(GetErrorCount(), 1);
 }
 
@@ -953,7 +953,7 @@ TEST_P(ReadNamedFailsTest, Exists) {
 
 TEST_P(ReadNamedFailsTest, ExistsWithContextType) {
   ValidatedContext validated_context(&context, GetParam());
-  EXPECT_FALSE(validated_context.Exists(kNameValue, ContextKey::Get<int>()));
+  EXPECT_FALSE(validated_context.Exists(kNameValue, TypeKey::Get<int>()));
   EXPECT_EQ(GetErrorCount(), 1);
 }
 
@@ -991,7 +991,7 @@ TEST_P(ReadSucceedsTest, Exists) {
 
 TEST_P(ReadSucceedsTest, ExistsWithContextType) {
   ValidatedContext validated_context(&context, GetParam());
-  EXPECT_TRUE(validated_context.Exists(ContextKey::Get<int>()));
+  EXPECT_TRUE(validated_context.Exists(TypeKey::Get<int>()));
   EXPECT_EQ(GetErrorCount(), 0);
 }
 
@@ -1030,7 +1030,7 @@ TEST_P(ReadNamedSucceedsTest, Exists) {
 
 TEST_P(ReadNamedSucceedsTest, ExistsWithContextType) {
   ValidatedContext validated_context(&context, GetParam());
-  EXPECT_TRUE(validated_context.Exists(kNameValue, ContextKey::Get<int>()));
+  EXPECT_TRUE(validated_context.Exists(kNameValue, TypeKey::Get<int>()));
   EXPECT_EQ(GetErrorCount(), 0);
 }
 

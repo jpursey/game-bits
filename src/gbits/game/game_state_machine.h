@@ -242,7 +242,7 @@ class GameStateMachine final {
   template <typename StateType>
   void Register() {
     DoRegister(
-        ContextType::Get<StateType>()->Key(), StateType::Lifetime::kType,
+        TypeInfo::Get<StateType>()->Key(), StateType::Lifetime::kType,
         StateType::ParentStates::kType, StateType::ParentStates::GetIds(),
         StateType::SiblingStates::kType, StateType::SiblingStates::GetIds(),
         StateType::Contract::GetConstraints(),

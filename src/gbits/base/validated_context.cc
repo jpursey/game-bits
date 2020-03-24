@@ -19,7 +19,7 @@ std::string ToString(std::string_view type_name, std::string_view name) {
   return absl::StrCat(type_name, " ", name);
 }
 
-std::string ToString(ContextKey* key, std::string_view name) {
+std::string ToString(TypeKey* key, std::string_view name) {
   return ToString((key != nullptr ? key->GetTypeName() : ""), name);
 }
 
@@ -172,8 +172,7 @@ bool ValidatedContext::Complete() {
   return true;
 }
 
-bool ValidatedContext::CanReadValue(std::string_view name,
-                                    ContextKey* key) const {
+bool ValidatedContext::CanReadValue(std::string_view name, TypeKey* key) const {
   if (context_ == nullptr) {
     // Error was reported at construction or assignment.
     return false;
@@ -189,7 +188,7 @@ bool ValidatedContext::CanReadValue(std::string_view name,
 }
 
 bool ValidatedContext::CanWriteValue(std::string_view name,
-                                     ContextKey* key) const {
+                                     TypeKey* key) const {
   if (context_ == nullptr) {
     // Error was reported at construction or assignment.
     return false;
