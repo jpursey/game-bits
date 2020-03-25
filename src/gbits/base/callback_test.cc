@@ -330,7 +330,7 @@ TEST(CallbackTest, MoveOnlyParametersWork) {
   EXPECT_EQ(value, nullptr);
 }
 
-TEST(CallbackTest, RValueParametersWork) {
+TEST(CallbackTest, LValueParametersWork) {
   int x = 1;
   int y = 2;
   Callback<int(int, int)> callback(AddValues);
