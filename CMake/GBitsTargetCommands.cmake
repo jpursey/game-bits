@@ -43,6 +43,15 @@ function(gbits_add_test NAME)
 		${NAME}
 		"${GBITS_BUILD_DIR}/third_party/googletest/lib/$(Configuration)/gmock_main$<$<CONFIG:Debug>:d>.lib"
 	)
+	if(DEFINED ${NAME}_TEST_DEPS)
+		add_dependencies(${NAME}_test ${${NAME}_TEST_DEPS})
+		target_link_libraries(${NAME}_test
+			${${NAME}_TEST_DEPS}
+		)
+	endif()
+	if(DEFINED ${NAME}_TEST_LIBS)
+		target_link_libraries(${NAME}_test ${${NAME}_TEST_LIBS})
+	endif()
 
 	if(DEFINED VS_FOLDER)
 		set_target_properties(${NAME}_test PROPERTIES FOLDER ${VS_FOLDER}/Tests)
