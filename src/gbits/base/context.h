@@ -188,7 +188,8 @@ class Context final {
   // construction.
   template <typename Type>
   Type GetValue(std::string_view name = {}) const {
-    Type* value = GetPtr<Type>(name);
+    absl::ReaderMutexLock lock(&mutex_);
+    Type* value = GetPtrImpl<Type>(name);
     if (value != nullptr) {
       return *value;
     }
@@ -200,7 +201,8 @@ class Context final {
   // construction.
   template <typename Type, typename DefaultType>
   Type GetValueOrDefault(DefaultType&& default_value) const {
-    Type* value = GetPtr<Type>();
+    absl::ReaderMutexLock lock(&mutex_);
+    Type* value = GetPtrImpl<Type>();
     if (value != nullptr) {
       return *value;
     }
@@ -209,7 +211,8 @@ class Context final {
   template <typename Type, typename DefaultType>
   Type GetValueOrDefault(std::string_view name,
                          DefaultType&& default_value) const {
-    Type* value = GetPtr<Type>(name);
+    absl::ReaderMutexLock lock(&mutex_);
+    Type* value = GetPtrImpl<Type>(name);
     if (value != nullptr) {
       return *value;
     }

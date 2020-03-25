@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 
+#include "gbits/test/thread_tester.h"
+#include "glog/logging.h"
 #include "gtest/gtest.h"
 
 namespace gb {
@@ -1132,6 +1134,76 @@ TEST(ContextTest, SetPtrSupportsForwardDeclaredTypes) {
   context.ClearName("name");
   EXPECT_FALSE(context.Exists<ForwardDeclaredType>("name"));
   EXPECT_FALSE(context.NameExists("name"));
+}
+
+TEST(ContextTest, ThreadAbuse) {
+  Context context;
+  ThreadTester tester;
+  int int_ptr = 42;
+  auto func = [&context, &int_ptr]() {
+    context.Empty();
+    context.Reset();
+    context.SetNew<int>(5);
+    context.SetNamedNew<int>("int", 6);
+    context.SetOwned<double>(std::make_unique<double>(10.0));
+    context.SetOwned<double>("double", std::make_unique<double>(20.0));
+    context.SetPtr<int>(&int_ptr);
+    context.SetPtr<int>("int", &int_ptr);
+    context.SetValue<double>(30.0);
+    context.SetValue<double>("double", 40.0);
+    std::any value(100);
+    context.SetAny(TypeInfo::Get<int>(), value);
+    value = 200;
+    context.SetAny("int", TypeInfo::Get<int>(), value);
+    context.GetPtr<int>();
+    context.GetPtr<int>("int");
+    context.GetValue<double>();
+    context.GetValue<double>("double");
+    context.GetValueOrDefault<double>(42.0);
+    context.GetValueOrDefault<double>("double", 42.0);
+    context.Exists<int>();
+    context.Exists<int>("int");
+    context.Exists(TypeKey::Get<double>());
+    context.Exists("double", TypeKey::Get<double>());
+    context.NameExists("int");
+    context.Owned<double>();
+    context.Owned<double>("double");
+    context.Release<double>();
+    context.Clear<int>();
+    context.Clear<int>("int");
+    context.Clear(TypeKey::Get<double>());
+    context.Clear("double", TypeKey::Get<double>());
+    context.ClearName("int");
+    return true;
+  };
+  tester.RunLoop(1, "loop", func, ThreadTester::MaxConcurrency());
+  absl::SleepFor(absl::Seconds(1));
+  EXPECT_TRUE(tester.Complete()) << tester.GetResultString();
+}
+
+TEST(ContextTest, ConstructorRace) {
+  Context context;
+  ThreadTester tester;
+  struct Value {
+    Value(ThreadTester& tester, int new_value) {
+      value = new_value;
+      tester.Signal(1);
+      tester.Wait(2);
+    }
+    int value;
+  };
+  tester.Run("set", [&tester, &context]() {
+    context.SetNew<Value>(tester, 5);
+    return true;
+  });
+  tester.Run("get", [&tester, &context]() {
+    tester.Wait(1);
+    Value* value = context.GetPtr<Value>();
+    return value != nullptr && value->value == 5;
+  });
+  absl::SleepFor(absl::Milliseconds(1));
+  tester.Signal(2);
+  EXPECT_TRUE(tester.Complete()) << tester.GetResultString();
 }
 
 }  // namespace

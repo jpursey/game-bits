@@ -16,6 +16,9 @@ set(gbits_base_TEST_SOURCE
   context_test.cc
   validated_context_test.cc
 )
+set(gbits_base_TEST_DEPS
+  gbits_test
+)
 set_source_files_properties(validated_context_test.cc
   PROPERTIES COMPILE_FLAGS /bigobj
 )
