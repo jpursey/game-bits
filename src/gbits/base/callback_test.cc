@@ -28,7 +28,6 @@ struct MethodCounterInfo {
   int copy_assign_count_ = 0;
   int move_assign_count_ = 0;
   int destructor_count_ = 0;
-  int custom_destructor_count_ = 0;
   int call_count_ = 0;
 };
 
@@ -238,7 +237,6 @@ TEST(CallbackTest, MoveConstructMethodCounter) {
   EXPECT_EQ(MethodCounter::Info().copy_assign_count_, 0);
   EXPECT_EQ(MethodCounter::Info().move_assign_count_, 0);
   EXPECT_EQ(MethodCounter::Info().destructor_count_, 2);
-  EXPECT_EQ(MethodCounter::Info().custom_destructor_count_, 0);
   EXPECT_EQ(MethodCounter::Info().call_count_, 0);
 }
 
@@ -251,7 +249,6 @@ TEST(CallbackTest, UniquePointerConstructMethodCounter) {
   EXPECT_EQ(MethodCounter::Info().copy_assign_count_, 0);
   EXPECT_EQ(MethodCounter::Info().move_assign_count_, 0);
   EXPECT_EQ(MethodCounter::Info().destructor_count_, 1);
-  EXPECT_EQ(MethodCounter::Info().custom_destructor_count_, 0);
   EXPECT_EQ(MethodCounter::Info().call_count_, 0);
 }
 
@@ -265,7 +262,6 @@ TEST(CallbackTest, SelfAssignMethodCounter) {
   EXPECT_EQ(MethodCounter::Info().copy_assign_count_, 0);
   EXPECT_EQ(MethodCounter::Info().move_assign_count_, 0);
   EXPECT_EQ(MethodCounter::Info().destructor_count_, 1);
-  EXPECT_EQ(MethodCounter::Info().custom_destructor_count_, 0);
   EXPECT_EQ(MethodCounter::Info().call_count_, 0);
 }
 
@@ -279,7 +275,6 @@ TEST(CallbackTest, NullAssignMethodCounter) {
   EXPECT_EQ(MethodCounter::Info().copy_assign_count_, 0);
   EXPECT_EQ(MethodCounter::Info().move_assign_count_, 0);
   EXPECT_EQ(MethodCounter::Info().destructor_count_, 2);
-  EXPECT_EQ(MethodCounter::Info().custom_destructor_count_, 0);
   EXPECT_EQ(MethodCounter::Info().call_count_, 0);
 }
 
@@ -293,7 +288,6 @@ TEST(CallbackTest, MoveAssignMethodCounter) {
   EXPECT_EQ(MethodCounter::Info().copy_assign_count_, 0);
   EXPECT_EQ(MethodCounter::Info().move_assign_count_, 0);
   EXPECT_EQ(MethodCounter::Info().destructor_count_, 3);
-  EXPECT_EQ(MethodCounter::Info().custom_destructor_count_, 0);
   EXPECT_EQ(MethodCounter::Info().call_count_, 0);
 }
 
@@ -307,8 +301,48 @@ TEST(CallbackTest, UniquePointerAssignMethodCounter) {
   EXPECT_EQ(MethodCounter::Info().copy_assign_count_, 0);
   EXPECT_EQ(MethodCounter::Info().move_assign_count_, 0);
   EXPECT_EQ(MethodCounter::Info().destructor_count_, 1);
-  EXPECT_EQ(MethodCounter::Info().custom_destructor_count_, 0);
   EXPECT_EQ(MethodCounter::Info().call_count_, 0);
+}
+
+TEST(CallbackTest, MoveParametersWork) {
+  MethodCounter counter;
+  MethodCounter::Reset();
+  Callback<void(MethodCounter)> callback(
+      [](MethodCounter counter) { counter(); });
+  callback(std::move(counter));
+  EXPECT_EQ(MethodCounter::Info().default_constructor_count_, 0);
+  EXPECT_EQ(MethodCounter::Info().copy_constructor_count_, 0);
+  EXPECT_EQ(MethodCounter::Info().move_constructor_count_, 2);
+  EXPECT_EQ(MethodCounter::Info().copy_assign_count_, 0);
+  EXPECT_EQ(MethodCounter::Info().move_assign_count_, 0);
+  EXPECT_EQ(MethodCounter::Info().destructor_count_, 2);
+  EXPECT_EQ(MethodCounter::Info().call_count_, 1);
+}
+
+TEST(CallbackTest, MoveOnlyParametersWork) {
+  std::unique_ptr<int> value = std::make_unique<int>(5);
+  int* value_ptr = value.get();
+  Callback<void(std::unique_ptr<int>)> callback(
+      [value_ptr](std::unique_ptr<int> value) {
+        EXPECT_EQ(value_ptr, value.get());
+      });
+  callback(std::move(value));
+  EXPECT_EQ(value, nullptr);
+}
+
+TEST(CallbackTest, RValueParametersWork) {
+  int x = 1;
+  int y = 2;
+  Callback<int(int, int)> callback(AddValues);
+  EXPECT_EQ(callback(x, y), 3);
+}
+
+TEST(CallbackTest, TypeConversionParametersWork) {
+  int x = 1;
+  int y = 2;
+  Callback<double(double, double)> callback(
+      [](double a, double b) { return a + b; });
+  EXPECT_EQ(callback(x, y), 3.0);
 }
 
 }  // namespace

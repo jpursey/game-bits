@@ -154,7 +154,7 @@ class Callback<Return(Args...)> final {
   operator bool() const { return callback_ != nullptr; }
 
   // Calls the underlying callback.
-  Return operator()(Args&&... args) const {
+  Return operator()(Args... args) const {
     return call_callback_(callback_, std::forward<Args>(args)...);
   }
 
