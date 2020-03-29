@@ -14,6 +14,7 @@ set(gbits_base_TEST_SOURCE
   callback_scope_test.cc
   clock_test.cc
   context_test.cc
+  type_info_test.cc
   validated_context_test.cc
 )
 set(gbits_base_TEST_DEPS
