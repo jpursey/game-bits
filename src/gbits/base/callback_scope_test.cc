@@ -1,5 +1,8 @@
 #include "gbits/base/callback_scope.h"
 
+#include <atomic>
+
+#include "gbits/test/thread_tester.h"
 #include "gtest/gtest.h"
 
 namespace gb {
@@ -114,6 +117,53 @@ TEST(CallbackScopeTest, CallbackWorksFallbackWorksWithDefault) {
     callback = scope.New<int(int, int)>(AddValue, 42);
   }
   EXPECT_EQ(callback(1, 2), 42);
+}
+
+TEST(CallbackScopeTest, CallbackDeletedWithMultipleThreads) {
+  auto scope = std::make_unique<CallbackScope>();
+  auto count = std::make_unique<std::atomic<int>>(0);
+  ThreadTester tester;
+  auto callback = scope->New<bool()>(
+      [&count]() {
+        if (count == nullptr) {
+          return false;
+        }
+        ++*count;
+        return true;
+      },
+      true);
+  tester.RunLoop(
+      1, "test", [&callback]() { return callback(); },
+      ThreadTester::MaxConcurrency());
+  absl::SleepFor(absl::Milliseconds(10));
+  scope.reset();
+  count.reset();
+  absl::SleepFor(absl::Milliseconds(10));
+  EXPECT_TRUE(tester.Complete()) << tester.GetResultString();
+}
+
+TEST(CallbackScopeTest, CallbackScopeDestructorWaits) {
+  auto scope = std::make_unique<CallbackScope>();
+  ThreadTester tester;
+  tester.Run("run", [&scope, &tester]() {
+    auto callback = scope->New<bool()>(
+        [&tester]() {
+          tester.Wait(1);
+          tester.Signal(2);
+          absl::SleepFor(absl::Milliseconds(10));
+          return true;
+        },
+        false);
+    return callback();
+  });
+  tester.RunThenSignal(3, "delete", [&scope, &tester]() {
+    tester.Wait(2);
+    scope.reset();
+    return true;
+  });
+  tester.Signal(1);
+  tester.Wait(3);
+  EXPECT_TRUE(tester.Complete()) << tester.GetResultString();
 }
 
 }  // namespace
