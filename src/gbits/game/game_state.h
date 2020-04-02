@@ -130,10 +130,18 @@ struct ActiveGameStateLifetime : GameStateLifetime {
 //     be switched to from this state.
 //   - It should declare a Lifetime alias if the state has specific lifetime
 //     requirements.
-//   - It must have a default constructor (no parameters). This is called by the
-//     GameStateMachine to instantiate the class.
+//   - It must have a default constructor taking no parameters. This is called
+//     by the GameStateMachine to instantiate the class.
+//   - No GameState member functions are callable until *after* construction
+//     completes. If access is needed during initialization of the instance, the
+//     derived class can override OnInit() to do further one-time
+//     initialization. Calling GameState member functions prior to OnInit() will
+//     result in an access violation.
 //
-// This class is thread-compatible.
+// This class is thread-safe. However, caution must still be applied around
+// destruction, as the state instance is owned by the GameStateMachine and may
+// be deleted during a state machine update (depending on specified Lifetime
+// attribute).
 class GameState {
  public:
   GameState(const GameState&) = delete;
@@ -165,11 +173,12 @@ class GameState {
   // override the default behavior.
   using Lifetime = GlobalGameStateLifetime;
 
-  // The following attributes are set immediately *after* construction (ie. they
-  // are not available in the constructor). Override OnInit(), if further
-  // one-time initialization is needed that requires these attributes.
+  // As noted above, these attributes are only available after construction
+  // completes. Override OnInit(), if further one-time initialization is needed
+  // that requires these attributes.
+  GameStateInfo* GetInfo() const { return info_; }
   GameStateId GetId() const;
-  GameStateMachine* GetStateMachine() const { return machine_; }
+  GameStateMachine* GetStateMachine() const;
 
   // The following attributes are only set if the state is active (during
   // OnEnter and OnExit and any time in between these two calls). Notably these
@@ -208,7 +217,11 @@ class GameState {
   // Returns the validated context, whose contract was defined by Contract in
   // the registered type. This context is *always* valid when the state is
   // entered (OnEnter is called), and is *always* invalid when the state is not
-  // active.
+  // active. It is *only* safe to access the context under the following
+  // circumstances:
+  //   - While executing any On*() callback from the state machine (of any
+  //     state, not just this state).
+  //   - When the associated GameStateMachine's Update function is not running.
   const ValidatedContext& Context() const { return context_; }
   ValidatedContext& Context() { return context_; }
 
@@ -271,7 +284,6 @@ class GameState {
 
   // These are managed directly by GameStateMachine.
   GameStateInfo* info_ = nullptr;
-  GameStateMachine* machine_ = nullptr;
   ValidatedContext context_;
 };
 

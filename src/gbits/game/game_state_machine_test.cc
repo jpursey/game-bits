@@ -39,12 +39,6 @@ class TestState : public GameState {
     EXPECT_EQ(Instance(), nullptr)
         << GetGameStateName<DerivedState>() << " has multiple instances";
     Instance() = this;
-    EXPECT_EQ(GetId(), kNoGameStateId);
-    EXPECT_EQ(GetStateMachine(), nullptr);
-    EXPECT_EQ(GetParentId(), kNoGameStateId);
-    EXPECT_EQ(GetParent(), nullptr);
-    EXPECT_EQ(GetChildId(), kNoGameStateId);
-    EXPECT_EQ(GetChild(), nullptr);
   }
   ~TestState() override {
     EXPECT_EQ(Instance(), this) << GetGameStateName<DerivedState>()

@@ -16,55 +16,25 @@ void SetGameStateName(GameStateId id, const char* name) {
   id->SetTypeName(name);
 }
 
-GameStateId GameState::GetId() const {
-  return info_ == nullptr ? kNoGameStateId : info_->id;
+GameStateId GameState::GetId() const { return info_->GetId(); }
+GameStateMachine* GameState::GetStateMachine() const {
+  return info_->GetStateMachine();
 }
-GameStateId GameState::GetParentId() const {
-  return info_ != nullptr && info_->parent != nullptr ? info_->parent->id
-                                                      : kNoGameStateId;
-}
-GameState* GameState::GetParent() const {
-  return info_ != nullptr && info_->parent != nullptr
-             ? info_->parent->instance.get()
-             : nullptr;
-}
-GameStateId GameState::GetChildId() const {
-  return info_ != nullptr && info_->child != nullptr ? info_->child->id
-                                                     : kNoGameStateId;
-}
-GameState* GameState::GetChild() const {
-  return info_ != nullptr && info_->child != nullptr
-             ? info_->child->instance.get()
-             : nullptr;
-}
+GameStateId GameState::GetParentId() const { return info_->GetParentId(); }
+GameState* GameState::GetParent() const { return info_->GetParent(); }
+GameStateId GameState::GetChildId() const { return info_->GetChildId(); }
+GameState* GameState::GetChild() const { return info_->GetChild(); }
 
 bool GameState::ChangeChildState(GameStateId state) {
-  if (machine_ == nullptr) {
-    LOG(ERROR) << "GameState::ChangeChildState: " << GetGameStateName(info_->id)
-               << ": Cannot change child to state " << GetGameStateName(state)
-               << " as the state is not active.";
-    return false;
-  }
-  return machine_->ChangeState(info_->id, state);
+  return info_->GetStateMachine()->ChangeState(info_->GetId(), state);
 }
 
 bool GameState::ChangeState(GameStateId state) {
-  if (machine_ == nullptr) {
-    LOG(ERROR) << "GameState::ChangeState: " << GetGameStateName(info_->id)
-               << ": Cannot change to sibling state " << GetGameStateName(state)
-               << " as the state is not active.";
-    return false;
-  }
-  return machine_->ChangeState(GetParentId(), state);
+  return info_->GetStateMachine()->ChangeState(GetParentId(), state);
 }
 
 bool GameState::ExitState() {
-  if (machine_ == nullptr) {
-    LOG(ERROR) << "GameState::ExitState: " << GetGameStateName(info_->id)
-               << ": Cannot exit state as the state is not active.";
-    return false;
-  }
-  return machine_->ChangeState(GetParentId(), kNoGameStateId);
+  return info_->GetStateMachine()->ChangeState(GetParentId(), kNoGameStateId);
 }
 
 }  // namespace gb

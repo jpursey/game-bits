@@ -54,21 +54,24 @@ std::string ToString(const GameStateTrace& trace) {
 }
 
 void GameStateMachine::SetTraceLevel(GameStateTraceLevel trace_level) {
+  absl::MutexLock lock(&mutex_);
   trace_level_ = trace_level;
 }
 
 void GameStateMachine::SetTraceHandler(GameStateTraceHandler handler) {
+  absl::MutexLock lock(&mutex_);
   trace_handler_ = std::move(handler);
 }
 
 void GameStateMachine::AddTraceHandler(GameStateTraceHandler handler) {
+  absl::MutexLock lock(&mutex_);
   auto new_handler = [handler_1 = std::move(trace_handler_),
                       handler_2 =
                           std::move(handler)](const GameStateTrace& trace) {
     handler_1(trace);
     handler_2(trace);
   };
-  trace_handler_ = new_handler;
+  trace_handler_ = std::move(new_handler);
 }
 
 std::unique_ptr<GameStateMachine> GameStateMachine::Create(Contract contract) {
@@ -82,6 +85,7 @@ std::unique_ptr<GameStateMachine> GameStateMachine::Create(Contract contract) {
 
 GameStateMachine::GameStateMachine(ValidatedContext context)
     : context_(std::move(context)) {
+  absl::MutexLock lock(&mutex_);
   trace_handler_ = [this](const GameStateTrace& trace) { LogTrace(trace); };
 }
 
@@ -146,7 +150,7 @@ bool GameStateMachine::IsActive(GameStateId state) const {
   return state_info != nullptr ? state_info->active : false;
 }
 
-GameState* GameStateMachine::GetState(GameStateId state) {
+GameState* GameStateMachine::GetState(GameStateId state) const {
   absl::MutexLock lock(&mutex_);
   auto state_info = GetStateInfo(state);
   if (state_info == nullptr) {
@@ -485,10 +489,8 @@ void GameStateMachine::ProcessTransition() {
 }
 
 void GameStateMachine::CreateInstance(GameStateInfo* state_info) {
-  auto state = state_info->factory();
-  state->info_ = state_info;
-  state->machine_ = this;
-  state_info->instance = std::move(state);
+  state_info->instance = state_info->factory();
+  state_info->instance->info_ = state_info;
   state_info->instance->OnInit();
 }
 
@@ -499,7 +501,7 @@ void GameStateMachine::DoRegister(
     GameStateList::Type valid_siblings_type,
     std::vector<GameStateId> valid_siblings,
     std::vector<ContextConstraint> constraints,
-    std::function<std::unique_ptr<GameState>()> factory) {
+    Callback<std::unique_ptr<GameState>()> factory) {
   GameStateInfo* state_info = nullptr;
   {
     absl::MutexLock lock(&mutex_);
@@ -511,6 +513,8 @@ void GameStateMachine::DoRegister(
     auto& owned_state_info = states_[id];
     owned_state_info = std::make_unique<GameStateInfo>();
     state_info = owned_state_info.get();
+    state_info->mutex = &mutex_;
+    state_info->state_machine = this;
     state_info->id = id;
     state_info->lifetime = lifetime;
     state_info->valid_parents_type = valid_parents_type;

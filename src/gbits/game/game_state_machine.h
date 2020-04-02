@@ -9,6 +9,7 @@
 #include "absl/container/flat_hash_map.h"
 #include "absl/synchronization/mutex.h"
 #include "absl/time/time.h"
+#include "gbits/base/callback.h"
 #include "gbits/game/game_state.h"
 
 namespace gb {
@@ -112,7 +113,7 @@ struct GameStateTrace {
 };
 
 // Handler definition of the callback that receives a GameStateTrace.
-using GameStateTraceHandler = std::function<void(const GameStateTrace&)>;
+using GameStateTraceHandler = Callback<void(const GameStateTrace&)>;
 
 // Helpers to stringify traces.
 std::string ToString(GameStateTraceType trace_type);
@@ -122,17 +123,50 @@ std::string ToString(const GameStateTrace& trace);
 // GameStateInfo
 //------------------------------------------------------------------------------
 
-// Internal class used by GameStateMachine to track game states.
+// This class provides generic information about a GameState registered with a
+// GameStateMachine.
+//
+// Pointers to GameStateInfo remain valid for the life of the GameStateMachine
+// that it is associated with.
+//
+// This class is thread-safe.
 class GameStateInfo {
  public:
   GameStateInfo() = default;
 
+  GameStateMachine* GetStateMachine() const { return state_machine; }
+  GameStateId GetId() const { return id; }
+  GameState* GetState() const {
+    absl::MutexLock lock(mutex);
+    return instance.get();
+  }
+  bool IsActive() const {
+    absl::MutexLock lock(mutex);
+    return active;
+  }
+  GameStateId GetParentId() const {
+    absl::MutexLock lock(mutex);
+    return parent != nullptr ? parent->id : kNoGameStateId;
+  }
+  GameState* GetParent() const {
+    absl::MutexLock lock(mutex);
+    return parent != nullptr ? parent->instance.get() : nullptr;
+  }
+  GameStateId GetChildId() const {
+    absl::MutexLock lock(mutex);
+    return child != nullptr ? child->id : kNoGameStateId;
+  }
+  GameState* GetChild() const {
+    absl::MutexLock lock(mutex);
+    return child != nullptr ? child->instance.get() : nullptr;
+  }
+
  private:
-  friend class GameState;
   friend class GameStateMachine;
-  friend GameStateId GetGameStateId(GameStateInfo* info);
 
   // Set at registration.
+  absl::Mutex* mutex = nullptr;
+  GameStateMachine* state_machine = nullptr;
   GameStateId id = kNoGameStateId;
   GameStateLifetime::Type lifetime = GameStateLifetime::Type::kGlobal;
   GameStateList::Type valid_parents_type = GameStateList::kNone;
@@ -140,9 +174,9 @@ class GameStateInfo {
   GameStateList::Type valid_siblings_type = GameStateList::kNone;
   std::vector<GameStateId> valid_siblings;
   std::vector<ContextConstraint> constraints;
-  std::function<std::unique_ptr<GameState>()> factory;
+  Callback<std::unique_ptr<GameState>()> factory;
 
-  // Working state.
+  // Working state (guarded by mutex).
   std::unique_ptr<GameState> instance;
   bool active = false;
   GameStateInfo* parent = nullptr;
@@ -151,7 +185,7 @@ class GameStateInfo {
 };
 
 inline GameStateId GetGameStateId(GameStateInfo* info) {
-  return info != nullptr ? info->id : kNoGameStateId;
+  return info != nullptr ? info->GetId() : kNoGameStateId;
 }
 
 //------------------------------------------------------------------------------
@@ -175,7 +209,7 @@ inline GameStateId GetGameStateId(GameStateInfo* info) {
 // happens directly with in the GameStateMachine::Update call (never while
 // executing any GameState callback).
 //
-// This class is thread-safe except as noted.
+// This class is thread-safe.
 class GameStateMachine final {
  public:
   GameStateMachine(const GameStateMachine&) = delete;
@@ -196,12 +230,9 @@ class GameStateMachine final {
   static std::unique_ptr<GameStateMachine> Create(
       Contract contract = std::make_unique<Context>());
 
-  // Sets the trace level for the state machine. The default trace level is
-  // kError.
+  // Sets the trace level for the state machine.
   //
-  // This function is thread-compatible. External synchronization is required if
-  // this function could be called while this or any other member function is
-  // executing in a different thread.
+  // The default trace level is kError.
   void SetTraceLevel(GameStateTraceLevel trace_level);
 
   // Set the trace handler for this state machine.
@@ -210,12 +241,10 @@ class GameStateMachine final {
   // (which logs the trace). To add an additional handler, call AddTraceHandler
   // instead. See GameStateTrace for more information on trace output.
   //
-  // This GameStateMachine instance must not be called from within the
-  // registered handler, or deadlock will occur.
-  //
-  // This function is thread-compatible. External synchronization is required if
-  // this function could be called while this or any other member function is
-  // executing in a different thread.
+  // Trace handlers may be called on multiple threads, but will never be
+  // called from multiple threads concurrently. This GameStateMachine instance
+  // must not be called from within the registered handler, or deadlock will
+  // occur.
   void SetTraceHandler(GameStateTraceHandler handler);
 
   // Adds an additional trace handler for this state machine.
@@ -223,12 +252,10 @@ class GameStateMachine final {
   // This leaves any existing handlers in place, and adds this handler in
   // addition. See GameStateTrace for more information on trace output.
   //
-  // This GameStateMachine instance must not be called from within the
-  // registered handler, or deadlock will occur.
-  //
-  // This function is thread-compatible. External synchronization is required if
-  // this function could be called while this or any other member function is
-  // executing in a different thread.
+  // Trace handlers may be called on multiple threads, but will never be
+  // called from multiple threads concurrently. This GameStateMachine instance
+  // must not be called from within the registered handler, or deadlock will
+  // occur.
   void AddTraceHandler(GameStateTraceHandler handler);
 
   // Registers a GameState derived class with the state machine.
@@ -246,7 +273,7 @@ class GameStateMachine final {
         StateType::ParentStates::kType, StateType::ParentStates::GetIds(),
         StateType::SiblingStates::kType, StateType::SiblingStates::GetIds(),
         StateType::Contract::GetConstraints(),
-        []() -> std::unique_ptr<GameState> {
+        +[]() -> std::unique_ptr<GameState> {
           return std::make_unique<StateType>();
         });
   }
@@ -261,15 +288,15 @@ class GameStateMachine final {
 
   // Get the requested state instance. If the state is not global or active,
   // this will return nullptr.
-  GameState* GetState(GameStateId state);
+  GameState* GetState(GameStateId state) const;
 
   template <typename StateType>
-  StateType* GetState() {
+  StateType* GetState() const {
     return static_cast<StateType*>(GetState(GetGameStateId<StateType>()));
   }
 
   // Returns the top state, or null if no states are active.
-  GameState* GetTopState() {
+  GameState* GetTopState() const {
     absl::MutexLock lock(&mutex_);
     return top_state_ != nullptr ? top_state_->instance.get() : nullptr;
   }
@@ -348,7 +375,7 @@ class GameStateMachine final {
                   GameStateList::Type valid_siblings_type,
                   std::vector<GameStateId> valid_siblings,
                   std::vector<ContextConstraint> constraints,
-                  std::function<std::unique_ptr<GameState>()> factory)
+                  Callback<std::unique_ptr<GameState>()> factory)
       ABSL_LOCKS_EXCLUDED(mutex_);
 
   // Performs the actual update.
@@ -369,8 +396,9 @@ class GameStateMachine final {
   ValidatedContext context_;
 
   // Trace information.
-  GameStateTraceLevel trace_level_ = GameStateTraceLevel::kError;
-  GameStateTraceHandler trace_handler_;
+  GameStateTraceLevel trace_level_ GUARDED_BY(mutex_) =
+      GameStateTraceLevel::kError;
+  GameStateTraceHandler trace_handler_ GUARDED_BY(mutex_);
 
   // Map of all registered states.
   States states_ GUARDED_BY(mutex_);
