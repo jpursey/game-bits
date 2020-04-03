@@ -122,9 +122,9 @@ GameStateMachine::~GameStateMachine() {
 
 void GameStateMachine::LogTrace(const GameStateTrace& trace) {
   if (trace.IsError()) {
-    LOG(ERROR) << ToString(trace);
+    LOG_IF(ERROR, enable_logging_) << ToString(trace);
   } else {
-    LOG(INFO) << ToString(trace);
+    LOG_IF(INFO, enable_logging_) << ToString(trace);
   }
 }
 
@@ -272,7 +272,8 @@ bool GameStateMachine::ChangeState(GameStateId parent, GameStateId state) {
 
 void GameStateMachine::Update(absl::Duration delta_time) {
   if (!update_mutex_.TryLock()) {
-    LOG(WARNING) << "Update called recursively, ignoring request.";
+    LOG_IF(WARNING, enable_logging_)
+        << "Update called recursively, ignoring request.";
     return;
   }
   DoUpdate(delta_time);
@@ -324,8 +325,8 @@ void GameStateMachine::ProcessTransition() {
   // locking and unlocking around these callbacks.
 
   // Cache current request.
-  GameStateInfo* parent_info = transition_parent_;
-  GameStateInfo* new_state_info = transition_state_;
+  GameStateInfo* const parent_info = transition_parent_;
+  GameStateInfo* const new_state_info = transition_state_;
 
   // Find states that need to exit.
   GameStateInfo* exit_info = top_state_;
@@ -344,17 +345,6 @@ void GameStateMachine::ProcessTransition() {
            absl::StrCat("path=", GetStatePath(exit_info->id, kNoGameStateId))});
     }
 
-    mutex_.Unlock();
-    exit_info->instance->OnExit();
-    if (!exit_info->instance->context_.Assign(ValidatedContext{})) {
-      if (trace_level_ >= GameStateTraceLevel::kError) {
-        trace_handler_({GameStateTraceType::kConstraintFailure, kNoGameStateId,
-                        GetGameStateId(exit_info), "Update",
-                        "exit context could not complete"});
-      }
-    }
-    mutex_.Lock();
-
     // Clear all the state. If anything happens related to the instance now, it
     // should be treated as exited.
     GameStateInfo* exit_parent = exit_info->parent;
@@ -366,6 +356,18 @@ void GameStateMachine::ProcessTransition() {
       top_state_ = nullptr;
     }
     exit_info->update_id = 0;
+
+    mutex_.Unlock();
+    exit_info->instance->OnExit();
+    if (!exit_info->instance->context_.Assign(ValidatedContext{})) {
+      if (trace_level_ >= GameStateTraceLevel::kError) {
+        trace_handler_({GameStateTraceType::kConstraintFailure, kNoGameStateId,
+                        GetGameStateId(exit_info), "Update",
+                        "exit context could not complete"});
+      }
+    }
+    mutex_.Lock();
+
     if (exit_info->lifetime == GameStateLifetime::Type::kActive) {
       mutex_.Unlock();
       exit_info->instance.reset();
@@ -506,8 +508,8 @@ void GameStateMachine::DoRegister(
   {
     absl::MutexLock lock(&mutex_);
     if (states_.find(id) != states_.end()) {
-      LOG(WARNING) << "State " << GetGameStateName(id)
-                   << " already registered.";
+      LOG_IF(WARNING, enable_logging_)
+          << "State " << GetGameStateName(id) << " already registered.";
       return;
     }
     auto& owned_state_info = states_[id];

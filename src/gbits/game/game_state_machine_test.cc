@@ -1,5 +1,7 @@
 #include "gbits/game/game_state_machine.h"
 
+#include "gbits/test/thread_tester.h"
+#include "glog/logging.h"
 #include "gtest/gtest.h"
 
 namespace gb {
@@ -178,6 +180,7 @@ class GameStateMachineTest : public ::testing::Test {
 
   GameStateMachineTest() {
     state_machine_ = GameStateMachine::Create(&context_);
+    state_machine_->DisableLogging();
     state_machine_->SetTraceLevel(GameStateTraceLevel::kVerbose);
     state_machine_->SetTraceHandler([this](const GameStateTrace& trace) {
       if (trace.IsError()) {
@@ -1364,6 +1367,57 @@ TEST_F(GameStateMachineTest, ChangeStateDuringOnExit) {
   });
 }
 
+TEST_F(GameStateMachineTest, ChangeToChildStateDuringOnExit) {
+  TopStateA::Reset();
+  ChildStateA::Reset();
+  DefaultState::Reset();
+
+  state_machine_->Register<TopStateA>();
+  state_machine_->Register<ChildStateA>();
+  state_machine_->Register<DefaultState>();
+  state_machine_->ChangeState(kNoGameStateId, GetGameStateId<TopStateA>());
+  state_machine_->Update(absl::Milliseconds(1));
+  state_machine_->GetState<TopStateA>()->QueueChangeState(
+      GameStateTraceType::kOnExit, GetGameStateId<TopStateA>(),
+      GetGameStateId<ChildStateA>());
+  state_machine_->ChangeState(kNoGameStateId, GetGameStateId<DefaultState>());
+  state_machine_->Update(absl::Milliseconds(1));
+  EXPECT_FALSE(state_machine_->IsActive<TopStateA>());
+  EXPECT_EQ(TopStateA::Info().update_count, 1);
+  EXPECT_EQ(TopStateA::Info().update_time, absl::Milliseconds(1));
+  EXPECT_EQ(TopStateA::Info().enter_count, 1);
+  EXPECT_EQ(TopStateA::Info().exit_count, 1);
+  EXPECT_EQ(TopStateA::Info().child_enter_count, 0);
+  EXPECT_EQ(TopStateA::Info().child_exit_count, 0);
+  EXPECT_FALSE(state_machine_->IsActive<ChildStateA>());
+  EXPECT_EQ(ChildStateA::Info().update_count, 0);
+  EXPECT_EQ(ChildStateA::Info().update_time, absl::ZeroDuration());
+  EXPECT_EQ(ChildStateA::Info().enter_count, 0);
+  EXPECT_EQ(ChildStateA::Info().exit_count, 0);
+  EXPECT_EQ(ChildStateA::Info().child_enter_count, 0);
+  EXPECT_EQ(ChildStateA::Info().child_exit_count, 0);
+  EXPECT_TRUE(state_machine_->IsActive<DefaultState>());
+  EXPECT_EQ(DefaultState::Info().update_count, 1);
+  EXPECT_EQ(DefaultState::Info().update_time, absl::Milliseconds(1));
+  EXPECT_EQ(DefaultState::Info().enter_count, 1);
+  EXPECT_EQ(DefaultState::Info().exit_count, 0);
+  EXPECT_EQ(DefaultState::Info().child_enter_count, 0);
+  EXPECT_EQ(DefaultState::Info().child_exit_count, 0);
+  MatchTrace({
+      {GameStateTraceType::kRequestChange, GetGameStateId<TopStateA>()},
+      {GameStateTraceType::kOnEnter, GetGameStateId<TopStateA>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<TopStateA>()},
+      {GameStateTraceType::kOnUpdate, GetGameStateId<TopStateA>()},
+      {GameStateTraceType::kRequestChange, GetGameStateId<DefaultState>()},
+      {GameStateTraceType::kOnExit, GetGameStateId<TopStateA>()},
+      {GameStateTraceType::kInvalidChangeParent, GetGameStateId<TopStateA>(),
+       GetGameStateId<ChildStateA>()},
+      {GameStateTraceType::kOnEnter, GetGameStateId<DefaultState>()},
+      {GameStateTraceType::kCompleteChange, GetGameStateId<DefaultState>()},
+      {GameStateTraceType::kOnUpdate, GetGameStateId<DefaultState>()},
+  });
+}
+
 TEST_F(GameStateMachineTest, ChangeStateDuringChildOnExit) {
   TopStateA::Reset();
   TopStateB::Reset();
@@ -1958,6 +2012,83 @@ TEST_F(GameStateMachineTest, StatesShutDownCleanlyAtStateMachineDestruction) {
   });
   EXPECT_EQ(TopStateA::Info().destruct_count, 1);
   EXPECT_EQ(ChildStateA::Info().destruct_count, 1);
+}
+
+TEST_F(GameStateMachineTest, ThreadAbuse) {
+  state_machine_->Register<TopStateA>();
+  state_machine_->Register<TopStateB>();
+  state_machine_->Register<DefaultState>();
+  state_machine_->Register<ChildStateA>();
+  state_machine_->Register<ChildStateB>();
+
+  ThreadTester tester;
+  tester.RunLoop(1, "change-1", [this]() {
+    state_machine_->ChangeState(kNoGameStateId, GetGameStateId<DefaultState>());
+    state_machine_->Update(absl::Milliseconds(1));
+    state_machine_->ChangeState(kNoGameStateId, GetGameStateId<TopStateA>());
+    state_machine_->Update(absl::Milliseconds(1));
+    state_machine_->ChangeState(kNoGameStateId, GetGameStateId<TopStateB>());
+    state_machine_->Update(absl::Milliseconds(1));
+    return true;
+  });
+  tester.RunLoop(1, "change-2", [this]() {
+    auto top_state = state_machine_->GetTopState();
+    if (top_state != nullptr && state_machine_->IsActive(top_state->GetId())) {
+      top_state->ChangeChildState<DefaultState>();
+      state_machine_->Update(absl::Milliseconds(1));
+      top_state->ChangeChildState<ChildStateA>();
+      state_machine_->Update(absl::Milliseconds(1));
+      top_state->ChangeChildState<ChildStateB>();
+      state_machine_->Update(absl::Milliseconds(1));
+      top_state->ExitState();
+      state_machine_->Update(absl::Milliseconds(1));
+    }
+    return true;
+  });
+  tester.RunLoop(1, "state-info", [this]() {
+    auto info = state_machine_->GetState<DefaultState>()->GetInfo();
+    EXPECT_NE(info, nullptr);
+    if (info == nullptr) {
+      return false;
+    }
+    EXPECT_EQ(info->GetStateMachine(), state_machine_.get());
+    EXPECT_EQ(info->GetId(), GetGameStateId<DefaultState>());
+    info->IsActive();
+    info->GetParentId();
+    info->GetParent();
+    info->GetChildId();
+    info->GetChild();
+    return true;
+  });
+  GameStateTrace last_trace, other_trace;
+  GameStateTraceLevel trace_level = GameStateTraceLevel::kNone;
+  tester.RunLoop(
+      1, "trace-handler", [this, &last_trace, &other_trace, &trace_level]() {
+        state_machine_->SetTraceHandler(
+            [&last_trace](const GameStateTrace& trace) { last_trace = trace; });
+        state_machine_->AddTraceHandler(
+            [&other_trace](const GameStateTrace& trace) {
+              other_trace = trace;
+            });
+        switch (trace_level) {
+          case GameStateTraceLevel::kNone:
+            trace_level = GameStateTraceLevel::kError;
+            break;
+          case GameStateTraceLevel::kError:
+            trace_level = GameStateTraceLevel::kInfo;
+            break;
+          case GameStateTraceLevel::kInfo:
+            trace_level = GameStateTraceLevel::kVerbose;
+            break;
+          case GameStateTraceLevel::kVerbose:
+            trace_level = GameStateTraceLevel::kNone;
+            break;
+        }
+        return true;
+      });
+  absl::SleepFor(absl::Seconds(1));
+  EXPECT_TRUE(tester.Complete()) << tester.GetResultString();
+  state_machine_->SetTraceHandler(+[](const GameStateTrace&) {});
 }
 
 }  // namespace

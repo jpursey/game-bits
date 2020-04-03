@@ -9,6 +9,10 @@ set(gbits_game_TEST_SOURCE
   game_test.cc
 )
 
+set(gbits_game_TEST_DEPS
+  gbits_test
+)
+
 set(gbits_game_DEPS
   absl::flat_hash_map
   absl::strings

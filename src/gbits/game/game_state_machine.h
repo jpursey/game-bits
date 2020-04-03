@@ -1,6 +1,7 @@
 #ifndef GBITS_GAME_GAME_STATE_MACHINE_H_
 #define GBITS_GAME_GAME_STATE_MACHINE_H_
 
+#include <atomic>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -22,7 +23,7 @@ class GameStateMachine;
 
 // Defines the trace level for trace output from the state machine. Levels are
 // cumulative, so a higher level will always include traces of a lower level.
-enum class GameStateTraceLevel {
+enum class GameStateTraceLevel : int {
   kNone,     // No trace output at all.
   kError,    // Only error trace output. This is the default.
   kInfo,     // Error and info trace output. Info output only occurs during
@@ -230,6 +231,10 @@ class GameStateMachine final {
   static std::unique_ptr<GameStateMachine> Create(
       Contract contract = std::make_unique<Context>());
 
+  // Disable warning and error logging for the state machine. This is
+  // independent of the trace handler.
+  void DisableLogging() { enable_logging_ = false; }
+
   // Sets the trace level for the state machine.
   //
   // The default trace level is kError.
@@ -328,8 +333,7 @@ class GameStateMachine final {
   // This function does *not* pre-validate context constraints, as constraints
   // may be met (or broken) as a side effect of the state transition process
   // itself. However, no state will actually be entered unless its input context
-  // constraints are met. If a state context constraint failure occurs (exit or
-  // enter).
+  // constraints are met.
   bool ChangeState(GameStateId parent, GameStateId state);
 
   // Updates the state machine, performing any requested state changes and
@@ -387,6 +391,7 @@ class GameStateMachine final {
   // completing the previous transition.
   void ProcessTransition() ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
+  std::atomic<bool> enable_logging_ = true;
   mutable absl::Mutex update_mutex_;  // Reentrance guard for Update method.
   mutable absl::Mutex mutex_;         // Mutex for execution state.
 
