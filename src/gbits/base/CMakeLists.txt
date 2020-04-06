@@ -7,6 +7,7 @@ set(gbits_base_SOURCE
   fake_clock.h
   type_info.h
   validated_context.cc validated_context.h
+  weak_ptr.h
 )
 
 set(gbits_base_TEST_SOURCE
@@ -16,6 +17,7 @@ set(gbits_base_TEST_SOURCE
   context_test.cc
   type_info_test.cc
   validated_context_test.cc
+  weak_ptr_test.cc
 )
 set(gbits_base_TEST_DEPS
   gbits_test
