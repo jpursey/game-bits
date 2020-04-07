@@ -390,5 +390,13 @@ TEST(CallbackTest, TypeConversionParametersWork) {
   EXPECT_EQ(callback(x, y), 3.0);
 }
 
+TEST(CallbackTest, ImplicitCastFromNoCaptureLambdaToCallbackInParameter) {
+  struct Type {
+    int Call(Callback<int(int)> callback, int value) { return callback(value); }
+  };
+  Type type;
+  EXPECT_EQ(type.Call([](int value) { return value; }, 5), 5);
+}
+
 }  // namespace
 }  // namespace gb

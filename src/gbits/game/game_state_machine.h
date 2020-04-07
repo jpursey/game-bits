@@ -278,7 +278,7 @@ class GameStateMachine final {
         StateType::ParentStates::kType, StateType::ParentStates::GetIds(),
         StateType::SiblingStates::kType, StateType::SiblingStates::GetIds(),
         StateType::Contract::GetConstraints(),
-        +[]() -> std::unique_ptr<GameState> {
+        []() -> std::unique_ptr<GameState> {
           return std::make_unique<StateType>();
         });
   }

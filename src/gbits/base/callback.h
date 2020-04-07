@@ -43,12 +43,14 @@ class Callback<Return(Args...)> final {
         delete_callback_(std::exchange(other.delete_callback_, nullptr)) {}
 
   // Construct from any callable type that supports move construction.
-  template <typename Callable, typename = std::enable_if_t<!std::is_convertible<
-                                   Callable, Return (*)(Args...)>::value>>
+  template <typename Callable>
   Callback(Callable&& callable) {
     Init(std::forward<Callable>(callable),
-         std::conditional<std::is_lvalue_reference<Callable>::value, LValueTag,
-                          RValueTag>::type());
+         std::conditional<
+             std::is_convertible<Callable, Return (*)(Args...)>::value,
+             FunctionPtrTag,
+             std::conditional<std::is_lvalue_reference<Callable>::value,
+                              LValueTag, RValueTag>::type>::type());
   }
 
   // Construct from a std::unique_ptr to callable type. This is used for types
@@ -128,15 +130,6 @@ class Callback<Return(Args...)> final {
     return *this;
   }
 
-  // Explicit construction from a function pointer.
-  //
-  // Note: This is here explicitly, as for some reason Visual Studio 2017 does
-  // not find the conversion from a no-capture lambda to a Callback, even though
-  // it will for explicit construction.
-  Callback& operator=(Return (*callable)(Args...)) {
-    return operator=(Callback(callable));
-  }
-
   // Destructs the callback.
   ~Callback() {
     if (delete_callback_ != nullptr) {
@@ -155,9 +148,19 @@ class Callback<Return(Args...)> final {
  private:
   using CallCallback = Return (*)(void*, Args&&...);
   using DeleteCallback = void (*)(void*);
+  struct FunctionPtrTag {};
   struct RValueTag {};
   struct LValueTag {};
 
+  template <typename Callable>
+  void Init(Callable&& callable, FunctionPtrTag) {
+    callback_ = static_cast<Return (*)(Args...)>(callable);
+    call_callback_ = [](void* callable, Args&&... args) -> Return {
+      return (*static_cast<Return (*)(Args...)>(callable))(
+          std::forward<Args>(args)...);
+    };
+    delete_callback_ = nullptr;
+  }
   template <typename Callable>
   void Init(Callable&& callable, RValueTag) {
     using CallableType = typename std::decay<Callable>::type;

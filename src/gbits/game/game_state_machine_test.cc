@@ -2088,7 +2088,7 @@ TEST_F(GameStateMachineTest, ThreadAbuse) {
       });
   absl::SleepFor(absl::Seconds(1));
   EXPECT_TRUE(tester.Complete()) << tester.GetResultString();
-  state_machine_->SetTraceHandler(+[](const GameStateTrace&) {});
+  state_machine_->SetTraceHandler([](const GameStateTrace&) {});
 }
 
 }  // namespace
