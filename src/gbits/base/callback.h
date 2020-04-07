@@ -46,15 +46,9 @@ class Callback<Return(Args...)> final {
   template <typename Callable, typename = std::enable_if_t<!std::is_convertible<
                                    Callable, Return (*)(Args...)>::value>>
   Callback(Callable&& callable) {
-    using CallableType = typename std::decay<Callable>::type;
-    callback_ = new CallableType(std::move(callable));
-    call_callback_ = [](void* callable, Args&&... args) -> Return {
-      return (*static_cast<CallableType*>(callable))(
-          std::forward<Args>(args)...);
-    };
-    delete_callback_ = [](void* callable) {
-      delete static_cast<CallableType*>(callable);
-    };
+    Init(std::forward<Callable>(callable),
+         std::conditional<std::is_lvalue_reference<Callable>::value, LValueTag,
+                          RValueTag>::type());
   }
 
   // Construct from a std::unique_ptr to callable type. This is used for types
@@ -161,6 +155,33 @@ class Callback<Return(Args...)> final {
  private:
   using CallCallback = Return (*)(void*, Args&&...);
   using DeleteCallback = void (*)(void*);
+  struct RValueTag {};
+  struct LValueTag {};
+
+  template <typename Callable>
+  void Init(Callable&& callable, RValueTag) {
+    using CallableType = typename std::decay<Callable>::type;
+    callback_ = new CallableType(std::move(callable));
+    call_callback_ = [](void* callable, Args&&... args) -> Return {
+      return (*static_cast<CallableType*>(callable))(
+          std::forward<Args>(args)...);
+    };
+    delete_callback_ = [](void* callable) {
+      delete static_cast<CallableType*>(callable);
+    };
+  }
+  template <typename Callable>
+  void Init(Callable&& callable, LValueTag) {
+    using CallableType = typename std::decay<Callable>::type;
+    callback_ = new CallableType(callable);
+    call_callback_ = [](void* callable, Args&&... args) -> Return {
+      return (*static_cast<CallableType*>(callable))(
+          std::forward<Args>(args)...);
+    };
+    delete_callback_ = [](void* callable) {
+      delete static_cast<CallableType*>(callable);
+    };
+  }
 
   void* callback_ = nullptr;
   CallCallback call_callback_ = nullptr;

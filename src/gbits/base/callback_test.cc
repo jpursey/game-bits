@@ -228,7 +228,52 @@ TEST(CallbackTest, StatelessLambdaAssign) {
   EXPECT_EQ(callback(2), 3);
 }
 
-TEST(CallbackTest, MoveConstructMethodCounter) {
+TEST(CallbackTest, ConstConstructMethodCounter) {
+  MethodCounter::Reset();
+  {
+    const MethodCounter counter;
+    Callback<void(void)> callback(counter);
+  }
+  EXPECT_EQ(MethodCounter::Info().default_constructor_count_, 1);
+  EXPECT_EQ(MethodCounter::Info().copy_constructor_count_, 1);
+  EXPECT_EQ(MethodCounter::Info().move_constructor_count_, 0);
+  EXPECT_EQ(MethodCounter::Info().copy_assign_count_, 0);
+  EXPECT_EQ(MethodCounter::Info().move_assign_count_, 0);
+  EXPECT_EQ(MethodCounter::Info().destructor_count_, 2);
+  EXPECT_EQ(MethodCounter::Info().call_count_, 0);
+}
+
+TEST(CallbackTest, LValueConstructMethodCounter) {
+  MethodCounter::Reset();
+  {
+    MethodCounter counter;
+    Callback<void(void)> callback(counter);
+  }
+  EXPECT_EQ(MethodCounter::Info().default_constructor_count_, 1);
+  EXPECT_EQ(MethodCounter::Info().copy_constructor_count_, 1);
+  EXPECT_EQ(MethodCounter::Info().move_constructor_count_, 0);
+  EXPECT_EQ(MethodCounter::Info().copy_assign_count_, 0);
+  EXPECT_EQ(MethodCounter::Info().move_assign_count_, 0);
+  EXPECT_EQ(MethodCounter::Info().destructor_count_, 2);
+  EXPECT_EQ(MethodCounter::Info().call_count_, 0);
+}
+
+TEST(CallbackTest, RValueConstructMethodCounter) {
+  MethodCounter::Reset();
+  {
+    MethodCounter counter;
+    Callback<void(void)> callback(std::move(counter));
+  }
+  EXPECT_EQ(MethodCounter::Info().default_constructor_count_, 1);
+  EXPECT_EQ(MethodCounter::Info().copy_constructor_count_, 0);
+  EXPECT_EQ(MethodCounter::Info().move_constructor_count_, 1);
+  EXPECT_EQ(MethodCounter::Info().copy_assign_count_, 0);
+  EXPECT_EQ(MethodCounter::Info().move_assign_count_, 0);
+  EXPECT_EQ(MethodCounter::Info().destructor_count_, 2);
+  EXPECT_EQ(MethodCounter::Info().call_count_, 0);
+}
+
+TEST(CallbackTest, TemporaryConstructMethodCounter) {
   MethodCounter::Reset();
   { Callback<void(void)> callback(MethodCounter{}); }
   EXPECT_EQ(MethodCounter::Info().default_constructor_count_, 1);
