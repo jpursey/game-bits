@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "absl/memory/memory.h"
+#include "gbits/base/callback.h"
 #include "gbits/base/context.h"
 
 namespace gb {
@@ -131,7 +132,7 @@ class ContextContract;
 // constructor).
 class ValidatedContext final {
  public:
-  using ErrorCallback = std::function<void(const std::string& message)>;
+  using ErrorCallback = Callback<void(const std::string& message)>;
 
   // Default constructor.
   //

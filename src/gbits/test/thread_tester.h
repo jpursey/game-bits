@@ -21,6 +21,7 @@ namespace gb {
 // but are completed by the end of the test.
 class ThreadTester {
  public:
+  // std::function is required here as the TestFunction *must* be copiable.
   using TestFunction = std::function<bool()>;
 
   enum Result {
