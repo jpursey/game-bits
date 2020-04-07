@@ -42,7 +42,8 @@ class Callback<Return(Args...)> final {
         call_callback_(std::exchange(other.call_callback_, nullptr)),
         delete_callback_(std::exchange(other.delete_callback_, nullptr)) {}
 
-  // Construct from any callable type that supports move construction.
+  // Construct from any callable type that supports copy or move construction,
+  // or implicit cast to a function pointer.
   template <typename Callable>
   Callback(Callable&& callable) {
     Init(std::forward<Callable>(callable),
