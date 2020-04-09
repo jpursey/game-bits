@@ -55,6 +55,7 @@ class WeakPtr {
  public:
   // Constructs a null WeakPtr.
   WeakPtr() = default;
+  WeakPtr(nullptr_t) : WeakPtr() {}
 
   // Constructs a WeakPtr from a scope that can supply a WeakPtr of this Type.
   //
