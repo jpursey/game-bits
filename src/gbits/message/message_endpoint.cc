@@ -46,7 +46,7 @@ void MessageEndpoint::Unsubscribe(MessageEndpointId endpoint) {
   system->Unsubscribe({}, endpoint, id_);
 }
 
-bool MessageEndpoint::IsSubscribed(MessageEndpointId endpoint) {
+bool MessageEndpoint::IsSubscribed(MessageEndpointId endpoint) const {
   WeakLock<MessageSystem> system(&system_);
   if (system == nullptr) {
     return false;

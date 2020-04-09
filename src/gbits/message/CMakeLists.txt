@@ -1,12 +1,14 @@
 set(gbits_message_SOURCE
   message_dispatcher.cc message_dispatcher.h
   message_endpoint.cc message_endpoint.h
-  message_types.h
+  message_stack_endpoint.cc message_stack_endpoint.h
   message_system.cc message_system.h
+  message_types.h
 )
 
 set(gbits_message_TEST_SOURCE
   message_system_test.cc
+  message_stack_endpoint_test.cc
 )
 
 set(gbits_message_TEST_DEPS

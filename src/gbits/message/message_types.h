@@ -5,6 +5,8 @@ namespace gb {
 
 class MessageDispatcher;
 class MessageEndpoint;
+class MessageStackEndpoint;
+class MessageStackHandlers;
 class MessageSystem;
 
 // This is an internal class used to tag and enforce that functions internal to
@@ -16,9 +18,11 @@ class MessageInternal final {
   MessageInternal& operator=(const MessageInternal&) = default;
 
  private:
-  friend class MessageSystem;
-  friend class MessageEndpoint;
   friend class MessageDispatcher;
+  friend class MessageEndpoint;
+  friend class MessageStackEndpoint;
+  friend class MessageStackHandlers;
+  friend class MessageSystem;
 
   MessageInternal() = default;
 };

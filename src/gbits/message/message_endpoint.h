@@ -105,7 +105,7 @@ class MessageEndpoint final {
 
   // Returns true if this endpoint is currently subscribed to messages from the
   // other endpoint.
-  bool IsSubscribed(MessageEndpointId endpoint);
+  bool IsSubscribed(MessageEndpointId endpoint) const;
 
   // Sets or clears a message handler for a specific type of message.
   //
@@ -167,6 +167,10 @@ class MessageEndpoint final {
   std::thread::id calling_thread_ ABSL_GUARDED_BY(handler_mutex_);
   QueuedMessages queued_messages_ ABSL_GUARDED_BY(handler_mutex_);
 };
+
+//------------------------------------------------------------------------------
+// Template / inline implementation
+//------------------------------------------------------------------------------
 
 template <typename Message>
 void MessageEndpoint::SetHandler(MessageHandler<Message> callback) {
