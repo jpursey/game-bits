@@ -138,6 +138,30 @@ TEST(TypeInfoTest, PlaceholderInfoIsNotNull) {
   EXPECT_NE(TypeInfo::GetPlaceholder<void*>(), nullptr);
 }
 
+TEST(TypeInfoTest, PlaceholderCannotDestroy) {
+  EXPECT_FALSE(TypeInfo::GetPlaceholder<PartialType>()->CanDestroy());
+  EXPECT_FALSE(TypeInfo::GetPlaceholder<StructType>()->CanDestroy());
+  EXPECT_FALSE(TypeInfo::GetPlaceholder<ClassType>()->CanDestroy());
+  EXPECT_FALSE(TypeInfo::GetPlaceholder<EnumType>()->CanDestroy());
+  EXPECT_FALSE(TypeInfo::GetPlaceholder<int>()->CanDestroy());
+  EXPECT_FALSE(TypeInfo::GetPlaceholder<float>()->CanDestroy());
+  EXPECT_FALSE(TypeInfo::GetPlaceholder<bool>()->CanDestroy());
+  EXPECT_FALSE(TypeInfo::GetPlaceholder<void>()->CanDestroy());
+  EXPECT_FALSE(TypeInfo::GetPlaceholder<void*>()->CanDestroy());
+}
+
+TEST(TypeInfoTest, PlaceholderCannotClone) {
+  EXPECT_FALSE(TypeInfo::GetPlaceholder<PartialType>()->CanClone());
+  EXPECT_FALSE(TypeInfo::GetPlaceholder<StructType>()->CanClone());
+  EXPECT_FALSE(TypeInfo::GetPlaceholder<ClassType>()->CanClone());
+  EXPECT_FALSE(TypeInfo::GetPlaceholder<EnumType>()->CanClone());
+  EXPECT_FALSE(TypeInfo::GetPlaceholder<int>()->CanClone());
+  EXPECT_FALSE(TypeInfo::GetPlaceholder<float>()->CanClone());
+  EXPECT_FALSE(TypeInfo::GetPlaceholder<bool>()->CanClone());
+  EXPECT_FALSE(TypeInfo::GetPlaceholder<void>()->CanClone());
+  EXPECT_FALSE(TypeInfo::GetPlaceholder<void*>()->CanClone());
+}
+
 TEST(TypeInfoTest, PlaceholderInfoIsStable) {
   EXPECT_EQ(TypeInfo::GetPlaceholder<PartialType>(),
             TypeInfo::GetPlaceholder<PartialType>());
@@ -185,6 +209,30 @@ TEST(TypeInfoTest, SetNameMatches) {
   EXPECT_STREQ(TypeInfo::GetPlaceholder<PartialTypeForSetName>()->GetTypeName(),
                "B");
   EXPECT_STREQ(TypeKey::Get<PartialTypeForSetName>()->GetTypeName(), "B");
+}
+
+TEST(TypeInfoTest, InfoCanDestroy) {
+  EXPECT_TRUE(TypeInfo::Get<StructType>()->CanDestroy());
+  EXPECT_TRUE(TypeInfo::Get<ClassType>()->CanDestroy());
+  EXPECT_TRUE(TypeInfo::Get<EnumType>()->CanDestroy());
+  EXPECT_TRUE(TypeInfo::Get<int>()->CanDestroy());
+  EXPECT_TRUE(TypeInfo::Get<float>()->CanDestroy());
+  EXPECT_TRUE(TypeInfo::Get<bool>()->CanDestroy());
+  EXPECT_FALSE(TypeInfo::Get<void>()->CanDestroy());
+  EXPECT_TRUE(TypeInfo::Get<Item>()->CanDestroy());
+  EXPECT_FALSE(TypeInfo::Get<NoDestructItem>()->CanDestroy());
+}
+
+TEST(TypeInfoTest, InfoCanClone) {
+  EXPECT_TRUE(TypeInfo::Get<StructType>()->CanClone());
+  EXPECT_TRUE(TypeInfo::Get<ClassType>()->CanClone());
+  EXPECT_TRUE(TypeInfo::Get<EnumType>()->CanClone());
+  EXPECT_TRUE(TypeInfo::Get<int>()->CanClone());
+  EXPECT_TRUE(TypeInfo::Get<float>()->CanClone());
+  EXPECT_TRUE(TypeInfo::Get<bool>()->CanClone());
+  EXPECT_FALSE(TypeInfo::Get<void>()->CanClone());
+  EXPECT_TRUE(TypeInfo::Get<Item>()->CanClone());
+  EXPECT_FALSE(TypeInfo::Get<NoCopyItem>()->CanClone());
 }
 
 TEST(TypeInfoTest, InfoAnonymousDestroy) {

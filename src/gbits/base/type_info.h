@@ -85,9 +85,15 @@ class TypeInfo {
   // this key.
   void SetTypeName(const char* name) { Key()->SetTypeName(name); }
 
+  // Returns true if the type has a public destructor.
+  virtual bool CanDestroy() = 0;
+
   // Destroys the value, iff it has a public destructor. If it does not, then
   // this will do nothing.
   virtual void Destroy(void* value) = 0;
+
+  // Returns true if the type has a public copy constructor.
+  virtual bool CanClone() = 0;
 
   // Creates a copy of the provided value, iff it has a public copy constructor.
   // If it does not, then this will return nullptr.
@@ -214,7 +220,9 @@ class TypeInfo::Impl : public TypeInfo {
   ~Impl() override = default;
 
   TypeKey* Key() override { return TypeKey::Get<Type>(); }
+  bool CanDestroy() override { return std::is_destructible<Type>::value; }
   void Destroy(void* value) override { DoDestroy<Type>(value); }
+  bool CanClone() override { return std::is_copy_constructible<Type>::value; }
   void* Clone(const std::any& value) override { return DoCreate<Type>(value); }
   void* Clone(const void* value) override { return DoCreate<Type>(value); }
 };
@@ -235,7 +243,9 @@ class TypeInfo::PlaceholderImpl : public TypeInfo {
   ~PlaceholderImpl() override = default;
 
   TypeKey* Key() override { return TypeKey::Get<Type>(); }
+  bool CanDestroy() override { return false; }
   void Destroy(void* value) override {}
+  bool CanClone() override { return false; }
   void* Clone(const std::any& value) override { return nullptr; }
   void* Clone(const void* value) override { return nullptr; }
 };
