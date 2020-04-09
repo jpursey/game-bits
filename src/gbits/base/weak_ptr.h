@@ -61,6 +61,11 @@ class WeakPtr {
   // If "scope" is null, then the WeakPtr will also be null.
   template <typename Scope>
   WeakPtr(Scope* scope);
+  template <typename Scope, typename Deleter>
+  WeakPtr(const std::unique_ptr<Scope, Deleter>& scope)
+      : WeakPtr(scope.get()) {}
+  template <typename Scope>
+  WeakPtr(const std::shared_ptr<Scope>& scope) : WeakPtr(scope.get()) {}
 
   // Returns a WeakLock to this WeakPtr.
   WeakLock<Type> Lock() const;

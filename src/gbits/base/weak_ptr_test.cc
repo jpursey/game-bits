@@ -47,6 +47,20 @@ TEST(WeakPtrTest, WeakScopeToNull) {
   scope.InvalidateWeakPtrs();
 }
 
+TEST(WeakPtrTest, WeakPtrFromUniquePtr) {
+  auto instance = std::make_unique<DerivedClass>(42);
+  WeakPtr<DerivedClass> ptr(instance);
+  WeakLock<DerivedClass> lock(&ptr);
+  EXPECT_EQ(lock.Get(), instance.get());
+}
+
+TEST(WeakPtrTest, WeakPtrFromSharedPtr) {
+  auto instance = std::make_shared<DerivedClass>(42);
+  WeakPtr<DerivedClass> ptr(instance);
+  WeakLock<DerivedClass> lock(&ptr);
+  EXPECT_EQ(lock.Get(), instance.get());
+}
+
 TEST(WeakPtrTest, WeakScopeToNonNull) {
   auto instance = std::make_unique<DerivedClass>(42);
   WeakPtr<DerivedClass> ptr(instance.get());
