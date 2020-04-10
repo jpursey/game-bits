@@ -232,7 +232,7 @@ TEST(CallbackTest, ConstConstructMethodCounter) {
   MethodCounter::Reset();
   {
     const MethodCounter counter;
-    Callback<void(void)> callback(counter);
+    Callback<void()> callback(counter);
   }
   EXPECT_EQ(MethodCounter::Info().default_constructor_count_, 1);
   EXPECT_EQ(MethodCounter::Info().copy_constructor_count_, 1);

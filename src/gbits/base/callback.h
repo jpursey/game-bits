@@ -46,6 +46,12 @@ class Callback<Return(Args...)> final {
   // or implicit cast to a function pointer.
   template <typename Callable>
   Callback(Callable&& callable) {
+    using CallableType = typename std::decay<Callable>::type;
+    static_assert(std::is_invocable<CallableType, Args...>::value,
+                  "One or more arguments do not match Callback");
+    static_assert(!std::is_invocable<CallableType, Args...>::value ||
+                      std::is_invocable_r<Return, CallableType, Args...>::value,
+                  "Return type does not match callback");
     Init(std::forward<Callable>(callable),
          std::conditional<
              std::is_convertible<Callable, Return (*)(Args...)>::value,
@@ -64,6 +70,11 @@ class Callback<Return(Args...)> final {
     static_assert(
         std::is_same<Deleter, std::default_delete<CallableType>>::value,
         "Custom deleters are not supported in Callback.");
+    static_assert(std::is_invocable<CallableType, Args...>::value,
+                  "One or more arguments do not match Callback");
+    static_assert(!std::is_invocable<CallableType, Args...>::value ||
+                      std::is_invocable_r<Return, CallableType, Args...>::value,
+                  "Return type does not match callback");
     callback_ = callable.release();
     call_callback_ = [](void* callable, Args&&... args) -> Return {
       return (*static_cast<CallableType*>(callable))(
@@ -80,6 +91,11 @@ class Callback<Return(Args...)> final {
   // duration of time this callback is referring to it.
   template <typename CallableType>
   Callback(CallableType* callable) {
+    static_assert(std::is_invocable<CallableType, Args...>::value,
+                  "One or more arguments do not match Callback");
+    static_assert(!std::is_invocable<CallableType, Args...>::value ||
+                      std::is_invocable_r<Return, CallableType, Args...>::value,
+                  "Return type does not match callback");
     callback_ = callable;
     call_callback_ = [](void* callable, Args&&... args) -> Return {
       return (*static_cast<CallableType*>(callable))(
