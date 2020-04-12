@@ -580,6 +580,22 @@ class ContextContract final {
   ValidatedContext context_;
 };
 
+template <typename BaseContract, const ContextConstraint&... Constraints>
+struct DerivedContextContractImpl;
+
+template <const ContextConstraint&... BaseConstraints,
+          const ContextConstraint&... Constraints>
+struct DerivedContextContractImpl<ContextContract<BaseConstraints...>,
+                                  Constraints...> {
+  using Type = ContextContract<BaseConstraints..., Constraints...>;
+};
+
+// This type composes a ContractContract from a base contract and new
+// constraints.
+template <typename BaseContract, const ContextConstraint&... Constraints>
+using DerivedContextContract =
+    typename DerivedContextContractImpl<BaseContract, Constraints...>::Type;
+
 template <const ContextConstraint&... Constraints>
 bool ValidatedContext::Assign(ContextContract<Constraints...>&& contract) {
   return Assign(std::move(contract.context_));
