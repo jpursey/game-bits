@@ -5,6 +5,7 @@ set(gbits_base_SOURCE
   context.cc context.h
   context_builder.h
   fake_clock.h
+  flags.h
   type_info.h
   validated_context.cc validated_context.h
   weak_ptr.h
@@ -15,6 +16,7 @@ set(gbits_base_TEST_SOURCE
   callback_scope_test.cc
   clock_test.cc
   context_test.cc
+  flags_test.cc
   type_info_test.cc
   validated_context_test.cc
   weak_ptr_test.cc
