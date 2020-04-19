@@ -6,6 +6,7 @@ set(gbits_base_SOURCE
   context_builder.h
   fake_clock.h
   flags.h
+  platform_requirements.cc platform_requirements.h
   type_info.h
   validated_context.cc validated_context.h
   weak_ptr.h
