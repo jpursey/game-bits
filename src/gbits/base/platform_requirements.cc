@@ -26,7 +26,7 @@ static_assert(sizeof(uint64_t) == 8, "uint64_t is required");
 static_assert(
     static_cast<int64_t>(std::numeric_limits<int>::min()) <=
             static_cast<int64_t>(std::numeric_limits<int32_t>::min()) &&
-        static_cast<int64_t>(std::numeric_limits<int>::max()) <=
+        static_cast<int64_t>(std::numeric_limits<int>::max()) >=
             static_cast<int64_t>(std::numeric_limits<int32_t>::max()),
     "int must support the full range of 32-bit integer values.");
 
