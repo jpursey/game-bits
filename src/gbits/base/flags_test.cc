@@ -133,30 +133,28 @@ static_assert(Flags<BasicEnum>({kBasicEnum_Zero, kBasicEnum_One}) -
                       Flags<BasicEnum>(kBasicEnum_Two) ==
                   Flags<BasicEnum>({kBasicEnum_Zero, kBasicEnum_One}),
               "BasicEnum {Zero,One} - Two is not equal to {Zero,One}");
+static_assert(Union(kBasicEnum_Zero, Flags<BasicEnum>(kBasicEnum_One)) ==
+                  Flags<BasicEnum>({kBasicEnum_Zero, kBasicEnum_One}),
+              "BasicEnum Zero union One is not equal to {Zero, One}");
 static_assert(
-    Flags<BasicEnum>(kBasicEnum_Zero).Union(Flags<BasicEnum>(kBasicEnum_One)) ==
-        Flags<BasicEnum>({kBasicEnum_Zero, kBasicEnum_One}),
-    "BasicEnum Zero union One is not equal to {Zero, One}");
-static_assert(
-    Flags<BasicEnum>({kBasicEnum_Zero, kBasicEnum_One})
-            .Union(Flags<BasicEnum>({kBasicEnum_One, kBasicEnum_Two})) ==
+    Union(Flags<BasicEnum>({kBasicEnum_Zero, kBasicEnum_One}),
+          Flags<BasicEnum>({kBasicEnum_One, kBasicEnum_Two})) ==
         Flags<BasicEnum>({kBasicEnum_Zero, kBasicEnum_One, kBasicEnum_Two}),
     "BasicEnum {Zero,One} union {One,Two} is not equal to {Zero,One,Two}");
-static_assert(Flags<BasicEnum>({kBasicEnum_Zero, kBasicEnum_One})
-                      .Remove(Flags<BasicEnum>(kBasicEnum_Zero)) ==
+static_assert((Flags<BasicEnum>({kBasicEnum_Zero, kBasicEnum_One}) -
+               Flags<BasicEnum>(kBasicEnum_Zero)) ==
                   Flags<BasicEnum>(kBasicEnum_One),
               "BasicEnum {Zero,One} remove Zero is not equal to One");
-static_assert(Flags<BasicEnum>({kBasicEnum_Zero, kBasicEnum_One})
-                      .Remove(Flags<BasicEnum>(kBasicEnum_Two)) ==
+static_assert((Flags<BasicEnum>({kBasicEnum_Zero, kBasicEnum_One}) -
+               Flags<BasicEnum>(kBasicEnum_Two)) ==
                   Flags<BasicEnum>({kBasicEnum_Zero, kBasicEnum_One}),
               "BasicEnum {Zero,One} remove Two is not equal to {Zero,One}");
-static_assert(Flags<BasicEnum>({kBasicEnum_Zero, kBasicEnum_One})
-                      .Intersect(Flags<BasicEnum>({kBasicEnum_Zero,
-                                                   kBasicEnum_Two})) ==
+static_assert(Intersect(Flags<BasicEnum>({kBasicEnum_Zero, kBasicEnum_One}),
+                        Flags<BasicEnum>({kBasicEnum_Zero, kBasicEnum_Two})) ==
                   Flags<BasicEnum>(kBasicEnum_Zero),
               "BasicEnum {Zero,One} intersect {Zero,Two} is not equal to Zero");
-static_assert(Flags<BasicEnum>({kBasicEnum_Zero, kBasicEnum_One})
-                  .Intersect(Flags<BasicEnum>(kBasicEnum_Two))
+static_assert(Intersect(Flags<BasicEnum>({kBasicEnum_Zero, kBasicEnum_One}),
+                        Flags<BasicEnum>(kBasicEnum_Two))
                   .IsEmpty(),
               "BasicEnum {Zero,One} intersect Two is not empty");
 static_assert(Flags<BasicEnum>({kBasicEnum_One}) ==
@@ -277,30 +275,28 @@ static_assert(Flags<SizedEnum>({kSizedEnum_Zero, kSizedEnum_One}) -
                       Flags<SizedEnum>(kSizedEnum_Two) ==
                   Flags<SizedEnum>({kSizedEnum_Zero, kSizedEnum_One}),
               "SizedEnum {Zero,One} - Two is not equal to {Zero,One}");
+static_assert(Union(kSizedEnum_Zero, Flags<SizedEnum>(kSizedEnum_One)) ==
+                  Flags<SizedEnum>({kSizedEnum_Zero, kSizedEnum_One}),
+              "SizedEnum Zero union One is not equal to {Zero, One}");
 static_assert(
-    Flags<SizedEnum>(kSizedEnum_Zero).Union(Flags<SizedEnum>(kSizedEnum_One)) ==
-        Flags<SizedEnum>({kSizedEnum_Zero, kSizedEnum_One}),
-    "SizedEnum Zero union One is not equal to {Zero, One}");
-static_assert(
-    Flags<SizedEnum>({kSizedEnum_Zero, kSizedEnum_One})
-            .Union(Flags<SizedEnum>({kSizedEnum_One, kSizedEnum_Two})) ==
+    Union(Flags<SizedEnum>({kSizedEnum_Zero, kSizedEnum_One}),
+          Flags<SizedEnum>({kSizedEnum_One, kSizedEnum_Two})) ==
         Flags<SizedEnum>({kSizedEnum_Zero, kSizedEnum_One, kSizedEnum_Two}),
     "SizedEnum {Zero,One} union {One,Two} is not equal to {Zero,One,Two}");
-static_assert(Flags<SizedEnum>({kSizedEnum_Zero, kSizedEnum_One})
-                      .Remove(Flags<SizedEnum>(kSizedEnum_Zero)) ==
+static_assert((Flags<SizedEnum>({kSizedEnum_Zero, kSizedEnum_One}) -
+               Flags<SizedEnum>(kSizedEnum_Zero)) ==
                   Flags<SizedEnum>(kSizedEnum_One),
               "SizedEnum {Zero,One} remove Zero is not equal to One");
-static_assert(Flags<SizedEnum>({kSizedEnum_Zero, kSizedEnum_One})
-                      .Remove(Flags<SizedEnum>(kSizedEnum_Two)) ==
+static_assert((Flags<SizedEnum>({kSizedEnum_Zero, kSizedEnum_One}) -
+               Flags<SizedEnum>(kSizedEnum_Two)) ==
                   Flags<SizedEnum>({kSizedEnum_Zero, kSizedEnum_One}),
               "SizedEnum {Zero,One} remove Two is not equal to {Zero,One}");
-static_assert(Flags<SizedEnum>({kSizedEnum_Zero, kSizedEnum_One})
-                      .Intersect(Flags<SizedEnum>({kSizedEnum_Zero,
-                                                   kSizedEnum_Two})) ==
+static_assert(Intersect(Flags<SizedEnum>({kSizedEnum_Zero, kSizedEnum_One}),
+                        Flags<SizedEnum>({kSizedEnum_Zero, kSizedEnum_Two})) ==
                   Flags<SizedEnum>(kSizedEnum_Zero),
               "SizedEnum {Zero,One} intersect {Zero,Two} is not equal to Zero");
-static_assert(Flags<SizedEnum>({kSizedEnum_Zero, kSizedEnum_One})
-                  .Intersect(Flags<SizedEnum>(kSizedEnum_Two))
+static_assert(Intersect(Flags<SizedEnum>({kSizedEnum_Zero, kSizedEnum_One}),
+                        Flags<SizedEnum>(kSizedEnum_Two))
                   .IsEmpty(),
               "SizedEnum {Zero,One} intersect Two is not empty");
 static_assert(Flags<SizedEnum>({kSizedEnum_One}) ==
@@ -425,30 +421,30 @@ static_assert(Flags<ClassEnum>({ClassEnum::kZero, ClassEnum::kOne}) -
                       Flags<ClassEnum>(ClassEnum::kTwo) ==
                   Flags<ClassEnum>({ClassEnum::kZero, ClassEnum::kOne}),
               "ClassEnum {Zero,One} - Two is not equal to {Zero,One}");
-static_assert(Flags<ClassEnum>(ClassEnum::kZero)
-                      .Union(Flags<ClassEnum>(ClassEnum::kOne)) ==
+static_assert(Union(Flags<ClassEnum>(ClassEnum::kZero),
+                    Flags<ClassEnum>(ClassEnum::kOne)) ==
                   Flags<ClassEnum>({ClassEnum::kZero, ClassEnum::kOne}),
               "ClassEnum Zero union One is not equal to {Zero, One}");
 static_assert(
-    Flags<ClassEnum>({ClassEnum::kZero, ClassEnum::kOne})
-            .Union(Flags<ClassEnum>({ClassEnum::kOne, ClassEnum::kTwo})) ==
+    Union(Flags<ClassEnum>({ClassEnum::kZero, ClassEnum::kOne}),
+          Flags<ClassEnum>({ClassEnum::kOne, ClassEnum::kTwo})) ==
         Flags<ClassEnum>({ClassEnum::kZero, ClassEnum::kOne, ClassEnum::kTwo}),
     "ClassEnum {Zero,One} union {One,Two} is not equal to {Zero,One,Two}");
-static_assert(Flags<ClassEnum>({ClassEnum::kZero, ClassEnum::kOne})
-                      .Remove(Flags<ClassEnum>(ClassEnum::kZero)) ==
+static_assert((Flags<ClassEnum>({ClassEnum::kZero, ClassEnum::kOne}) -
+               Flags<ClassEnum>(ClassEnum::kZero)) ==
                   Flags<ClassEnum>(ClassEnum::kOne),
               "ClassEnum {Zero,One} remove Zero is not equal to One");
-static_assert(Flags<ClassEnum>({ClassEnum::kZero, ClassEnum::kOne})
-                      .Remove(Flags<ClassEnum>(ClassEnum::kTwo)) ==
+static_assert((Flags<ClassEnum>({ClassEnum::kZero, ClassEnum::kOne}) -
+               Flags<ClassEnum>(ClassEnum::kTwo)) ==
                   Flags<ClassEnum>({ClassEnum::kZero, ClassEnum::kOne}),
               "ClassEnum {Zero,One} remove Two is not equal to {Zero,One}");
-static_assert(Flags<ClassEnum>({ClassEnum::kZero, ClassEnum::kOne})
-                      .Intersect(Flags<ClassEnum>({ClassEnum::kZero,
-                                                   ClassEnum::kTwo})) ==
+static_assert(Intersect(Flags<ClassEnum>({ClassEnum::kZero, ClassEnum::kOne}),
+                        Flags<ClassEnum>({ClassEnum::kZero,
+                                          ClassEnum::kTwo})) ==
                   Flags<ClassEnum>(ClassEnum::kZero),
               "ClassEnum {Zero,One} intersect {Zero,Two} is not equal to Zero");
-static_assert(Flags<ClassEnum>({ClassEnum::kZero, ClassEnum::kOne})
-                  .Intersect(Flags<ClassEnum>(ClassEnum::kTwo))
+static_assert(Intersect(Flags<ClassEnum>({ClassEnum::kZero, ClassEnum::kOne}),
+                        Flags<ClassEnum>(ClassEnum::kTwo))
                   .IsEmpty(),
               "ClassEnum {Zero,One} intersect Two is not empty");
 static_assert(Flags<ClassEnum>({ClassEnum::kOne}) ==
