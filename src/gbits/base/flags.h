@@ -110,7 +110,19 @@ constexpr Flags<FlagType> operator+(Flags<FlagType> a, Flags<FlagType> b) {
   return a.Union(b);
 }
 template <typename FlagType>
+constexpr Flags<FlagType> operator+(Flags<FlagType> a, FlagType b) {
+  return a.Union(b);
+}
+template <typename FlagType>
+constexpr Flags<FlagType> operator+(FlagType a, Flags<FlagType> b) {
+  return b.Union(a);
+}
+template <typename FlagType>
 constexpr Flags<FlagType> operator-(Flags<FlagType> a, Flags<FlagType> b) {
+  return a.Remove(b);
+}
+template <typename FlagType>
+constexpr Flags<FlagType> operator-(Flags<FlagType> a, FlagType b) {
   return a.Remove(b);
 }
 
