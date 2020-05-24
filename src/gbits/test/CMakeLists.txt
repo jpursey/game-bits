@@ -1,4 +1,5 @@
 set(gbits_test_SOURCE
+  test_util.cc test_util.h
   thread_tester.cc thread_tester.h
 )
 
