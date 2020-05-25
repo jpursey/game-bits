@@ -326,8 +326,11 @@ std::unique_ptr<File> FileSystem::OpenFile(std::string_view path,
       !protocol_flags.IsSet(FileProtocolFlag::kFileCreate)) {
     return nullptr;
   }
-  return absl::WrapUnique(
-      new File(protocol->OpenFile(protocol_name, path, flags), flags));
+  auto raw_file = protocol->OpenFile(protocol_name, path, flags);
+  if (raw_file == nullptr) {
+    return nullptr;
+  }
+  return absl::WrapUnique(new File(std::move(raw_file), flags));
 }
 
 std::tuple<std::string_view, FileProtocol*> FileSystem::GetProtocol(

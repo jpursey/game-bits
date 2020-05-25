@@ -658,15 +658,20 @@ TEST(FileSystemTest, OpenFile) {
       nullptr);
   state.flags += FileProtocolFlag::kFileCreate;
 
-  state.flags = FileProtocolFlag::kFileRead;
+  state.open_fail_path = "/file";
+  EXPECT_EQ(file_system.OpenFile("test:/file", FileFlag::kRead), nullptr);
+  state.open_fail_path.clear();
+
+  state.flags = {FileProtocolFlag::kInfo, FileProtocolFlag::kFileRead};
   EXPECT_NE(file_system.OpenFile("test:/file", FileFlag::kRead), nullptr);
 
-  state.flags = FileProtocolFlag::kFileWrite;
+  state.flags = {FileProtocolFlag::kInfo, FileProtocolFlag::kFileWrite};
   EXPECT_NE(
       file_system.OpenFile("test:/file", {FileFlag::kReset, FileFlag::kWrite}),
       nullptr);
 
-  state.flags = {FileProtocolFlag::kFileCreate, FileProtocolFlag::kFileWrite};
+  state.flags = {FileProtocolFlag::kInfo, FileProtocolFlag::kFileCreate,
+                 FileProtocolFlag::kFileWrite};
   EXPECT_NE(
       file_system.OpenFile("test:/file", {FileFlag::kCreate, FileFlag::kReset,
                                           FileFlag::kWrite}),
