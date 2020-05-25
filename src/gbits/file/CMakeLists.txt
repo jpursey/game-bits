@@ -8,6 +8,7 @@ set(gbits_file_SOURCE
 )
 
 set(gbits_file_TEST_SOURCE
+  common_protocol_test.cc common_protocol_test.h
   path_test.cc
   file_protocol_test.cc
   file_system_test.cc

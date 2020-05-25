@@ -2,11 +2,83 @@
 
 #include <cstring>
 
+#include "gbits/file/common_protocol_test.h"
 #include "gbits/file/raw_file.h"
 #include "gtest/gtest.h"
 
 namespace gb {
 namespace {
+
+using ::testing::Values;
+
+std::unique_ptr<FileProtocol> TestProtocolFactory(
+    FileProtocolFlags flags, const CommonProtocolTestInit& init) {
+  TestProtocol::State* state = new TestProtocol::State;
+  state->flags = flags;
+  state->implement_copy = true;
+  state->delete_state = true;
+  for (const auto& path : init.folders) {
+    state->paths[path] = TestProtocol::PathState::NewFolder();
+  }
+  for (const auto& [path, contents] : init.files) {
+    state->paths[path] = TestProtocol::PathState::NewFile(contents);
+  }
+  return std::make_unique<TestProtocol>(state);
+}
+
+std::unique_ptr<FileProtocol> TestProtocolFactory_All(
+    const CommonProtocolTestInit& init) {
+  return TestProtocolFactory(kAllFileProtocolFlags, init);
+}
+
+std::unique_ptr<FileProtocol> TestProtocolFactory_Info(
+    const CommonProtocolTestInit& init) {
+  return TestProtocolFactory(
+      {FileProtocolFlag::kInfo, FileProtocolFlag::kFileRead}, init);
+}
+
+std::unique_ptr<FileProtocol> TestProtocolFactory_List(
+    const CommonProtocolTestInit& init) {
+  return TestProtocolFactory({FileProtocolFlag::kInfo, FileProtocolFlag::kList,
+                              FileProtocolFlag::kFileRead},
+                             init);
+}
+
+std::unique_ptr<FileProtocol> TestProtocolFactory_FolderCreate(
+    const CommonProtocolTestInit& init) {
+  return TestProtocolFactory(
+      {FileProtocolFlag::kInfo, FileProtocolFlag::kList,
+       FileProtocolFlag::kFolderCreate, FileProtocolFlag::kFileCreate,
+       FileProtocolFlag::kFileWrite},
+      init);
+}
+
+std::unique_ptr<FileProtocol> TestProtocolFactory_FileCreate(
+    const CommonProtocolTestInit& init) {
+  return TestProtocolFactory(
+      {FileProtocolFlag::kInfo, FileProtocolFlag::kFileCreate,
+       FileProtocolFlag::kFileWrite},
+      init);
+}
+
+std::unique_ptr<FileProtocol> TestProtocolFactory_FileRead(
+    const CommonProtocolTestInit& init) {
+  return TestProtocolFactory(
+      {FileProtocolFlag::kInfo, FileProtocolFlag::kFileRead}, init);
+}
+
+std::unique_ptr<FileProtocol> TestProtocolFactory_FileWrite(
+    const CommonProtocolTestInit& init) {
+  return TestProtocolFactory(
+      {FileProtocolFlag::kInfo, FileProtocolFlag::kFileWrite}, init);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    TestProtocolTest, CommonProtocolTest,
+    Values(TestProtocolFactory_All, TestProtocolFactory_Info,
+           TestProtocolFactory_List, TestProtocolFactory_FolderCreate,
+           TestProtocolFactory_FileCreate, TestProtocolFactory_FileRead,
+           TestProtocolFactory_FileWrite));
 
 TEST(TestProtocolTest, BasicInitialization) {
   FileProtocolFlags test_flags = {FileProtocolFlag::kList,
