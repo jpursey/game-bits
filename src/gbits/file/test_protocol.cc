@@ -164,8 +164,22 @@ std::vector<std::string> TestProtocol::GetDefaultNames() const {
   return state_->default_names;
 }
 
-PathInfo TestProtocol::GetPathInfo(std::string_view protocol_name,
-                                   std::string_view path) {
+void TestProtocol::Lock(LockType type) {
+  if (state_->lock_type != LockType::kInvalid || type == LockType::kInvalid) {
+    state_->invalid_call_count += 1;
+  }
+  state_->lock_type = type;
+}
+
+void TestProtocol::Unlock(LockType type) {
+  if (state_->lock_type != type || type == LockType::kInvalid) {
+    state_->invalid_call_count += 1;
+  }
+  state_->lock_type = LockType::kInvalid;
+}
+
+PathInfo TestProtocol::DoGetPathInfo(std::string_view protocol_name,
+                                     std::string_view path) {
   if (!IsValidProtocolName(protocol_name) || !IsValidPath(path) ||
       !state_->flags.IsSet(FileProtocolFlag::kInfo)) {
     state_->invalid_call_count += 1;
@@ -178,33 +192,34 @@ PathInfo TestProtocol::GetPathInfo(std::string_view protocol_name,
   return {path_state.GetType(), path_state.GetSize()};
 }
 
-std::vector<std::string> TestProtocol::List(std::string_view protocol_name,
-                                            std::string_view path,
-                                            std::string_view pattern,
-                                            FolderMode mode, PathTypes types) {
+std::vector<std::string> TestProtocol::DoList(std::string_view protocol_name,
+                                              std::string_view path,
+                                              std::string_view pattern,
+                                              FolderMode mode,
+                                              PathTypes types) {
   state_->list_count += 1;
   if (!IsValidProtocolName(protocol_name) || !IsValidPath(path) ||
       !state_->flags.IsSet(FileProtocolFlag::kList)) {
     state_->invalid_call_count += 1;
     return {};
   }
-  return FileProtocol::List(protocol_name, path, pattern, mode, types);
+  return FileProtocol::DoList(protocol_name, path, pattern, mode, types);
 }
 
-bool TestProtocol::CreateFolder(std::string_view protocol_name,
-                                std::string_view path, FolderMode mode) {
+bool TestProtocol::DoCreateFolder(std::string_view protocol_name,
+                                  std::string_view path, FolderMode mode) {
   state_->create_folder_count += 1;
   if (!IsValidProtocolName(protocol_name) || !IsValidPath(path) ||
       !state_->flags.IsSet(FileProtocolFlag::kFolderCreate)) {
     state_->invalid_call_count += 1;
     return false;
   }
-  return FileProtocol::CreateFolder(protocol_name, path, mode);
+  return FileProtocol::DoCreateFolder(protocol_name, path, mode);
 }
 
-bool TestProtocol::CopyFolder(std::string_view protocol_name,
-                              std::string_view from_path,
-                              std::string_view to_path) {
+bool TestProtocol::DoCopyFolder(std::string_view protocol_name,
+                                std::string_view from_path,
+                                std::string_view to_path) {
   state_->copy_folder_count += 1;
   if (!IsValidProtocolName(protocol_name) || !IsValidPath(from_path) ||
       !IsValidPath(to_path) ||
@@ -212,23 +227,23 @@ bool TestProtocol::CopyFolder(std::string_view protocol_name,
     state_->invalid_call_count += 1;
     return false;
   }
-  return FileProtocol::CopyFolder(protocol_name, from_path, to_path);
+  return FileProtocol::DoCopyFolder(protocol_name, from_path, to_path);
 }
 
-bool TestProtocol::DeleteFolder(std::string_view protocol_name,
-                                std::string_view path, FolderMode mode) {
+bool TestProtocol::DoDeleteFolder(std::string_view protocol_name,
+                                  std::string_view path, FolderMode mode) {
   state_->delete_folder_count += 1;
   if (!IsValidProtocolName(protocol_name) || !IsValidPath(path) ||
       !state_->flags.IsSet(FileProtocolFlag::kFolderCreate)) {
     state_->invalid_call_count += 1;
     return false;
   }
-  return FileProtocol::DeleteFolder(protocol_name, path, mode);
+  return FileProtocol::DoDeleteFolder(protocol_name, path, mode);
 }
 
-bool TestProtocol::CopyFile(std::string_view protocol_name,
-                            std::string_view from_path,
-                            std::string_view to_path) {
+bool TestProtocol::DoCopyFile(std::string_view protocol_name,
+                              std::string_view from_path,
+                              std::string_view to_path) {
   state_->copy_file_count += 1;
   if (!IsValidProtocolName(protocol_name) || !IsValidPath(from_path) ||
       !IsValidPath(to_path) ||
@@ -236,23 +251,22 @@ bool TestProtocol::CopyFile(std::string_view protocol_name,
     state_->invalid_call_count += 1;
     return false;
   }
-  return FileProtocol::CopyFile(protocol_name, from_path, to_path);
+  return FileProtocol::DoCopyFile(protocol_name, from_path, to_path);
 }
 
-bool TestProtocol::DeleteFile(std::string_view protocol_name,
-                              std::string_view path) {
+bool TestProtocol::DoDeleteFile(std::string_view protocol_name,
+                                std::string_view path) {
   state_->delete_file_count += 1;
   if (!IsValidProtocolName(protocol_name) || !IsValidPath(path) ||
       !state_->flags.IsSet(FileProtocolFlag::kFileCreate)) {
     state_->invalid_call_count += 1;
     return false;
   }
-  return FileProtocol::DeleteFile(protocol_name, path);
+  return FileProtocol::DoDeleteFile(protocol_name, path);
 }
 
-std::unique_ptr<RawFile> TestProtocol::OpenFile(std::string_view protocol_name,
-                                                std::string_view path,
-                                                FileFlags flags) {
+std::unique_ptr<RawFile> TestProtocol::DoOpenFile(
+    std::string_view protocol_name, std::string_view path, FileFlags flags) {
   state_->open_file_count += 1;
   if (!IsValidProtocolName(protocol_name) || !IsValidPath(path)) {
     state_->invalid_call_count += 1;
@@ -277,7 +291,7 @@ std::unique_ptr<RawFile> TestProtocol::OpenFile(std::string_view protocol_name,
     state_->invalid_call_count += 1;
     return nullptr;
   }
-  return FileProtocol::OpenFile(protocol_name, path, flags);
+  return FileProtocol::DoOpenFile(protocol_name, path, flags);
 }
 
 std::vector<std::string> TestProtocol::BasicList(std::string_view protocol_name,

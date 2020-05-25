@@ -107,6 +107,10 @@ class TestProtocol : public FileProtocol {
     std::vector<std::string>
         default_names;  // Default names, for auto-registration.
     bool implement_copy = false;
+    bool delete_state = false;
+
+    // Current lock type
+    LockType lock_type = LockType::kInvalid;
 
     // If an operation attempts to use this path, it will fail.
     std::string fail_path;
@@ -143,31 +147,39 @@ class TestProtocol : public FileProtocol {
   };
 
   TestProtocol(State* state) : state_(state) { state_->protocol = this; }
-  ~TestProtocol() override { state_->protocol = nullptr; }
+  ~TestProtocol() override {
+    state_->protocol = nullptr;
+    if (state_->delete_state) {
+      delete state_;
+    }
+  }
 
   // Implementation for FileProtocol.
   FileProtocolFlags GetFlags() const override;
   std::vector<std::string> GetDefaultNames() const override;
-  PathInfo GetPathInfo(std::string_view protocol_name,
-                       std::string_view path) override;
-  std::vector<std::string> List(std::string_view protocol_name,
-                                std::string_view path, std::string_view pattern,
-                                FolderMode mode, PathTypes types) override;
-  bool CreateFolder(std::string_view protocol_name, std::string_view path,
-                    FolderMode mode) override;
-  bool DeleteFolder(std::string_view protocol_name, std::string_view path,
-                    FolderMode mode) override;
-  bool CopyFolder(std::string_view protocol_name, std::string_view from_path,
-                  std::string_view to_path) override;
-  bool CopyFile(std::string_view protocol_name, std::string_view from_path,
-                std::string_view to_path) override;
-  bool DeleteFile(std::string_view protocol_name,
-                  std::string_view path) override;
-  std::unique_ptr<RawFile> OpenFile(std::string_view protocol_name,
-                                    std::string_view path,
-                                    FileFlags flags) override;
 
   // These are deliberately public, so they can be called directly from tests.
+  void Lock(LockType type) override;
+  void Unlock(LockType type) override;
+  PathInfo DoGetPathInfo(std::string_view protocol_name,
+                         std::string_view path) override;
+  std::vector<std::string> DoList(std::string_view protocol_name,
+                                  std::string_view path,
+                                  std::string_view pattern, FolderMode mode,
+                                  PathTypes types) override;
+  bool DoCreateFolder(std::string_view protocol_name, std::string_view path,
+                      FolderMode mode) override;
+  bool DoDeleteFolder(std::string_view protocol_name, std::string_view path,
+                      FolderMode mode) override;
+  bool DoCopyFolder(std::string_view protocol_name, std::string_view from_path,
+                    std::string_view to_path) override;
+  bool DoCopyFile(std::string_view protocol_name, std::string_view from_path,
+                  std::string_view to_path) override;
+  bool DoDeleteFile(std::string_view protocol_name,
+                    std::string_view path) override;
+  std::unique_ptr<RawFile> DoOpenFile(std::string_view protocol_name,
+                                      std::string_view path,
+                                      FileFlags flags) override;
   std::vector<std::string> BasicList(std::string_view protocol_name,
                                      std::string_view path) override;
   bool BasicCreateFolder(std::string_view protocol_name,

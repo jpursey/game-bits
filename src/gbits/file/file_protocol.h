@@ -55,14 +55,112 @@ class FileProtocol {
 
   // Returns the path information for the specified path.
   //
+  // Derived classes must override DoGetPathInfo to implement this if
+  // FileProtocolFlag::kInfo is supported. Further, all default implementations
+  // of the Do* functions require support for this regardless of file protocol
+  // flags.
+  PathInfo GetPathInfo(std::string_view protocol_name, std::string_view path);
+
+  // Lists paths that match a pattern.
+  //
+  // Derived classes must override DoList or BasicList to implement this if
+  // FileProtocolFlag::kList is supported. GetPathInfo is also called if DoList
+  // is not implemented.
+  std::vector<std::string> List(std::string_view protocol_name,
+                                std::string_view path, std::string_view pattern,
+                                FolderMode mode, PathTypes types);
+
+  // Creates a folder given at the specified path.
+  //
+  // Derived classes must override DoCreateFolder or BasicCreateFolder to
+  // implement this if FileProtocolFlag::kFolderCreate is supported. GetPathInfo
+  // is also called if DoCreateFolder is not implemented.
+  bool CreateFolder(std::string_view protocol_name, std::string_view path,
+                    FolderMode mode);
+
+  // Copies a folder from one path to another.
+  //
+  // Derived classes may optionally override DoCopyFolder to implement this if
+  // FileProtocolFlag::kFolderCreate is supported. GetPathInfo, List,
+  // CreateFolder, and CopyFile are also called if DoCopyFolder is not
+  // implemented.
+  bool CopyFolder(std::string_view protocol_name, std::string_view from_path,
+                  std::string_view to_path);
+
+  // Deletes a folder at the specified path.
+  //
+  // Derived classes must override DoDeleteFolder or BasicCopyFolder to
+  // implement this if FileProtocolFlag::kFolderCreate is supported.
+  // GetPathInfo, List, and DeleteFile are also called if DoDeleteFolder is not
+  // implemented.
+  bool DeleteFolder(std::string_view protocol_name, std::string_view path,
+                    FolderMode mode);
+
+  // Copies a file from one path to another.
+  //
+  // Derived classes may optionally override DoCopyFile or BasicCopyFile to
+  // implement this if FileProtocolFlag::kFileCreate is supported. GetPathInfo
+  // is called if DoCopyFile is not implemented. OpenFile is called if neither
+  // DoCopyFile or BasicCopyFile are implemented.
+  bool CopyFile(std::string_view protocol_name, std::string_view from_path,
+                std::string_view to_path);
+
+  // Deletes a file at the specified path
+  //
+  // Derived classes must override DoDeleteFile or BasicDeleteFile to implement
+  // this if FileProtocolFlag::kFileCreate is supported. GetPathInfo is called
+  // if DoDeleteFile is not implemented.
+  bool DeleteFile(std::string_view protocol_name, std::string_view path);
+
+  // Opens a file for at the specified path.
+  //
+  // Derived classes must override DoOpenFile or BasicOpenFile to implement
+  // this. GetPathInfo is called if DoOpenFile is not implemented.
+  std::unique_ptr<RawFile> OpenFile(std::string_view protocol_name,
+                                    std::string_view path, FileFlags flags);
+
+  // Describes the nature of the operation taking place for the purpose of
+  // derived classes that can support atomic operations and thread-safety.
+  //
+  // This is public for use in tests only.
+  enum class LockType {
+    kInvalid,  // Never used. Placeholder for an uninitialized value.
+
+    // In order from least restrictive to most restrictive. Each type implies
+    // all access from the previous type(s).
+    kQuery,      // Query properties and presence of files/folders.
+    kOpenRead,   // Open an existing file for reading.
+    kOpenWrite,  // Open an existing file for writing.
+    kModify,     // Add or remove files/folders.
+  };
+
+ protected:
+  FileProtocol() = default;
+
+  // Lock/Unlock are called when public operations are performed on the file
+  // protocol.
+  //
+  // If a protocol may be used in a multi-threaded context and are relying on
+  // one or more default Do* method implementations, they should implement these
+  // or the preconditions guaranteed to the Basic* method implementations cannot
+  // be met. They also may be implemented regardless, to ensure thread-safety
+  // guarantees.
+  //
+  // Lock/Unlock are always called in pairs, and are never nested/recursive
+  // (multiple Lock calls).
+  virtual void Lock(LockType type);
+  virtual void Unlock(LockType type);
+
+  // Returns the path information for the specified path.
+  //
   // A protocol must implement this if the protocol supports
   // FileProtocolFlag::kInfo (which most should try to do). If implemented, it
   // must return PathInfo{PathType::kFolder} for any valid root path (generally
   // the path "/").
   //
   // If the path is inaccessible, this should return {}.
-  virtual PathInfo GetPathInfo(std::string_view protocol_name,
-                               std::string_view path);
+  virtual PathInfo DoGetPathInfo(std::string_view protocol_name,
+                                 std::string_view path);
 
   // Lists paths that match a pattern.
   //
@@ -76,10 +174,10 @@ class FileProtocol {
   // The returned paths must be prefixed with the protocol prefix using the
   // provided protocol name. The special folders "." and ".." should never
   // included in the results.
-  virtual std::vector<std::string> List(std::string_view protocol_name,
-                                        std::string_view path,
-                                        std::string_view pattern,
-                                        FolderMode mode, PathTypes types);
+  virtual std::vector<std::string> DoList(std::string_view protocol_name,
+                                          std::string_view path,
+                                          std::string_view pattern,
+                                          FolderMode mode, PathTypes types);
 
   // Creates a folder given at the specified path.
   //
@@ -90,8 +188,8 @@ class FileProtocol {
   //
   // CreateFolder is only called if the protocol supports
   // FileProtocolFlag::kFolderCreate.
-  virtual bool CreateFolder(std::string_view protocol_name,
-                            std::string_view path, FolderMode mode);
+  virtual bool DoCreateFolder(std::string_view protocol_name,
+                              std::string_view path, FolderMode mode);
 
   // Copies a folder from one path to another.
   //
@@ -110,8 +208,9 @@ class FileProtocol {
   // FileProtocolFlag::kFolderCreate and FileProtocolFlag::kFileCreate, and
   // from_path is not a parent of to_path. The protocol is responsible for all
   // further validation.
-  virtual bool CopyFolder(std::string_view protocol_name,
-                          std::string_view from_path, std::string_view to_path);
+  virtual bool DoCopyFolder(std::string_view protocol_name,
+                            std::string_view from_path,
+                            std::string_view to_path);
 
   // Deletes a folder at the specified path.
   //
@@ -126,8 +225,8 @@ class FileProtocol {
   // DeleteFolder is only called is the protocol supports
   // FileProtocolFlag::kFolderCreate. The protocol is responsible for all
   // further validation.
-  virtual bool DeleteFolder(std::string_view protocol_name,
-                            std::string_view path, FolderMode mode);
+  virtual bool DoDeleteFolder(std::string_view protocol_name,
+                              std::string_view path, FolderMode mode);
 
   // Copies a file from one path to another.
   //
@@ -142,8 +241,8 @@ class FileProtocol {
   //
   // CopyFile is only called if FileProtocolFlag::kFileCreate is supported. The
   // protocol is responsible for all further validation.
-  virtual bool CopyFile(std::string_view protocol_name,
-                        std::string_view from_path, std::string_view to_path);
+  virtual bool DoCopyFile(std::string_view protocol_name,
+                          std::string_view from_path, std::string_view to_path);
 
   // Deletes a file at the specified path
   //
@@ -155,8 +254,8 @@ class FileProtocol {
   //
   // DeleteFile is only called if FileProtocolFlag::kFileCreate is supported.
   // The protocol is responsible for all further validation.
-  virtual bool DeleteFile(std::string_view protocol_name,
-                          std::string_view path);
+  virtual bool DoDeleteFile(std::string_view protocol_name,
+                            std::string_view path);
 
   // Opens a file for at the specified path.
   //
@@ -169,12 +268,9 @@ class FileProtocol {
   // all further validation.
   //
   // On error, this should return a nullptr.
-  virtual std::unique_ptr<RawFile> OpenFile(std::string_view protocol_name,
-                                            std::string_view path,
-                                            FileFlags flags);
-
- protected:
-  FileProtocol() = default;
+  virtual std::unique_ptr<RawFile> DoOpenFile(std::string_view protocol_name,
+                                              std::string_view path,
+                                              FileFlags flags);
 
   // File protocols may optionally override BasicList instead of List when
   // both FileProtocolFlag::kList and FileProtocolFlag::kInfo are supported.
