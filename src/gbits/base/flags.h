@@ -185,7 +185,7 @@ constexpr Flags<FlagType> operator-(Flags<FlagType> a, Flags<FlagType> b) {
 }
 template <typename FlagType>
 constexpr Flags<FlagType> operator-(Flags<FlagType> a, FlagType b) {
-  return Flags<FlagType>(a.GetMask() & ~b.GetMask());
+  return Flags<FlagType>(a.GetMask() & ~Flags<FlagType>(b).GetMask());
 }
 
 }  // namespace gb

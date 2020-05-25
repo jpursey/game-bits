@@ -112,8 +112,10 @@ static_assert(Flags<BasicEnum>(kBasicEnum_One) >=
 static_assert(!(Flags<BasicEnum>(kBasicEnum_Zero) >=
                 Flags<BasicEnum>(kBasicEnum_One)),
               "BasicEnum Zero is greater or equal to One");
-static_assert(Flags<BasicEnum>(kBasicEnum_Zero) +
-                      Flags<BasicEnum>(kBasicEnum_One) ==
+static_assert(Flags<BasicEnum>(kBasicEnum_Zero) + kBasicEnum_One ==
+                  Flags<BasicEnum>({kBasicEnum_Zero, kBasicEnum_One}),
+              "BasicEnum Zero + One is not equal to {Zero, One}");
+static_assert(kBasicEnum_Zero + Flags<BasicEnum>(kBasicEnum_One) ==
                   Flags<BasicEnum>({kBasicEnum_Zero, kBasicEnum_One}),
               "BasicEnum Zero + One is not equal to {Zero, One}");
 static_assert(
@@ -126,7 +128,7 @@ static_assert(Flags<BasicEnum>({kBasicEnum_Zero, kBasicEnum_One}) -
                   Flags<BasicEnum>(kBasicEnum_One),
               "BasicEnum {Zero,One} - Zero is not equal to One");
 static_assert(Flags<BasicEnum>({kBasicEnum_Zero, kBasicEnum_One}) -
-                      Flags<BasicEnum>(kBasicEnum_Zero) ==
+                      kBasicEnum_Zero ==
                   Flags<BasicEnum>(kBasicEnum_One),
               "BasicEnum {Zero,One} - Zero is not equal to One");
 static_assert(Flags<BasicEnum>({kBasicEnum_Zero, kBasicEnum_One}) -
@@ -141,14 +143,6 @@ static_assert(
           Flags<BasicEnum>({kBasicEnum_One, kBasicEnum_Two})) ==
         Flags<BasicEnum>({kBasicEnum_Zero, kBasicEnum_One, kBasicEnum_Two}),
     "BasicEnum {Zero,One} union {One,Two} is not equal to {Zero,One,Two}");
-static_assert((Flags<BasicEnum>({kBasicEnum_Zero, kBasicEnum_One}) -
-               Flags<BasicEnum>(kBasicEnum_Zero)) ==
-                  Flags<BasicEnum>(kBasicEnum_One),
-              "BasicEnum {Zero,One} remove Zero is not equal to One");
-static_assert((Flags<BasicEnum>({kBasicEnum_Zero, kBasicEnum_One}) -
-               Flags<BasicEnum>(kBasicEnum_Two)) ==
-                  Flags<BasicEnum>({kBasicEnum_Zero, kBasicEnum_One}),
-              "BasicEnum {Zero,One} remove Two is not equal to {Zero,One}");
 static_assert(Intersect(Flags<BasicEnum>({kBasicEnum_Zero, kBasicEnum_One}),
                         Flags<BasicEnum>({kBasicEnum_Zero, kBasicEnum_Two})) ==
                   Flags<BasicEnum>(kBasicEnum_Zero),
@@ -254,8 +248,10 @@ static_assert(Flags<SizedEnum>(kSizedEnum_One) >=
 static_assert(!(Flags<SizedEnum>(kSizedEnum_Zero) >=
                 Flags<SizedEnum>(kSizedEnum_One)),
               "SizedEnum Zero is greater or equal to One");
-static_assert(Flags<SizedEnum>(kSizedEnum_Zero) +
-                      Flags<SizedEnum>(kSizedEnum_One) ==
+static_assert(Flags<SizedEnum>(kSizedEnum_Zero) + kSizedEnum_One ==
+                  Flags<SizedEnum>({kSizedEnum_Zero, kSizedEnum_One}),
+              "SizedEnum Zero + One is not equal to {Zero, One}");
+static_assert(kSizedEnum_Zero + Flags<SizedEnum>(kSizedEnum_One) ==
                   Flags<SizedEnum>({kSizedEnum_Zero, kSizedEnum_One}),
               "SizedEnum Zero + One is not equal to {Zero, One}");
 static_assert(
@@ -268,7 +264,7 @@ static_assert(Flags<SizedEnum>({kSizedEnum_Zero, kSizedEnum_One}) -
                   Flags<SizedEnum>(kSizedEnum_One),
               "SizedEnum {Zero,One} - Zero is not equal to One");
 static_assert(Flags<SizedEnum>({kSizedEnum_Zero, kSizedEnum_One}) -
-                      Flags<SizedEnum>(kSizedEnum_Zero) ==
+                      kSizedEnum_Zero ==
                   Flags<SizedEnum>(kSizedEnum_One),
               "SizedEnum {Zero,One} - Zero is not equal to One");
 static_assert(Flags<SizedEnum>({kSizedEnum_Zero, kSizedEnum_One}) -
@@ -283,14 +279,6 @@ static_assert(
           Flags<SizedEnum>({kSizedEnum_One, kSizedEnum_Two})) ==
         Flags<SizedEnum>({kSizedEnum_Zero, kSizedEnum_One, kSizedEnum_Two}),
     "SizedEnum {Zero,One} union {One,Two} is not equal to {Zero,One,Two}");
-static_assert((Flags<SizedEnum>({kSizedEnum_Zero, kSizedEnum_One}) -
-               Flags<SizedEnum>(kSizedEnum_Zero)) ==
-                  Flags<SizedEnum>(kSizedEnum_One),
-              "SizedEnum {Zero,One} remove Zero is not equal to One");
-static_assert((Flags<SizedEnum>({kSizedEnum_Zero, kSizedEnum_One}) -
-               Flags<SizedEnum>(kSizedEnum_Two)) ==
-                  Flags<SizedEnum>({kSizedEnum_Zero, kSizedEnum_One}),
-              "SizedEnum {Zero,One} remove Two is not equal to {Zero,One}");
 static_assert(Intersect(Flags<SizedEnum>({kSizedEnum_Zero, kSizedEnum_One}),
                         Flags<SizedEnum>({kSizedEnum_Zero, kSizedEnum_Two})) ==
                   Flags<SizedEnum>(kSizedEnum_Zero),
@@ -400,8 +388,10 @@ static_assert(Flags<ClassEnum>(ClassEnum::kOne) >=
 static_assert(!(Flags<ClassEnum>(ClassEnum::kZero) >=
                 Flags<ClassEnum>(ClassEnum::kOne)),
               "ClassEnum Zero is greater or equal to One");
-static_assert(Flags<ClassEnum>(ClassEnum::kZero) +
-                      Flags<ClassEnum>(ClassEnum::kOne) ==
+static_assert(Flags<ClassEnum>(ClassEnum::kZero) + ClassEnum::kOne ==
+                  Flags<ClassEnum>({ClassEnum::kZero, ClassEnum::kOne}),
+              "ClassEnum Zero + One is not equal to {Zero, One}");
+static_assert(ClassEnum::kZero + Flags<ClassEnum>(ClassEnum::kOne) ==
                   Flags<ClassEnum>({ClassEnum::kZero, ClassEnum::kOne}),
               "ClassEnum Zero + One is not equal to {Zero, One}");
 static_assert(
@@ -414,7 +404,7 @@ static_assert(Flags<ClassEnum>({ClassEnum::kZero, ClassEnum::kOne}) -
                   Flags<ClassEnum>(ClassEnum::kOne),
               "ClassEnum {Zero,One} - Zero is not equal to One");
 static_assert(Flags<ClassEnum>({ClassEnum::kZero, ClassEnum::kOne}) -
-                      Flags<ClassEnum>(ClassEnum::kZero) ==
+                      ClassEnum::kZero ==
                   Flags<ClassEnum>(ClassEnum::kOne),
               "ClassEnum {Zero,One} - Zero is not equal to One");
 static_assert(Flags<ClassEnum>({ClassEnum::kZero, ClassEnum::kOne}) -
@@ -430,14 +420,6 @@ static_assert(
           Flags<ClassEnum>({ClassEnum::kOne, ClassEnum::kTwo})) ==
         Flags<ClassEnum>({ClassEnum::kZero, ClassEnum::kOne, ClassEnum::kTwo}),
     "ClassEnum {Zero,One} union {One,Two} is not equal to {Zero,One,Two}");
-static_assert((Flags<ClassEnum>({ClassEnum::kZero, ClassEnum::kOne}) -
-               Flags<ClassEnum>(ClassEnum::kZero)) ==
-                  Flags<ClassEnum>(ClassEnum::kOne),
-              "ClassEnum {Zero,One} remove Zero is not equal to One");
-static_assert((Flags<ClassEnum>({ClassEnum::kZero, ClassEnum::kOne}) -
-               Flags<ClassEnum>(ClassEnum::kTwo)) ==
-                  Flags<ClassEnum>({ClassEnum::kZero, ClassEnum::kOne}),
-              "ClassEnum {Zero,One} remove Two is not equal to {Zero,One}");
 static_assert(Intersect(Flags<ClassEnum>({ClassEnum::kZero, ClassEnum::kOne}),
                         Flags<ClassEnum>({ClassEnum::kZero,
                                           ClassEnum::kTwo})) ==
