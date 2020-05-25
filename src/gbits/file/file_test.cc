@@ -146,13 +146,13 @@ TEST(FileTest, Write) {
   EXPECT_EQ(file_state->contents, buffer);
 
   const std::string text("hello");
-  EXPECT_EQ(file->Write(text), text.size());
+  EXPECT_EQ(file->WriteString(text), text.size());
   EXPECT_EQ(file->GetPosition(), file_state->position);
   EXPECT_EQ(file_state->position, buffer_length + text.size());
   EXPECT_TRUE(absl::EndsWith(file_state->contents, text));
 
   const std::string_view text_view("good-bye");
-  EXPECT_EQ(file->Write(text_view), text_view.size());
+  EXPECT_EQ(file->WriteString(text_view), text_view.size());
   EXPECT_EQ(file->GetPosition(), file_state->position);
   EXPECT_EQ(file_state->position,
             buffer_length + text.size() + text_view.size());
@@ -244,6 +244,7 @@ TEST(FileTest, Read) {
   };
   file_state->contents.resize(sizeof(items));
   std::memcpy(file_state->contents.data(), items, sizeof(items));
+
   EXPECT_EQ(file->SeekBegin(), 0);
   Item read_items[2] = {};
   EXPECT_EQ(file->Read(read_items, 2), 2);
@@ -252,6 +253,23 @@ TEST(FileTest, Read) {
   EXPECT_STREQ(items[1].name, read_items[1].name);
   EXPECT_EQ(items[1].value, read_items[1].value);
 
+  std::vector<Item> read_items_vector;
+  EXPECT_EQ(file->SeekBegin(), 0);
+  EXPECT_EQ(file->Read(&read_items_vector, 2), 2);
+  ASSERT_EQ(read_items_vector.size(), 2);
+  EXPECT_STREQ(items[0].name, read_items_vector[0].name);
+  EXPECT_EQ(items[0].value, read_items_vector[0].value);
+  EXPECT_STREQ(items[1].name, read_items_vector[1].name);
+  EXPECT_EQ(items[1].value, read_items_vector[1].value);
+
+  EXPECT_EQ(file->SeekBegin(), 0);
+  read_items_vector = file->Read<Item>(2);
+  ASSERT_EQ(read_items_vector.size(), 2);
+  EXPECT_STREQ(items[0].name, read_items_vector[0].name);
+  EXPECT_EQ(items[0].value, read_items_vector[0].value);
+  EXPECT_STREQ(items[1].name, read_items_vector[1].name);
+  EXPECT_EQ(items[1].value, read_items_vector[1].value);
+
   file.reset();
   file = file_system.OpenFile("test:/file", FileFlag::kWrite);
   ASSERT_NE(file, nullptr);
@@ -259,6 +277,33 @@ TEST(FileTest, Read) {
   int value = 42;
   EXPECT_EQ(file->Read(&value), 0);
   EXPECT_EQ(file->GetPosition(), 0);
+}
+
+TEST(FileTest, ReadString) {
+  TestProtocol::State state;
+  FileSystem file_system;
+  file_system.Register(std::make_unique<TestProtocol>(&state), "test");
+
+  state.paths["/file"] = TestProtocol::PathState::NewFile("1234567890");
+  auto* file_state = state.paths["/file"].GetFile();
+  auto file = file_system.OpenFile("test:/file", FileFlag::kRead);
+  ASSERT_NE(file, nullptr);
+  std::string buffer;
+
+  EXPECT_EQ(file->ReadString(&buffer, 5), 5);
+  EXPECT_EQ(buffer, "12345");
+  EXPECT_EQ(file->ReadString(&buffer, 2), 2);
+  EXPECT_EQ(buffer, "67");
+  EXPECT_EQ(file->ReadString(&buffer, 10), 3);
+  EXPECT_EQ(buffer, "890");
+
+  EXPECT_EQ(file->SeekBegin(), 0);
+  buffer = file->ReadString(5);
+  EXPECT_EQ(buffer, "12345");
+  buffer = file->ReadString(2);
+  EXPECT_EQ(buffer, "67");
+  buffer = file->ReadString(10);
+  EXPECT_EQ(buffer, "890");
 }
 
 TEST(FileTest, ReadRemainingString) {
@@ -270,34 +315,51 @@ TEST(FileTest, ReadRemainingString) {
   auto* file_state = state.paths["/file"].GetFile();
   auto file = file_system.OpenFile("test:/file", FileFlag::kRead);
   ASSERT_NE(file, nullptr);
-
   std::string buffer;
-  EXPECT_TRUE(file->ReadRemaining(&buffer));
+
+  file->ReadRemainingString(&buffer);
   EXPECT_EQ(buffer, file_state->contents);
 
-  EXPECT_TRUE(file->ReadRemaining(&buffer));
+  file->ReadRemainingString(&buffer);
   EXPECT_THAT(buffer, IsEmpty());
 
   EXPECT_EQ(file->SeekTo(5), 5);
-  EXPECT_TRUE(file->ReadRemaining(&buffer));
+  file->ReadRemainingString(&buffer);
+  EXPECT_EQ(buffer, "67890");
+
+  EXPECT_EQ(file->SeekBegin(), 0);
+  buffer = file->ReadRemainingString();
+  EXPECT_EQ(buffer, file_state->contents);
+
+  buffer = file->ReadRemainingString();
+  EXPECT_THAT(buffer, IsEmpty());
+
+  EXPECT_EQ(file->SeekTo(5), 5);
+  buffer = file->ReadRemainingString();
   EXPECT_EQ(buffer, "67890");
 
   buffer = "not empty";
   file_state->position = -1;
-  EXPECT_TRUE(file->IsValid());
-  EXPECT_FALSE(file->ReadRemaining(&buffer));
+  file->ReadRemainingString(&buffer);
   EXPECT_THAT(buffer, IsEmpty());
 
   buffer = "not empty";
-  EXPECT_FALSE(file->IsValid());
-  EXPECT_FALSE(file->ReadRemaining(&buffer));
+  file->ReadRemainingString(&buffer);
+  EXPECT_THAT(buffer, IsEmpty());
+
+  file.reset();
+  file = file_system.OpenFile("test:/file", FileFlag::kRead);
+  file_state->position = -1;
+  buffer = file->ReadRemainingString();
+  EXPECT_THAT(buffer, IsEmpty());
+  buffer = file->ReadRemainingString();
   EXPECT_THAT(buffer, IsEmpty());
 
   file.reset();
   file = file_system.OpenFile("test:/file", FileFlag::kRead);
   ASSERT_NE(file, nullptr);
   file_state->fail_read_after = 5;
-  EXPECT_FALSE(file->ReadRemaining(&buffer));
+  file->ReadRemainingString(&buffer);
   EXPECT_EQ(buffer, "12345");
   file_state->fail_read_after = -1;
 
@@ -305,7 +367,22 @@ TEST(FileTest, ReadRemainingString) {
   file = file_system.OpenFile("test:/file", FileFlag::kWrite);
   ASSERT_NE(file, nullptr);
   buffer = "not empty";
-  EXPECT_FALSE(file->ReadRemaining(&buffer));
+  file->ReadRemainingString(&buffer);
+  EXPECT_THAT(buffer, IsEmpty());
+
+  file.reset();
+  file = file_system.OpenFile("test:/file", FileFlag::kRead);
+  ASSERT_NE(file, nullptr);
+  file_state->fail_read_after = 5;
+  buffer = file->ReadRemainingString();
+  EXPECT_EQ(buffer, "12345");
+  file_state->fail_read_after = -1;
+
+  file.reset();
+  file = file_system.OpenFile("test:/file", FileFlag::kWrite);
+  ASSERT_NE(file, nullptr);
+  buffer = "not empty";
+  buffer = file->ReadRemainingString();
   EXPECT_THAT(buffer, IsEmpty());
 }
 
@@ -328,34 +405,51 @@ TEST(FileTest, ReadRemainingVector) {
   auto* file_state = state.paths["/file"].GetFile();
   auto file = file_system.OpenFile("test:/file", FileFlag::kRead);
   ASSERT_NE(file, nullptr);
-
   std::vector<Item> buffer;
-  EXPECT_TRUE(file->ReadRemaining(&buffer));
+
+  file->ReadRemaining(&buffer);
   EXPECT_THAT(buffer, ElementsAreArray(items));
 
-  EXPECT_TRUE(file->ReadRemaining(&buffer));
+  file->ReadRemaining(&buffer);
   EXPECT_THAT(buffer, IsEmpty());
 
   EXPECT_EQ(file->SeekTo(sizeof(Item) * 2), sizeof(Item) * 2);
-  EXPECT_TRUE(file->ReadRemaining(&buffer));
+  file->ReadRemaining(&buffer);
+  EXPECT_THAT(buffer, ElementsAre(items[2], items[3]));
+
+  EXPECT_EQ(file->SeekBegin(), 0);
+  buffer = file->ReadRemaining<Item>();
+  EXPECT_THAT(buffer, ElementsAreArray(items));
+
+  buffer = file->ReadRemaining<Item>();
+  EXPECT_THAT(buffer, IsEmpty());
+
+  EXPECT_EQ(file->SeekTo(sizeof(Item) * 2), sizeof(Item) * 2);
+  buffer = file->ReadRemaining<Item>();
   EXPECT_THAT(buffer, ElementsAre(items[2], items[3]));
 
   buffer.push_back(items[0]);
   file_state->position = -1;
-  EXPECT_TRUE(file->IsValid());
-  EXPECT_FALSE(file->ReadRemaining(&buffer));
+  file->ReadRemaining(&buffer);
   EXPECT_THAT(buffer, IsEmpty());
 
   buffer.push_back(items[0]);
-  EXPECT_FALSE(file->IsValid());
-  EXPECT_FALSE(file->ReadRemaining(&buffer));
+  file->ReadRemaining(&buffer);
+  EXPECT_THAT(buffer, IsEmpty());
+
+  file.reset();
+  file = file_system.OpenFile("test:/file", FileFlag::kRead);
+  file_state->position = -1;
+  buffer = file->ReadRemaining<Item>();
+  EXPECT_THAT(buffer, IsEmpty());
+  buffer = file->ReadRemaining<Item>();
   EXPECT_THAT(buffer, IsEmpty());
 
   file.reset();
   file = file_system.OpenFile("test:/file", FileFlag::kRead);
   ASSERT_NE(file, nullptr);
   file_state->fail_read_after = sizeof(Item) * 2;
-  EXPECT_FALSE(file->ReadRemaining(&buffer));
+  file->ReadRemaining(&buffer);
   EXPECT_THAT(buffer, ElementsAre(items[0], items[1]));
   file_state->fail_read_after = -1;
 
@@ -363,7 +457,7 @@ TEST(FileTest, ReadRemainingVector) {
   file_state->contents.pop_back();  // Delete one byte!
   file = file_system.OpenFile("test:/file", FileFlag::kRead);
   ASSERT_NE(file, nullptr);
-  EXPECT_TRUE(file->ReadRemaining(&buffer));
+  file->ReadRemaining(&buffer);
   EXPECT_THAT(buffer, ElementsAre(items[0], items[1], items[2]));
   EXPECT_EQ(file->GetPosition(), sizeof(Item) * 3);
 
@@ -371,7 +465,30 @@ TEST(FileTest, ReadRemainingVector) {
   file = file_system.OpenFile("test:/file", FileFlag::kWrite);
   ASSERT_NE(file, nullptr);
   buffer.push_back(items[0]);
-  EXPECT_FALSE(file->ReadRemaining(&buffer));
+  file->ReadRemaining(&buffer);
+  EXPECT_THAT(buffer, IsEmpty());
+
+  file.reset();
+  file = file_system.OpenFile("test:/file", FileFlag::kRead);
+  ASSERT_NE(file, nullptr);
+  file_state->fail_read_after = sizeof(Item) * 2;
+  buffer = file->ReadRemaining<Item>();
+  EXPECT_THAT(buffer, ElementsAre(items[0], items[1]));
+  file_state->fail_read_after = -1;
+
+  file.reset();
+  file_state->contents.pop_back();  // Delete one byte!
+  file = file_system.OpenFile("test:/file", FileFlag::kRead);
+  ASSERT_NE(file, nullptr);
+  buffer = file->ReadRemaining<Item>();
+  EXPECT_THAT(buffer, ElementsAre(items[0], items[1], items[2]));
+  EXPECT_EQ(file->GetPosition(), sizeof(Item) * 3);
+
+  file.reset();
+  file = file_system.OpenFile("test:/file", FileFlag::kWrite);
+  ASSERT_NE(file, nullptr);
+  buffer.push_back(items[0]);
+  buffer = file->ReadRemaining<Item>();
   EXPECT_THAT(buffer, IsEmpty());
 }
 
@@ -393,6 +510,9 @@ TEST(FileTest, ReadLineFails) {
   EXPECT_THAT(lines, IsEmpty());
   EXPECT_EQ(file->ReadRemainingLines(&lines), 0);
   EXPECT_THAT(lines, IsEmpty());
+  EXPECT_THAT(file->ReadLine(), IsEmpty());
+  EXPECT_THAT(file->ReadLines(1), IsEmpty());
+  EXPECT_THAT(file->ReadRemainingLines(), IsEmpty());
   EXPECT_EQ(file->GetPosition(), 0);
   file.reset();
 
@@ -406,6 +526,9 @@ TEST(FileTest, ReadLineFails) {
   EXPECT_THAT(lines, IsEmpty());
   EXPECT_EQ(file->ReadRemainingLines(&lines), 0);
   EXPECT_THAT(lines, IsEmpty());
+  EXPECT_THAT(file->ReadLine(), IsEmpty());
+  EXPECT_THAT(file->ReadLines(1), IsEmpty());
+  EXPECT_THAT(file->ReadRemainingLines(), IsEmpty());
   EXPECT_EQ(file->GetPosition(), -1);
   file_state->fail_seek = false;
   file.reset();
@@ -429,6 +552,25 @@ TEST(FileTest, ReadLineFails) {
   file_state->fail_read_after = 5;
   EXPECT_EQ(file->ReadRemainingLines(&lines), 1);
   EXPECT_THAT(lines, ElementsAre("12345"));
+  file_state->fail_read_after = -1;
+  file.reset();
+
+  file = file_system.OpenFile("test:/file", FileFlag::kRead);
+  file_state->fail_read_after = 5;
+  line = "not_empty";
+  EXPECT_EQ(file->ReadLine(), "12345");
+  file_state->fail_read_after = -1;
+  file.reset();
+
+  file = file_system.OpenFile("test:/file", FileFlag::kRead);
+  file_state->fail_read_after = 5;
+  EXPECT_THAT(file->ReadLines(1), ElementsAre("12345"));
+  file_state->fail_read_after = -1;
+  file.reset();
+
+  file = file_system.OpenFile("test:/file", FileFlag::kRead);
+  file_state->fail_read_after = 5;
+  EXPECT_THAT(file->ReadRemainingLines(), ElementsAre("12345"));
   file_state->fail_read_after = -1;
   file.reset();
 }
@@ -573,6 +715,15 @@ TEST_P(LineTest, ReadOne) {
     EXPECT_EQ(file->ReadRemainingLines(&lines), 0);
     EXPECT_THAT(lines, IsEmpty());
     EXPECT_EQ(file->GetPosition(), file_state->contents.size());
+
+    EXPECT_THAT(file->ReadLine(), IsEmpty());
+    EXPECT_EQ(file->GetPosition(), file_state->contents.size());
+
+    EXPECT_THAT(file->ReadLines(1), IsEmpty());
+    EXPECT_EQ(file->GetPosition(), file_state->contents.size());
+
+    EXPECT_THAT(file->ReadRemainingLines(), IsEmpty());
+    EXPECT_EQ(file->GetPosition(), file_state->contents.size());
   } else {
     line = "not empty";
     EXPECT_EQ(file->ReadLine(&line), !file_lines[0].empty());
@@ -587,6 +738,18 @@ TEST_P(LineTest, ReadOne) {
     file->SeekBegin();
     EXPECT_EQ(file->ReadRemainingLines(&lines), 1);
     EXPECT_THAT(lines, ElementsAre(file_lines.front()));
+    EXPECT_EQ(file->GetPosition(), file_state->contents.size());
+
+    file->SeekBegin();
+    EXPECT_EQ(file->ReadLine(), file_lines.front());
+    EXPECT_EQ(file->GetPosition(), file_state->contents.size());
+
+    file->SeekBegin();
+    EXPECT_THAT(file->ReadLines(2), ElementsAre(file_lines.front()));
+    EXPECT_EQ(file->GetPosition(), file_state->contents.size());
+
+    file->SeekBegin();
+    EXPECT_THAT(file->ReadRemainingLines(), ElementsAre(file_lines.front()));
     EXPECT_EQ(file->GetPosition(), file_state->contents.size());
   }
 
@@ -606,6 +769,18 @@ TEST_P(LineTest, ReadOne) {
   file->SeekBegin();
   EXPECT_EQ(file->ReadRemainingLines(&lines), 1);
   EXPECT_THAT(lines, ElementsAre(file_lines.front()));
+  EXPECT_EQ(file->GetPosition(), file_state->contents.size());
+
+  file->SeekBegin();
+  EXPECT_EQ(file->ReadLine(), file_lines.front());
+  EXPECT_EQ(file->GetPosition(), file_state->contents.size());
+
+  file->SeekBegin();
+  EXPECT_THAT(file->ReadLines(2), ElementsAre(file_lines.front()));
+  EXPECT_EQ(file->GetPosition(), file_state->contents.size());
+
+  file->SeekBegin();
+  EXPECT_THAT(file->ReadRemainingLines(), ElementsAre(file_lines.front()));
   EXPECT_EQ(file->GetPosition(), file_state->contents.size());
 }
 
@@ -638,6 +813,25 @@ TEST_P(LineTest, ReadTwo) {
   EXPECT_EQ(file->ReadRemainingLines(&lines), 2);
   EXPECT_THAT(lines, ElementsAre(file_lines[0], file_lines[1]));
   EXPECT_EQ(file->GetPosition(), file_state->contents.size());
+
+  file->SeekBegin();
+  EXPECT_EQ(file->ReadLine(), file_lines.front());
+  EXPECT_EQ(file->GetPosition(),
+            file_state->contents.size() - file_lines[1].size());
+
+  file->SeekBegin();
+  EXPECT_THAT(file->ReadLines(3), ElementsAre(file_lines[0], file_lines[1]));
+  EXPECT_EQ(file->GetPosition(), file_state->contents.size());
+
+  file->SeekBegin();
+  EXPECT_THAT(file->ReadLines(1), ElementsAre(file_lines[0]));
+  EXPECT_EQ(file->GetPosition(),
+            file_state->contents.size() - file_lines[1].size());
+
+  file->SeekBegin();
+  EXPECT_THAT(file->ReadRemainingLines(),
+              ElementsAre(file_lines[0], file_lines[1]));
+  EXPECT_EQ(file->GetPosition(), file_state->contents.size());
 }
 
 TEST_P(LineTest, ReadMiddle) {
@@ -663,6 +857,16 @@ TEST_P(LineTest, ReadMiddle) {
   file->SeekTo(start_pos);
   EXPECT_EQ(file->ReadRemainingLines(&lines), file_lines.size() - 4);
   EXPECT_THAT(lines,
+              ElementsAreArray(file_lines.begin() + 4, file_lines.end()));
+  EXPECT_EQ(file->GetPosition(), file_state->contents.size());
+
+  file->SeekTo(start_pos);
+  EXPECT_THAT(file->ReadLines(4), ElementsAre(file_lines[4], file_lines[5],
+                                              file_lines[6], file_lines[7]));
+  EXPECT_EQ(file->GetPosition(), end_pos);
+
+  file->SeekTo(start_pos);
+  EXPECT_THAT(file->ReadRemainingLines(),
               ElementsAreArray(file_lines.begin() + 4, file_lines.end()));
   EXPECT_EQ(file->GetPosition(), file_state->contents.size());
 }

@@ -21,23 +21,22 @@ int64_t File::SeekTo(int64_t position) {
   return position_;
 }
 
-bool File::ReadRemaining(std::string* buffer) {
+void File::ReadRemainingString(std::string* buffer) {
   if (!flags_.IsSet(FileFlag::kRead)) {
     buffer->resize(0);
-    return false;
+    return;
   }
   const int64_t remaining = CalculateRemaining();
   if (remaining < 0) {
     buffer->resize(0);
-    return false;
+    return;
   }
   buffer->resize(static_cast<std::string::size_type>(remaining));
   if (remaining == 0) {
-    return true;
+    return;
   }
   const int64_t bytes_read = DoRead(&(*buffer)[0], remaining);
   buffer->resize(bytes_read);
-  return bytes_read == remaining;
 }
 
 bool File::ReadLine(std::string* line) {
@@ -71,7 +70,7 @@ int64_t File::ReadLines(int64_t count, std::vector<std::string>* lines) {
 
 int64_t File::ReadRemainingLines(std::vector<std::string>* lines) {
   std::string text;
-  ReadRemaining(&text);
+  ReadRemainingString(&text);
   if (text.empty()) {
     lines->clear();
     return 0;
