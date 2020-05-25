@@ -61,12 +61,19 @@ using FileFlags = Flags<FileFlag>;
 inline constexpr FileFlags kReadFileFlags = {
     FileFlag::kRead,
 };
+inline constexpr FileFlags kWriteFileFlags = {
+    FileFlag::kWrite,
+};
 inline constexpr FileFlags kReadWriteFileFlags = {
     FileFlag::kRead,
     FileFlag::kWrite,
 };
+inline constexpr FileFlags kOverwriteFileFlags = {
+    FileFlag::kWrite,
+    FileFlag::kReset,
+};
 inline constexpr FileFlags kNewFileFlags = {
-    kReadWriteFileFlags,
+    FileFlag::kWrite,
     FileFlag::kCreate,
     FileFlag::kReset,
 };
