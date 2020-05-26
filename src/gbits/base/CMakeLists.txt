@@ -7,6 +7,7 @@ set(gbits_base_SOURCE
   fake_clock.h
   flags.h
   platform_requirements.cc platform_requirements.h
+  scoped_call.h
   string_util.h
   type_info.h
   validated_context.cc validated_context.h
