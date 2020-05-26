@@ -86,7 +86,11 @@ TEST_P(CommonProtocolTest, List) {
   }
   EXPECT_THAT(file_system.List("test:/invalid", "", FolderMode::kNormal),
               IsEmpty());
+  EXPECT_THAT(file_system.List("test:/invalid", "", FolderMode::kRecursive),
+              IsEmpty());
   EXPECT_THAT(file_system.List("test:/file-1", "", FolderMode::kNormal),
+              IsEmpty());
+  EXPECT_THAT(file_system.List("test:/file-1", "", FolderMode::kRecursive),
               IsEmpty());
   EXPECT_THAT(file_system.List("test:/", "", FolderMode::kNormal),
               UnorderedElementsAre("test:/folder-1", "test:/folder-2",
