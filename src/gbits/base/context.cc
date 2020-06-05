@@ -11,6 +11,7 @@ Context::Context(Context&& other) : WeakScope<Context>(this) {
 Context& Context::operator=(Context&& other) {
   absl::WriterMutexLock other_lock(&other.mutex_);
   absl::WriterMutexLock this_lock(&mutex_);
+  parent_ = std::move(other.parent_);
   values_ = std::move(other.values_);
   names_ = std::move(other.names_);
   return *this;

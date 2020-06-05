@@ -142,7 +142,7 @@ class Context final : public WeakScope<Context> {
                        int> = 0>
   void SetValue(OtherType&& value) {
     absl::WriterMutexLock lock(&mutex_);
-    Type* old_value = GetPtrImpl<Type>();
+    Type* old_value = Lookup<Type>();
     if (old_value != nullptr) {
       *old_value = std::forward<OtherType>(value);
     } else {
@@ -156,7 +156,7 @@ class Context final : public WeakScope<Context> {
                        int> = 0>
   void SetValue(std::string_view name, OtherType&& value) {
     absl::WriterMutexLock lock(&mutex_);
-    Type* old_value = GetPtrImpl<Type>(name);
+    Type* old_value = Lookup<Type>(name);
     if (old_value != nullptr) {
       *old_value = std::forward<OtherType>(value);
     } else {
@@ -202,7 +202,6 @@ class Context final : public WeakScope<Context> {
   // one, or null otherwise.
   template <typename Type>
   Type* GetPtr(std::string_view name = {}) const {
-    absl::ReaderMutexLock lock(&mutex_);
     return GetPtrImpl<Type>(name);
   }
 
@@ -211,7 +210,6 @@ class Context final : public WeakScope<Context> {
   // construction.
   template <typename Type>
   Type GetValue(std::string_view name = {}) const {
-    absl::ReaderMutexLock lock(&mutex_);
     Type* value = GetPtrImpl<Type>(name);
     if (value != nullptr) {
       return *value;
@@ -224,7 +222,6 @@ class Context final : public WeakScope<Context> {
   // construction.
   template <typename Type, typename DefaultType>
   Type GetValueOrDefault(DefaultType&& default_value) const {
-    absl::ReaderMutexLock lock(&mutex_);
     Type* value = GetPtrImpl<Type>();
     if (value != nullptr) {
       return *value;
@@ -234,7 +231,6 @@ class Context final : public WeakScope<Context> {
   template <typename Type, typename DefaultType>
   Type GetValueOrDefault(std::string_view name,
                          DefaultType&& default_value) const {
-    absl::ReaderMutexLock lock(&mutex_);
     Type* value = GetPtrImpl<Type>(name);
     if (value != nullptr) {
       return *value;
@@ -251,11 +247,14 @@ class Context final : public WeakScope<Context> {
   }
   bool Exists(TypeKey* key) const { return Exists({}, key); }
   bool Exists(std::string_view name, TypeKey* key) const {
-    absl::ReaderMutexLock lock(&mutex_);
-    if (values_.find({name, key}) != values_.end()) {
-      return true;
+    WeakLock<Context> parent;
+    {
+      absl::ReaderMutexLock lock(&mutex_);
+      if (values_.find({name, key}) != values_.end()) {
+        return true;
+      }
+      parent = parent_.Lock();
     }
-    auto parent = parent_.Lock();
     return parent != nullptr && parent->Exists(name, key);
   }
 
@@ -263,11 +262,14 @@ class Context final : public WeakScope<Context> {
   //
   // If the name is empty, this always returns false.
   bool NameExists(std::string_view name) const {
-    absl::ReaderMutexLock lock(&mutex_);
-    if (names_.find(name) != names_.end()) {
-      return true;
+    WeakLock<Context> parent;
+    {
+      absl::ReaderMutexLock lock(&mutex_);
+      if (names_.find(name) != names_.end()) {
+        return true;
+      }
+      parent = parent_.Lock();
     }
-    auto parent = parent_.Lock();
     return parent != nullptr && parent->NameExists(name);
   }
 
@@ -328,14 +330,27 @@ class Context final : public WeakScope<Context> {
   using Names = absl::flat_hash_map<std::string_view, TypeInfo*>;
 
   template <typename Type>
-  Type* GetPtrImpl(std::string_view name = {}) const
+  Type* Lookup(std::string_view name = {}) const
       ABSL_SHARED_LOCKS_REQUIRED(mutex_) {
     auto it = values_.find({name, TypeKey::Get<Type>()});
-    if (it != values_.end()) {
-      return static_cast<Type*>(it->second.value);
+    return (it != values_.end() ? static_cast<Type*>(it->second.value)
+                                : nullptr);
+  }
+
+  template <typename Type>
+  Type* GetPtrImpl(std::string_view name = {}) const
+      ABSL_LOCKS_EXCLUDED(mutex_) {
+    Type* result = nullptr;
+    WeakLock<Context> parent;
+    {
+      absl::ReaderMutexLock lock(&mutex_);
+      result = Lookup<Type>(name);
+      if (result != nullptr) {
+        return result;
+      }
+      parent = parent_.Lock();
     }
-    auto parent = parent_.Lock();
-    return parent != nullptr ? parent->GetPtrImpl<Type>(name) : nullptr;
+    return (parent != nullptr ? parent->GetPtrImpl<Type>(name) : nullptr);
   }
   void SetImpl(std::string_view name, TypeInfo* type, void* new_value,
                bool owned) ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);

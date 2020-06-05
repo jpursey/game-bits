@@ -36,6 +36,7 @@ public:
   // class for full documentation on these methods.
   ContextBuilder& SetParent(WeakPtr<Context> context) {
     context_.SetParent(context);
+    return *this;
   }
   template <typename Type, class... Args>
   ContextBuilder& SetNew(Args&&... args) {
