@@ -250,8 +250,6 @@ template <typename Type>
 inline int64_t File::Read(Type* buffer, int64_t count) {
   static_assert(std::is_trivially_copyable_v<Type>,
                 "Buffer cannot be written into as raw bytes");
-  static_assert(!std::is_same_v<int64_t, bool> && std::is_integral_v<int64_t>,
-                "int64_t is not an integer type");
   const int64_t type_size = static_cast<int64_t>(sizeof(Type));
   return DoRead(buffer, static_cast<int64_t>(count) * type_size) / type_size;
 }
@@ -306,8 +304,6 @@ template <typename Type>
 inline int64_t File::Write(const Type* buffer, int64_t count) {
   static_assert(std::is_trivially_copyable_v<Type>,
                 "Buffer cannot be written as raw bytes");
-  static_assert(!std::is_same_v<int64_t, bool> && std::is_integral_v<int64_t>,
-                "int64_t is not an integer type");
   const int64_t type_size = static_cast<int64_t>(sizeof(Type));
   return static_cast<int64_t>(
       DoWrite(buffer, static_cast<int64_t>(count) * type_size) / type_size);

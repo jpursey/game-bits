@@ -195,6 +195,24 @@ class FileSystem final {
   // nullptr.
   std::unique_ptr<File> OpenFile(std::string_view path, FileFlags flags);
 
+  // Writes a file from a string or vector of trivially copyable types.
+  //
+  // These are convenience wrappers for opening a file, writing the buffer, and
+  // closing the file. If a file already exists, it will be overwritten.
+  //
+  // Returns true if the file was written successfullt, or false if any part of
+  // the process failed. This may result in a partially created file.
+  bool WriteFile(std::string_view path, std::string_view buffer);
+  template <typename Type>
+  bool WriteFile(std::string_view path, const std::vector<Type>& buffer);
+  bool WriteFile(std::string_view path, const void* buffer,
+                 int64_t buffer_size);
+
+  // Reads a file into a string or vector of trivially copyable types.
+  bool ReadFile(std::string_view path, std::string* buffer);
+  template <typename Type>
+  bool ReadFile(std::string_view path, std::vector<Type>* buffer);
+
   // Number of bytes copied at a time when copying files across protocols.
   inline static constexpr int64_t kCopyBufferSize = 32 * 1024;
 
@@ -219,6 +237,54 @@ class FileSystem final {
   FileProtocol* default_protocol_ = nullptr;
   std::string default_protocol_name_;
 };
+
+inline bool FileSystem::WriteFile(std::string_view path,
+                                  std::string_view buffer) {
+  auto file = OpenFile(path, kNewFileFlags);
+  if (file == nullptr) {
+    return false;
+  }
+  return file->WriteString(buffer) == static_cast<int64_t>(buffer.size());
+}
+
+template <typename Type>
+inline bool FileSystem::WriteFile(std::string_view path,
+                                  const std::vector<Type>& buffer) {
+  auto file = OpenFile(path, kNewFileFlags);
+  if (file == nullptr) {
+    return false;
+  }
+  return file->Write(buffer) == static_cast<int64_t>(buffer.size());
+}
+
+inline bool FileSystem::WriteFile(std::string_view path, const void* buffer,
+                                  int64_t buffer_size) {
+  auto file = OpenFile(path, kNewFileFlags);
+  if (file == nullptr) {
+    return false;
+  }
+  return file->Write(buffer, buffer_size) == buffer_size;
+}
+
+inline bool FileSystem::ReadFile(std::string_view path, std::string* buffer) {
+  auto file = OpenFile(path, kReadFileFlags);
+  if (file == nullptr) {
+    return false;
+  }
+  file->ReadRemainingString(buffer);
+  return true;
+}
+
+template <typename Type>
+inline bool FileSystem::ReadFile(std::string_view path,
+                                 std::vector<Type>* buffer) {
+  auto file = OpenFile(path, kReadFileFlags);
+  if (file == nullptr) {
+    return false;
+  }
+  file->ReadRemaining(buffer);
+  return true;
+}
 
 }  // namespace gb
 
