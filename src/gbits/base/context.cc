@@ -4,7 +4,9 @@
 
 namespace gb {
 
-Context::Context(Context&& other) { *this = std::move(other); }
+Context::Context(Context&& other) : WeakScope<Context>(this) {
+  *this = std::move(other);
+}
 
 Context& Context::operator=(Context&& other) {
   absl::WriterMutexLock other_lock(&other.mutex_);

@@ -1136,21 +1136,150 @@ TEST(ContextTest, SetPtrSupportsForwardDeclaredTypes) {
   EXPECT_FALSE(context.NameExists("name"));
 }
 
+TEST(ContextTest, GetInParentContext) {
+  Context parent;
+  parent.SetValue<int>(42);
+  parent.SetValue<int>("one", 1);
+  Context child;
+  child.SetParent(&parent);
+
+  EXPECT_EQ(child.GetPtr<int>(), parent.GetPtr<int>());
+  EXPECT_EQ(child.GetValue<int>(), 42);
+  EXPECT_EQ(child.GetValueOrDefault<int>(24), 42);
+  EXPECT_EQ(child.GetPtr<int>("one"), parent.GetPtr<int>("one"));
+  EXPECT_EQ(child.GetValue<int>("one"), 1);
+  EXPECT_EQ(child.GetValueOrDefault<int>("one", 2), 1);
+  EXPECT_TRUE(child.Exists<int>());
+  EXPECT_TRUE(child.Exists<int>("one"));
+  EXPECT_TRUE(child.Exists(TypeKey::Get<int>()));
+  EXPECT_TRUE(child.Exists("one", TypeKey::Get<int>()));
+  EXPECT_TRUE(child.NameExists("one"));
+  EXPECT_FALSE(child.Owned<int>());
+  EXPECT_FALSE(child.Owned<int>("one"));
+
+  EXPECT_TRUE(parent.Owned<int>());
+  EXPECT_TRUE(parent.Owned<int>("one"));
+
+  EXPECT_EQ(child.GetPtr<double>(), nullptr);
+  EXPECT_EQ(child.GetValue<double>(), 0.0);
+  EXPECT_EQ(child.GetValueOrDefault<double>(2.0), 2.0);
+  EXPECT_EQ(child.GetPtr<double>("one"), nullptr);
+  EXPECT_EQ(child.GetValue<double>("one"), 0.0);
+  EXPECT_EQ(child.GetValueOrDefault<double>("one", 2.0), 2.0);
+  EXPECT_FALSE(child.Exists<double>());
+  EXPECT_FALSE(child.Exists<double>("one"));
+  EXPECT_FALSE(child.Exists(TypeKey::Get<double>()));
+  EXPECT_FALSE(child.Exists("one", TypeKey::Get<double>()));
+  EXPECT_FALSE(child.NameExists("two"));
+}
+
+TEST(ContextTest, ChangeParent) {
+  Context parent[2];
+  parent[0].SetValue<int>(42);
+  parent[1].SetValue<int>(24);
+  Context child;
+
+  EXPECT_EQ(child.GetValue<int>(), 0);
+  child.SetParent(&parent[0]);
+  EXPECT_EQ(child.GetValue<int>(), 42);
+  child.SetParent(&parent[1]);
+  EXPECT_EQ(child.GetValue<int>(), 24);
+  child.SetParent(nullptr);
+  EXPECT_EQ(child.GetValue<int>(), 0);
+}
+
+TEST(ContextTest, OverrideParentContext) {
+  Context parent;
+  parent.SetValue<int>(42);
+  parent.SetValue<int>("one", 1);
+  Context child;
+  child.SetParent(&parent);
+
+  child.SetValue<int>(24);
+  EXPECT_EQ(child.GetValue<int>(), 24);
+  EXPECT_EQ(parent.GetValue<int>(), 42);
+
+  child.SetValue<int>("one", 2);
+  EXPECT_EQ(child.GetValue<int>("one"), 2);
+  EXPECT_EQ(parent.GetValue<int>("one"), 1);
+
+  child.Clear<int>();
+  EXPECT_EQ(child.GetValue<int>(), 42);
+  EXPECT_EQ(parent.GetValue<int>(), 42);
+
+  child.Clear<int>("one");
+  EXPECT_EQ(child.GetValue<int>("one"), 1);
+  EXPECT_EQ(parent.GetValue<int>("one"), 1);
+
+  child.SetValue<int>(24);
+  child.SetValue<int>("one", 2);
+  EXPECT_EQ(child.GetValue<int>(), 24);
+  EXPECT_EQ(child.GetValue<int>("one"), 2);
+
+  child.ClearName("one");
+  EXPECT_EQ(child.GetValue<int>("one"), 1);
+  EXPECT_EQ(parent.GetValue<int>("one"), 1);
+
+  child.Reset();
+  EXPECT_EQ(child.GetValue<int>(), 42);
+  EXPECT_EQ(parent.GetValue<int>(), 42);
+  EXPECT_EQ(child.GetValue<int>("one"), 1);
+  EXPECT_EQ(parent.GetValue<int>("one"), 1);
+}
+
+TEST(ContextTest, MultipleChildContexts) {
+  Context parent;
+  parent.SetValue<int>(42);
+  Context child[2];
+  child[0].SetParent(&parent);
+  child[1].SetParent(&parent);
+
+  EXPECT_EQ(child[0].GetValue<int>(), 42);
+  EXPECT_EQ(child[1].GetValue<int>(), 42);
+  child[0].SetValue<int>(24);
+  EXPECT_EQ(child[0].GetValue<int>(), 24);
+  EXPECT_EQ(child[1].GetValue<int>(), 42);
+  parent.SetValue<int>(100);
+  EXPECT_EQ(child[0].GetValue<int>(), 24);
+  EXPECT_EQ(child[1].GetValue<int>(), 100);
+}
+
+TEST(ContextTest, ParentDeletion) {
+  auto parent = std::make_unique<Context>();
+  parent->SetValue<int>(42);
+  Context child;
+  child.SetParent(parent.get());
+
+  EXPECT_EQ(child.GetValue<int>(), 42);
+  parent.reset();
+  EXPECT_EQ(child.GetValue<int>(), 0);
+}
+
 TEST(ContextTest, ThreadAbuse) {
+  Context parent;
   Context context;
   ThreadTester tester;
   int int_ptr = 42;
-  auto func = [&context, &int_ptr]() {
+  auto func = [&parent, &context, &int_ptr]() {
+    context.SetParent(&parent);
     context.Empty();
     context.Reset();
     context.SetNew<int>(5);
+    parent.SetNew<int>(55);
     context.SetNamedNew<int>("int", 6);
+    parent.SetNamedNew<int>("int", 66);
     context.SetOwned<double>(std::make_unique<double>(10.0));
+    parent.SetOwned<double>(std::make_unique<double>(101.0));
     context.SetOwned<double>("double", std::make_unique<double>(20.0));
+    parent.SetOwned<double>("double", std::make_unique<double>(202.0));
     context.SetPtr<int>(&int_ptr);
+    parent.SetPtr<int>(&int_ptr);
     context.SetPtr<int>("int", &int_ptr);
+    parent.SetPtr<int>("int", &int_ptr);
     context.SetValue<double>(30.0);
+    parent.SetValue<double>(33.0);
     context.SetValue<double>("double", 40.0);
+    parent.SetValue<double>("double", 44.0);
     std::any value(100);
     context.SetAny(TypeInfo::Get<int>(), value);
     value = 200;
@@ -1165,6 +1294,7 @@ TEST(ContextTest, ThreadAbuse) {
     context.Exists<int>("int");
     context.Exists(TypeKey::Get<double>());
     context.Exists("double", TypeKey::Get<double>());
+    context.SetParent(nullptr);
     context.NameExists("int");
     context.Owned<double>();
     context.Owned<double>("double");

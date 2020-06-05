@@ -32,9 +32,11 @@ public:
   // effectively resets the internal context to being empty again.
   Context Build() { return std::move(context_); }
 
-  // The following functions mirror the Set* functions in Context, but do
-  // additional validation to ensure the operation is allowed. See Context
+  // The following functions mirror the Set* functions in Context. See Context
   // class for full documentation on these methods.
+  ContextBuilder& SetParent(WeakPtr<Context> context) {
+    context_.SetParent(context);
+  }
   template <typename Type, class... Args>
   ContextBuilder& SetNew(Args&&... args) {
     context_.SetNew<Type, Args...>(std::forward<Args>(args)...);

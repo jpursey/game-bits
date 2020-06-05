@@ -7,6 +7,7 @@
 #include "absl/container/flat_hash_map.h"
 #include "absl/synchronization/mutex.h"
 #include "gbits/base/type_info.h"
+#include "gbits/base/weak_ptr.h"
 
 namespace gb {
 
@@ -22,14 +23,36 @@ namespace gb {
 // Context instances in constructors or destructors for types that may get
 // constructed or deleted via calling the Set or Clear functions. The Context
 // destructor and Reset methods will never result in reentrant behavior.
-class Context final {
+class Context final : public WeakScope<Context> {
  public:
-  Context() = default;
+  Context() : WeakScope<Context>(this) {}
   Context(const Context&) = delete;
   Context(Context&&);
   Context& operator=(const Context&) = delete;
   Context& operator=(Context&&);
-  ~Context() { Reset(); }
+  ~Context() {
+    InvalidateWeakPtrs();
+    Reset();
+  }
+
+  // Sets a parent context for this context.
+  //
+  // A parent context is used when a lookup in this context fails, at which
+  // point it is looked up in the parent's context (which may fall back on its
+  // parent context, etc). Any Set* methods on this context will hide any
+  // corresponding value in the parent context, but will not modify it.
+  // Similarly, clearing a value in this context will simply unhide the
+  // corresponding value in the parent context.
+  void SetParent(WeakPtr<Context> parent) {
+    absl::WriterMutexLock lock(&mutex_);
+    parent_ = parent;
+  }
+
+  // Returns the parent context for this context.
+  WeakPtr<Context> GetParent() const {
+    absl::ReaderMutexLock lock(&mutex_);
+    return parent_;
+  }
 
   // Returns true if there are no values stored in the context.
   bool Empty() const {
@@ -229,7 +252,11 @@ class Context final {
   bool Exists(TypeKey* key) const { return Exists({}, key); }
   bool Exists(std::string_view name, TypeKey* key) const {
     absl::ReaderMutexLock lock(&mutex_);
-    return values_.find({name, key}) != values_.end();
+    if (values_.find({name, key}) != values_.end()) {
+      return true;
+    }
+    auto parent = parent_.Lock();
+    return parent != nullptr && parent->Exists(name, key);
   }
 
   // Returns true if a value of the specified name exists in the context.
@@ -237,7 +264,11 @@ class Context final {
   // If the name is empty, this always returns false.
   bool NameExists(std::string_view name) const {
     absl::ReaderMutexLock lock(&mutex_);
-    return names_.find(name) != names_.end();
+    if (names_.find(name) != names_.end()) {
+      return true;
+    }
+    auto parent = parent_.Lock();
+    return parent != nullptr && parent->NameExists(name);
   }
 
   // Returns true if a value of the specified Type exists in the context AND it
@@ -300,7 +331,11 @@ class Context final {
   Type* GetPtrImpl(std::string_view name = {}) const
       ABSL_SHARED_LOCKS_REQUIRED(mutex_) {
     auto it = values_.find({name, TypeKey::Get<Type>()});
-    return it != values_.end() ? static_cast<Type*>(it->second.value) : nullptr;
+    if (it != values_.end()) {
+      return static_cast<Type*>(it->second.value);
+    }
+    auto parent = parent_.Lock();
+    return parent != nullptr ? parent->GetPtrImpl<Type>(name) : nullptr;
   }
   void SetImpl(std::string_view name, TypeInfo* type, void* new_value,
                bool owned) ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
@@ -308,6 +343,7 @@ class Context final {
       ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   mutable absl::Mutex mutex_;
+  WeakPtr<Context> parent_ ABSL_GUARDED_BY(mutex_);
   Values values_ ABSL_GUARDED_BY(mutex_);
   Names names_ ABSL_GUARDED_BY(mutex_);
 };
