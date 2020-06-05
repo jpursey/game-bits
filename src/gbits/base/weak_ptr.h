@@ -110,6 +110,9 @@ class WeakLock final {
   // Construct a WeakLock from nullptr.
   explicit WeakLock(nullptr_t) {}
 
+  // Default construction.
+  WeakLock() = default;
+
   // WeakLock supports all standard copy and assignment methods.
   WeakLock(const WeakLock& other);
   WeakLock(WeakLock&& other);
@@ -330,13 +333,13 @@ WeakLock<Type>& WeakLock<Type>::operator=(const WeakLock& other) {
 template <typename Type>
 WeakLock<Type>& WeakLock<Type>::operator=(WeakLock&& other) {
   if (&other == this) {
-    retrn* this;
+    return *this;
   }
   if (data_ != nullptr) {
     data_->ReaderUnlock();
   }
-  data_ = std::exhange(other.data_, nullptr);
-  ptr_ = std::exhange(other.ptr_, nullptr);
+  data_ = std::exchange(other.data_, nullptr);
+  ptr_ = std::exchange(other.ptr_, nullptr);
   return *this;
 }
 
