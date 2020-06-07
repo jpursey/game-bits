@@ -5,6 +5,7 @@
 
 #include "absl/synchronization/mutex.h"
 #include "gbits/base/callback.h"
+#include "gbits/base/weak_ptr.h"
 
 namespace gb {
 
@@ -23,7 +24,9 @@ namespace gb {
 // delete the underlying scope as a side-effect.
 class CallbackScope final {
  public:
-  CallbackScope() = default;
+  CallbackScope() : scope_(this) {
+    alive_ = scope_.GetWeakPtr<CallbackScope>();
+  }
   CallbackScope(const CallbackScope&) = delete;
   CallbackScope& operator=(const CallbackScope&) = delete;
 
@@ -31,8 +34,15 @@ class CallbackScope final {
   //
   // This will block until there are no scoped callbacks executing.
   ~CallbackScope() {
-    absl::WriterMutexLock lock(&alive_->mutex);
-    alive_->alive = false;
+    scope_.InvalidateWeakPtrs();
+  }
+
+  // Invalidates all callbacks for this scope.
+  //
+  // Any existing callbacks will become no-ops and all new callbacks created
+  // after this is called will be no-ops.
+  void InvalidateCallbacks() {
+    scope_.InvalidateWeakPtrs();
   }
 
   // Creates a new void-return callback bound to this scope.
@@ -68,11 +78,8 @@ class CallbackScope final {
   }
 
  private:
-  struct Alive {
-    absl::Mutex mutex;
-    bool alive ABSL_GUARDED_BY(mutex) = true;
-  };
-  std::shared_ptr<Alive> alive_ = std::make_shared<Alive>();
+  WeakScope<CallbackScope> scope_;
+  WeakPtr<CallbackScope> alive_;
 
   template <typename Callable>
   class Factory;
@@ -80,12 +87,12 @@ class CallbackScope final {
   template <typename Return, typename... Args>
   class Factory<Return(Args...)> {
    public:
-    static Callback<void(Args...)> NewVoid(std::shared_ptr<Alive> alive,
+    static Callback<void(Args...)> NewVoid(WeakPtr<CallbackScope> alive,
                                            Callback<Return(Args...)> callback) {
       return [alive = std::move(alive),
               callback = std::move(callback)](Args&&... args) {
-        absl::ReaderMutexLock lock(&alive->mutex);
-        if (alive->alive) {
+        auto lock = alive.Lock();
+        if (lock) {
           callback(std::forward<Args>(args)...);
         }
       };
@@ -94,12 +101,12 @@ class CallbackScope final {
         typename DefaultType,
         typename = std::enable_if_t<!std::is_same<void, DefaultType>::value>>
     static Callback<Return(Args...)> NewDefault(
-        std::shared_ptr<Alive> alive, Callback<Return(Args...)> callback,
+        WeakPtr<CallbackScope> alive, Callback<Return(Args...)> callback,
         DefaultType default_value) {
       return [alive = std::move(alive), callback = std::move(callback),
               default_value = std::move(default_value)](Args&&... args) {
-        absl::ReaderMutexLock lock(&alive->mutex);
-        if (alive->alive) {
+        auto lock = alive.Lock();
+        if (lock) {
           return callback(std::forward<Args>(args)...);
         }
         return default_value;
