@@ -246,7 +246,7 @@ class WeakScope {
   template <typename OtherType,
             typename =
                 std::enable_if_t<std::is_convertible<Type*, OtherType*>::value>>
-  WeakPtr<OtherType> GetWeakPtr() {
+  WeakPtr<OtherType> GetWeakPtr() const {
     return WeakPtr<OtherType>(data_);
   }
 
