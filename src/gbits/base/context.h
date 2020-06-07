@@ -43,13 +43,13 @@ class Context final : public WeakScope<Context> {
   // corresponding value in the parent context, but will not modify it.
   // Similarly, clearing a value in this context will simply unhide the
   // corresponding value in the parent context.
-  void SetParent(WeakPtr<Context> parent) {
+  void SetParent(WeakPtr<const Context> parent) {
     absl::WriterMutexLock lock(&mutex_);
     parent_ = parent;
   }
 
   // Returns the parent context for this context.
-  WeakPtr<Context> GetParent() const {
+  WeakPtr<const Context> GetParent() const {
     absl::ReaderMutexLock lock(&mutex_);
     return parent_;
   }
@@ -247,7 +247,7 @@ class Context final : public WeakScope<Context> {
   }
   bool Exists(TypeKey* key) const { return Exists({}, key); }
   bool Exists(std::string_view name, TypeKey* key) const {
-    WeakLock<Context> parent;
+    WeakLock<const Context> parent;
     {
       absl::ReaderMutexLock lock(&mutex_);
       if (values_.find({name, key}) != values_.end()) {
@@ -262,7 +262,7 @@ class Context final : public WeakScope<Context> {
   //
   // If the name is empty, this always returns false.
   bool NameExists(std::string_view name) const {
-    WeakLock<Context> parent;
+    WeakLock<const Context> parent;
     {
       absl::ReaderMutexLock lock(&mutex_);
       if (names_.find(name) != names_.end()) {
@@ -341,7 +341,7 @@ class Context final : public WeakScope<Context> {
   Type* GetPtrImpl(std::string_view name = {}) const
       ABSL_LOCKS_EXCLUDED(mutex_) {
     Type* result = nullptr;
-    WeakLock<Context> parent;
+    WeakLock<const Context> parent;
     {
       absl::ReaderMutexLock lock(&mutex_);
       result = Lookup<Type>(name);
@@ -358,7 +358,7 @@ class Context final : public WeakScope<Context> {
       ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   mutable absl::Mutex mutex_;
-  WeakPtr<Context> parent_ ABSL_GUARDED_BY(mutex_);
+  WeakPtr<const Context> parent_ ABSL_GUARDED_BY(mutex_);
   Values values_ ABSL_GUARDED_BY(mutex_);
   Names names_ ABSL_GUARDED_BY(mutex_);
 };

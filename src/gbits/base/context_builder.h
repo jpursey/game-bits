@@ -34,7 +34,7 @@ public:
 
   // The following functions mirror the Set* functions in Context. See Context
   // class for full documentation on these methods.
-  ContextBuilder& SetParent(WeakPtr<Context> context) {
+  ContextBuilder& SetParent(WeakPtr<const Context> context) {
     context_.SetParent(context);
     return *this;
   }
