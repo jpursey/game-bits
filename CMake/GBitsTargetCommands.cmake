@@ -10,9 +10,15 @@
 ###############################################################################
 
 function(gbits_set_target_properties NAME)
-  target_include_directories(${NAME} PUBLIC "${GBITS_DIR}/src" ${GBITS_INCLUDE_DIRS})
 	if(DEFINED VS_FOLDER)
 		set_target_properties(${NAME} PROPERTIES FOLDER ${VS_FOLDER})
+	endif()
+	target_include_directories(${NAME} PUBLIC "${GBITS_DIR}/src" ${GBITS_INCLUDE_DIRS})
+	if(DEFINED ${NAME}_INCLUDES)
+		target_include_directories(${NAME} PUBLIC ${${NAME}_INCLUDES})
+	endif()
+	if(DEFINED ${NAME}_DEFINES)
+		target_compile_definitions(${NAME} PUBLIC ${${NAME}_DEFINES})
 	endif()
 	if(DEFINED ${NAME}_DEPS)
 		add_dependencies(${NAME} ${${NAME}_DEPS})
