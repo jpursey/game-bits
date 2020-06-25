@@ -63,21 +63,30 @@ int64_t LocalFile::Write(const void* buffer, int64_t size) {
     if (GetPosition() < 0) {
       return 0;
     }
-    return std::max<int64_t>(position_ - position, 0);
+    size = std::max<int64_t>(position_ - position, 0);
   }
+  position_ += size;
   return size;
 }
 
 int64_t LocalFile::Read(void* buffer, int64_t size) {
   file_.read(reinterpret_cast<char*>(buffer),
              static_cast<std::streamsize>(size));
-  if (file_.fail() || file_.eof()) {
+  if (file_.eof()) {
+    size = file_.gcount();
+    file_.clear();
+    SeekEnd();
+    return size;
+  }
+  if (file_.fail()) {
     int64_t position = position_;
     if (GetPosition() < 0) {
-      return 0;
+      size = 0;
+    } else {
+      size = std::max<int64_t>(position_ - position, 0);
     }
-    return std::max<int64_t>(position_ - position, 0);
   }
+  position_ += size;
   return size;
 }
 

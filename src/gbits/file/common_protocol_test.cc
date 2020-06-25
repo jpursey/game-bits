@@ -613,6 +613,35 @@ TEST_P(CommonProtocolTest, ReadFile) {
   EXPECT_EQ(file->GetPosition(), kFileSize / 4 + kFileSize / 2);
 }
 
+TEST_P(CommonProtocolTest, ReadFilePastEnd) {
+  CommonProtocolTestInit init;
+  static constexpr int64_t kFileSize = 100;
+  init.files = {{"/file", GenerateTestString(kFileSize)}};
+  const std::string& file_contents = std::get<1>(init.files[0]);
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(NewProtocol(init), "test"));
+  if (!file_system.GetFlags("test").IsSet(FileProtocolFlag::kFileRead)) {
+    return;
+  }
+  std::unique_ptr<File> file =
+      file_system.OpenFile("test:/file", kReadFileFlags);
+  ASSERT_NE(file, nullptr);
+  std::string contents;
+
+  contents = file->ReadString(kFileSize);
+  EXPECT_EQ(contents, file_contents);
+  EXPECT_EQ(file->GetPosition(), kFileSize);
+
+  contents = file->ReadString(1);
+  EXPECT_THAT(contents, IsEmpty());
+  EXPECT_EQ(file->GetPosition(), kFileSize);
+
+  file->SeekTo(kFileSize / 2);
+  contents = file->ReadString(kFileSize);
+  EXPECT_EQ(contents, file_contents.substr(kFileSize / 2));
+  EXPECT_EQ(file->GetPosition(), kFileSize);
+}
+
 TEST_P(CommonProtocolTest, WriteFile) {
   CommonProtocolTestInit init;
   init.files = {{"/file", "1234567890"}};
