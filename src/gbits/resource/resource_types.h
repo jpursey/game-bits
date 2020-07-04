@@ -6,6 +6,7 @@
 #include <string_view>
 #include <tuple>
 
+#include "gbits/base/access_token.h"
 #include "gbits/base/type_info.h"
 
 namespace gb {
@@ -30,22 +31,9 @@ using ResourceId = uint64_t;
 using ResourceKey = std::tuple<TypeKey*, ResourceId>;
 
 // Internal access token for the resource system.
-class ResourceInternal final {
- public:
-  ResourceInternal(const ResourceInternal&) = default;
-  ResourceInternal& operator=(const ResourceInternal&) = default;
-  ~ResourceInternal() = default;
-
- private:
-  ResourceInternal() = default;
-
-  friend class Resource;
-  friend class ResourceEntry;
-  friend class ResourceManager;
-  friend class ResourcePtrBase;
-  friend class ResourceSet;
-  friend class ResourceSystem;
-};
+GB_DEFINE_ACCESS_TOKEN(ResourceInternal, class Resource, class ResourceEntry,
+                       class ResourceManager, class ResourcePtrBase,
+                       class ResourceSet, class ResourceSystem);
 
 }  // namespace gb
 

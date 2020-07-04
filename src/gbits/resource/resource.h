@@ -81,7 +81,9 @@ class Resource {
   // Resources cannot be copied, as their lifecycle is tied to a
   // ResourceManager.
   Resource(const Resource&) = delete;
+  Resource(Resource&&) = delete;
   Resource& operator=(const Resource&) = delete;
+  Resource& operator=(Resource&&) = delete;
 
   //----------------------------------------------------------------------------
   // Properties

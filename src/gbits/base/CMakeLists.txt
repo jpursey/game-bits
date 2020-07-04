@@ -1,4 +1,5 @@
 set(gbits_base_SOURCE
+  access_token.h
   callback.h
   callback_scope.h
   clock.h
