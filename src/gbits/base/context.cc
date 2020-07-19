@@ -19,41 +19,66 @@ Context& Context::operator=(Context&& other) {
 
 void Context::SetImpl(std::string_view name, TypeInfo* type, void* new_value,
                       bool owned) {
+  TypeInfo* delete_type = nullptr;
+  void* delete_value = nullptr;
   auto key = std::make_tuple(name, type->Key());
-  auto it = values_.find(key);
   Value* stored_value = nullptr;
+
+  mutex_.WriterLock();
+  auto it = values_.find(key);
   if (it != values_.end()) {
+    // The value already exists. If we are replacing with null, then we erase
+    // (and delete if owned) the existing value.
     stored_value = &it->second;
     if (new_value == nullptr) {
       char* owned_name = stored_value->name;
       if (stored_value->owned) {
-        stored_value->type->Destroy(stored_value->value);
+        delete_type = stored_value->type;
+        delete_value = stored_value->value;
       }
       values_.erase(it);
       if (owned_name != nullptr) {
         names_.erase(std::get<0>(key));
         delete[] owned_name;  // Must be after erase.
       }
+
+      mutex_.WriterUnlock();
+      if (delete_value != nullptr) {
+        delete_type->Destroy(delete_value);
+      }
       return;
     }
+
+    // If the new and old value are identical, there is nothing to do.
     if (new_value == stored_value->value) {
+      mutex_.WriterUnlock();
       return;
     }
   } else if (new_value == nullptr) {
+    // We are erasing a value that does not exist. However, if a name was
+    // specified, this must clear any other value of the same name.
     if (!name.empty()) {
       auto name_it = names_.find(name);
       if (name_it != names_.end()) {
+        mutex_.WriterUnlock();
         SetImpl(name, name_it->second, nullptr, false);
         return;
       }
     }
+    mutex_.WriterUnlock();
     return;
   } else {
+    // We are adding a new value!
     char* owned_name = nullptr;
     if (!name.empty()) {
+      // A name was specified, so we must first clear any existing value of the
+      // same name.
       auto name_it = names_.find(name);
       if (name_it != names_.end()) {
+        mutex_.WriterUnlock();
         SetImpl(name, name_it->second, nullptr, false);
+        SetImpl(name, type, new_value, owned);
+        return;
       }
       owned_name = new char[name.size() + 1];
       std::memcpy(owned_name, name.data(), name.size());
@@ -66,11 +91,17 @@ void Context::SetImpl(std::string_view name, TypeInfo* type, void* new_value,
     stored_value->name = owned_name;
   }
   if (stored_value->owned) {
-    stored_value->type->Destroy(stored_value->value);
+    delete_type = stored_value->type;
+    delete_value = stored_value->value;
   }
   stored_value->type = type;
   stored_value->value = new_value;
   stored_value->owned = owned;
+
+  mutex_.WriterUnlock();
+  if (delete_value != nullptr) {
+    delete_type->Destroy(delete_value);
+  }
 }
 
 void* Context::ReleaseImpl(std::string_view name, TypeInfo* type) {

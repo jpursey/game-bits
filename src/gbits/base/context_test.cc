@@ -1311,30 +1311,5 @@ TEST(ContextTest, ThreadAbuse) {
   EXPECT_TRUE(tester.Complete()) << tester.GetResultString();
 }
 
-TEST(ContextTest, ConstructorRace) {
-  Context context;
-  ThreadTester tester;
-  struct Value {
-    Value(ThreadTester& tester, int new_value) {
-      value = new_value;
-      tester.Signal(1);
-      tester.Wait(2);
-    }
-    int value;
-  };
-  tester.Run("set", [&tester, &context]() {
-    context.SetNew<Value>(tester, 5);
-    return true;
-  });
-  tester.Run("get", [&tester, &context]() {
-    tester.Wait(1);
-    Value* value = context.GetPtr<Value>();
-    return value != nullptr && value->value == 5;
-  });
-  absl::SleepFor(absl::Milliseconds(1));
-  tester.Signal(2);
-  EXPECT_TRUE(tester.Complete()) << tester.GetResultString();
-}
-
 }  // namespace
 }  // namespace gb

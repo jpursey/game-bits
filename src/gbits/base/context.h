@@ -17,12 +17,13 @@ namespace gb {
 // value of each name (regardless of the type) may be stored. The values stored
 // in the context are never const.
 //
-// This class is thread-safe. This class is not reentrant, however. If any
-// method is called during construction or destruction of contained types in the
-// context, this will result in a deadlock. As a general rule, do not access
-// Context instances in constructors or destructors for types that may get
-// constructed or deleted via calling the Set or Clear functions. The Context
-// destructor and Reset methods will never result in reentrant behavior.
+// This class is thread-safe. However, there is no implied thread-safety
+// guarantees for methods called on contained values. These methods are always
+// called outside of any synchronization primitive to allow further calls into
+// the Context. For instance, it is up to the caller to ensure that a specific
+// value is not destructed while simultaneously being assigned from a separate
+// thread. For this reason (and others) it is recommended that complex objects
+// are stored by pointer instead of by value.
 class Context final : public WeakScope<Context> {
  public:
   Context() : WeakScope<Context>(this) {}
@@ -70,13 +71,11 @@ class Context final : public WeakScope<Context> {
   // value.
   template <typename Type, class... Args>
   void SetNew(Args&&... args) {
-    absl::WriterMutexLock lock(&mutex_);
     SetImpl({}, TypeInfo::Get<Type>(), new Type(std::forward<Args>(args)...),
             true);
   }
   template <typename Type, class... Args>
   void SetNamedNew(std::string_view name, Args&&... args) {
-    absl::WriterMutexLock lock(&mutex_);
     SetImpl(name, TypeInfo::Get<Type>(), new Type(std::forward<Args>(args)...),
             true);
   }
@@ -93,12 +92,10 @@ class Context final : public WeakScope<Context> {
   // specification as it is unambiguous.
   template <typename Type>
   void SetOwned(std::unique_ptr<Type> value) {
-    absl::WriterMutexLock lock(&mutex_);
     SetImpl({}, TypeInfo::Get<Type>(), value.release(), true);
   }
   template <typename Type>
   void SetOwned(std::string_view name, std::unique_ptr<Type> value) {
-    absl::WriterMutexLock lock(&mutex_);
     SetImpl(name, TypeInfo::Get<Type>(), value.release(), true);
   }
 
@@ -114,12 +111,10 @@ class Context final : public WeakScope<Context> {
   // specification as it is unambiguous.
   template <typename Type>
   void SetPtr(Type* value) {
-    absl::WriterMutexLock lock(&mutex_);
     SetImpl({}, TypeInfo::GetPlaceholder<Type>(), value, false);
   }
   template <typename Type>
   void SetPtr(std::string_view name, Type* value) {
-    absl::WriterMutexLock lock(&mutex_);
     SetImpl(name, TypeInfo::GetPlaceholder<Type>(), value, false);
   }
 
@@ -141,8 +136,9 @@ class Context final : public WeakScope<Context> {
       std::enable_if_t<std::is_assignable<std::decay_t<Type>, OtherType>::value,
                        int> = 0>
   void SetValue(OtherType&& value) {
-    absl::WriterMutexLock lock(&mutex_);
+    mutex_.ReaderLock();
     Type* old_value = Lookup<Type>();
+    mutex_.ReaderUnlock();
     if (old_value != nullptr) {
       *old_value = std::forward<OtherType>(value);
     } else {
@@ -155,8 +151,9 @@ class Context final : public WeakScope<Context> {
       std::enable_if_t<std::is_assignable<std::decay_t<Type>, OtherType>::value,
                        int> = 0>
   void SetValue(std::string_view name, OtherType&& value) {
-    absl::WriterMutexLock lock(&mutex_);
+    mutex_.ReaderLock();
     Type* old_value = Lookup<Type>(name);
+    mutex_.ReaderUnlock();
     if (old_value != nullptr) {
       *old_value = std::forward<OtherType>(value);
     } else {
@@ -169,7 +166,6 @@ class Context final : public WeakScope<Context> {
                                  std::decay_t<Type>, OtherType>>::value,
                              int> = 0>
   void SetValue(OtherType&& value) {
-    absl::WriterMutexLock lock(&mutex_);
     SetImpl({}, TypeInfo::Get<Type>(), new Type(std::forward<OtherType>(value)),
             true);
   }
@@ -178,7 +174,6 @@ class Context final : public WeakScope<Context> {
                                  std::decay_t<Type>, OtherType>>::value,
                              int> = 0>
   void SetValue(std::string_view name, OtherType&& value) {
-    absl::WriterMutexLock lock(&mutex_);
     SetImpl(name, TypeInfo::Get<Type>(),
             new Type(std::forward<OtherType>(value)), true);
   }
@@ -193,7 +188,6 @@ class Context final : public WeakScope<Context> {
   }
   void SetAny(std::string_view name, TypeInfo* type, const std::any& value) {
     if (type != nullptr) {
-      absl::WriterMutexLock lock(&mutex_);
       SetImpl(name, type, type->Clone(value), true);
     }
   }
@@ -302,7 +296,6 @@ class Context final : public WeakScope<Context> {
   }
   void Clear(TypeKey* key) { return Clear({}, key); }
   void Clear(std::string_view name, TypeKey* key) {
-    absl::WriterMutexLock lock(&mutex_);
     SetImpl(name, key->GetPlaceholderType(), nullptr, false);
   }
 
@@ -310,10 +303,17 @@ class Context final : public WeakScope<Context> {
   //
   // If the name is empty, this has no effect.
   void ClearName(std::string_view name) {
-    absl::WriterMutexLock lock(&mutex_);
+    TypeInfo* type = nullptr;
+
+    mutex_.ReaderLock();
     auto name_it = names_.find(name);
     if (name_it != names_.end()) {
-      SetImpl(name, name_it->second, nullptr, false);
+      type = name_it->second;
+    }
+    mutex_.ReaderUnlock();
+
+    if (type != nullptr) {
+      SetImpl(name, type, nullptr, false);
     }
   }
 
@@ -353,7 +353,7 @@ class Context final : public WeakScope<Context> {
     return (parent != nullptr ? parent->GetPtrImpl<Type>(name) : nullptr);
   }
   void SetImpl(std::string_view name, TypeInfo* type, void* new_value,
-               bool owned) ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+               bool owned) ABSL_LOCKS_EXCLUDED(mutex_);
   void* ReleaseImpl(std::string_view name, TypeInfo* type)
       ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
