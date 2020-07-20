@@ -91,6 +91,9 @@ class ResourceSet final {
 
   bool Remove(Resource* resource, bool remove_dependencies = true);
 
+  // Removes all resources from the resource set
+  void RemoveAll();
+
  private:
   ResourceId GetResourceIdFromName(TypeKey* type, std::string_view name) const;
 

@@ -66,6 +66,16 @@ ResourceId ResourceSet::GetResourceIdFromName(TypeKey* type,
   return system_->GetResourceIdFromName({}, type, name);
 }
 
+void ResourceSet::RemoveAll() {
+  absl::flat_hash_map<ResourceKey, Resource*> old_resources;
+  resources_.swap(old_resources);
+
+  for (const auto& it : old_resources) {
+    it.second->RemoveRef({});
+  }
+  system_ = nullptr;
+}
+
 bool ResourceSet::DoAdd(Resource* resource, bool add_dependencies) {
   if (system_ == nullptr) {
     system_ = resource->GetResourceSystem();

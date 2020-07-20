@@ -711,6 +711,28 @@ TEST(ResourceSetTest, RemoveResourceByName) {
   EXPECT_TRUE(resource_set->IsEmpty());
 }
 
+TEST(ResourceSetTest, RemoveAll) {
+  TestResource::Counts counts;
+  auto system = ResourceSystem::Create();
+  ASSERT_NE(system, nullptr);
+  ResourceManager manager;
+  EXPECT_TRUE(system->Register<TestResource>(&manager));
+
+  auto resource_set = std::make_unique<ResourceSet>();
+  auto* resource_1 =
+      new TestResource(&counts, manager.NewResourceEntry<TestResource>(), {});
+  auto* resource_2 =
+      new TestResource(&counts, manager.NewResourceEntry<TestResource>(), {});
+  resource_1->SetResourceDependencies({resource_2});
+  EXPECT_TRUE(resource_set->Add(resource_1, true));
+
+  resource_set->RemoveAll();
+  EXPECT_FALSE(resource_1->IsResourceReferenced());
+  EXPECT_FALSE(resource_2->IsResourceReferenced());
+  EXPECT_EQ(resource_set->GetSystem(), nullptr);
+  EXPECT_TRUE(resource_set->IsEmpty());
+}
+
 TEST(ResourceSetTest, MultipleResourceTypesFromMultipleManagers) {
   TestResource::Counts counts;
   auto system = ResourceSystem::Create();
