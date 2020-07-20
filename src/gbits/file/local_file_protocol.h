@@ -44,7 +44,7 @@ class LocalFileProtocol : public FileProtocol {
   // - If kConstraintRoot refers to an existing folder, then a randomly named
   //   folder will be created below it.
   // - If kConstraintRoot refers to a new path, that path will be used as a
-  //   prefix for generating a randomly named folder below it.
+  //   prefix for generating a randomly named folder.
   static inline constexpr char* kKeyUniqueRoot = "unique_root";
   static GB_CONTEXT_CONSTRAINT_NAMED(kConstraintUniqueRoot, kInOptional, bool,
                                      kKeyUniqueRoot);
