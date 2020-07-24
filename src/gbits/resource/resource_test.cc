@@ -438,6 +438,33 @@ TEST(ResourceTest, MaybeDeleteFailsIfReferenced) {
   EXPECT_TRUE(resource->IsResourceReferenced());
 }
 
+TEST(ResourceTest, DeleteNewlyCreated) {
+  TestResource::Counts counts;
+  auto system = ResourceSystem::Create();
+  ASSERT_NE(system, nullptr);
+  ResourceManager manager;
+  EXPECT_TRUE(system->Register<TestResource>(&manager));
+  auto* resource =
+      new TestResource(&counts, manager.NewResourceEntry<TestResource>(), {});
+  resource->Delete();
+  EXPECT_EQ(counts.destruct, 1);
+}
+
+TEST(ResourceTest, DeleteReferencedButNeverVisible) {
+  TestResource::Counts counts;
+  auto system = ResourceSystem::Create();
+  ASSERT_NE(system, nullptr);
+  ResourceManager manager;
+  EXPECT_TRUE(system->Register<TestResource>(&manager));
+  ResourcePtr<TestResource> resource =
+      new TestResource(&counts, manager.NewResourceEntry<TestResource>(), {});
+  TestResource* resource_ptr = resource.Get();
+  resource = nullptr;
+  EXPECT_EQ(counts.destruct, 0);
+  resource_ptr->Delete();
+  EXPECT_EQ(counts.destruct, 1);
+}
+
 TEST(ResourceTest, GetResourceById) {
   TestResource::Counts counts;
   auto system = ResourceSystem::Create();

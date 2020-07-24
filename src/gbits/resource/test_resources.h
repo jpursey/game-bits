@@ -41,6 +41,9 @@ class TestResource : public Resource {
                          dependencies_.end());
   }
 
+  // Make Delete public so it is callable in tests.
+  using Resource::Delete;
+
  protected:
   ~TestResource() override {
     if (counts_ != nullptr) {

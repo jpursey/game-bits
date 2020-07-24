@@ -171,8 +171,21 @@ class Resource {
 
   // Derived resource types should also have protected or private destructors.
   // The only valid way to delete a resource is by calling
-  // ResourceManager::MaybeDeleteResource.
+  // Delete (if it is not referenced and was never visible in the resource
+  // system), or via ResourceManager::MaybeDeleteResource (at any time).
   virtual ~Resource();
+
+  // Explicitly delete the resource.
+  //
+  // This may be called only if there are no references to the resource, and it
+  // is has never been visible in the resource system. This is intended to be
+  // used during resource construction, where the validity of the resource may
+  // not be known until later (for instance when creating a compound resource,
+  // or if initialization is multi-phased).
+  //
+  // These are hard preconditions, which must be enforced programmatically. If
+  // they are not met, this will crash the program.
+  void Delete();
 
  private:
   enum class State {

@@ -19,6 +19,13 @@ Resource::~Resource() {
 }
 
 void Resource::SetResourceVisible(bool visible) {
+  if (visible) {
+    mutex_.Lock();
+    if (state_ == State::kNew) {
+      state_ = State::kActive;
+    }
+    mutex_.Unlock();
+  }
   entry_.GetSystem()->SetResourceVisible({}, this, visible);
 }
 
@@ -58,7 +65,7 @@ void Resource::DoAutoVisible() {
   mutex_.Unlock();
 
   if (make_visible) {
-    SetResourceVisible(true);
+    entry_.GetSystem()->SetResourceVisible({}, this, true);
   }
 }
 
@@ -82,6 +89,18 @@ void Resource::Release() {
   --ref_count_;
   state_ = State::kActive;
   mutex_.Unlock();
+}
+
+void Resource::Delete() {
+  mutex_.Lock();
+  CHECK(state_ == State::kNew) << "Resource was visibile in resource system "
+                                  "and cannot be force deleted.";
+  int expected = 1;
+  CHECK(ref_count_.compare_exchange_strong(expected, 0))
+      << "Resource is referenced already and cannot be force deleted.";
+  state_ = State::kDeleting;
+  mutex_.Unlock();
+  delete this;
 }
 
 }  // namespace gb
