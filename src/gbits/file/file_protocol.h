@@ -1,6 +1,7 @@
 #ifndef GBITS_FILE_FILE_PROTOCOL_H_
 #define GBITS_FILE_FILE_PROTOCOL_H_
 
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>

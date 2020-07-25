@@ -1,6 +1,7 @@
 #ifndef GBITS_BASE_FILE_FILE_H_
 #define GBITS_BASE_FILE_FILE_H_
 
+#include <memory>
 #include <string>
 #include <string_view>
 #include <type_traits>
