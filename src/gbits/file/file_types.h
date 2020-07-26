@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#include <string_view>
+
 #include "gbits/base/flags.h"
 
 namespace gb {
@@ -77,6 +79,17 @@ inline constexpr FileFlags kNewFileFlags = {
     FileFlag::kCreate,
     FileFlag::kReset,
 };
+
+inline FileFlags FromFopenMode(std::string_view mode) {
+  if (mode == "r" || mode == "rb") return kReadFileFlags;
+  if (mode == "w" || mode == "wb") return kNewFileFlags;
+  if (mode == "a" || mode == "ab") return kWriteFileFlags + FileFlag::kCreate;
+  if (mode == "r+" || mode == "r+b") return kReadWriteFileFlags;
+  if (mode == "w+" || mode == "w+b") return kNewFileFlags + FileFlag::kRead;
+  if (mode == "a+" || mode == "a+b")
+    return kReadWriteFileFlags + FileFlag::kCreate;
+  return {};
+}
 
 enum class PathType {
   kInvalid,
