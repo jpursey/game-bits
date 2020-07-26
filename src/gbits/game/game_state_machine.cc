@@ -144,6 +144,21 @@ GameStateInfo* GameStateMachine::GetStateInfo(GameStateId id) {
   return it->second.get();
 }
 
+GameStateId GameStateMachine::GetRegisteredId(std::string_view name) const {
+  absl::MutexLock lock(&mutex_);
+  for (const auto& it : states_) {
+    if (GetGameStateName(it.first) == name) {
+      return it.first;
+    }
+  }
+  return kNoGameStateId;
+}
+
+bool GameStateMachine::IsRegistered(GameStateId state) const {
+  absl::MutexLock lock(&mutex_);
+  return GetStateInfo(state) != nullptr;
+}
+
 bool GameStateMachine::IsActive(GameStateId state) const {
   absl::MutexLock lock(&mutex_);
   auto state_info = GetStateInfo(state);

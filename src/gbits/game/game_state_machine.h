@@ -283,6 +283,17 @@ class GameStateMachine final {
         });
   }
 
+  // Returns the game state ID for a registered state by name.
+  GameStateId GetRegisteredId(std::string_view name) const;
+
+  // Returns true if the specifid state is registered.
+  bool IsRegistered(GameStateId state) const;
+
+  template <typename StateType>
+  bool IsRegistered() const {
+    return IsRegistered(GetGameStateId<StateType>());
+  }
+
   // Returns true if the specified state is currently active.
   bool IsActive(GameStateId state) const;
 

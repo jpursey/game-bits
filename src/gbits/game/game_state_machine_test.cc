@@ -163,7 +163,7 @@ struct OutputContextState : TestState<OutputContextState> {
 class GameStateMachineTest : public ::testing::Test {
  protected:
   static void SetUpTestSuite() {
-    // Force names for nicer error output.
+    // Force names for nicer error output and to test lookup by name.
     SetGameStateName<DefaultState>("DefaultState");
     SetGameStateName<TopStateA>("TopStateA");
     SetGameStateName<TopStateB>("TopStateB");
@@ -237,6 +237,32 @@ class GameStateMachineTest : public ::testing::Test {
 
 TEST_F(GameStateMachineTest, DefaultConstruct) {
   EXPECT_EQ(state_machine_->GetTopState(), nullptr);
+}
+
+TEST_F(GameStateMachineTest, IsRegistered) {
+  TopStateA::Reset();
+  TopStateB::Reset();
+
+  EXPECT_FALSE(state_machine_->IsRegistered<TopStateA>());
+  EXPECT_FALSE(state_machine_->IsRegistered(gb::GetGameStateId<TopStateB>()));
+  state_machine_->Register<TopStateA>();
+  state_machine_->Register<TopStateB>();
+  EXPECT_TRUE(state_machine_->IsRegistered<TopStateA>());
+  EXPECT_TRUE(state_machine_->IsRegistered(gb::GetGameStateId<TopStateB>()));
+}
+
+TEST_F(GameStateMachineTest, GetRegisteredId) {
+  TopStateA::Reset();
+  TopStateB::Reset();
+
+  EXPECT_EQ(state_machine_->GetRegisteredId("TopStateA"), kNoGameStateId);
+  EXPECT_EQ(state_machine_->GetRegisteredId("TopStateB"), kNoGameStateId);
+  state_machine_->Register<TopStateA>();
+  state_machine_->Register<TopStateB>();
+  EXPECT_EQ(state_machine_->GetRegisteredId("TopStateA"),
+            GetGameStateId<TopStateA>());
+  EXPECT_EQ(state_machine_->GetRegisteredId("TopStateB"),
+            GetGameStateId<TopStateB>());
 }
 
 TEST_F(GameStateMachineTest, RegisterDefaultLifetime) {
