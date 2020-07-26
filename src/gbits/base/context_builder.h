@@ -38,6 +38,10 @@ public:
     context_.SetParent(context);
     return *this;
   }
+  ContextBuilder& SetParent(const ValidatedContext& context) {
+    context_.SetParent(context.GetContext());
+    return *this;
+  }
   template <typename Type, class... Args>
   ContextBuilder& SetNew(Args&&... args) {
     context_.SetNew<Type, Args...>(std::forward<Args>(args)...);
