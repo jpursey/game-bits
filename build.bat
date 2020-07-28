@@ -16,7 +16,7 @@ cd build
 rem ---------------------------------------------------------------------------
 rem Build third_party Source
 
-set GBITS_DIR=%~dp0
+set GB_DIR=%~dp0
 call ..\third_party\build.bat %*
 
 rem ---------------------------------------------------------------------------

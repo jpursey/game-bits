@@ -3,7 +3,7 @@
 /3rdparty/Build/
 
 # Sublime files
-gbits.sublime-workspace
+game-bits.sublime-workspace
 
 # CMake files
 CMakeCache.txt

@@ -4,44 +4,44 @@ cmake_minimum_required(VERSION 3.8)
 ## Set project configuration
 ###############################################################################
 
-project(gbits CXX)
+project(game-bits CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 ###############################################################################
-# GBits configuration
+# Game Bits configuration
 ###############################################################################
 
-include(CMake/GBitsConfig.cmake)
-gbits_config()
+include(CMake/GameBitsConfig.cmake)
+gb_config()
 
 ###############################################################################
-# GBits initialization
+# Game Bits initialization
 ###############################################################################
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${GBITS_BIN_DIR}")
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${GB_BIN_DIR}")
 enable_testing()
 add_compile_definitions(_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS)
 
 list(APPEND CMAKE_MODULE_PATH
-  "${GBITS_DIR}/CMake"
+  "${GB_DIR}/CMake"
 )
-include(GBitsTargetCommands)
-include(GBitsExternalLibraries)
-gbits_external_libraries()
+include(GameBitsTargetCommands)
+include(GameBitsExternalLibraries)
+gb_external_libraries()
 
 ####### absl
 
 # Disable Testing for abseil
 set(BUILD_TESTING OFF) 
-add_subdirectory("${GBITS_THIRD_PARTY_DIR}/abseil-cpp")
+add_subdirectory("${GB_THIRD_PARTY_DIR}/abseil-cpp")
 set(BUILD_TESTING ON) 
 
 ###############################################################################
-## Add gbits source
+## Add Game Bits source
 ###############################################################################
 
 add_subdirectory(src)

@@ -1,0 +1,20 @@
+{
+	"folders":
+	[
+		{
+			"path": "src/gb"
+		},
+		{
+			"path": "third_party/abseil-cpp/absl"
+		},
+		{
+			"path": "third_party/googletest/googletest/include/gtest"
+		},
+		{
+			"path": "third_party/googletest/googlemock/include/gmock"
+		},
+		{
+			"path": "third_party/glog/src/windows/glog"
+		}
+	]
+}
