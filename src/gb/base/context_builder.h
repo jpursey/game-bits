@@ -7,6 +7,7 @@
 #define GB_BASE_CONTEXT_BUILDER_H_
 
 #include "gb/base/context.h"
+#include "gb/base/validated_context.h"
 
 namespace gb {
 
