@@ -1,3 +1,8 @@
+rem Copyright 2020 John Pursey
+rem
+rem Use of this source code is governed by an MIT-style License that can be
+rem found in the LICENSE file or at https://opensource.org/licenses/MIT.
+
 if "%GB_DIR%" == "" (
   echo GB_DIR is not defined!
   goto :EOF

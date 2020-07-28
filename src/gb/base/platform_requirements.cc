@@ -1,3 +1,8 @@
+// Copyright (c) 2020 John Pursey
+//
+// Use of this source code is governed by an MIT-style License that can be found
+// in the LICENSE file or at https://opensource.org/licenses/MIT.
+
 // C++ supports an incredibly broad set of platforms, including esoteric
 // character encodings, integer sizes, and such. The Game Bits libraries do not
 // support platforms with more exotic features. This file will fail to compile

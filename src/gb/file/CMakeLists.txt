@@ -1,3 +1,8 @@
+## Copyright (c) 2020 John Pursey
+##
+## Use of this source code is governed by an MIT-style License that can be found
+## in the LICENSE file or at https://opensource.org/licenses/MIT.
+
 set(gb_file_SOURCE
   file.cc file.h
   file_protocol.cc file_protocol.h

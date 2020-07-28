@@ -1,3 +1,8 @@
+## Copyright (c) 2020 John Pursey
+##
+## Use of this source code is governed by an MIT-style License that can be found
+## in the LICENSE file or at https://opensource.org/licenses/MIT.
+
 set(gb_message_SOURCE
   message_dispatcher.cc message_dispatcher.h
   message_endpoint.cc message_endpoint.h

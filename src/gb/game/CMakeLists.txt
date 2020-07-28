@@ -1,3 +1,8 @@
+## Copyright (c) 2020 John Pursey
+##
+## Use of this source code is governed by an MIT-style License that can be found
+## in the LICENSE file or at https://opensource.org/licenses/MIT.
+
 set(gb_game_SOURCE
   game.cc game.h
   game_state.cc game_state.h

@@ -1,3 +1,8 @@
+## Copyright (c) 2020 John Pursey
+##
+## Use of this source code is governed by an MIT-style License that can be found
+## in the LICENSE file or at https://opensource.org/licenses/MIT.
+
 function(gb_config)
   # These values configure where Game Bits parts are located or should be put.
   # They can be defined by a game project to be wherever is convenient for
