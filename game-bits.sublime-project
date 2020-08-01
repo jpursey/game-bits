@@ -15,6 +15,13 @@
 		},
 		{
 			"path": "third_party/glog/src/windows/glog"
+		},
+		{
+			"path": "third_party/glm/glm"
+		},
+		{
+			"name": "sdl",
+			"path": "third_party/SDL2-2.0.10/include"
 		}
 	]
 }
