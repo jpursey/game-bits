@@ -45,6 +45,10 @@ set(BUILD_TESTING OFF)
 add_subdirectory("${GB_THIRD_PARTY_DIR}/abseil-cpp")
 set(BUILD_TESTING ON) 
 
+####### GLM
+
+add_subdirectory("${GB_THIRD_PARTY_DIR}/glm")
+
 ###############################################################################
 ## Add Game Bits source
 ###############################################################################
