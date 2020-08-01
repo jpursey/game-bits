@@ -28,6 +28,8 @@ namespace gb {
 // operation, however, is further dependent on the file protocol used.
 class FileSystem final {
  public:
+  // TODO: Initialize with a static Create method like the other Game Bits
+  //       systems.
   FileSystem();
   FileSystem(const FileSystem&) = delete;
   FileSystem& operator=(const FileSystem&) = delete;

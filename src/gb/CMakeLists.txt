@@ -4,9 +4,11 @@
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
 set(VS_FOLDER GameBits)
+
 add_subdirectory(base)
 add_subdirectory(file)
 add_subdirectory(game)
 add_subdirectory(message)
+add_subdirectory(render)
 add_subdirectory(resource)
 add_subdirectory(test)
