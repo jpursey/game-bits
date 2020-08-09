@@ -35,6 +35,13 @@ class Texture;
 class TextureView;
 struct Binding;
 
+// Resource chunks
+struct MeshChunk;
+struct MaterialChunk;
+struct MaterialTypeChunk;
+struct ShaderChunk;
+struct TextureChunk;
+
 // Internal access token for functions callable by render classes.
 GB_DEFINE_ACCESS_TOKEN(RenderInternal, class RenderSystem,
                        class LocalBindingData, class Material, class Mesh,
@@ -161,11 +168,12 @@ class VertexType final {
 
 // Data volatility specifies how often data may be updated when rendering.
 enum class DataVolatility : int {
+  kInvalid,          // Invalid value for DataVolatility
   kStaticWrite,      // Data is rarely changed, and can only be written to.
   kStaticReadWrite,  // Data is rarely changed, but is editable. May require up
                      // to 2x memory over kStaticWrite.
   kPerFrame,         // Data is often changed per-frame. May require up to
-                     // 3x to 5x memory over kStaticWrite.
+                     // 3x or more memory over kStaticWrite.
 };
 
 //==============================================================================
@@ -267,6 +275,10 @@ inline constexpr bool operator!=(const Pixel& a, const Pixel& b) {
 
 // This defines the upper limit for a binding index for a Binding.
 inline constexpr int kMaxBindingIndex = 1023;
+
+// Maximum dimensions for a texture.
+inline constexpr int kMaxTextureWidth = 8096;
+inline constexpr int kMaxTextureHeight = 8096;
 
 }  // namespace gb
 

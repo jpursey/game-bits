@@ -16,6 +16,7 @@ set(gb_render_SOURCE
   render_buffer.cc render_buffer.h
   render_buffer_view.h
   render_pipeline.h
+  render_resource_chunks.h
   render_scene.h
   render_scene_type.cc render_scene_type.h
   render_system.cc render_system.h
@@ -62,6 +63,8 @@ set(gb_render_DEPS
   gb_base
   gb_file
   gb_resource
+  gb_resource_file
+  stb_image
 )
 
 set(gb_render_LIBS

@@ -76,9 +76,18 @@ class RenderSystem final {
                                              kInOptional, bool, kKeyEnableDebug,
                                              kDefaultEnableDebug);
 
+  // OPTIONAL: Editor flag which ensures that all resources are by default
+  // editable when loaded via the resource system (at least
+  // DataVolatility::kStaticReadWrite). This also the only mode which allows
+  // saving ShaderCode resources (which otherwise are always write-only).
+  static inline constexpr char* kKeyEnableEdit = "EnableEdit";
+  static GB_CONTEXT_CONSTRAINT_NAMED_DEFAULT(kConstraintEnableEdit, kInOptional,
+                                             bool, kKeyEnableEdit, false);
+
   using Contract =
       ContextContract<kConstraintBackend, kConstraintFileSystem,
-                      kConstraintResourceSystem, kConstraintEnableDebug>;
+                      kConstraintResourceSystem, kConstraintEnableDebug,
+                      kConstraintEnableEdit>;
 
   //----------------------------------------------------------------------------
   // Construction / Destruction
@@ -91,7 +100,9 @@ class RenderSystem final {
   static std::unique_ptr<RenderSystem> Create(Contract contract);
 
   RenderSystem(const RenderSystem&) = delete;
+  RenderSystem(RenderSystem&&) = delete;
   RenderSystem& operator=(const RenderSystem&) = delete;
+  RenderSystem& operator=(RenderSystem&&) = delete;
   ~RenderSystem();
 
   //----------------------------------------------------------------------------
@@ -165,6 +176,17 @@ class RenderSystem final {
                    DataVolatility volatility, int max_vertices,
                    int max_triangles);
 
+  // Saves a mesh to the specified resource name.
+  //
+  // The mesh must be readable (not DataVolatility::kStaticWrite), and all
+  // dependent resources must already be saved. Optionally, DataVolatility may
+  // be specified for the mesh to indicate what it should be when it is reloaded
+  // later.
+  //
+  // Returns true if the mesh was successfully saved.
+  bool SaveMesh(std::string_view name, Mesh* mesh,
+                DataVolatility volatility = DataVolatility::kStaticWrite);
+
   // Creates a material from a material type.
   //
   // The created material will use the default material and instance binding
@@ -173,6 +195,14 @@ class RenderSystem final {
   ResourcePtr<Material> CreateMaterial(MaterialType* material_type);
   Material* CreateMaterial(ResourceSet* resource_set,
                            MaterialType* material_type);
+
+  // Saves a material to the specified resource name.
+  //
+  // All data bindings and must be readable (not DataVolatility::kStaticWrite),
+  // and all dependent resources must already be saved.
+  //
+  // Returns true if the material was successfully saved.
+  bool SaveMaterial(std::string_view name, Material* material);
 
   // Creates a new material type from the specified shaders.
   //
@@ -197,6 +227,14 @@ class RenderSystem final {
                                    Shader* vertex_shader,
                                    Shader* fragment_shader);
 
+  // Saves a material type to the specified resource name.
+  //
+  // All data bindings and must be readable (not DataVolatility::kStaticWrite),
+  // and all dependent resources must already be saved.
+  //
+  // Returns true if the material type was successfully saved.
+  bool SaveMaterialType(std::string_view name, MaterialType* material_type);
+
   // Creates a shader from the specified bindings and shader code
   //
   // Common bindings defined by a RenderSceneType or paired Shader are
@@ -214,6 +252,13 @@ class RenderSystem final {
                        absl::Span<const ShaderParam> inputs,
                        absl::Span<const ShaderParam> outputs);
 
+  // Saves a shader to the specified resource name.
+  //
+  // Edit mode must be enabled (see kConstraintEnableEdit).
+  //
+  // Returns true if the material type was successfully saved.
+  bool SaveShader(std::string_view name, Shader* shader);
+
   // Creates shader code given the backend specific format for shader code.
   //
   // There is no generic shader code format, as it is entirely up to the
@@ -230,6 +275,16 @@ class RenderSystem final {
                                      int height);
   Texture* CreateTexture(ResourceSet* resource_set, DataVolatility volatility,
                          int width, int height);
+
+  // Saves a texture to the specified resource name.
+  //
+  // The texture must be readable (not DataVolatility::kStaticWrite).
+  // Optionally, DataVolatility may be specified for the mesh to indicate what
+  // it should be when it is reloaded later.
+  //
+  // Returns true if the texture was successfully saved.
+  bool SaveTexture(std::string_view name, Texture* texture,
+                   DataVolatility volatility = DataVolatility::kStaticWrite);
 
   //----------------------------------------------------------------------------
   // Rendering
@@ -261,19 +316,36 @@ class RenderSystem final {
 
   Mesh* DoCreateMesh(Material* material, DataVolatility volatility,
                      int max_vertices, int max_triangles);
+  Mesh* LoadMesh(std::string_view name);
+  Mesh* LoadMeshChunk(ChunkReader& chunk_reader);
+
   Material* DoCreateMaterial(MaterialType* material_type);
+  Material* LoadMaterial(std::string_view name);
+  Material* LoadMaterialChunk(ChunkReader& chunk_reader);
+
   MaterialType* DoCreateMaterialType(RenderSceneType* scene_type,
                                      const VertexType* vertex_type,
                                      Shader* vertex_shader,
                                      Shader* fragment_shader);
+  MaterialType* LoadMaterialType(std::string_view name);
+  MaterialType* LoadMaterialTypeChunk(ChunkReader& chunk_reader);
+
   Shader* DoCreateShader(ShaderType type, ShaderCode* code,
                          absl::Span<const Binding> bindings,
                          absl::Span<const ShaderParam> inputs,
                          absl::Span<const ShaderParam> outputs);
-  Texture* DoCreateTexture(DataVolatility volatility, int width, int height);
-  Texture* LoadTexture(std::string_view name);
+  Shader* LoadShader(std::string_view name);
+  Shader* LoadShaderChunk(ChunkReader& chunk_reader);
+
   ShaderCode* DoCreateShaderCode(const void* code, int64_t code_size);
   ShaderCode* LoadShaderCode(std::string_view name);
+  ShaderCode* LoadShaderCodeChunk(ChunkReader& chunk_reader);
+
+  Texture* DoCreateTexture(DataVolatility volatility, int width, int height);
+  Texture* LoadTexture(std::string_view name);
+  Texture* LoadGbTexture(File* file);
+  Texture* LoadTextureChunk(ChunkReader& chunk_reader);
+  Texture* LoadStbTexture(File* file);
 
   const RenderDataType* DoRegisterConstantsType(std::string_view name,
                                                 TypeKey* type, size_t size);
@@ -284,11 +356,15 @@ class RenderSystem final {
   ValidatedContext context_;
   RenderBackend* backend_;
   std::unique_ptr<ResourceManager> resource_manager_;
+  std::unique_ptr<ResourceFileReader> resource_reader_;
+  std::unique_ptr<ResourceFileWriter> resource_writer_;
   absl::flat_hash_map<std::string, std::unique_ptr<RenderDataType>>
       constants_types_;
   absl::flat_hash_map<std::string, std::unique_ptr<VertexType>> vertex_types_;
   absl::flat_hash_map<std::string, std::unique_ptr<RenderSceneType>>
       scene_types_;
+  bool debug_ = false;
+  bool edit_ = false;
   bool is_rendering_ = false;
 };
 

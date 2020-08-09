@@ -17,6 +17,7 @@ MaterialType::MaterialType(RenderInternal internal, ResourceEntry entry,
                            const VertexType* vertex_type, Shader* vertex_shader,
                            Shader* fragment_shader)
     : Resource(std::move(entry)),
+      bindings_(bindings.begin(), bindings.end()),
       pipeline_(std::move(pipeline)),
       vertex_type_(vertex_type),
       vertex_shader_(vertex_shader),

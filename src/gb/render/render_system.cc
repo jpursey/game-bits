@@ -9,11 +9,16 @@
 
 #include "absl/memory/memory.h"
 #include "absl/strings/str_cat.h"
+#include "gb/base/scoped_call.h"
 #include "gb/file/file.h"
 #include "gb/file/file_system.h"
 #include "gb/render/render_backend.h"
+#include "gb/render/render_resource_chunks.h"
+#include "gb/resource/file/resource_file_reader.h"
+#include "gb/resource/file/resource_file_writer.h"
 #include "gb/resource/resource_manager.h"
 #include "gb/resource/resource_system.h"
+#include "stb_image.h"
 
 namespace gb {
 
@@ -22,6 +27,7 @@ std::unique_ptr<RenderSystem> RenderSystem::Create(Contract contract) {
   if (!context.IsValid()) {
     return nullptr;
   }
+
   auto render_system = absl::WrapUnique(new RenderSystem(std::move(context)));
   if (!render_system->Init()) {
     return nullptr;
@@ -32,6 +38,9 @@ std::unique_ptr<RenderSystem> RenderSystem::Create(Contract contract) {
 RenderSystem::RenderSystem(ValidatedContext context)
     : context_(std::move(context)) {
   backend_ = context_.GetPtr<RenderBackend>();
+  debug_ = context.GetValue<bool>(kKeyEnableDebug);
+  SetRenderAssertEnabled(debug_);
+  edit_ = context.GetValue<bool>(kKeyEnableEdit);
 }
 
 bool RenderSystem::Init() {
@@ -229,6 +238,17 @@ Mesh* RenderSystem::DoCreateMesh(Material* material, DataVolatility volatility,
                   std::move(index_buffer));
 }
 
+Mesh* RenderSystem::LoadMesh(std::string_view name) {
+  // TODO
+  return nullptr;
+}
+
+bool RenderSystem::SaveMesh(std::string_view name, Mesh* mesh,
+                            DataVolatility volatility) {
+  // TODO
+  return false;
+}
+
 Material* RenderSystem::DoCreateMaterial(MaterialType* material_type) {
   if (material_type == nullptr) {
     LOG(ERROR) << "Null material type passed to CreateMaterial";
@@ -237,6 +257,16 @@ Material* RenderSystem::DoCreateMaterial(MaterialType* material_type) {
 
   return new Material({}, resource_manager_->NewResourceEntry<Material>(),
                       material_type);
+}
+
+Material* RenderSystem::LoadMaterial(std::string_view name) {
+  // TODO
+  return nullptr;
+}
+
+bool RenderSystem::SaveMaterial(std::string_view name, Material* material) {
+  // TODO
+  return false;
 }
 
 MaterialType* RenderSystem::DoCreateMaterialType(RenderSceneType* scene_type,
@@ -359,6 +389,17 @@ MaterialType* RenderSystem::DoCreateMaterialType(RenderSceneType* scene_type,
       std::move(pipeline), vertex_type, vertex_shader, fragment_shader);
 }
 
+MaterialType* RenderSystem::LoadMaterialType(std::string_view name) {
+  // TODO
+  return nullptr;
+}
+
+bool RenderSystem::SaveMaterialType(std::string_view name,
+                                    MaterialType* material_type) {
+  // TODO
+  return false;
+}
+
 Shader* RenderSystem::DoCreateShader(ShaderType type, ShaderCode* code,
                                      absl::Span<const Binding> bindings,
                                      absl::Span<const ShaderParam> inputs,
@@ -402,31 +443,14 @@ Shader* RenderSystem::DoCreateShader(ShaderType type, ShaderCode* code,
                     code, all_bindings, inputs, outputs);
 }
 
-Texture* RenderSystem::DoCreateTexture(DataVolatility volatility, int width,
-                                       int height) {
-  return backend_->CreateTexture({},
-                                 resource_manager_->NewResourceEntry<Texture>(),
-                                 volatility, width, height);
+Shader* RenderSystem::LoadShader(std::string_view name) {
+  // TODO
+  return nullptr;
 }
 
-Texture* RenderSystem::LoadTexture(std::string_view name) {
-  auto* file_system = context_.GetPtr<FileSystem>();
-
-  auto file = file_system->OpenFile(name, kReadFileFlags);
-  if (file == nullptr) {
-    LOG(ERROR) << "Could not open texture file: " << name;
-    return nullptr;
-  }
-
-  // TODO: Load the texture from the file
-  Texture* texture = backend_->CreateTexture(
-      {}, resource_manager_->NewResourceEntry<Texture>(),
-      DataVolatility::kStaticWrite, 0, 0);
-  if (texture == nullptr) {
-    LOG(ERROR) << "Error reading texture file: " << name;
-  }
-
-  return texture;
+bool RenderSystem::SaveShader(std::string_view name, Shader* shader) {
+  // TODO
+  return false;
 }
 
 ShaderCode* RenderSystem::DoCreateShaderCode(const void* code,
@@ -449,8 +473,208 @@ ShaderCode* RenderSystem::LoadShaderCode(std::string_view name) {
   if (code == nullptr) {
     LOG(ERROR) << "Error reading shader code file: " << name;
   }
+  if (edit_) {
+    code->SetData({}, std::move(file));
+  }
 
   return code;
+}
+
+ShaderCode* RenderSystem::LoadShaderCodeChunk(ChunkReader& chunk_reader) {
+  // TODO
+  return nullptr;
+}
+
+Texture* RenderSystem::DoCreateTexture(DataVolatility volatility, int width,
+                                       int height) {
+  if (width <= 0 || width > kMaxTextureWidth || height <= 0 ||
+      height > kMaxTextureHeight) {
+    LOG(ERROR) << "Invalid texture dimensions in CreateTexture: " << width
+               << " by " << height;
+    return nullptr;
+  }
+  return backend_->CreateTexture({},
+                                 resource_manager_->NewResourceEntry<Texture>(),
+                                 volatility, width, height);
+}
+
+Texture* RenderSystem::LoadTexture(std::string_view name) {
+  auto* file_system = context_.GetPtr<FileSystem>();
+
+  auto file = file_system->OpenFile(name, kReadFileFlags);
+  if (file == nullptr) {
+    LOG(ERROR) << "Could not open texture file: " << name;
+    return nullptr;
+  }
+
+  ChunkType chunk_type;
+  if (file->Read(&chunk_type) != 1) {
+    LOG(ERROR) << "Invalid texture file: " << name;
+    return nullptr;
+  }
+  file->SeekBegin();
+
+  TextureChunk* chunk = nullptr;
+  if (chunk_type == kChunkTypeFile) {
+    return LoadGbTexture(file.get());
+  }
+  return LoadStbTexture(file.get());
+}
+
+Texture* RenderSystem::LoadGbTexture(File* file) {
+  std::vector<ChunkReader> chunks;
+  ChunkType file_type;
+  if (!ReadChunkFile(file, &file_type, &chunks)) {
+    return nullptr;
+  }
+  if (file_type != kChunkTypeTexture) {
+    LOG(ERROR) << "File is not a texture";
+    return nullptr;
+  }
+  for (auto& chunk_reader : chunks) {
+    if (chunk_reader.GetType() != kChunkTypeTexture) {
+      continue;
+    }
+    return LoadTextureChunk(chunk_reader);
+  }
+  LOG(ERROR) << "No texture data in texture file";
+  return nullptr;
+}
+
+Texture* RenderSystem::LoadTextureChunk(ChunkReader& chunk_reader) {
+  if (chunk_reader.GetVersion() > 1) {
+    LOG(ERROR) << "Texture version is too new";
+    return nullptr;
+  }
+  auto* chunk = chunk_reader.GetChunkData<TextureChunk>();
+  if (chunk == nullptr) {
+    LOG(ERROR) << "Invalid texture chunk";
+    return nullptr;
+  }
+  if (chunk->width <= 0 || chunk->height <= 0 ||
+      chunk->width >= kMaxTextureWidth || chunk->height >= kMaxTextureHeight) {
+    LOG(ERROR) << "Invalid texture dimensions in texture file: " << chunk->width
+               << " by " << chunk->height;
+    return nullptr;
+  }
+  chunk_reader.ConvertToPtr(&chunk->pixels);
+
+  DataVolatility volatility = static_cast<DataVolatility>(chunk->volatility);
+  if (edit_ && volatility == DataVolatility::kStaticWrite) {
+    volatility = DataVolatility::kStaticReadWrite;
+  }
+  ResourceEntry resource_entry =
+      resource_manager_->NewResourceEntryWithId<Texture>(chunk->id);
+  if (!resource_entry) {
+    LOG(ERROR) << "Failed to load texture with ID " << chunk->id
+               << " because the ID is associated with another resource.";
+    return nullptr;
+  }
+  Texture* texture = backend_->CreateTexture(
+      {}, std::move(resource_entry), volatility, chunk->width, chunk->height);
+  if (texture == nullptr) {
+    LOG(ERROR) << "Failed to create texture of dimensions " << chunk->width
+               << "x" << chunk->height;
+    return nullptr;
+  }
+  if (!texture->Set(chunk->pixels.ptr,
+                    chunk->width * chunk->height * sizeof(Pixel))) {
+    LOG(ERROR) << "Failed to initialize texture with image data";
+    return nullptr;
+  }
+  return texture;
+}
+
+Texture* RenderSystem::LoadStbTexture(File* file) {
+  struct IoState {
+    int64_t size;
+    gb::File* file;
+  };
+  static stbi_io_callbacks io_callbacks = {
+      // Read callback.
+      [](void* user, char* data, int size) -> int {
+        auto* state = static_cast<IoState*>(user);
+        return static_cast<int>(state->file->Read(data, size));
+      },
+      // Skip callback.
+      [](void* user, int n) -> void {
+        auto* state = static_cast<IoState*>(user);
+        state->file->SeekBy(n);
+      },
+      // End-of-file callback.
+      [](void* user) -> int {
+        auto* state = static_cast<IoState*>(user);
+        const int64_t position = state->file->GetPosition();
+        return position < 0 || position == state->size;
+      },
+  };
+
+  IoState state;
+  file->SeekEnd();
+  state.size = file->GetPosition();
+  state.file = file;
+  file->SeekBegin();
+
+  int channels = 0;
+  int width = 0;
+  int height = 0;
+  void* pixels = stbi_load_from_callbacks(&io_callbacks, &state, &width,
+                                          &height, &channels, STBI_rgb_alpha);
+  if (pixels == nullptr) {
+    LOG(ERROR) << "Failed to read texture file with error: "
+               << stbi_failure_reason();
+    return false;
+  }
+  ScopedCall free_pixels([pixels]() { stbi_image_free(pixels); });
+
+  Texture* texture = backend_->CreateTexture(
+      {}, resource_manager_->NewResourceEntry<Texture>(),
+      (edit_ ? DataVolatility::kStaticReadWrite : DataVolatility::kStaticWrite),
+      width, height);
+  if (texture == nullptr) {
+    LOG(ERROR) << "Failed to create texture of dimensions " << width << "x"
+               << height;
+    return nullptr;
+  }
+  if (!texture->Set(pixels, width * height * sizeof(Pixel))) {
+    LOG(ERROR) << "Failed to initialize texture with image data";
+    return nullptr;
+  }
+  return texture;
+}
+
+bool RenderSystem::SaveTexture(std::string_view name, Texture* texture,
+                               DataVolatility volatility) {
+  if (texture == nullptr) {
+    LOG(ERROR) << "Cannot save null texture.";
+    return false;
+  }
+  if (texture->GetVolatility() == DataVolatility::kStaticWrite) {
+    LOG(ERROR) << "Cannot save texture with kStaticWrite volatility.";
+    return false;
+  }
+  auto view = texture->Edit();
+  if (view == nullptr) {
+    LOG(ERROR) << "Failed to read texture";
+    return false;
+  }
+  auto* file_system = context_.GetPtr<FileSystem>();
+  auto file = file_system->OpenFile(name, kNewFileFlags);
+  if (file == nullptr) {
+    LOG(ERROR) << "Could not create texture file: " << name;
+    return nullptr;
+  }
+  std::vector<ChunkWriter> chunks;
+  chunks.emplace_back(ChunkWriter::New<TextureChunk>(kChunkTypeTexture, 1));
+  ChunkWriter& chunk_writer = chunks.back();
+  auto* chunk = chunk_writer.GetChunkData<TextureChunk>();
+  chunk->id = texture->GetResourceId();
+  chunk->volatility = static_cast<int32_t>(volatility);
+  chunk->width = static_cast<uint16_t>(texture->GetWidth());
+  chunk->height = static_cast<uint16_t>(texture->GetHeight());
+  chunk->pixels = chunk_writer.AddData<const Pixel>(
+      view->GetPixels(), chunk->width * chunk->height);
+  return WriteChunkFile(file.get(), kChunkTypeTexture, chunks);
 }
 
 bool RenderSystem::BeginFrame() {

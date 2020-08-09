@@ -48,6 +48,8 @@ class MaterialType final : public Resource {
   // Binding data
   //----------------------------------------------------------------------------
 
+  absl::Span<const Binding> GetBindings() const { return bindings_; }
+
   // Returns the default material and instance binding data for the material
   // type.
   //
@@ -92,6 +94,7 @@ class MaterialType final : public Resource {
  private:
   ~MaterialType() override;
 
+  std::vector<Binding> bindings_;
   std::unique_ptr<RenderPipeline> pipeline_;
   const VertexType* const vertex_type_;
   Shader* const vertex_shader_;
