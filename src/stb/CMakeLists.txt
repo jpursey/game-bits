@@ -3,7 +3,13 @@
 ## Use of this source code is governed by an MIT-style License that can be found
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-add_subdirectory(gb)
+set(stb_image_SOURCE
+  ${GB_THIRD_PARTY_DIR}/stb/stb_image.h
+  stb_image.cc
+)
 
-set(VS_FOLDER stb)
-add_subdirectory(stb)
+set(stb_image_INCLUDES
+  ${GB_THIRD_PARTY_DIR}/stb
+)
+
+gb_add_library(stb_image)

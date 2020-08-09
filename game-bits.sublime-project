@@ -20,6 +20,9 @@
 			"path": "third_party/glm/glm"
 		},
 		{
+			"path": "third_party/stb"
+		},
+		{
 			"name": "sdl",
 			"path": "third_party/SDL2-2.0.10/include"
 		}
