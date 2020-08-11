@@ -15,7 +15,8 @@
 
 #include "stdint.h"
 
-// It is required that all fixed sized integers up to 64-bit are supported.
+// It is required that all fixed sized integers up to 64-bit are supported, and
+// all integer types are packed into the expected minimum number of bytes.
 static_assert(sizeof(int8_t) == 1, "int8_t is required");
 static_assert(sizeof(int16_t) == 2, "int16_t is required");
 static_assert(sizeof(int32_t) == 4, "int32_t is required");
@@ -25,9 +26,27 @@ static_assert(sizeof(uint16_t) == 2, "uint16_t is required");
 static_assert(sizeof(uint32_t) == 4, "uint32_t is required");
 static_assert(sizeof(uint64_t) == 8, "uint64_t is required");
 
+// Float types must be of a defined size in bytes.
+static_assert(sizeof(float) == 4, "float must be 4 bytes");
+static_assert(sizeof(double) == 8, "double must be 8 bytes");
+
+// Alignment requirements must not be greater than what is expected. Where
+// alignment matters for binary compatibility (for instance serialization), Game
+// Bits ensures these minimum alignments for the associated types.
+static_assert(alignof(int8_t) <= 1, "int8_t alignment must be <= its size");
+static_assert(alignof(int16_t) <= 2, "int16_t alignment must be <= its size");
+static_assert(alignof(int32_t) <= 4, "int32_t alignment must be <= its size");
+static_assert(alignof(int64_t) <= 8, "int64_t alignment must be <= its size");
+static_assert(alignof(uint8_t) <= 1, "uint8_t alignment must be <= its size");
+static_assert(alignof(uint16_t) <= 2, "uint16_t alignment must be <= its size");
+static_assert(alignof(uint32_t) <= 4, "uint32_t alignment must be <= its size");
+static_assert(alignof(uint64_t) <= 8, "uint64_t alignment must be <= its size");
+static_assert(alignof(float) <= 4, "float alignment must be <= its size");
+static_assert(alignof(double) <= 8, "double alignment must be <= its size");
+
 // C++ only guarantees that the "int" type is in the range -32,768...32,767.
-// "int" is used extensively in Game Bits for general indexing, which can easily
-// range into 32-bit territory.
+// "int" is used extensively in Game Bits for general indexing, which is assumed
+// to be more than a 16-bit signed int could support.
 static_assert(
     static_cast<int64_t>(std::numeric_limits<int>::min()) <=
             static_cast<int64_t>(std::numeric_limits<int32_t>::min()) &&

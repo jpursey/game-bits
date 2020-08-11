@@ -4,6 +4,9 @@
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
 set(gb_file_SOURCE
+  chunk_reader.cc chunk_reader.h
+  chunk_types.h
+  chunk_writer.cc chunk_writer.h
   file.cc file.h
   file_protocol.cc file_protocol.h
   file_system.cc file_system.h
@@ -15,6 +18,7 @@ set(gb_file_SOURCE
 )
 
 set(gb_file_TEST_SOURCE
+  chunk_file_test.cc
   common_protocol_test.cc common_protocol_test.h
   path_test.cc
   file_protocol_test.cc

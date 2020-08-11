@@ -14,10 +14,14 @@
 
 namespace gb {
 
+class ChunkReader;
+class ChunkWriter;
 class File;
 class FileProtocol;
 class FileSystem;
 class RawFile;
+struct ChunkHeader;
+struct ChunkType;
 
 // Defines what capabilities are available for a given file protocol.
 enum class FileProtocolFlag {
