@@ -18,7 +18,10 @@ namespace gb {
 
 class Resource;
 class ResourceEntry;
+class ResourceFileReader;
+class ResourceFileWriter;
 class ResourceManager;
+class ResourceNameReservation;
 class ResourcePtrBase;
 class ResourceSet;
 class ResourceSystem;
@@ -37,8 +40,9 @@ using ResourceKey = std::tuple<TypeKey*, ResourceId>;
 
 // Internal access token for the resource system.
 GB_DEFINE_ACCESS_TOKEN(ResourceInternal, class Resource, class ResourceEntry,
-                       class ResourceManager, class ResourcePtrBase,
-                       class ResourceSet, class ResourceSystem);
+                       class ResourceNameReservation, class ResourceManager,
+                       class ResourcePtrBase, class ResourceSet,
+                       class ResourceSystem, class ResourceFileReader);
 
 }  // namespace gb
 

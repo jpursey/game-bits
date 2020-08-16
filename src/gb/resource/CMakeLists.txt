@@ -3,10 +3,13 @@
 ## Use of this source code is governed by an MIT-style License that can be found
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
+add_subdirectory(file)
+
 set(gb_resource_SOURCE
   resource.cc resource.h
   resource_entry.cc resource_entry.h
   resource_manager.cc resource_manager.h
+  resource_name_reservation.cc resource_name_reservation.h
   resource_ptr.h
   resource_set.cc resource_set.h
   resource_system.cc resource_system.h
@@ -38,3 +41,4 @@ set(gb_resource_LIBS
 )
 
 gb_add_library(gb_resource)
+

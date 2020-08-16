@@ -136,6 +136,21 @@ ResourceManager::GenericReleaseHandler* ResourceManager::GetReleaseHandler(
   return &generic_release_handler_;
 }
 
+ResourceNameReservation ResourceManager::DoReserveResourceName(
+    TypeKey* type, ResourceId id, std::string_view name) {
+  if (!types_.contains(type)) {
+    LOG(ERROR) << "Cannot reserve resource name for type "
+               << type->GetTypeName()
+               << " as this ResourceManager was not registered with it.";
+    return {};
+  }
+  std::string resource_name(name.data(), name.size());
+  if (!system_->ReserveResourceName({}, type, id, resource_name)) {
+    return {};
+  }
+  return ResourceNameReservation({}, system_, type, id, resource_name);
+}
+
 ResourceEntry ResourceManager::DoNewResourceEntry(TypeKey* type,
                                                   ResourceId id) {
   if (!types_.contains(type)) {

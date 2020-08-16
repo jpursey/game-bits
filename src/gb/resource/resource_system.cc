@@ -76,6 +76,11 @@ bool ResourceSystem::DoRegister(std::initializer_list<TypeKey*> types,
     type_info.manager = manager;
     type_info.loader = manager->GetLoader({}, type);
     type_info.release_handler = manager->GetReleaseHandler({}, type);
+
+    std::string type_name = type->GetTypeName();
+    if (!type_name.empty()) {
+      type_names_[type_name] = type;
+    }
   }
   return true;
 }
@@ -109,6 +114,68 @@ void ResourceSystem::DoAddDependencies(ResourceSet* set, Resource* resource) {
   for (Resource* resource : dependencies) {
     set->Add(resource);
   }
+}
+
+bool ResourceSystem::ReserveResourceName(ResourceInternal, TypeKey* type,
+                                         ResourceId id,
+                                         const std::string& name) {
+  absl::WriterMutexLock lock(&mutex_);
+  auto type_it = types_.find(type);
+  if (type_it == types_.end()) {
+    return false;
+  }
+  auto name_it = type_it->second.name_to_id.find(name);
+  if (name_it != type_it->second.name_to_id.end()) {
+    return name_it->second == id;
+  }
+  type_it->second.name_to_id[name] = id;
+  return true;
+}
+
+void ResourceSystem::ReleaseResourceName(ResourceInternal, TypeKey* type,
+                                         ResourceId id,
+                                         const std::string& name) {
+  absl::WriterMutexLock lock(&mutex_);
+  auto type_it = types_.find(type);
+  if (type_it == types_.end()) {
+    return;
+  }
+  auto name_it = type_it->second.name_to_id.find(name);
+  if (name_it == type_it->second.name_to_id.end()) {
+    LOG(ERROR) << "Name reservation removed unexpectedly. ID=" << id
+               << ", Name=\"" << name << "\"";
+    return;
+  }
+  auto id_it = type_it->second.id_to_name.find(id);
+  if (id_it != type_it->second.id_to_name.end() && id_it->second == name) {
+    return;
+  }
+  type_it->second.name_to_id.erase(name_it);
+}
+
+void ResourceSystem::ApplyResourceName(ResourceInternal, TypeKey* type,
+                                       ResourceId id, const std::string& name) {
+  absl::WriterMutexLock lock(&mutex_);
+  auto type_it = types_.find(type);
+  if (type_it == types_.end()) {
+    return;
+  }
+  auto name_it = type_it->second.name_to_id.find(name);
+  if (name_it == type_it->second.name_to_id.end()) {
+    LOG(ERROR) << "Name reservation removed unexpectedly. ID=" << id
+               << ", Name=\"" << name << "\"";
+    return;
+  }
+  auto id_it = type_it->second.id_to_name.find(id);
+  if (id_it != type_it->second.id_to_name.end()) {
+    if (id_it->second == name) {
+      return;
+    }
+    type_it->second.name_to_id.erase(id_it->second);
+    id_it->second = name;
+    return;
+  }
+  type_it->second.id_to_name[id] = name;
 }
 
 ResourcePtr<Resource> ResourceSystem::DoLoad(TypeKey* type,

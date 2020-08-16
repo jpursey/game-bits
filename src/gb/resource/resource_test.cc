@@ -726,5 +726,26 @@ TEST(ResourceTest, SystemDestructEdgeConditions) {
   system.reset();
 }
 
+TEST(ResourceTest, ResourceTypeName) {
+  struct ResourceNoName {
+    int x;
+  };
+  struct ResourceName {
+    int x;
+  };
+  TypeKey::Get<ResourceName>()->SetTypeName("ResourceName");
+
+  EXPECT_STREQ(TypeKey::Get<ResourceNoName>()->GetTypeName(), "");
+  EXPECT_STREQ(TypeKey::Get<ResourceName>()->GetTypeName(), "ResourceName");
+
+  auto system = ResourceSystem::Create();
+  ASSERT_NE(system, nullptr);
+  auto manager = std::make_unique<ResourceManager>();
+  EXPECT_TRUE((system->Register<ResourceNoName, ResourceName>(manager.get())));
+  EXPECT_EQ(system->GetResourceType(""), nullptr);
+  EXPECT_EQ(system->GetResourceType("ResourceName"),
+            TypeKey::Get<ResourceName>());
+}
+
 }  // namespace
 }  // namespace gb

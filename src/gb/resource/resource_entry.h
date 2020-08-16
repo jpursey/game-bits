@@ -51,7 +51,8 @@ class ResourceEntry {
   }
 
   // Returns true if the resource entry is valid.
-  operator bool() const { return system_ != nullptr; }
+  bool IsValid() const { return system_ != nullptr; }
+  operator bool() const { return IsValid(); }
 
   // Attributes
   ResourceSystem* GetSystem() const { return system_; }

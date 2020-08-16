@@ -10,6 +10,8 @@
 #include "absl/container/flat_hash_set.h"
 #include "absl/synchronization/mutex.h"
 #include "gb/base/callback.h"
+#include "gb/resource/resource_entry.h"
+#include "gb/resource/resource_name_reservation.h"
 #include "gb/resource/resource_ptr.h"
 #include "gb/resource/resource_types.h"
 
@@ -103,6 +105,15 @@ class ResourceManager final {
   // Operations
   //----------------------------------------------------------------------------
 
+  // Returns a resource name reservation which may be used to apply to a
+  // resource if it is successfully saved under that name.
+  //
+  // The returned resource name will be valid iff the resource exists, and there
+  // is no other resource of that type with the same name.
+  template <typename Type>
+  ResourceNameReservation ReserveResourceName(ResourceId id,
+                                              std::string_view name);
+
   // Returns a new resource entry which may used to create a resource.
   //
   // This method will mint a unique resource ID, and allocate an entry of the
@@ -155,6 +166,8 @@ class ResourceManager final {
 
   void DoInitLoader(TypeKey* type, GenericLoader callback);
   void DoInitReleaseHandler(TypeKey* type, GenericReleaseHandler callback);
+  ResourceNameReservation DoReserveResourceName(TypeKey* type, ResourceId id,
+                                                std::string_view name);
   ResourceEntry DoNewResourceEntry(TypeKey* type, ResourceId id);
 
   ResourceSystem* system_ = nullptr;
@@ -184,6 +197,13 @@ void ResourceManager::InitReleaseHandler(
       [release_handler = std::move(callback)](Resource* resource) {
         return release_handler(static_cast<Type*>(resource));
       });
+}
+
+template <typename Type>
+ResourceNameReservation ResourceManager::ReserveResourceName(
+    ResourceId id, std::string_view name) {
+  static_assert(std::is_base_of_v<Resource, Type>, "Type is not a resource");
+  return DoReserveResourceName(TypeKey::Get<Type>(), id, name);
 }
 
 template <typename Type>

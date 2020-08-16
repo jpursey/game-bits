@@ -59,6 +59,12 @@ class ResourceSystem final {
   // Registers a resource manager which controls creation and deletion of one or
   // more types of resources.
   //
+  // All specified resource types should have type names specified:
+  //   TypeKey::Get<Example>()->SetTypeName("Example");
+  // Each type registered with a resource system must have a unique name. This
+  // is used in some resource serialization libraries (like gb_resource_file) to
+  // support generic resource type serialization.
+  //
   // A single manager can handle multiple resource types, but a type may only be
   // registered against one manager. This returns true if the manager could be
   // registered for ALL specified resource types. On failure, the resource
@@ -69,6 +75,12 @@ class ResourceSystem final {
   //----------------------------------------------------------------------------
   // Operations
   //----------------------------------------------------------------------------
+
+  // Retrieves the type for a registered resource type.
+  //
+  // The type name matches the type name set on the type key when it was
+  // registered with the resource system.
+  TypeKey* GetResourceType(std::string_view type_name);
 
   // Retrieves the requested resource by ID, or null if it does not exist or is
   // not loaded.
@@ -99,6 +111,8 @@ class ResourceSystem final {
   template <typename Type>
   Type* Load(ResourceSet* set, std::string_view name);
 
+  Resource* Load(ResourceSet* set, TypeKey* type, std::string_view name);
+
   //----------------------------------------------------------------------------
   // Internal
   //----------------------------------------------------------------------------
@@ -116,6 +130,13 @@ class ResourceSystem final {
                                    std::string_view name);
   void ResourceLock(ResourceInternal);
   void ResourceUnlock(ResourceInternal);
+  Resource* Find(ResourceInternal, TypeKey* type, ResourceId id);
+  bool ReserveResourceName(ResourceInternal, TypeKey* type, ResourceId id,
+                           const std::string& name);
+  void ReleaseResourceName(ResourceInternal, TypeKey* type, ResourceId id,
+                           const std::string& name);
+  void ApplyResourceName(ResourceInternal, TypeKey* type, ResourceId id,
+                         const std::string& name);
 
  private:
   using Loader = Callback<Resource*(TypeKey*, std::string_view)>;
@@ -153,6 +174,7 @@ class ResourceSystem final {
       ABSL_LOCKS_EXCLUDED(mutex_);
 
   absl::Mutex mutex_;
+  absl::flat_hash_map<std::string, TypeKey*> type_names_;
   absl::flat_hash_map<TypeKey*, ResourceTypeInfo> types_
       ABSL_GUARDED_BY(mutex_);
   absl::flat_hash_map<ResourceKey, ResourceInfo> resources_
@@ -161,8 +183,14 @@ class ResourceSystem final {
 };
 
 template <typename... Type>
-bool ResourceSystem::Register(ResourceManager* manager) {
+inline bool ResourceSystem::Register(ResourceManager* manager) {
   return DoRegister({TypeKey::Get<Type>()...}, manager);
+}
+
+inline TypeKey* ResourceSystem::GetResourceType(std::string_view type_name) {
+  absl::MutexLock lock(&mutex_);
+  auto it = type_names_.find(type_name);
+  return it != type_names_.end() ? it->second : nullptr;
 }
 
 template <typename Type>
@@ -213,16 +241,21 @@ ResourcePtr<Type> ResourceSystem::Load(std::string_view name) {
   return ResourcePtr<Type>(static_cast<Type*>(resource.Get()));
 }
 
-template <typename Type>
-Type* ResourceSystem::Load(ResourceSet* set, std::string_view name) {
+inline Resource* ResourceSystem::Load(ResourceSet* set, TypeKey* type,
+                                      std::string_view name) {
   if (set == nullptr) {
     return nullptr;
   }
-  ResourcePtr<Resource> resource = DoLoad(TypeKey::Get<Type>(), name);
+  ResourcePtr<Resource> resource = DoLoad(type, name);
   if (resource != nullptr) {
     set->Add(resource.Get());
   }
-  return static_cast<Type*>(resource.Get());
+  return resource.Get();
+}
+
+template <typename Type>
+inline Type* ResourceSystem::Load(ResourceSet* set, std::string_view name) {
+  return static_cast<Type*>(Load(set, TypeKey::Get<Type>(), name));
 }
 
 inline ResourceId ResourceSystem::GetResourceIdFromName(ResourceInternal,
@@ -238,6 +271,12 @@ inline void ResourceSystem::ResourceLock(ResourceInternal) {
 
 inline void ResourceSystem::ResourceUnlock(ResourceInternal) {
   mutex_.WriterUnlock();
+}
+
+inline Resource* ResourceSystem::Find(ResourceInternal, TypeKey* type,
+                                      ResourceId id) {
+  absl::MutexLock lock(&mutex_);
+  return DoGet(type, id);
 }
 
 }  // namespace gb

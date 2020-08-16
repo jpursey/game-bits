@@ -154,7 +154,7 @@ class ChunkWriter final {
   // Passing null for data, will always result in a null ChunkPtr offset.
   // "count" is ignored in this case.
   template <typename Type>
-  ChunkPtr<Type> AddData(Type* data, int32_t count = 1);
+  ChunkPtr<Type> AddData(const Type* data, int32_t count = 1);
 
   // Adds array-like data of the specified type to the chunk returning an
   // offset-initialized ChunkPtr to the data.
@@ -264,7 +264,7 @@ inline std::tuple<int64_t, void*> ChunkWriter::ReserveExtra(
 }
 
 template <typename Type>
-inline ChunkPtr<Type> ChunkWriter::AddData(Type* data, int32_t count) {
+inline ChunkPtr<Type> ChunkWriter::AddData(const Type* data, int32_t count) {
   static_assert(IsValidChunkType<Type>(),
                 "Chunk type must be trivially copyable or void");
   ChunkPtr<Type> chunk_ptr;
@@ -282,7 +282,7 @@ template <typename Type>
 inline ChunkPtr<Type> ChunkWriter::AddData(absl::Span<const Type> data) {
   static_assert(std::is_trivially_copyable_v<Type>,
                 "Chunk type must be trivially copyable (void is not allowed)");
-  return AddData(data.data(), static_cast<int32_t>(data.size()));
+  return AddData<Type>(data.data(), static_cast<int32_t>(data.size()));
 }
 
 inline ChunkPtr<const char> ChunkWriter::AddString(std::string_view str) {
