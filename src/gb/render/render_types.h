@@ -244,14 +244,14 @@ struct alignas(uint32_t) Pixel {
       : r(r), g(g), b(b), a(a) {}
 
   // Direct from a packed pixel value.
-  explicit constexpr Pixel(uint32_t packed)
+  explicit Pixel(uint32_t packed)
       : r(reinterpret_cast<const uint8_t*>(&packed)[0]),
         g(reinterpret_cast<const uint8_t*>(&packed)[1]),
         b(reinterpret_cast<const uint8_t*>(&packed)[2]),
         a(reinterpret_cast<const uint8_t*>(&packed)[3]) {}
 
   // Returns the pixel in packed form.
-  constexpr uint32_t Packed() const {
+  uint32_t Packed() const {
     return *reinterpret_cast<const uint32_t*>(this);
   }
 
@@ -263,7 +263,7 @@ struct alignas(uint32_t) Pixel {
 static_assert(sizeof(Pixel) == sizeof(uint32_t), "Pixel must be 4 bytes");
 
 inline constexpr bool operator==(const Pixel& a, const Pixel& b) {
-  return a.Packed() == b.Packed();
+  return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
 }
 inline constexpr bool operator!=(const Pixel& a, const Pixel& b) {
   return !(a == b);
