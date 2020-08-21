@@ -17,12 +17,13 @@ namespace gb {
 // and is used to initialize shaders.
 //
 // This class and all derived classes must be thread-compatible.
-class ShaderCode : public Resource {
+class ShaderCode {
  public:
   ShaderCode(const ShaderCode&) = delete;
   ShaderCode(ShaderCode&&) = delete;
   ShaderCode& operator=(const ShaderCode&) = delete;
   ShaderCode& operator=(ShaderCode&&) = delete;
+  virtual ~ShaderCode() = default;
 
   //----------------------------------------------------------------------------
   // Internal
@@ -34,8 +35,7 @@ class ShaderCode : public Resource {
   const std::vector<uint8_t>& GetData(RenderInternal) const { return data_; }
 
  protected:
-  ShaderCode(ResourceEntry entry) : Resource(std::move(entry)) {}
-  ~ShaderCode() override = default;
+  ShaderCode() = default;
 
   std::vector<uint8_t> data_;
 };

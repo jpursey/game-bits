@@ -7,9 +7,7 @@
 
 namespace gb {
 
-TestShaderCode::TestShaderCode(ResourceEntry entry, const void* code,
-                               int64_t code_size)
-    : ShaderCode(std::move(entry)) {
+TestShaderCode::TestShaderCode(const void* code, int64_t code_size) {
   code_.assign(static_cast<const char*>(code), code_size);
 }
 

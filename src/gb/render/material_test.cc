@@ -35,15 +35,9 @@ TEST_F(MaterialTest, CreateInResourceSet) {
   Material* material =
       render_system_->CreateMaterial(&resource_set, material_type);
   ASSERT_NE(material, nullptr);
-  EXPECT_EQ(resource_set.Get<ShaderCode>(
-                material_type->GetVertexShader()->GetCode()->GetResourceId()),
-            material_type->GetVertexShader()->GetCode());
   EXPECT_EQ(resource_set.Get<Shader>(
                 material_type->GetVertexShader()->GetResourceId()),
             material_type->GetVertexShader());
-  EXPECT_EQ(resource_set.Get<ShaderCode>(
-                material_type->GetFragmentShader()->GetCode()->GetResourceId()),
-            material_type->GetFragmentShader()->GetCode());
   EXPECT_EQ(resource_set.Get<Shader>(
                 material_type->GetFragmentShader()->GetResourceId()),
             material_type->GetFragmentShader());

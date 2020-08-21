@@ -47,17 +47,14 @@ bool RenderSystem::Init() {
   resource_manager_ = std::make_unique<ResourceManager>();
   resource_manager_->InitLoader<Texture>(
       [this](std::string_view name) { return LoadTexture(name); });
-  resource_manager_->InitLoader<ShaderCode>(
-      [this](std::string_view name) { return LoadShaderCode(name); });
   TypeKey::Get<Texture>()->SetTypeName("Texture");
-  TypeKey::Get<ShaderCode>()->SetTypeName("ShaderCode");
   TypeKey::Get<Shader>()->SetTypeName("Shader");
   TypeKey::Get<MaterialType>()->SetTypeName("MaterialType");
   TypeKey::Get<Material>()->SetTypeName("Material");
   TypeKey::Get<Mesh>()->SetTypeName("Mesh");
   auto* resource_system = context_.GetPtr<ResourceSystem>();
-  if (!resource_system->Register<Texture, ShaderCode, Shader, MaterialType,
-                                 Material, Mesh>(resource_manager_.get())) {
+  if (!resource_system->Register<Texture, Shader, MaterialType, Material, Mesh>(
+          resource_manager_.get())) {
     return false;
   }
   return true;
@@ -400,11 +397,12 @@ bool RenderSystem::SaveMaterialType(std::string_view name,
   return false;
 }
 
-Shader* RenderSystem::DoCreateShader(ShaderType type, ShaderCode* code,
+Shader* RenderSystem::DoCreateShader(ShaderType type,
+                                     std::unique_ptr<ShaderCode> shader_code,
                                      absl::Span<const Binding> bindings,
                                      absl::Span<const ShaderParam> inputs,
                                      absl::Span<const ShaderParam> outputs) {
-  if (code == nullptr) {
+  if (shader_code == nullptr) {
     LOG(ERROR) << "Null shader code bassed to CreateShader";
     return nullptr;
   }
@@ -440,7 +438,7 @@ Shader* RenderSystem::DoCreateShader(ShaderType type, ShaderCode* code,
   }
 
   return new Shader({}, resource_manager_->NewResourceEntry<Shader>(), type,
-                    code, all_bindings, inputs, outputs);
+                    std::move(shader_code), all_bindings, inputs, outputs);
 }
 
 Shader* RenderSystem::LoadShader(std::string_view name) {
@@ -453,36 +451,38 @@ bool RenderSystem::SaveShader(std::string_view name, Shader* shader) {
   return false;
 }
 
-ShaderCode* RenderSystem::DoCreateShaderCode(const void* code,
-                                             int64_t code_size) {
-  return backend_->CreateShaderCode(
-      {}, resource_manager_->NewResourceEntry<ShaderCode>(), code, code_size);
-}
-
-ShaderCode* RenderSystem::LoadShaderCode(std::string_view name) {
-  auto* file_system = context_.GetPtr<FileSystem>();
-  std::vector<uint8_t> file;
-  if (!file_system->ReadFile(name, &file)) {
-    LOG(ERROR) << "Could not read shader code file: " << name;
+std::unique_ptr<ShaderCode> RenderSystem::CreateShaderCode(
+    const void* code, int64_t code_size) {
+  auto shader_code = backend_->CreateShaderCode({}, code, code_size);
+  if (shader_code == nullptr) {
     return nullptr;
   }
-
-  ShaderCode* code = backend_->CreateShaderCode(
-      {}, resource_manager_->NewResourceEntry<ShaderCode>(), file.data(),
-      static_cast<int>(file.size()));
-  if (code == nullptr) {
-    LOG(ERROR) << "Error reading shader code file: " << name;
-  }
   if (edit_) {
-    code->SetData({}, std::move(file));
+    std::vector<uint8_t> buffer(code_size);
+    std::memcpy(buffer.data(), code, code_size);
+    shader_code->SetData({}, std::move(buffer));
   }
-
-  return code;
+  return shader_code;
 }
 
-ShaderCode* RenderSystem::LoadShaderCodeChunk(ChunkReader& chunk_reader) {
-  // TODO
-  return nullptr;
+std::unique_ptr<ShaderCode> RenderSystem::LoadShaderCode(
+    std::string_view filename) {
+  std::vector<uint8_t> buffer;
+  auto file_system = context_.GetPtr<FileSystem>();
+  if (!file_system->ReadFile(filename, &buffer)) {
+    LOG(ERROR) << "Failed to read file " << filename
+               << " when loading shader code";
+    return nullptr;
+  }
+  auto shader_code =
+      backend_->CreateShaderCode({}, buffer.data(), buffer.size());
+  if (shader_code == nullptr) {
+    return nullptr;
+  }
+  if (edit_) {
+    shader_code->SetData({}, std::move(buffer));
+  }
+  return shader_code;
 }
 
 Texture* RenderSystem::DoCreateTexture(DataVolatility volatility, int width,

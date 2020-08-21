@@ -31,20 +31,25 @@ std::unique_ptr<RenderPipeline> RenderTest::CreatePipeline(
   auto* vertex_type = render_system_->RegisterVertexType<Vector3>(
       "vertex", {ShaderValue::kVec3});
   EXPECT_NE(vertex_type, nullptr);
-  auto* vertex_shader_code = render_system_->CreateShaderCode(
-      &temp_resource_set_, kVertexShaderCode.data(), kVertexShaderCode.size());
-  EXPECT_NE(vertex_shader_code, nullptr);
-  auto* fragment_shader_code = render_system_->CreateShaderCode(
-      &temp_resource_set_, kFragmentShaderCode.data(),
-      kFragmentShaderCode.size());
-  EXPECT_NE(fragment_shader_code, nullptr);
+  auto* vertex_shader = render_system_->CreateShader(
+      &temp_resource_set_, ShaderType::kVertex,
+      render_system_->CreateShaderCode(kVertexShaderCode.data(),
+                                       kVertexShaderCode.size()),
+      {}, {}, {});
+  EXPECT_NE(vertex_shader, nullptr);
+  auto* fragment_shader = render_system_->CreateShader(
+      &temp_resource_set_, ShaderType::kFragment,
+      render_system_->CreateShaderCode(kFragmentShaderCode.data(),
+                                       kFragmentShaderCode.size()),
+      {}, {}, {});
+  EXPECT_NE(fragment_shader, nullptr);
   if (scene_type == nullptr || vertex_type == nullptr ||
-      vertex_shader_code == nullptr || fragment_shader_code == nullptr) {
+      vertex_shader == nullptr || fragment_shader == nullptr) {
     return nullptr;
   }
   return state_.backend->CreatePipeline(
-      GetAccessToken(), scene_type, vertex_type, bindings, vertex_shader_code,
-      fragment_shader_code);
+      GetAccessToken(), scene_type, vertex_type, bindings,
+      vertex_shader->GetCode(), fragment_shader->GetCode());
 }
 
 MaterialType* RenderTest::CreateMaterialType(
@@ -54,16 +59,17 @@ MaterialType* RenderTest::CreateMaterialType(
   auto* vertex_type = render_system_->RegisterVertexType<Vector3>(
       "vertex", {ShaderValue::kVec3});
   EXPECT_NE(vertex_type, nullptr);
-  auto* vertex_shader_code = render_system_->CreateShaderCode(
-      &temp_resource_set_, kVertexShaderCode.data(), kVertexShaderCode.size());
-  auto* vertex_shader = render_system_->CreateShader(
-      &temp_resource_set_, ShaderType::kVertex, vertex_shader_code, {}, {}, {});
+  auto vertex_shader_code = render_system_->CreateShaderCode(
+      kVertexShaderCode.data(), kVertexShaderCode.size());
+  auto* vertex_shader =
+      render_system_->CreateShader(&temp_resource_set_, ShaderType::kVertex,
+                                   std::move(vertex_shader_code), {}, {}, {});
   EXPECT_NE(vertex_shader, nullptr);
-  auto* fragment_shader_code = render_system_->CreateShaderCode(
-      &temp_resource_set_, kVertexShaderCode.data(), kVertexShaderCode.size());
+  auto fragment_shader_code = render_system_->CreateShaderCode(
+      kVertexShaderCode.data(), kVertexShaderCode.size());
   auto* fragment_shader =
       render_system_->CreateShader(&temp_resource_set_, ShaderType::kFragment,
-                                   fragment_shader_code, {}, {}, {});
+                                   std::move(fragment_shader_code), {}, {}, {});
   EXPECT_NE(fragment_shader, nullptr);
   return render_system_->CreateMaterialType(&temp_resource_set_, scene_type,
                                             vertex_type, vertex_shader,

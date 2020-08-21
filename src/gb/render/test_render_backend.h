@@ -72,8 +72,8 @@ class TestRenderBackend final : public RenderBackend {
   Texture* CreateTexture(RenderInternal, ResourceEntry entry,
                          DataVolatility volatility, int width,
                          int height) override;
-  ShaderCode* CreateShaderCode(RenderInternal, ResourceEntry entry,
-                               const void* code, int64_t code_size) override;
+  std::unique_ptr<ShaderCode> CreateShaderCode(RenderInternal, const void* code,
+                                               int64_t code_size) override;
   std::unique_ptr<RenderSceneType> CreateSceneType(
       RenderInternal, absl::Span<const Binding> bindings) override;
   std::unique_ptr<RenderScene> CreateScene(RenderInternal,

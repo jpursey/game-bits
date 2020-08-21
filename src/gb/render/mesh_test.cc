@@ -58,17 +58,9 @@ TEST_F(MeshTest, CreateInResourceSet) {
                                           DataVolatility::kStaticWrite,
                                           64 * 1024 - 1, 128 * 1024);
   ASSERT_NE(mesh, nullptr);
-  EXPECT_EQ(
-      resource_set.Get<ShaderCode>(
-          material->GetType()->GetVertexShader()->GetCode()->GetResourceId()),
-      material->GetType()->GetVertexShader()->GetCode());
   EXPECT_EQ(resource_set.Get<Shader>(
                 material->GetType()->GetVertexShader()->GetResourceId()),
             material->GetType()->GetVertexShader());
-  EXPECT_EQ(
-      resource_set.Get<ShaderCode>(
-          material->GetType()->GetFragmentShader()->GetCode()->GetResourceId()),
-      material->GetType()->GetFragmentShader()->GetCode());
   EXPECT_EQ(resource_set.Get<Shader>(
                 material->GetType()->GetFragmentShader()->GetResourceId()),
             material->GetType()->GetFragmentShader());

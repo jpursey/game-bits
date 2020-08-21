@@ -31,7 +31,7 @@ class Shader final : public Resource {
   ShaderType GetType() const { return type_; }
 
   // Returns the underlying shader code.
-  ShaderCode* GetCode() const { return code_; }
+  ShaderCode* GetCode() const { return code_.get(); }
 
   // Returns the inputs / outputs for this shader.
   absl::Span<const ShaderParam> GetInputs() const { return inputs_; }
@@ -41,25 +41,16 @@ class Shader final : public Resource {
   absl::Span<const Binding> GetBindings() const { return bindings_; }
 
   //----------------------------------------------------------------------------
-  // Resource overrides
-  //----------------------------------------------------------------------------
-
-  void GetResourceDependencies(
-      ResourceDependencyList* dependencies) const override {
-    dependencies->push_back(code_);
-  }
-
-  //----------------------------------------------------------------------------
   // Internal
   //----------------------------------------------------------------------------
 
   Shader(RenderInternal, ResourceEntry entry, ShaderType type,
-         ShaderCode* code, absl::Span<const Binding> bindings,
+         std::unique_ptr<ShaderCode> code, absl::Span<const Binding> bindings,
          absl::Span<const ShaderParam> inputs,
          absl::Span<const ShaderParam> outputs)
       : Resource(std::move(entry)),
         type_(type),
-        code_(code),
+        code_(std::move(code)),
         bindings_(bindings.begin(), bindings.end()),
         inputs_(inputs.begin(), inputs.end()),
         outputs_(outputs.begin(), outputs.end()) {}
@@ -68,7 +59,7 @@ class Shader final : public Resource {
   ~Shader() override = default;
 
   const ShaderType type_;
-  ShaderCode* const code_;
+  const std::unique_ptr<ShaderCode> code_;
   const std::vector<Binding> bindings_;
   const std::vector<ShaderParam> inputs_;
   const std::vector<ShaderParam> outputs_;

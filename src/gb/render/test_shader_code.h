@@ -12,7 +12,7 @@ namespace gb {
 
 class TestShaderCode final : public ShaderCode {
  public:
-  TestShaderCode(ResourceEntry entry, const void* code, int64_t code_size);
+  TestShaderCode(const void* code, int64_t code_size);
   ~TestShaderCode() override;
 
   const std::string& GetCode() const { return code_; }

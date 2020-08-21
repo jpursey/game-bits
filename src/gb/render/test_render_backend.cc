@@ -29,14 +29,13 @@ Texture* TestRenderBackend::CreateTexture(RenderInternal, ResourceEntry entry,
                          width, height);
 }
 
-ShaderCode* TestRenderBackend::CreateShaderCode(RenderInternal,
-                                                ResourceEntry entry,
+std::unique_ptr<ShaderCode> TestRenderBackend::CreateShaderCode(RenderInternal,
                                                 const void* code,
                                                 int64_t code_size) {
   if (state_->fail_create_shader_code) {
     return nullptr;
   }
-  return new TestShaderCode(std::move(entry), code, code_size);
+  return std::make_unique<TestShaderCode>(code, code_size);
 }
 
 std::unique_ptr<RenderSceneType> TestRenderBackend::CreateSceneType(

@@ -79,7 +79,7 @@ class RenderSystem final {
   // OPTIONAL: Editor flag which ensures that all resources are by default
   // editable when loaded via the resource system (at least
   // DataVolatility::kStaticReadWrite). This also the only mode which allows
-  // saving ShaderCode resources (which otherwise are always write-only).
+  // saving Shader resources (which otherwise are always write-only).
   static inline constexpr char* kKeyEnableEdit = "EnableEdit";
   static GB_CONTEXT_CONSTRAINT_NAMED_DEFAULT(kConstraintEnableEdit, kInOptional,
                                              bool, kKeyEnableEdit, false);
@@ -235,7 +235,7 @@ class RenderSystem final {
   // Returns true if the material type was successfully saved.
   bool SaveMaterialType(std::string_view name, MaterialType* material_type);
 
-  // Creates a shader from the specified bindings and shader code
+  // Creates a shader from the specified bindings and API specific shader code
   //
   // Common bindings defined by a RenderSceneType or paired Shader are
   // implicitly added to the provided bindings when creating a MaterialType, and
@@ -243,12 +243,14 @@ class RenderSystem final {
   // recommended to only specify the bindings that the shader code actually
   // uses. The inputs, outputs, and bindings MUST match the underyling shader
   // code, or the results will be undefined (crash or corruption is likely).
-  ResourcePtr<Shader> CreateShader(ShaderType type, ShaderCode* code,
+  ResourcePtr<Shader> CreateShader(ShaderType type,
+                                   std::unique_ptr<ShaderCode> shader_code,
                                    absl::Span<const Binding> bindings,
                                    absl::Span<const ShaderParam> inputs,
                                    absl::Span<const ShaderParam> outputs);
   Shader* CreateShader(ResourceSet* resource_set, ShaderType type,
-                       ShaderCode* code, absl::Span<const Binding> bindings,
+                       std::unique_ptr<ShaderCode> shader_code,
+                       absl::Span<const Binding> bindings,
                        absl::Span<const ShaderParam> inputs,
                        absl::Span<const ShaderParam> outputs);
 
@@ -259,13 +261,16 @@ class RenderSystem final {
   // Returns true if the material type was successfully saved.
   bool SaveShader(std::string_view name, Shader* shader);
 
-  // Creates shader code given the backend specific format for shader code.
+  // Creates or backend specific shader code to be used with a shader.
   //
-  // There is no generic shader code format, as it is entirely up to the
-  // backend.
-  ResourcePtr<ShaderCode> CreateShaderCode(const void* code, int64_t code_size);
-  ShaderCode* CreateShaderCode(ResourceSet* resource_set, const void* code,
-                               int64_t code_size);
+  // The shader code specified must be in a form expected by the render backend
+  // used by the render system. For instance, for the Vulkan backend this must
+  // be SPIR-V code.
+  //
+  // Returns null if the shader code could not be created.
+  std::unique_ptr<ShaderCode> CreateShaderCode(const void* code,
+                                               int64_t code_size);
+  std::unique_ptr<ShaderCode> LoadShaderCode(std::string_view filename);
 
   // Creates a texture with the specified parameters.
   //
@@ -330,16 +335,13 @@ class RenderSystem final {
   MaterialType* LoadMaterialType(std::string_view name);
   MaterialType* LoadMaterialTypeChunk(ChunkReader& chunk_reader);
 
-  Shader* DoCreateShader(ShaderType type, ShaderCode* code,
+  Shader* DoCreateShader(ShaderType type,
+                         std::unique_ptr<ShaderCode> shader_code,
                          absl::Span<const Binding> bindings,
                          absl::Span<const ShaderParam> inputs,
                          absl::Span<const ShaderParam> outputs);
   Shader* LoadShader(std::string_view name);
   Shader* LoadShaderChunk(ChunkReader& chunk_reader);
-
-  ShaderCode* DoCreateShaderCode(const void* code, int64_t code_size);
-  ShaderCode* LoadShaderCode(std::string_view name);
-  ShaderCode* LoadShaderCodeChunk(ChunkReader& chunk_reader);
 
   Texture* DoCreateTexture(DataVolatility volatility, int width, int height);
   Texture* LoadTexture(std::string_view name);
@@ -431,32 +433,22 @@ inline MaterialType* RenderSystem::CreateMaterialType(
 }
 
 inline ResourcePtr<Shader> RenderSystem::CreateShader(
-    ShaderType type, ShaderCode* code, absl::Span<const Binding> bindings,
-    absl::Span<const ShaderParam> inputs,
+    ShaderType type, std::unique_ptr<ShaderCode> shader_code,
+    absl::Span<const Binding> bindings, absl::Span<const ShaderParam> inputs,
     absl::Span<const ShaderParam> outputs) {
-  return DoCreateShader(type, code, bindings, inputs, outputs);
+  return DoCreateShader(type, std::move(shader_code), bindings, inputs,
+                        outputs);
 }
 
 inline Shader* RenderSystem::CreateShader(
-    ResourceSet* resource_set, ShaderType type, ShaderCode* code,
-    absl::Span<const Binding> bindings, absl::Span<const ShaderParam> inputs,
+    ResourceSet* resource_set, ShaderType type,
+    std::unique_ptr<ShaderCode> shader_code, absl::Span<const Binding> bindings,
+    absl::Span<const ShaderParam> inputs,
     absl::Span<const ShaderParam> outputs) {
-  Shader* shader = DoCreateShader(type, code, bindings, inputs, outputs);
+  Shader* shader =
+      DoCreateShader(type, std::move(shader_code), bindings, inputs, outputs);
   resource_set->Add(shader);
   return shader;
-}
-
-inline ResourcePtr<ShaderCode> RenderSystem::CreateShaderCode(
-    const void* code, int64_t code_size) {
-  return DoCreateShaderCode(code, code_size);
-}
-
-inline ShaderCode* RenderSystem::CreateShaderCode(ResourceSet* resource_set,
-                                                  const void* code,
-                                                  int64_t code_size) {
-  ShaderCode* shader_code = DoCreateShaderCode(code, code_size);
-  resource_set->Add(shader_code);
-  return shader_code;
 }
 
 inline ResourcePtr<Texture> RenderSystem::CreateTexture(

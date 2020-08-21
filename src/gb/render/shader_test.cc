@@ -22,7 +22,7 @@ TEST_F(ShaderTest, CreateAsResourcePtr) {
   auto shader_code = render_system_->CreateShaderCode(kVertexShaderCode.data(),
                                                       kVertexShaderCode.size());
   ResourcePtr<Shader> shader = render_system_->CreateShader(
-      ShaderType::kVertex, shader_code.Get(), {}, {}, {});
+      ShaderType::kVertex, std::move(shader_code), {}, {}, {});
   ASSERT_NE(shader, nullptr);
 
   EXPECT_EQ(state_.invalid_call_count, 0);
@@ -34,11 +34,9 @@ TEST_F(ShaderTest, CreateInResourceSet) {
   auto shader_code = render_system_->CreateShaderCode(kVertexShaderCode.data(),
                                                       kVertexShaderCode.size());
   Shader* shader = render_system_->CreateShader(
-      &resource_set, ShaderType::kVertex, shader_code.Get(), {}, {}, {});
+      &resource_set, ShaderType::kVertex, std::move(shader_code), {}, {}, {});
   ASSERT_NE(shader, nullptr);
   EXPECT_EQ(resource_set.Get<Shader>(shader->GetResourceId()), shader);
-  EXPECT_EQ(resource_set.Get<ShaderCode>(shader_code->GetResourceId()),
-            shader_code.Get());
 
   EXPECT_EQ(state_.invalid_call_count, 0);
 }
@@ -57,20 +55,22 @@ TEST_F(ShaderTest, TypeAndCodeProperties) {
   // Vertex shader.
   auto shader_code = render_system_->CreateShaderCode(kVertexShaderCode.data(),
                                                       kVertexShaderCode.size());
+  auto* shader_code_ptr = shader_code.get();
   auto shader = render_system_->CreateShader(ShaderType::kVertex,
-                                             shader_code.Get(), {}, {}, {});
+                                             std::move(shader_code), {}, {}, {});
   ASSERT_NE(shader, nullptr);
   EXPECT_EQ(shader->GetType(), ShaderType::kVertex);
-  EXPECT_EQ(shader->GetCode(), shader_code.Get());
+  EXPECT_EQ(shader->GetCode(), shader_code_ptr);
 
   // Fragment shader.
   shader_code = render_system_->CreateShaderCode(kFragmentShaderCode.data(),
                                                  kFragmentShaderCode.size());
+  shader_code_ptr = shader_code.get();
   shader = render_system_->CreateShader(ShaderType::kFragment,
-                                        shader_code.Get(), {}, {}, {});
+                                        std::move(shader_code), {}, {}, {});
   ASSERT_NE(shader, nullptr);
   EXPECT_EQ(shader->GetType(), ShaderType::kFragment);
-  EXPECT_EQ(shader->GetCode(), shader_code.Get());
+  EXPECT_EQ(shader->GetCode(), shader_code_ptr);
 
   EXPECT_EQ(state_.invalid_call_count, 0);
 }
@@ -96,7 +96,7 @@ TEST_F(ShaderTest, InputOutputBindingProperties) {
   auto shader_code = render_system_->CreateShaderCode(kVertexShaderCode.data(),
                                                       kVertexShaderCode.size());
   auto shader = render_system_->CreateShader(
-      ShaderType::kVertex, shader_code.Get(), bindings, inputs, outputs);
+      ShaderType::kVertex, std::move(shader_code), bindings, inputs, outputs);
   ASSERT_NE(shader, nullptr);
   EXPECT_THAT(shader->GetBindings(), UnorderedElementsAreArray(bindings));
   EXPECT_THAT(shader->GetInputs(), UnorderedElementsAreArray(inputs));
@@ -110,7 +110,7 @@ TEST_F(ShaderTest, InvalidBindings) {
   auto shader_code = render_system_->CreateShaderCode(kVertexShaderCode.data(),
                                                       kVertexShaderCode.size());
   auto shader = render_system_->CreateShader(
-      ShaderType::kVertex, shader_code.Get(), {Binding()}, {}, {});
+      ShaderType::kVertex, std::move(shader_code), {Binding()}, {}, {});
 
   EXPECT_EQ(shader, nullptr);
 
@@ -118,7 +118,7 @@ TEST_F(ShaderTest, InvalidBindings) {
                         .SetShaders(ShaderType::kFragment)
                         .SetLocation(BindingSet::kMaterial, 1)
                         .SetTexture();
-  shader = render_system_->CreateShader(ShaderType::kVertex, shader_code.Get(),
+  shader = render_system_->CreateShader(ShaderType::kVertex, std::move(shader_code),
                                         {binding}, {}, {});
   EXPECT_EQ(shader, nullptr);
 
@@ -134,7 +134,7 @@ TEST_F(ShaderTest, RedundantBindingsAreIgnored) {
   auto shader_code = render_system_->CreateShaderCode(kVertexShaderCode.data(),
                                                       kVertexShaderCode.size());
   auto shader = render_system_->CreateShader(
-      ShaderType::kVertex, shader_code.Get(), {binding, binding}, {}, {});
+      ShaderType::kVertex, std::move(shader_code), {binding, binding}, {}, {});
   ASSERT_NE(shader, nullptr);
   EXPECT_EQ(shader->GetBindings().size(), 1);
   EXPECT_THAT(shader->GetBindings(), Contains(binding));
@@ -157,26 +157,26 @@ TEST_F(ShaderTest, IncompatibleBindings) {
                                                       kVertexShaderCode.size());
 
   auto shader =
-      render_system_->CreateShader(ShaderType::kVertex, shader_code.Get(),
+      render_system_->CreateShader(ShaderType::kVertex, std::move(shader_code),
                                    {binding, binding.SetTexture()}, {}, {});
   EXPECT_EQ(shader, nullptr);
 
   shader = render_system_->CreateShader(
-      ShaderType::kVertex, shader_code.Get(),
+      ShaderType::kVertex, std::move(shader_code),
       {binding,
        binding.SetConstants(constants_vec3, DataVolatility::kStaticWrite)},
       {}, {});
   EXPECT_EQ(shader, nullptr);
 
   shader = render_system_->CreateShader(
-      ShaderType::kVertex, shader_code.Get(),
+      ShaderType::kVertex, std::move(shader_code),
       {binding,
        binding.SetConstants(constants_vec2, DataVolatility::kStaticReadWrite)},
       {}, {});
   EXPECT_EQ(shader, nullptr);
 
   shader = render_system_->CreateShader(
-      ShaderType::kVertex, shader_code.Get(),
+      ShaderType::kVertex, std::move(shader_code),
       {binding,
        binding.SetConstants(constants_vec2, DataVolatility::kPerFrame)},
       {}, {});

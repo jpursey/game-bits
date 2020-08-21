@@ -40,7 +40,6 @@ set(gb_render_TEST_SOURCE
   render_scene_type_test.cc
   render_system_test.cc
   render_test.cc render_test.h
-  shader_code_test.cc
   shader_test.cc
   test_binding_data.cc test_binding_data.h
   test_render_backend.cc test_render_backend.h

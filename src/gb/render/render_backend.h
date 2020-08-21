@@ -68,8 +68,9 @@ class RenderBackend {
   // shader data.
   //
   // If the shader code could not be created, this returns null.
-  virtual ShaderCode* CreateShaderCode(RenderInternal, ResourceEntry entry,
-                                       const void* code, int64_t code_size) = 0;
+  virtual std::unique_ptr<ShaderCode> CreateShaderCode(RenderInternal,
+                                                       const void* code,
+                                                       int64_t code_size) = 0;
 
   // Creates a new RenderSceneType compatible with this backend.
   //
