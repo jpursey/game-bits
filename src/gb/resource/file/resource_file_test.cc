@@ -140,12 +140,12 @@ class ResourceFileTest : public ::testing::Test {
         ContextBuilder().SetPtr<FileSystem>(file_system_.get()).Build());
     ASSERT_NE(writer_, nullptr);
 
-    resource_manager_.InitLoader<ResourceC>([this](std::string_view name) {
-      return reader_->Read<ResourceC>(name, &load_context_);
+    resource_manager_.InitLoader<ResourceC>([this](Context* context, std::string_view name) {
+      return reader_->Read<ResourceC>(name, context);
     });
     resource_manager_.InitGenericLoader(
-        [this](TypeKey* type, std::string_view name) {
-          return reader_->Read(type, name, &load_context_);
+        [this](Context* context, TypeKey* type, std::string_view name) {
+          return reader_->Read(type, name, context);
         });
     resource_system_
         ->Register<ResourceA, ResourceB, ResourceC, NoNameResourceA>(
@@ -297,8 +297,6 @@ class ResourceFileTest : public ::testing::Test {
     };
   }
 
-  Context load_context_;
-  Context write_context_;
   std::unique_ptr<FileSystem> file_system_;
   std::unique_ptr<ResourceSystem> resource_system_;
   ResourceManager resource_manager_;

@@ -80,11 +80,11 @@ LocalBindingData::LocalBindingData(RenderInternal,
 LocalBindingData::~LocalBindingData() { delete[] backing_buffer_; }
 
 const RenderDataType* LocalBindingData::GetTextureDataType() {
-  static RenderDataType type({}, TypeKey::Get<Texture*>(), sizeof(Texture*));
+  static RenderDataType type({}, "", TypeKey::Get<Texture*>(), sizeof(Texture*));
   return &type;
 }
 
-void LocalBindingData::CopyTo(BindingData* binding_data) {
+void LocalBindingData::CopyTo(BindingData* binding_data) const {
   const int count = static_cast<int>(data_.size());
   for (int i = 0; i < count; ++i) {
     const auto* type = std::get<const RenderDataType*>(data_[i]);

@@ -197,6 +197,9 @@ Resource* ResourceFileReader::Read(TypeKey* type, std::string_view name,
                 resource_system->Load(resource_set, type, chunk.name.ptr);
           }
           if (resource == nullptr) {
+            LOG(ERROR) << "Could not load or find resource " << chunk.type.ptr
+                       << " (ID: " << chunk.id << ") of name \""
+                       << chunk.name.ptr << "\"";
             return false;
           }
         }

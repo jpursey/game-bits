@@ -6,6 +6,7 @@
 #include "gb/resource/file/resource_file_writer.h"
 
 #include "absl/memory/memory.h"
+#include "gb/base/scoped_call.h"
 #include "gb/file/file.h"
 #include "gb/file/file_system.h"
 #include "gb/resource/file/resource_chunks.h"
@@ -51,6 +52,35 @@ bool ResourceFileWriter::Write(std::string_view name, Resource* resource,
   }
   const auto& writer_info = writer_it->second;
 
+  const std::string name_string(name.data(), name.size());
+  context.SetValue<std::string>(kKeyResourceName, name_string);
+  auto* resource_system = context_.GetPtr<ResourceSystem>();
+  const bool set_resource_name = (context.GetValue<bool>(kKeySetResourceName) &&
+                                  name != resource->GetResourceName());
+  if (set_resource_name) {
+    if (!resource_system->ReserveResourceName({}, resource->GetResourceType(),
+                                              resource->GetResourceId(),
+                                              name_string)) {
+      LOG(ERROR) << "Name already reserved for resource";
+      return false;
+    }
+  }
+  bool success = false;
+  ScopedCall complete_resource_name([&] {
+    if (set_resource_name) {
+      if (success) {
+        resource_system->ApplyResourceName({}, resource->GetResourceType(),
+                                           resource->GetResourceId(),
+                                           name_string);
+
+      } else {
+        resource_system->ReleaseResourceName({}, resource->GetResourceType(),
+                                             resource->GetResourceId(),
+                                             name_string);
+      }
+    }
+  });
+
   auto* file_system = context_.GetPtr<FileSystem>();
   auto file = file_system->OpenFile(name, kNewFileFlags);
   if (file == nullptr) {
@@ -61,6 +91,8 @@ bool ResourceFileWriter::Write(std::string_view name, Resource* resource,
   std::vector<ChunkWriter> chunk_writers;
 
   // Write out resource load chunk if there are any dependencies.
+  const bool allow_unnamed_dependencies =
+      context.GetValue<bool>(kKeyAllowUnnamedDependencies);
   ResourceDependencyList dependencies;
   resource->GetResourceDependencies(&dependencies);
   if (!dependencies.empty()) {
@@ -69,9 +101,9 @@ bool ResourceFileWriter::Write(std::string_view name, Resource* resource,
     auto* chunks = chunk_writer.GetChunkData<ResourceLoadChunk>();
     for (int i = 0; i < chunk_writer.GetCount(); ++i) {
       auto& chunk = chunks[i];
-      Resource* resource = dependencies[i];
-      chunk.id = resource->GetResourceId();
-      std::string_view type_name = resource->GetResourceType()->GetTypeName();
+      Resource* dependency = dependencies[i];
+      chunk.id = dependency->GetResourceId();
+      std::string_view type_name = dependency->GetResourceType()->GetTypeName();
       if (type_name.empty()) {
         LOG(ERROR) << "Resource dependency has no type name, so cannot be "
                       "written to file: "
@@ -79,7 +111,14 @@ bool ResourceFileWriter::Write(std::string_view name, Resource* resource,
         return false;
       }
       chunk.type = chunk_writer.AddString(type_name);
-      chunk.name = chunk_writer.AddString(resource->GetResourceName());
+      if (!allow_unnamed_dependencies &&
+          dependency->GetResourceName().empty()) {
+        LOG(ERROR) << "Resource dependency has no resource name, so cannot be "
+                      "written to file: "
+                   << name;
+        return false;
+      }
+      chunk.name = chunk_writer.AddString(dependency->GetResourceName());
     }
     chunk_writers.emplace_back(std::move(chunk_writer));
   }
@@ -87,7 +126,8 @@ bool ResourceFileWriter::Write(std::string_view name, Resource* resource,
   if (!writer_info.writer(context.GetContext(), resource, &chunk_writers)) {
     return false;
   }
-  return WriteChunkFile(file.get(), writer_info.chunk_type, chunk_writers);
+  success = WriteChunkFile(file.get(), writer_info.chunk_type, chunk_writers);
+  return success;
 }
 
 }  // namespace gb

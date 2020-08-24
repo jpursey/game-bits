@@ -88,8 +88,8 @@ class BindingData {
   //----------------------------------------------------------------------------
 
   RenderPipeline* GetPipeline(RenderInternal) const { return pipeline_; }
-  void SetInternal(RenderInternal, int index, TypeKey* type,
-                   const void* data);
+  void SetInternal(RenderInternal, int index, TypeKey* type, const void* data);
+  void GetInternal(RenderInternal, int index, TypeKey* type, void* data);
 
  protected:
   BindingData(RenderPipeline* pipeline, BindingSet set)
@@ -152,10 +152,16 @@ inline void BindingData::GetConstants(int index, Type* constants) {
   DoGet(index, constants);
 }
 
-inline void BindingData::SetInternal(RenderInternal, int index,
-                                     TypeKey* type, const void* data) {
+inline void BindingData::SetInternal(RenderInternal, int index, TypeKey* type,
+                                     const void* data) {
   RENDER_ASSERT(Validate(index, type));
   DoSet(index, data);
+}
+
+inline void BindingData::GetInternal(RenderInternal, int index, TypeKey* type,
+                                     void* data) {
+  RENDER_ASSERT(Validate(index, type));
+  DoGet(index, data);
 }
 
 }  // namespace gb

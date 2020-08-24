@@ -50,11 +50,42 @@ class ResourceFileWriter final {
   // REQUIRED: FileSystem interface.
   static GB_CONTEXT_CONSTRAINT(kConstraintFileSystem, kInRequired, FileSystem);
 
+  // REQUIRED: ResourceSystem interface.
+  static GB_CONTEXT_CONSTRAINT(kConstraintResourceSystem, kInRequired,
+                               ResourceSystem);
+
   // Contract for creating a new ResourceFileWriter
-  using CreateContract = ContextContract<kConstraintFileSystem>;
+  using CreateContract =
+      ContextContract<kConstraintFileSystem, kConstraintResourceSystem>;
+
+  // OPTIONAL: Determines whether the resource name is updated when a resource
+  // is written. By default, the resource name is updated.
+  static inline constexpr char* kKeySetResourceName = "SetResourceName";
+  static GB_CONTEXT_CONSTRAINT_NAMED_DEFAULT(kConstraintSetResourceName,
+                                             kInOptional, bool,
+                                             kKeySetResourceName, true);
+
+  // OPTIONAL: Determines whether the resource may be saved if it has unnamed
+  // resource dependencies. By default, this is not allowed as it likely could
+  // never be loaded again.
+  static inline constexpr char* kKeyAllowUnnamedDependencies =
+      "AllowUnnamedDependencies";
+  static GB_CONTEXT_CONSTRAINT_NAMED_DEFAULT(
+      kConstraintAllowUnnamedDependencies, kInOptional, bool,
+      kKeyAllowUnnamedDependencies, false);
+
+  // SCOPED: This is set to the resource name being written to. It may be used
+  // for error messages, or may be used to determine the correct resource ID to
+  // write into the file (this is recommended to avoid resource ID collisions
+  // between resource names).
+  static inline constexpr char* kKeyResourceName = "ResourceName";
+  static GB_CONTEXT_CONSTRAINT_NAMED(kConstraintResourceName, kScoped,
+                                     std::string, kKeyResourceName);
 
   // Contract for Write calls.
-  using WriteContract = ContextContract<>;
+  using WriteContract = ContextContract<kConstraintSetResourceName,
+                                        kConstraintAllowUnnamedDependencies,
+                                        kConstraintResourceName>;
 
   //----------------------------------------------------------------------------
   // Construction / Destruction

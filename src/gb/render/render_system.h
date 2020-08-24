@@ -149,7 +149,7 @@ class RenderSystem final {
   const VertexType* GetVertexType(std::string_view name) const;
 
   // Returns the requested render scene type if it exists or null otherwise.
-  const RenderSceneType* GetSceneType(std::string_view name) const;
+  RenderSceneType* GetSceneType(std::string_view name) const;
 
   // Return frame dimensions in pixels or null otherwise.
   FrameDimensions GetFrameDimensions();
@@ -319,34 +319,57 @@ class RenderSystem final {
 
   bool Init();
 
+  bool LoadBindingChunk(Context* context, ChunkReader* chunk_reader);
+  bool SaveBindingChunk(absl::Span<const Binding> bindings,
+                        std::vector<ChunkWriter>* out_chunks);
+  bool LoadBindingDataChunk(Context* context, ChunkReader* chunk_reader);
+  bool SaveBindingDataChunk(BindingSet set, absl::Span<const Binding> bindings,
+                            BindingData* binding_data,
+                            std::vector<ChunkWriter>* out_chunks);
+
   Mesh* DoCreateMesh(Material* material, DataVolatility volatility,
                      int max_vertices, int max_triangles);
-  Mesh* LoadMesh(std::string_view name);
-  Mesh* LoadMeshChunk(ChunkReader& chunk_reader);
+  Mesh* LoadMeshChunk(Context* context, ChunkReader* chunk_reader,
+                      ResourceEntry entry);
+  bool SaveMeshChunk(Context* context, Mesh* mesh,
+                     std::vector<ChunkWriter>* out_chunks);
 
   Material* DoCreateMaterial(MaterialType* material_type);
-  Material* LoadMaterial(std::string_view name);
-  Material* LoadMaterialChunk(ChunkReader& chunk_reader);
+  Material* LoadMaterialChunk(Context* context, ChunkReader* chunk_reader,
+                              ResourceEntry entry);
+  bool SaveMaterialChunk(Context* context, Material* material,
+                         std::vector<ChunkWriter>* out_chunks);
 
+  bool ValidateMaterialTypeArguments(RenderSceneType* scene_type,
+                                     const VertexType* vertex_type,
+                                     Shader* vertex_shader,
+                                     Shader* fragment_shader);
   MaterialType* DoCreateMaterialType(RenderSceneType* scene_type,
                                      const VertexType* vertex_type,
                                      Shader* vertex_shader,
                                      Shader* fragment_shader);
-  MaterialType* LoadMaterialType(std::string_view name);
-  MaterialType* LoadMaterialTypeChunk(ChunkReader& chunk_reader);
+  MaterialType* LoadMaterialTypeChunk(Context* context,
+                                      ChunkReader* chunk_reader,
+                                      ResourceEntry entry);
+  bool SaveMaterialTypeChunk(Context* context, MaterialType* material_type,
+                             std::vector<ChunkWriter>* out_chunks);
 
   Shader* DoCreateShader(ShaderType type,
                          std::unique_ptr<ShaderCode> shader_code,
                          absl::Span<const Binding> bindings,
                          absl::Span<const ShaderParam> inputs,
                          absl::Span<const ShaderParam> outputs);
-  Shader* LoadShader(std::string_view name);
-  Shader* LoadShaderChunk(ChunkReader& chunk_reader);
+  Shader* LoadShaderChunk(Context* context, ChunkReader* chunk_reader,
+                          ResourceEntry entry);
+  bool SaveShaderChunk(Context* context, Shader* shader,
+                       std::vector<ChunkWriter>* out_chunks);
 
   Texture* DoCreateTexture(DataVolatility volatility, int width, int height);
   Texture* LoadTexture(std::string_view name);
-  Texture* LoadGbTexture(File* file);
-  Texture* LoadTextureChunk(ChunkReader& chunk_reader);
+  Texture* LoadTextureChunk(Context* context, ChunkReader* chunk_reader,
+                            ResourceEntry entry);
+  bool SaveTextureChunk(Context* context, Texture* texture,
+                        std::vector<ChunkWriter>* out_chunks);
   Texture* LoadStbTexture(File* file);
 
   const RenderDataType* DoRegisterConstantsType(std::string_view name,

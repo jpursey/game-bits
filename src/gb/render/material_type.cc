@@ -12,11 +12,13 @@
 namespace gb {
 
 MaterialType::MaterialType(RenderInternal internal, ResourceEntry entry,
+                           RenderSceneType* scene_type,
                            absl::Span<const Binding> bindings,
                            std::unique_ptr<RenderPipeline> pipeline,
                            const VertexType* vertex_type, Shader* vertex_shader,
                            Shader* fragment_shader)
     : Resource(std::move(entry)),
+      scene_type_(scene_type),
       bindings_(bindings.begin(), bindings.end()),
       pipeline_(std::move(pipeline)),
       vertex_type_(vertex_type),

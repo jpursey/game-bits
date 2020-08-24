@@ -184,6 +184,9 @@ class MeshView final {
         vertex_view_(std::move(vertex_view)),
         index_view_(std::move(index_view)) {}
 
+  const void* GetVertexData(RenderInternal) const;
+  const uint16_t* GetIndexData(RenderInternal) const;
+
  private:
   int DoSetVertices(int index, const void* vertices, int count);
   int DoSetIndices(int index, const void* indices, int count);
@@ -209,6 +212,10 @@ inline int MeshView::GetTriangleCapacity() const {
 
 inline bool MeshView::IsModified() const {
   return vertex_view_->IsModified() || index_view_->IsModified();
+}
+
+inline const void* MeshView::GetVertexData(RenderInternal) const {
+  return vertex_view_->GetData(0);
 }
 
 template <typename Vertex>
@@ -237,6 +244,10 @@ inline int MeshView::AddVertices(absl::Span<const Vertex> vertices) {
   RENDER_ASSERT(TypeKey::Get<Vertex>() == vertex_type_);
   return DoSetVertices(GetVertexCount(), vertices.data(),
                        static_cast<int>(vertices.size()));
+}
+
+inline const uint16_t* MeshView::GetIndexData(RenderInternal) const {
+  return static_cast<const uint16_t*>(index_view_->GetData(0));
 }
 
 inline const Triangle& MeshView::GetTriangle(int index) const {

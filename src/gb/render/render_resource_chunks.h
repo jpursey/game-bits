@@ -19,25 +19,7 @@ inline constexpr ChunkType kChunkTypeMaterialBindingData = {'G', 'B', 'B', 'M'};
 inline constexpr ChunkType kChunkTypeMaterialType = {'G', 'B', 'M', 'T'};
 inline constexpr ChunkType kChunkTypeMesh = {'G', 'B', 'M', 'E'};
 inline constexpr ChunkType kChunkTypeShader = {'G', 'B', 'S', 'H'};
-inline constexpr ChunkType kChunkTypeShaderCode = {'G', 'B', 'S', 'C'};
 inline constexpr ChunkType kChunkTypeTexture = {'G', 'B', 'T', 'X'};
-
-// Chunk for mesh resource.
-//
-// Mesh resource files are structured as follows:
-//   Chunk "GBFI"  -- File header of file type "GBME".
-//   Chunk "GBRL"  -- Optional: Specifies dependent resource names.
-//   Chunk "GBME"  -- Mesh data.
-struct MeshChunk {
-  ResourceId id;
-  ResourceId material_id;
-  int32_t volatility;  // DataVolatility
-  int32_t triangle_count;
-  int32_t vertex_count;
-  int32_t vertex_size;
-  ChunkPtr<const void> vertices;
-  ChunkPtr<const uint16_t> indices;
-};
 
 // Entry for binding chunk.
 struct BindingChunk {
@@ -59,13 +41,31 @@ struct BindingDataChunk {
   };
 };
 
+// Chunk for mesh resource.
+//
+// Mesh resource files are structured as follows:
+//   Chunk "GBFI"  -- File header of file type "GBME".
+//   Chunk "GBRL"  -- Optional: Specifies dependent resource names.
+//   Chunk "GBME"  -- Mesh data.
+struct MeshChunk {
+  ResourceId id;
+  ResourceId material_id;
+  int32_t volatility;  // DataVolatility
+  int32_t index_count;
+  int32_t vertex_count;
+  int32_t vertex_size;
+  ChunkPtr<const void> vertices;
+  ChunkPtr<const uint16_t> indices;
+};
+
 // Chunk for material resource.
 //
 // Material resource files are structured as follows:
 //   Chunk "GBFI"  -- File header of file type "GBMA".
 //   Chunk "GBRL"  -- Optional: Specifies dependent resource names.
-//   Chunk "GBBM"  -- Material binding data (must match material type).
-//   Chunk "GBBI"  -- Default instance binding data (must match material type).
+//   Chunk "GBBN"  -- Binding data for the material (must match material type).
+//   Chunk "GBBM"  -- Material binding data (must match bindings).
+//   Chunk "GBBI"  -- Default instance binding data (must match bindings).
 //   Chunk "GBMA"  -- Material data.
 struct MaterialChunk {
   ResourceId id;
@@ -78,8 +78,8 @@ struct MaterialChunk {
 //   Chunk "GBFI"  -- File header of file type "GBMT".
 //   Chunk "GBRL"  -- Optional: Specifies dependent resource names.
 //   Chunk "GBBN"  -- Binding data for the material type.
-//   Chunk "GBBM"  -- Default material binding data (must match material type).
-//   Chunk "GBBI"  -- Default instance binding data (must match material type).
+//   Chunk "GBBM"  -- Default material binding data (must match bindings).
+//   Chunk "GBBI"  -- Default instance binding data (must match bindings).
 //   Chunk "GBMT"  -- Material type data.
 struct MaterialTypeChunk {
   ResourceId id;
@@ -99,25 +99,17 @@ struct ShaderParamEntry {
 //
 // Shader resource files are structured as follows:
 //   Chunk "GBFI"  -- File header of file type "GBSH".
-//   Chunk "GBSC"  -- Shader code.
+//   Chunk "GBBN"  -- Bindings for shader.
 //   Chunk "GBSH"  -- Shader data.
 struct ShaderChunk {
   ResourceId id;
-  uint16_t input_count;
-  uint16_t output_count;
+  int32_t type;
+  int32_t input_count;
+  int32_t output_count;
   int32_t code_size;
   ChunkPtr<const ShaderParamEntry> inputs;
   ChunkPtr<const ShaderParamEntry> outputs;
-  ResourceId shader_code_id;
-};
-
-// Chunk for shader code resource.
-//
-// Shader code resources are always embeded as "GBSC" in a shader resource.
-struct ShaderCodeChunk {
-  ResourceId id;
   ChunkPtr<const void> code;
-  int32_t code_size;
 };
 
 // Chunk for texture resource.

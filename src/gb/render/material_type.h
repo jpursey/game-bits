@@ -36,6 +36,9 @@ class MaterialType final : public Resource {
   // Properties
   //----------------------------------------------------------------------------
 
+  // Returns the scene type for this material type.
+  RenderSceneType* GetSceneType() const { return scene_type_; } 
+
   // Returns the shaders used in this material type.
   Shader* GetVertexShader() const { return vertex_shader_; }
   Shader* GetFragmentShader() const { return fragment_shader_; }
@@ -84,7 +87,7 @@ class MaterialType final : public Resource {
   // Internal
   //----------------------------------------------------------------------------
 
-  MaterialType(RenderInternal, ResourceEntry entry,
+  MaterialType(RenderInternal, ResourceEntry entry, RenderSceneType* scene_type,
                absl::Span<const Binding> bindings,
                std::unique_ptr<RenderPipeline> pipeline,
                const VertexType* vertex_type, Shader* vertex_shader,
@@ -94,6 +97,7 @@ class MaterialType final : public Resource {
  private:
   ~MaterialType() override;
 
+  RenderSceneType* scene_type_ = nullptr;
   std::vector<Binding> bindings_;
   std::unique_ptr<RenderPipeline> pipeline_;
   const VertexType* const vertex_type_;

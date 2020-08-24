@@ -14,6 +14,7 @@
 #include "absl/synchronization/mutex.h"
 #include "gb/base/callback.h"
 #include "gb/base/type_info.h"
+#include "gb/base/validated_context.h"
 #include "gb/resource/resource_ptr.h"
 #include "gb/resource/resource_set.h"
 #include "gb/resource/resource_types.h"
@@ -45,8 +46,25 @@ namespace gb {
 class ResourceSystem final {
  public:
   //----------------------------------------------------------------------------
+  // Contract constraints
+  //----------------------------------------------------------------------------
+
+  // OPTIONAL: Specifies resource set that should be used to collect all
+  // resources (including dependent resources) during a load. If not specified,
+  // this is set automatically by the Load calls that take a resource set as a
+  // parameter.
+  static GB_CONTEXT_CONSTRAINT(kConstraintResourceSet, kInOptional,
+                               ResourceSet);
+  static GB_CONTEXT_CONSTRAINT(kConstraintOutResourceSet, kOutOptional,
+                               ResourceSet);
+
+  using LoadContract =
+      ContextContract<kConstraintResourceSet, kConstraintOutResourceSet>;
+
+  //----------------------------------------------------------------------------
   // Construction / Destruction
   //----------------------------------------------------------------------------
+
   static std::unique_ptr<ResourceSystem> Create();
   ResourceSystem(const ResourceSystem&) = delete;
   ResourceSystem& operator=(const ResourceSystem&) = delete;
@@ -106,12 +124,15 @@ class ResourceSystem final {
   // Load is thread-safe as long as the underlying manager for the type supports
   // thread-safe loading.
   template <typename Type>
-  ResourcePtr<Type> Load(std::string_view name);
+  ResourcePtr<Type> Load(std::string_view name,
+                         LoadContract contract = Context{});
 
   template <typename Type>
-  Type* Load(ResourceSet* set, std::string_view name);
+  Type* Load(ResourceSet* set, std::string_view name,
+             LoadContract contract = Context{});
 
-  Resource* Load(ResourceSet* set, TypeKey* type, std::string_view name);
+  Resource* Load(ResourceSet* set, TypeKey* type, std::string_view name,
+                 LoadContract contract = Context{});
 
   //----------------------------------------------------------------------------
   // Internal
@@ -139,7 +160,7 @@ class ResourceSystem final {
                          const std::string& name);
 
  private:
-  using Loader = Callback<Resource*(TypeKey*, std::string_view)>;
+  using Loader = Callback<Resource*(Context*, TypeKey*, std::string_view)>;
   using ReleaseHandler = Callback<void(Resource*)>;
 
   struct ResourceTypeInfo {
@@ -170,7 +191,8 @@ class ResourceSystem final {
       ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
   void DoAddDependencies(ResourceSet* set, Resource* resource)
       ABSL_LOCKS_EXCLUDED(mutex_);
-  ResourcePtr<Resource> DoLoad(TypeKey* type, std::string_view name)
+  ResourcePtr<Resource> DoLoad(TypeKey* type, std::string_view name,
+                               ValidatedContext context)
       ABSL_LOCKS_EXCLUDED(mutex_);
 
   absl::Mutex mutex_;
@@ -236,17 +258,24 @@ Type* ResourceSystem::Get(ResourceSet* set, std::string_view name,
 }
 
 template <typename Type>
-ResourcePtr<Type> ResourceSystem::Load(std::string_view name) {
-  ResourcePtr<Resource> resource = DoLoad(TypeKey::Get<Type>(), name);
+ResourcePtr<Type> ResourceSystem::Load(std::string_view name,
+                                       LoadContract contract) {
+  ResourcePtr<Resource> resource =
+      DoLoad(TypeKey::Get<Type>(), name, std::move(contract));
   return ResourcePtr<Type>(static_cast<Type*>(resource.Get()));
 }
 
 inline Resource* ResourceSystem::Load(ResourceSet* set, TypeKey* type,
-                                      std::string_view name) {
+                                      std::string_view name,
+                                      LoadContract contract) {
   if (set == nullptr) {
     return nullptr;
   }
-  ResourcePtr<Resource> resource = DoLoad(type, name);
+  ValidatedContext context = std::move(contract);
+  if (!context.Exists<ResourceSet>()) {
+    context.SetPtr<ResourceSet>(set);
+  }
+  ResourcePtr<Resource> resource = DoLoad(type, name, std::move(context));
   if (resource != nullptr) {
     set->Add(resource.Get());
   }
@@ -254,8 +283,10 @@ inline Resource* ResourceSystem::Load(ResourceSet* set, TypeKey* type,
 }
 
 template <typename Type>
-inline Type* ResourceSystem::Load(ResourceSet* set, std::string_view name) {
-  return static_cast<Type*>(Load(set, TypeKey::Get<Type>(), name));
+inline Type* ResourceSystem::Load(ResourceSet* set, std::string_view name,
+                                  LoadContract contract) {
+  return static_cast<Type*>(
+      Load(set, TypeKey::Get<Type>(), name, std::move(contract)));
 }
 
 inline ResourceId ResourceSystem::GetResourceIdFromName(ResourceInternal,

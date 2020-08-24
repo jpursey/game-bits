@@ -70,7 +70,7 @@ class RenderTest : public ::testing::Test {
 
   // Creates a RenderSystem with a resource system, memory-backed file system
   // and test backend, storing in render_system_.
-  void CreateSystem();
+  void CreateSystem(bool edit_mode = false);
 
   // Creates a test pipeline with the Vector3 vertex data and the requested
   // bindings.

@@ -24,21 +24,25 @@ TEST(ResourceThreadTest, ThreadAbuse) {
   ASSERT_NE(system, nullptr);
 
   ResourceManager manager_1;
-  manager_1.InitLoader<TestResource>([&manager_1](std::string_view name) {
-    return new TestResource(manager_1.NewResourceEntry<TestResource>());
-  });
+  manager_1.InitLoader<TestResource>(
+      [&manager_1](Context* context, std::string_view name) {
+        return new TestResource(manager_1.NewResourceEntry<TestResource>());
+      });
   EXPECT_TRUE(system->Register<TestResource>(&manager_1));
 
   ResourceManager manager_2;
-  manager_2.InitLoader<ResourceA>([&manager_2](std::string_view name) {
-    return new ResourceA(manager_2.NewResourceEntry<ResourceA>());
-  });
-  manager_2.InitLoader<ResourceB>([&manager_2](std::string_view name) {
-    return new ResourceB(manager_2.NewResourceEntry<ResourceB>());
-  });
-  manager_2.InitLoader<ResourceC>([&manager_2](std::string_view name) {
-    return new ResourceC(manager_2.NewResourceEntry<ResourceC>());
-  });
+  manager_2.InitLoader<ResourceA>(
+      [&manager_2](Context* context, std::string_view name) {
+        return new ResourceA(manager_2.NewResourceEntry<ResourceA>());
+      });
+  manager_2.InitLoader<ResourceB>(
+      [&manager_2](Context* context, std::string_view name) {
+        return new ResourceB(manager_2.NewResourceEntry<ResourceB>());
+      });
+  manager_2.InitLoader<ResourceC>(
+      [&manager_2](Context* context, std::string_view name) {
+        return new ResourceC(manager_2.NewResourceEntry<ResourceC>());
+      });
   EXPECT_TRUE((system->Register<ResourceA, ResourceB, ResourceC>(&manager_2)));
 
   std::vector<TestResource*> global_resources = {

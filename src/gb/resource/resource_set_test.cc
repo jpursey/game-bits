@@ -242,7 +242,8 @@ TEST(ResourceSetTest, GetByResourceName) {
   ASSERT_NE(system, nullptr);
   ResourceManager manager;
   TestResource* resource = nullptr;
-  manager.InitLoader<TestResource>([&](std::string_view name) {
+  manager.InitLoader<TestResource>([&](Context* context,
+                                       std::string_view name) {
     resource =
         new TestResource(&counts, manager.NewResourceEntry<TestResource>(), {});
     return resource;
@@ -690,7 +691,8 @@ TEST(ResourceSetTest, RemoveResourceByName) {
   ASSERT_NE(system, nullptr);
   ResourceManager manager;
   TestResource* resource = nullptr;
-  manager.InitLoader<TestResource>([&](std::string_view name) {
+  manager.InitLoader<TestResource>([&](Context* context,
+                                       std::string_view name) {
     resource =
         new TestResource(&counts, manager.NewResourceEntry<TestResource>(), {});
     return resource;
@@ -853,10 +855,11 @@ TEST(ResourceSetTest, SystemAddToSetByName) {
   auto system = ResourceSystem::Create();
   ASSERT_NE(system, nullptr);
   ResourceManager manager;
-  manager.InitLoader<TestResource>([&](std::string_view name) {
-    return new TestResource(&counts, manager.NewResourceEntry<TestResource>(),
-                            {});
-  });
+  manager.InitLoader<TestResource>(
+      [&](Context* context, std::string_view name) {
+        return new TestResource(&counts,
+                                manager.NewResourceEntry<TestResource>(), {});
+      });
   EXPECT_TRUE(system->Register<TestResource>(&manager));
 
   auto resource_set = std::make_unique<ResourceSet>();
@@ -899,7 +902,8 @@ TEST(ResourceSetTest, SystemLoadToSet) {
   ResourceManager manager;
   TestResource* resource = nullptr;
   TestResource* other_resource = nullptr;
-  manager.InitLoader<TestResource>([&](std::string_view name) -> TestResource* {
+  manager.InitLoader<TestResource>([&](Context* context,
+                                       std::string_view name) -> TestResource* {
     if (name != "resource") {
       return nullptr;
     }

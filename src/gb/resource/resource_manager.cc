@@ -113,7 +113,7 @@ ResourceManager::GenericLoader* ResourceManager::GetLoader(ResourceInternal,
     }
   }
   if (!generic_loader_) {
-    generic_loader_ = [](TypeKey*, std::string_view) -> Resource* {
+    generic_loader_ = [](Context*, TypeKey*, std::string_view) -> Resource* {
       return nullptr;
     };
   }

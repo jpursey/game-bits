@@ -10,6 +10,7 @@
 #include "absl/container/flat_hash_set.h"
 #include "absl/synchronization/mutex.h"
 #include "gb/base/callback.h"
+#include "gb/base/context.h"
 #include "gb/resource/resource_entry.h"
 #include "gb/resource/resource_name_reservation.h"
 #include "gb/resource/resource_ptr.h"
@@ -39,11 +40,11 @@ namespace gb {
 class ResourceManager final {
  public:
   using GenericLoader =
-      Callback<Resource*(TypeKey* type, std::string_view name)>;
+      Callback<Resource*(Context* context, TypeKey* type, std::string_view name)>;
   using GenericReleaseHandler = Callback<void(Resource* resource)>;
 
   template <typename Type>
-  using Loader = Callback<Type*(std::string_view name)>;
+  using Loader = Callback<Type*(Context* context, std::string_view name)>;
   template <typename Type>
   using ReleaseHandler = Callback<void(Type* resource)>;
 
@@ -179,12 +180,12 @@ class ResourceManager final {
 
 template <typename Type>
 void ResourceManager::InitLoader(
-    Callback<Type*(std::string_view name)> callback) {
+    Callback<Type*(Context* context, std::string_view name)> callback) {
   static_assert(std::is_base_of_v<Resource, Type>, "Type is not a resource");
   DoInitLoader(TypeKey::Get<Type>(),
                [loader = std::move(callback)](
-                   TypeKey* type, std::string_view name) -> Resource* {
-                 return loader(name);
+                   Context* context, TypeKey* type, std::string_view name) -> Resource* {
+                 return loader(context, name);
                });
 }
 

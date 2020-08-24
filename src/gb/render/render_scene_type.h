@@ -32,6 +32,12 @@ class RenderSceneType {
   virtual ~RenderSceneType() = default;
 
   //----------------------------------------------------------------------------
+  // Properties
+  //----------------------------------------------------------------------------
+
+  const std::string& GetName() const { return name_; }
+
+  //----------------------------------------------------------------------------
   // Binding Data
   //----------------------------------------------------------------------------
 
@@ -69,10 +75,19 @@ class RenderSceneType {
     return instance_defaults_.get();
   }
 
+  //----------------------------------------------------------------------------
+  // Internal
+  //----------------------------------------------------------------------------
+
+  void SetName(RenderInternal, std::string_view name) {
+    name_.assign(name.data(), name.size());
+  }
+
  protected:
   RenderSceneType(absl::Span<const Binding> bindings);
 
  private:
+  std::string name_;
   std::vector<Binding> bindings_;
   std::unique_ptr<LocalBindingData> scene_defaults_;
   std::unique_ptr<LocalBindingData> material_defaults_;

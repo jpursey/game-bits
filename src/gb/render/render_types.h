@@ -66,13 +66,18 @@ struct FrameDimensions {
 // vertex definitions, etc.
 class RenderDataType final {
  public:
-  RenderDataType(RenderInternal, TypeKey* type, size_t size)
-      : type_(type), size_(static_cast<int>(size)) {}
+  RenderDataType(RenderInternal, std::string_view name, TypeKey* type,
+                 size_t size)
+      : name_(name.data(), name.size()),
+        type_(type),
+        size_(static_cast<int>(size)) {}
 
+  const std::string& GetName() const { return name_; }
   TypeKey* GetType() const { return type_; }
   int GetSize() const { return size_; }
 
  private:
+  std::string name_;
   TypeKey* type_ = nullptr;
   int size_ = 0;
 };
@@ -146,17 +151,20 @@ inline constexpr bool operator>=(const ShaderParam& a, const ShaderParam& b) {
 // Vertex types are expected to be packed.
 class VertexType final {
  public:
-  VertexType(RenderInternal, TypeKey* type, size_t size,
+  VertexType(RenderInternal, std::string_view name, TypeKey* type, size_t size,
              absl::Span<const ShaderValue> attributes)
-      : type_(type),
+      : name_(name.data(), name.size()),
+        type_(type),
         size_(static_cast<int>(size)),
         attributes_(attributes.begin(), attributes.end()) {}
 
+  const std::string& GetName() const { return name_; }
   TypeKey* GetType() const { return type_; }
   int GetSize() const { return size_; }
   absl::Span<const ShaderValue> GetAttributes() const { return attributes_; }
 
  private:
+  std::string name_;
   TypeKey* type_ = nullptr;
   int size_ = 0;
   std::vector<ShaderValue> attributes_;
@@ -251,9 +259,7 @@ struct alignas(uint32_t) Pixel {
         a(reinterpret_cast<const uint8_t*>(&packed)[3]) {}
 
   // Returns the pixel in packed form.
-  uint32_t Packed() const {
-    return *reinterpret_cast<const uint32_t*>(this);
-  }
+  uint32_t Packed() const { return *reinterpret_cast<const uint32_t*>(this); }
 
   uint8_t r = 0;
   uint8_t g = 0;

@@ -42,7 +42,8 @@ using ResourceKey = std::tuple<TypeKey*, ResourceId>;
 GB_DEFINE_ACCESS_TOKEN(ResourceInternal, class Resource, class ResourceEntry,
                        class ResourceNameReservation, class ResourceManager,
                        class ResourcePtrBase, class ResourceSet,
-                       class ResourceSystem, class ResourceFileReader);
+                       class ResourceSystem, class ResourceFileReader,
+                       class ResourceFileWriter);
 
 }  // namespace gb
 

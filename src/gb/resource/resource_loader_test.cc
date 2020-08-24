@@ -38,7 +38,7 @@ TEST(ResourceLoaderTest, GenericLoader) {
   ResourceManager manager;
   TestResource* resource = nullptr;
   int load_count = 0;
-  manager.InitGenericLoader([&](TypeKey* type,
+  manager.InitGenericLoader([&](Context* context, TypeKey* type,
                                 std::string_view name) -> Resource* {
     EXPECT_EQ(name, "name");
     ++load_count;
@@ -71,18 +71,19 @@ TEST(ResourceLoaderTest, TypeSpecificLoader) {
 
   ResourceA* resource_a = nullptr;
   int load_count_a = 0;
-  manager.InitLoader<ResourceA>([&](std::string_view name) -> ResourceA* {
-    EXPECT_EQ(name, "a");
-    ++load_count_a;
-    resource_a =
-        new ResourceA(&counts, manager.NewResourceEntry<ResourceA>(), {});
-    return resource_a;
-  });
+  manager.InitLoader<ResourceA>(
+      [&](Context* context, std::string_view name) -> ResourceA* {
+        EXPECT_EQ(name, "a");
+        ++load_count_a;
+        resource_a =
+            new ResourceA(&counts, manager.NewResourceEntry<ResourceA>(), {});
+        return resource_a;
+      });
 
   ResourceB* resource_b = nullptr;
   int load_count_b = 0;
   manager.InitGenericLoader(
-      [&](TypeKey* type, std::string_view name) -> Resource* {
+      [&](Context* context, TypeKey* type, std::string_view name) -> Resource* {
         EXPECT_EQ(type, TypeKey::Get<ResourceB>());
         EXPECT_EQ(name, "b");
         ++load_count_b;
@@ -113,23 +114,25 @@ TEST(ResourceLoaderTest, DuplicateInitLoaderFails) {
   ResourceManager manager;
   int generic_load = 0;
   manager.InitGenericLoader(
-      [&generic_load](TypeKey* type, std::string_view name) -> Resource* {
+      [&generic_load](Context* context, TypeKey* type,
+                      std::string_view name) -> Resource* {
         ++generic_load;
         return nullptr;
       });
   manager.InitGenericLoader(
-      [&generic_load](TypeKey* type, std::string_view name) -> Resource* {
+      [&generic_load](Context* context, TypeKey* type,
+                      std::string_view name) -> Resource* {
         generic_load += 100;
         return nullptr;
       });
   int typed_load = 0;
   manager.InitLoader<ResourceA>(
-      [&typed_load](std::string_view name) -> ResourceA* {
+      [&typed_load](Context* context, std::string_view name) -> ResourceA* {
         ++typed_load;
         return nullptr;
       });
   manager.InitLoader<ResourceA>(
-      [&typed_load](std::string_view name) -> ResourceA* {
+      [&typed_load](Context* context, std::string_view name) -> ResourceA* {
         typed_load += 100;
         return nullptr;
       });
@@ -152,13 +155,14 @@ TEST(ResourceLoaderTest, InitLoaderAfterRegisterFails) {
   EXPECT_TRUE((system->Register<ResourceA, ResourceB>(&manager)));
   int generic_load = 0;
   manager.InitGenericLoader(
-      [&generic_load](TypeKey* type, std::string_view name) -> Resource* {
+      [&generic_load](Context* context, TypeKey* type,
+                      std::string_view name) -> Resource* {
         ++generic_load;
         return nullptr;
       });
   int typed_load = 0;
   manager.InitLoader<ResourceA>(
-      [&typed_load](std::string_view name) -> ResourceA* {
+      [&typed_load](Context* context, std::string_view name) -> ResourceA* {
         ++typed_load;
         return nullptr;
       });
@@ -179,7 +183,8 @@ TEST(ResourceLoaderTest, ReloadAfterDelete) {
   ResourceManager manager;
   TestResource* resource = nullptr;
   int load_count = 0;
-  manager.InitLoader<TestResource>([&](std::string_view name) -> TestResource* {
+  manager.InitLoader<TestResource>([&](Context* context,
+                                       std::string_view name) -> TestResource* {
     EXPECT_EQ(name, "name");
     ++load_count;
     resource =
@@ -205,7 +210,8 @@ TEST(ResourceLoaderTest, LoadedResourceIsNotVisible) {
   ASSERT_NE(system, nullptr);
   ResourceManager manager;
   TestResource* resource = nullptr;
-  manager.InitLoader<TestResource>([&](std::string_view name) -> TestResource* {
+  manager.InitLoader<TestResource>([&](Context* context,
+                                       std::string_view name) -> TestResource* {
     EXPECT_EQ(name, "name");
     resource =
         new TestResource(&counts, manager.NewResourceEntry<TestResource>(), {});
@@ -224,18 +230,19 @@ TEST(ResourceLoaderTest, ManagerDestructEdgeConditions) {
   ASSERT_NE(system, nullptr);
   ResourceSystem* system_ptr = system.get();
   auto manager = std::make_unique<ResourceManager>();
-  manager->InitLoader<TestResource>([&](std::string_view name) {
-    TestResource* resource = new TestResource(
-        &counts, manager->NewResourceEntry<TestResource>(),
-        {ResourceFlag::kAutoRelease, ResourceFlag::kAutoVisible});
-    resource->SetDeleteCallback([resource, system_ptr] {
-      auto resource_ptr = system_ptr->Get<TestResource>("name");
-      EXPECT_EQ(resource_ptr, nullptr);
-      resource_ptr = system_ptr->Load<TestResource>("name");
-      EXPECT_EQ(resource_ptr, nullptr);
-    });
-    return resource;
-  });
+  manager->InitLoader<TestResource>(
+      [&](Context* context, std::string_view name) {
+        TestResource* resource = new TestResource(
+            &counts, manager->NewResourceEntry<TestResource>(),
+            {ResourceFlag::kAutoRelease, ResourceFlag::kAutoVisible});
+        resource->SetDeleteCallback([resource, system_ptr] {
+          auto resource_ptr = system_ptr->Get<TestResource>("name");
+          EXPECT_EQ(resource_ptr, nullptr);
+          resource_ptr = system_ptr->Load<TestResource>("name");
+          EXPECT_EQ(resource_ptr, nullptr);
+        });
+        return resource;
+      });
   EXPECT_TRUE((system->Register<TestResource>(manager.get())));
   auto resource_ptr = system->Load<TestResource>("name");
   manager.reset();
@@ -247,18 +254,19 @@ TEST(ResourceLoaderTest, SystemDestructEdgeConditions) {
   ASSERT_NE(system, nullptr);
   ResourceSystem* system_ptr = system.get();
   auto manager = std::make_unique<ResourceManager>();
-  manager->InitLoader<TestResource>([&](std::string_view name) {
-    TestResource* resource = new TestResource(
-        &counts, manager->NewResourceEntry<TestResource>(),
-        {ResourceFlag::kAutoRelease, ResourceFlag::kAutoVisible});
-    resource->SetDeleteCallback([resource, system_ptr] {
-      auto resource_ptr = system_ptr->Get<TestResource>("name");
-      EXPECT_EQ(resource_ptr, nullptr);
-      resource_ptr = system_ptr->Load<TestResource>("name");
-      EXPECT_EQ(resource_ptr, nullptr);
-    });
-    return resource;
-  });
+  manager->InitLoader<TestResource>(
+      [&](Context* context, std::string_view name) {
+        TestResource* resource = new TestResource(
+            &counts, manager->NewResourceEntry<TestResource>(),
+            {ResourceFlag::kAutoRelease, ResourceFlag::kAutoVisible});
+        resource->SetDeleteCallback([resource, system_ptr] {
+          auto resource_ptr = system_ptr->Get<TestResource>("name");
+          EXPECT_EQ(resource_ptr, nullptr);
+          resource_ptr = system_ptr->Load<TestResource>("name");
+          EXPECT_EQ(resource_ptr, nullptr);
+        });
+        return resource;
+      });
   EXPECT_TRUE((system->Register<TestResource>(manager.get())));
   auto resource_ptr = system->Load<TestResource>("name");
   resource_ptr.Reset();

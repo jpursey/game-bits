@@ -38,7 +38,7 @@ class LocalBindingData : public BindingData {
   // data. "binding_data" must be for the same binding types or a strict
   // superset of this binding data. Anything else is undefined behavior, and
   // likely will result in a crash.
-  void CopyTo(BindingData* binding_data);
+  void CopyTo(BindingData* binding_data) const;
 
   //----------------------------------------------------------------------------
   // Internal

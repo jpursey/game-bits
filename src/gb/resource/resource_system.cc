@@ -179,7 +179,8 @@ void ResourceSystem::ApplyResourceName(ResourceInternal, TypeKey* type,
 }
 
 ResourcePtr<Resource> ResourceSystem::DoLoad(TypeKey* type,
-                                             std::string_view name) {
+                                             std::string_view name,
+                                             ValidatedContext context) {
   // TODO: This method can fail erroneously if there are simultaneous load
   //       requests on different threads for the same resource, or if the
   //       resource is deleted on a separate thread immediately after the name
@@ -216,7 +217,7 @@ ResourcePtr<Resource> ResourceSystem::DoLoad(TypeKey* type,
     loader = it->second.loader;
   }
 
-  ResourcePtr<Resource> resource = (*loader)(type, name);
+  ResourcePtr<Resource> resource = (*loader)(context.GetContext(), type, name);
 
   {
     absl::WriterMutexLock lock(&mutex_);

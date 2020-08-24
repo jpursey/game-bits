@@ -11,7 +11,7 @@
 
 namespace gb {
 
-void RenderTest::CreateSystem() {
+void RenderTest::CreateSystem(bool edit_mode) {
   CHECK(resource_system_ = ResourceSystem::Create());
   CHECK(file_system_ = std::make_unique<FileSystem>());
   CHECK(file_system_->Register(std::make_unique<MemoryFileProtocol>()));
@@ -21,6 +21,7 @@ void RenderTest::CreateSystem() {
                     std::make_unique<TestRenderBackend>(&state_))
                 .SetPtr(resource_system_.get())
                 .SetPtr(file_system_.get())
+                .SetValue<bool>(RenderSystem::kKeyEnableEdit, edit_mode)
                 .Build()));
 }
 
@@ -66,7 +67,7 @@ MaterialType* RenderTest::CreateMaterialType(
                                    std::move(vertex_shader_code), {}, {}, {});
   EXPECT_NE(vertex_shader, nullptr);
   auto fragment_shader_code = render_system_->CreateShaderCode(
-      kVertexShaderCode.data(), kVertexShaderCode.size());
+      kFragmentShaderCode.data(), kFragmentShaderCode.size());
   auto* fragment_shader =
       render_system_->CreateShader(&temp_resource_set_, ShaderType::kFragment,
                                    std::move(fragment_shader_code), {}, {}, {});
