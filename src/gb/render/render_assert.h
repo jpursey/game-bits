@@ -22,7 +22,7 @@ bool IsRenderAssertEnabled();
 #else  // NDEBUG
 #define RENDER_ASSERT(condition)                    \
   do {                                              \
-    if (IsRenderAssertEnabled()) assert(condition); \
+    if (gb::IsRenderAssertEnabled()) assert(condition); \
   } while (false)
 #endif  // NDEBUG
 

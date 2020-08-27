@@ -3,6 +3,10 @@
 ## Use of this source code is governed by an MIT-style License that can be found
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
+if(DEFINED ENV{VULKAN_SDK})
+  add_subdirectory(vulkan)
+endif()
+
 set(gb_render_SOURCE
   binding.h
   binding_data.h

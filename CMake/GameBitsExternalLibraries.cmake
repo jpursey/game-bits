@@ -51,4 +51,18 @@ function(gb_external_libraries)
     IMPORTED_LOCATION_DEBUG
       "${GB_BUILD_DIR}/third_party/glog/$(Configuration)/glogd.lib" 
   )
+
+  ####### Vulkan
+
+  if(DEFINED ENV{VULKAN_SDK})
+    add_library(Vulkan SHARED IMPORTED GLOBAL)
+    target_include_directories(Vulkan INTERFACE "$ENV{VULKAN_SDK}/Include")
+    set_target_properties(Vulkan PROPERTIES 
+      IMPORTED_IMPLIB "$ENV{VULKAN_SDK}/Lib/vulkan-1.lib"
+    )
+    target_compile_definitions(Vulkan INTERFACE
+      VULKAN_HPP_NO_EXCEPTIONS
+    )
+  endif()
+
 endfunction()
