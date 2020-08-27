@@ -22,16 +22,6 @@
 #include "gb/render/vulkan/vulkan_window.h"
 #include "glog/logging.h"
 
-namespace gb {
-
-namespace {
-
-static const vk::ClearColorValue kColorClearValue(std::array<float, 4>{
-    0.0f, 0.0f, 0.0f, 0.1f});
-static const vk::ClearDepthStencilValue kDepthClearValue({1.0f, 0});
-
-}  // namespace
-
 //------------------------------------------------------------------------------
 // Define Vulkan extension functions that will auto-load iff the extension is
 // available, otherwise will fail with VK_ERROR_EXTENSION_NOT_PRESENT.
@@ -58,6 +48,16 @@ void vkDestroyDebugUtilsMessengerEXT(VkInstance instance,
     func(instance, debugMessenger, pAllocator);
   }
 }
+
+namespace gb {
+
+namespace {
+
+static const vk::ClearColorValue kColorClearValue(std::array<float, 4>{
+    0.0f, 0.0f, 0.0f, 0.1f});
+static const vk::ClearDepthStencilValue kDepthClearValue({1.0f, 0});
+
+}  // namespace
 
 //------------------------------------------------------------------------------
 // Helper functions and types.

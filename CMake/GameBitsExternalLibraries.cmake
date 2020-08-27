@@ -55,7 +55,7 @@ function(gb_external_libraries)
   ####### Vulkan
 
   if(DEFINED ENV{VULKAN_SDK})
-    add_library(Vulkan SHARED IMPORTED GLOBAL)
+    add_library(Vulkan SHARED IMPORTED)
     target_include_directories(Vulkan INTERFACE "$ENV{VULKAN_SDK}/Include")
     set_target_properties(Vulkan PROPERTIES 
       IMPORTED_IMPLIB "$ENV{VULKAN_SDK}/Lib/vulkan-1.lib"
