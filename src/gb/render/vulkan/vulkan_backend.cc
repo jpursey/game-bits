@@ -124,7 +124,7 @@ bool VulkanBackend::InitInstance(std::vector<const char*>* layers) {
   auto app_info = vk::ApplicationInfo()
                       .setPApplicationName(app_name.c_str())
                       .setApplicationVersion(1)
-                      .setPEngineName("Terra Diem")
+                      .setPEngineName("Game Bits")
                       .setEngineVersion(1)
                       .setApiVersion(VK_API_VERSION_1_1);
   vk::InstanceCreateInfo instance_create_info =
@@ -789,11 +789,9 @@ bool VulkanBackend::BeginFrame(RenderInternal) {
     return false;
   }
 
-  auto [acquire_result, image_index] = device_.acquireNextImage2KHR(
-      vk::AcquireNextImageInfoKHR()
-          .setSwapchain(swap_chain_)
-          .setTimeout(std::numeric_limits<uint64_t>::max())
-          .setSemaphore(frame.image_available_semaphore));
+  auto [acquire_result, image_index] = device_.acquireNextImageKHR(
+      swap_chain_, std::numeric_limits<uint64_t>::max(),
+      frame.image_available_semaphore, {});
   if (acquire_result == vk::Result::eErrorOutOfDateKHR ||
       acquire_result == vk::Result::eSuboptimalKHR) {
     recreate_swap_ = true;
