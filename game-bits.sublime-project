@@ -5,6 +5,9 @@
 			"path": "src/gb"
 		},
 		{
+			"path": "examples"
+		},
+		{
 			"path": "third_party/abseil-cpp/absl"
 		},
 		{

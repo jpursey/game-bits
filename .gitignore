@@ -5,6 +5,9 @@
 # Sublime files
 game-bits.sublime-workspace
 
+# Assets
+*.spv
+
 # CMake files
 CMakeCache.txt
 CMakeFiles

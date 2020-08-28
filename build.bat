@@ -31,6 +31,22 @@ rem Build Source
 echo ======== BUILDING Source ========
 cmake .. %*
 
+rem ---------------------------------------------------------------------------
+rem Build Examples
+
+if not exist examples (
+  mkdir examples
+)
+cd examples
+
+echo ======== BUILDING Block World Example ========
+if not exist block-world (
+  mkdir block-world
+)
+cd block-world
+cmake ../../../examples/block-world %*
+cd ..
+
 rem ===========================================================================
 rem Back to calling directory
 popd
