@@ -5,6 +5,10 @@
 			"path": "src/gb"
 		},
 		{
+			"name": "gb: stb",
+			"path": "src/stb"
+		},
+		{
 			"path": "examples"
 		},
 		{
@@ -24,6 +28,9 @@
 		},
 		{
 			"path": "third_party/stb"
+		},
+		{
+			"path": "third_party/imgui"
 		},
 		{
 			"name": "sdl",
