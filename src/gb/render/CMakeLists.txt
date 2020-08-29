@@ -12,6 +12,7 @@ set(gb_render_SOURCE
   binding_data.h
   local_binding_data.cc local_binding_data.h
   material.cc material.h
+  material_config.h
   material_type.cc material_type.h
   mesh.cc mesh.h
   mesh_view.cc mesh_view.h

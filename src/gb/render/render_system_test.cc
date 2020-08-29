@@ -356,7 +356,10 @@ TEST_F(RenderSystemTest, SaveLoadMaterialType) {
           .SetLocation(BindingSet::kInstance, 1)
           .SetTexture(),
   };
-  auto* material_type_ptr = CreateMaterialType(bindings);
+  auto* material_type_ptr =
+      CreateMaterialType(bindings, MaterialConfig()
+                                       .SetCullMode(CullMode::kFront)
+                                       .SetDepthMode(DepthMode::kTest));
   auto material_type_id = material_type_ptr->GetResourceId();
   auto* vertex_shader = material_type_ptr->GetVertexShader();
   auto* fragment_shader = material_type_ptr->GetFragmentShader();
@@ -390,6 +393,8 @@ TEST_F(RenderSystemTest, SaveLoadMaterialType) {
   EXPECT_EQ(material_type->GetVertexShader(), vertex_shader);
   EXPECT_EQ(material_type->GetFragmentShader(), fragment_shader);
   EXPECT_EQ(material_type->GetVertexType(), vertex_type);
+  EXPECT_EQ(material_type->GetConfig().cull_mode, CullMode::kFront);
+  EXPECT_EQ(material_type->GetConfig().depth_mode, DepthMode::kTest);
   Vector2 constants = {0, 0};
   material_type->GetDefaultMaterialBindingData()->GetConstants<Vector2>(
       0, &constants);

@@ -14,13 +14,15 @@ TestRenderPipeline::TestRenderPipeline(Config* config,
                                        const VertexType* vertex_type,
                                        absl::Span<const Binding> bindings,
                                        TestShaderCode* vertex_shader,
-                                       TestShaderCode* fragment_shader)
+                                       TestShaderCode* fragment_shader,
+                                       const MaterialConfig& material_config)
     : config_(config),
       scene_type_(scene_type),
       vertex_type_(vertex_type),
       bindings_(bindings.begin(), bindings.end()),
       vertex_shader_(vertex_shader),
-      fragment_shader_(fragment_shader) {}
+      fragment_shader_(fragment_shader),
+      material_config_(material_config) {}
 
 TestRenderPipeline::~TestRenderPipeline() {}
 

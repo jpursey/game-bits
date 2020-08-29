@@ -704,7 +704,8 @@ bool RenderSystem::ValidateMaterialTypeArguments(RenderSceneType* scene_type,
 MaterialType* RenderSystem::DoCreateMaterialType(RenderSceneType* scene_type,
                                                  const VertexType* vertex_type,
                                                  Shader* vertex_shader,
-                                                 Shader* fragment_shader) {
+                                                 Shader* fragment_shader,
+                                                 const MaterialConfig& config) {
   if (scene_type == nullptr) {
     LOG(ERROR) << "Null scene type passed in to CreateMaterialType";
     return nullptr;
@@ -768,7 +769,7 @@ MaterialType* RenderSystem::DoCreateMaterialType(RenderSceneType* scene_type,
   // Create a pipeline for the material.
   auto pipeline = backend_->CreatePipeline(
       {}, scene_type, vertex_type, all_bindings, vertex_shader->GetCode(),
-      fragment_shader->GetCode());
+      fragment_shader->GetCode(), config);
   if (pipeline == nullptr) {
     LOG(ERROR) << "Failed to create pipeline for material type";
     return nullptr;
@@ -777,7 +778,7 @@ MaterialType* RenderSystem::DoCreateMaterialType(RenderSceneType* scene_type,
   return new MaterialType({},
                           resource_manager_->NewResourceEntry<MaterialType>(),
                           scene_type, all_bindings, std::move(pipeline),
-                          vertex_type, vertex_shader, fragment_shader);
+                          vertex_type, vertex_shader, fragment_shader, config);
 }
 
 MaterialType* RenderSystem::LoadMaterialTypeChunk(Context* context,
@@ -791,6 +792,10 @@ MaterialType* RenderSystem::LoadMaterialTypeChunk(Context* context,
   }
   chunk_reader->ConvertToPtr(&chunk->scene_type_name);
   chunk_reader->ConvertToPtr(&chunk->vertex_type_name);
+
+  MaterialConfig config = {};
+  config.cull_mode = static_cast<CullMode>(chunk->cull_mode);
+  config.depth_mode = static_cast<DepthMode>(chunk->depth_mode);
 
   RenderSceneType* scene_type = GetSceneType(chunk->scene_type_name.ptr);
   if (scene_type == nullptr) {
@@ -852,7 +857,7 @@ MaterialType* RenderSystem::LoadMaterialTypeChunk(Context* context,
   // Create a pipeline for the material.
   auto pipeline = backend_->CreatePipeline({}, scene_type, vertex_type,
                                            bindings, vertex_shader->GetCode(),
-                                           fragment_shader->GetCode());
+                                           fragment_shader->GetCode(), config);
   if (pipeline == nullptr) {
     LOG(ERROR) << "Failed to create pipeline for material type";
     return nullptr;
@@ -860,7 +865,7 @@ MaterialType* RenderSystem::LoadMaterialTypeChunk(Context* context,
 
   auto material_type = new MaterialType(
       {}, std::move(entry), scene_type, bindings, std::move(pipeline),
-      vertex_type, vertex_shader, fragment_shader);
+      vertex_type, vertex_shader, fragment_shader, config);
   const auto* material_binding_data = context->GetPtr<LocalBindingData>(
       kChunkTypeMaterialBindingData.ToString());
   if (material_binding_data != nullptr) {
@@ -905,6 +910,9 @@ bool RenderSystem::SaveMaterialTypeChunk(Context* context,
       material_type->GetFragmentShader()->GetResourceId();
   chunk->vertex_type_name =
       chunk_writer.AddString(material_type->GetVertexType()->GetName());
+  const MaterialConfig& config = material_type->GetConfig();
+  chunk->cull_mode = static_cast<uint8_t>(config.cull_mode);
+  chunk->depth_mode = static_cast<uint8_t>(config.depth_mode);
   return true;
 }
 

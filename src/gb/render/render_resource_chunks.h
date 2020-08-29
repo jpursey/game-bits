@@ -87,6 +87,8 @@ struct MaterialTypeChunk {
   ResourceId fragment_shader_id;
   ChunkPtr<const char> scene_type_name;
   ChunkPtr<const char> vertex_type_name;
+  uint8_t cull_mode;
+  uint8_t depth_mode;
 };
 
 // Entry for shader parameters in a shader chunk

@@ -11,6 +11,7 @@
 #include "absl/types/span.h"
 #include "gb/render/binding_data.h"
 #include "gb/render/local_binding_data.h"
+#include "gb/render/material_config.h"
 #include "gb/render/render_types.h"
 #include "gb/render/shader.h"
 #include "gb/resource/resource.h"
@@ -37,7 +38,7 @@ class MaterialType final : public Resource {
   //----------------------------------------------------------------------------
 
   // Returns the scene type for this material type.
-  RenderSceneType* GetSceneType() const { return scene_type_; } 
+  RenderSceneType* GetSceneType() const { return scene_type_; }
 
   // Returns the shaders used in this material type.
   Shader* GetVertexShader() const { return vertex_shader_; }
@@ -46,6 +47,9 @@ class MaterialType final : public Resource {
   // Returns the vertex type expected by the shaders and required by mesh
   // associated with materials of this type.
   const VertexType* GetVertexType() const { return vertex_type_; }
+
+  // Returns the material configuration used for this material type.
+  const MaterialConfig& GetConfig() const { return config_; }
 
   //----------------------------------------------------------------------------
   // Binding data
@@ -91,7 +95,7 @@ class MaterialType final : public Resource {
                absl::Span<const Binding> bindings,
                std::unique_ptr<RenderPipeline> pipeline,
                const VertexType* vertex_type, Shader* vertex_shader,
-               Shader* fragment_shader);
+               Shader* fragment_shader, const MaterialConfig& config);
   RenderPipeline* GetPipeline(RenderInternal) const { return pipeline_.get(); }
 
  private:
@@ -103,6 +107,7 @@ class MaterialType final : public Resource {
   const VertexType* const vertex_type_;
   Shader* const vertex_shader_;
   Shader* const fragment_shader_;
+  const MaterialConfig config_;
   std::unique_ptr<LocalBindingData> material_defaults_;
   std::unique_ptr<LocalBindingData> instance_defaults_;
 };

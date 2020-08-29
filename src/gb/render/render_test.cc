@@ -26,7 +26,7 @@ void RenderTest::CreateSystem(bool edit_mode) {
 }
 
 std::unique_ptr<RenderPipeline> RenderTest::CreatePipeline(
-    absl::Span<const Binding> bindings) {
+    absl::Span<const Binding> bindings, const MaterialConfig& config) {
   auto* scene_type = render_system_->RegisterSceneType("scene", {});
   EXPECT_NE(scene_type, nullptr);
   auto* vertex_type = render_system_->RegisterVertexType<Vector3>(
@@ -50,11 +50,11 @@ std::unique_ptr<RenderPipeline> RenderTest::CreatePipeline(
   }
   return state_.backend->CreatePipeline(
       GetAccessToken(), scene_type, vertex_type, bindings,
-      vertex_shader->GetCode(), fragment_shader->GetCode());
+      vertex_shader->GetCode(), fragment_shader->GetCode(), config);
 }
 
-MaterialType* RenderTest::CreateMaterialType(
-    absl::Span<const Binding> bindings) {
+MaterialType* RenderTest::CreateMaterialType(absl::Span<const Binding> bindings,
+                                             const MaterialConfig& config) {
   auto* scene_type = render_system_->RegisterSceneType("scene", bindings);
   EXPECT_NE(scene_type, nullptr);
   auto* vertex_type = render_system_->RegisterVertexType<Vector3>(
@@ -74,7 +74,7 @@ MaterialType* RenderTest::CreateMaterialType(
   EXPECT_NE(fragment_shader, nullptr);
   return render_system_->CreateMaterialType(&temp_resource_set_, scene_type,
                                             vertex_type, vertex_shader,
-                                            fragment_shader);
+                                            fragment_shader, config);
 }
 
 Material* RenderTest::CreateMaterial(absl::Span<const Binding> bindings) {

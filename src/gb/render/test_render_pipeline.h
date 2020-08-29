@@ -6,6 +6,7 @@
 #ifndef GB_RENDER_TEST_RENDER_PIPELINE_H_
 #define GB_RENDER_TEST_RENDER_PIPELINE_H_
 
+#include "gb/render/material_config.h"
 #include "gb/render/render_pipeline.h"
 #include "gb/render/test_render_scene_type.h"
 #include "gb/render/test_shader_code.h"
@@ -24,9 +25,11 @@ class TestRenderPipeline final : public RenderPipeline {
                      const VertexType* vertex_type,
                      absl::Span<const Binding> bindings,
                      TestShaderCode* vertex_shader,
-                     TestShaderCode* fragment_shader);
+                     TestShaderCode* fragment_shader,
+                     const MaterialConfig& material_config);
   ~TestRenderPipeline() override;
 
+  const MaterialConfig& GetConfig() const { return material_config_; }
   TestRenderSceneType* GetSceneType() const { return scene_type_; }
   const VertexType* GetVertexType() const { return vertex_type_; }
   absl::Span<const Binding> GetBindings() const { return bindings_; }
@@ -43,6 +46,7 @@ class TestRenderPipeline final : public RenderPipeline {
   const std::vector<Binding> bindings_;
   TestShaderCode* const vertex_shader_;
   TestShaderCode* const fragment_shader_;
+  const MaterialConfig material_config_;
 };
 
 }  // namespace gb

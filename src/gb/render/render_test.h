@@ -11,6 +11,7 @@
 
 #include "absl/types/span.h"
 #include "gb/file/file_system.h"
+#include "gb/render/material_config.h"
 #include "gb/render/render_system.h"
 #include "gb/render/test_render_backend.h"
 #include "gb/resource/resource_system.h"
@@ -75,11 +76,12 @@ class RenderTest : public ::testing::Test {
   // Creates a test pipeline with the Vector3 vertex data and the requested
   // bindings.
   std::unique_ptr<RenderPipeline> CreatePipeline(
-      absl::Span<const Binding> bindings);
+      absl::Span<const Binding> bindings, const MaterialConfig& config);
 
   // Creates a test material type with the Vector3 vertex data and the requested
   // bindings.
-  MaterialType* CreateMaterialType(absl::Span<const Binding> bindings);
+  MaterialType* CreateMaterialType(absl::Span<const Binding> bindings,
+                                   const MaterialConfig& config = {});
 
   // Creates a test material with the Vector3 vertex data and the requested
   // bindings.

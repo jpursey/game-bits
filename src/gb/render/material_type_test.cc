@@ -568,6 +568,9 @@ TEST_F(MaterialTypeTest, Properties) {
       scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get());
   ASSERT_NE(material_type, nullptr);
   const MaterialType* const_material_type = material_type.Get();
+  EXPECT_EQ(const_material_type->GetConfig().cull_mode, CullMode::kBack);
+  EXPECT_EQ(const_material_type->GetConfig().depth_mode,
+            DepthMode::kTestAndWrite);
   EXPECT_EQ(const_material_type->GetVertexShader(), vertex_shader.Get());
   EXPECT_EQ(const_material_type->GetFragmentShader(), fragment_shader.Get());
   EXPECT_EQ(const_material_type->GetVertexType(), vertex_type);
@@ -578,6 +581,46 @@ TEST_F(MaterialTypeTest, Properties) {
   EXPECT_EQ(const_material_type->GetDefaultInstanceBindingData(),
             material_type->GetDefaultInstanceBindingData());
   EXPECT_NE(const_material_type->GetPipeline(GetAccessToken()), nullptr);
+
+  EXPECT_EQ(state_.invalid_call_count, 0);
+}
+
+TEST_F(MaterialTypeTest, ExplicitMaterialConfig) {
+  CreateSystem();
+  auto* scene_type = render_system_->RegisterSceneType("scene", {});
+  ASSERT_NE(scene_type, nullptr);
+  auto* vertex_type = render_system_->RegisterVertexType<Vector3>(
+      "vertex", {ShaderValue::kVec3});
+  ASSERT_NE(vertex_type, nullptr);
+  auto vertex_shader = render_system_->CreateShader(
+      ShaderType::kVertex,
+      render_system_->CreateShaderCode(kVertexShaderCode.data(),
+                                       kVertexShaderCode.size()),
+      {}, {}, {});
+  ASSERT_NE(vertex_shader, nullptr);
+  auto fragment_shader = render_system_->CreateShader(
+      ShaderType::kFragment,
+      render_system_->CreateShaderCode(kFragmentShaderCode.data(),
+                                       kFragmentShaderCode.size()),
+      {}, {}, {});
+  ASSERT_NE(fragment_shader, nullptr);
+
+  auto material_type = render_system_->CreateMaterialType(
+      scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get(),
+      MaterialConfig()
+          .SetCullMode(CullMode::kFront)
+          .SetDepthMode(DepthMode::kTest));
+  ASSERT_NE(material_type, nullptr);
+  const MaterialType* const_material_type = material_type.Get();
+  EXPECT_EQ(const_material_type->GetConfig().cull_mode, CullMode::kFront);
+  EXPECT_EQ(const_material_type->GetConfig().depth_mode, DepthMode::kTest);
+
+  auto* test_pipeline = static_cast<TestRenderPipeline*>(
+      const_material_type->GetPipeline(GetAccessToken()));
+  EXPECT_EQ(const_material_type->GetConfig().cull_mode,
+            test_pipeline->GetConfig().cull_mode);
+  EXPECT_EQ(const_material_type->GetConfig().depth_mode,
+            test_pipeline->GetConfig().depth_mode);
 
   EXPECT_EQ(state_.invalid_call_count, 0);
 }

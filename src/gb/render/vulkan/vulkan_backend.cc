@@ -737,11 +737,11 @@ std::unique_ptr<RenderScene> VulkanBackend::CreateScene(
 std::unique_ptr<RenderPipeline> VulkanBackend::CreatePipeline(
     RenderInternal, RenderSceneType* scene_type, const VertexType* vertex_type,
     absl::Span<const Binding> bindings, ShaderCode* vertex_shader,
-    ShaderCode* fragment_shader) {
+    ShaderCode* fragment_shader, const MaterialConfig& config) {
   return VulkanRenderPipeline::Create(
       {}, this, static_cast<VulkanSceneType*>(scene_type), vertex_type,
       bindings, static_cast<VulkanShaderCode*>(vertex_shader),
-      static_cast<VulkanShaderCode*>(fragment_shader), render_pass_);
+      static_cast<VulkanShaderCode*>(fragment_shader), config, render_pass_);
 }
 
 std::unique_ptr<RenderBuffer> VulkanBackend::CreateVertexBuffer(

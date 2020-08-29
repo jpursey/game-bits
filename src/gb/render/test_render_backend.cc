@@ -57,7 +57,7 @@ std::unique_ptr<RenderScene> TestRenderBackend::CreateScene(
 std::unique_ptr<RenderPipeline> TestRenderBackend::CreatePipeline(
     RenderInternal, RenderSceneType* scene_type, const VertexType* vertex_type,
     absl::Span<const Binding> bindings, ShaderCode* vertex_shader,
-    ShaderCode* fragment_shader) {
+    ShaderCode* fragment_shader, const MaterialConfig& config) {
   if (state_->fail_create_pipeline) {
     return nullptr;
   }
@@ -65,7 +65,7 @@ std::unique_ptr<RenderPipeline> TestRenderBackend::CreatePipeline(
       &state_->render_pipeline_config,
       static_cast<TestRenderSceneType*>(scene_type), vertex_type, bindings,
       static_cast<TestShaderCode*>(vertex_shader),
-      static_cast<TestShaderCode*>(fragment_shader));
+      static_cast<TestShaderCode*>(fragment_shader), config);
 }
 
 std::unique_ptr<RenderBuffer> TestRenderBackend::CreateVertexBuffer(

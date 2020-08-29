@@ -5,6 +5,7 @@
 
 #include "gb/render/vulkan/vulkan_render_pipeline.h"
 
+#include "gb/render/material_config.h"
 #include "gb/render/vulkan/vulkan_backend.h"
 #include "gb/render/vulkan/vulkan_binding_data_factory.h"
 #include "gb/render/vulkan/vulkan_scene_type.h"
@@ -16,10 +17,10 @@ std::unique_ptr<VulkanRenderPipeline> VulkanRenderPipeline::Create(
     VulkanInternal, VulkanBackend* backend, VulkanSceneType* scene_type,
     const VertexType* vertex_type, absl::Span<const Binding> bindings,
     VulkanShaderCode* vertex_shader, VulkanShaderCode* fragment_shader,
-    vk::RenderPass render_pass) {
+    const MaterialConfig& config, vk::RenderPass render_pass) {
   auto pipeline = absl::WrapUnique(new VulkanRenderPipeline());
   if (!pipeline->Init(backend, scene_type, vertex_type, bindings, vertex_shader,
-                      fragment_shader, render_pass)) {
+                      fragment_shader, config, render_pass)) {
     return nullptr;
   }
   return pipeline;
@@ -31,13 +32,11 @@ VulkanRenderPipeline::~VulkanRenderPipeline() {
   gc->Dispose(pipeline_layout_);
 }
 
-bool VulkanRenderPipeline::Init(VulkanBackend* backend,
-                                VulkanSceneType* scene_type,
-                                const VertexType* vertex_type,
-                                absl::Span<const Binding> bindings,
-                                VulkanShaderCode* vertex_shader,
-                                VulkanShaderCode* fragment_shader,
-                                vk::RenderPass render_pass) {
+bool VulkanRenderPipeline::Init(
+    VulkanBackend* backend, VulkanSceneType* scene_type,
+    const VertexType* vertex_type, absl::Span<const Binding> bindings,
+    VulkanShaderCode* vertex_shader, VulkanShaderCode* fragment_shader,
+    const MaterialConfig& config, vk::RenderPass render_pass) {
   backend_ = backend;
   auto device = backend_->GetDevice();
 
@@ -137,24 +136,33 @@ bool VulkanRenderPipeline::Init(VulkanBackend* backend,
                             .setScissorCount(1)
                             .setPScissors(&scissor);
 
+  vk::CullModeFlags cull_mode = {};
+  if (config.cull_mode == CullMode::kBack) {
+    cull_mode = vk::CullModeFlagBits::eBack;
+  } else if (config.cull_mode == CullMode::kFront) {
+    cull_mode = vk::CullModeFlagBits::eFront;
+  }
   auto rasterizer = vk::PipelineRasterizationStateCreateInfo()
                         .setPolygonMode(vk::PolygonMode::eFill)
                         .setLineWidth(1.0f)
-                        .setCullMode(vk::CullModeFlagBits::eBack)
+                        .setCullMode(cull_mode)
                         .setFrontFace(vk::FrontFace::eCounterClockwise);
 
   auto multisampling = vk::PipelineMultisampleStateCreateInfo();
 
-  auto depth_stencil = vk::PipelineDepthStencilStateCreateInfo()
-                           .setDepthTestEnable(VK_TRUE)
-                           .setDepthWriteEnable(VK_TRUE)
-                           .setDepthCompareOp(vk::CompareOp::eLess)
-                           .setDepthBoundsTestEnable(VK_FALSE)
-                           .setMinDepthBounds(0.0f)
-                           .setMaxDepthBounds(1.0f)
-                           .setStencilTestEnable(VK_FALSE)
-                           .setFront({})
-                           .setBack({});
+  auto depth_stencil =
+      vk::PipelineDepthStencilStateCreateInfo()
+          .setDepthTestEnable(config.depth_mode == DepthMode::kTest ||
+                              config.depth_mode == DepthMode::kTestAndWrite)
+          .setDepthWriteEnable(config.depth_mode == DepthMode::kWrite ||
+                               config.depth_mode == DepthMode::kTestAndWrite)
+          .setDepthCompareOp(vk::CompareOp::eLess)
+          .setDepthBoundsTestEnable(VK_FALSE)
+          .setMinDepthBounds(0.0f)
+          .setMaxDepthBounds(1.0f)
+          .setStencilTestEnable(VK_FALSE)
+          .setFront({})
+          .setBack({});
 
   auto color_blend_attachment =
       vk::PipelineColorBlendAttachmentState()

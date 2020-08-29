@@ -17,6 +17,7 @@
 #include "gb/file/file_types.h"
 #include "gb/render/binding.h"
 #include "gb/render/material.h"
+#include "gb/render/material_config.h"
 #include "gb/render/material_type.h"
 #include "gb/render/mesh.h"
 #include "gb/render/render_scene.h"
@@ -220,12 +221,14 @@ class RenderSystem final {
   ResourcePtr<MaterialType> CreateMaterialType(RenderSceneType* scene_type,
                                                const VertexType* vertex_type,
                                                Shader* vertex_shader,
-                                               Shader* fragment_shader);
+                                               Shader* fragment_shader,
+                                               const MaterialConfig& config = {});
   MaterialType* CreateMaterialType(ResourceSet* resource_set,
                                    RenderSceneType* scene_type,
                                    const VertexType* vertex_type,
                                    Shader* vertex_shader,
-                                   Shader* fragment_shader);
+                                   Shader* fragment_shader,
+                                   const MaterialConfig& config = {});
 
   // Saves a material type to the specified resource name.
   //
@@ -347,7 +350,8 @@ class RenderSystem final {
   MaterialType* DoCreateMaterialType(RenderSceneType* scene_type,
                                      const VertexType* vertex_type,
                                      Shader* vertex_shader,
-                                     Shader* fragment_shader);
+                                     Shader* fragment_shader,
+                                     const MaterialConfig& config);
   MaterialType* LoadMaterialTypeChunk(Context* context,
                                       ChunkReader* chunk_reader,
                                       ResourceEntry entry);
@@ -440,17 +444,18 @@ inline Material* RenderSystem::CreateMaterial(ResourceSet* resource_set,
 
 inline ResourcePtr<MaterialType> RenderSystem::CreateMaterialType(
     RenderSceneType* scene_type, const VertexType* vertex_type,
-    Shader* vertex_shader, Shader* fragment_shader) {
+    Shader* vertex_shader, Shader* fragment_shader,
+    const MaterialConfig& config) {
   return DoCreateMaterialType(scene_type, vertex_type, vertex_shader,
-                              fragment_shader);
+                              fragment_shader, config);
 }
 
 inline MaterialType* RenderSystem::CreateMaterialType(
     ResourceSet* resource_set, RenderSceneType* scene_type,
     const VertexType* vertex_type, Shader* vertex_shader,
-    Shader* fragment_shader) {
+    Shader* fragment_shader, const MaterialConfig& config) {
   MaterialType* material_type = DoCreateMaterialType(
-      scene_type, vertex_type, vertex_shader, fragment_shader);
+      scene_type, vertex_type, vertex_shader, fragment_shader, config);
   resource_set->Add(material_type);
   return material_type;
 }

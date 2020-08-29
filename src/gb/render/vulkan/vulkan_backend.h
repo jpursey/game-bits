@@ -14,12 +14,12 @@
 
 #include "gb/base/callback_scope.h"
 #include "gb/base/validated_context.h"
-#include "glm/glm.hpp"
 #include "gb/render/render_backend.h"
 #include "gb/render/vulkan/vulkan_allocator.h"
 #include "gb/render/vulkan/vulkan_garbage_collector.h"
 #include "gb/render/vulkan/vulkan_render_state.h"
 #include "gb/render/vulkan/vulkan_types.h"
+#include "glm/glm.hpp"
 
 namespace gb {
 
@@ -164,15 +164,16 @@ class VulkanBackend final : public RenderBackend {
                          int height) override;
   std::unique_ptr<ShaderCode> CreateShaderCode(RenderInternal, const void* code,
                                                int64_t code_size) override;
-  std::unique_ptr<RenderSceneType> CreateSceneType(RenderInternal,
-      absl::Span<const Binding> bindings) override;
+  std::unique_ptr<RenderSceneType> CreateSceneType(
+      RenderInternal, absl::Span<const Binding> bindings) override;
   std::unique_ptr<RenderScene> CreateScene(RenderInternal,
                                            RenderSceneType* scene_type,
                                            int scene_order) override;
   std::unique_ptr<RenderPipeline> CreatePipeline(
       RenderInternal, RenderSceneType* scene_type,
       const VertexType* vertex_type, absl::Span<const Binding> bindings,
-      ShaderCode* vertex_shader, ShaderCode* fragment_shader) override;
+      ShaderCode* vertex_shader, ShaderCode* fragment_shader,
+      const MaterialConfig& config) override;
   std::unique_ptr<RenderBuffer> CreateVertexBuffer(
       RenderInternal, DataVolatility volatility, int vertex_size,
       int vertex_capacity) override;

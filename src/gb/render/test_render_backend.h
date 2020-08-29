@@ -82,7 +82,8 @@ class TestRenderBackend final : public RenderBackend {
   std::unique_ptr<RenderPipeline> CreatePipeline(
       RenderInternal, RenderSceneType* scene_type,
       const VertexType* vertex_type, absl::Span<const Binding> bindings,
-      ShaderCode* vertex_shader, ShaderCode* fragment_shader) override;
+      ShaderCode* vertex_shader, ShaderCode* fragment_shader,
+      const MaterialConfig& config) override;
   std::unique_ptr<RenderBuffer> CreateVertexBuffer(
       RenderInternal, DataVolatility volatility, int vertex_size,
       int vertex_capacity) override;

@@ -25,7 +25,7 @@ TEST_F(BindingDataTest, ConstructionNullPipelineNoBindings) {
 
 TEST_F(BindingDataTest, ConstructionWithPipelineNoBindings) {
   CreateSystem();
-  auto pipeline = CreatePipeline({});
+  auto pipeline = CreatePipeline({}, {});
   ASSERT_NE(pipeline, nullptr);
 
   TestBindingData binding_data(pipeline.get(), BindingSet::kMaterial, {});

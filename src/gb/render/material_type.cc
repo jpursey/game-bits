@@ -16,14 +16,16 @@ MaterialType::MaterialType(RenderInternal internal, ResourceEntry entry,
                            absl::Span<const Binding> bindings,
                            std::unique_ptr<RenderPipeline> pipeline,
                            const VertexType* vertex_type, Shader* vertex_shader,
-                           Shader* fragment_shader)
+                           Shader* fragment_shader,
+                           const MaterialConfig& config)
     : Resource(std::move(entry)),
       scene_type_(scene_type),
       bindings_(bindings.begin(), bindings.end()),
       pipeline_(std::move(pipeline)),
       vertex_type_(vertex_type),
       vertex_shader_(vertex_shader),
-      fragment_shader_(fragment_shader) {
+      fragment_shader_(fragment_shader),
+      config_(config) {
   absl::InlinedVector<Binding, 16> material_bindings;
   absl::InlinedVector<Binding, 16> instance_bindings;
   for (const auto& binding : bindings) {

@@ -107,7 +107,8 @@ class RenderBackend {
   virtual std::unique_ptr<RenderPipeline> CreatePipeline(
       RenderInternal, RenderSceneType* scene_type,
       const VertexType* vertex_type, absl::Span<const Binding> bindings,
-      ShaderCode* vertex_shader, ShaderCode* fragment_shader) = 0;
+      ShaderCode* vertex_shader, ShaderCode* fragment_shader,
+      const MaterialConfig& config) = 0;
 
   // Creates a new vertex buffer compatible with this backend.
   //

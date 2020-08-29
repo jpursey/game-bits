@@ -34,6 +34,7 @@ class ShaderCode;
 class Texture;
 class TextureView;
 struct Binding;
+struct MaterialConfig;
 
 // Resource chunks
 struct MeshChunk;
