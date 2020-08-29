@@ -137,12 +137,16 @@ class ResourceFileTest : public ::testing::Test {
     ASSERT_NE(reader_, nullptr);
 
     writer_ = ResourceFileWriter::Create(
-        ContextBuilder().SetPtr<FileSystem>(file_system_.get()).Build());
+        ContextBuilder()
+            .SetPtr<FileSystem>(file_system_.get())
+            .SetPtr<ResourceSystem>(resource_system_.get())
+            .Build());
     ASSERT_NE(writer_, nullptr);
 
-    resource_manager_.InitLoader<ResourceC>([this](Context* context, std::string_view name) {
-      return reader_->Read<ResourceC>(name, context);
-    });
+    resource_manager_.InitLoader<ResourceC>(
+        [this](Context* context, std::string_view name) {
+          return reader_->Read<ResourceC>(name, context);
+        });
     resource_manager_.InitGenericLoader(
         [this](Context* context, TypeKey* type, std::string_view name) {
           return reader_->Read(type, name, context);
@@ -432,7 +436,12 @@ TEST_F(ResourceFileTest, WriteResourceDependencies) {
   ResourcePtr<ResourceC> resource =
       new ResourceC(resource_manager_.NewResourceEntry<ResourceC>(),
                     resource_a.Get(), resource_b.Get());
-  EXPECT_TRUE(writer_->Write("mem:/file", resource.Get()));
+  EXPECT_TRUE(writer_->Write(
+      "mem:/file", resource.Get(),
+      ContextBuilder()
+          .SetValue<bool>(ResourceFileWriter::kKeyAllowUnnamedDependencies,
+                          true)
+          .Build()));
 
   auto file = file_system_->OpenFile("mem:/file", kReadFileFlags);
   ASSERT_NE(file, nullptr);
@@ -839,7 +848,12 @@ TEST_F(ResourceFileTest, ReadResourceDependencies) {
   ResourcePtr<ResourceC> resource =
       new ResourceC(resource_manager_.NewResourceEntry<ResourceC>(),
                     resource_a.Get(), resource_b.Get());
-  EXPECT_TRUE(writer_->Write("mem:/file", resource.Get()));
+  EXPECT_TRUE(writer_->Write(
+      "mem:/file", resource.Get(),
+      ContextBuilder()
+          .SetValue<bool>(ResourceFileWriter::kKeyAllowUnnamedDependencies,
+                          true)
+          .Build()));
   ResourceId resource_id = resource->GetResourceId();
   resource.Reset();
   ASSERT_EQ(resource_system_->Get<ResourceC>(resource_id), nullptr);
