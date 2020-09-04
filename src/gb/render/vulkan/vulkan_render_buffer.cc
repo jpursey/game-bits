@@ -394,7 +394,6 @@ bool VulkanPerFrameBuffer::Init() {
 VulkanPerFrameBuffer::~VulkanPerFrameBuffer() { std::free(local_buffer_); }
 
 bool VulkanPerFrameBuffer::DoClear(int offset, int size) {
-  RENDER_ASSERT(GetValueSize() == GetAlignSize());
   std::memset(static_cast<uint8_t*>(local_buffer_) + (offset * GetAlignSize()),
               0, size * GetAlignSize());
   for (auto& buffers : buffers_) {

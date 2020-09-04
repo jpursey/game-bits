@@ -163,6 +163,7 @@ const VertexType* RenderSystem::DoRegisterVertexType(
   for (ShaderValue attribute : attributes) {
     switch (attribute) {
       case ShaderValue::kFloat:
+      case ShaderValue::kColor:
         expected_size += 4;
         break;
       case ShaderValue::kVec2:
@@ -667,7 +668,17 @@ bool RenderSystem::ValidateMaterialTypeArguments(RenderSceneType* scene_type,
                  << " attributes.";
       return false;
     }
-    if (input.value != attributes[input.location]) {
+    bool match = (input.value == attributes[input.location]);
+    if (!match) {
+      switch (attributes[input.location]) {
+        case ShaderValue::kColor:
+          match = (input.value == ShaderValue::kVec4);
+          break;
+        default:
+          break;
+      }
+    }
+    if (!match) {
       LOG(ERROR) << "Shader type mismatch for vertex input and vertex "
                     "attribute location "
                  << input.location;
@@ -1259,18 +1270,27 @@ bool RenderSystem::BeginFrame() {
 
 void RenderSystem::Draw(RenderScene* scene, Mesh* mesh,
                         BindingData* instance_data) {
-  if (!is_rendering_ || scene == nullptr || mesh == nullptr ||
-      instance_data == nullptr) {
-    return;
-  }
-  Material* material = mesh->GetMaterial();
-  RenderPipeline* pipeline = material->GetType()->GetPipeline({});
-  if (instance_data->GetPipeline({}) != pipeline) {
-    return;
-  }
+  RENDER_ASSERT(is_rendering_);
+  RENDER_ASSERT(scene != nullptr && mesh != nullptr &&
+                instance_data != nullptr);
+  Material* const material = mesh->GetMaterial();
+  MaterialType* const material_type = material->GetType();
+  RenderPipeline* const pipeline = material_type->GetPipeline({});
+  RENDER_ASSERT(instance_data->GetPipeline({}) == pipeline);
+  RENDER_ASSERT(scene->GetType() == material_type->GetSceneType());
   backend_->Draw({}, scene, pipeline, material->GetMaterialBindingData(),
                  instance_data, mesh->GetVertexBuffer({}),
                  mesh->GetIndexBuffer({}));
+}
+
+void RenderSystem::Draw(RenderScene* scene, const DrawList& commands) {
+  RENDER_ASSERT(is_rendering_);
+  RENDER_ASSERT(scene != nullptr);
+  const auto& command_list = commands.GetCommands({});
+  if (command_list.empty()) {
+    return;
+  }
+  backend_->Draw({}, scene, command_list);
 }
 
 void RenderSystem::EndFrame() {

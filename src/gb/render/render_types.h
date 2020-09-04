@@ -34,6 +34,7 @@ class ShaderCode;
 class Texture;
 class TextureView;
 struct Binding;
+struct DrawCommand;
 struct MaterialConfig;
 
 // Resource chunks
@@ -47,7 +48,8 @@ struct TextureChunk;
 GB_DEFINE_ACCESS_TOKEN(RenderInternal, class RenderSystem,
                        class LocalBindingData, class Material, class Mesh,
                        class RenderFrame, class RenderBuffer,
-                       class RenderSceneType, class Texture, class RenderTest);
+                       class RenderSceneType, class Texture, class DrawList,
+                       class RenderTest);
 
 //==============================================================================
 // FrameDimensions
@@ -110,6 +112,7 @@ enum class ShaderValue : int {
   kVec2,
   kVec3,
   kVec4,
+  kColor,
 };
 
 // A shader parameter binds a ShaderValue to a shader pipeline input or output

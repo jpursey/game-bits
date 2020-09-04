@@ -10,6 +10,7 @@ endif()
 set(gb_render_SOURCE
   binding.h
   binding_data.h
+  draw_list.cc draw_list.h
   local_binding_data.cc local_binding_data.h
   material.cc material.h
   material_config.h

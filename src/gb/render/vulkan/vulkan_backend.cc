@@ -831,11 +831,41 @@ void VulkanBackend::Draw(RenderInternal, RenderScene* scene,
   render_state_
       .draw[scene->GetOrder()][static_cast<VulkanScene*>(scene)]
            [static_cast<VulkanRenderPipeline*>(pipeline)]
-           [static_cast<VulkanBindingData*>(material_data)]
+      .mesh[static_cast<VulkanBindingData*>(material_data)]
            [static_cast<VulkanRenderBuffer*>(vertices)]
            [static_cast<VulkanRenderBuffer*>(indices)]
            [static_cast<VulkanBindingData*>(instance_data)->GetBufferGroup()]
       .push_back(static_cast<VulkanBindingData*>(instance_data));
+}
+
+void VulkanBackend::Draw(RenderInternal, RenderScene* scene,
+                         absl::Span<const DrawCommand> commands) {
+  render_state_.binding_data.insert(
+      static_cast<VulkanBindingData*>(scene->GetSceneBindingData()));
+  RenderPipeline* pipeline = nullptr;
+  for (const auto& command : commands) {
+    if (command.type == DrawCommand::Type::kPipeline) {
+      if (pipeline == nullptr) {
+        pipeline = command.pipeline;
+      }
+    } else if (command.type == DrawCommand::Type::kMaterialData ||
+               command.type == DrawCommand::Type::kInstanceData) {
+      render_state_.binding_data.insert(
+          static_cast<VulkanBindingData*>(command.binding_data));
+    } else if (command.type == DrawCommand::Type::kVertices ||
+               command.type == DrawCommand::Type::kIndices) {
+      render_state_.buffers.insert(
+          static_cast<VulkanRenderBuffer*>(command.buffer));
+    }
+  }
+  if (pipeline == nullptr) {
+    return;
+  }
+  auto& draw =
+      render_state_.draw[scene->GetOrder()][static_cast<VulkanScene*>(scene)]
+                        [static_cast<VulkanRenderPipeline*>(pipeline)];
+  draw.commands.insert(draw.commands.end(), commands.begin(), commands.end());
+  draw.commands.emplace_back(DrawCommand::Type::kReset);
 }
 
 void VulkanBackend::EndFrame(RenderInternal) {
@@ -1049,7 +1079,8 @@ void VulkanBackend::EndFrameRenderPass() {
         VulkanRenderPipeline* pipeline = pipeline_it.first;
         frame.commands.bindPipeline(vk::PipelineBindPoint::eGraphics,
                                     pipeline->Get());
-        for (const auto& material_it : pipeline_it.second) {
+        auto& pipeline_info = pipeline_it.second;
+        for (const auto& material_it : pipeline_info.mesh) {
           VulkanBindingData* material_data = material_it.first;
           auto material_descriptor_set =
               material_data->GetDescriptorSet(frame_index_);
@@ -1085,9 +1116,114 @@ void VulkanBackend::EndFrameRenderPass() {
             }      // IndexDraw
           }        // VertexDraw
         }          // MaterialDraw
-      }            // PipelineDraw
-    }              // SceneDraw
-  }                // SceneGroupDraw
+        VulkanRenderPipeline* last_pipeline = pipeline;
+        VulkanRenderPipeline* next_pipeline = pipeline;
+        VulkanRenderBuffer* last_vertex_buffer = nullptr;
+        VulkanRenderBuffer* next_vertex_buffer = nullptr;
+        VulkanRenderBuffer* last_index_buffer = nullptr;
+        VulkanRenderBuffer* next_index_buffer = nullptr;
+        VulkanBindingData* last_material_data = nullptr;
+        VulkanBindingData* next_material_data = nullptr;
+        VulkanBindingData* last_instance_data = nullptr;
+        VulkanBindingData* next_instance_data = nullptr;
+        for (const auto& command : pipeline_info.commands) {
+          switch (command.type) {
+            case DrawCommand::Type::kPipeline: {
+              pipeline = static_cast<VulkanRenderPipeline*>(command.pipeline);
+              if (pipeline != last_pipeline) {
+                next_pipeline = pipeline;
+              }
+              break;
+            }
+            case DrawCommand::Type::kVertices: {
+              auto* buffer = static_cast<VulkanRenderBuffer*>(command.buffer);
+              if (buffer != last_vertex_buffer) {
+                next_vertex_buffer = buffer;
+              }
+              break;
+            }
+            case DrawCommand::Type::kIndices: {
+              auto* buffer = static_cast<VulkanRenderBuffer*>(command.buffer);
+              if (buffer != last_index_buffer) {
+                next_index_buffer = buffer;
+              }
+              break;
+            }
+            case DrawCommand::Type::kMaterialData: {
+              auto* binding_data =
+                  static_cast<VulkanBindingData*>(command.binding_data);
+              auto descriptor_set =
+                  binding_data->GetDescriptorSet(frame_index_);
+              if (binding_data != last_material_data && descriptor_set) {
+                next_material_data = binding_data;
+              }
+              break;
+            }
+            case DrawCommand::Type::kInstanceData: {
+              auto* binding_data =
+                  static_cast<VulkanBindingData*>(command.binding_data);
+              auto descriptor_set =
+                  binding_data->GetDescriptorSet(frame_index_);
+              if (binding_data != last_instance_data && descriptor_set) {
+                next_instance_data = binding_data;
+              }
+              break;
+            }
+            case DrawCommand::Type::kScissor: {
+              scissor.offset = {command.rect.x, command.rect.y};
+              scissor.extent = {command.rect.width, command.rect.height};
+              frame.commands.setScissor(0, {scissor});
+              break;
+            }
+            case DrawCommand::Type::kDraw: {
+              if (next_pipeline != last_pipeline) {
+                frame.commands.bindPipeline(vk::PipelineBindPoint::eGraphics,
+                                            next_pipeline->Get());
+                last_pipeline = next_pipeline;
+              }
+              if (next_material_data != last_material_data) {
+                frame.commands.bindDescriptorSets(
+                    vk::PipelineBindPoint::eGraphics, pipeline->GetLayout(), 1,
+                    {next_material_data->GetDescriptorSet(frame_index_)},
+                    next_material_data->GetBufferOffsets());
+                last_material_data = next_material_data;
+              }
+              if (next_instance_data != last_instance_data) {
+                frame.commands.bindDescriptorSets(
+                    vk::PipelineBindPoint::eGraphics, pipeline->GetLayout(), 2,
+                    {next_instance_data->GetDescriptorSet(frame_index_)},
+                    next_instance_data->GetBufferOffsets());
+                last_instance_data = next_instance_data;
+              }
+              if (next_vertex_buffer != last_vertex_buffer) {
+                frame.commands.bindVertexBuffers(
+                    0, {next_vertex_buffer->GetBuffer(frame_index_)}, {0});
+                last_vertex_buffer = next_vertex_buffer;
+              }
+              if (next_index_buffer != last_index_buffer) {
+                frame.commands.bindIndexBuffer(
+                    next_index_buffer->GetBuffer(frame_index_), 0,
+                    vk::IndexType::eUint16);
+                last_index_buffer = next_index_buffer;
+              }
+              frame.commands.drawIndexed(command.draw.index_count, 1,
+                                         command.draw.index_offset,
+                                         command.draw.vertex_offset, 0);
+              break;
+            }
+            case DrawCommand::Type::kReset: {
+              scissor = vk::Rect2D({0, 0}, swap_extent_);
+              frame.commands.setScissor(0, {scissor});
+              last_pipeline = nullptr;
+              last_material_data = last_instance_data = nullptr;
+              last_vertex_buffer = last_index_buffer = nullptr;
+              break;
+            }
+          }
+        }
+      }  // PipelineDraw
+    }    // SceneDraw
+  }      // SceneGroupDraw
 
   CallFrameCallbacks(&end_render_callbacks_);
 

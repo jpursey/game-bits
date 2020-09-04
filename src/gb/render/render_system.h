@@ -16,6 +16,7 @@
 #include "gb/base/validated_context.h"
 #include "gb/file/file_types.h"
 #include "gb/render/binding.h"
+#include "gb/render/draw_list.h"
 #include "gb/render/material.h"
 #include "gb/render/material_config.h"
 #include "gb/render/material_type.h"
@@ -218,11 +219,10 @@ class RenderSystem final {
   // Default material and instance binding data will be default (all zero or
   // null), and the caller should initialize this before using the material
   // type.
-  ResourcePtr<MaterialType> CreateMaterialType(RenderSceneType* scene_type,
-                                               const VertexType* vertex_type,
-                                               Shader* vertex_shader,
-                                               Shader* fragment_shader,
-                                               const MaterialConfig& config = {});
+  ResourcePtr<MaterialType> CreateMaterialType(
+      RenderSceneType* scene_type, const VertexType* vertex_type,
+      Shader* vertex_shader, Shader* fragment_shader,
+      const MaterialConfig& config = {});
   MaterialType* CreateMaterialType(ResourceSet* resource_set,
                                    RenderSceneType* scene_type,
                                    const VertexType* vertex_type,
@@ -305,13 +305,32 @@ class RenderSystem final {
   // minimized), this will return false and the game should try again later.
   bool BeginFrame();
 
-  // Draw a mesh in the scene using the specified instance data.
+  // Render a mesh in the scene using the specified instance data.
+  //
+  // This method does not necessarily preserve order relative to other draw
+  // methods. The render backend is free to reorder draw calls to maximize
+  // performance. If explicit ordering of relative draw calls is required, use
+  // a DrawList instead. To force global ordering, use separate scenes with a
+  // defined order; however this should be reserved for a small number of scenes
+  // as it is a significantly more heavyweight approach.
   //
   // The scene, mesh, and instance_data must all be compatible with each other.
   // This is based on the mesh's material's material type:
   // - The scene's type must match the material type's scene type.
   // - The instance data be created from a material of the same material type.
   void Draw(RenderScene* scene, Mesh* mesh, BindingData* instance_data);
+
+  // Renderss a list of ordered draw commands in the scene.
+  //
+  // This method does not necessarily preserve order relative to other draw
+  // methods. The render backend is free to reorder draw calls to maximize
+  // performance. To force global ordering, use separate scenes with a defined
+  // order; however this should be reserved for a small number of scenes as it
+  // is a significantly more heavyweight approach.
+  //
+  // The scene must be compatible with all mesh, and instance_data must in the
+  // DrawList. The scene's type must match each material type's scene type.
+  void Draw(RenderScene* scene, const DrawList& commands);
 
   // End frame will transfer all registered commands to the graphics card and
   // present the frame.

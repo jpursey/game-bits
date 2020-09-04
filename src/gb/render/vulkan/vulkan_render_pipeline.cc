@@ -102,6 +102,10 @@ bool VulkanRenderPipeline::Init(
         format = vk::Format::eR32G32B32A32Sfloat;
         size = 16;
         break;
+      case ShaderValue::kColor:
+        format = vk::Format::eR8G8B8A8Unorm;
+        size = 4;
+        break;
       default:
         LOG(ERROR) << "Unhandled vertex attribute type";
         return false;

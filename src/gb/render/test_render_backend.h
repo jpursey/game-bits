@@ -94,6 +94,8 @@ class TestRenderBackend final : public RenderBackend {
   void Draw(RenderInternal, RenderScene* scene, RenderPipeline* pipeline,
             BindingData* material_data, BindingData* instance_data,
             RenderBuffer* vertices, RenderBuffer* indices) override;
+  void Draw(RenderInternal, RenderScene* scene,
+            absl::Span<const DrawCommand> commands) override {}
   void EndFrame(RenderInternal) override;
 
  private:

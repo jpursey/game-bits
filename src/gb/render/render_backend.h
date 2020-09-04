@@ -145,6 +145,14 @@ class RenderBackend {
                     BindingData* instance_data, RenderBuffer* vertices,
                     RenderBuffer* indices) = 0;
 
+  // Queues an ordered list of draw commands to be executed next time EndFrame
+  // is called.
+  //
+  // This will only be called after BeginFrame is called and before EndFrame
+  // is called.
+  virtual void Draw(RenderInternal, RenderScene* scene,
+                    absl::Span<const DrawCommand> commands) = 0;
+
   // Completes draw operations, then renders and presents the frame to the
   // screen.
   virtual void EndFrame(RenderInternal) = 0;

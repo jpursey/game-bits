@@ -11,6 +11,7 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
+#include "gb/render/draw_list.h"
 #include "gb/render/vulkan/vulkan_types.h"
 
 namespace gb {
@@ -26,7 +27,10 @@ struct VulkanRenderState {
   using InstanceGroupDraw = absl::flat_hash_map<int, InstanceDraw>;
   using IndexDraw = absl::flat_hash_map<VulkanRenderBuffer*, InstanceGroupDraw>;
   using VertexDraw = absl::flat_hash_map<VulkanRenderBuffer*, IndexDraw>;
-  using MaterialDraw = absl::flat_hash_map<VulkanBindingData*, VertexDraw>;
+  struct MaterialDraw {
+    absl::flat_hash_map<VulkanBindingData*, VertexDraw> mesh;
+    std::vector<DrawCommand> commands;
+  };
   using PipelineDraw = absl::flat_hash_map<VulkanRenderPipeline*, MaterialDraw>;
   using SceneDraw = absl::flat_hash_map<VulkanScene*, PipelineDraw>;
   using SceneGroupDraw = std::map<int, SceneDraw>;
