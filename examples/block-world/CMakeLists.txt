@@ -48,6 +48,7 @@ set(block_world_DEPS
   absl::strings
   gb_file
   gb_game
+  gb_imgui
   gb_message
   gb_render
   gb_render_vulkan

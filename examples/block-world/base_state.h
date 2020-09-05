@@ -3,6 +3,7 @@
 
 #include "SDL.h"
 #include "gb/game/game_state.h"
+#include "gb/imgui/imgui_types.h"
 #include "gb/message/message_stack_endpoint.h"
 #include "gb/render/render_types.h"
 
@@ -23,9 +24,13 @@ class BaseState : public gb::GameState {
   static GB_CONTEXT_CONSTRAINT(kConstraintRenderSystem, kInRequired,
                                gb::RenderSystem);
 
+  // REQUIRED: ImGuiInstance interface.
+  static GB_CONTEXT_CONSTRAINT(kConstraintGuiInstance, kInRequired,
+                               gb::ImGuiInstance);
+
   using Contract =
       gb::ContextContract<kConstraintWindow, kConstraintStateEndpoint,
-                          kConstraintRenderSystem>;
+                          kConstraintRenderSystem, kConstraintGuiInstance>;
 
   //----------------------------------------------------------------------------
   // Construction / Destruction
@@ -46,6 +51,7 @@ class BaseState : public gb::GameState {
   gb::MessageStackHandlers& GetHandlers() { return handlers_; }
   SDL_Window* GetWindow() const { return window_; }
   gb::RenderSystem* GetRenderSystem() const { return render_system_; }
+  gb::ImGuiInstance* GetGuiInstance() const { return gui_instance_; }
 
   // Processes an SDL event. Derived class should return true if the event is
   // completely handled, and parent states should not receive the event.
@@ -54,6 +60,7 @@ class BaseState : public gb::GameState {
  private:
   SDL_Window* window_ = nullptr;
   gb::RenderSystem* render_system_ = nullptr;
+  gb::ImGuiInstance* gui_instance_ = nullptr;
   gb::MessageStackEndpoint* endpoint_;
   gb::MessageStackHandlers handlers_;
 };

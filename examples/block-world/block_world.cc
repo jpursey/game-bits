@@ -43,7 +43,7 @@ bool BlockWorld::Init(const std::vector<std::string_view>& args) {
     return false;
   }
   return InitFileSystem() && InitResourceSystem() && InitMessages() &&
-         InitRenderSystem() && InitStates();
+         InitRenderSystem() && InitGui() && InitStates();
 }
 
 bool BlockWorld::InitFileSystem() {
@@ -153,9 +153,32 @@ bool BlockWorld::InitRenderSystem() {
   return true;
 }
 
+bool BlockWorld::InitGui() {
+  auto gui_instance = gb::ImGuiInstance::Create(
+      gb::ContextBuilder().SetParent(context_).Build());
+  if (gui_instance == nullptr) {
+    LOG(ERROR) << "Could not create GUI instance";
+    return false;
+  }
+  if (!gui_instance->LoadFonts()) {
+    LOG(ERROR) << "Failed to initialize fonts for GUI";
+    return false;
+  }
+  gui_instance_ = gui_instance.get();
+  context_.SetOwned(std::move(gui_instance));
+
+  // We need to set a few things up-front for the first state to render properly
+  auto dimensions = render_system_->GetFrameDimensions();
+  auto& io = ImGui::GetIO();
+  io.DisplaySize = ImVec2(static_cast<float>(dimensions.width),
+                          static_cast<float>(dimensions.height));
+  io.DisplayFramebufferScale = ImVec2(1.0f, 1.0f);
+  return true;
+}
+
 bool BlockWorld::InitStates() {
-  if (!context_.SetOwned<gb::GameStateMachine>(
-          gb::GameStateMachine::Create(context_))) {
+  if (!context_.SetOwned<gb::GameStateMachine>(gb::GameStateMachine::Create(
+          gb::ContextBuilder().SetParent(context_).Build()))) {
     return false;
   }
   state_machine_ = context_.GetPtr<gb::GameStateMachine>();
@@ -165,7 +188,9 @@ bool BlockWorld::InitStates() {
     init_state = gb::GetGameStateId<TitleState>();
   }
   state_machine_->ChangeState(gb::kNoGameStateId, init_state);
+  ImGui::NewFrame();
   state_machine_->Update(absl::ZeroDuration());
+  ImGui::EndFrame();
   return true;
 }
 
@@ -178,7 +203,16 @@ bool BlockWorld::Update(absl::Duration delta_time) {
     message_system_->Send<SDL_Event>(sdl_channel_, event);
   }
   dispatcher_.Update();
+
+  auto dimensions = render_system_->GetFrameDimensions();
+  auto& io = ImGui::GetIO();
+  io.DisplaySize = ImVec2(static_cast<float>(dimensions.width),
+                          static_cast<float>(dimensions.height));
+  ImGui::NewFrame();
+
   state_machine_->Update(delta_time);
+
+  ImGui::EndFrame();
   return true;
 }
 
@@ -190,7 +224,18 @@ void BlockWorld::CleanUp() {
     state_machine_->Update(absl::ZeroDuration());
   }
 
+  // Extract resources from the context, so we can make sure the destruction
+  // order is explicit.
+  auto state_machine = context_.Release<gb::GameStateMachine>();
+  auto gui_instance = context_.Release<gb::ImGuiInstance>();
+  auto render_system = context_.Release<gb::RenderSystem>();
+  auto resource_system = context_.Release<gb::ResourceSystem>();
   LOG_IF(ERROR, !context_.Complete()) << "Contract constraints violated!";
+  state_machine.reset();
+  gui_instance.reset();
+  render_system.reset();
+  resource_system.reset();
+
   if (window_ != nullptr) {
     SDL_DestroyWindow(window_);
   }

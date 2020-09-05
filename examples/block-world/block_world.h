@@ -5,6 +5,7 @@
 #include "gb/file/file_system.h"
 #include "gb/game/game.h"
 #include "gb/game/game_state_machine.h"
+#include "gb/imgui/imgui_instance.h"
 #include "gb/message/message_dispatcher.h"
 #include "gb/message/message_stack_endpoint.h"
 #include "gb/message/message_system.h"
@@ -30,12 +31,13 @@ class BlockWorld final : public gb::Game {
                                gb::GameStateMachine);
   static GB_CONTEXT_CONSTRAINT(kConstraintRenderSystem, kScoped,
                                gb::RenderSystem);
+  static GB_CONTEXT_CONSTRAINT(kConstraintGuiInstance, kScoped, gb::ImGuiInstance);
   using Contract = gb::DerivedContextContract<
       GameContract, kConstraintBlockWorld, kConstraintWindow,
       kConstraintFileSystem, kConstraintResourceSystem,
       kConstraintMessageSystem, kConstraintStateEndpoint,
       kConstraintSdlEndpointId, kConstraintStateMachine,
-      kConstraintRenderSystem>;
+      kConstraintRenderSystem, kConstraintGuiInstance>;
 
   BlockWorld() = default;
   ~BlockWorld() override = default;
@@ -64,6 +66,7 @@ class BlockWorld final : public gb::Game {
   SDL_Window* window_ = nullptr;
   gb::RenderSystem* render_system_ = nullptr;
   gb::RenderBackend* render_backend_ = nullptr;
+  gb::ImGuiInstance* gui_instance_ = nullptr;
   std::string init_state_name_;
 };
 

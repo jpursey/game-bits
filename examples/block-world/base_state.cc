@@ -10,6 +10,7 @@ void BaseState::OnInit() {
 void BaseState::OnEnter() {
   window_ = Context().GetPtr<SDL_Window>();
   render_system_ = Context().GetPtr<gb::RenderSystem>();
+  gui_instance_ = Context().GetPtr<gb::ImGuiInstance>();
   endpoint_ = Context().GetPtr<gb::MessageStackEndpoint>();
   if (window_ == nullptr || render_system_ == nullptr || endpoint_ == nullptr) {
     LOG(ERROR)
