@@ -112,7 +112,8 @@ class DrawList final {
   void Draw();
 
   // Draws a partial mesh.
-  void DrawPartial(int first_triangle, int triangle_count, int first_vertex = 0);
+  void DrawPartial(int first_triangle, int triangle_count,
+                   int first_vertex = 0);
 
   // Resets the state back to the initial state.
   void Reset();

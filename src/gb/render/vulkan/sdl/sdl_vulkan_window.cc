@@ -3,12 +3,13 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
+#include "gb/render/vulkan/sdl/sdl_vulkan_window.h"
+
 #include <algorithm>
 
 #include "SDL_vulkan.h"
 #include "absl/memory/memory.h"
 #include "gb/message/message_system.h"
-#include "gb/render/vulkan/sdl/sdl_vulkan_window.h"
 #include "gb/render/vulkan/vulkan_types.h"
 #include "glog/logging.h"
 

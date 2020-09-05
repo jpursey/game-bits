@@ -56,8 +56,8 @@ TEST_F(ShaderTest, TypeAndCodeProperties) {
   auto shader_code = render_system_->CreateShaderCode(kVertexShaderCode.data(),
                                                       kVertexShaderCode.size());
   auto* shader_code_ptr = shader_code.get();
-  auto shader = render_system_->CreateShader(ShaderType::kVertex,
-                                             std::move(shader_code), {}, {}, {});
+  auto shader = render_system_->CreateShader(
+      ShaderType::kVertex, std::move(shader_code), {}, {}, {});
   ASSERT_NE(shader, nullptr);
   EXPECT_EQ(shader->GetType(), ShaderType::kVertex);
   EXPECT_EQ(shader->GetCode(), shader_code_ptr);
@@ -118,8 +118,8 @@ TEST_F(ShaderTest, InvalidBindings) {
                         .SetShaders(ShaderType::kFragment)
                         .SetLocation(BindingSet::kMaterial, 1)
                         .SetTexture();
-  shader = render_system_->CreateShader(ShaderType::kVertex, std::move(shader_code),
-                                        {binding}, {}, {});
+  shader = render_system_->CreateShader(
+      ShaderType::kVertex, std::move(shader_code), {binding}, {}, {});
   EXPECT_EQ(shader, nullptr);
 
   EXPECT_EQ(state_.invalid_call_count, 0);

@@ -29,9 +29,8 @@ Texture* TestRenderBackend::CreateTexture(RenderInternal, ResourceEntry entry,
                          width, height);
 }
 
-std::unique_ptr<ShaderCode> TestRenderBackend::CreateShaderCode(RenderInternal,
-                                                const void* code,
-                                                int64_t code_size) {
+std::unique_ptr<ShaderCode> TestRenderBackend::CreateShaderCode(
+    RenderInternal, const void* code, int64_t code_size) {
   if (state_->fail_create_shader_code) {
     return nullptr;
   }

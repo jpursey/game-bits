@@ -18,9 +18,9 @@ enum class DepthMode {
 
 // Determines how faces are culled, given CCW winding
 enum class CullMode {
-  kNone,  // No culling is done, both the front and back face are drawn.
+  kNone,   // No culling is done, both the front and back face are drawn.
   kFront,  // Culls front face.
-  kBack,  // Culls back face.
+  kBack,   // Culls back face.
 };
 
 // MaterialConfig defines behavior of how mesh using a material is drawn by the

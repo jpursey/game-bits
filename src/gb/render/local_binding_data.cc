@@ -80,7 +80,8 @@ LocalBindingData::LocalBindingData(RenderInternal,
 LocalBindingData::~LocalBindingData() { delete[] backing_buffer_; }
 
 const RenderDataType* LocalBindingData::GetTextureDataType() {
-  static RenderDataType type({}, "", TypeKey::Get<Texture*>(), sizeof(Texture*));
+  static RenderDataType type({}, "", TypeKey::Get<Texture*>(),
+                             sizeof(Texture*));
   return &type;
 }
 

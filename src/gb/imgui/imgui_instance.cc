@@ -496,7 +496,8 @@ void ImGuiInstance::Draw(ImDrawData* draw_data) {
                             static_cast<int>(clip_rect.z - clip_rect.x),
                             static_cast<int>(clip_rect.w - clip_rect.y));
             draw.DrawPartial((cmd->IdxOffset + index_offset) / 3,
-                             cmd->ElemCount / 3, cmd->VtxOffset + vertex_offset);
+                             cmd->ElemCount / 3,
+                             cmd->VtxOffset + vertex_offset);
           }
         }
       }

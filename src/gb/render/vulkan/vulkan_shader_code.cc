@@ -10,12 +10,11 @@
 namespace gb {
 
 std::unique_ptr<VulkanShaderCode> VulkanShaderCode::Create(
-    VulkanInternal, VulkanBackend* backend,
-    const void* code, int64_t code_size) {
+    VulkanInternal, VulkanBackend* backend, const void* code,
+    int64_t code_size) {
   auto [result, shader] = backend->GetDevice().createShaderModule(
-      vk::ShaderModuleCreateInfo()
-          .setCodeSize(code_size)
-          .setPCode(static_cast<const uint32_t*>(code)));
+      vk::ShaderModuleCreateInfo().setCodeSize(code_size).setPCode(
+          static_cast<const uint32_t*>(code)));
   if (result != vk::Result::eSuccess) {
     return nullptr;
   }

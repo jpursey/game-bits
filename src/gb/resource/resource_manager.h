@@ -39,8 +39,8 @@ namespace gb {
 // registered with a ResourceSystem.
 class ResourceManager final {
  public:
-  using GenericLoader =
-      Callback<Resource*(Context* context, TypeKey* type, std::string_view name)>;
+  using GenericLoader = Callback<Resource*(Context* context, TypeKey* type,
+                                           std::string_view name)>;
   using GenericReleaseHandler = Callback<void(Resource* resource)>;
 
   template <typename Type>
@@ -182,11 +182,12 @@ template <typename Type>
 void ResourceManager::InitLoader(
     Callback<Type*(Context* context, std::string_view name)> callback) {
   static_assert(std::is_base_of_v<Resource, Type>, "Type is not a resource");
-  DoInitLoader(TypeKey::Get<Type>(),
-               [loader = std::move(callback)](
-                   Context* context, TypeKey* type, std::string_view name) -> Resource* {
-                 return loader(context, name);
-               });
+  DoInitLoader(
+      TypeKey::Get<Type>(),
+      [loader = std::move(callback)](Context* context, TypeKey* type,
+                                     std::string_view name) -> Resource* {
+        return loader(context, name);
+      });
 }
 
 template <typename Type>

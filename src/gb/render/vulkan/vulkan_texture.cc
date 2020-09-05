@@ -253,7 +253,7 @@ bool VulkanStaticReadWriteTexture::Init() {
 }
 
 bool VulkanStaticReadWriteTexture::DoClear(int x, int y, int width, int height,
-                                       Pixel pixel) {
+                                           Pixel pixel) {
   if (const bool copy_contents =
           x != 0 || y != 0 || width != GetWidth() || height != GetHeight();
       !EnsureHostBufferIsWritable(copy_contents)) {
@@ -437,7 +437,7 @@ bool VulkanPerFrameTexture::Init() {
 }
 
 bool VulkanPerFrameTexture::DoClear(int x, int y, int width, int height,
-                                       Pixel pixel) {
+                                    Pixel pixel) {
   ClearRegion(local_buffer_, x, y, width, height, pixel);
   for (auto& frame_data : frame_data_) {
     if (frame_data.dirty) {
@@ -547,7 +547,7 @@ std::unique_ptr<VulkanBuffer> VulkanTexture::CreateHostBuffer() {
 }
 
 void VulkanTexture::ClearRegion(void* buffer, int x, int y, int width,
-                               int height, Pixel pixel) {
+                                int height, Pixel pixel) {
   Pixel* dst = static_cast<Pixel*>(buffer) + (y * GetWidth() + x);
   for (int y = 0; y < height; ++y) {
     for (int x = 0; x < width; ++x) {
