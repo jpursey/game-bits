@@ -31,7 +31,8 @@ class BlockWorld final : public gb::Game {
                                gb::GameStateMachine);
   static GB_CONTEXT_CONSTRAINT(kConstraintRenderSystem, kScoped,
                                gb::RenderSystem);
-  static GB_CONTEXT_CONSTRAINT(kConstraintGuiInstance, kScoped, gb::ImGuiInstance);
+  static GB_CONTEXT_CONSTRAINT(kConstraintGuiInstance, kScoped,
+                               gb::ImGuiInstance);
   using Contract = gb::DerivedContextContract<
       GameContract, kConstraintBlockWorld, kConstraintWindow,
       kConstraintFileSystem, kConstraintResourceSystem,
@@ -57,6 +58,8 @@ class BlockWorld final : public gb::Game {
   bool InitRenderSystem();
   bool InitGui();
   bool InitStates();
+
+  void UpdateStateMachine(absl::Duration delta_time);
 
   gb::PollingMessageDispatcher dispatcher_;
   gb::ValidatedContext context_;

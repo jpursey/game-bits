@@ -49,6 +49,7 @@ set(block_world_DEPS
   gb_file
   gb_game
   gb_imgui
+  gb_imgui_sdl
   gb_message
   gb_render
   gb_render_vulkan

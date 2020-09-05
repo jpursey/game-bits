@@ -58,6 +58,8 @@ class BaseState : public gb::GameState {
   virtual bool OnSdlEvent(const SDL_Event& event) { return false; }
 
  private:
+  bool ProcessGuiEvent(const SDL_Event& event);
+
   SDL_Window* window_ = nullptr;
   gb::RenderSystem* render_system_ = nullptr;
   gb::ImGuiInstance* gui_instance_ = nullptr;

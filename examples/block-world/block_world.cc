@@ -11,6 +11,7 @@
 #include "gb/render/vulkan/vulkan_backend.h"
 #include "gb/resource/resource_system.h"
 #include "glog/logging.h"
+#include "imgui_impl_sdl.h"
 #include "states.h"
 
 namespace {
@@ -166,13 +167,7 @@ bool BlockWorld::InitGui() {
   }
   gui_instance_ = gui_instance.get();
   context_.SetOwned(std::move(gui_instance));
-
-  // We need to set a few things up-front for the first state to render properly
-  auto dimensions = render_system_->GetFrameDimensions();
-  auto& io = ImGui::GetIO();
-  io.DisplaySize = ImVec2(static_cast<float>(dimensions.width),
-                          static_cast<float>(dimensions.height));
-  io.DisplayFramebufferScale = ImVec2(1.0f, 1.0f);
+  ImGui_ImplSDL2_InitForVulkan(window_);
   return true;
 }
 
@@ -188,10 +183,17 @@ bool BlockWorld::InitStates() {
     init_state = gb::GetGameStateId<TitleState>();
   }
   state_machine_->ChangeState(gb::kNoGameStateId, init_state);
-  ImGui::NewFrame();
-  state_machine_->Update(absl::ZeroDuration());
-  ImGui::EndFrame();
+  UpdateStateMachine(absl::ZeroDuration());
   return true;
+}
+
+void BlockWorld::UpdateStateMachine(absl::Duration delta_time) {
+  ImGui_ImplSDL2_NewFrame(window_);
+  ImGui::NewFrame();
+
+  state_machine_->Update(delta_time);
+
+  ImGui::EndFrame();
 }
 
 bool BlockWorld::Update(absl::Duration delta_time) {
@@ -203,16 +205,7 @@ bool BlockWorld::Update(absl::Duration delta_time) {
     message_system_->Send<SDL_Event>(sdl_channel_, event);
   }
   dispatcher_.Update();
-
-  auto dimensions = render_system_->GetFrameDimensions();
-  auto& io = ImGui::GetIO();
-  io.DisplaySize = ImVec2(static_cast<float>(dimensions.width),
-                          static_cast<float>(dimensions.height));
-  ImGui::NewFrame();
-
-  state_machine_->Update(delta_time);
-
-  ImGui::EndFrame();
+  UpdateStateMachine(delta_time);
   return true;
 }
 
@@ -221,20 +214,23 @@ void BlockWorld::CleanUp() {
   // exists.
   if (state_machine_ != nullptr && state_machine_->GetTopState() != nullptr) {
     state_machine_->ChangeState(gb::kNoGameStateId, gb::kNoGameStateId);
-    state_machine_->Update(absl::ZeroDuration());
+    UpdateStateMachine(absl::ZeroDuration());
   }
 
   // Extract resources from the context, so we can make sure the destruction
   // order is explicit.
+  auto message_system = context_.Release<gb::MessageSystem>();
   auto state_machine = context_.Release<gb::GameStateMachine>();
   auto gui_instance = context_.Release<gb::ImGuiInstance>();
   auto render_system = context_.Release<gb::RenderSystem>();
   auto resource_system = context_.Release<gb::ResourceSystem>();
   LOG_IF(ERROR, !context_.Complete()) << "Contract constraints violated!";
   state_machine.reset();
+  ImGui_ImplSDL2_Shutdown();
   gui_instance.reset();
   render_system.reset();
   resource_system.reset();
+  message_system.reset();
 
   if (window_ != nullptr) {
     SDL_DestroyWindow(window_);
