@@ -219,7 +219,7 @@ void ValidatedContext::ReportError(const std::string& message) const {
     (*global_callback)(message);
     return;
   }
-#ifdef DEBUG_
+#ifndef NDEBUG
   LOG(FATAL) << message;
 #else
   LOG(ERROR) << message;
