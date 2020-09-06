@@ -1,3 +1,8 @@
+// Copyright (c) 2020 John Pursey
+//
+// Use of this source code is governed by an MIT-style License that can be found
+// in the LICENSE file or at https://opensource.org/licenses/MIT.
+
 #ifndef BASE_STATE_H_
 #define BASE_STATE_H_
 
@@ -6,6 +11,8 @@
 #include "gb/imgui/imgui_types.h"
 #include "gb/message/message_stack_endpoint.h"
 #include "gb/render/render_types.h"
+
+struct GuiFonts;
 
 class BaseState : public gb::GameState {
  public:
@@ -28,9 +35,13 @@ class BaseState : public gb::GameState {
   static GB_CONTEXT_CONSTRAINT(kConstraintGuiInstance, kInRequired,
                                gb::ImGuiInstance);
 
+  // REQUIRED: GuiFonts structure.
+  static GB_CONTEXT_CONSTRAINT(kConstraintGuiFonts, kInRequired, GuiFonts);
+
   using Contract =
       gb::ContextContract<kConstraintWindow, kConstraintStateEndpoint,
-                          kConstraintRenderSystem, kConstraintGuiInstance>;
+                          kConstraintRenderSystem, kConstraintGuiInstance,
+                          kConstraintGuiFonts>;
 
   //----------------------------------------------------------------------------
   // Construction / Destruction
@@ -52,6 +63,7 @@ class BaseState : public gb::GameState {
   SDL_Window* GetWindow() const { return window_; }
   gb::RenderSystem* GetRenderSystem() const { return render_system_; }
   gb::ImGuiInstance* GetGuiInstance() const { return gui_instance_; }
+  const GuiFonts* GetGuiFonts() const { return gui_fonts_; }
 
   // Processes an SDL event. Derived class should return true if the event is
   // completely handled, and parent states should not receive the event.
@@ -63,6 +75,7 @@ class BaseState : public gb::GameState {
   SDL_Window* window_ = nullptr;
   gb::RenderSystem* render_system_ = nullptr;
   gb::ImGuiInstance* gui_instance_ = nullptr;
+  const GuiFonts* gui_fonts_ = nullptr;
   gb::MessageStackEndpoint* endpoint_;
   gb::MessageStackHandlers handlers_;
 };

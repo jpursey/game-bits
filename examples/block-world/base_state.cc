@@ -1,3 +1,8 @@
+// Copyright (c) 2020 John Pursey
+//
+// Use of this source code is governed by an MIT-style License that can be found
+// in the LICENSE file or at https://opensource.org/licenses/MIT.
+
 #include "base_state.h"
 
 #include "SDL.h"
@@ -37,8 +42,10 @@ void BaseState::OnEnter() {
   window_ = Context().GetPtr<SDL_Window>();
   render_system_ = Context().GetPtr<gb::RenderSystem>();
   gui_instance_ = Context().GetPtr<gb::ImGuiInstance>();
+  gui_fonts_ = Context().GetPtr<GuiFonts>();
   endpoint_ = Context().GetPtr<gb::MessageStackEndpoint>();
-  if (window_ == nullptr || render_system_ == nullptr || endpoint_ == nullptr) {
+  if (window_ == nullptr || render_system_ == nullptr || endpoint_ == nullptr ||
+      gui_instance_ == nullptr || gui_fonts_ == nullptr) {
     LOG(ERROR)
         << "Derived state did not include BaseState::Contract in its contract.";
     return;

@@ -38,6 +38,7 @@ gb_external_libraries()
 set(block_world_SOURCE
   base_state.cc base_state.h
   block_world.cc block_world.h
+  gui_fonts.h
   main.cc
   play_state.cc play_state.h
   states.cc states.h

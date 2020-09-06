@@ -1,3 +1,8 @@
+// Copyright (c) 2020 John Pursey
+//
+// Use of this source code is governed by an MIT-style License that can be found
+// in the LICENSE file or at https://opensource.org/licenses/MIT.
+
 #include "block_world.h"
 
 #include <filesystem>
@@ -161,12 +166,28 @@ bool BlockWorld::InitGui() {
     LOG(ERROR) << "Could not create GUI instance";
     return false;
   }
+
+  GuiFonts fonts;
+  ImGuiIO& io = ImGui::GetIO();
+  io.Fonts->AddFontDefault();
+  fonts.title = io.Fonts->AddFontFromFileTTF(
+      "asset:/fonts/chunk_five/ChunkFive-Regular.otf", 100.0f);
+  fonts.prompt = io.Fonts->AddFontFromFileTTF(
+      "asset:/fonts/komika_text/KOMTXT__.ttf", 40.0f);
+  fonts.console = io.Fonts->AddFontFromFileTTF(
+      "asset:/fonts/source_code_pro/SourceCodePro-Medium.otf", 15.0f);
+  if (fonts.title == nullptr || fonts.prompt == nullptr ||
+      fonts.console == nullptr) {
+    LOG(ERROR) << "Failed to load one or more fonts for GUI";
+    return false;
+  }
   if (!gui_instance->LoadFonts()) {
     LOG(ERROR) << "Failed to initialize fonts for GUI";
     return false;
   }
   gui_instance_ = gui_instance.get();
   context_.SetOwned(std::move(gui_instance));
+  context_.SetValue<GuiFonts>(fonts);
   ImGui_ImplSDL2_InitForVulkan(window_);
   return true;
 }

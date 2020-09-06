@@ -1,3 +1,8 @@
+// Copyright (c) 2020 John Pursey
+//
+// Use of this source code is governed by an MIT-style License that can be found
+// in the LICENSE file or at https://opensource.org/licenses/MIT.
+
 #ifndef DEMO_STATE_H_
 #define DEMO_STATE_H_
 

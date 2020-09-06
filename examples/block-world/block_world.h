@@ -1,3 +1,8 @@
+// Copyright (c) 2020 John Pursey
+//
+// Use of this source code is governed by an MIT-style License that can be found
+// in the LICENSE file or at https://opensource.org/licenses/MIT.
+
 #ifndef BLOCK_WORLD_H_
 #define BLOCK_WORLD_H_
 
@@ -11,6 +16,7 @@
 #include "gb/message/message_system.h"
 #include "gb/render/render_types.h"
 #include "gb/resource/resource_system.h"
+#include "gui_fonts.h"
 
 class BlockWorld final : public gb::Game {
  public:
@@ -33,12 +39,13 @@ class BlockWorld final : public gb::Game {
                                gb::RenderSystem);
   static GB_CONTEXT_CONSTRAINT(kConstraintGuiInstance, kScoped,
                                gb::ImGuiInstance);
+  static GB_CONTEXT_CONSTRAINT(kConstraintGuiFonts, kScoped, GuiFonts);
   using Contract = gb::DerivedContextContract<
       GameContract, kConstraintBlockWorld, kConstraintWindow,
       kConstraintFileSystem, kConstraintResourceSystem,
       kConstraintMessageSystem, kConstraintStateEndpoint,
       kConstraintSdlEndpointId, kConstraintStateMachine,
-      kConstraintRenderSystem, kConstraintGuiInstance>;
+      kConstraintRenderSystem, kConstraintGuiInstance, kConstraintGuiFonts>;
 
   BlockWorld() = default;
   ~BlockWorld() override = default;
