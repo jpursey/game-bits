@@ -5,9 +5,9 @@
 
 cmake_minimum_required (VERSION 3.8)
 
-###############################################################################
+################################################################################
 ## Set project configuration
-###############################################################################
+################################################################################
 
 project(BlockWorld CXX)
 
@@ -15,11 +15,14 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-###############################################################################
+################################################################################
 # Game Bits configuration
-###############################################################################
+################################################################################
 
 STRING(REGEX REPLACE "\\\\" "/" CURRENT_DIR ${CMAKE_CURRENT_LIST_DIR})
+
+# Set the GB_DIR directory to wherever it is located, in your install. Since
+# this is part of Game Bits, it is simply farther up the directory tree.
 set(GB_DIR "${CURRENT_DIR}/../..")
 
 # Optionally set your own build and bin directories. The examples just use the
@@ -31,9 +34,9 @@ add_subdirectory("${GB_DIR}" gb)
 gb_config()
 gb_external_libraries()
 
-###############################################################################
+################################################################################
 ## Game Source
-###############################################################################
+################################################################################
 
 set(block_world_SOURCE
   base_state.cc base_state.h
