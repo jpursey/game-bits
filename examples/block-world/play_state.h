@@ -49,16 +49,28 @@ class PlayState final : public BaseState {
   void OnUpdate(absl::Duration delta_time) override;
 
  private:
-  struct ViewMatrices {
-    glm::mat4 view;
-    glm::mat4 projection;
+  struct SceneData {
+    glm::mat4 view_projection;
   };
+
+  struct SceneLightData {
+    glm::vec4 ambient;    // w is intensity
+    glm::vec4 sun_color;  // w is intensity
+    glm::vec3 sun_direction;
+  };
+
+  struct InstanceData {
+    glm::mat4 model;
+  };
+
+  void DrawGui();
 
   gb::ResourceSet resources_;
   gb::Mesh* instance_mesh_ = nullptr;
   std::unique_ptr<gb::BindingData> instance_data_;
   std::unique_ptr<gb::RenderScene> scene_;
-  ViewMatrices view_matrices_;
+  glm::mat4 view_;
+  SceneLightData lights_;
 };
 
 #endif  // DEMO_STATE_H_
