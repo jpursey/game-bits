@@ -261,7 +261,7 @@ void PlayState::OnEnter() {
 
   lights_ = {
       // Ambient
-      {1.0f, 1.0f, 1.0f, 0.01f},  // White light at 0.5% brightness
+      {1.0f, 1.0f, 1.0f, 0.1f},  // White light at 10% brightness
 
       // Sun
       {1.0f, 0.91f, 0.655f, 1.0f},  // Light yellow light, full bright

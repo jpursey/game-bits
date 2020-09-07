@@ -30,7 +30,7 @@ vec3 GetDirectionalLight(vec3 normal, vec4 color, vec3 direction) {
 void main() {
   vec3 normal = normalize(in_normal);
   vec3 light_mod = GetDirectionalLight(normal, s_sun_color, s_sun_direction);
-  vec3 light_add = s_ambient.w * s_ambient.rgb;
+  light_mod += s_ambient.w * s_ambient.rgb;
   vec4 mat_color = texture(m_sampler, in_uv);
-  out_color = vec4(light_add + light_mod * mat_color.xyz, mat_color.w);
+  out_color = vec4(light_mod * mat_color.xyz, mat_color.w);
 }
