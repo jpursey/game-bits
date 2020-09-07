@@ -189,6 +189,9 @@ bool BlockWorld::InitGui() {
   context_.SetOwned(std::move(gui_instance));
   context_.SetValue<GuiFonts>(fonts);
   ImGui_ImplSDL2_InitForVulkan(window_);
+
+  io.IniFilename = "game:/block-world-ui.ini";
+  ImGui::LoadIniSettingsFromDisk("game:/block-world-ui.ini");
   return true;
 }
 
@@ -238,20 +241,15 @@ void BlockWorld::CleanUp() {
     UpdateStateMachine(absl::ZeroDuration());
   }
 
-  // Extract resources from the context, so we can make sure the destruction
-  // order is explicit.
-  auto message_system = context_.Release<gb::MessageSystem>();
-  auto state_machine = context_.Release<gb::GameStateMachine>();
-  auto gui_instance = context_.Release<gb::ImGuiInstance>();
-  auto render_system = context_.Release<gb::RenderSystem>();
-  auto resource_system = context_.Release<gb::ResourceSystem>();
-  LOG_IF(ERROR, !context_.Complete()) << "Contract constraints violated!";
-  state_machine.reset();
+  // Clear from context in a determistic order.
+  context_.Clear<gb::GameStateMachine>();
   ImGui_ImplSDL2_Shutdown();
-  gui_instance.reset();
-  render_system.reset();
-  resource_system.reset();
-  message_system.reset();
+  context_.Clear<gb::ImGuiInstance>();
+  context_.Clear<gb::RenderSystem>();
+  context_.Clear<gb::ResourceSystem>();
+  context_.Clear<gb::MessageSystem>();
+  context_.Clear<gb::FileSystem>();
+  LOG_IF(ERROR, !context_.Complete()) << "Contract constraints violated!";
 
   if (window_ != nullptr) {
     SDL_DestroyWindow(window_);

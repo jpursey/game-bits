@@ -8,6 +8,9 @@ game-bits.sublime-workspace
 # Assets
 *.spv
 
+# Binary working output
+/*.ini
+
 # CMake files
 CMakeCache.txt
 CMakeFiles

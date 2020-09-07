@@ -47,6 +47,7 @@ class PlayState final : public BaseState {
   void OnEnter() override;
   void OnExit() override;
   void OnUpdate(absl::Duration delta_time) override;
+  bool OnSdlEvent(const SDL_Event& event) override;
 
  private:
   struct SceneData {
@@ -70,6 +71,15 @@ class PlayState final : public BaseState {
   std::unique_ptr<gb::BindingData> instance_data_;
   std::unique_ptr<gb::RenderScene> scene_;
   glm::mat4 view_;
+  glm::ivec2 mouse_pos_ = {0, 0};
+  glm::vec3 camera_pos_ = {2.0f, 2.0f, 2.0f};
+  glm::vec3 camera_dir_ = glm::normalize(glm::vec3(-1.0f, -1.0f, -1.0f));
+  glm::vec3 camera_strafe_ = {0.0f, 0.0f, 0.0f};
+  float camera_speed_ = 0.1f;
+  float camera_speed_mod_ = 0.0f;
+  float camera_strafe_mod_ = 0.0f;
+  bool camera_rotating_ = false;
+  float camera_sensitivity_ = 0.25f;
   SceneLightData lights_;
 };
 
