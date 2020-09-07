@@ -6,6 +6,7 @@
 #ifndef GB_RENDER_RENDER_TYPES_H_
 #define GB_RENDER_RENDER_TYPES_H_
 
+#include <algorithm>
 #include <vector>
 
 #include "absl/types/span.h"
@@ -265,6 +266,19 @@ struct alignas(uint32_t) Pixel {
   // Returns the pixel in packed form.
   uint32_t Packed() const { return *reinterpret_cast<const uint32_t*>(this); }
 
+  // Create a new Pixel based on this color but with a new alpha.
+  constexpr Pixel WithAlpha(uint8_t new_a) const {
+    return Pixel(r, g, b, new_a);
+  }
+  constexpr Pixel ModAlpha(float mod) const {
+    return Pixel(r, g, b,
+                 static_cast<uint8_t>(std::clamp(a * mod, 0.0f, 255.0f)));
+  }
+  constexpr Pixel ModAlpha(double mod) const {
+    return Pixel(r, g, b,
+                 static_cast<uint8_t>(std::clamp(a * mod, 0.0, 255.0)));
+  }
+
   uint8_t r = 0;
   uint8_t g = 0;
   uint8_t b = 0;
@@ -272,11 +286,29 @@ struct alignas(uint32_t) Pixel {
 };
 static_assert(sizeof(Pixel) == sizeof(uint32_t), "Pixel must be 4 bytes");
 
-inline constexpr bool operator==(const Pixel& a, const Pixel& b) {
+inline constexpr bool operator==(Pixel a, Pixel b) {
   return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
 }
-inline constexpr bool operator!=(const Pixel& a, const Pixel& b) {
+inline constexpr bool operator!=(Pixel a, Pixel b) {
   return !(a == b);
+}
+inline constexpr Pixel operator*(Pixel pixel, float mod) {
+  return Pixel(static_cast<uint8_t>(std::clamp(pixel.r * mod, 0.0f, 255.0f)),
+               static_cast<uint8_t>(std::clamp(pixel.g * mod, 0.0f, 255.0f)),
+               static_cast<uint8_t>(std::clamp(pixel.b * mod, 0.0f, 255.0f)),
+               pixel.a);
+}
+inline constexpr Pixel operator*(float mod, Pixel pixel) {
+  return pixel * mod;
+}
+inline constexpr Pixel operator*(Pixel pixel, double mod) {
+  return Pixel(static_cast<uint8_t>(std::clamp(pixel.r * mod, 0.0, 255.0)),
+               static_cast<uint8_t>(std::clamp(pixel.g * mod, 0.0, 255.0)),
+               static_cast<uint8_t>(std::clamp(pixel.b * mod, 0.0, 255.0)),
+               pixel.a);
+}
+inline constexpr Pixel operator*(double mod, Pixel pixel) {
+  return pixel * mod;
 }
 
 //==============================================================================

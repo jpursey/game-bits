@@ -17,6 +17,7 @@ set(gb_render_SOURCE
   material_type.cc material_type.h
   mesh.cc mesh.h
   mesh_view.cc mesh_view.h
+  pixel_colors.h
   render_assert.cc render_assert.h
   render_backend.h
   render_buffer.cc render_buffer.h
