@@ -289,18 +289,14 @@ static_assert(sizeof(Pixel) == sizeof(uint32_t), "Pixel must be 4 bytes");
 inline constexpr bool operator==(Pixel a, Pixel b) {
   return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
 }
-inline constexpr bool operator!=(Pixel a, Pixel b) {
-  return !(a == b);
-}
+inline constexpr bool operator!=(Pixel a, Pixel b) { return !(a == b); }
 inline constexpr Pixel operator*(Pixel pixel, float mod) {
   return Pixel(static_cast<uint8_t>(std::clamp(pixel.r * mod, 0.0f, 255.0f)),
                static_cast<uint8_t>(std::clamp(pixel.g * mod, 0.0f, 255.0f)),
                static_cast<uint8_t>(std::clamp(pixel.b * mod, 0.0f, 255.0f)),
                pixel.a);
 }
-inline constexpr Pixel operator*(float mod, Pixel pixel) {
-  return pixel * mod;
-}
+inline constexpr Pixel operator*(float mod, Pixel pixel) { return pixel * mod; }
 inline constexpr Pixel operator*(Pixel pixel, double mod) {
   return Pixel(static_cast<uint8_t>(std::clamp(pixel.r * mod, 0.0, 255.0)),
                static_cast<uint8_t>(std::clamp(pixel.g * mod, 0.0, 255.0)),
