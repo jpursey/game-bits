@@ -19,6 +19,7 @@
 #include "gb/resource/resource_system.h"
 #include "glm/ext/matrix_clip_space.hpp"
 #include "glm/ext/matrix_transform.hpp"
+#include "glm/gtx/rotate_vector.hpp"
 #include "glog/logging.h"
 #include "gui_fonts.h"
 #include "imgui.h"
@@ -46,14 +47,6 @@ const glm::vec2 kSideUv[4] = {{0, 0}, {0, 1}, {1, 1}, {1, 0}};
 const gb::Triangle kSideTriangle[2] = {{0, 1, 2}, {0, 2, 3}};
 
 }  // namespace Cube
-
-// Rodrigues' rotation formula.
-glm::vec3 AxisRotate(const glm::vec3& v, const glm::vec3& axis, float angle) {
-  const float angle_cos = std::cos(angle);
-  const float angle_sin = std::sin(angle);
-  return (v * angle_cos) + (glm::cross(axis, v) * angle_sin) +
-         (axis * glm::dot(axis, v) * (1 - angle_cos));
-}
 
 struct Vertex {
   glm::vec3 pos;
@@ -434,13 +427,13 @@ bool PlayState::OnSdlEvent(const SDL_Event& event) {
   if (event.type == SDL_MOUSEMOTION && camera_rotating_) {
     const float rotation = glm::radians(static_cast<float>(event.motion.xrel)) *
                            camera_sensitivity_;
-    camera_dir_ = AxisRotate(camera_dir_, glm::vec3(0, 1, 0), -rotation);
+    camera_dir_ = glm::rotate(camera_dir_, -rotation, glm::vec3(0, 1, 0));
 
     const float pitch = glm::radians(static_cast<float>(event.motion.yrel)) *
                         camera_sensitivity_;
     camera_strafe_ =
         glm::normalize(glm::cross(camera_dir_, glm::vec3(0, 1, 0)));
-    camera_dir_ = AxisRotate(camera_dir_, camera_strafe_, -pitch);
+    camera_dir_ = glm::rotate(camera_dir_, -pitch, camera_strafe_);
 
     view_ = glm::lookAt(camera_pos_, camera_pos_ + camera_dir_,
                         glm::vec3(0.0f, 1.0f, 0.0f));
