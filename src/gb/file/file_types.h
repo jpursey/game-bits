@@ -90,12 +90,15 @@ inline constexpr FileFlags kNewFileFlags = {
 };
 
 inline FileFlags FromFopenMode(std::string_view mode) {
-  if (mode == "r" || mode == "rb") return kReadFileFlags;
-  if (mode == "w" || mode == "wb") return kNewFileFlags;
-  if (mode == "a" || mode == "ab") return kWriteFileFlags + FileFlag::kCreate;
-  if (mode == "r+" || mode == "r+b") return kReadWriteFileFlags;
-  if (mode == "w+" || mode == "w+b") return kNewFileFlags + FileFlag::kRead;
-  if (mode == "a+" || mode == "a+b")
+  if (mode == "r" || mode == "rb" || mode == "rt") return kReadFileFlags;
+  if (mode == "w" || mode == "wb" || mode == "wt") return kNewFileFlags;
+  if (mode == "a" || mode == "ab" || mode == "at")
+    return kWriteFileFlags + FileFlag::kCreate;
+  if (mode == "r+" || mode == "r+b" || mode == "r+t")
+    return kReadWriteFileFlags;
+  if (mode == "w+" || mode == "w+b" || mode == "w+t")
+    return kNewFileFlags + FileFlag::kRead;
+  if (mode == "a+" || mode == "a+b" || mode == "a+t")
     return kReadWriteFileFlags + FileFlag::kCreate;
   return {};
 }
