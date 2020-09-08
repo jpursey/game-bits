@@ -16,7 +16,9 @@
 #include "gb/message/message_system.h"
 #include "gb/render/render_types.h"
 #include "gb/resource/resource_system.h"
-#include "gui_fonts.h"
+
+// Game includes
+#include "game_types.h"
 
 class BlockWorld final : public gb::Game {
  public:
@@ -40,12 +42,15 @@ class BlockWorld final : public gb::Game {
   static GB_CONTEXT_CONSTRAINT(kConstraintGuiInstance, kScoped,
                                gb::ImGuiInstance);
   static GB_CONTEXT_CONSTRAINT(kConstraintGuiFonts, kScoped, GuiFonts);
+  static GB_CONTEXT_CONSTRAINT(kConstraintWorldResources, kScoped,
+                               WorldResources);
   using Contract = gb::DerivedContextContract<
       GameContract, kConstraintBlockWorld, kConstraintWindow,
       kConstraintFileSystem, kConstraintResourceSystem,
       kConstraintMessageSystem, kConstraintStateEndpoint,
       kConstraintSdlEndpointId, kConstraintStateMachine,
-      kConstraintRenderSystem, kConstraintGuiInstance, kConstraintGuiFonts>;
+      kConstraintRenderSystem, kConstraintGuiInstance, kConstraintGuiFonts,
+      kConstraintWorldResources>;
 
   BlockWorld() = default;
   ~BlockWorld() override = default;
@@ -63,6 +68,7 @@ class BlockWorld final : public gb::Game {
   bool InitResourceSystem();
   bool InitMessages();
   bool InitRenderSystem();
+  bool InitResources();
   bool InitGui();
   bool InitStates();
 

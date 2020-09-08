@@ -8,7 +8,6 @@
 
 #include <memory>
 
-#include "base_state.h"
 #include "gb/base/callback_scope.h"
 #include "gb/base/validated_context.h"
 #include "gb/file/file_types.h"
@@ -18,6 +17,11 @@
 #include "gb/resource/resource_set.h"
 #include "gb/resource/resource_types.h"
 #include "glm/glm.hpp"
+
+// Game includes
+#include "base_state.h"
+#include "camera.h"
+#include "game_types.h"
 
 class PlayState final : public BaseState {
  public:
@@ -29,8 +33,16 @@ class PlayState final : public BaseState {
   static GB_CONTEXT_CONSTRAINT(kConstraintResourceSystem, kInRequired,
                                gb::ResourceSystem);
 
-  using Contract = gb::DerivedContextContract<BaseState::Contract,
-                                              kConstraintResourceSystem>;
+  // REQUIRED: WorldResources.
+  static GB_CONTEXT_CONSTRAINT(kConstraintWorldResources, kInRequired,
+                               WorldResources);
+
+  // SCOPED: World.
+  static GB_CONTEXT_CONSTRAINT(kConstraintWorld, kScoped, World);
+
+  using Contract =
+      gb::DerivedContextContract<BaseState::Contract, kConstraintResourceSystem,
+                                 kConstraintWorldResources, kConstraintWorld>;
 
   //----------------------------------------------------------------------------
   // Construction / Destruction
@@ -45,42 +57,20 @@ class PlayState final : public BaseState {
   //----------------------------------------------------------------------------
 
   void OnEnter() override;
-  void OnExit() override;
   void OnUpdate(absl::Duration delta_time) override;
   bool OnSdlEvent(const SDL_Event& event) override;
 
  private:
-  struct SceneData {
-    glm::mat4 view_projection;
-  };
-
-  struct SceneLightData {
-    glm::vec4 ambient;    // w is intensity
-    glm::vec4 sun_color;  // w is intensity
-    glm::vec3 sun_direction;
-  };
-
-  struct InstanceData {
-    glm::mat4 model;
-  };
-
   void DrawGui();
 
-  gb::ResourceSet resources_;
-  gb::Mesh* instance_mesh_ = nullptr;
-  std::unique_ptr<gb::BindingData> instance_data_;
-  std::unique_ptr<gb::RenderScene> scene_;
-  glm::mat4 view_;
+  World* world_ = nullptr;
+  Camera camera_;
   glm::ivec2 mouse_pos_ = {0, 0};
-  glm::vec3 camera_pos_ = {2.0f, 2.0f, 2.0f};
-  glm::vec3 camera_dir_ = glm::normalize(glm::vec3(-1.0f, -1.0f, -1.0f));
-  glm::vec3 camera_strafe_ = {0.0f, 0.0f, 0.0f};
-  float camera_speed_ = 0.1f;
+  float camera_speed_ = 1.0f;
   float camera_speed_mod_ = 0.0f;
   float camera_strafe_mod_ = 0.0f;
   bool camera_rotating_ = false;
   float camera_sensitivity_ = 0.25f;
-  SceneLightData lights_;
 };
 
 #endif  // DEMO_STATE_H_

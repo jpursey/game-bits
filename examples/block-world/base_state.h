@@ -12,7 +12,8 @@
 #include "gb/message/message_stack_endpoint.h"
 #include "gb/render/render_types.h"
 
-struct GuiFonts;
+// Game includes
+#include "game_types.h"
 
 class BaseState : public gb::GameState {
  public:

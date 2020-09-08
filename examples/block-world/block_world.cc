@@ -17,7 +17,11 @@
 #include "gb/resource/resource_system.h"
 #include "glog/logging.h"
 #include "imgui_impl_sdl.h"
+
+// Game includes
+#include "gui_fonts.h"
 #include "states.h"
+#include "world_resources.h"
 
 namespace {
 namespace fs = std::filesystem;
@@ -49,7 +53,7 @@ bool BlockWorld::Init(const std::vector<std::string_view>& args) {
     return false;
   }
   return InitFileSystem() && InitResourceSystem() && InitMessages() &&
-         InitRenderSystem() && InitGui() && InitStates();
+         InitRenderSystem() && InitResources() && InitGui() && InitStates();
 }
 
 bool BlockWorld::InitFileSystem() {
@@ -159,6 +163,15 @@ bool BlockWorld::InitRenderSystem() {
   return true;
 }
 
+bool BlockWorld::InitResources() {
+  auto world_resources = WorldResources::Create(context_);
+  if (world_resources == nullptr) {
+    return false;
+  }
+  context_.SetOwned(std::move(world_resources));
+  return true;
+}
+
 bool BlockWorld::InitGui() {
   auto gui_instance = gb::ImGuiInstance::Create(
       gb::ContextBuilder().SetParent(context_).Build());
@@ -243,6 +256,7 @@ void BlockWorld::CleanUp() {
 
   // Clear from context in a determistic order.
   context_.Clear<gb::GameStateMachine>();
+  context_.Clear<WorldResources>();
   ImGui_ImplSDL2_Shutdown();
   context_.Clear<gb::ImGuiInstance>();
   context_.Clear<gb::RenderSystem>();

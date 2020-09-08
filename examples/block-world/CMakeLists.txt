@@ -40,12 +40,20 @@ gb_external_libraries()
 
 set(block_world_SOURCE
   base_state.cc base_state.h
+  block.h
   block_world.cc block_world.h
+  camera.cc camera.h
+  chunk.cc chunk.h
+  cube.h
+  game_types.h
   gui_fonts.h
   main.cc
   play_state.cc play_state.h
+  scene_types.h
   states.cc states.h
   title_state.cc title_state.h
+  world.cc world.h
+  world_resources.cc world_resources.h
 )
 
 set(block_world_DEPS

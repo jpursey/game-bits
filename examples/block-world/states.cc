@@ -5,6 +5,7 @@
 
 #include "states.h"
 
+// Game includes
 #include "play_state.h"
 #include "title_state.h"
 

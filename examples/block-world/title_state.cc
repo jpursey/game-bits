@@ -9,8 +9,10 @@
 
 #include "gb/imgui/imgui_instance.h"
 #include "gb/render/render_system.h"
-#include "gui_fonts.h"
 #include "imgui.h"
+
+// Game includes
+#include "gui_fonts.h"
 
 namespace {
 

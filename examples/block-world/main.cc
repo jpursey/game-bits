@@ -7,6 +7,8 @@
 #include <vector>
 
 #include "SDL_main.h"
+
+// Game includes
 #include "block_world.h"
 
 SDLMAIN_DECLSPEC int main(int argc, char* argv[]) {
