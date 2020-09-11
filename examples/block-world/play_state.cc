@@ -65,6 +65,8 @@ void PlayState::OnUpdate(absl::Duration delta_time) {
                        camera_speed_mod_ * delta_seconds;
     camera_position += camera_.GetStrafe() * camera_speed_ *
                        camera_strafe_mod_ * delta_seconds;
+    camera_position.y =
+        std::clamp(camera_position.y, 0.0f, static_cast<float>(Chunk::kSize.y));
     camera_.SetPosition(camera_position);
   }
 

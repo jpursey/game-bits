@@ -102,6 +102,8 @@ bool World::InitGraphics() {
           glm::vec3(0.15f, -0.4f, -0.8f)),  // Down at a convenient angle
   };
   scene_->GetSceneBindingData()->SetConstants(1, lights_);
+  sky_color_ = gb::Pixel(69, 136, 221);
+  render_system->SetClearColor(sky_color_);
 
   return true;
 }
@@ -242,17 +244,15 @@ void World::Draw(const Camera& camera) {
     }
 
     ++debug_chunk_count;
-    if (!chunk->IsEmpty()) {
-      if (!chunk->HasMesh()) {
-        chunk->BuildMesh();
-      }
-      auto instance_data = chunk->GetInstanceData();
-      auto meshes = chunk->GetMesh();
-      if (instance_data != nullptr && !meshes.empty()) {
-        for (gb::Mesh* mesh : meshes) {
-          debug_triangle_count += mesh->GetTriangleCount();
-          render_system->Draw(scene_.get(), mesh, instance_data);
-        }
+    if (!chunk->HasMesh()) {
+      chunk->BuildMesh();
+    }
+    auto instance_data = chunk->GetInstanceData();
+    auto meshes = chunk->GetMesh();
+    if (instance_data != nullptr && !meshes.empty()) {
+      for (gb::Mesh* mesh : meshes) {
+        debug_triangle_count += mesh->GetTriangleCount();
+        render_system->Draw(scene_.get(), mesh, instance_data);
       }
     }
 
@@ -302,6 +302,18 @@ void World::DrawLightingGui() {
              modified;
   if (modified) {
     scene_->GetSceneBindingData()->SetConstants(1, lights_);
+  }
+  float sky_color[3] = {static_cast<float>(sky_color_.r) / 255.0f,
+                        static_cast<float>(sky_color_.g) / 255.0f,
+                        static_cast<float>(sky_color_.b) / 255.0f};
+  if (ImGui::ColorEdit3("Sky Color", sky_color)) {
+    sky_color_.r =
+        static_cast<uint8_t>(std::clamp(sky_color[0] * 255.0f, 0.0f, 255.0f));
+    sky_color_.g =
+        static_cast<uint8_t>(std::clamp(sky_color[1] * 255.0f, 0.0f, 255.0f));
+    sky_color_.b =
+        static_cast<uint8_t>(std::clamp(sky_color[2] * 255.0f, 0.0f, 255.0f));
+    context_.GetPtr<gb::RenderSystem>()->SetClearColor(sky_color_);
   }
   ImGui::End();
 }

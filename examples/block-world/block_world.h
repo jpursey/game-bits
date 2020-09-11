@@ -83,6 +83,7 @@ class BlockWorld final : public gb::Game {
   gb::RenderSystem* render_system_ = nullptr;
   gb::RenderBackend* render_backend_ = nullptr;
   gb::ImGuiInstance* gui_instance_ = nullptr;
+  GuiFonts* gui_fonts_ = nullptr;
   std::string init_state_name_;
 };
 

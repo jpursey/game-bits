@@ -40,7 +40,8 @@ void TitleState::OnUpdate(absl::Duration delta_time) {
                ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar |
                    ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
                    ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoBackground |
-                   ImGuiWindowFlags_NoBringToFrontOnFocus);
+                   ImGuiWindowFlags_NoBringToFrontOnFocus |
+                   ImGuiWindowFlags_NoInputs);
   auto* fonts = GetGuiFonts();
 
   ImGui::PushFont(fonts->title);

@@ -57,18 +57,9 @@ class Chunk final {
   // Block access
   //----------------------------------------------------------------------------
 
-  // Returns if the chunk is entirely empty
-  bool IsEmpty() { return empty_; }
-
   // After modifying block data, it will not be reflected properly until Update
   // is called.
   void Set(int x, int y, int z, BlockId new_block) {
-    assert(x >= 0);
-    assert(x < kSize.x);
-    assert(y >= 0);
-    assert(y < kSize.y);
-    assert(z >= 0);
-    assert(z < kSize.z);
     blocks_[x][y][z] = new_block;
     modified_ = true;
   }
@@ -112,13 +103,11 @@ class Chunk final {
 
   void AddMesh(MeshContext* context, int x, int y, int z);
 
-  void UpdateEmpty();
   bool UpdateMesh();
 
   World* const world_;
   const ChunkIndex index_;
   bool modified_ = false;
-  bool empty_ = true;
   bool has_mesh_ = false;
   BlockId blocks_[kSize.x][kSize.y][kSize.z] = {};
   gb::ResourceSet resources_;

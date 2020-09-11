@@ -89,6 +89,7 @@ class World final {
   Camera cull_camera_;
   std::unique_ptr<gb::RenderScene> scene_;
   SceneLightData lights_;
+  gb::Pixel sky_color_;
 };
 
 #endif WORLD_H_

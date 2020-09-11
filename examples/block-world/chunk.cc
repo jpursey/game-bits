@@ -21,25 +21,10 @@ void Chunk::Update() {
   if (!modified_) {
     return;
   }
-  UpdateEmpty();
   if (has_mesh_) {
     UpdateMesh();
     ClearMesh();
     BuildMesh();
-  }
-}
-
-void Chunk::UpdateEmpty() {
-  empty_ = true;
-  for (int x = 0; x < kSize.x; ++x) {
-    for (int y = 0; y < kSize.y; ++y) {
-      for (int z = 0; z < kSize.z; ++z) {
-        if (blocks_[x][y][z] != kBlockAir) {
-          empty_ = false;
-          return;
-        }
-      }
-    }
   }
 }
 

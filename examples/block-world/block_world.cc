@@ -201,6 +201,7 @@ bool BlockWorld::InitGui() {
   gui_instance_ = gui_instance.get();
   context_.SetOwned(std::move(gui_instance));
   context_.SetValue<GuiFonts>(fonts);
+  gui_fonts_ = context_.GetPtr<GuiFonts>();
   ImGui_ImplSDL2_InitForVulkan(window_);
 
   io.IniFilename = "game:/block-world-ui.ini";
@@ -227,6 +228,30 @@ bool BlockWorld::InitStates() {
 void BlockWorld::UpdateStateMachine(absl::Duration delta_time) {
   ImGui_ImplSDL2_NewFrame(window_);
   ImGui::NewFrame();
+
+  auto render_size = render_system_->GetFrameDimensions();
+  ImGui::SetNextWindowPos({static_cast<float>(render_size.width) - 90, 10});
+  ImGui::SetNextWindowSize({80, 30});
+  ImGui::Begin("Frame Stats", nullptr,
+               ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar |
+                   ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
+                   ImGuiWindowFlags_NoCollapse |
+                   ImGuiWindowFlags_NoBringToFrontOnFocus |
+                   ImGuiWindowFlags_NoInputs);
+  ImGui::PushFont(gui_fonts_->console);
+
+  static double frame_fps[16] = {};
+  static uint32_t frame = 0;
+  frame_fps[frame++ % ABSL_ARRAYSIZE(frame_fps)] =
+      1.0 / absl::ToDoubleSeconds(delta_time);
+  double average_fps = 0.0f;
+  for (double fps : frame_fps) {
+    average_fps += fps;
+  }
+  ImGui::Text("FPS: %.1f", average_fps / ABSL_ARRAYSIZE(frame_fps));
+
+  ImGui::PopFont();
+  ImGui::End();
 
   state_machine_->Update(delta_time);
 
