@@ -44,6 +44,6 @@ void Camera::DrawGui(const char* title) {
     UpdateView();
     UpdateStrafe();
   }
-  ImGui::SliderFloat("View Distance", &view_distance_, 10.0f, 250.0f);
+  ImGui::SliderFloat("View Distance", &view_distance_, 10.0f, 1200.0f);
   ImGui::End();
 }

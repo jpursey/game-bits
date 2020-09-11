@@ -12,6 +12,39 @@
 #include "camera.h"
 #include "world_resources.h"
 
+namespace {
+
+struct FrustumNormals {
+  FrustumNormals(const glm::mat4& view_projection) {
+    for (int i = 0; i < 3; ++i) {
+      const float v = view_projection[i][3];
+      left[i] = v + view_projection[i][0];
+      right[i] = v - view_projection[i][0];
+      bottom[i] = v + view_projection[i][1];
+      top[i] = v - view_projection[i][1];
+      near[i] = v + view_projection[i][2];
+      far[i] = v - view_projection[i][2];
+    }
+  }
+  void Normalize() {
+    left = glm::normalize(left);
+    right = glm::normalize(right);
+    top = glm::normalize(top);
+    bottom = glm::normalize(bottom);
+    near = glm::normalize(near);
+    far = glm::normalize(far);
+  }
+
+  glm::vec3 left;
+  glm::vec3 right;
+  glm::vec3 top;
+  glm::vec3 bottom;
+  glm::vec3 near;
+  glm::vec3 far;
+};
+
+}  // namespace
+
 World::World(gb::ValidatedContext context) : context_(std::move(context)) {}
 
 World::~World() {}
@@ -108,15 +141,28 @@ void World::InitSineWorldChunk(Chunk* chunk) {
 }
 
 void World::Draw(const Camera& camera) {
-  const glm::vec3 world_position = camera.GetPosition();
-  const float distance = camera.GetViewDistance();
-  glm::ivec3 chunk_position(
-      static_cast<int>(world_position.x / Chunk::kSize.x),
-      static_cast<int>(world_position.y / Chunk::kSize.y),
-      static_cast<int>(world_position.z / Chunk::kSize.z));
-  const glm::ivec3 chunk_distance(static_cast<int>(distance / Chunk::kSize.x),
-                                  static_cast<int>(distance / Chunk::kSize.y),
-                                  static_cast<int>(distance / Chunk::kSize.z));
+  const Camera cull_camera = (use_cull_camera_ ? cull_camera_ : camera);
+  const glm::vec3 cull_position = cull_camera.GetPosition();
+  const float cull_distance = cull_camera.GetViewDistance();
+
+  glm::ivec3 chunk_position(static_cast<int>(cull_position.x / Chunk::kSize.x),
+                            static_cast<int>(cull_position.y / Chunk::kSize.y),
+                            static_cast<int>(cull_position.z / Chunk::kSize.z));
+  // Negative positions floor toward zero, which puts them in the wrong chunk
+  // (off by one).
+  if (cull_position.x < 0) {
+    --chunk_position.x;
+  }
+  if (cull_position.y < 0) {
+    --chunk_position.y;
+  }
+  if (cull_position.z < 0) {
+    --chunk_position.z;
+  }
+  const glm::ivec3 chunk_distance(
+      static_cast<int>(cull_distance / Chunk::kSize.x),
+      static_cast<int>(cull_distance / Chunk::kSize.y),
+      static_cast<int>(cull_distance / Chunk::kSize.z));
   glm::ivec3 chunk_min_position = chunk_position - chunk_distance;
   glm::ivec3 chunk_max_position = chunk_position + chunk_distance;
 
@@ -146,10 +192,27 @@ void World::Draw(const Camera& camera) {
   glm::mat4 projection =
       glm::perspective(glm::radians(45.0f),
                        frame_size.width / static_cast<float>(frame_size.height),
-                       0.1f, distance * 2);
+                       0.1f, camera.GetViewDistance() * 2);
   projection[1][1] *= -1.0f;
   scene_->GetSceneBindingData()->SetConstants(
       0, SceneData{projection * camera.GetView()});
+
+  glm::mat4 cull_projection;
+  if (!use_cull_camera_) {
+    cull_projection = projection;
+  } else {
+    cull_projection = glm::perspective(
+        glm::radians(45.0f),
+        frame_size.width / static_cast<float>(frame_size.height), 0.1f,
+        cull_camera.GetViewDistance() * 2);
+    cull_projection[1][1] *= -1.0f;
+  }
+  glm::mat4 cull_view_projection = cull_projection * cull_camera.GetView();
+  FrustumNormals frustum(cull_view_projection);
+  frustum.Normalize();
+
+  int debug_triangle_count = 0;
+  int debug_chunk_count = 0;
 
   // Start in the current chunk and then flood fill to all visible chunks.
   absl::flat_hash_set<std::tuple<int, int, int>> visited;
@@ -164,15 +227,49 @@ void World::Draw(const Camera& camera) {
       ++queue_index;
       continue;
     }
+
     Chunk* chunk = GetChunk(chunk_queue[queue_index++]);
-    if (!chunk->HasMesh()) {
-      chunk->BuildMesh();
+
+    if (use_frustum_cull_) {
+      glm::vec3 chunk_center = {
+          static_cast<float>(index.x * Chunk::kSize.x + Chunk::kSize.x / 2),
+          static_cast<float>(index.y * Chunk::kSize.y + Chunk::kSize.y / 2),
+          static_cast<float>(index.z * Chunk::kSize.x + Chunk::kSize.z / 2)};
+      float plane_distance = glm::dot(
+          chunk_center - (cull_position + frustum.near * 0.1f), frustum.near);
+      if (plane_distance < -Chunk::kRadius) {
+        continue;
+      }
+      plane_distance = glm::dot(chunk_center - cull_position, frustum.left);
+      if (plane_distance < -Chunk::kRadius) {
+        continue;
+      }
+      plane_distance = glm::dot(chunk_center - cull_position, frustum.right);
+      if (plane_distance < -Chunk::kRadius) {
+        continue;
+      }
+      plane_distance = glm::dot(chunk_center - cull_position, frustum.top);
+      if (plane_distance < -Chunk::kRadius) {
+        continue;
+      }
+      plane_distance = glm::dot(chunk_center - cull_position, frustum.bottom);
+      if (plane_distance < -Chunk::kRadius) {
+        continue;
+      }
     }
-    auto instance_data = chunk->GetInstanceData();
-    auto meshes = chunk->GetMesh();
-    if (instance_data != nullptr && !meshes.empty()) {
-      for (gb::Mesh* mesh : meshes) {
-        render_system->Draw(scene_.get(), mesh, instance_data);
+
+    ++debug_chunk_count;
+    if (!chunk->IsEmpty()) {
+      if (!chunk->HasMesh()) {
+        chunk->BuildMesh();
+      }
+      auto instance_data = chunk->GetInstanceData();
+      auto meshes = chunk->GetMesh();
+      if (instance_data != nullptr && !meshes.empty()) {
+        for (gb::Mesh* mesh : meshes) {
+          debug_triangle_count += mesh->GetTriangleCount();
+          render_system->Draw(scene_.get(), mesh, instance_data);
+        }
       }
     }
 
@@ -197,6 +294,19 @@ void World::Draw(const Camera& camera) {
       chunk_queue.push_back({index.x, index.y, index.z + 1});
     }
   }
+
+  ImGui::Begin("World Render Stats");
+  if (ImGui::Checkbox("Freeze cull camera", &use_cull_camera_)) {
+    if (use_cull_camera_) {
+      EnableCullCamera(camera);
+    } else {
+      DisableCullCamera();
+    }
+  }
+  ImGui::Checkbox("Frustum culling", &use_frustum_cull_);
+  ImGui::Text("Chunks: %d", debug_chunk_count);
+  ImGui::Text("Triangles: %d", debug_triangle_count);
+  ImGui::End();
 }
 
 void World::DrawLightingGui() {

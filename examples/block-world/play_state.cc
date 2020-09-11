@@ -42,8 +42,12 @@ void PlayState::OnEnter() {
   Context().SetOwned(std::move(world));
 
   camera_.SetPosition({3, 15, 3});
-  camera_.SetDirection({0.4f, -0.7f, 0.4f});
-  camera_.SetViewDistance(100.0f);
+  camera_.SetDirection({0, 0, -1});
+#ifdef NDEBUG
+  camera_.SetViewDistance(640.0f);
+#else
+  camera_.SetViewDistance(96.0f);
+#endif
 }
 
 void PlayState::OnUpdate(absl::Duration delta_time) {
@@ -56,9 +60,11 @@ void PlayState::OnUpdate(absl::Duration delta_time) {
 
   if (camera_speed_mod_ != 0.0f || camera_strafe_mod_ != 0.0f) {
     glm::vec3 camera_position = camera_.GetPosition();
-    camera_position +=
-        camera_.GetDirection() * camera_speed_ * camera_speed_mod_;
-    camera_position += camera_.GetStrafe() * camera_speed_ * camera_strafe_mod_;
+    float delta_seconds = static_cast<float>(absl::ToDoubleSeconds(delta_time));
+    camera_position += camera_.GetDirection() * camera_speed_ *
+                       camera_speed_mod_ * delta_seconds;
+    camera_position += camera_.GetStrafe() * camera_speed_ *
+                       camera_strafe_mod_ * delta_seconds;
     camera_.SetPosition(camera_position);
   }
 

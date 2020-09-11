@@ -9,6 +9,7 @@
 #include "glm/glm.hpp"
 
 // Game includes
+#include "camera.h"
 #include "chunk.h"
 #include "game_types.h"
 #include "scene_types.h"
@@ -66,6 +67,12 @@ class World final {
   // Rendering
   //----------------------------------------------------------------------------
 
+  void EnableCullCamera(const Camera& camera) {
+    cull_camera_ = camera;
+    use_cull_camera_ = true;
+  }
+  void DisableCullCamera() { use_cull_camera_ = false; }
+
   void Draw(const Camera& camera);
   void DrawLightingGui();
 
@@ -85,6 +92,9 @@ class World final {
       chunks_;
 
   // Render data
+  bool use_frustum_cull_ = true;
+  bool use_cull_camera_ = false;
+  Camera cull_camera_;
   std::unique_ptr<gb::RenderScene> scene_;
   SceneLightData lights_;
 };

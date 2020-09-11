@@ -26,6 +26,7 @@ class Chunk final {
   //----------------------------------------------------------------------------
 
   static inline constexpr glm::ivec3 kSize = {16, 16, 16};
+  static inline constexpr float kRadius = 27.712813f;  // 16x16x16
 
   //----------------------------------------------------------------------------
   // Construction / Destruction

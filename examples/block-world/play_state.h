@@ -64,9 +64,10 @@ class PlayState final : public BaseState {
   void DrawGui();
 
   World* world_ = nullptr;
+
   Camera camera_;
   glm::ivec2 mouse_pos_ = {0, 0};
-  float camera_speed_ = 1.0f;
+  float camera_speed_ = 20.0f;
   float camera_speed_mod_ = 0.0f;
   float camera_strafe_mod_ = 0.0f;
   bool camera_rotating_ = false;
