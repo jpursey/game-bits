@@ -157,6 +157,7 @@ class VulkanBackend final : public RenderBackend {
   // RenderBackend overrides
   //----------------------------------------------------------------------------
 
+  void SetClearColor(RenderInternal, Pixel color) override;
   FrameDimensions GetFrameDimensions(RenderInternal) const override;
 
   Texture* CreateTexture(RenderInternal, gb::ResourceEntry entry,
@@ -297,6 +298,7 @@ class VulkanBackend final : public RenderBackend {
   VulkanRenderState render_state_;
 
   // Global resources
+  vk::ClearColorValue clear_color_;
   vk::Sampler sampler_;
   std::vector<VulkanSceneType*> scene_types_;
 

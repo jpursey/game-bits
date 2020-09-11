@@ -267,6 +267,10 @@ FrameDimensions RenderSystem::GetFrameDimensions() {
   return backend_->GetFrameDimensions({});
 }
 
+void RenderSystem::SetClearColor(Pixel color) {
+  backend_->SetClearColor({}, color);
+}
+
 std::unique_ptr<RenderScene> RenderSystem::CreateScene(
     RenderSceneType* scene_type, int scene_order) {
   return backend_->CreateScene({}, scene_type, scene_order);

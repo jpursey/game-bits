@@ -54,7 +54,7 @@ namespace gb {
 namespace {
 
 static const vk::ClearColorValue kColorClearValue(std::array<float, 4>{
-    0.0f, 0.0f, 0.0f, 0.1f});
+    0.0f, 0.0f, 0.0f, 1.0f});
 static const vk::ClearDepthStencilValue kDepthClearValue({1.0f, 0});
 
 }  // namespace
@@ -92,7 +92,8 @@ std::unique_ptr<VulkanBackend> VulkanBackend::Create(Contract contract) {
 
 VulkanBackend::VulkanBackend(gb::ValidatedContext context)
     : debug_(context.GetValue<bool>(kKeyEnableDebug)),
-      window_(context.GetPtr<VulkanWindow>()) {
+      window_(context.GetPtr<VulkanWindow>()),
+      clear_color_(kColorClearValue) {
   context_ = std::move(context);
 }
 
@@ -665,6 +666,15 @@ vk::ImageView VulkanBackend::CreateImageView(vk::Image image,
   return image_view;
 }
 
+void VulkanBackend::SetClearColor(RenderInternal, Pixel color) {
+  clear_color_.setFloat32(std::array<float, 4>({
+      static_cast<float>(color.r) / 255.0f,
+      static_cast<float>(color.g) / 255.0f,
+      static_cast<float>(color.b) / 255.0f,
+      static_cast<float>(color.a) / 255.0f,
+  }));
+}
+
 FrameDimensions VulkanBackend::GetFrameDimensions(RenderInternal) const {
   return {static_cast<int>(swap_extent_.width),
           static_cast<int>(swap_extent_.height)};
@@ -1043,8 +1053,8 @@ void VulkanBackend::EndFrameRenderPass() {
   auto& frame = frames_[frame_index_];
   auto& frame_buffer = frame_buffers_[frame_buffer_index_];
 
-  static const std::array<vk::ClearValue, 2> kClearValues = {kColorClearValue,
-                                                             kDepthClearValue};
+  const std::array<vk::ClearValue, 2> kClearValues = {clear_color_,
+                                                      kDepthClearValue};
   frame.commands.beginRenderPass(
       vk::RenderPassBeginInfo()
           .setRenderPass(render_pass_)

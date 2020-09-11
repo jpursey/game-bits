@@ -46,6 +46,9 @@ class RenderBackend {
   // Derived class interface
   //----------------------------------------------------------------------------
 
+  // Sets the clear color for the background before rendering takes place.
+  virtual void SetClearColor(RenderInternal, Pixel color) = 0;
+
   // Returns the current dimensions of the render frame.
   //
   // This may change from frame to frame if the render target changes size

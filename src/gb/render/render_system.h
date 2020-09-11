@@ -156,6 +156,9 @@ class RenderSystem final {
   // Return frame dimensions in pixels or null otherwise.
   FrameDimensions GetFrameDimensions();
 
+  // Sets the clear color for the background before rendering takes place.
+  void SetClearColor(Pixel color);
+
   //----------------------------------------------------------------------------
   // Resource / Scene creation
   //----------------------------------------------------------------------------

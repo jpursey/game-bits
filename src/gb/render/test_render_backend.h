@@ -68,6 +68,7 @@ class TestRenderBackend final : public RenderBackend {
   }
 
   // Implementation of RenderBackend
+  void SetClearColor(RenderInternal, Pixel color) override {}
   FrameDimensions GetFrameDimensions(RenderInternal) const override;
   Texture* CreateTexture(RenderInternal, ResourceEntry entry,
                          DataVolatility volatility, int width,
