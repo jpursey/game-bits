@@ -14,6 +14,28 @@
 
 namespace {
 
+inline constexpr glm::vec3 kChunkVertices[8] = {
+    glm::vec3(0, 0, 0),
+    glm::vec3(Chunk::kSize.x, 0, 0),
+    glm::vec3(0, Chunk::kSize.y, 0),
+    glm::vec3(Chunk::kSize.x, Chunk::kSize.y, 0),
+    glm::vec3(0, 0, Chunk::kSize.z),
+    glm::vec3(Chunk::kSize.x, 0, Chunk::kSize.z),
+    glm::vec3(0, Chunk::kSize.y, Chunk::kSize.z),
+    glm::vec3(Chunk::kSize.x, Chunk::kSize.y, Chunk::kSize.z),
+};
+
+inline bool IsChunkOutsidePlane(const glm::vec3& chunk_pos,
+                                const glm::vec3& plane_pos,
+                                const glm::vec3& normal) {
+  for (int i = 0; i < 8; ++i) {
+    if (glm::dot(chunk_pos + kChunkVertices[i] - plane_pos, normal) >= 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
 struct FrustumNormals {
   FrustumNormals(const glm::mat4& view_projection) {
     for (int i = 0; i < 3; ++i) {
@@ -84,15 +106,15 @@ bool World::InitGraphics() {
   return true;
 }
 
-Chunk* World::GetChunk(const glm::ivec3& index) {
-  auto& chunk = chunks_[{index.x, index.y, index.z}];
+Chunk* World::GetChunk(const ChunkIndex& index) {
+  auto& chunk = chunks_[{index.x, index.z}];
   if (chunk == nullptr) {
     chunk = NewChunk(index);
   }
   return chunk.get();
 }
 
-std::unique_ptr<Chunk> World::NewChunk(const glm::ivec3& index) {
+std::unique_ptr<Chunk> World::NewChunk(const ChunkIndex& index) {
   auto chunk = std::make_unique<Chunk>(this, index);
   InitSineWorldChunk(chunk.get());
   chunk->Update();
@@ -100,20 +122,17 @@ std::unique_ptr<Chunk> World::NewChunk(const glm::ivec3& index) {
 }
 
 void World::InitFlatWorldChunk(Chunk* chunk) {
-  glm::ivec3 index = chunk->GetIndex();
-  if (index.y > 0) {
-    return;
-  }
+  ChunkIndex index = chunk->GetIndex();
   for (int x = 0; x < Chunk::kSize.x; ++x) {
     for (int y = 0; y < Chunk::kSize.y; ++y) {
       for (int z = 0; z < Chunk::kSize.z; ++z) {
-        if (y < 4 || index.y < 0) {
+        if (y < 100) {
           chunk->Set(x, y, z, kBlockRock2);
-        } else if (y < 8) {
+        } else if (y < 108) {
           chunk->Set(x, y, z, kBlockRock1);
-        } else if (y < 12) {
+        } else if (y < 116) {
           chunk->Set(x, y, z, kBlockDirt);
-        } else if (y == 12) {
+        } else if (y == 116) {
           chunk->Set(x, y, z, kBlockGrass);
         }
       }
@@ -123,17 +142,14 @@ void World::InitFlatWorldChunk(Chunk* chunk) {
 
 void World::InitSineWorldChunk(Chunk* chunk) {
   InitFlatWorldChunk(chunk);
-  glm::ivec3 index = chunk->GetIndex();
-  if (index.y != 0) {
-    return;
-  }
+  ChunkIndex index = chunk->GetIndex();
   static constexpr float kSineScale = 0.1f;
   for (int x = 0; x < Chunk::kSize.x; ++x) {
     for (int z = 0; z < Chunk::kSize.z; ++z) {
       const float v = std::sin((index.x * Chunk::kSize.x + x) * kSineScale) +
                       std::sin((index.z * Chunk::kSize.z + z) * kSineScale);
-      const int depth = std::clamp(static_cast<int>(v * 3.0f) + 8, 0, 13);
-      for (int y = depth; y < 13; ++y) {
+      const int depth = std::clamp(static_cast<int>(v * 6.0f) + 108, 0, 117);
+      for (int y = depth; y < 117; ++y) {
         chunk->Set(x, y, z, kBlockAir);
       }
     }
@@ -145,41 +161,24 @@ void World::Draw(const Camera& camera) {
   const glm::vec3 cull_position = cull_camera.GetPosition();
   const float cull_distance = cull_camera.GetViewDistance();
 
-  glm::ivec3 chunk_position(static_cast<int>(cull_position.x / Chunk::kSize.x),
-                            static_cast<int>(cull_position.y / Chunk::kSize.y),
-                            static_cast<int>(cull_position.z / Chunk::kSize.z));
+  ChunkIndex chunk_position = {
+      static_cast<int>(cull_position.x / Chunk::kSize.x),
+      static_cast<int>(cull_position.z / Chunk::kSize.z)};
   // Negative positions floor toward zero, which puts them in the wrong chunk
   // (off by one).
   if (cull_position.x < 0) {
     --chunk_position.x;
   }
-  if (cull_position.y < 0) {
-    --chunk_position.y;
-  }
   if (cull_position.z < 0) {
     --chunk_position.z;
   }
-  const glm::ivec3 chunk_distance(
+  const ChunkIndex chunk_distance = {
       static_cast<int>(cull_distance / Chunk::kSize.x),
-      static_cast<int>(cull_distance / Chunk::kSize.y),
-      static_cast<int>(cull_distance / Chunk::kSize.z));
-  glm::ivec3 chunk_min_position = chunk_position - chunk_distance;
-  glm::ivec3 chunk_max_position = chunk_position + chunk_distance;
-
-  // Clamp vertical distance
-  if (chunk_min_position.y > kMaxChunkIndexY ||
-      chunk_max_position.y < kMinChunkIndexY) {
-    return;
-  }
-  if (chunk_min_position.y < kMinChunkIndexY) {
-    chunk_min_position.y = kMinChunkIndexY;
-  }
-  if (chunk_max_position.y > kMaxChunkIndexY) {
-    chunk_max_position.y = kMaxChunkIndexY;
-  }
-
-  // Hack to only render y = 0;
-  chunk_position.y = chunk_min_position.y = chunk_max_position.y = 0;
+      static_cast<int>(cull_distance / Chunk::kSize.z)};
+  const ChunkIndex chunk_min_position = {chunk_position.x - chunk_distance.x,
+                                         chunk_position.z - chunk_distance.z};
+  const ChunkIndex chunk_max_position = {chunk_position.x + chunk_distance.x,
+                                         chunk_position.z + chunk_distance.z};
 
   auto* render_system = context_.GetPtr<gb::RenderSystem>();
   auto frame_size = render_system->GetFrameDimensions();
@@ -215,15 +214,14 @@ void World::Draw(const Camera& camera) {
   int debug_chunk_count = 0;
 
   // Start in the current chunk and then flood fill to all visible chunks.
-  absl::flat_hash_set<std::tuple<int, int, int>> visited;
-  std::vector<glm::ivec3> chunk_queue;
-  // This is rediculously innefficient, and will be better with culling
-  chunk_queue.reserve(16000);
+  absl::flat_hash_set<std::tuple<int, int>> visited;
+  std::vector<ChunkIndex> chunk_queue;
+  chunk_queue.reserve(1000);
   chunk_queue.push_back(chunk_position);
   int queue_index = 0;
   while (queue_index < static_cast<int>(chunk_queue.size())) {
     auto index = chunk_queue[queue_index];
-    if (!visited.insert({index.x, index.y, index.z}).second) {
+    if (!visited.insert({index.x, index.z}).second) {
       ++queue_index;
       continue;
     }
@@ -231,29 +229,14 @@ void World::Draw(const Camera& camera) {
     Chunk* chunk = GetChunk(chunk_queue[queue_index++]);
 
     if (use_frustum_cull_) {
-      glm::vec3 chunk_center = {
-          static_cast<float>(index.x * Chunk::kSize.x + Chunk::kSize.x / 2),
-          static_cast<float>(index.y * Chunk::kSize.y + Chunk::kSize.y / 2),
-          static_cast<float>(index.z * Chunk::kSize.x + Chunk::kSize.z / 2)};
-      float plane_distance = glm::dot(
-          chunk_center - (cull_position + frustum.near * 0.1f), frustum.near);
-      if (plane_distance < -Chunk::kRadius) {
-        continue;
-      }
-      plane_distance = glm::dot(chunk_center - cull_position, frustum.left);
-      if (plane_distance < -Chunk::kRadius) {
-        continue;
-      }
-      plane_distance = glm::dot(chunk_center - cull_position, frustum.right);
-      if (plane_distance < -Chunk::kRadius) {
-        continue;
-      }
-      plane_distance = glm::dot(chunk_center - cull_position, frustum.top);
-      if (plane_distance < -Chunk::kRadius) {
-        continue;
-      }
-      plane_distance = glm::dot(chunk_center - cull_position, frustum.bottom);
-      if (plane_distance < -Chunk::kRadius) {
+      const glm::vec3 chunk_pos = {index.x * Chunk::kSize.x, 0,
+                                   index.z * Chunk::kSize.z};
+      if (IsChunkOutsidePlane(chunk_pos, cull_position + frustum.near * 0.1f,
+                              frustum.near) ||
+          IsChunkOutsidePlane(chunk_pos, cull_position, frustum.left) ||
+          IsChunkOutsidePlane(chunk_pos, cull_position, frustum.right) ||
+          IsChunkOutsidePlane(chunk_pos, cull_position, frustum.top) ||
+          IsChunkOutsidePlane(chunk_pos, cull_position, frustum.bottom)) {
         continue;
       }
     }
@@ -276,22 +259,16 @@ void World::Draw(const Camera& camera) {
     // TODO: Traverse to neighboring mesh that is not culled.
 
     if (index.x > chunk_min_position.x) {
-      chunk_queue.push_back({index.x - 1, index.y, index.z});
+      chunk_queue.push_back({index.x - 1, index.z});
     }
     if (index.x < chunk_max_position.x) {
-      chunk_queue.push_back({index.x + 1, index.y, index.z});
-    }
-    if (index.y > chunk_min_position.y) {
-      chunk_queue.push_back({index.x, index.y - 1, index.z});
-    }
-    if (index.y < chunk_max_position.y) {
-      chunk_queue.push_back({index.x, index.y + 1, index.z});
+      chunk_queue.push_back({index.x + 1, index.z});
     }
     if (index.z > chunk_min_position.z) {
-      chunk_queue.push_back({index.x, index.y, index.z - 1});
+      chunk_queue.push_back({index.x, index.z - 1});
     }
     if (index.z < chunk_max_position.z) {
-      chunk_queue.push_back({index.x, index.y, index.z + 1});
+      chunk_queue.push_back({index.x, index.z + 1});
     }
   }
 

@@ -41,8 +41,8 @@ void PlayState::OnEnter() {
   world_ = world.get();
   Context().SetOwned(std::move(world));
 
-  camera_.SetPosition({3, 15, 3});
-  camera_.SetDirection({0, 0, -1});
+  camera_.SetPosition({10, 120, 10});
+  camera_.SetDirection({0, 0, 1});
 #ifdef NDEBUG
   camera_.SetViewDistance(640.0f);
 #else

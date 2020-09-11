@@ -18,13 +18,6 @@
 class World final {
  public:
   //----------------------------------------------------------------------------
-  // Constants and Types
-  //----------------------------------------------------------------------------
-
-  static inline constexpr int kMinChunkIndexY = -128 / Chunk::kSize.y;
-  static inline constexpr int kMaxChunkIndexY = 256 / Chunk::kSize.y;
-
-  //----------------------------------------------------------------------------
   // Contract constraints
   //----------------------------------------------------------------------------
 
@@ -61,7 +54,7 @@ class World final {
   // Chunk access
   //----------------------------------------------------------------------------
 
-  Chunk* GetChunk(const glm::ivec3& index);
+  Chunk* GetChunk(const ChunkIndex& index);
 
   //----------------------------------------------------------------------------
   // Rendering
@@ -81,15 +74,14 @@ class World final {
 
   bool InitGraphics();
 
-  std::unique_ptr<Chunk> NewChunk(const glm::ivec3& index);
+  std::unique_ptr<Chunk> NewChunk(const ChunkIndex& index);
   void InitFlatWorldChunk(Chunk* chunk);
   void InitSineWorldChunk(Chunk* chunk);
 
   gb::ValidatedContext context_;
 
   // Game data
-  absl::flat_hash_map<std::tuple<int, int, int>, std::unique_ptr<Chunk>>
-      chunks_;
+  absl::flat_hash_map<std::tuple<int, int>, std::unique_ptr<Chunk>> chunks_;
 
   // Render data
   bool use_frustum_cull_ = true;

@@ -16,6 +16,13 @@
 #include "game_types.h"
 #include "scene_types.h"
 
+// All chunks are logically zero for Y.
+struct ChunkIndex {
+  ChunkIndex() = default;
+  int x = 0;
+  int z = 0;
+};
+
 // Game representation for a chunk in the world.
 //
 // Chunks are made up of blocks
@@ -25,14 +32,14 @@ class Chunk final {
   // Constants and Types
   //----------------------------------------------------------------------------
 
-  static inline constexpr glm::ivec3 kSize = {16, 16, 16};
+  static inline constexpr glm::ivec3 kSize = {16, 256, 16};
   static inline constexpr float kRadius = 27.712813f;  // 16x16x16
 
   //----------------------------------------------------------------------------
   // Construction / Destruction
   //----------------------------------------------------------------------------
 
-  Chunk(World* world, glm::ivec3 index) : world_(world), index_(index) {}
+  Chunk(World* world, const ChunkIndex& index) : world_(world), index_(index) {}
   Chunk(const Chunk&) = delete;
   Chunk(Chunk&&) = delete;
   Chunk& operator=(const Chunk&) = delete;
@@ -44,7 +51,7 @@ class Chunk final {
   //----------------------------------------------------------------------------
 
   World* GetWorld() const { return world_; }
-  const glm::ivec3& GetIndex() const { return index_; }
+  const ChunkIndex& GetIndex() const { return index_; }
 
   //----------------------------------------------------------------------------
   // Block access
@@ -109,7 +116,7 @@ class Chunk final {
   bool UpdateMesh();
 
   World* const world_;
-  const glm::ivec3 index_;
+  const ChunkIndex index_;
   bool modified_ = false;
   bool empty_ = true;
   bool has_mesh_ = false;
