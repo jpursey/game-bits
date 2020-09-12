@@ -410,6 +410,19 @@ bool ImGuiInstance::LoadFonts() {
   return true;
 }
 
+ImTextureID ImGuiInstance::AddTexture(gb::Texture* texture) {
+  auto* render_system = context_.GetPtr<RenderSystem>();
+  auto* material =
+      render_system->CreateMaterial(&resources_, material_->GetType());
+  if (material == nullptr) {
+    LOG(ERROR) << "Failed to create GUI texture";
+    return nullptr;
+  }
+  resources_.Add(texture);
+  material->GetMaterialBindingData()->SetTexture(0, texture);
+  return static_cast<ImTextureID>(material);
+}
+
 void ImGuiInstance::Draw(ImDrawData* draw_data) {
   if (!IsActive() || mesh_ == nullptr) {
     return;
@@ -450,6 +463,7 @@ void ImGuiInstance::Draw(ImDrawData* draw_data) {
 
   DrawList draw;
   draw.SetMesh(mesh_, instance_data_.get());
+  ImTextureID last_texture_id = static_cast<ImTextureID>(mesh_->GetMaterial());
   ImVec2 clip_off = draw_data->DisplayPos;
   ImVec2 clip_scale = draw_data->FramebufferScale;
   int vertex_offset = 0;
@@ -495,6 +509,11 @@ void ImGuiInstance::Draw(ImDrawData* draw_data) {
                             static_cast<int>(clip_rect.y),
                             static_cast<int>(clip_rect.z - clip_rect.x),
                             static_cast<int>(clip_rect.w - clip_rect.y));
+            if (cmd->TextureId != last_texture_id) {
+              last_texture_id = cmd->TextureId;
+              draw.SetMaterialData(static_cast<gb::Material*>(cmd->TextureId)
+                                       ->GetMaterialBindingData());
+            }
             draw.DrawPartial((cmd->IdxOffset + index_offset) / 3,
                              cmd->ElemCount / 3,
                              cmd->VtxOffset + vertex_offset);

@@ -75,6 +75,11 @@ class ImGuiInstance final {
   //  }
   bool LoadFonts();
 
+  // Adds a texture to be used with ImGui.
+  //
+  // The texture will remain loaded until the ImGuiInstance is destroyed.
+  ImTextureID AddTexture(gb::Texture* texture);
+
   //----------------------------------------------------------------------------
   // Properties
   //----------------------------------------------------------------------------
