@@ -13,3 +13,14 @@ set(stb_image_INCLUDES
 )
 
 gb_add_library(stb_image)
+
+set(stb_perlin_SOURCE
+  ${GB_THIRD_PARTY_DIR}/stb/stb_perlin.h
+  stb_perlin.cc
+)
+
+set(stb_perlin_INCLUDES
+  ${GB_THIRD_PARTY_DIR}/stb
+)
+
+gb_add_library(stb_perlin)
