@@ -24,8 +24,10 @@
 #include "imgui.h"
 
 // Game includes
+#include "cube.h"
 #include "gui_fonts.h"
 #include "world.h"
+#include "world_resources.h"
 
 PlayState::PlayState() {}
 PlayState::~PlayState() {}
@@ -41,6 +43,8 @@ void PlayState::OnEnter() {
   world_ = world.get();
   Context().SetOwned(std::move(world));
 
+  world_resources_ = Context().GetPtr<WorldResources>();
+
   camera_.SetPosition({10, 120, 10});
   camera_.SetDirection({0, 0, 1});
 #ifdef NDEBUG
@@ -52,6 +56,10 @@ void PlayState::OnEnter() {
 
 void PlayState::OnUpdate(absl::Duration delta_time) {
   BaseState::OnUpdate(delta_time);
+
+  if (camera_rotating_) {
+    right_click_down_time_ += delta_time;
+  }
 
   auto* render_system = GetRenderSystem();
   if (!render_system->BeginFrame()) {
@@ -70,22 +78,67 @@ void PlayState::OnUpdate(absl::Duration delta_time) {
     camera_.SetPosition(camera_position);
   }
 
+  ImGui::PushFont(GetGuiFonts()->console);
+
   world_->Draw(camera_);
 
   DrawGui();
+
+  ImGui::PopFont();
+  GetGuiInstance()->Draw();
 
   render_system->EndFrame();
 }
 
 void PlayState::DrawGui() {
-  auto* fonts = GetGuiFonts();
-  ImGui::PushFont(fonts->console);
-
   world_->DrawLightingGui();
   camera_.DrawGui();
 
-  ImGui::PopFont();
-  GetGuiInstance()->Draw();
+  auto render_size = GetRenderSystem()->GetFrameDimensions();
+  ImVec2 window_size = {static_cast<float>(render_size.width),
+                        static_cast<float>(render_size.height)};
+
+  static constexpr int kHudBlockSize = 50;
+  static constexpr int kHudSpacing = 10;
+  static constexpr int kNumBlocks = kLastSoldBlock - kFirstSolidBlock + 1;
+  static constexpr int kHudWidth =
+      (kHudBlockSize + kHudSpacing) * kNumBlocks - kHudSpacing;
+
+  ImVec2 hud_start = {(window_size.x - kHudWidth) / 2,
+                      window_size.y - kHudBlockSize - 20};
+  ImGui::SetNextWindowPos({hud_start.x - 10, hud_start.y - 10});
+  ImGui::SetNextWindowSize({static_cast<float>(kHudWidth) + 21,
+                            static_cast<float>(kHudBlockSize) + 21});
+  ImGui::Begin("HUD", nullptr,
+               ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar |
+                   ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
+                   ImGuiWindowFlags_NoCollapse |
+                   ImGuiWindowFlags_NoBringToFrontOnFocus);
+
+  ImGui::PushStyleColor(ImGuiCol_Text, {0, 0, 0, 0});
+  ImGui::PushStyleColor(ImGuiCol_HeaderActive, {0, 0, 0, 0});
+  ImGui::PushStyleColor(ImGuiCol_HeaderHovered, {0, 0, 0, 0});
+  ImGui::PushStyleColor(ImGuiCol_Header, {0, 0, 0, 0});
+  for (BlockId block = kFirstSolidBlock; block <= kLastSoldBlock; ++block) {
+    ImGui::SetCursorScreenPos(hud_start);
+    ImGui::Image(
+        world_resources_->GetBlockGuiTexture(),
+        {static_cast<float>(kHudBlockSize), static_cast<float>(kHudBlockSize)},
+        {kBlockUvOffset[block].x, kBlockUvOffset[block].y},
+        {kBlockUvOffset[block].x + kBlockUvEndScale,
+         kBlockUvOffset[block].y + kBlockUvEndScale},
+        {1, 1, 1, 1},
+        {1, 1, 1, static_cast<float>(block == selected_block_ ? 1 : 0)});
+    ImGui::SetCursorScreenPos(hud_start);
+    if (ImGui::Selectable(absl::StrCat("##HUD_", block).c_str(), true, 0,
+                          {static_cast<float>(kHudBlockSize),
+                           static_cast<float>(kHudBlockSize)})) {
+      selected_block_ = block;
+    }
+    hud_start.x += kHudBlockSize + kHudSpacing;
+  }
+  ImGui::PopStyleColor(4);
+  ImGui::End();
 }
 
 bool PlayState::OnSdlEvent(const SDL_Event& event) {
@@ -135,18 +188,28 @@ bool PlayState::OnSdlEvent(const SDL_Event& event) {
   }
   if (event.type == SDL_MOUSEBUTTONDOWN) {
     if (event.button.button == SDL_BUTTON_RIGHT) {
+      right_click_down_time_ = absl::ZeroDuration();
       camera_rotating_ = true;
       SDL_GetGlobalMouseState(&mouse_pos_.x, &mouse_pos_.y);
       SDL_SetRelativeMouseMode(SDL_TRUE);
       return true;
     }
+    if (event.button.button == SDL_BUTTON_LEFT && !camera_rotating_) {
+      AddBlock(event.button.x, event.button.y);
+    }
     return false;
   }
   if (event.type == SDL_MOUSEBUTTONUP) {
     if (event.button.button == SDL_BUTTON_RIGHT) {
+      if (!camera_rotating_) {
+        return false;
+      }
       camera_rotating_ = false;
       SDL_SetRelativeMouseMode(SDL_FALSE);
       SDL_WarpMouseGlobal(mouse_pos_.x, mouse_pos_.y);
+      if (right_click_down_time_ < absl::Seconds(0.25f)) {
+        RemoveBlock(event.button.x, event.button.y);
+      }
       return true;
     }
     return false;
@@ -162,4 +225,65 @@ bool PlayState::OnSdlEvent(const SDL_Event& event) {
     return true;
   }
   return false;
+}
+
+void PlayState::AddBlock(int screen_x, int screen_y) {
+  const auto& frame_size = GetRenderSystem()->GetFrameDimensions();
+  if (frame_size.width == 0 || frame_size.height == 0) {
+    return;
+  }
+  glm::vec3 start = camera_.GetPosition();
+  if (world_->GetBlock(start) != kBlockAir) {
+    return;
+  }
+  glm::vec3 ray = camera_.CreateScreenRay(frame_size, screen_x, screen_y);
+  HitInfo hit = world_->RayCast(start, ray, 50.0f);
+  if (hit.block == kBlockAir) {
+    return;
+  }
+
+  switch (hit.face) {
+    case kCubePx:
+      ++hit.index.x;
+      break;
+    case kCubeNx:
+      --hit.index.x;
+      break;
+    case kCubePy:
+      ++hit.index.y;
+      break;
+    case kCubeNy:
+      --hit.index.y;
+      break;
+    case kCubePz:
+      ++hit.index.z;
+      break;
+    case kCubeNz:
+      --hit.index.z;
+      break;
+  }
+  if (hit.index == glm::ivec3(std::floor(start.x), std::floor(start.y),
+                              std::floor(start.z))) {
+    return;
+  }
+
+  world_->SetBlock(hit.index, selected_block_);
+}
+
+void PlayState::RemoveBlock(int screen_x, int screen_y) {
+  const auto& frame_size = GetRenderSystem()->GetFrameDimensions();
+  if (frame_size.width == 0 || frame_size.height == 0) {
+    return;
+  }
+  glm::vec3 start = camera_.GetPosition();
+  if (world_->GetBlock(start) != kBlockAir) {
+    return;
+  }
+  glm::vec3 ray = camera_.CreateScreenRay(frame_size, screen_x, screen_y);
+  HitInfo hit = world_->RayCast(start, ray, 50.0f);
+  if (hit.block == kBlockAir) {
+    return;
+  }
+
+  world_->SetBlock(hit.index, kBlockAir);
 }

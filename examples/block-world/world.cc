@@ -4,12 +4,12 @@
 
 #include "absl/memory/memory.h"
 #include "gb/render/render_system.h"
-#include "glm/ext/matrix_clip_space.hpp"
 #include "imgui.h"
 
 // Game includes
 #include "block.h"
 #include "camera.h"
+#include "cube.h"
 #include "world_resources.h"
 
 namespace {
@@ -108,14 +108,6 @@ bool World::InitGraphics() {
   return true;
 }
 
-Chunk* World::GetChunk(const ChunkIndex& index) {
-  auto& chunk = chunks_[{index.x, index.z}];
-  if (chunk == nullptr) {
-    chunk = NewChunk(index);
-  }
-  return chunk.get();
-}
-
 std::unique_ptr<Chunk> World::NewChunk(const ChunkIndex& index) {
   auto chunk = std::make_unique<Chunk>(this, index);
   InitSineWorldChunk(chunk.get());
@@ -158,43 +150,219 @@ void World::InitSineWorldChunk(Chunk* chunk) {
   }
 }
 
+bool World::GetIndex(int x, int y, int z, ChunkIndex* chunk_index,
+                     glm::ivec3* block_index) {
+  if (y < 0 || y > Chunk::kSize.y) {
+    *chunk_index = {0, 0};
+    if (block_index != nullptr) {
+      *block_index = {0, 0, 0};
+    }
+    return false;
+  }
+  chunk_index->x = x / Chunk::kSize.x;
+  x %= Chunk::kSize.x;
+  if (x < 0) {
+    x += Chunk::kSize.x;
+    --chunk_index->x;
+  }
+
+  y %= Chunk::kSize.y;
+
+  chunk_index->z = z / Chunk::kSize.z;
+  z %= Chunk::kSize.z;
+  if (z < 0) {
+    z += Chunk::kSize.z;
+    --chunk_index->z;
+  }
+
+  if (block_index != nullptr) {
+    *block_index = {x, y, z};
+  }
+  return true;
+}
+
+Chunk* World::GetChunk(const ChunkIndex& index) {
+  auto& chunk = chunks_[{index.x, index.z}];
+  if (chunk == nullptr) {
+    chunk = NewChunk(index);
+  }
+  return chunk.get();
+}
+
+BlockId World::GetBlock(int x, int y, int z) {
+  ChunkIndex chunk_index;
+  glm::ivec3 block_index;
+  if (!GetIndex(x, y, z, &chunk_index, &block_index)) {
+    return kBlockAir;
+  }
+  return GetChunk(chunk_index)->Get(block_index);
+}
+
+void World::SetBlock(int x, int y, int z, BlockId block) {
+  ChunkIndex chunk_index;
+  glm::ivec3 block_index;
+  if (!GetIndex(x, y, z, &chunk_index, &block_index)) {
+    return;
+  }
+  Chunk* chunk = GetChunk(chunk_index);
+  bool had_block = chunk->Get(block_index) != kBlockAir;
+  chunk->Set(block_index, block);
+  if (had_block != (block != kBlockAir)) {
+    if (block_index.x == 0) {
+      GetChunk({chunk_index.x - 1, chunk_index.z})->Invalidate();
+    } else if (block_index.x == Chunk::kSize.x - 1) {
+      GetChunk({chunk_index.x + 1, chunk_index.z})->Invalidate();
+    }
+    if (block_index.z == 0) {
+      GetChunk({chunk_index.x, chunk_index.z - 1})->Invalidate();
+    } else if (block_index.z == Chunk::kSize.z - 1) {
+      GetChunk({chunk_index.x, chunk_index.z + 1})->Invalidate();
+    }
+  }
+}
+
+HitInfo World::RayCast(const glm::vec3& position, const glm::vec3& ray,
+                       float distance) {
+  static constexpr float kMinAxisValue = 0.000001f;  // Treated as zero.
+
+  glm::ivec3 world_index = {std::floor(position.x), std::floor(position.y),
+                            std::floor(position.z)};
+  HitInfo hit = {world_index, 0, kBlockAir};
+
+  ChunkIndex chunk_index;
+  glm::ivec3 block_index;
+  if (!GetIndex(position, &chunk_index, &block_index)) {
+    return hit;
+  }
+  Chunk* chunk = GetChunk(chunk_index);
+
+  const glm::ivec3 step = {
+      ray.x < 0 ? -1 : 1,
+      ray.y < 0 ? -1 : 1,
+      ray.z < 0 ? -1 : 1,
+  };
+  const glm::vec3 delta = {
+      (std::fabs(ray.x) < kMinAxisValue ? 1.0f / kMinAxisValue
+                                        : 1.0f / std::fabs(ray.x)),
+      (std::fabs(ray.y) < kMinAxisValue ? 1.0f / kMinAxisValue
+                                        : 1.0f / std::fabs(ray.y)),
+      (std::fabs(ray.z) < kMinAxisValue ? 1.0f / kMinAxisValue
+                                        : 1.0f / std::fabs(ray.z)),
+  };
+  glm::vec3 max = {
+      (world_index.x - position.x + (ray.x < 0 ? 0.0f : 1.0f)) / ray.x,
+      (world_index.y - position.y + (ray.y < 0 ? 0.0f : 1.0f)) / ray.y,
+      (world_index.z - position.z + (ray.z < 0 ? 0.0f : 1.0f)) / ray.z,
+  };
+
+  // Sides that are crossed from the perspective of the new block.
+  const int sides[3] = {
+      step.x < 0 ? kCubePx : kCubeNx,
+      step.y < 0 ? kCubePy : kCubeNy,
+      step.z < 0 ? kCubePz : kCubeNz,
+  };
+  int crossed_side = sides[0];
+
+  glm::vec3 travel = {0, 0, 0};
+  const float distance_squared = distance * distance;
+
+  while (true) {
+    if (max.x < max.y) {
+      if (max.x < max.z) {
+        crossed_side = sides[0];
+        block_index.x += step.x;
+        world_index.x += step.x;
+        max.x += delta.x;
+        travel.x += 1.0f;
+        if (block_index.x < 0) {
+          block_index.x = Chunk::kSize.x - 1;
+          --chunk_index.x;
+          chunk = GetChunk(chunk_index);
+        } else if (block_index.x >= Chunk::kSize.x) {
+          block_index.x = 0;
+          ++chunk_index.x;
+          chunk = GetChunk(chunk_index);
+        }
+      } else {
+        crossed_side = sides[2];
+        block_index.z += step.z;
+        world_index.z += step.z;
+        max.z += delta.z;
+        travel.z += 1.0f;
+        if (block_index.z < 0) {
+          block_index.z = Chunk::kSize.z - 1;
+          --chunk_index.z;
+          chunk = GetChunk(chunk_index);
+        } else if (block_index.z >= Chunk::kSize.z) {
+          block_index.z = 0;
+          ++chunk_index.z;
+          chunk = GetChunk(chunk_index);
+        }
+      }
+    } else {
+      if (max.y < max.z) {
+        crossed_side = sides[1];
+        block_index.y += step.y;
+        world_index.y += step.y;
+        max.y += delta.y;
+        travel.y += 1.0f;
+        if (block_index.y < 0 || block_index.y >= Chunk::kSize.y) {
+          hit.index = world_index;
+          hit.face = crossed_side;
+          return hit;
+        }
+      } else {
+        crossed_side = sides[2];
+        block_index.z += step.z;
+        world_index.z += step.z;
+        max.z += delta.z;
+        travel.z += 1.0f;
+        if (block_index.z < 0) {
+          block_index.z = Chunk::kSize.z - 1;
+          --chunk_index.z;
+          chunk = GetChunk(chunk_index);
+        } else if (block_index.z >= Chunk::kSize.z) {
+          block_index.z = 0;
+          ++chunk_index.z;
+          chunk = GetChunk(chunk_index);
+        }
+      }
+    }
+    if (glm::dot(travel, travel) > distance_squared) {
+      hit.index = world_index;
+      hit.face = crossed_side;
+      return hit;
+    }
+    hit.block = chunk->Get(block_index);
+    if (hit.block != kBlockAir) {
+      break;
+    }
+  }
+  hit.index = world_index;
+  hit.face = crossed_side;
+  return hit;
+}
+
 void World::Draw(const Camera& camera) {
   const Camera cull_camera = (use_cull_camera_ ? cull_camera_ : camera);
   const glm::vec3 cull_position = cull_camera.GetPosition();
   const float cull_distance = cull_camera.GetViewDistance();
 
-  ChunkIndex chunk_position = {
-      static_cast<int>(cull_position.x / Chunk::kSize.x),
-      static_cast<int>(cull_position.z / Chunk::kSize.z)};
-  // Negative positions floor toward zero, which puts them in the wrong chunk
-  // (off by one).
-  if (cull_position.x < 0) {
-    --chunk_position.x;
-  }
-  if (cull_position.z < 0) {
-    --chunk_position.z;
+  ChunkIndex chunk_index;
+  if (!GetIndex(cull_position, &chunk_index, nullptr)) {
+    return;
   }
   const ChunkIndex chunk_distance = {
       static_cast<int>(cull_distance / Chunk::kSize.x),
       static_cast<int>(cull_distance / Chunk::kSize.z)};
-  const ChunkIndex chunk_min_position = {chunk_position.x - chunk_distance.x,
-                                         chunk_position.z - chunk_distance.z};
-  const ChunkIndex chunk_max_position = {chunk_position.x + chunk_distance.x,
-                                         chunk_position.z + chunk_distance.z};
+  const ChunkIndex chunk_min_position = {chunk_index.x - chunk_distance.x,
+                                         chunk_index.z - chunk_distance.z};
+  const ChunkIndex chunk_max_position = {chunk_index.x + chunk_distance.x,
+                                         chunk_index.z + chunk_distance.z};
 
   auto* render_system = context_.GetPtr<gb::RenderSystem>();
-  auto frame_size = render_system->GetFrameDimensions();
-  if (frame_size.width == 0) {
-    frame_size.width = 1;
-  }
-  if (frame_size.height == 0) {
-    frame_size.height = 1;
-  }
   glm::mat4 projection =
-      glm::perspective(glm::radians(45.0f),
-                       frame_size.width / static_cast<float>(frame_size.height),
-                       0.1f, camera.GetViewDistance() * 2);
-  projection[1][1] *= -1.0f;
+      camera.CreateProjection(render_system->GetFrameDimensions());
   scene_->GetSceneBindingData()->SetConstants(
       0, SceneData{projection * camera.GetView()});
 
@@ -202,11 +370,8 @@ void World::Draw(const Camera& camera) {
   if (!use_cull_camera_) {
     cull_projection = projection;
   } else {
-    cull_projection = glm::perspective(
-        glm::radians(45.0f),
-        frame_size.width / static_cast<float>(frame_size.height), 0.1f,
-        cull_camera.GetViewDistance() * 2);
-    cull_projection[1][1] *= -1.0f;
+    cull_projection =
+        cull_camera.CreateProjection(render_system->GetFrameDimensions());
   }
   glm::mat4 cull_view_projection = cull_projection * cull_camera.GetView();
   FrustumNormals frustum(cull_view_projection);
@@ -215,11 +380,10 @@ void World::Draw(const Camera& camera) {
   int debug_triangle_count = 0;
   int debug_chunk_count = 0;
 
-  // Start in the current chunk and then flood fill to all visible chunks.
   absl::flat_hash_set<std::tuple<int, int>> visited;
   std::vector<ChunkIndex> chunk_queue;
   chunk_queue.reserve(1000);
-  chunk_queue.push_back(chunk_position);
+  chunk_queue.push_back(chunk_index);
   int queue_index = 0;
   while (queue_index < static_cast<int>(chunk_queue.size())) {
     auto index = chunk_queue[queue_index];
@@ -255,8 +419,6 @@ void World::Draw(const Camera& camera) {
         render_system->Draw(scene_.get(), mesh, instance_data);
       }
     }
-
-    // TODO: Traverse to neighboring mesh that is not culled.
 
     if (index.x > chunk_min_position.x) {
       chunk_queue.push_back({index.x - 1, index.z});

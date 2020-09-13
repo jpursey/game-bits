@@ -53,7 +53,7 @@ bool BlockWorld::Init(const std::vector<std::string_view>& args) {
     return false;
   }
   return InitFileSystem() && InitResourceSystem() && InitMessages() &&
-         InitRenderSystem() && InitResources() && InitGui() && InitStates();
+         InitRenderSystem() && InitGui() && InitResources() && InitStates();
 }
 
 bool BlockWorld::InitFileSystem() {
@@ -163,15 +163,6 @@ bool BlockWorld::InitRenderSystem() {
   return true;
 }
 
-bool BlockWorld::InitResources() {
-  auto world_resources = WorldResources::Create(context_);
-  if (world_resources == nullptr) {
-    return false;
-  }
-  context_.SetOwned(std::move(world_resources));
-  return true;
-}
-
 bool BlockWorld::InitGui() {
   auto gui_instance = gb::ImGuiInstance::Create(
       gb::ContextBuilder().SetParent(context_).Build());
@@ -206,6 +197,15 @@ bool BlockWorld::InitGui() {
 
   io.IniFilename = "game:/block-world-ui.ini";
   ImGui::LoadIniSettingsFromDisk("game:/block-world-ui.ini");
+  return true;
+}
+
+bool BlockWorld::InitResources() {
+  auto world_resources = WorldResources::Create(context_);
+  if (world_resources == nullptr) {
+    return false;
+  }
+  context_.SetOwned(std::move(world_resources));
   return true;
 }
 

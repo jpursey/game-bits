@@ -68,8 +68,8 @@ class BlockWorld final : public gb::Game {
   bool InitResourceSystem();
   bool InitMessages();
   bool InitRenderSystem();
-  bool InitResources();
   bool InitGui();
+  bool InitResources();
   bool InitStates();
 
   void UpdateStateMachine(absl::Duration delta_time);

@@ -63,7 +63,13 @@ class Chunk final {
     blocks_[x][y][z] = new_block;
     modified_ = true;
   }
+  void Set(const glm::ivec3& index, BlockId new_block) {
+    Set(index.x, index.y, index.z, new_block);
+  }
   const BlockId& Get(int x, int y, int z) const { return blocks_[x][y][z]; }
+  const BlockId& Get(const glm::ivec3& index) const {
+    return Get(index.x, index.y, index.z);
+  }
 
   // Explicitly invalidate the chunk.
   //
@@ -71,8 +77,6 @@ class Chunk final {
   void Invalidate() { modified_ = true; }
 
   // Updated the chunk based on the current block data.
-  //
-  // After this returns, any mesh will be updated and IsEmpty() will be correct.
   void Update();
 
   //----------------------------------------------------------------------------
@@ -83,7 +87,12 @@ class Chunk final {
   bool HasMesh() { return has_mesh_; }
 
   // Returns the mesh to render.
-  absl::Span<gb::Mesh* const> GetMesh() const { return mesh_; }
+  absl::Span<gb::Mesh* const> GetMesh() {
+    if (modified_) {
+      Update();
+    }
+    return mesh_;
+  }
 
   // Returns the instance data to use with all mesh.
   gb::BindingData* GetInstanceData() const { return instance_data_.get(); }

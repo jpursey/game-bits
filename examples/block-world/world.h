@@ -14,6 +14,12 @@
 #include "game_types.h"
 #include "scene_types.h"
 
+struct HitInfo {
+  glm::ivec3 index;  // World index.
+  int face;          // Cube face that was hit.
+  BlockId block;     // Block type hit.
+};
+
 // The world class contains the state of the entire game world
 class World final {
  public:
@@ -50,11 +56,59 @@ class World final {
 
   const gb::ValidatedContext& GetContext() const { return context_; }
 
+  gb::RenderScene* GetScene() const { return scene_.get(); }
+
   //----------------------------------------------------------------------------
   // Chunk access
   //----------------------------------------------------------------------------
 
+  // Returns the chunk index for the specified world position.
+  //
+  // If specified, "block_index" will receive the index of the block within the
+  // chunk.
+  bool GetIndex(int x, int y, int z, ChunkIndex* chunk_index,
+                glm::ivec3* block_index);
+  bool GetIndex(const glm::ivec3& position, ChunkIndex* chunk_index,
+                glm::ivec3* block_index) {
+    return GetIndex(position.x, position.y, position.z, chunk_index,
+                    block_index);
+  }
+  bool GetIndex(const glm::vec3& position, ChunkIndex* chunk_index,
+                glm::ivec3* block_index) {
+    return GetIndex(static_cast<int>(std::floor(position.x)),
+                    static_cast<int>(std::floor(position.y)),
+                    static_cast<int>(std::floor(position.z)), chunk_index,
+                    block_index);
+  }
+
+  // Returns the chunk for the specified
   Chunk* GetChunk(const ChunkIndex& index);
+
+  // Returns the block at the requested position.
+  BlockId GetBlock(int x, int y, int z);
+  BlockId GetBlock(const glm::ivec3& index) {
+    return GetBlock(index.x, index.y, index.z);
+  }
+  BlockId GetBlock(const glm::vec3& position) {
+    return GetBlock(static_cast<int>(std::floor(position.x)),
+                    static_cast<int>(std::floor(position.y)),
+                    static_cast<int>(std::floor(position.z)));
+  }
+
+  // Set a block at the requested position.
+  void SetBlock(int x, int y, int z, BlockId block);
+  void SetBlock(const glm::ivec3& index, BlockId block) {
+    SetBlock(index.x, index.y, index.z, block);
+  }
+  void SetBlock(const glm::vec3& position, BlockId block) {
+    SetBlock(static_cast<int>(std::floor(position.x)),
+             static_cast<int>(std::floor(position.y)),
+             static_cast<int>(std::floor(position.z)), block);
+  }
+
+  // Casts a ray until a block is hit and returns the results.
+  HitInfo RayCast(const glm::vec3& position, const glm::vec3& ray,
+                  float distance);
 
   //----------------------------------------------------------------------------
   // Rendering

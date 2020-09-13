@@ -1,5 +1,6 @@
 #include "world_resources.h"
 
+#include "gb/imgui/imgui_instance.h"
 #include "gb/render/render_system.h"
 #include "gb/resource/resource_system.h"
 
@@ -15,11 +16,12 @@ std::unique_ptr<WorldResources> WorldResources::Create(Contract contract) {
   if (!contract.IsValid()) {
     return nullptr;
   }
-  auto world = absl::WrapUnique(new WorldResources(std::move(contract)));
-  if (!world->InitGraphics()) {
+  auto world_resources =
+      absl::WrapUnique(new WorldResources(std::move(contract)));
+  if (!world_resources->InitGraphics() || !world_resources->InitGui()) {
     return nullptr;
   }
-  return world;
+  return world_resources;
 }
 
 bool WorldResources::InitGraphics() {
@@ -152,12 +154,21 @@ bool WorldResources::InitGraphics() {
     return false;
   }
 
-  gb::Texture* texture = resource_system->Load<gb::Texture>(
+  block_texture_ = resource_system->Load<gb::Texture>(
       &resources_, "asset:/textures/block.png");
-  if (texture == nullptr) {
-    LOG(ERROR) << "Failed to load texture";
+  if (block_texture_ == nullptr) {
+    LOG(ERROR) << "Failed to block texture";
     return false;
   }
-  chunk_material_->GetMaterialBindingData()->SetTexture(0, texture);
+  chunk_material_->GetMaterialBindingData()->SetTexture(0, block_texture_);
+  return true;
+}
+
+bool WorldResources::InitGui() {
+  auto* gui_instance = context_.GetPtr<gb::ImGuiInstance>();
+  chunk_gui_texture_ = gui_instance->AddTexture(block_texture_);
+  if (chunk_gui_texture_ == nullptr) {
+    return false;
+  }
   return true;
 }

@@ -15,6 +15,9 @@ inline constexpr BlockId kBlockGrass = 2;
 inline constexpr BlockId kBlockRock1 = 3;
 inline constexpr BlockId kBlockRock2 = 4;
 
+inline constexpr BlockId kFirstSolidBlock = 1;
+inline constexpr BlockId kLastSoldBlock = 4;
+
 inline constexpr float kBlockTextureSize = 256.0f;
 inline constexpr float kBlockTextureTileCount = 2.0f;
 inline constexpr float kBlockTexturePixelSize = 1.0f / kBlockTextureSize;

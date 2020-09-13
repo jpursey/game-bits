@@ -20,6 +20,7 @@
 
 // Game includes
 #include "base_state.h"
+#include "block.h"
 #include "camera.h"
 #include "game_types.h"
 
@@ -63,7 +64,11 @@ class PlayState final : public BaseState {
  private:
   void DrawGui();
 
+  void AddBlock(int screen_x, int screen_y);
+  void RemoveBlock(int screen_x, int screen_y);
+
   World* world_ = nullptr;
+  WorldResources* world_resources_ = nullptr;
 
   Camera camera_;
   glm::ivec2 mouse_pos_ = {0, 0};
@@ -72,6 +77,8 @@ class PlayState final : public BaseState {
   float camera_strafe_mod_ = 0.0f;
   bool camera_rotating_ = false;
   float camera_sensitivity_ = 0.25f;
+  BlockId selected_block_ = kFirstSolidBlock;
+  absl::Duration right_click_down_time_;
 };
 
 #endif  // DEMO_STATE_H_

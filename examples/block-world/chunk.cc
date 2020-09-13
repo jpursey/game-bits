@@ -26,6 +26,7 @@ void Chunk::Update() {
     ClearMesh();
     BuildMesh();
   }
+  modified_ = false;
 }
 
 bool Chunk::BuildMesh() {
