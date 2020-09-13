@@ -5,6 +5,7 @@
 #include "absl/memory/memory.h"
 #include "gb/render/render_system.h"
 #include "imgui.h"
+#include "stb_perlin.h"
 
 // Game includes
 #include "block.h"
@@ -110,7 +111,7 @@ bool World::InitGraphics() {
 
 std::unique_ptr<Chunk> World::NewChunk(const ChunkIndex& index) {
   auto chunk = std::make_unique<Chunk>(this, index);
-  InitSineWorldChunk(chunk.get());
+  InitPerlinWorldChunk(chunk.get());
   chunk->Update();
   return chunk;
 }
@@ -145,6 +146,36 @@ void World::InitSineWorldChunk(Chunk* chunk) {
       const int depth = std::clamp(static_cast<int>(v * 6.0f) + 108, 0, 117);
       for (int y = depth; y < 117; ++y) {
         chunk->Set(x, y, z, kBlockAir);
+      }
+    }
+  }
+}
+
+void World::InitPerlinWorldChunk(Chunk* chunk) {
+  ChunkIndex index = chunk->GetIndex();
+  static float kHorizontalScale = 0.008f;
+  static float kVerticalScale = static_cast<float>(Chunk::kSize.y / 4);
+  for (int x = 0; x < Chunk::kSize.x; ++x) {
+    for (int z = 0; z < Chunk::kSize.z; ++z) {
+      const float perlin_x = (index.x * Chunk::kSize.x + x) * kHorizontalScale;
+      const float perlin_y = (index.z * Chunk::kSize.z + z) * kHorizontalScale;
+      const float v = stb_perlin_ridge_noise3(perlin_x, perlin_y, 0.0f, 2.0f,
+                                              0.5f, 0.8f, 4);
+      const int max_height = Chunk::kSize.y * 3 / 4;
+      const int height =
+          std::clamp(static_cast<int>(v * kVerticalScale) + Chunk::kSize.y / 3,
+                     0, max_height);
+      int y = 0;
+      for (; y < height; ++y) {
+        if (y < 80) {
+          chunk->Set(x, y, z, kBlockRock2);
+        } else if (y < 90) {
+          chunk->Set(x, y, z, kBlockGrass);
+        } else if (y < 100) {
+          chunk->Set(x, y, z, kBlockDirt);
+        } else {
+          chunk->Set(x, y, z, kBlockRock1);
+        }
       }
     }
   }

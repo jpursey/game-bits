@@ -131,6 +131,7 @@ class World final {
   std::unique_ptr<Chunk> NewChunk(const ChunkIndex& index);
   void InitFlatWorldChunk(Chunk* chunk);
   void InitSineWorldChunk(Chunk* chunk);
+  void InitPerlinWorldChunk(Chunk* chunk);
 
   gb::ValidatedContext context_;
 

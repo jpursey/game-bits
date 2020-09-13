@@ -67,6 +67,7 @@ set(block_world_DEPS
   gb_render_vulkan
   gb_render_vulkan_sdl
   gb_resource
+  stb_perlin
 )
 
 set(block_world_LIBS

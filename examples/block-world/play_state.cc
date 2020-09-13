@@ -45,7 +45,13 @@ void PlayState::OnEnter() {
 
   world_resources_ = Context().GetPtr<WorldResources>();
 
-  camera_.SetPosition({10, 120, 10});
+  int y = 0;
+  while (y < Chunk::kSize.y - 1 && world_->GetBlock(10, y, 10) != kBlockAir) {
+    ++y;
+  }
+  y = std::min(y + 10, Chunk::kSize.y - 1);
+
+  camera_.SetPosition({10, y, 10});
   camera_.SetDirection({0, 0, 1});
 #ifdef NDEBUG
   camera_.SetViewDistance(640.0f);
