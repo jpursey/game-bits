@@ -45,14 +45,14 @@ void PlayState::OnEnter() {
 
   world_resources_ = Context().GetPtr<WorldResources>();
 
-  int y = 0;
-  while (y < Chunk::kSize.y - 1 && world_->GetBlock(10, y, 10) != kBlockAir) {
-    ++y;
+  int z = 0;
+  while (z < Chunk::kSize.z - 1 && world_->GetBlock(10, 10, z) != kBlockAir) {
+    ++z;
   }
-  y = std::min(y + 10, Chunk::kSize.y - 1);
+  z = std::min(z + 10, Chunk::kSize.z - 1);
 
-  camera_.SetPosition({10, y, 10});
-  camera_.SetDirection({0, 0, 1});
+  camera_.SetPosition({10, 10, z});
+  camera_.SetDirection({0, 1, 0});
 #ifdef NDEBUG
   camera_.SetViewDistance(640.0f);
 #else
@@ -79,8 +79,8 @@ void PlayState::OnUpdate(absl::Duration delta_time) {
                        camera_speed_mod_ * delta_seconds;
     camera_position += camera_.GetStrafe() * camera_speed_ *
                        camera_strafe_mod_ * delta_seconds;
-    camera_position.y =
-        std::clamp(camera_position.y, 0.0f, static_cast<float>(Chunk::kSize.y));
+    camera_position.z =
+        std::clamp(camera_position.z, 0.0f, static_cast<float>(Chunk::kSize.z));
     camera_.SetPosition(camera_position);
   }
 

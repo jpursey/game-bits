@@ -20,7 +20,7 @@
 struct ChunkIndex {
   ChunkIndex() = default;
   int x = 0;
-  int z = 0;
+  int y = 0;
 };
 
 // Game representation for a chunk in the world.
@@ -32,8 +32,7 @@ class Chunk final {
   // Constants and Types
   //----------------------------------------------------------------------------
 
-  static inline constexpr glm::ivec3 kSize = {16, 256, 16};
-  static inline constexpr float kRadius = 27.712813f;  // 16x16x16
+  static inline constexpr glm::ivec3 kSize = {16, 16, 256};
 
   //----------------------------------------------------------------------------
   // Construction / Destruction

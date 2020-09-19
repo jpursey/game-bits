@@ -38,12 +38,12 @@ bool Chunk::BuildMesh() {
 
 bool Chunk::UpdateMesh() {
   MeshContext context;
-  context.neighbor_chunks[kCubePx] = world_->GetChunk({index_.x + 1, index_.z});
-  context.neighbor_chunks[kCubeNx] = world_->GetChunk({index_.x - 1, index_.z});
-  context.neighbor_chunks[kCubePy] = nullptr;  // Not used.
-  context.neighbor_chunks[kCubeNy] = nullptr;  // Not used.
-  context.neighbor_chunks[kCubePz] = world_->GetChunk({index_.x, index_.z + 1});
-  context.neighbor_chunks[kCubeNz] = world_->GetChunk({index_.x, index_.z - 1});
+  context.neighbor_chunks[kCubePx] = world_->GetChunk({index_.x + 1, index_.y});
+  context.neighbor_chunks[kCubeNx] = world_->GetChunk({index_.x - 1, index_.y});
+  context.neighbor_chunks[kCubePy] = world_->GetChunk({index_.x, index_.y + 1});
+  context.neighbor_chunks[kCubeNy] = world_->GetChunk({index_.x, index_.y - 1});
+  context.neighbor_chunks[kCubePz] = nullptr;  // Not used.
+  context.neighbor_chunks[kCubeNz] = nullptr;  // Not used.
 
   for (int x = 0; x < kSize.x; ++x) {
     for (int y = 0; y < kSize.y; ++y) {
@@ -107,7 +107,7 @@ bool Chunk::UpdateMesh() {
     }
     InstanceData data;
     data.model = glm::translate(
-        glm::mat4(1.0f), glm::vec3(index_.x * kSize.x, 0, index_.z * kSize.z));
+        glm::mat4(1.0f), glm::vec3(index_.x * kSize.x, index_.y * kSize.y, 0));
     instance_data_->SetConstants<InstanceData>(0, data);
   }
 
@@ -127,14 +127,14 @@ void Chunk::AddMesh(MeshContext* context, int x, int y, int z) {
   neighbors[kCubeNx] =
       (x > 0 ? blocks_[x - 1][y][z]
              : context->neighbor_chunks[kCubeNx]->blocks_[kSize.x - 1][y][z]);
-  neighbors[kCubePy] = (y < kSize.y - 1 ? blocks_[x][y + 1][z] : kBlockAir);
-  neighbors[kCubeNy] = (y > 0 ? blocks_[x][y - 1][z] : kBlockRock2);
-  neighbors[kCubePz] =
-      (z < kSize.z - 1 ? blocks_[x][y][z + 1]
-                       : context->neighbor_chunks[kCubePz]->blocks_[x][y][0]);
-  neighbors[kCubeNz] =
-      (z > 0 ? blocks_[x][y][z - 1]
-             : context->neighbor_chunks[kCubeNz]->blocks_[x][y][kSize.z - 1]);
+  neighbors[kCubePy] =
+      (y < kSize.y - 1 ? blocks_[x][y + 1][z]
+                       : context->neighbor_chunks[kCubePy]->blocks_[x][0][z]);
+  neighbors[kCubeNy] =
+      (y > 0 ? blocks_[x][y - 1][z]
+             : context->neighbor_chunks[kCubeNy]->blocks_[x][kSize.y - 1][z]);
+  neighbors[kCubePz] = (z < kSize.z - 1 ? blocks_[x][y][z + 1] : kBlockAir);
+  neighbors[kCubeNz] = (z > 0 ? blocks_[x][y][z - 1] : kBlockRock2);
 
   Vertex vertex;
   vertex.color = gb::Colors::kWhite;

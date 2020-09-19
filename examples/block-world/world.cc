@@ -100,7 +100,7 @@ bool World::InitGraphics() {
       // Sun
       {1.0f, 0.91f, 0.655f, 1.0f},  // Light yellow light, full bright
       glm::normalize(
-          glm::vec3(0.15f, -0.4f, -0.8f)),  // Down at a convenient angle
+          glm::vec3(0.15f, -0.8f, -0.4f)),  // Down at a convenient angle
   };
   scene_->GetSceneBindingData()->SetConstants(1, lights_);
   sky_color_ = gb::Pixel(69, 136, 221);
@@ -121,13 +121,13 @@ void World::InitFlatWorldChunk(Chunk* chunk) {
   for (int x = 0; x < Chunk::kSize.x; ++x) {
     for (int y = 0; y < Chunk::kSize.y; ++y) {
       for (int z = 0; z < Chunk::kSize.z; ++z) {
-        if (y < 100) {
+        if (z < 100) {
           chunk->Set(x, y, z, kBlockRock2);
-        } else if (y < 108) {
+        } else if (z < 108) {
           chunk->Set(x, y, z, kBlockRock1);
-        } else if (y < 116) {
+        } else if (z < 116) {
           chunk->Set(x, y, z, kBlockDirt);
-        } else if (y == 116) {
+        } else if (z == 116) {
           chunk->Set(x, y, z, kBlockGrass);
         }
       }
@@ -140,11 +140,11 @@ void World::InitSineWorldChunk(Chunk* chunk) {
   ChunkIndex index = chunk->GetIndex();
   static constexpr float kSineScale = 0.1f;
   for (int x = 0; x < Chunk::kSize.x; ++x) {
-    for (int z = 0; z < Chunk::kSize.z; ++z) {
+    for (int y = 0; y < Chunk::kSize.y; ++y) {
       const float v = std::sin((index.x * Chunk::kSize.x + x) * kSineScale) +
-                      std::sin((index.z * Chunk::kSize.z + z) * kSineScale);
+                      std::sin((index.y * Chunk::kSize.y + y) * kSineScale);
       const int depth = std::clamp(static_cast<int>(v * 6.0f) + 108, 0, 117);
-      for (int y = depth; y < 117; ++y) {
+      for (int z = depth; z < 117; ++z) {
         chunk->Set(x, y, z, kBlockAir);
       }
     }
@@ -154,24 +154,24 @@ void World::InitSineWorldChunk(Chunk* chunk) {
 void World::InitPerlinWorldChunk(Chunk* chunk) {
   ChunkIndex index = chunk->GetIndex();
   static float kHorizontalScale = 0.008f;
-  static float kVerticalScale = static_cast<float>(Chunk::kSize.y / 4);
+  static float kVerticalScale = static_cast<float>(Chunk::kSize.z / 4);
   for (int x = 0; x < Chunk::kSize.x; ++x) {
-    for (int z = 0; z < Chunk::kSize.z; ++z) {
+    for (int y = 0; y < Chunk::kSize.y; ++y) {
       const float perlin_x = (index.x * Chunk::kSize.x + x) * kHorizontalScale;
-      const float perlin_y = (index.z * Chunk::kSize.z + z) * kHorizontalScale;
+      const float perlin_y = (index.y * Chunk::kSize.y + y) * kHorizontalScale;
       const float v = stb_perlin_ridge_noise3(perlin_x, perlin_y, 0.0f, 2.0f,
                                               0.5f, 0.8f, 4);
-      const int max_height = Chunk::kSize.y * 3 / 4;
+      const int max_height = Chunk::kSize.z * 3 / 4;
       const int height =
-          std::clamp(static_cast<int>(v * kVerticalScale) + Chunk::kSize.y / 3,
+          std::clamp(static_cast<int>(v * kVerticalScale) + Chunk::kSize.z / 3,
                      0, max_height);
-      int y = 0;
-      for (; y < height; ++y) {
-        if (y < 80) {
+      int z = 0;
+      for (; z < height; ++z) {
+        if (z < 80) {
           chunk->Set(x, y, z, kBlockRock2);
-        } else if (y < 90) {
+        } else if (z < 90) {
           chunk->Set(x, y, z, kBlockGrass);
-        } else if (y < 100) {
+        } else if (z < 100) {
           chunk->Set(x, y, z, kBlockDirt);
         } else {
           chunk->Set(x, y, z, kBlockRock1);
@@ -183,7 +183,7 @@ void World::InitPerlinWorldChunk(Chunk* chunk) {
 
 bool World::GetIndex(int x, int y, int z, ChunkIndex* chunk_index,
                      glm::ivec3* block_index) {
-  if (y < 0 || y > Chunk::kSize.y) {
+  if (z < 0 || z > Chunk::kSize.z) {
     *chunk_index = {0, 0};
     if (block_index != nullptr) {
       *block_index = {0, 0, 0};
@@ -197,13 +197,11 @@ bool World::GetIndex(int x, int y, int z, ChunkIndex* chunk_index,
     --chunk_index->x;
   }
 
+  chunk_index->y = y / Chunk::kSize.y;
   y %= Chunk::kSize.y;
-
-  chunk_index->z = z / Chunk::kSize.z;
-  z %= Chunk::kSize.z;
-  if (z < 0) {
-    z += Chunk::kSize.z;
-    --chunk_index->z;
+  if (y < 0) {
+    y += Chunk::kSize.y;
+    --chunk_index->y;
   }
 
   if (block_index != nullptr) {
@@ -213,7 +211,7 @@ bool World::GetIndex(int x, int y, int z, ChunkIndex* chunk_index,
 }
 
 Chunk* World::GetChunk(const ChunkIndex& index) {
-  auto& chunk = chunks_[{index.x, index.z}];
+  auto& chunk = chunks_[{index.x, index.y}];
   if (chunk == nullptr) {
     chunk = NewChunk(index);
   }
@@ -236,18 +234,18 @@ void World::SetBlock(int x, int y, int z, BlockId block) {
     return;
   }
   Chunk* chunk = GetChunk(chunk_index);
-  bool had_block = chunk->Get(block_index) != kBlockAir;
+  bool had_block = (chunk->Get(block_index) != kBlockAir);
   chunk->Set(block_index, block);
   if (had_block != (block != kBlockAir)) {
     if (block_index.x == 0) {
-      GetChunk({chunk_index.x - 1, chunk_index.z})->Invalidate();
+      GetChunk({chunk_index.x - 1, chunk_index.y})->Invalidate();
     } else if (block_index.x == Chunk::kSize.x - 1) {
-      GetChunk({chunk_index.x + 1, chunk_index.z})->Invalidate();
+      GetChunk({chunk_index.x + 1, chunk_index.y})->Invalidate();
     }
-    if (block_index.z == 0) {
-      GetChunk({chunk_index.x, chunk_index.z - 1})->Invalidate();
-    } else if (block_index.z == Chunk::kSize.z - 1) {
-      GetChunk({chunk_index.x, chunk_index.z + 1})->Invalidate();
+    if (block_index.y == 0) {
+      GetChunk({chunk_index.x, chunk_index.y - 1})->Invalidate();
+    } else if (block_index.y == Chunk::kSize.y - 1) {
+      GetChunk({chunk_index.x, chunk_index.y + 1})->Invalidate();
     }
   }
 }
@@ -320,14 +318,10 @@ HitInfo World::RayCast(const glm::vec3& position, const glm::vec3& ray,
         world_index.z += step.z;
         max.z += delta.z;
         travel.z += 1.0f;
-        if (block_index.z < 0) {
-          block_index.z = Chunk::kSize.z - 1;
-          --chunk_index.z;
-          chunk = GetChunk(chunk_index);
-        } else if (block_index.z >= Chunk::kSize.z) {
-          block_index.z = 0;
-          ++chunk_index.z;
-          chunk = GetChunk(chunk_index);
+        if (block_index.z < 0 || block_index.z >= Chunk::kSize.z) {
+          hit.index = world_index;
+          hit.face = crossed_side;
+          return hit;
         }
       }
     } else {
@@ -337,10 +331,14 @@ HitInfo World::RayCast(const glm::vec3& position, const glm::vec3& ray,
         world_index.y += step.y;
         max.y += delta.y;
         travel.y += 1.0f;
-        if (block_index.y < 0 || block_index.y >= Chunk::kSize.y) {
-          hit.index = world_index;
-          hit.face = crossed_side;
-          return hit;
+        if (block_index.y < 0) {
+          block_index.y = Chunk::kSize.y - 1;
+          --chunk_index.y;
+          chunk = GetChunk(chunk_index);
+        } else if (block_index.y >= Chunk::kSize.y) {
+          block_index.y = 0;
+          ++chunk_index.y;
+          chunk = GetChunk(chunk_index);
         }
       } else {
         crossed_side = sides[2];
@@ -348,14 +346,10 @@ HitInfo World::RayCast(const glm::vec3& position, const glm::vec3& ray,
         world_index.z += step.z;
         max.z += delta.z;
         travel.z += 1.0f;
-        if (block_index.z < 0) {
-          block_index.z = Chunk::kSize.z - 1;
-          --chunk_index.z;
-          chunk = GetChunk(chunk_index);
-        } else if (block_index.z >= Chunk::kSize.z) {
-          block_index.z = 0;
-          ++chunk_index.z;
-          chunk = GetChunk(chunk_index);
+        if (block_index.z < 0 || block_index.z >= Chunk::kSize.z) {
+          hit.index = world_index;
+          hit.face = crossed_side;
+          return hit;
         }
       }
     }
@@ -385,11 +379,11 @@ void World::Draw(const Camera& camera) {
   }
   const ChunkIndex chunk_distance = {
       static_cast<int>(cull_distance / Chunk::kSize.x),
-      static_cast<int>(cull_distance / Chunk::kSize.z)};
+      static_cast<int>(cull_distance / Chunk::kSize.y)};
   const ChunkIndex chunk_min_position = {chunk_index.x - chunk_distance.x,
-                                         chunk_index.z - chunk_distance.z};
+                                         chunk_index.y - chunk_distance.y};
   const ChunkIndex chunk_max_position = {chunk_index.x + chunk_distance.x,
-                                         chunk_index.z + chunk_distance.z};
+                                         chunk_index.y + chunk_distance.y};
 
   auto* render_system = context_.GetPtr<gb::RenderSystem>();
   glm::mat4 projection =
@@ -418,7 +412,7 @@ void World::Draw(const Camera& camera) {
   int queue_index = 0;
   while (queue_index < static_cast<int>(chunk_queue.size())) {
     auto index = chunk_queue[queue_index];
-    if (!visited.insert({index.x, index.z}).second) {
+    if (!visited.insert({index.x, index.y}).second) {
       ++queue_index;
       continue;
     }
@@ -426,8 +420,8 @@ void World::Draw(const Camera& camera) {
     Chunk* chunk = GetChunk(chunk_queue[queue_index++]);
 
     if (use_frustum_cull_) {
-      const glm::vec3 chunk_pos = {index.x * Chunk::kSize.x, 0,
-                                   index.z * Chunk::kSize.z};
+      const glm::vec3 chunk_pos = {index.x * Chunk::kSize.x,
+                                   index.y * Chunk::kSize.y, 0};
       if (IsChunkOutsidePlane(chunk_pos, cull_position + frustum.near * 0.1f,
                               frustum.near) ||
           IsChunkOutsidePlane(chunk_pos, cull_position, frustum.left) ||
@@ -452,16 +446,16 @@ void World::Draw(const Camera& camera) {
     }
 
     if (index.x > chunk_min_position.x) {
-      chunk_queue.push_back({index.x - 1, index.z});
+      chunk_queue.push_back({index.x - 1, index.y});
     }
     if (index.x < chunk_max_position.x) {
-      chunk_queue.push_back({index.x + 1, index.z});
+      chunk_queue.push_back({index.x + 1, index.y});
     }
-    if (index.z > chunk_min_position.z) {
-      chunk_queue.push_back({index.x, index.z - 1});
+    if (index.y > chunk_min_position.y) {
+      chunk_queue.push_back({index.x, index.y - 1});
     }
-    if (index.z < chunk_max_position.z) {
-      chunk_queue.push_back({index.x, index.z + 1});
+    if (index.y < chunk_max_position.y) {
+      chunk_queue.push_back({index.x, index.y + 1});
     }
   }
 

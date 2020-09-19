@@ -25,6 +25,6 @@ struct InstanceData {
   glm::mat4 model;
 };
 
-inline constexpr glm::vec3 kUpAxis = glm::vec3(0, 1, 0);
+inline constexpr glm::vec3 kUpAxis = glm::vec3(0, 0, 1);
 
 #endif  // SCENE_TYPES_H_
