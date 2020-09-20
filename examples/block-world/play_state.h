@@ -3,8 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef DEMO_STATE_H_
-#define DEMO_STATE_H_
+#ifndef PLAY_STATE_H_
+#define PLAY_STATE_H_
 
 #include <memory>
 
@@ -81,4 +81,4 @@ class PlayState final : public BaseState {
   absl::Duration right_click_down_time_;
 };
 
-#endif  // DEMO_STATE_H_
+#endif  // PLAY_STATE_H_
