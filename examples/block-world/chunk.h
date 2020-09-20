@@ -104,11 +104,25 @@ class Chunk final {
 
  private:
   struct MeshContext {
-    Chunk* neighbor_chunks[6];
+    Chunk* chunk_pxpy;
+    Chunk* chunk_py;
+    Chunk* chunk_nxpy;
+    Chunk* chunk_px;
+    Chunk* chunk_nx;
+    Chunk* chunk_pxny;
+    Chunk* chunk_ny;
+    Chunk* chunk_nxny;
+    BlockId blocks[3][3][3];
+    BlockId side_blocks[6];
+    int vertex_block_count[8];
     std::vector<Vertex> vertices;
     std::vector<gb::Triangle> triangles;
   };
 
+  BlockId GetBlock(MeshContext* context, int x, int y, int z);
+  bool GetSideBlocks(MeshContext* context, int x, int y, int z);
+  void GetEdgeAndCornerBlocks(MeshContext* context, int x, int y, int z);
+  void GetVertexBlockCount(MeshContext* context, int x, int y, int z);
   void AddMesh(MeshContext* context, int x, int y, int z);
 
   bool UpdateMesh();

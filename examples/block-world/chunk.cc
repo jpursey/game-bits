@@ -1,6 +1,5 @@
 #include "chunk.h"
 
-#include "gb/render/pixel_colors.h"
 #include "gb/render/render_system.h"
 #include "glm/ext/matrix_transform.hpp"
 
@@ -14,6 +13,15 @@ namespace {
 
 constexpr int kMaxVerticesPerMesh = 65536;
 constexpr int kMaxTrianglesPerMesh = 32768;
+
+// Shadow colors based on the number of solid blocks sharing the vertex.
+constexpr gb::Pixel kShadowColor[9] = {
+    gb::Pixel(255, 255, 255), gb::Pixel(255, 255, 255),
+    gb::Pixel(255, 255, 255), gb::Pixel(255, 255, 255),
+    gb::Pixel(255, 255, 255), gb::Pixel(190, 190, 190),
+    gb::Pixel(120, 120, 120), gb::Pixel(30, 30, 30),
+    gb::Pixel(0, 0, 0),
+};
 
 }  // namespace
 
@@ -38,12 +46,14 @@ bool Chunk::BuildMesh() {
 
 bool Chunk::UpdateMesh() {
   MeshContext context;
-  context.neighbor_chunks[kCubePx] = world_->GetChunk({index_.x + 1, index_.y});
-  context.neighbor_chunks[kCubeNx] = world_->GetChunk({index_.x - 1, index_.y});
-  context.neighbor_chunks[kCubePy] = world_->GetChunk({index_.x, index_.y + 1});
-  context.neighbor_chunks[kCubeNy] = world_->GetChunk({index_.x, index_.y - 1});
-  context.neighbor_chunks[kCubePz] = nullptr;  // Not used.
-  context.neighbor_chunks[kCubeNz] = nullptr;  // Not used.
+  context.chunk_pxpy = world_->GetChunk({index_.x + 1, index_.y + 1});
+  context.chunk_py = world_->GetChunk({index_.x, index_.y + 1});
+  context.chunk_nxpy = world_->GetChunk({index_.x - 1, index_.y + 1});
+  context.chunk_px = world_->GetChunk({index_.x + 1, index_.y});
+  context.chunk_nx = world_->GetChunk({index_.x - 1, index_.y});
+  context.chunk_pxny = world_->GetChunk({index_.x + 1, index_.y - 1});
+  context.chunk_ny = world_->GetChunk({index_.x, index_.y - 1});
+  context.chunk_nxny = world_->GetChunk({index_.x - 1, index_.y - 1});
 
   for (int x = 0; x < kSize.x; ++x) {
     for (int y = 0; y < kSize.y; ++y) {
@@ -114,43 +124,233 @@ bool Chunk::UpdateMesh() {
   return true;
 }
 
+BlockId Chunk::GetBlock(MeshContext* context, int x, int y, int z) {
+  if (z < 0) {
+    return kBlockRock2;
+  }
+  if (z >= kSize.z) {
+    return kBlockAir;
+  }
+  if (x < 0) {
+    if (y < 0) {
+      return context->chunk_nxny->blocks_[kSize.x - 1][kSize.y - 1][z];
+    }
+    if (y >= kSize.y) {
+      return context->chunk_nxpy->blocks_[kSize.x - 1][0][z];
+    }
+    return context->chunk_nx->blocks_[kSize.x - 1][y][z];
+  }
+  if (x >= kSize.x) {
+    if (y < 0) {
+      return context->chunk_pxny->blocks_[0][kSize.y - 1][z];
+    }
+    if (y >= kSize.y) {
+      return context->chunk_pxpy->blocks_[0][0][z];
+    }
+    return context->chunk_px->blocks_[0][y][z];
+  }
+  if (y < 0) {
+    return context->chunk_ny->blocks_[x][kSize.y - 1][z];
+  }
+  if (y >= kSize.y) {
+    return context->chunk_py->blocks_[x][0][z];
+  }
+  return blocks_[x][y][z];
+}
+
+bool Chunk::GetSideBlocks(MeshContext* context, int x, int y, int z) {
+  context->side_blocks[kCubeNx] = context->blocks[0][1][1] =
+      GetBlock(context, x - 1, y, z);
+  context->side_blocks[kCubePx] = context->blocks[2][1][1] =
+      GetBlock(context, x + 1, y, z);
+  context->side_blocks[kCubeNy] = context->blocks[1][0][1] =
+      GetBlock(context, x, y - 1, z);
+  context->side_blocks[kCubePy] = context->blocks[1][2][1] =
+      GetBlock(context, x, y + 1, z);
+  context->side_blocks[kCubeNz] = context->blocks[1][1][0] =
+      GetBlock(context, x, y, z - 1);
+  context->side_blocks[kCubePz] = context->blocks[1][1][2] =
+      GetBlock(context, x, y, z + 1);
+  return context->side_blocks[kCubeNx] != kBlockAir ||
+         context->side_blocks[kCubePx] != kBlockAir ||
+         context->side_blocks[kCubeNy] != kBlockAir ||
+         context->side_blocks[kCubePy] != kBlockAir ||
+         context->side_blocks[kCubeNz] != kBlockAir ||
+         context->side_blocks[kCubePz] != kBlockAir;
+}
+
+void Chunk::GetEdgeAndCornerBlocks(MeshContext* context, int x, int y, int z) {
+  context->blocks[0][0][0] = GetBlock(context, x - 1, y - 1, z - 1);
+  context->blocks[0][0][1] = GetBlock(context, x - 1, y - 1, z);
+  context->blocks[0][0][2] = GetBlock(context, x - 1, y - 1, z + 1);
+  context->blocks[0][1][0] = GetBlock(context, x - 1, y, z - 1);
+  context->blocks[0][1][2] = GetBlock(context, x - 1, y, z + 1);
+  context->blocks[0][2][0] = GetBlock(context, x - 1, y + 1, z - 1);
+  context->blocks[0][2][1] = GetBlock(context, x - 1, y + 1, z);
+  context->blocks[0][2][2] = GetBlock(context, x - 1, y + 1, z + 1);
+  context->blocks[1][0][0] = GetBlock(context, x, y - 1, z - 1);
+  context->blocks[1][0][2] = GetBlock(context, x, y - 1, z + 1);
+  context->blocks[1][2][0] = GetBlock(context, x, y + 1, z - 1);
+  context->blocks[1][2][2] = GetBlock(context, x, y + 1, z + 1);
+  context->blocks[2][0][0] = GetBlock(context, x + 1, y - 1, z - 1);
+  context->blocks[2][0][1] = GetBlock(context, x + 1, y - 1, z);
+  context->blocks[2][0][2] = GetBlock(context, x + 1, y - 1, z + 1);
+  context->blocks[2][1][0] = GetBlock(context, x + 1, y, z - 1);
+  context->blocks[2][1][2] = GetBlock(context, x + 1, y, z + 1);
+  context->blocks[2][2][0] = GetBlock(context, x + 1, y + 1, z - 1);
+  context->blocks[2][2][1] = GetBlock(context, x + 1, y + 1, z);
+  context->blocks[2][2][2] = GetBlock(context, x + 1, y + 1, z + 1);
+}
+
+void Chunk::GetVertexBlockCount(MeshContext* context, int x, int y, int z) {
+  std::memset(context->vertex_block_count, 0,
+              sizeof(context->vertex_block_count));
+  if (context->blocks[0][0][0] != kBlockAir) {
+    context->vertex_block_count[kCubeNxNyNz] += 1;
+  }
+  if (context->blocks[1][0][0] != kBlockAir) {
+    context->vertex_block_count[kCubeNxNyNz] += 1;
+    context->vertex_block_count[kCubePxNyNz] += 1;
+  }
+  if (context->blocks[2][0][0] != kBlockAir) {
+    context->vertex_block_count[kCubePxNyNz] += 1;
+  }
+
+  if (context->blocks[0][1][0] != kBlockAir) {
+    context->vertex_block_count[kCubeNxNyNz] += 1;
+    context->vertex_block_count[kCubeNxPyNz] += 1;
+  }
+  if (context->blocks[1][1][0] != kBlockAir) {
+    context->vertex_block_count[kCubeNxNyNz] += 1;
+    context->vertex_block_count[kCubePxNyNz] += 1;
+    context->vertex_block_count[kCubeNxPyNz] += 1;
+    context->vertex_block_count[kCubePxPyNz] += 1;
+  }
+  if (context->blocks[2][1][0] != kBlockAir) {
+    context->vertex_block_count[kCubePxNyNz] += 1;
+    context->vertex_block_count[kCubePxPyNz] += 1;
+  }
+
+  if (context->blocks[0][2][0] != kBlockAir) {
+    context->vertex_block_count[kCubeNxPyNz] += 1;
+  }
+  if (context->blocks[1][2][0] != kBlockAir) {
+    context->vertex_block_count[kCubeNxPyNz] += 1;
+    context->vertex_block_count[kCubePxPyNz] += 1;
+  }
+  if (context->blocks[2][2][0] != kBlockAir) {
+    context->vertex_block_count[kCubePxPyNz] += 1;
+  }
+
+  if (context->blocks[0][0][1] != kBlockAir) {
+    context->vertex_block_count[kCubeNxNyNz] += 1;
+    context->vertex_block_count[kCubeNxNyPz] += 1;
+  }
+  if (context->blocks[1][0][1] != kBlockAir) {
+    context->vertex_block_count[kCubeNxNyNz] += 1;
+    context->vertex_block_count[kCubePxNyNz] += 1;
+    context->vertex_block_count[kCubeNxNyPz] += 1;
+    context->vertex_block_count[kCubePxNyPz] += 1;
+  }
+  if (context->blocks[2][0][1] != kBlockAir) {
+    context->vertex_block_count[kCubePxNyNz] += 1;
+    context->vertex_block_count[kCubePxNyPz] += 1;
+  }
+
+  if (context->blocks[0][1][1] != kBlockAir) {
+    context->vertex_block_count[kCubeNxNyNz] += 1;
+    context->vertex_block_count[kCubeNxPyNz] += 1;
+    context->vertex_block_count[kCubeNxNyPz] += 1;
+    context->vertex_block_count[kCubeNxPyPz] += 1;
+  }
+  if (context->blocks[2][1][1] != kBlockAir) {
+    context->vertex_block_count[kCubePxNyNz] += 1;
+    context->vertex_block_count[kCubePxPyNz] += 1;
+    context->vertex_block_count[kCubePxNyPz] += 1;
+    context->vertex_block_count[kCubePxPyPz] += 1;
+  }
+
+  if (context->blocks[0][2][1] != kBlockAir) {
+    context->vertex_block_count[kCubeNxPyNz] += 1;
+    context->vertex_block_count[kCubeNxPyPz] += 1;
+  }
+  if (context->blocks[1][2][1] != kBlockAir) {
+    context->vertex_block_count[kCubeNxPyNz] += 1;
+    context->vertex_block_count[kCubePxPyNz] += 1;
+    context->vertex_block_count[kCubeNxPyPz] += 1;
+    context->vertex_block_count[kCubePxPyPz] += 1;
+  }
+  if (context->blocks[2][2][1] != kBlockAir) {
+    context->vertex_block_count[kCubePxPyNz] += 1;
+    context->vertex_block_count[kCubePxPyPz] += 1;
+  }
+
+  if (context->blocks[0][0][2] != kBlockAir) {
+    context->vertex_block_count[kCubeNxNyPz] += 1;
+  }
+  if (context->blocks[1][0][2] != kBlockAir) {
+    context->vertex_block_count[kCubeNxNyPz] += 1;
+    context->vertex_block_count[kCubePxNyPz] += 1;
+  }
+  if (context->blocks[2][0][2] != kBlockAir) {
+    context->vertex_block_count[kCubePxNyPz] += 1;
+  }
+
+  if (context->blocks[0][1][2] != kBlockAir) {
+    context->vertex_block_count[kCubeNxNyPz] += 1;
+    context->vertex_block_count[kCubeNxPyPz] += 1;
+  }
+  if (context->blocks[1][1][2] != kBlockAir) {
+    context->vertex_block_count[kCubeNxNyPz] += 1;
+    context->vertex_block_count[kCubePxNyPz] += 1;
+    context->vertex_block_count[kCubeNxPyPz] += 1;
+    context->vertex_block_count[kCubePxPyPz] += 1;
+  }
+  if (context->blocks[2][1][2] != kBlockAir) {
+    context->vertex_block_count[kCubePxNyPz] += 1;
+    context->vertex_block_count[kCubePxPyPz] += 1;
+  }
+
+  if (context->blocks[0][2][2] != kBlockAir) {
+    context->vertex_block_count[kCubeNxPyPz] += 1;
+  }
+  if (context->blocks[1][2][2] != kBlockAir) {
+    context->vertex_block_count[kCubeNxPyPz] += 1;
+    context->vertex_block_count[kCubePxPyPz] += 1;
+  }
+  if (context->blocks[2][2][2] != kBlockAir) {
+    context->vertex_block_count[kCubePxPyPz] += 1;
+  }
+}
+
 void Chunk::AddMesh(MeshContext* context, int x, int y, int z) {
-  BlockId block_id = blocks_[x][y][z];
-  if (block_id == kBlockAir) {
+  BlockId block_id = context->blocks[1][1][1] = blocks_[x][y][z];
+  if (block_id != kBlockAir) {
     return;
   }
 
-  BlockId neighbors[6];
-  neighbors[kCubePx] =
-      (x < kSize.x - 1 ? blocks_[x + 1][y][z]
-                       : context->neighbor_chunks[kCubePx]->blocks_[0][y][z]);
-  neighbors[kCubeNx] =
-      (x > 0 ? blocks_[x - 1][y][z]
-             : context->neighbor_chunks[kCubeNx]->blocks_[kSize.x - 1][y][z]);
-  neighbors[kCubePy] =
-      (y < kSize.y - 1 ? blocks_[x][y + 1][z]
-                       : context->neighbor_chunks[kCubePy]->blocks_[x][0][z]);
-  neighbors[kCubeNy] =
-      (y > 0 ? blocks_[x][y - 1][z]
-             : context->neighbor_chunks[kCubeNy]->blocks_[x][kSize.y - 1][z]);
-  neighbors[kCubePz] = (z < kSize.z - 1 ? blocks_[x][y][z + 1] : kBlockAir);
-  neighbors[kCubeNz] = (z > 0 ? blocks_[x][y][z - 1] : kBlockRock2);
-
-  Vertex vertex;
-  vertex.color = gb::Colors::kWhite;
+  if (!GetSideBlocks(context, x, y, z)) {
+    return;
+  }
+  GetEdgeAndCornerBlocks(context, x, y, z);
+  GetVertexBlockCount(context, x, y, z);
 
   // If we have more than 2^16 indexes, then this will start wrapping around --
   // which is exactly what we want. We break the mesh into multiple meshes.
   uint16_t index = static_cast<uint16_t>(context->vertices.size());
   glm::vec3 position = {x, y, z};
 
+  Vertex vertex;
   for (int side = 0; side < 6; ++side) {
-    if (neighbors[side] != kBlockAir) {
+    block_id = context->side_blocks[side];
+    if (block_id == kBlockAir) {
       continue;
     }
-    vertex.normal = kCubeSideNormal[side];
+    vertex.normal = kCubeSideNormal[side] * -1.0f;
     for (int i = 0; i < 4; ++i) {
-      vertex.pos = position + kCubePosition[kCubeSideVertex[side][i]];
+      const int vertex_index = kCubeSideVertex[side][i];
+      vertex.color = kShadowColor[context->vertex_block_count[vertex_index]];
+      vertex.pos = position + kCubePosition[vertex_index];
       vertex.uv = kBlockUvOffset[block_id] + kCubeSideUv[i] * kBlockUvEndScale;
       context->vertices.push_back(vertex);
     }
@@ -159,6 +359,7 @@ void Chunk::AddMesh(MeshContext* context, int x, int y, int z) {
       triangle.a += index;
       triangle.b += index;
       triangle.c += index;
+      std::swap(triangle.a, triangle.b);  // Fix winding order.
       context->triangles.push_back(triangle);
     }
     index += 4;
