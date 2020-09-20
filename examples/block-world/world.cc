@@ -405,6 +405,9 @@ void World::Draw(const Camera& camera) {
   int debug_triangle_count = 0;
   int debug_chunk_count = 0;
 
+  static constexpr int64_t kMaxTime = 10LL * 1000 * 1000;  // 10 milliseconds
+  int64_t start_time = absl::GetCurrentTimeNanos();
+
   absl::flat_hash_set<std::tuple<int, int>> visited;
   std::vector<ChunkIndex> chunk_queue;
   chunk_queue.reserve(1000);
@@ -434,17 +437,20 @@ void World::Draw(const Camera& camera) {
 
     ++debug_chunk_count;
     if (!chunk->HasMesh()) {
-      chunk->BuildMesh();
-    }
-    auto instance_data = chunk->GetInstanceData();
-    auto meshes = chunk->GetMesh();
-    if (instance_data != nullptr && !meshes.empty()) {
-      for (gb::Mesh* mesh : meshes) {
-        debug_triangle_count += mesh->GetTriangleCount();
-        render_system->Draw(scene_.get(), mesh, instance_data);
+      if (absl::GetCurrentTimeNanos() - start_time < kMaxTime) {
+        chunk->BuildMesh();
       }
     }
-
+    if (chunk->HasMesh()) {
+      auto instance_data = chunk->GetInstanceData();
+      auto meshes = chunk->GetMesh();
+      if (instance_data != nullptr && !meshes.empty()) {
+        for (gb::Mesh* mesh : meshes) {
+          debug_triangle_count += mesh->GetTriangleCount();
+          render_system->Draw(scene_.get(), mesh, instance_data);
+        }
+      }
+    }
     if (index.x > chunk_min_position.x) {
       chunk_queue.push_back({index.x - 1, index.y});
     }
