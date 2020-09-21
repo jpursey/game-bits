@@ -127,6 +127,7 @@ class VulkanBackend final : public RenderBackend {
     return static_cast<int>(frame_buffers_.size());
   }
   vk::RenderPass GetRenderPass() const { return render_pass_; }
+  vk::SampleCountFlagBits GetMsaaSampleCount() const { return msaa_count_; }
 
   // Allocator
   VmaAllocator GetAllocator() { return allocator_; }
@@ -278,6 +279,7 @@ class VulkanBackend final : public RenderBackend {
   vk::Device device_;
   Queues queues_;
   vk::Format depth_format_;
+  vk::SampleCountFlagBits msaa_count_ = vk::SampleCountFlagBits::e1;
   VmaAllocator allocator_ = VK_NULL_HANDLE;
 
   // Render pass
@@ -287,6 +289,7 @@ class VulkanBackend final : public RenderBackend {
   vk::Extent2D swap_extent_;
   vk::SwapchainKHR swap_chain_;
   std::vector<FrameBuffer> frame_buffers_;
+  std::unique_ptr<VulkanImage> color_image_;
   std::unique_ptr<VulkanImage> depth_image_;
   bool recreate_swap_ = false;
 

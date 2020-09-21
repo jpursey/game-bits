@@ -276,6 +276,17 @@ bool VulkanBackend::InitDevice(const std::vector<const char*>& layers) {
   }
   depth_format_ = depth_format.value();
 
+  const vk::SampleCountFlags sample_counts =
+      physical_device_properties_.limits.framebufferColorSampleCounts &
+      physical_device_properties_.limits.framebufferDepthSampleCounts;
+  if (sample_counts & vk::SampleCountFlagBits::e8) {
+    msaa_count_ = vk::SampleCountFlagBits::e8;
+  } else if (sample_counts & vk::SampleCountFlagBits::e4) {
+    msaa_count_ = vk::SampleCountFlagBits::e4;
+  } else if (sample_counts & vk::SampleCountFlagBits::e2) {
+    msaa_count_ = vk::SampleCountFlagBits::e2;
+  }
+
   // Create the logical device and retrieve the needed queues.
   std::set<uint32_t> queue_families = {queues_.graphics_index.value(),
                                        queues_.present_index.value()};
@@ -331,25 +342,25 @@ bool VulkanBackend::InitDevice(const std::vector<const char*>& layers) {
 }
 
 bool VulkanBackend::InitRenderPass() {
-  std::array<vk::AttachmentDescription, 2> attachments;
+  std::array<vk::AttachmentDescription, 3> attachments;
 
   auto color_attachement_ref =
       vk::AttachmentReference(0, vk::ImageLayout::eColorAttachmentOptimal);
   attachments[0]
       .setFormat(format_.format)
-      .setSamples(vk::SampleCountFlagBits::e1)
+      .setSamples(msaa_count_)
       .setLoadOp(vk::AttachmentLoadOp::eClear)
       .setStoreOp(vk::AttachmentStoreOp::eStore)
       .setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
       .setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
       .setInitialLayout(vk::ImageLayout::eUndefined)
-      .setFinalLayout(vk::ImageLayout::ePresentSrcKHR);
+      .setFinalLayout(vk::ImageLayout::eColorAttachmentOptimal);
 
   auto depth_attachment_ref = vk::AttachmentReference(
       1, vk::ImageLayout::eDepthStencilAttachmentOptimal);
   attachments[1]
       .setFormat(depth_format_)
-      .setSamples(vk::SampleCountFlagBits::e1)
+      .setSamples(msaa_count_)
       .setLoadOp(vk::AttachmentLoadOp::eClear)
       .setStoreOp(vk::AttachmentStoreOp::eDontCare)
       .setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
@@ -357,11 +368,24 @@ bool VulkanBackend::InitRenderPass() {
       .setInitialLayout(vk::ImageLayout::eUndefined)
       .setFinalLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal);
 
+  auto resolve_attachment_ref =
+      vk::AttachmentReference(2, vk::ImageLayout::eColorAttachmentOptimal);
+  attachments[2]
+      .setFormat(format_.format)
+      .setSamples(vk::SampleCountFlagBits::e1)
+      .setLoadOp(vk::AttachmentLoadOp::eDontCare)
+      .setStoreOp(vk::AttachmentStoreOp::eStore)
+      .setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
+      .setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
+      .setInitialLayout(vk::ImageLayout::eUndefined)
+      .setFinalLayout(vk::ImageLayout::ePresentSrcKHR);
+
   auto subpass = vk::SubpassDescription()
                      .setPipelineBindPoint(vk::PipelineBindPoint::eGraphics)
                      .setColorAttachmentCount(1)
                      .setPColorAttachments(&color_attachement_ref)
-                     .setPDepthStencilAttachment(&depth_attachment_ref);
+                     .setPDepthStencilAttachment(&depth_attachment_ref)
+                     .setPResolveAttachments(&resolve_attachment_ref);
   auto subpass_dependency =
       vk::SubpassDependency()
           .setSrcSubpass(VK_SUBPASS_EXTERNAL)
@@ -445,11 +469,22 @@ bool VulkanBackend::InitSwapChain() {
   }
   swap_chain_ = swap_chain;
 
+  color_image_ =
+      VulkanImage::Create(this, static_cast<int>(swap_extent_.width),
+                          static_cast<int>(swap_extent_.height), format_.format,
+                          vk::ImageUsageFlagBits::eTransientAttachment |
+                              vk::ImageUsageFlagBits::eColorAttachment,
+                          vk::ImageTiling::eOptimal, msaa_count_);
+  if (color_image_ == nullptr) {
+    LOG(ERROR) << "Failed to create color image for swapchain";
+    return false;
+  }
+
   depth_image_ =
       VulkanImage::Create(this, static_cast<int>(swap_extent_.width),
                           static_cast<int>(swap_extent_.height), depth_format_,
                           vk::ImageUsageFlagBits::eDepthStencilAttachment,
-                          vk::ImageTiling::eOptimal);
+                          vk::ImageTiling::eOptimal, msaa_count_);
   if (depth_image_ == nullptr) {
     LOG(ERROR) << "Failed to create depth image for swapchain";
     return false;
@@ -467,8 +502,8 @@ bool VulkanBackend::InitSwapChain() {
       LOG(ERROR) << "Failed to create image view for swapchain";
       return false;
     }
-    std::array<vk::ImageView, 2> attachments = {buffer.image_view,
-                                                depth_image_->GetView()};
+    std::array<vk::ImageView, 3> attachments = {
+        color_image_->GetView(), depth_image_->GetView(), buffer.image_view};
     auto [create_result, frame_buffer] = device_.createFramebuffer(
         vk::FramebufferCreateInfo()
             .setRenderPass(render_pass_)
@@ -606,6 +641,7 @@ void VulkanBackend::CleanUpSwap() {
   frame_buffers_.clear();
 
   depth_image_.reset();
+  color_image_.reset();
 
   if (swap_chain_) {
     device_.destroySwapchainKHR(swap_chain_);

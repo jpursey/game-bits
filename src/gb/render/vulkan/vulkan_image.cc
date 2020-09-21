@@ -11,14 +11,13 @@
 
 namespace gb {
 
-std::unique_ptr<VulkanImage> VulkanImage::Create(VulkanBackend* backend,
-                                                 int width, int height,
-                                                 vk::Format format,
-                                                 vk::ImageUsageFlags usage,
-                                                 vk::ImageTiling tiling) {
+std::unique_ptr<VulkanImage> VulkanImage::Create(
+    VulkanBackend* backend, int width, int height, vk::Format format,
+    vk::ImageUsageFlags usage, vk::ImageTiling tiling,
+    vk::SampleCountFlagBits sample_count) {
   auto image =
       absl::WrapUnique(new VulkanImage(backend, width, height, format));
-  if (!image->Init(usage, tiling)) {
+  if (!image->Init(usage, tiling, sample_count)) {
     return nullptr;
   }
   return image;
@@ -30,7 +29,8 @@ VulkanImage::~VulkanImage() {
   gc->Dispose(image_, allocation_);
 }
 
-bool VulkanImage::Init(vk::ImageUsageFlags usage, vk::ImageTiling tiling) {
+bool VulkanImage::Init(vk::ImageUsageFlags usage, vk::ImageTiling tiling,
+                       vk::SampleCountFlagBits sample_count) {
   auto device = backend_->GetDevice();
   auto create_info = vk::ImageCreateInfo()
                          .setImageType(vk::ImageType::e2D)
@@ -43,7 +43,7 @@ bool VulkanImage::Init(vk::ImageUsageFlags usage, vk::ImageTiling tiling) {
                          .setInitialLayout(vk::ImageLayout::eUndefined)
                          .setUsage(usage)
                          .setSharingMode(vk::SharingMode::eExclusive)
-                         .setSamples(vk::SampleCountFlagBits::e1)
+                         .setSamples(sample_count)
                          .setFlags({});
 
   VmaAllocationCreateInfo alloc_info = {};

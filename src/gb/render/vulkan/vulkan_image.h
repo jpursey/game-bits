@@ -20,7 +20,8 @@ class VulkanImage final {
   static std::unique_ptr<VulkanImage> Create(
       VulkanBackend* backend, int width, int height, vk::Format format,
       vk::ImageUsageFlags usage,
-      vk::ImageTiling tiling = vk::ImageTiling::eOptimal);
+      vk::ImageTiling tiling = vk::ImageTiling::eOptimal,
+      vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1);
   VulkanImage(const VulkanImage&) = delete;
   VulkanImage(VulkanImage&&) = delete;
   VulkanImage& operator=(const VulkanImage&) = delete;
@@ -41,7 +42,8 @@ class VulkanImage final {
   VulkanImage(VulkanBackend* backend, int width, int height, vk::Format format)
       : backend_(backend), width_(width), height_(height), format_(format) {}
 
-  bool Init(vk::ImageUsageFlags usage, vk::ImageTiling tiling);
+  bool Init(vk::ImageUsageFlags usage, vk::ImageTiling tiling,
+            vk::SampleCountFlagBits sample_count);
 
   VulkanBackend* const backend_;
   const int width_;

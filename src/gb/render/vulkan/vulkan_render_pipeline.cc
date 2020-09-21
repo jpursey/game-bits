@@ -152,7 +152,9 @@ bool VulkanRenderPipeline::Init(
                         .setCullMode(cull_mode)
                         .setFrontFace(vk::FrontFace::eCounterClockwise);
 
-  auto multisampling = vk::PipelineMultisampleStateCreateInfo();
+  auto multisampling =
+      vk::PipelineMultisampleStateCreateInfo().setRasterizationSamples(
+          backend_->GetMsaaSampleCount());
 
   auto depth_stencil =
       vk::PipelineDepthStencilStateCreateInfo()
