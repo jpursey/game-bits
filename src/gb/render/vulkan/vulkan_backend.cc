@@ -9,6 +9,7 @@
 
 #include "absl/memory/memory.h"
 #include "gb/base/context_builder.h"
+#include "gb/render/pixel_colors.h"
 #include "gb/render/vulkan/vulkan_binding_data.h"
 #include "gb/render/vulkan/vulkan_binding_data_factory.h"
 #include "gb/render/vulkan/vulkan_descriptor_pool.h"
@@ -469,22 +470,22 @@ bool VulkanBackend::InitSwapChain() {
   }
   swap_chain_ = swap_chain;
 
-  color_image_ =
-      VulkanImage::Create(this, static_cast<int>(swap_extent_.width),
-                          static_cast<int>(swap_extent_.height), format_.format,
-                          vk::ImageUsageFlagBits::eTransientAttachment |
-                              vk::ImageUsageFlagBits::eColorAttachment,
-                          vk::ImageTiling::eOptimal, msaa_count_);
+  color_image_ = VulkanImage::Create(
+      this, static_cast<int>(swap_extent_.width),
+      static_cast<int>(swap_extent_.height), 1, format_.format,
+      vk::ImageUsageFlagBits::eTransientAttachment |
+          vk::ImageUsageFlagBits::eColorAttachment,
+      vk::ImageTiling::eOptimal, msaa_count_);
   if (color_image_ == nullptr) {
     LOG(ERROR) << "Failed to create color image for swapchain";
     return false;
   }
 
-  depth_image_ =
-      VulkanImage::Create(this, static_cast<int>(swap_extent_.width),
-                          static_cast<int>(swap_extent_.height), depth_format_,
-                          vk::ImageUsageFlagBits::eDepthStencilAttachment,
-                          vk::ImageTiling::eOptimal, msaa_count_);
+  depth_image_ = VulkanImage::Create(
+      this, static_cast<int>(swap_extent_.width),
+      static_cast<int>(swap_extent_.height), 1, depth_format_,
+      vk::ImageUsageFlagBits::eDepthStencilAttachment,
+      vk::ImageTiling::eOptimal, msaa_count_);
   if (depth_image_ == nullptr) {
     LOG(ERROR) << "Failed to create depth image for swapchain";
     return false;
@@ -555,30 +556,7 @@ bool VulkanBackend::InitFrames() {
   return true;
 }
 
-bool VulkanBackend::InitResources() {
-  auto [result, sampler] = device_.createSampler(
-      vk::SamplerCreateInfo()
-          .setMagFilter(vk::Filter::eLinear)
-          .setMinFilter(vk::Filter::eLinear)
-          .setAddressModeU(vk::SamplerAddressMode::eRepeat)
-          .setAddressModeV(vk::SamplerAddressMode::eRepeat)
-          .setAddressModeW(vk::SamplerAddressMode::eRepeat)
-          .setAnisotropyEnable(VK_TRUE)
-          .setMaxAnisotropy(16.0f)
-          .setBorderColor(vk::BorderColor::eIntOpaqueBlack)
-          .setUnnormalizedCoordinates(VK_FALSE)
-          .setCompareEnable(VK_FALSE)
-          .setCompareOp(vk::CompareOp::eAlways)
-          .setMipmapMode(vk::SamplerMipmapMode::eLinear)
-          .setMipLodBias(0.0f)
-          .setMinLod(0.0f)
-          .setMaxLod(0.0f));
-  if (result != vk::Result::eSuccess) {
-    return false;
-  }
-  sampler_ = sampler;
-  return true;
-}
+bool VulkanBackend::InitResources() { return true; }
 
 void VulkanBackend::CleanUp() {
   LOG_IF(ERROR, !context_.Complete())
@@ -590,8 +568,8 @@ void VulkanBackend::CleanUp() {
   if (render_pass_) {
     device_.destroyRenderPass(render_pass_);
   }
-  if (sampler_) {
-    device_.destroySampler(sampler_);
+  for (auto it : samplers_) {
+    device_.destroySampler(it.second);
   }
   for (Frame& frame : frames_) {
     if (frame.image_available_semaphore) {
@@ -702,6 +680,91 @@ vk::ImageView VulkanBackend::CreateImageView(vk::Image image,
   return image_view;
 }
 
+vk::Sampler VulkanBackend::GetSampler(SamplerOptions options, int width,
+                                      int height) {
+  if (options.mipmap) {
+    if (options.tile_size == 0) {
+      options.tile_size = std::min(width, height);
+    }
+  } else {
+    // Tile size is unimportant if mipmapping is not enabled.
+    options.tile_size = 0;
+  }
+
+  auto it = samplers_.find(options);
+  if (it != samplers_.end()) {
+    return it->second;
+  }
+
+  const vk::Filter filter =
+      (options.filter ? vk::Filter::eLinear : vk::Filter::eNearest);
+
+  vk::SamplerAddressMode address_mode;
+  switch (options.address_mode) {
+    case SamplerAddressMode::kMirrorRepeat:
+      address_mode = vk::SamplerAddressMode::eMirroredRepeat;
+      break;
+    case SamplerAddressMode::kClampEdge:
+      address_mode = vk::SamplerAddressMode::eClampToEdge;
+      break;
+    case SamplerAddressMode::kClampBorder:
+      address_mode = vk::SamplerAddressMode::eClampToBorder;
+      break;
+    case SamplerAddressMode::kRepeat:
+    default:
+      address_mode = vk::SamplerAddressMode::eRepeat;
+  }
+
+  vk::BorderColor border_color;
+  if (options.border == Colors::kWhite) {
+    border_color = vk::BorderColor::eIntOpaqueWhite;
+  } else if (options.border == Colors::kBlack) {
+    border_color = vk::BorderColor::eIntOpaqueBlack;
+  } else if (options.border == Colors::kBlack.WithAlpha(0)) {
+    border_color = vk::BorderColor::eIntTransparentBlack;
+  } else {
+    // TODO: Support other border colors VkSamplerCustomBorderColorCreateInfoEXT
+    border_color =
+        (options.border.a < 127 ? vk::BorderColor::eIntTransparentBlack
+                                : vk::BorderColor::eIntOpaqueBlack);
+  }
+
+  const vk::SamplerMipmapMode mipmap_mode =
+      (options.mipmap ? vk::SamplerMipmapMode::eLinear
+                      : vk::SamplerMipmapMode::eNearest);
+  float max_lod = 0.0f;
+  if (options.mipmap) {
+    int size = options.tile_size >> 1;
+    while (size != 0) {
+      size >>= 1;
+      max_lod += 1.0f;
+    }
+  }
+
+  auto [result, sampler] = device_.createSampler(
+      vk::SamplerCreateInfo()
+          .setMagFilter(filter)
+          .setMinFilter(filter)
+          .setAddressModeU(address_mode)
+          .setAddressModeV(address_mode)
+          .setAddressModeW(address_mode)
+          .setAnisotropyEnable(options.filter ? VK_TRUE : VK_FALSE)
+          .setMaxAnisotropy(options.filter ? 16.0f : 0.0f)
+          .setBorderColor(border_color)
+          .setUnnormalizedCoordinates(VK_FALSE)
+          .setCompareEnable(VK_FALSE)
+          .setCompareOp(vk::CompareOp::eAlways)
+          .setMipmapMode(mipmap_mode)
+          .setMipLodBias(0.0f)
+          .setMinLod(0.0f)
+          .setMaxLod(max_lod));
+  if (result != vk::Result::eSuccess) {
+    return {};
+  }
+  samplers_[options] = sampler;
+  return sampler;
+}
+
 void VulkanBackend::SetClearColor(RenderInternal, Pixel color) {
   clear_color_.setFloat32(std::array<float, 4>({
       static_cast<float>(color.r) / 255.0f,
@@ -753,9 +816,35 @@ void VulkanBackend::AddFrameCallback(RenderStage stage,
 
 Texture* VulkanBackend::CreateTexture(RenderInternal, gb::ResourceEntry entry,
                                       DataVolatility volatility, int width,
-                                      int height) {
-  return VulkanTexture::Create(std::move(entry), this, sampler_, volatility,
-                               width, height);
+                                      int height,
+                                      const SamplerOptions& options) {
+  if (options.tile_size != 0 &&
+      (width % options.tile_size != 0 || height % options.tile_size != 0)) {
+    LOG(ERROR) << "Texture tile size " << options.tile_size
+               << " is not evenly divisible into dimensions " << width << ","
+               << height;
+    return nullptr;
+  }
+
+  if (options.mipmap) {
+    if ((width & (width - 1)) != 0 || (height & (height - 1)) != 0) {
+      LOG(ERROR) << "Texture dimensions " << width << "," << height
+                 << " must be a power of two for mipmapping";
+      return nullptr;
+    }
+    if ((options.tile_size & (options.tile_size - 1)) != 0) {
+      LOG(ERROR) << "Texture tile size " << options.tile_size
+                 << " must be a power of two for mipmapping";
+      return nullptr;
+    }
+  }
+
+  auto sampler = GetSampler(options, width, height);
+  if (!sampler) {
+    return nullptr;
+  }
+  return VulkanTexture::Create(std::move(entry), this, sampler, volatility,
+                               width, height, options);
 }
 
 std::unique_ptr<ShaderCode> VulkanBackend::CreateShaderCode(RenderInternal,
@@ -994,9 +1083,13 @@ void VulkanBackend::EndFrameUpdateImages() {
   vk::Image last_image;
   for (size_t i = 0; i < render_state_.image_updates.size(); ++i) {
     const auto& update = render_state_.image_updates[i];
-    if (update.dst_image == last_image) {
+
+    // The lowest level mip may have multiple regions being updated, but we
+    // don't want/need to have a barrier for all of them.
+    if (update.dst_image == last_image && update.mip_level == 0) {
       continue;
     }
+
     last_image = update.dst_image;
     barriers.emplace_back()
         .setOldLayout(vk::ImageLayout::eUndefined)
@@ -1006,7 +1099,7 @@ void VulkanBackend::EndFrameUpdateImages() {
         .setImage(update.dst_image)
         .setSubresourceRange(vk::ImageSubresourceRange()
                                  .setAspectMask(vk::ImageAspectFlagBits::eColor)
-                                 .setBaseMipLevel(0)
+                                 .setBaseMipLevel(update.mip_level)
                                  .setLevelCount(1)
                                  .setBaseArrayLayer(0)
                                  .setLayerCount(1))
@@ -1021,8 +1114,9 @@ void VulkanBackend::EndFrameUpdateImages() {
   for (size_t i = 0; i < render_state_.image_updates.size(); ++i) {
     const auto& update = render_state_.image_updates[i];
     const vk::DeviceSize buffer_offset =
+        update.src_offset +
         (update.region_y * update.image_width + update.region_x) *
-        sizeof(Pixel);
+            sizeof(Pixel);
     const uint32_t buffer_row_length =
         static_cast<uint32_t>(update.image_width);
     frame.commands.copyBufferToImage(
@@ -1035,7 +1129,7 @@ void VulkanBackend::EndFrameUpdateImages() {
              .setImageSubresource(
                  vk::ImageSubresourceLayers()
                      .setAspectMask(vk::ImageAspectFlagBits::eColor)
-                     .setMipLevel(0)
+                     .setMipLevel(update.mip_level)
                      .setBaseArrayLayer(0)
                      .setLayerCount(1))
              .setImageOffset({update.region_x, update.region_y, 0})

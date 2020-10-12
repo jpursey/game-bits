@@ -36,11 +36,14 @@ struct VulkanRenderState {
   using SceneGroupDraw = std::map<int, SceneDraw>;
 
   struct ImageUpdate {
-    ImageUpdate(vk::Buffer src_buffer, vk::Image dst_image,
-                uint32_t image_width, uint32_t image_height, int32_t region_x,
-                int32_t region_y, uint32_t region_width, uint32_t region_height)
+    ImageUpdate(vk::Buffer src_buffer, uint32_t src_offset, vk::Image dst_image,
+                uint32_t mip_level, uint32_t image_width, uint32_t image_height,
+                int32_t region_x, int32_t region_y, uint32_t region_width,
+                uint32_t region_height)
         : src_buffer(src_buffer),
+          src_offset(src_offset),
           dst_image(dst_image),
+          mip_level(mip_level),
           image_width(image_width),
           image_height(image_height),
           region_x(region_x),
@@ -48,7 +51,9 @@ struct VulkanRenderState {
           region_width(region_width),
           region_height(region_height) {}
     vk::Buffer src_buffer;
+    uint32_t src_offset;
     vk::Image dst_image;
+    uint32_t mip_level;
     uint32_t image_width;
     uint32_t image_height;
     int32_t region_x;

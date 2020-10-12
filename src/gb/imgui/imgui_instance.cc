@@ -10,6 +10,7 @@
 #include "gb/file/file_system.h"
 #include "gb/render/binding.h"
 #include "gb/render/draw_list.h"
+#include "gb/render/pixel_colors.h"
 #include "gb/render/render_system.h"
 
 ImFileHandle ImFileOpen(const char* filename, const char* mode) {
@@ -397,8 +398,10 @@ bool ImGuiInstance::LoadFonts() {
   io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
 
   auto* render_system = context_.GetPtr<RenderSystem>();
-  auto texture =
-      render_system->CreateTexture(DataVolatility::kStaticWrite, width, height);
+  auto texture = render_system->CreateTexture(
+      DataVolatility::kStaticWrite, width, height,
+      SamplerOptions().SetFilter(false).SetMipmap(false).SetAddressMode(
+          SamplerAddressMode::kClampBorder, Colors::kBlack.WithAlpha(0)));
   if (texture == nullptr ||
       !texture->Set(pixels, width * height * sizeof(Pixel))) {
     LOG(ERROR) << "Failed to initialize font texture for Dear ImGui";

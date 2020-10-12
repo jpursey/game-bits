@@ -13,32 +13,13 @@
 #include "gb/render/vulkan/vulkan_backend.h"
 #include "gb/render/vulkan/vulkan_buffer.h"
 #include "glog/logging.h"
+#include "stb_image_resize.h"
 
 namespace gb {
 
 namespace {
 
 constexpr int kNeverUsedFrame = -1000;
-
-struct DirtyRegion {
-  DirtyRegion() = default;
-  DirtyRegion(int x, int y, int width, int height)
-      : x(x), y(y), width(width), height(height) {}
-
-  int x = 0;
-  int y = 0;
-  int width = 0;
-  int height = 0;
-};
-
-inline void UnionDirtyRegion(DirtyRegion* region, int x, int y, int width,
-                             int height) {
-  const int x1 = std::min(x, region->x);
-  const int y1 = std::min(y, region->y);
-  const int x2 = std::max(x + width, region->x + region->width);
-  const int y2 = std::max(y + height, region->y + region->height);
-  *region = {x1, y1, x2 - x1, y2 - y1};
-}
 
 //==============================================================================
 // VulkanStaticWriteTexture
@@ -47,9 +28,10 @@ inline void UnionDirtyRegion(DirtyRegion* region, int x, int y, int width,
 class VulkanStaticWriteTexture final : public VulkanTexture {
  public:
   VulkanStaticWriteTexture(gb::ResourceEntry entry, VulkanBackend* backend,
-                           vk::Sampler sampler, int width, int height)
+                           vk::Sampler sampler, int width, int height,
+                           const SamplerOptions& options)
       : VulkanTexture(std::move(entry), backend, sampler,
-                      DataVolatility::kStaticWrite, width, height) {}
+                      DataVolatility::kStaticWrite, width, height, options) {}
 
  protected:
   bool Init() override;
@@ -163,12 +145,10 @@ void VulkanStaticWriteTexture::DoRender(VulkanRenderState* state) {
     return;
   }
 
-  for (const DirtyRegion& region : dirty_regions_) {
-    state->image_updates.emplace_back(
-        host_buffer_->Get(), image_->Get(), static_cast<uint32_t>(GetWidth()),
-        static_cast<uint32_t>(GetHeight()), region.x, region.y,
-        static_cast<uint32_t>(region.width),
-        static_cast<uint32_t>(region.height));
+  int num_regions = static_cast<int>(dirty_regions_.size());
+  for (int i = 0; i < num_regions; ++i) {
+    UpdateImage(state, host_buffer_.get(), image_.get(), dirty_regions_[i],
+                i == num_regions - 1);
   }
   host_buffer_.reset();
   dirty_regions_.clear();
@@ -212,9 +192,11 @@ void VulkanStaticWriteTexture::AddDirtyRegion(int x, int y, int width,
 class VulkanStaticReadWriteTexture final : public VulkanTexture {
  public:
   VulkanStaticReadWriteTexture(gb::ResourceEntry entry, VulkanBackend* backend,
-                               vk::Sampler sampler, int width, int height)
+                               vk::Sampler sampler, int width, int height,
+                               const SamplerOptions& options)
       : VulkanTexture(std::move(entry), backend, sampler,
-                      DataVolatility::kStaticReadWrite, width, height) {}
+                      DataVolatility::kStaticReadWrite, width, height,
+                      options) {}
 
  protected:
   bool Init() override;
@@ -333,11 +315,7 @@ void VulkanStaticReadWriteTexture::DoRender(VulkanRenderState* state) {
     return;
   }
 
-  state->image_updates.emplace_back(
-      host_buffer_->Get(), image_->Get(), static_cast<uint32_t>(GetWidth()),
-      static_cast<uint32_t>(GetHeight()), dirty_region_.x, dirty_region_.y,
-      static_cast<uint32_t>(dirty_region_.width),
-      static_cast<uint32_t>(dirty_region_.height));
+  UpdateImage(state, host_buffer_.get(), image_.get(), dirty_region_);
   transfer_frame_ = render_frame_;
   dirty_region_ = {};
   dirty_ = false;
@@ -388,9 +366,10 @@ bool VulkanStaticReadWriteTexture::EnsureImageIsWritable() {
 class VulkanPerFrameTexture final : public VulkanTexture {
  public:
   VulkanPerFrameTexture(gb::ResourceEntry entry, VulkanBackend* backend,
-                        vk::Sampler sampler, int width, int height)
+                        vk::Sampler sampler, int width, int height,
+                        const SamplerOptions& options)
       : VulkanTexture(std::move(entry), backend, sampler,
-                      DataVolatility::kPerFrame, width, height) {}
+                      DataVolatility::kPerFrame, width, height, options) {}
 
  protected:
   bool Init() override;
@@ -487,16 +466,35 @@ void VulkanPerFrameTexture::DoRender(VulkanRenderState* state) {
              static_cast<const Pixel*>(local_buffer_) +
                  (region.y * GetWidth() + region.x),
              GetWidth());
-  state->image_updates.emplace_back(
-      frame_data.host->Get(), frame_data.image->Get(),
-      static_cast<uint32_t>(GetWidth()), static_cast<uint32_t>(GetHeight()),
-      region.x, region.y, static_cast<uint32_t>(region.width),
-      static_cast<uint32_t>(region.height));
+  UpdateImage(state, frame_data.host.get(), frame_data.image.get(), region);
   frame_data.dirty_region = {};
   frame_data.dirty = false;
 }
 
 }  // namespace
+
+VulkanTexture::VulkanTexture(gb::ResourceEntry entry, VulkanBackend* backend,
+                             vk::Sampler sampler, DataVolatility volatility,
+                             int width, int height,
+                             const SamplerOptions& options)
+    : Texture(std::move(entry), volatility, width, height, options),
+      backend_(backend),
+      sampler_(sampler) {
+  host_size_ = width * height * sizeof(Pixel);
+  if (options.mipmap) {
+    int size = options.tile_size;
+    if (size == 0) {
+      size = std::min(GetWidth(), GetHeight());
+    }
+    size >>= 1;
+    int mip = 1;
+    while (size != 0) {
+      host_size_ += (width >> mip) * (height >> mip) * sizeof(Pixel);
+      size >>= 1;
+      ++mip_levels_;
+    }
+  }
+}
 
 VulkanTexture::~VulkanTexture() {}
 
@@ -504,20 +502,21 @@ VulkanTexture* VulkanTexture::Create(gb::ResourceEntry entry,
                                      VulkanBackend* backend,
                                      vk::Sampler sampler,
                                      DataVolatility volatility, int width,
-                                     int height) {
+                                     int height,
+                                     const SamplerOptions& options) {
   VulkanTexture* texture = nullptr;
   switch (volatility) {
     case DataVolatility::kStaticWrite:
       texture = new VulkanStaticWriteTexture(std::move(entry), backend, sampler,
-                                             width, height);
+                                             width, height, options);
       break;
     case DataVolatility::kStaticReadWrite:
-      texture = new VulkanStaticReadWriteTexture(std::move(entry), backend,
-                                                 sampler, width, height);
+      texture = new VulkanStaticReadWriteTexture(
+          std::move(entry), backend, sampler, width, height, options);
       break;
     case DataVolatility::kPerFrame:
       texture = new VulkanPerFrameTexture(std::move(entry), backend, sampler,
-                                          width, height);
+                                          width, height, options);
       break;
     default:
       LOG(ERROR) << "Unhandled data volatility for texture";
@@ -532,7 +531,7 @@ VulkanTexture* VulkanTexture::Create(gb::ResourceEntry entry,
 
 std::unique_ptr<VulkanImage> VulkanTexture::CreateImage() {
   return VulkanImage::Create(
-      backend_, GetWidth(), GetHeight(), vk::Format::eR8G8B8A8Srgb,
+      backend_, GetWidth(), GetHeight(), mip_levels_, vk::Format::eR8G8B8A8Srgb,
       vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled);
 }
 
@@ -540,10 +539,65 @@ std::unique_ptr<VulkanBuffer> VulkanTexture::CreateHostBuffer() {
   return VulkanBuffer::Create(
       backend_,
       vk::BufferCreateInfo()
-          .setSize(GetWidth() * GetHeight() * sizeof(Pixel))
+          .setSize(host_size_)
           .setUsage(vk::BufferUsageFlagBits::eTransferSrc)
           .setSharingMode(vk::SharingMode::eExclusive),
       VMA_MEMORY_USAGE_CPU_ONLY);
+}
+
+void VulkanTexture::UpdateImage(VulkanRenderState* state,
+                                VulkanBuffer* host_buffer, VulkanImage* image,
+                                const DirtyRegion& region, bool update_mips) {
+  state->image_updates.emplace_back(host_buffer->Get(), 0, image->Get(), 0,
+                                    GetWidth(), GetHeight(), region.x, region.y,
+                                    region.width, region.height);
+  if (!update_mips || mip_levels_ == 1) {
+    return;
+  }
+
+  int src_tile_size = GetSamplerOptions().tile_size;
+  int src_width = GetWidth();
+  int src_height = GetHeight();
+  uint32_t offset = src_width * src_height * sizeof(Pixel);
+  unsigned char* src = static_cast<unsigned char*>(host_buffer->GetData());
+  unsigned char* dst = src + offset;
+  for (int mip = 1; mip < mip_levels_; ++mip) {
+    int dst_width = src_width >> 1;
+    int dst_height = src_height >> 1;
+    uint32_t mip_byte_size = dst_width * dst_height * sizeof(Pixel);
+
+    if (src_tile_size == 0) {
+      stbir_resize_uint8_srgb(src, src_width, src_height, 0, dst, dst_width,
+                              dst_height, 0, 4, 3, 0);
+    } else {
+      int dst_tile_size = src_tile_size >> 1;
+      int src_tile_stride = src_width * sizeof(Pixel);
+      int dst_tile_stride = dst_width * sizeof(Pixel);
+      for (int y = 0; y < src_height; y += src_tile_size) {
+        unsigned char* tile_src = src + (src_tile_stride * y);
+        unsigned char* tile_dst = dst + (dst_tile_stride * y / 2);
+        for (int x = 0; x < src_width; x += src_tile_size) {
+          stbir_resize_uint8_srgb(tile_src, src_tile_size, src_tile_size,
+                                  src_tile_stride, tile_dst, dst_tile_size,
+                                  dst_tile_size, dst_tile_stride, 4, 3, 0);
+          tile_src += src_tile_size * sizeof(Pixel);
+          tile_dst += dst_tile_size * sizeof(Pixel);
+        }
+      }
+      src_tile_size = dst_tile_size;
+    }
+
+    state->image_updates.emplace_back(host_buffer->Get(), offset, image->Get(),
+                                      mip, dst_width, dst_height, 0, 0,
+                                      dst_width, dst_height);
+
+    src = dst;
+    src_width = dst_width;
+    src_height = dst_height;
+
+    offset += mip_byte_size;
+    dst += mip_byte_size;
+  }
 }
 
 void VulkanTexture::ClearRegion(void* buffer, int x, int y, int width,

@@ -18,8 +18,8 @@ class VulkanImage final {
   //----------------------------------------------------------------------------
 
   static std::unique_ptr<VulkanImage> Create(
-      VulkanBackend* backend, int width, int height, vk::Format format,
-      vk::ImageUsageFlags usage,
+      VulkanBackend* backend, int width, int height, int mip_levels,
+      vk::Format format, vk::ImageUsageFlags usage,
       vk::ImageTiling tiling = vk::ImageTiling::eOptimal,
       vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1);
   VulkanImage(const VulkanImage&) = delete;
@@ -34,13 +34,19 @@ class VulkanImage final {
 
   int GetWidth() const { return width_; }
   int GetHeight() const { return height_; }
+  int GetMipLevels() const { return mip_levels_; }
 
   vk::Image Get() const { return image_; }
   vk::ImageView GetView() const { return image_view_; }
 
  private:
-  VulkanImage(VulkanBackend* backend, int width, int height, vk::Format format)
-      : backend_(backend), width_(width), height_(height), format_(format) {}
+  VulkanImage(VulkanBackend* backend, int width, int height, int mip_levels,
+              vk::Format format)
+      : backend_(backend),
+        width_(width),
+        height_(height),
+        mip_levels_(mip_levels),
+        format_(format) {}
 
   bool Init(vk::ImageUsageFlags usage, vk::ImageTiling tiling,
             vk::SampleCountFlagBits sample_count);
@@ -48,6 +54,7 @@ class VulkanImage final {
   VulkanBackend* const backend_;
   const int width_;
   const int height_;
+  const int mip_levels_;
   const vk::Format format_;
   vk::Image image_;
   vk::ImageView image_view_;

@@ -40,6 +40,7 @@ set(gb_render_vulkan_DEPS
   absl::time
   gb_base
   gb_render
+  stb_image_resize
 )
 
 set(gb_render_vulkan_LIBS

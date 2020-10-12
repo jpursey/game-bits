@@ -13,6 +13,7 @@
 #include "gb/file/file_system.h"
 #include "gb/render/material_config.h"
 #include "gb/render/render_system.h"
+#include "gb/render/sampler_options.h"
 #include "gb/render/test_render_backend.h"
 #include "gb/resource/resource_system.h"
 #include "gtest/gtest.h"
@@ -105,6 +106,29 @@ inline void PrintTo(const Pixel& value, std::ostream* out) {
   *out << "{" << static_cast<int>(value.r) << ", " << static_cast<int>(value.g)
        << ", " << static_cast<int>(value.b) << ", " << static_cast<int>(value.a)
        << "}";
+}
+inline void PrintTo(const SamplerOptions& value, std::ostream* out) {
+  *out << "{ filter=" << value.filter << ", mimap=" << value.mipmap
+       << ", addressing=";
+  switch (value.address_mode) {
+    case SamplerAddressMode::kRepeat:
+      *out << "kRepeat";
+      break;
+    case SamplerAddressMode::kMirrorRepeat:
+      *out << "kMirrorRepeat";
+      break;
+    case SamplerAddressMode::kClampEdge:
+      *out << "kClampEdge";
+      break;
+    case SamplerAddressMode::kClampBorder:
+      *out << "kClampBorder";
+      break;
+    default:
+      *out << static_cast<uint8_t>(value.address_mode);
+  }
+  *out << ", border=";
+  PrintTo(value.border, out);
+  *out << ", tile_size=" << value.tile_size << "}";
 }
 
 }  // namespace gb

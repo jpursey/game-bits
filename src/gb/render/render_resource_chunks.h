@@ -19,6 +19,7 @@ inline constexpr ChunkType kChunkTypeMaterialBindingData = {'G', 'B', 'B', 'M'};
 inline constexpr ChunkType kChunkTypeMaterialType = {'G', 'B', 'M', 'T'};
 inline constexpr ChunkType kChunkTypeMesh = {'G', 'B', 'M', 'E'};
 inline constexpr ChunkType kChunkTypeShader = {'G', 'B', 'S', 'H'};
+inline constexpr ChunkType kChunkTypeSamplerOptions = {'G', 'B', 'S', 'O'};
 inline constexpr ChunkType kChunkTypeTexture = {'G', 'B', 'T', 'X'};
 
 // Entry for binding chunk.
@@ -114,10 +115,20 @@ struct ShaderChunk {
   ChunkPtr<const void> code;
 };
 
+// Chunk for texture sampler options.
+struct SamplerOptionsChunk {
+  uint8_t filter;        // Boolean filter value.
+  uint8_t mipmap;        // Boolean mimap value.
+  uint8_t address_mode;  // Maps to SamplerAddressMode.
+  Pixel border;          // Border color for addressing.
+  uint32_t tile_size;    // Tile size.
+};
+
 // Chunk for texture resource.
 //
 // Texture resource files are structured as follows:
 //   Chunk "GBFI"  -- File header of file type "GBTX".
+//   Chunk "GBSO"  -- Sampler options for the texture (optional).
 //   Chunk "GBTX"  -- Texture data.
 struct TextureChunk {
   ResourceId id;

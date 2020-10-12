@@ -71,8 +71,8 @@ class TestRenderBackend final : public RenderBackend {
   void SetClearColor(RenderInternal, Pixel color) override {}
   FrameDimensions GetFrameDimensions(RenderInternal) const override;
   Texture* CreateTexture(RenderInternal, ResourceEntry entry,
-                         DataVolatility volatility, int width,
-                         int height) override;
+                         DataVolatility volatility, int width, int height,
+                         const SamplerOptions& options) override;
   std::unique_ptr<ShaderCode> CreateShaderCode(RenderInternal, const void* code,
                                                int64_t code_size) override;
   std::unique_ptr<RenderSceneType> CreateSceneType(

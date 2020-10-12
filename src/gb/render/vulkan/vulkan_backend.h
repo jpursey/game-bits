@@ -162,8 +162,8 @@ class VulkanBackend final : public RenderBackend {
   FrameDimensions GetFrameDimensions(RenderInternal) const override;
 
   Texture* CreateTexture(RenderInternal, gb::ResourceEntry entry,
-                         DataVolatility volatility, int width,
-                         int height) override;
+                         DataVolatility volatility, int width, int height,
+                         const SamplerOptions& options) override;
   std::unique_ptr<ShaderCode> CreateShaderCode(RenderInternal, const void* code,
                                                int64_t code_size) override;
   std::unique_ptr<RenderSceneType> CreateSceneType(
@@ -250,6 +250,7 @@ class VulkanBackend final : public RenderBackend {
                        vk::Semaphore* semaphore);
   bool CreateFence(const vk::FenceCreateInfo& create_info, vk::Fence* fence);
   vk::ImageView CreateImageView(vk::Image image, vk::Format format);
+  vk::Sampler GetSampler(SamplerOptions options, int width, int height);
 
   void CallFrameCallbacks(std::vector<FrameCallback>* callbacks);
   void EndFrameProcessUpdates();
@@ -302,7 +303,7 @@ class VulkanBackend final : public RenderBackend {
 
   // Global resources
   vk::ClearColorValue clear_color_;
-  vk::Sampler sampler_;
+  absl::flat_hash_map<SamplerOptions, vk::Sampler> samplers_;
   std::vector<VulkanSceneType*> scene_types_;
 
   // Garbage collection

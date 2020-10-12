@@ -24,7 +24,9 @@
 #include "gb/render/render_scene.h"
 #include "gb/render/render_scene_type.h"
 #include "gb/render/render_types.h"
+#include "gb/render/sampler_options.h"
 #include "gb/render/shader.h"
+#include "gb/render/texture.h"
 #include "gb/resource/resource_ptr.h"
 #include "gb/resource/resource_set.h"
 #include "gb/resource/resource_types.h"
@@ -86,10 +88,21 @@ class RenderSystem final {
   static GB_CONTEXT_CONSTRAINT_NAMED_DEFAULT(kConstraintEnableEdit, kInOptional,
                                              bool, kKeyEnableEdit, false);
 
+  // Contract for render system creation.
   using Contract =
       ContextContract<kConstraintBackend, kConstraintFileSystem,
                       kConstraintResourceSystem, kConstraintEnableDebug,
                       kConstraintEnableEdit>;
+
+  // OPTIONAL: Specifies sampler options for the texture load contract. If the
+  // sampler options are not specified, then either the sampler options in the
+  // resource file will be used, or the default (if there are no sampler options
+  // in the texture file -- for instance a regular image file).
+  static GB_CONTEXT_CONSTRAINT(kConstraintSamplerOptions, kInOptional,
+                               SamplerOptions);
+
+  // Contract for load context of texture resources.
+  using TextureLoadContract = ContextContract<kConstraintSamplerOptions>;
 
   //----------------------------------------------------------------------------
   // Construction / Destruction
@@ -282,10 +295,12 @@ class RenderSystem final {
   //
   // If successful, the texture will be created uninitialized (pixel values are
   // undefined). The caller should call Set or Edit to initialize its contents.
-  ResourcePtr<Texture> CreateTexture(DataVolatility volatility, int width,
-                                     int height);
+  ResourcePtr<Texture> CreateTexture(
+      DataVolatility volatility, int width, int height,
+      const SamplerOptions& options = SamplerOptions());
   Texture* CreateTexture(ResourceSet* resource_set, DataVolatility volatility,
-                         int width, int height);
+                         int width, int height,
+                         const SamplerOptions& options = SamplerOptions());
 
   // Saves a texture to the specified resource name.
   //
@@ -390,13 +405,18 @@ class RenderSystem final {
   bool SaveShaderChunk(Context* context, Shader* shader,
                        std::vector<ChunkWriter>* out_chunks);
 
-  Texture* DoCreateTexture(DataVolatility volatility, int width, int height);
-  Texture* LoadTexture(std::string_view name);
+  bool LoadSamplerOptionsChunk(Context* context, ChunkReader* chunk_reader);
+  bool SaveSamplerOptionsChunk(const SamplerOptions& options,
+                               std::vector<ChunkWriter>* out_chunks);
+
+  Texture* DoCreateTexture(DataVolatility volatility, int width, int height,
+                           const SamplerOptions& options);
+  Texture* LoadTexture(Context* context, std::string_view name);
   Texture* LoadTextureChunk(Context* context, ChunkReader* chunk_reader,
                             ResourceEntry entry);
   bool SaveTextureChunk(Context* context, Texture* texture,
                         std::vector<ChunkWriter>* out_chunks);
-  Texture* LoadStbTexture(File* file);
+  Texture* LoadStbTexture(TextureLoadContract contract, File* file);
 
   const RenderDataType* DoRegisterConstantsType(std::string_view name,
                                                 TypeKey* type, size_t size);
@@ -414,6 +434,7 @@ class RenderSystem final {
   absl::flat_hash_map<std::string, std::unique_ptr<VertexType>> vertex_types_;
   absl::flat_hash_map<std::string, std::unique_ptr<RenderSceneType>>
       scene_types_;
+
   bool debug_ = false;
   bool edit_ = false;
   bool is_rendering_ = false;
@@ -502,14 +523,16 @@ inline Shader* RenderSystem::CreateShader(
 }
 
 inline ResourcePtr<Texture> RenderSystem::CreateTexture(
-    DataVolatility volatility, int width, int height) {
-  return DoCreateTexture(volatility, width, height);
+    DataVolatility volatility, int width, int height,
+    const SamplerOptions& options) {
+  return DoCreateTexture(volatility, width, height, options);
 }
 
 inline Texture* RenderSystem::CreateTexture(ResourceSet* resource_set,
                                             DataVolatility volatility,
-                                            int width, int height) {
-  Texture* texture = DoCreateTexture(volatility, width, height);
+                                            int width, int height,
+                                            const SamplerOptions& options) {
+  Texture* texture = DoCreateTexture(volatility, width, height, options);
   resource_set->Add(texture);
   return texture;
 }

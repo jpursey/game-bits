@@ -21,12 +21,13 @@ FrameDimensions TestRenderBackend::GetFrameDimensions(RenderInternal) const {
 
 Texture* TestRenderBackend::CreateTexture(RenderInternal, ResourceEntry entry,
                                           DataVolatility volatility, int width,
-                                          int height) {
+                                          int height,
+                                          const SamplerOptions& options) {
   if (state_->fail_create_texture) {
     return nullptr;
   }
   return new TestTexture(&state_->texture_config, std::move(entry), volatility,
-                         width, height);
+                         width, height, options);
 }
 
 std::unique_ptr<ShaderCode> TestRenderBackend::CreateShaderCode(

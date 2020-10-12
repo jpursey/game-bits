@@ -12,11 +12,11 @@
 namespace gb {
 
 std::unique_ptr<VulkanImage> VulkanImage::Create(
-    VulkanBackend* backend, int width, int height, vk::Format format,
-    vk::ImageUsageFlags usage, vk::ImageTiling tiling,
+    VulkanBackend* backend, int width, int height, int mip_levels,
+    vk::Format format, vk::ImageUsageFlags usage, vk::ImageTiling tiling,
     vk::SampleCountFlagBits sample_count) {
-  auto image =
-      absl::WrapUnique(new VulkanImage(backend, width, height, format));
+  auto image = absl::WrapUnique(
+      new VulkanImage(backend, width, height, mip_levels, format));
   if (!image->Init(usage, tiling, sample_count)) {
     return nullptr;
   }
@@ -36,7 +36,7 @@ bool VulkanImage::Init(vk::ImageUsageFlags usage, vk::ImageTiling tiling,
                          .setImageType(vk::ImageType::e2D)
                          .setExtent({static_cast<uint32_t>(width_),
                                      static_cast<uint32_t>(height_), 1})
-                         .setMipLevels(1)
+                         .setMipLevels(mip_levels_)
                          .setArrayLayers(1)
                          .setFormat(format_)
                          .setTiling(tiling)
@@ -68,7 +68,7 @@ bool VulkanImage::Init(vk::ImageUsageFlags usage, vk::ImageTiling tiling,
           .setSubresourceRange(vk::ImageSubresourceRange()
                                    .setAspectMask(aspect_flags)
                                    .setBaseMipLevel(0)
-                                   .setLevelCount(1)
+                                   .setLevelCount(mip_levels_)
                                    .setBaseArrayLayer(0)
                                    .setLayerCount(1)));
   if (create_view_result != vk::Result::eSuccess) {

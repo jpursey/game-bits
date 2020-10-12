@@ -7,6 +7,7 @@
 #define GB_RENDER_TEXTURE_H_
 
 #include "absl/types/span.h"
+#include "gb/render/sampler_options.h"
 #include "gb/render/texture_view.h"
 #include "gb/resource/resource.h"
 
@@ -32,6 +33,9 @@ class Texture : public Resource {
   // calling Set.
   int GetWidth() const { return width_; }
   int GetHeight() const { return height_; }
+
+  // Returns the sampler options used with this texture.
+  const SamplerOptions& GetSamplerOptions() const { return options_; }
 
   //----------------------------------------------------------------------------
   // Operations
@@ -100,11 +104,13 @@ class Texture : public Resource {
   std::unique_ptr<TextureView> Edit();
 
  protected:
-  Texture(ResourceEntry entry, DataVolatility volatility, int width, int height)
+  Texture(ResourceEntry entry, DataVolatility volatility, int width, int height,
+          const SamplerOptions& options)
       : Resource(std::move(entry)),
         volatility_(volatility),
         width_(width),
-        height_(height) {}
+        height_(height),
+        options_(options) {}
   virtual ~Texture() = default;
 
   // Clear the texture with the specified color, returning true if the write was
@@ -165,6 +171,7 @@ class Texture : public Resource {
   const DataVolatility volatility_;
   const int width_;
   const int height_;
+  const SamplerOptions options_;
   bool editing_ = false;
 };
 

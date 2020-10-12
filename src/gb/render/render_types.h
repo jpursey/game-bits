@@ -37,6 +37,7 @@ class TextureView;
 struct Binding;
 struct DrawCommand;
 struct MaterialConfig;
+struct SamplerOptions;
 
 // Resource chunks
 struct MeshChunk;

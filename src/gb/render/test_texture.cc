@@ -8,8 +8,10 @@
 namespace gb {
 
 TestTexture::TestTexture(Config* config, ResourceEntry entry,
-                         DataVolatility volatility, int width, int height)
-    : Texture(std::move(entry), volatility, width, height), config_(config) {
+                         DataVolatility volatility, int width, int height,
+                         const SamplerOptions& options)
+    : Texture(std::move(entry), volatility, width, height, options),
+      config_(config) {
   const size_t size = width * height * sizeof(Pixel);
   pixels_ = static_cast<Pixel*>(std::malloc(size));
   std::memset(pixels_, 0xFF, size);

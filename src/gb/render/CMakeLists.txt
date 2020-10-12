@@ -28,6 +28,7 @@ set(gb_render_SOURCE
   render_scene_type.cc render_scene_type.h
   render_system.cc render_system.h
   render_types.h
+  sampler_options.h
   shader.h
   shader_code.h
   texture.cc texture.h

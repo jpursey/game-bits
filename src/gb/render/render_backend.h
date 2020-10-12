@@ -62,7 +62,7 @@ class RenderBackend {
   // value).
   virtual Texture* CreateTexture(RenderInternal, ResourceEntry entry,
                                  DataVolatility volatility, int width,
-                                 int height) = 0;
+                                 int height, const SamplerOptions& options) = 0;
 
   // Creates the shader code compatible with this backend from the raw shader
   // code data.

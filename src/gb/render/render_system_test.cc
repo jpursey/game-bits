@@ -186,6 +186,7 @@ TEST_F(RenderSystemTest, FrameDimensions) {
 
 TEST_F(RenderSystemTest, LoadPngTexture) {
   CreateSystem();
+  SamplerOptions expected_options;
   ASSERT_TRUE(file_system_->WriteFile("mem:/image.png", kPngImage));
   ResourcePtr<Texture> texture =
       resource_system_->Load<Texture>("mem:/image.png");
@@ -193,6 +194,29 @@ TEST_F(RenderSystemTest, LoadPngTexture) {
   EXPECT_EQ(texture->GetVolatility(), DataVolatility::kStaticWrite);
   EXPECT_EQ(texture->GetWidth(), 16);
   EXPECT_EQ(texture->GetHeight(), 16);
+  EXPECT_EQ(texture->GetSamplerOptions(), expected_options);
+  auto* test_texture = static_cast<TestTexture*>(texture.Get());
+  auto expected_pixels = MakeImageData();
+  EXPECT_THAT(test_texture->GetPixels(), ElementsAreArray(expected_pixels));
+}
+
+TEST_F(RenderSystemTest, LoadPngTextureWithSamplerOptions) {
+  CreateSystem();
+  SamplerOptions expected_options =
+      SamplerOptions()
+          .SetFilter(false)
+          .SetMipmap(false)
+          .SetAddressMode(SamplerAddressMode::kClampBorder, Pixel(32, 64, 128))
+          .SetTileSize(48);
+  ASSERT_TRUE(file_system_->WriteFile("mem:/image.png", kPngImage));
+  ResourcePtr<Texture> texture = resource_system_->Load<Texture>(
+      "mem:/image.png",
+      ContextBuilder().SetValue<SamplerOptions>(expected_options).Build());
+  ASSERT_NE(texture, nullptr);
+  EXPECT_EQ(texture->GetVolatility(), DataVolatility::kStaticWrite);
+  EXPECT_EQ(texture->GetWidth(), 16);
+  EXPECT_EQ(texture->GetHeight(), 16);
+  EXPECT_EQ(texture->GetSamplerOptions(), expected_options);
   auto* test_texture = static_cast<TestTexture*>(texture.Get());
   auto expected_pixels = MakeImageData();
   EXPECT_THAT(test_texture->GetPixels(), ElementsAreArray(expected_pixels));
@@ -211,6 +235,7 @@ TEST_F(RenderSystemTest, LoadPngTextureInEditMode) {
 
 TEST_F(RenderSystemTest, SaveLoadTexture) {
   CreateSystem();
+  const SamplerOptions expected_options;
   auto expected_pixels = MakeImageData();
   auto texture =
       render_system_->CreateTexture(DataVolatility::kStaticReadWrite, 16, 16);
@@ -228,6 +253,69 @@ TEST_F(RenderSystemTest, SaveLoadTexture) {
   EXPECT_EQ(texture->GetVolatility(), DataVolatility::kStaticWrite);
   EXPECT_EQ(texture->GetWidth(), 16);
   EXPECT_EQ(texture->GetHeight(), 16);
+  EXPECT_EQ(texture->GetSamplerOptions(), expected_options);
+  auto* test_texture = static_cast<TestTexture*>(texture.Get());
+  EXPECT_THAT(test_texture->GetPixels(), ElementsAreArray(expected_pixels));
+}
+
+TEST_F(RenderSystemTest, SaveLoadTextureWithSamplerOptions) {
+  CreateSystem();
+  SamplerOptions expected_options =
+      SamplerOptions()
+          .SetFilter(false)
+          .SetMipmap(false)
+          .SetAddressMode(SamplerAddressMode::kClampBorder, Pixel(32, 64, 128))
+          .SetTileSize(48);
+  auto expected_pixels = MakeImageData();
+  auto texture = render_system_->CreateTexture(DataVolatility::kStaticReadWrite,
+                                               16, 16, expected_options);
+  auto texture_id = texture->GetResourceId();
+  ASSERT_NE(texture, nullptr);
+  ASSERT_TRUE(texture->Set(expected_pixels));
+  ASSERT_TRUE(render_system_->SaveTexture("mem:/image.gbtx", texture.Get()));
+  EXPECT_EQ(texture->GetResourceName(), "mem:/image.gbtx");
+  texture.Reset();
+
+  texture = resource_system_->Load<Texture>("mem:/image.gbtx");
+  ASSERT_NE(texture, nullptr);
+  EXPECT_EQ(texture->GetResourceId(), texture_id);
+  EXPECT_EQ(texture->GetResourceName(), "mem:/image.gbtx");
+  EXPECT_EQ(texture->GetVolatility(), DataVolatility::kStaticWrite);
+  EXPECT_EQ(texture->GetWidth(), 16);
+  EXPECT_EQ(texture->GetHeight(), 16);
+  EXPECT_EQ(texture->GetSamplerOptions(), expected_options);
+  auto* test_texture = static_cast<TestTexture*>(texture.Get());
+  EXPECT_THAT(test_texture->GetPixels(), ElementsAreArray(expected_pixels));
+}
+
+TEST_F(RenderSystemTest, SaveLoadTextureOverridingSamplerOptions) {
+  CreateSystem();
+  SamplerOptions expected_options =
+      SamplerOptions()
+          .SetFilter(false)
+          .SetMipmap(false)
+          .SetAddressMode(SamplerAddressMode::kClampBorder, Pixel(32, 64, 128))
+          .SetTileSize(48);
+  auto expected_pixels = MakeImageData();
+  auto texture =
+      render_system_->CreateTexture(DataVolatility::kStaticReadWrite, 16, 16);
+  auto texture_id = texture->GetResourceId();
+  ASSERT_NE(texture, nullptr);
+  ASSERT_TRUE(texture->Set(expected_pixels));
+  ASSERT_TRUE(render_system_->SaveTexture("mem:/image.gbtx", texture.Get()));
+  EXPECT_EQ(texture->GetResourceName(), "mem:/image.gbtx");
+  texture.Reset();
+
+  texture = resource_system_->Load<Texture>(
+      "mem:/image.gbtx",
+      ContextBuilder().SetValue<SamplerOptions>(expected_options).Build());
+  ASSERT_NE(texture, nullptr);
+  EXPECT_EQ(texture->GetResourceId(), texture_id);
+  EXPECT_EQ(texture->GetResourceName(), "mem:/image.gbtx");
+  EXPECT_EQ(texture->GetVolatility(), DataVolatility::kStaticWrite);
+  EXPECT_EQ(texture->GetWidth(), 16);
+  EXPECT_EQ(texture->GetHeight(), 16);
+  EXPECT_EQ(texture->GetSamplerOptions(), expected_options);
   auto* test_texture = static_cast<TestTexture*>(texture.Get());
   EXPECT_THAT(test_texture->GetPixels(), ElementsAreArray(expected_pixels));
 }
@@ -279,7 +367,7 @@ TEST_F(RenderSystemTest, SaveLoadTextureInEditMode) {
   EXPECT_THAT(test_texture->GetPixels(), ElementsAreArray(expected_pixels));
 }
 
-TEST_F(RenderSystemTest, SavShaderNotInEditMode) {
+TEST_F(RenderSystemTest, SaveShaderNotInEditMode) {
   CreateSystem();
   auto shader = render_system_->CreateShader(
       ShaderType::kVertex,

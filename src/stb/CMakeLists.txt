@@ -14,6 +14,17 @@ set(stb_image_INCLUDES
 
 gb_add_library(stb_image)
 
+set(stb_image_resize_SOURCE
+  ${GB_THIRD_PARTY_DIR}/stb/stb_image_resize.h
+  stb_image_resize.cc
+)
+
+set(stb_image_resize_INCLUDES
+  ${GB_THIRD_PARTY_DIR}/stb
+)
+
+gb_add_library(stb_image_resize)
+
 set(stb_perlin_SOURCE
   ${GB_THIRD_PARTY_DIR}/stb/stb_perlin.h
   stb_perlin.cc

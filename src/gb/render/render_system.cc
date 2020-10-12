@@ -88,6 +88,11 @@ bool RenderSystem::Init() {
       [this](Context* context, ChunkReader* chunk_reader) {
         return LoadBindingDataChunk(context, chunk_reader);
       });
+  resource_reader_->RegisterGenericChunk<SamplerOptionsChunk>(
+      kChunkTypeSamplerOptions, 1,
+      [this](Context* context, ChunkReader* chunk_reader) {
+        return LoadSamplerOptionsChunk(context, chunk_reader);
+      });
   resource_reader_->RegisterResourceChunk<Texture, TextureChunk>(
       kChunkTypeTexture, 1,
       [this](Context* context, ChunkReader* chunk_reader, ResourceEntry entry) {
@@ -121,7 +126,7 @@ bool RenderSystem::Init() {
       });
   resource_manager_->InitLoader<Texture>(
       [this](Context* context, std::string_view name) {
-        return LoadTexture(name);
+        return LoadTexture(context, name);
       });
 
   TypeKey::Get<Texture>()->SetTypeName("Texture");
@@ -1098,8 +1103,40 @@ std::unique_ptr<ShaderCode> RenderSystem::LoadShaderCode(
   return shader_code;
 }
 
+bool RenderSystem::LoadSamplerOptionsChunk(Context* context,
+                                           ChunkReader* chunk_reader) {
+  // If the sampler options are overridden, then let them stand.
+  if (context->Exists<SamplerOptions>()) {
+    return true;
+  }
+
+  const auto* chunk = chunk_reader->GetChunkData<SamplerOptionsChunk>();
+  context->SetValue<SamplerOptions>(
+      SamplerOptions()
+          .SetFilter(chunk->filter != 0)
+          .SetMipmap(chunk->mipmap != 0)
+          .SetAddressMode(static_cast<SamplerAddressMode>(chunk->address_mode),
+                          chunk->border)
+          .SetTileSize(chunk->tile_size));
+  return true;
+}
+
+bool RenderSystem::SaveSamplerOptionsChunk(
+    const SamplerOptions& options, std::vector<ChunkWriter>* out_chunks) {
+  auto& chunk_writer = out_chunks->emplace_back(
+      ChunkWriter::New<SamplerOptionsChunk>(kChunkTypeSamplerOptions, 1));
+  auto* chunk = chunk_writer.GetChunkData<SamplerOptionsChunk>();
+  chunk->filter = (options.filter ? 1 : 0);
+  chunk->mipmap = (options.mipmap ? 1 : 0);
+  chunk->address_mode = static_cast<uint8_t>(options.address_mode);
+  chunk->border = options.border;
+  chunk->tile_size = options.tile_size;
+  return true;
+}
+
 Texture* RenderSystem::DoCreateTexture(DataVolatility volatility, int width,
-                                       int height) {
+                                       int height,
+                                       const SamplerOptions& options) {
   if (width <= 0 || width > kMaxTextureWidth || height <= 0 ||
       height > kMaxTextureHeight) {
     LOG(ERROR) << "Invalid texture dimensions in CreateTexture: " << width
@@ -1108,10 +1145,10 @@ Texture* RenderSystem::DoCreateTexture(DataVolatility volatility, int width,
   }
   return backend_->CreateTexture({},
                                  resource_manager_->NewResourceEntry<Texture>(),
-                                 volatility, width, height);
+                                 volatility, width, height, options);
 }
 
-Texture* RenderSystem::LoadTexture(std::string_view name) {
+Texture* RenderSystem::LoadTexture(Context* context, std::string_view name) {
   auto* file_system = context_.GetPtr<FileSystem>();
 
   auto file = file_system->OpenFile(name, kReadFileFlags);
@@ -1129,9 +1166,9 @@ Texture* RenderSystem::LoadTexture(std::string_view name) {
 
   if (chunk_type == kChunkTypeFile) {
     file.reset();
-    return resource_reader_->Read<Texture>(name);
+    return resource_reader_->Read<Texture>(name, context);
   }
-  return LoadStbTexture(file.get());
+  return LoadStbTexture(context, file.get());
 }
 
 Texture* RenderSystem::LoadTextureChunk(Context* context,
@@ -1150,12 +1187,17 @@ Texture* RenderSystem::LoadTextureChunk(Context* context,
   }
   chunk_reader->ConvertToPtr(&chunk->pixels);
 
+  gb::ValidatedContext validated_context = TextureLoadContract(context);
+  DCHECK(validated_context.IsValid())
+      << "TextureLoadContext does not have any requirements!";
+
   DataVolatility volatility = static_cast<DataVolatility>(chunk->volatility);
   if (edit_ && volatility == DataVolatility::kStaticWrite) {
     volatility = DataVolatility::kStaticReadWrite;
   }
-  Texture* texture = backend_->CreateTexture({}, std::move(entry), volatility,
-                                             chunk->width, chunk->height);
+  Texture* texture = backend_->CreateTexture(
+      {}, std::move(entry), volatility, chunk->width, chunk->height,
+      validated_context.GetValue<SamplerOptions>());
   if (texture == nullptr) {
     LOG(ERROR) << "Failed to create texture of dimensions " << chunk->width
                << "x" << chunk->height;
@@ -1169,7 +1211,8 @@ Texture* RenderSystem::LoadTextureChunk(Context* context,
   return texture;
 }
 
-Texture* RenderSystem::LoadStbTexture(File* file) {
+Texture* RenderSystem::LoadStbTexture(TextureLoadContract contract,
+                                      File* file) {
   struct IoState {
     int64_t size;
     gb::File* file;
@@ -1211,10 +1254,14 @@ Texture* RenderSystem::LoadStbTexture(File* file) {
   }
   ScopedCall free_pixels([pixels]() { stbi_image_free(pixels); });
 
+  gb::ValidatedContext validated_context = std::move(contract);
+  DCHECK(validated_context.IsValid())
+      << "TextureLoadContext does not have any requirements!";
+
   Texture* texture = backend_->CreateTexture(
       {}, resource_manager_->NewResourceEntry<Texture>(),
       (edit_ ? DataVolatility::kStaticReadWrite : DataVolatility::kStaticWrite),
-      width, height);
+      width, height, validated_context.GetValue<SamplerOptions>());
   if (texture == nullptr) {
     LOG(ERROR) << "Failed to create texture of dimensions " << width << "x"
                << height;
@@ -1243,6 +1290,9 @@ bool RenderSystem::SaveTextureChunk(Context* context, Texture* texture,
   auto view = texture->Edit();
   if (view == nullptr) {
     LOG(ERROR) << "Failed to read texture in order to save it";
+    return false;
+  }
+  if (!SaveSamplerOptionsChunk(texture->GetSamplerOptions(), out_chunks)) {
     return false;
   }
   out_chunks->emplace_back(

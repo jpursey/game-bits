@@ -24,7 +24,7 @@ class TestTexture final : public Texture {
   };
 
   TestTexture(Config* config, ResourceEntry entry, DataVolatility volatility,
-              int width, int height);
+              int width, int height, const SamplerOptions& options);
   ~TestTexture() override;
 
   Pixel* GetPixelData() const { return pixels_; }
