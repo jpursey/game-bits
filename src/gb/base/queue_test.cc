@@ -3,7 +3,7 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "gb/base/circular_queue.h"
+#include "gb/base/queue.h"
 
 #include "gtest/gtest.h"
 
@@ -45,10 +45,9 @@ class Item {
   int value_;
 };
 
-std::unique_ptr<CircularQueue<Item>> InitQueueImpl(Counts* counts,
-                                                   int start_index) {
+std::unique_ptr<Queue<Item>> InitQueueImpl(Counts* counts, int start_index) {
   // This creates an "interesting" queue where the there is a skip buffer.
-  auto queue = std::make_unique<CircularQueue<Item>>(2);
+  auto queue = std::make_unique<Queue<Item>>(2);
   queue->emplace(counts, start_index - 1);
   queue->emplace(counts, start_index);
   queue->emplace(counts, start_index + 1);
@@ -60,32 +59,32 @@ std::unique_ptr<CircularQueue<Item>> InitQueueImpl(Counts* counts,
   return queue;
 }
 
-std::unique_ptr<CircularQueue<Item>> InitQueueWith12345(Counts* counts) {
+std::unique_ptr<Queue<Item>> InitQueueWith12345(Counts* counts) {
   return InitQueueImpl(counts, 1);
 }
 
-std::unique_ptr<CircularQueue<Item>> InitQueueWith67890(Counts* counts) {
+std::unique_ptr<Queue<Item>> InitQueueWith67890(Counts* counts) {
   return InitQueueImpl(counts, 6);
 }
 
-TEST(CircularQueueTest, ConstructWithZeroCapacity) {
-  CircularQueue<Item> queue(0);
+TEST(QueueTest, ConstructWithZeroCapacity) {
+  Queue<Item> queue(0);
   EXPECT_TRUE(queue.empty());
   EXPECT_EQ(queue.size(), 0);
   EXPECT_EQ(queue.capacity(), 0);
   EXPECT_EQ(queue.grow_capacity(), 0);
 }
 
-TEST(CircularQueueTest, ConstructWithNonZeroCapacity) {
-  CircularQueue<Item> queue(1);
+TEST(QueueTest, ConstructWithNonZeroCapacity) {
+  Queue<Item> queue(1);
   EXPECT_TRUE(queue.empty());
   EXPECT_EQ(queue.size(), 0);
   EXPECT_EQ(queue.capacity(), 1);
   EXPECT_EQ(queue.grow_capacity(), 1);
 }
 
-TEST(CircularQueueTest, EmplaceWithInitCapacityOfOne) {
-  CircularQueue<Item> queue(1, 0);
+TEST(QueueTest, EmplaceWithInitCapacityOfOne) {
+  Queue<Item> queue(1, 0);
   EXPECT_TRUE(queue.empty());
   EXPECT_EQ(queue.size(), 0);
   EXPECT_EQ(queue.capacity(), 1);
@@ -108,8 +107,8 @@ TEST(CircularQueueTest, EmplaceWithInitCapacityOfOne) {
   EXPECT_EQ(counts.destruct, 0);
 }
 
-TEST(CircularQueueTest, EmplaceWithGrowCapacityOfOne) {
-  CircularQueue<Item> queue(0, 1);
+TEST(QueueTest, EmplaceWithGrowCapacityOfOne) {
+  Queue<Item> queue(0, 1);
   EXPECT_TRUE(queue.empty());
   EXPECT_EQ(queue.size(), 0);
   EXPECT_EQ(queue.capacity(), 0);
@@ -132,8 +131,8 @@ TEST(CircularQueueTest, EmplaceWithGrowCapacityOfOne) {
   EXPECT_EQ(counts.destruct, 0);
 }
 
-TEST(CircularQueueTest, EmplaceTwiceWithGrowCapacityOfOne) {
-  CircularQueue<Item> queue(0, 1);
+TEST(QueueTest, EmplaceTwiceWithGrowCapacityOfOne) {
+  Queue<Item> queue(0, 1);
   EXPECT_TRUE(queue.empty());
   EXPECT_EQ(queue.size(), 0);
   EXPECT_EQ(queue.capacity(), 0);
@@ -158,8 +157,8 @@ TEST(CircularQueueTest, EmplaceTwiceWithGrowCapacityOfOne) {
   EXPECT_EQ(counts.destruct, 0);
 }
 
-TEST(CircularQueueTest, PopToEmpty) {
-  CircularQueue<Item> queue(2);
+TEST(QueueTest, PopToEmpty) {
+  Queue<Item> queue(2);
 
   Counts counts;
   queue.emplace(&counts, 1);
@@ -174,8 +173,8 @@ TEST(CircularQueueTest, PopToEmpty) {
   EXPECT_EQ(counts.destruct, 1);
 }
 
-TEST(CircularQueueTest, PushByCopy) {
-  CircularQueue<Item> queue(2);
+TEST(QueueTest, PushByCopy) {
+  Queue<Item> queue(2);
 
   Counts counts;
   Item item(&counts, 1);
@@ -191,8 +190,8 @@ TEST(CircularQueueTest, PushByCopy) {
   EXPECT_EQ(counts.destruct, 0);
 }
 
-TEST(CircularQueueTest, PushByMove) {
-  CircularQueue<Item> queue(2);
+TEST(QueueTest, PushByMove) {
+  Queue<Item> queue(2);
 
   Counts counts;
   Item item(&counts, 1);
@@ -208,8 +207,8 @@ TEST(CircularQueueTest, PushByMove) {
   EXPECT_EQ(counts.destruct, 0);
 }
 
-TEST(CircularQueueTest, FixedSizeQueue) {
-  CircularQueue<Item> queue(4, 0);
+TEST(QueueTest, FixedSizeQueue) {
+  Queue<Item> queue(4, 0);
 
   Counts counts;
   queue.emplace(&counts, 1);
@@ -231,8 +230,8 @@ TEST(CircularQueueTest, FixedSizeQueue) {
   EXPECT_EQ(counts.destruct, 96);
 }
 
-TEST(CircularQueueTest, GrowingQueue) {
-  CircularQueue<Item> queue(10);
+TEST(QueueTest, GrowingQueue) {
+  Queue<Item> queue(10);
 
   Counts counts;
   for (int i = 1; i < 100; ++i) {
@@ -253,8 +252,8 @@ TEST(CircularQueueTest, GrowingQueue) {
   EXPECT_EQ(counts.destruct, 33);
 }
 
-TEST(CircularQueueTest, BackEdgeCases) {
-  CircularQueue<Item> queue(2);
+TEST(QueueTest, BackEdgeCases) {
+  Queue<Item> queue(2);
 
   Counts counts;
   queue.emplace(&counts, 1);
@@ -271,7 +270,7 @@ TEST(CircularQueueTest, BackEdgeCases) {
   EXPECT_EQ(queue.back().GetValue(), 6);
 }
 
-TEST(CircularQueueTest, Destruct) {
+TEST(QueueTest, Destruct) {
   Counts counts;
   auto queue = InitQueueWith12345(&counts);
 
@@ -282,11 +281,11 @@ TEST(CircularQueueTest, Destruct) {
   EXPECT_EQ(counts.destruct, 5);
 }
 
-TEST(CircularQueueTest, CopyConstruct) {
+TEST(QueueTest, CopyConstruct) {
   Counts counts;
   auto queue = InitQueueWith12345(&counts);
 
-  CircularQueue<Item> new_queue(*queue);
+  Queue<Item> new_queue(*queue);
   EXPECT_EQ(counts.init_construct, 0);
   EXPECT_EQ(counts.copy_construct, 5);
   EXPECT_EQ(counts.move_construct, 0);
@@ -311,11 +310,11 @@ TEST(CircularQueueTest, CopyConstruct) {
   }
 }
 
-TEST(CircularQueueTest, MoveConstruct) {
+TEST(QueueTest, MoveConstruct) {
   Counts counts;
   auto queue = InitQueueWith12345(&counts);
 
-  CircularQueue<Item> new_queue(std::move(*queue));
+  Queue<Item> new_queue(std::move(*queue));
   EXPECT_EQ(counts.init_construct, 0);
   EXPECT_EQ(counts.copy_construct, 0);
   EXPECT_EQ(counts.move_construct, 0);
@@ -334,7 +333,7 @@ TEST(CircularQueueTest, MoveConstruct) {
   }
 }
 
-TEST(CircularQueueTest, SelfCopyAssignment) {
+TEST(QueueTest, SelfCopyAssignment) {
   Counts counts;
   auto queue = InitQueueWith12345(&counts);
   *queue = *queue;
@@ -353,7 +352,7 @@ TEST(CircularQueueTest, SelfCopyAssignment) {
   }
 }
 
-TEST(CircularQueueTest, CopyAssignment) {
+TEST(QueueTest, CopyAssignment) {
   Counts counts;
   auto queue_1 = InitQueueWith12345(&counts);
   auto queue_2 = InitQueueWith67890(&counts);
@@ -381,7 +380,7 @@ TEST(CircularQueueTest, CopyAssignment) {
   }
 }
 
-TEST(CircularQueueTest, SelfMoveAssignment) {
+TEST(QueueTest, SelfMoveAssignment) {
   Counts counts;
   auto queue = InitQueueWith12345(&counts);
   *queue = std::move(*queue);
@@ -400,7 +399,7 @@ TEST(CircularQueueTest, SelfMoveAssignment) {
   }
 }
 
-TEST(CircularQueueTest, MoveAssignment) {
+TEST(QueueTest, MoveAssignment) {
   Counts counts;
   auto queue_1 = InitQueueWith12345(&counts);
   auto queue_2 = InitQueueWith67890(&counts);
@@ -423,7 +422,7 @@ TEST(CircularQueueTest, MoveAssignment) {
   }
 }
 
-TEST(CircularQueueTest, SwapMethod) {
+TEST(QueueTest, SwapMethod) {
   Counts counts;
   auto queue_1 = InitQueueWith12345(&counts);
   auto queue_2 = InitQueueWith67890(&counts);
@@ -452,7 +451,7 @@ TEST(CircularQueueTest, SwapMethod) {
   }
 }
 
-TEST(CircularQueueTest, SwapFunction) {
+TEST(QueueTest, SwapFunction) {
   Counts counts;
   auto queue_1 = InitQueueWith12345(&counts);
   auto queue_2 = InitQueueWith67890(&counts);

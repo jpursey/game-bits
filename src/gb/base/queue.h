@@ -3,16 +3,17 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef GB_BASE_CIRCULAR_QUEUE_H_
-#define GB_BASE_CIRCULAR_QUEUE_H_
+#ifndef GB_BASE_QUEUE_H_
+#define GB_BASE_QUEUE_H_
 
 #include <cstdlib>
 #include <new>
+#include <type_traits>
 
 namespace gb {
 
-// Mostly drop-in replacement for std::queue which is implemented in terms of a
-// circular queue, optionally dynamically resizable.
+// This is a drop-in replacement for std::queue which is implemented in terms of
+// an optionally resizable circular queue.
 //
 // The queue has the following guarantees:
 // - Pointer stability: Pointers to any element in a queue will remain valid
@@ -32,11 +33,12 @@ namespace gb {
 // The queue is implemented by storing queue elements in one or more bucket(s).
 // The first bucket has an initial capacity, and if the queue is full, it will
 // grow by adding a bucket of the specified "grow capacity" (which may be zero,
-// indicating the queue cannot grow).
+// indicating the queue cannot grow). Memory allocations are per bucket (so in
+// units of the initial capacity and grow capacity).
 //
 // This class is thread-compatible.
 template <typename Type>
-class CircularQueue {
+class Queue {
  public:
   //----------------------------------------------------------------------------
   // std::queue types (except container_type)
@@ -51,13 +53,13 @@ class CircularQueue {
   // Construction / Destruction
   //----------------------------------------------------------------------------
 
-  explicit CircularQueue(size_type capacity);
-  CircularQueue(size_type init_capacity, size_type grow_capacity);
-  CircularQueue(const CircularQueue& other);
-  CircularQueue(CircularQueue&& other);
-  CircularQueue& operator=(const CircularQueue& other);
-  CircularQueue& operator=(CircularQueue&& other);
-  ~CircularQueue();
+  explicit Queue(size_type capacity);
+  Queue(size_type init_capacity, size_type grow_capacity);
+  Queue(const Queue& other);
+  Queue(Queue&& other);
+  Queue& operator=(const Queue& other);
+  Queue& operator=(Queue&& other);
+  ~Queue();
 
   //----------------------------------------------------------------------------
   // std::queue compliant methods
@@ -77,7 +79,7 @@ class CircularQueue {
   decltype(auto) emplace(Args&&... args);
   void pop();
 
-  void swap(CircularQueue& other) noexcept;
+  void swap(Queue& other) noexcept;
 
   //----------------------------------------------------------------------------
   // Extended methods
@@ -90,6 +92,8 @@ class CircularQueue {
   static inline constexpr size_type kInvalidIndex =
       std::numeric_limits<size_type>::max();
 
+  // Represents a chunk of storage for the queue. Buckets are stored in a
+  // circular linked list.
   struct Bucket {
     Bucket() = default;
 
@@ -101,11 +105,12 @@ class CircularQueue {
     // How many elements this bucket can hold.
     size_type capacity = 0;
 
-    // Next bucket in the list (may be the same bucket)
+    // Next and previous bucket in the circular list (may be the same bucket).
+    // These are never null when in use.
     Bucket* next = nullptr;
     Bucket* prev = nullptr;
 
-    // These are only set if the queue was full and a new element was pushed. If
+    // These are only set if the queue is full and a new element is pushed. If
     // this occurs in the middle of a bucket, then these are set to where the
     // last push was made to this bucket, and to where the next pop should be
     // from when this bucket is emptied.
@@ -116,7 +121,10 @@ class CircularQueue {
       return reinterpret_cast<Type*>(this + 1) + index;
     }
   };
+  static_assert(std::is_trivially_destructible_v<Bucket>,
+                "Buckets have their memory freed and are never destructed");
 
+  // Represents a position in the queue.
   struct Position {
     Position() = default;
     Bucket* bucket = nullptr;
@@ -128,12 +136,33 @@ class CircularQueue {
     bool operator!=(const Position& other) const { return !(*this == other); }
   };
 
+  // Allocates a new bucket, pointing to itself. If the capacity is 0, this
+  // returns null.
   Bucket* NewBucket(size_type capacity);
+
+  // Allocates a new bucket of size grow_capacity_ and inserts it after
+  // prev_bucket. If a new bucket could not be created (grow_capacity_ is zero),
+  // this returns null.
   Bucket* AddBucket(Bucket* prev_bucket);
+
+  // Advances the supplied position to the next element in the queue. This is
+  // only valid if *it refers to a valid member of the queue.
   void Advance(Position* it) const;
+
+  // Initializes the queue with the specified capacity. It must be cleared (or
+  // not yet created).
   void Init(size_type init_capacity);
+
+  // Clears the bucket, returning it to its pre-initialized state.
   void Clear();
-  void Copy(const CircularQueue& other);
+
+  // Initializes the queue with a copy of the specified other queue.  It must be
+  // cleared (or not yet created).
+  void Copy(const Queue& other);
+
+  // Allocates space for new element from the queue. The returned pointer is
+  // uninitialized memory and must be constructed by the caller with placement
+  // new. If no space could be allocated, this returns null.
   Type* PushAlloc();
 
   // Size of buckets to add when the queue is full. This is zero if the queue is
@@ -148,8 +177,7 @@ class CircularQueue {
 };
 
 template <typename Type>
-typename CircularQueue<Type>::Bucket* CircularQueue<Type>::NewBucket(
-    size_type capacity) {
+typename Queue<Type>::Bucket* Queue<Type>::NewBucket(size_type capacity) {
   static_assert(alignof(Bucket) >= alignof(Type));
   if (capacity == 0) {
     return nullptr;
@@ -163,8 +191,7 @@ typename CircularQueue<Type>::Bucket* CircularQueue<Type>::NewBucket(
 }
 
 template <typename Type>
-typename CircularQueue<Type>::Bucket* CircularQueue<Type>::AddBucket(
-    Bucket* prev_bucket) {
+typename Queue<Type>::Bucket* Queue<Type>::AddBucket(Bucket* prev_bucket) {
   Bucket* bucket = NewBucket(grow_capacity_);
   if (bucket == nullptr) {
     return nullptr;
@@ -176,7 +203,7 @@ typename CircularQueue<Type>::Bucket* CircularQueue<Type>::AddBucket(
 }
 
 template <typename Type>
-void CircularQueue<Type>::Advance(Position* it) const {
+void Queue<Type>::Advance(Position* it) const {
   if (it->index == it->bucket->push_end) {
     it->index = 0;
     it->bucket = it->bucket->next;
@@ -188,14 +215,14 @@ void CircularQueue<Type>::Advance(Position* it) const {
 }
 
 template <typename Type>
-void CircularQueue<Type>::Init(size_type init_capacity) {
+void Queue<Type>::Init(size_type init_capacity) {
   front_.bucket = back_.bucket = buckets_ =
       NewBucket(init_capacity > 0 ? init_capacity + 1 : init_capacity);
   capacity_ = init_capacity;
 }
 
 template <typename Type>
-void CircularQueue<Type>::Clear() {
+void Queue<Type>::Clear() {
   while (front_ != back_) {
     front_.bucket->Data(front_.index)->~Type();
     Advance(&front_);
@@ -216,7 +243,7 @@ void CircularQueue<Type>::Clear() {
 }
 
 template <typename Type>
-void CircularQueue<Type>::Copy(const CircularQueue& other) {
+void Queue<Type>::Copy(const Queue& other) {
   size_type init_capacity = other.size_;
   if (other.buckets_ != nullptr && other.buckets_->capacity > init_capacity) {
     init_capacity = other.buckets_->capacity;
@@ -233,7 +260,7 @@ void CircularQueue<Type>::Copy(const CircularQueue& other) {
 }
 
 template <typename Type>
-Type* CircularQueue<Type>::PushAlloc() {
+Type* Queue<Type>::PushAlloc() {
   if (back_.bucket == nullptr) {
     Init(grow_capacity_);
   }
@@ -270,24 +297,21 @@ Type* CircularQueue<Type>::PushAlloc() {
 }
 
 template <typename Type>
-CircularQueue<Type>::CircularQueue(size_type init_capacity,
-                                   size_type grow_capacity)
+Queue<Type>::Queue(size_type init_capacity, size_type grow_capacity)
     : grow_capacity_(grow_capacity) {
   Init(init_capacity);
 }
 
 template <typename Type>
-CircularQueue<Type>::CircularQueue(size_type capacity)
-    : CircularQueue(capacity, capacity) {}
+Queue<Type>::Queue(size_type capacity) : Queue(capacity, capacity) {}
 
 template <typename Type>
-CircularQueue<Type>::CircularQueue(const CircularQueue& other)
-    : grow_capacity_(other.grow_capacity_) {
+Queue<Type>::Queue(const Queue& other) : grow_capacity_(other.grow_capacity_) {
   Copy(other);
 }
 
 template <typename Type>
-CircularQueue<Type>::CircularQueue(CircularQueue&& other)
+Queue<Type>::Queue(Queue&& other)
     : grow_capacity_(other.grow_capacity_),
       capacity_(std::exchange(other.capacity_, 0)),
       size_(std::exchange(other.size_, 0)),
@@ -296,8 +320,7 @@ CircularQueue<Type>::CircularQueue(CircularQueue&& other)
       back_(std::exchange(other.back_, Position{})) {}
 
 template <typename Type>
-CircularQueue<Type>& CircularQueue<Type>::operator=(
-    const CircularQueue& other) {
+Queue<Type>& Queue<Type>::operator=(const Queue& other) {
   if (&other == this) {
     return *this;
   }
@@ -307,7 +330,7 @@ CircularQueue<Type>& CircularQueue<Type>::operator=(
 }
 
 template <typename Type>
-CircularQueue<Type>& CircularQueue<Type>::operator=(CircularQueue&& other) {
+Queue<Type>& Queue<Type>::operator=(Queue&& other) {
   if (&other == this) {
     return *this;
   }
@@ -321,44 +344,42 @@ CircularQueue<Type>& CircularQueue<Type>::operator=(CircularQueue&& other) {
 }
 
 template <typename Type>
-CircularQueue<Type>::~CircularQueue() {
+Queue<Type>::~Queue() {
   Clear();
 }
 
 template <typename Type>
-bool CircularQueue<Type>::empty() const {
+bool Queue<Type>::empty() const {
   return size_ == 0;
 }
 
 template <typename Type>
-typename CircularQueue<Type>::size_type CircularQueue<Type>::size() const {
+typename Queue<Type>::size_type Queue<Type>::size() const {
   return size_;
 }
 
 template <typename Type>
-typename CircularQueue<Type>::size_type CircularQueue<Type>::capacity() const {
+typename Queue<Type>::size_type Queue<Type>::capacity() const {
   return capacity_;
 }
 
 template <typename Type>
-typename CircularQueue<Type>::size_type CircularQueue<Type>::grow_capacity()
-    const {
+typename Queue<Type>::size_type Queue<Type>::grow_capacity() const {
   return grow_capacity_;
 }
 
 template <typename Type>
-typename CircularQueue<Type>::reference CircularQueue<Type>::front() {
+typename Queue<Type>::reference Queue<Type>::front() {
   return *front_.bucket->Data(front_.index);
 }
 
 template <typename Type>
-typename CircularQueue<Type>::const_reference CircularQueue<Type>::front()
-    const {
+typename Queue<Type>::const_reference Queue<Type>::front() const {
   return *front_.bucket->Data(front_.index);
 }
 
 template <typename Type>
-typename CircularQueue<Type>::reference CircularQueue<Type>::back() {
+typename Queue<Type>::reference Queue<Type>::back() {
   if (back_.index > 0) {
     return *back_.bucket->Data(back_.index - 1);
   }
@@ -370,31 +391,30 @@ typename CircularQueue<Type>::reference CircularQueue<Type>::back() {
 }
 
 template <typename Type>
-typename CircularQueue<Type>::const_reference CircularQueue<Type>::back()
-    const {
-  return const_cast<CircularQueue<Type>*>(this)->back();
+typename Queue<Type>::const_reference Queue<Type>::back() const {
+  return const_cast<Queue<Type>*>(this)->back();
 }
 
 template <typename Type>
-void CircularQueue<Type>::push(const value_type& value) {
+void Queue<Type>::push(const value_type& value) {
   new (PushAlloc()) Type(value);
 }
 
 template <typename Type>
-void CircularQueue<Type>::push(value_type&& value) {
+void Queue<Type>::push(value_type&& value) {
   new (PushAlloc()) Type(std::move(value));
 }
 
 template <typename Type>
 template <class... Args>
-decltype(auto) CircularQueue<Type>::emplace(Args&&... args) {
+decltype(auto) Queue<Type>::emplace(Args&&... args) {
   Type* value = PushAlloc();
   new (value) Type(std::forward<Args>(args)...);
   return *value;
 }
 
 template <typename Type>
-void CircularQueue<Type>::pop() {
+void Queue<Type>::pop() {
   front().~Type();
   Position new_front = front_;
   Advance(&new_front);
@@ -414,7 +434,7 @@ void CircularQueue<Type>::pop() {
 }
 
 template <typename Type>
-void CircularQueue<Type>::swap(CircularQueue& other) noexcept {
+void Queue<Type>::swap(Queue& other) noexcept {
   std::swap(other.capacity_, capacity_);
   std::swap(other.size_, size_);
   std::swap(other.buckets_, buckets_);
@@ -427,10 +447,10 @@ void CircularQueue<Type>::swap(CircularQueue& other) noexcept {
 namespace std {
 
 template <typename Type>
-void swap(gb::CircularQueue<Type>& a, gb::CircularQueue<Type>& b) noexcept {
+void swap(gb::Queue<Type>& a, gb::Queue<Type>& b) noexcept {
   a.swap(b);
 }
 
 }  // namespace std
 
-#endif  // GB_BASE_CIRCULAR_QUEUE_H_
+#endif  // GB_BASE_QUEUE_H_
