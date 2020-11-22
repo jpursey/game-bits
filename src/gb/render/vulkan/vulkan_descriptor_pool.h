@@ -6,11 +6,11 @@
 #ifndef GB_RENDER_VULKAN_VULKAN_DESCRIPTOR_POOL_H_
 #define GB_RENDER_VULKAN_VULKAN_DESCRIPTOR_POOL_H_
 
-#include <deque>
 #include <memory>
 #include <vector>
 
 #include "absl/types/span.h"
+#include "gb/base/queue.h"
 #include "gb/render/binding.h"
 #include "gb/render/vulkan/vulkan_types.h"
 
@@ -52,7 +52,7 @@ class VulkanDescriptorPool final {
   int pool_size_ = 0;
   int unallocated_ = 0;
   std::vector<vk::DescriptorPool> pools_;
-  std::deque<AvailableSet> available_sets_;
+  Queue<AvailableSet> available_sets_;
 };
 
 }  // namespace gb

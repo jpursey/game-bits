@@ -70,7 +70,8 @@ VulkanDescriptorPool::VulkanDescriptorPool(VulkanBackend* backend,
     : backend_(backend),
       counts_(counts),
       layout_(layout),
-      pool_size_(init_pool_size) {}
+      pool_size_(init_pool_size),
+      available_sets_(100) {}
 
 VulkanDescriptorPool::~VulkanDescriptorPool() {
   auto* gc = backend_->GetGarbageCollector();
@@ -112,7 +113,7 @@ vk::DescriptorSet VulkanDescriptorPool::NewSet() {
     auto& available_set = available_sets_.front();
     if (available_set.dispose_frame > backend_->GetFrame() + 1) {
       auto new_set = available_set.set;
-      available_sets_.pop_front();
+      available_sets_.pop();
       return new_set;
     }
   }
@@ -137,7 +138,7 @@ vk::DescriptorSet VulkanDescriptorPool::NewSet() {
 }
 
 void VulkanDescriptorPool::DisposeSet(vk::DescriptorSet set) {
-  available_sets_.emplace_back(AvailableSet{backend_->GetFrame(), set});
+  available_sets_.emplace(AvailableSet{backend_->GetFrame(), set});
 }
 
 }  // namespace gb
