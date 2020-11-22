@@ -7,6 +7,7 @@ set(gb_base_SOURCE
   access_token.h
   callback.h
   callback_scope.h
+  circular_queue.h
   clock.h
   context.cc context.h
   context_builder.h
@@ -23,6 +24,7 @@ set(gb_base_SOURCE
 set(gb_base_TEST_SOURCE
   callback_test.cc
   callback_scope_test.cc
+  circular_queue_test.cc
   clock_test.cc
   context_test.cc
   flags_test.cc
