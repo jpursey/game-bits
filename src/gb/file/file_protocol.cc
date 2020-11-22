@@ -5,8 +5,7 @@
 
 #include "gb/file/file_protocol.h"
 
-#include <deque>
-
+#include "gb/base/queue.h"
 #include "gb/file/path.h"
 #include "gb/file/raw_file.h"
 #include "glog/logging.h"
@@ -109,18 +108,24 @@ std::vector<std::string> FileProtocol::DoList(std::string_view protocol_name,
   }
   std::vector<std::string> result;
   std::vector<std::string> paths = BasicList(protocol_name, path);
-  std::deque<std::string> remaining(paths.begin(), paths.end());
+  Queue<std::string> remaining(
+      std::max<int>(static_cast<int>(paths.size()), 100));
+  for (auto& path : paths) {
+    remaining.emplace(std::move(path));
+  }
   while (!remaining.empty()) {
     std::string current = std::move(remaining.front());
     std::string_view current_path = RemoveProtocol(std::string_view(current));
-    remaining.pop_front();
+    remaining.pop();
 
     const PathInfo current_info =
         DoGetPathInfo(protocol_name, RemoveProtocol(current_path));
     if (current_info.type == PathType::kFolder &&
         mode == FolderMode::kRecursive) {
       paths = BasicList(protocol_name, current_path);
-      remaining.insert(remaining.end(), paths.begin(), paths.end());
+      for (auto& path : paths) {
+        remaining.emplace(std::move(path));
+      }
     }
 
     if (types != kAllPathTypes && !types.IsSet(current_info.type)) {
