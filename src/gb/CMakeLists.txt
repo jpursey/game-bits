@@ -5,6 +5,7 @@
 
 set(VS_FOLDER GameBits)
 
+add_subdirectory(alloc)
 add_subdirectory(base)
 add_subdirectory(file)
 add_subdirectory(game)
