@@ -23,6 +23,20 @@ class Allocator {
  public:
   virtual ~Allocator() = default;
 
+  // Helper methods to new/delete classes using this allocator.
+  template <typename Type, typename... Args>
+  Type* New(Args... args) {
+    return new (Alloc(sizeof(Type), alignof(Type)))
+        Type(std::forward<Args>(args)...);
+  }
+  template <typename Type>
+  void Delete(Type* object) {
+    if (object != nullptr) {
+      object->~Type();
+      Free(object);
+    }
+  }
+
   // Allocates memory from the allocator of the specified alignment.
   //
   // The specified alignment 'align' is the number of bytes the allocation must
