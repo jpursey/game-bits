@@ -33,6 +33,9 @@
 			"path": "third_party/imgui"
 		},
 		{
+			"path": "third_party/flatbuffers/include/flatbuffers"
+		},
+		{
 			"name": "sdl",
 			"path": "third_party/SDL2-2.0.10/include"
 		}

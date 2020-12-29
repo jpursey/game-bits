@@ -15,6 +15,8 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+cmake_policy(SET CMP0076 NEW)
+
 ###############################################################################
 # Game Bits configuration
 ###############################################################################
@@ -33,10 +35,15 @@ add_compile_definitions(_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS)
 
 list(APPEND CMAKE_MODULE_PATH
   "${GB_DIR}/CMake"
+  "${GB_THIRD_PARTY_DIR}/flatbuffers/CMake"
 )
+set(FLATBUFFERS_FLATC_EXECUTABLE "${GB_BUILD_DIR}/third_party/flatbuffers/Release/flatc")
+set(FLATBUFFERS_INCLUDE_DIR "${GB_THIRD_PARTY_DIR}/flatbuffers/include")
+include(BuildFlatBuffers)
 include(GameBitsTargetCommands)
 include(GameBitsExternalLibraries)
 gb_external_libraries()
+
 
 ####### absl
 

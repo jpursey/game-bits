@@ -52,6 +52,17 @@ function(gb_external_libraries)
       "${GB_BUILD_DIR}/third_party/glog/$(Configuration)/glogd.lib" 
   )
 
+  ####### flatbuffers
+
+  add_library(flatbuffers STATIC IMPORTED)
+  target_include_directories(flatbuffers INTERFACE
+    "${GB_THIRD_PARTY_DIR}/flatbuffers/include"
+  )
+  set_target_properties(flatbuffers PROPERTIES
+    IMPORTED_LOCATION
+      "${GB_BUILD_DIR}/third_party/flatbuffers/$(Configuration)/flatbuffers.lib" 
+  )
+
   ####### Vulkan
 
   if(DEFINED ENV{VULKAN_SDK})

@@ -21,7 +21,7 @@ if not exist googletest (
   mkdir googletest
 )
 pushd googletest
-cmake "%GB_DIR%\third_party\googletest" -Dgtest_force_shared_crt=ON %*
+cmake "%GB_DIR%\third_party\googletest" -DINSTALL_GTEST=OFF -Dgtest_force_shared_crt=ON %*
 cmake --build . --config Release
 cmake --build . --config Debug
 cmake --build . --config MinSizeRel
@@ -33,7 +33,19 @@ if not exist glog (
   mkdir glog
 )
 pushd glog
-cmake "%GB_DIR%\third_party\glog" %*
+cmake "%GB_DIR%\third_party\glog" -DWITH_GFLAGS=OFF %*
+cmake --build . --config Release
+cmake --build . --config Debug
+cmake --build . --config MinSizeRel
+cmake --build . --config RelWithDebInfo
+popd
+
+echo ======== BUILDING flatbuffers ========
+if not exist flatbuffers (
+  mkdir flatbuffers
+)
+pushd flatbuffers
+cmake "%GB_DIR%\third_party\flatbuffers" -DFLATBUFFERS_BUILD_TESTS=OFF -DFLATBUFFERS_INSTALL=OFF %*
 cmake --build . --config Release
 cmake --build . --config Debug
 cmake --build . --config MinSizeRel
