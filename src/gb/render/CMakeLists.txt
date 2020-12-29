@@ -35,6 +35,10 @@ set(gb_render_SOURCE
   texture_view.cc texture_view.h
 )
 
+set(gb_render_FBS
+  render_resource.fbs
+)
+
 set(gb_render_TEST_SOURCE
   binding_data_test.cc
   local_binding_data_test.cc
