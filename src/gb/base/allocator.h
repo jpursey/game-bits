@@ -48,6 +48,7 @@ class Allocator {
   // On success, this will return a non-null pointer to the data. Allocating
   // zero bytes is undefined behavior.
   virtual void* Alloc(size_t size, size_t align) = 0;
+  void* Alloc(size_t size) { return Alloc(size, 0); }
 
   // Frees a pointer allocated by "Alloc" from this allocator.
   //

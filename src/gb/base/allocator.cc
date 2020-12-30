@@ -27,6 +27,9 @@ class SystemAllocator : public Allocator {
   ~SystemAllocator() override = default;
 
   void* Alloc(size_t size, size_t align) override {
+    if (align == 0) {
+      align = alignof(std::max_align_t);
+    }
 #ifdef _WIN32
     return _aligned_malloc(size, align);
 #else
