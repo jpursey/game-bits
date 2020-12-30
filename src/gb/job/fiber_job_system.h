@@ -12,16 +12,16 @@
 #include "gb/base/context.h"
 #include "gb/base/queue.h"
 #include "gb/base/validated_context.h"
-#include "gb/job/job_fiber.h"
 #include "gb/job/job_system.h"
+#include "gb/thread/fiber.h"
 
 namespace gb {
 
 // This class implements the JobSystem in terms of user space fibers.
 //
-// This is implemented in terms of the job_fiber API. Calling code must not
-// interfere with fibers managed by this class (aka calling SwitchToJobFiber or
-// DeleteJobFiber from/to a job system managed fiber), as that will break
+// This is implemented in terms of the fiber API. Calling code must not
+// interfere with fibers managed by this class (aka calling SwitchToFiber or
+// DeleteFiber from/to a job system managed fiber), as that will break
 // internal management and a crash or hang is likely.
 //
 // This class is thread-safe.
@@ -67,7 +67,7 @@ class FiberJobSystem : public JobSystem {
 
   // Creates a new fiber-based job system.
   //
-  // If the platform does not support fibers (SupportsJobFibers() returns
+  // If the platform does not support fibers (SupportsFibers() returns
   // false), this will return null.
   static std::unique_ptr<FiberJobSystem> Create(CreateContract contract);
 
@@ -108,7 +108,7 @@ class FiberJobSystem : public JobSystem {
     FiberJobSystem* const system;
 
     // Fiber this state is for.
-    JobFiber fiber = nullptr;
+    Fiber fiber = nullptr;
 
     // Job this fiber is currently running.
     Job* job = nullptr;
@@ -152,7 +152,7 @@ class FiberJobSystem : public JobSystem {
       ABSL_GUARDED_BY(mutex_);
 
   // Fibers that were created but are not currently in use.
-  Queue<JobFiber> unused_fibers_ ABSL_GUARDED_BY(mutex_);
+  Queue<Fiber> unused_fibers_ ABSL_GUARDED_BY(mutex_);
 };
 
 }  // namespace gb

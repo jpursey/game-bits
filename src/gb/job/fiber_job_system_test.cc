@@ -15,7 +15,7 @@ namespace {
 using ::testing::ValuesIn;
 
 #define CHECK_FIBER_SUPPORT() \
-  if (!SupportsJobFibers()) { \
+  if (!SupportsFibers()) {    \
     return;                   \
   }
 
@@ -37,7 +37,7 @@ class FiberJobSystemTest : public ::testing::TestWithParam<TestParams> {
  protected:
   void SetUp() override {
     CHECK_FIBER_SUPPORT();
-    // SetJobFiberVerboseLogging(true);  // Uncomment for more detailed logs
+    // SetFiberVerboseLogging(true);  // Uncomment for more detailed logs
     FiberJobSystem::SetVerboseLogging(true);
     job_system_ = FiberJobSystem::Create(
         ContextBuilder()
@@ -59,7 +59,7 @@ class FiberJobSystemTest : public ::testing::TestWithParam<TestParams> {
   void TearDown() override {
     job_system_.reset();
     FiberJobSystem::SetVerboseLogging(false);
-    SetJobFiberVerboseLogging(false);
+    SetFiberVerboseLogging(false);
   }
 
   std::unique_ptr<FiberJobSystem> job_system_;

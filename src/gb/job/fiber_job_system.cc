@@ -8,7 +8,6 @@
 #include <thread>
 
 #include "absl/memory/memory.h"
-#include "gb/job/job_fiber.h"
 #include "glog/logging.h"
 
 namespace gb {
@@ -40,7 +39,7 @@ std::unique_ptr<FiberJobSystem> FiberJobSystem::Create(
   if (!contract.IsValid()) {
     return nullptr;
   }
-  if (!SupportsJobFibers()) {
+  if (!SupportsFibers()) {
     return nullptr;
   }
   auto job_system = absl::WrapUnique(new FiberJobSystem);
@@ -59,7 +58,7 @@ bool FiberJobSystem::Init(ValidatedContext context) {
     thread_count = kMaxThreadCount;
   }
 
-  auto threads = CreateJobFiberThreads(
+  auto threads = CreateFiberThreads(
       thread_count, context.GetValue<bool>(kKeyPinThreads), 0, this,
       +[](void* user_data) {
         auto* job_system = static_cast<FiberJobSystem*>(user_data);
@@ -101,10 +100,10 @@ FiberJobSystem::~FiberJobSystem() {
   while (!unused_fibers_.empty()) {
     // There is a race between JobMain exiting and the fiber to actually stop
     // running.
-    while (IsJobFiberRunning(unused_fibers_.front())) {
+    while (IsFiberRunning(unused_fibers_.front())) {
       std::this_thread::yield();
     }
-    DeleteJobFiber(unused_fibers_.front());
+    DeleteFiber(unused_fibers_.front());
     unused_fibers_.pop();
   }
 }
@@ -125,8 +124,8 @@ bool FiberJobSystem::HasNoFibersInUse() const {
 
 void FiberJobSystem::JobMain() {
   mutex_.Lock();
-  const JobFiber fiber = GetThisJobFiber();
-  GB_FIBER_JOB_SYSTEM_LOG << "Starting fiber " << GetJobFiberName(fiber);
+  const Fiber fiber = GetThisFiber();
+  GB_FIBER_JOB_SYSTEM_LOG << "Starting fiber " << GetFiberName(fiber);
   while (running_) {
     FiberState* state = nullptr;
 
@@ -141,9 +140,9 @@ void FiberJobSystem::JobMain() {
 
       // Switch this thread to the fiber.
       GB_FIBER_JOB_SYSTEM_LOG << "Resuming job " << state->job << " on fiber "
-                              << GetJobFiberName(state->fiber);
+                              << GetFiberName(state->fiber);
       mutex_.Unlock();
-      SwitchToJobFiber(state->fiber);
+      SwitchToFiber(state->fiber);
 
       // Code may never get to this point. If it does, then fiber was removed
       // from the unused_fibers_ queue and is now assigned to a thread.
@@ -158,29 +157,27 @@ void FiberJobSystem::JobMain() {
       state->job = pending_jobs_.front();
       pending_jobs_.pop();
       GB_FIBER_JOB_SYSTEM_LOG << "Acquiring job " << state->job << " on fiber "
-                              << GetJobFiberName(fiber);
+                              << GetFiberName(fiber);
     } else {
       // There is no work to do, so we switch into an idle state waiting for the
       // job system to end or a new job is ready to run.
       state = fiber_allocator_.New<FiberState>(this);
       state->fiber = fiber;
       idle_fibers_.insert(state);
-      GB_FIBER_JOB_SYSTEM_LOG << "Idling fiber " << GetJobFiberName(fiber);
+      GB_FIBER_JOB_SYSTEM_LOG << "Idling fiber " << GetFiberName(fiber);
       mutex_.Await(absl::Condition(
           +[](FiberState* state) {
             return state->job != nullptr || !state->system->running_;
           },
           state));
       if (!running_) {
-        GB_FIBER_JOB_SYSTEM_LOG << "Ending idle fiber "
-                                << GetJobFiberName(fiber);
+        GB_FIBER_JOB_SYSTEM_LOG << "Ending idle fiber " << GetFiberName(fiber);
         idle_fibers_.erase(state);
         fiber_allocator_.Delete(state);
         break;
       }
-      GB_FIBER_JOB_SYSTEM_LOG << "Resuming idle fiber "
-                              << GetJobFiberName(fiber) << " with job "
-                              << state->job;
+      GB_FIBER_JOB_SYSTEM_LOG << "Resuming idle fiber " << GetFiberName(fiber)
+                              << " with job " << state->job;
     }
 
     // This is now a running fiber!
@@ -188,12 +185,12 @@ void FiberJobSystem::JobMain() {
 
     // Run the job
     GB_FIBER_JOB_SYSTEM_LOG << "Running job " << state->job
-                            << " callback on fiber " << GetJobFiberName(fiber);
+                            << " callback on fiber " << GetFiberName(fiber);
     mutex_.Unlock();
     state->job->callback();
     mutex_.Lock();
     GB_FIBER_JOB_SYSTEM_LOG << "Completed job " << state->job
-                            << " callback on fiber " << GetJobFiberName(fiber);
+                            << " callback on fiber " << GetFiberName(fiber);
 
     // Decrement run counter and unblock any waiting jobs.
     JobCounter* const counter = state->job->run_counter;
@@ -213,7 +210,7 @@ void FiberJobSystem::JobMain() {
     fiber_allocator_.Delete(state);
   }
   unused_fibers_.push(fiber);
-  GB_FIBER_JOB_SYSTEM_LOG << "Exiting fiber " << GetJobFiberName(fiber);
+  GB_FIBER_JOB_SYSTEM_LOG << "Exiting fiber " << GetFiberName(fiber);
   mutex_.Unlock();
 }
 
@@ -241,7 +238,7 @@ bool FiberJobSystem::DoRun(JobCounter* counter, Callback<void()> callback) {
 }
 
 void FiberJobSystem::DoWait(JobCounter* counter) {
-  const JobFiber fiber = GetThisJobFiber();
+  const Fiber fiber = GetThisFiber();
   DCHECK(fiber != nullptr) << "Wait can only be called from within a job";
   if (counter == nullptr || counter->Get({}) == 0) {
     return;
@@ -260,7 +257,7 @@ void FiberJobSystem::DoWait(JobCounter* counter) {
         << "Attempting to wait on a different fiber job system";
 
     GB_FIBER_JOB_SYSTEM_LOG << "Waiting job " << state->job << " on fiber "
-                            << GetJobFiberName(state->fiber);
+                            << GetFiberName(state->fiber);
 
     // This fiber is now waiting, and a new fiber will be created.
     running_fibers_.erase(state);
@@ -269,14 +266,14 @@ void FiberJobSystem::DoWait(JobCounter* counter) {
   }
 
   // Create a new fiber for this thread.
-  JobFiber new_fiber = CreateJobFiber(
+  Fiber new_fiber = CreateFiber(
       0, this, +[](void* user_data) {
         static_cast<FiberJobSystem*>(user_data)->JobMain();
         // Nothing can happen as the job system may be in its destructor.
       });
   CHECK(new_fiber != nullptr)
       << "Failed to create new fiber to replace waiting fiber on thread";
-  CHECK(SwitchToJobFiber(new_fiber)) << "Failed to switch to new fiber";
+  CHECK(SwitchToFiber(new_fiber)) << "Failed to switch to new fiber";
 }
 
 }  // namespace gb
