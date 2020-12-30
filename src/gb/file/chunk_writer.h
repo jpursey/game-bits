@@ -91,10 +91,10 @@ class ChunkWriter final {
   //----------------------------------------------------------------------------
 
   ChunkWriter(const ChunkWriter&) = delete;
-  ChunkWriter(ChunkWriter&&) = default;
+  ChunkWriter(ChunkWriter&&);
   ChunkWriter& operator=(const ChunkWriter&) = delete;
-  ChunkWriter& operator=(ChunkWriter&&) = default;
-  ~ChunkWriter() = default;
+  ChunkWriter& operator=(ChunkWriter&&);
+  ~ChunkWriter();
 
   // Instantiates a new ChunkWriter with space for one Type of chunk data.
   //
@@ -120,6 +120,15 @@ class ChunkWriter final {
   // read.
   template <typename Type>
   static ChunkWriter New(const ChunkType& type, int32_t version, int32_t count);
+
+  // Instantiates a new ChunkWriter with an explicit pre-allocated data buffer.
+  //
+  // The data is considered "used" as the primary chunk data, and will be
+  // returned by GetChunkData(). The data is not owned however, and so must
+  // remain valid longer than whichever ChunkWriter references it (passed via
+  // move semantics).
+  static ChunkWriter New(const ChunkType& type, int32_t version, void* data,
+                         int32_t data_size);
 
   //----------------------------------------------------------------------------
   // Chunk header
@@ -183,12 +192,14 @@ class ChunkWriter final {
 
  private:
   ChunkWriter(const ChunkType& type, int32_t version, int32_t count,
-              int64_t data_size);
+              int32_t item_size, void* chunk_data = nullptr);
 
   std::tuple<int64_t, void*> ChunkWriter::ReserveExtra(int64_t total_size);
 
   ChunkHeader header_;
-  std::vector<uint64_t> chunk_buffer_;
+  void* chunk_buffer_ = nullptr;
+  int32_t chunk_buffer_size_ = 0;
+  bool owns_chunk_buffer_ = false;
   std::vector<uint64_t> extra_buffer_;
 };
 
@@ -212,24 +223,11 @@ bool WriteChunkFile(File* file, const ChunkType& file_type,
 // Template / inline implementation
 //==============================================================================
 
-inline ChunkWriter::ChunkWriter(const ChunkType& type, int32_t version,
-                                int32_t count, int64_t data_size) {
-  header_.type = type;
-  header_.version = version;
-  header_.count = count;
-  header_.size = static_cast<int32_t>(data_size * count);
-  const int32_t remainder = header_.size % 8;
-  if (remainder != 0) {
-    header_.size += 8 - remainder;
-  }
-  chunk_buffer_.resize(header_.size / 8);
-}
-
 template <typename Type>
 inline ChunkWriter ChunkWriter::New(const ChunkType& type, int32_t version) {
   static_assert(std::is_trivially_copyable_v<Type>,
                 "Chunk type must be trivially copyable (void is not allowed)");
-  return ChunkWriter(type, version, 1, sizeof(Type));
+  return ChunkWriter(type, version, 1, GetChunkTypeSize<Type>());
 }
 
 template <typename Type>
@@ -240,31 +238,23 @@ inline ChunkWriter ChunkWriter::New(const ChunkType& type, int32_t version,
   return ChunkWriter(type, version, count, GetChunkTypeSize<Type>());
 }
 
+inline ChunkWriter ChunkWriter::New(const ChunkType& type, int32_t version,
+                                    void* data, int32_t data_size) {
+  return ChunkWriter(type, version, 1, data_size, data);
+}
+
 template <typename Type>
 inline Type* ChunkWriter::GetChunkData() {
   static_assert(IsValidChunkType<Type>(),
                 "Chunk type must be trivially copyable or void");
-  if (chunk_buffer_.size() * 8 < GetChunkTypeSize<Type>()) {
+  if (chunk_buffer_size_ < GetChunkTypeSize<Type>()) {
     return nullptr;
   }
-  return reinterpret_cast<Type*>(chunk_buffer_.data());
-}
-
-inline std::tuple<int64_t, void*> ChunkWriter::ReserveExtra(
-    int64_t total_size) {
-  int64_t remainder = (total_size % 8);
-  if (remainder != 0) {
-    total_size += 8 - remainder;
-  }
-  int64_t index = extra_buffer_.size();
-  int64_t offset = (chunk_buffer_.size() + extra_buffer_.size()) * 8;
-  extra_buffer_.resize(extra_buffer_.size() + (total_size / 8), 0);
-  header_.size += static_cast<int32_t>(total_size);
-  return {offset, static_cast<void*>(extra_buffer_.data() + index)};
+  return static_cast<Type*>(chunk_buffer_);
 }
 
 template <typename Type>
-inline ChunkPtr<Type> ChunkWriter::AddData(const Type* data, int32_t count) {
+ChunkPtr<Type> ChunkWriter::AddData(const Type* data, int32_t count) {
   static_assert(IsValidChunkType<Type>(),
                 "Chunk type must be trivially copyable or void");
   ChunkPtr<Type> chunk_ptr;

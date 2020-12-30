@@ -33,15 +33,15 @@ constexpr bool IsValidChunkType() {
 
 // Returns the minimum space needed for a chunk structure.
 template <typename Type>
-constexpr size_t GetChunkTypeSize() {
-  return sizeof(Type);
+constexpr int32_t GetChunkTypeSize() {
+  return static_cast<int32_t>(sizeof(Type));
 }
 template <>
-constexpr size_t GetChunkTypeSize<void>() {
+constexpr int32_t GetChunkTypeSize<void>() {
   return 1;
 }
 template <>
-constexpr size_t GetChunkTypeSize<const void>() {
+constexpr int32_t GetChunkTypeSize<const void>() {
   return 1;
 }
 

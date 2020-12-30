@@ -248,6 +248,69 @@ TEST_F(ChunkFileTest, ChunkWriterNewUnalignedListChunk) {
   EXPECT_EQ(read_chunks[2].c, 9);
 }
 
+TEST_F(ChunkFileTest, ChunkWriterNewAlignedUnownedData) {
+  Example data = {};
+  data.value = 42.0f;
+
+  // Put in a scope to force deletion.
+  {
+    auto chunk_writer =
+        ChunkWriter::New(kChunkTypeExample, 1, &data, sizeof(data));
+    EXPECT_EQ(chunk_writer.GetType(), kChunkTypeExample);
+    EXPECT_EQ(chunk_writer.GetVersion(), 1);
+    EXPECT_EQ(chunk_writer.GetSize(), sizeof(Example));
+    EXPECT_EQ(chunk_writer.GetCount(), 1);
+
+    auto* chunk = chunk_writer.GetChunkData<Example>();
+    ASSERT_EQ(chunk, &data);
+    EXPECT_EQ(chunk->name.offset, 0);
+    EXPECT_EQ(chunk->value, 42.0f);
+    EXPECT_EQ(chunk->foo_count, 0);
+    EXPECT_EQ(chunk->foos.offset, 0);
+
+    auto file = file_system_->OpenFile("mem:/test", kNewFileFlags);
+    ASSERT_NE(file, nullptr);
+    ASSERT_TRUE(chunk_writer.Write(file.get()));
+    file.reset();
+
+    auto* read_chunk = ReadSingleChunkFile<Example>("mem:/test", chunk_writer);
+    ASSERT_NE(read_chunk, nullptr);
+    EXPECT_EQ(read_chunk->name.offset, 0);
+    EXPECT_EQ(read_chunk->value, 42.0f);
+    EXPECT_EQ(read_chunk->foo_count, 0);
+    EXPECT_EQ(read_chunk->foos.offset, 0);
+  }
+}
+
+TEST_F(ChunkFileTest, ChunkWriterNewUnalignedUnownedData) {
+  Bar data = {1, 2, 3};
+
+  // Put in a scope to force deletion.
+  {
+    auto chunk_writer = ChunkWriter::New(kChunkTypeBar, 1, &data, sizeof(data));
+    EXPECT_EQ(chunk_writer.GetType(), kChunkTypeBar);
+    EXPECT_EQ(chunk_writer.GetVersion(), 1);
+    EXPECT_EQ(chunk_writer.GetSize(), sizeof(Bar) + 4);
+    EXPECT_EQ(chunk_writer.GetCount(), 1);
+    auto* chunk = chunk_writer.GetChunkData<Bar>();
+    ASSERT_EQ(chunk, &data);
+    EXPECT_EQ(chunk->a, 1);
+    EXPECT_EQ(chunk->b, 2);
+    EXPECT_EQ(chunk->c, 3);
+
+    auto file = file_system_->OpenFile("mem:/test", kNewFileFlags);
+    ASSERT_NE(file, nullptr);
+    ASSERT_TRUE(chunk_writer.Write(file.get()));
+    file.reset();
+
+    auto* read_chunk = ReadSingleChunkFile<Bar>("mem:/test", chunk_writer);
+    ASSERT_NE(read_chunk, nullptr);
+    EXPECT_EQ(read_chunk->a, 1);
+    EXPECT_EQ(read_chunk->b, 2);
+    EXPECT_EQ(read_chunk->c, 3);
+  }
+}
+
 TEST_F(ChunkFileTest, ChunkWriterAddData) {
   auto chunk_writer = ChunkWriter::New<StringExample>(kChunkTypeExample, 1);
   auto* chunk = chunk_writer.GetChunkData<StringExample>();
