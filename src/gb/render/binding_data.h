@@ -66,7 +66,7 @@ class BindingData {
   template <typename Type>
   void SetConstants(int index, const Type& constants);
   template <typename Type>
-  void GetConstants(int index, Type* constants);
+  void GetConstants(int index, Type* constants) const;
 
   // Get or set texture resource.
   //
@@ -74,7 +74,7 @@ class BindingData {
   // different binding type is undefined behavior, and likely will result in a
   // crash.
   void SetTexture(int index, Texture* texture);
-  const Texture* GetTexture(int index);
+  const Texture* GetTexture(int index) const;
 
   //----------------------------------------------------------------------------
   // Operations
@@ -89,7 +89,7 @@ class BindingData {
 
   RenderPipeline* GetPipeline(RenderInternal) const { return pipeline_; }
   void SetInternal(RenderInternal, int index, TypeKey* type, const void* data);
-  void GetInternal(RenderInternal, int index, TypeKey* type, void* data);
+  void GetInternal(RenderInternal, int index, TypeKey* type, void* data) const;
 
  protected:
   BindingData(RenderPipeline* pipeline, BindingSet set)
@@ -133,7 +133,7 @@ inline void BindingData::SetTexture(int index, Texture* texture) {
   DoSet(index, &texture);
 }
 
-inline const Texture* BindingData::GetTexture(int index) {
+inline const Texture* BindingData::GetTexture(int index) const {
   RENDER_ASSERT(Validate(index, TypeKey::Get<Texture*>()));
   Texture* texture = nullptr;
   DoGet(index, &texture);
@@ -147,7 +147,7 @@ inline void BindingData::SetConstants(int index, const Type& constants) {
 }
 
 template <typename Type>
-inline void BindingData::GetConstants(int index, Type* constants) {
+inline void BindingData::GetConstants(int index, Type* constants) const {
   RENDER_ASSERT(Validate(index, TypeKey::Get<Type>()));
   DoGet(index, constants);
 }
@@ -159,7 +159,7 @@ inline void BindingData::SetInternal(RenderInternal, int index, TypeKey* type,
 }
 
 inline void BindingData::GetInternal(RenderInternal, int index, TypeKey* type,
-                                     void* data) {
+                                     void* data) const {
   RENDER_ASSERT(Validate(index, type));
   DoGet(index, data);
 }

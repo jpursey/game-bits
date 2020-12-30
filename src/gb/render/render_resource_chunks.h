@@ -6,137 +6,87 @@
 #ifndef GB_RENDER_RENDER_RESOURCE_CHUNKS_H_
 #define GB_RENDER_RENDER_RESOURCE_CHUNKS_H_
 
+#include <type_traits>
+
 #include "gb/file/chunk_types.h"
+#include "gb/render/material_config.h"
+#include "gb/render/render_resource_generated.h"
 #include "gb/render/render_types.h"
+#include "gb/render/sampler_options.h"
 
 namespace gb {
 
 // Resource chunk types
-inline constexpr ChunkType kChunkTypeBinding = {'G', 'B', 'B', 'N'};
-inline constexpr ChunkType kChunkTypeInstanceBindingData = {'G', 'B', 'B', 'I'};
 inline constexpr ChunkType kChunkTypeMaterial = {'G', 'B', 'M', 'A'};
-inline constexpr ChunkType kChunkTypeMaterialBindingData = {'G', 'B', 'B', 'M'};
 inline constexpr ChunkType kChunkTypeMaterialType = {'G', 'B', 'M', 'T'};
 inline constexpr ChunkType kChunkTypeMesh = {'G', 'B', 'M', 'E'};
 inline constexpr ChunkType kChunkTypeShader = {'G', 'B', 'S', 'H'};
-inline constexpr ChunkType kChunkTypeSamplerOptions = {'G', 'B', 'S', 'O'};
 inline constexpr ChunkType kChunkTypeTexture = {'G', 'B', 'T', 'X'};
 
-// Entry for binding chunk.
-struct BindingChunk {
-  uint8_t shaders;      // ShaderTypes
-  uint8_t set;          // BindingSet
-  uint16_t index;       // Binding index
-  uint16_t type;        // BindingType
-  uint16_t volatility;  // DataVolatility
-  ChunkPtr<const char> constants_name;
-};
+template <typename FbsType, typename GbType>
+inline FbsType RenderEnumToFbs(GbType type) {
+  return static_cast<FbsType>(static_cast<std::underlying_type_t<FbsType>>(
+      static_cast<std::underlying_type_t<GbType>>(type)));
+}
+template <typename FbsType, typename GbType>
+inline GbType RenderEnumFromFbs(FbsType type) {
+  return static_cast<GbType>(static_cast<std::underlying_type_t<GbType>>(
+      static_cast<std::underlying_type_t<FbsType>>(type)));
+}
 
-// Entry for scene, material, or instance binding data chunk.
-struct BindingDataChunk {
-  int32_t type;   // BindingType
-  int32_t index;  // Binding index
-  union {
-    ResourceId texture_id;
-    ChunkPtr<const void> constants_data;
-  };
-};
+inline fbs::ShaderType ToFbs(gb::ShaderType type) {
+  return RenderEnumToFbs<fbs::ShaderType, gb::ShaderType>(type);
+}
+inline gb::ShaderType FromFbs(fbs::ShaderType type) {
+  return RenderEnumFromFbs<fbs::ShaderType, gb::ShaderType>(type);
+}
 
-// Chunk for mesh resource.
-//
-// Mesh resource files are structured as follows:
-//   Chunk "GBFI"  -- File header of file type "GBME".
-//   Chunk "GBRL"  -- Optional: Specifies dependent resource names.
-//   Chunk "GBME"  -- Mesh data.
-struct MeshChunk {
-  ResourceId id;
-  ResourceId material_id;
-  int32_t volatility;  // DataVolatility
-  int32_t index_count;
-  int32_t vertex_count;
-  int32_t vertex_size;
-  ChunkPtr<const void> vertices;
-  ChunkPtr<const uint16_t> indices;
-};
+inline fbs::BindingSet ToFbs(gb::BindingSet type) {
+  return RenderEnumToFbs<fbs::BindingSet, gb::BindingSet>(type);
+}
+inline gb::BindingSet FromFbs(fbs::BindingSet type) {
+  return RenderEnumFromFbs<fbs::BindingSet, gb::BindingSet>(type);
+}
 
-// Chunk for material resource.
-//
-// Material resource files are structured as follows:
-//   Chunk "GBFI"  -- File header of file type "GBMA".
-//   Chunk "GBRL"  -- Optional: Specifies dependent resource names.
-//   Chunk "GBBN"  -- Binding data for the material (must match material type).
-//   Chunk "GBBM"  -- Material binding data (must match bindings).
-//   Chunk "GBBI"  -- Default instance binding data (must match bindings).
-//   Chunk "GBMA"  -- Material data.
-struct MaterialChunk {
-  ResourceId id;
-  ResourceId material_type_id;
-};
+inline fbs::BindingType ToFbs(gb::BindingType type) {
+  return RenderEnumToFbs<fbs::BindingType, gb::BindingType>(type);
+}
+inline gb::BindingType FromFbs(fbs::BindingType type) {
+  return RenderEnumFromFbs<fbs::BindingType, gb::BindingType>(type);
+}
 
-// Chunk for material type resource.
-//
-// Material type resource files are structured as follows:
-//   Chunk "GBFI"  -- File header of file type "GBMT".
-//   Chunk "GBRL"  -- Optional: Specifies dependent resource names.
-//   Chunk "GBBN"  -- Binding data for the material type.
-//   Chunk "GBBM"  -- Default material binding data (must match bindings).
-//   Chunk "GBBI"  -- Default instance binding data (must match bindings).
-//   Chunk "GBMT"  -- Material type data.
-struct MaterialTypeChunk {
-  ResourceId id;
-  ResourceId vertex_shader_id;
-  ResourceId fragment_shader_id;
-  ChunkPtr<const char> scene_type_name;
-  ChunkPtr<const char> vertex_type_name;
-  uint8_t cull_mode;
-  uint8_t depth_mode;
-};
+inline fbs::DataVolatility ToFbs(gb::DataVolatility type) {
+  return RenderEnumToFbs<fbs::DataVolatility, gb::DataVolatility>(type);
+}
+inline gb::DataVolatility FromFbs(fbs::DataVolatility type) {
+  return RenderEnumFromFbs<fbs::DataVolatility, gb::DataVolatility>(type);
+}
 
-// Entry for shader parameters in a shader chunk
-struct ShaderParamEntry {
-  int32_t value;
-  int32_t location;
-};
+inline fbs::DepthMode ToFbs(gb::DepthMode type) {
+  return RenderEnumToFbs<fbs::DepthMode, gb::DepthMode>(type);
+}
+inline gb::DepthMode FromFbs(fbs::DepthMode type) {
+  return RenderEnumFromFbs<fbs::DepthMode, gb::DepthMode>(type);
+}
 
-// Chunk for shader resource.
-//
-// Shader resource files are structured as follows:
-//   Chunk "GBFI"  -- File header of file type "GBSH".
-//   Chunk "GBBN"  -- Bindings for shader.
-//   Chunk "GBSH"  -- Shader data.
-struct ShaderChunk {
-  ResourceId id;
-  int32_t type;
-  int32_t input_count;
-  int32_t output_count;
-  int32_t code_size;
-  ChunkPtr<const ShaderParamEntry> inputs;
-  ChunkPtr<const ShaderParamEntry> outputs;
-  ChunkPtr<const void> code;
-};
+inline fbs::CullMode ToFbs(gb::CullMode type) {
+  return RenderEnumToFbs<fbs::CullMode, gb::CullMode>(type);
+}
+inline gb::CullMode FromFbs(fbs::CullMode type) {
+  return RenderEnumFromFbs<fbs::CullMode, gb::CullMode>(type);
+}
 
-// Chunk for texture sampler options.
-struct SamplerOptionsChunk {
-  uint8_t filter;        // Boolean filter value.
-  uint8_t mipmap;        // Boolean mimap value.
-  uint8_t address_mode;  // Maps to SamplerAddressMode.
-  Pixel border;          // Border color for addressing.
-  uint32_t tile_size;    // Tile size.
-};
+inline fbs::SamplerAddressMode ToFbs(gb::SamplerAddressMode type) {
+  return RenderEnumToFbs<fbs::SamplerAddressMode, gb::SamplerAddressMode>(type);
+}
+inline gb::SamplerAddressMode FromFbs(fbs::SamplerAddressMode type) {
+  return RenderEnumFromFbs<fbs::SamplerAddressMode, gb::SamplerAddressMode>(
+      type);
+}
 
-// Chunk for texture resource.
-//
-// Texture resource files are structured as follows:
-//   Chunk "GBFI"  -- File header of file type "GBTX".
-//   Chunk "GBSO"  -- Sampler options for the texture (optional).
-//   Chunk "GBTX"  -- Texture data.
-struct TextureChunk {
-  ResourceId id;
-  int32_t volatility;  // DataVolatility
-  uint16_t width;
-  uint16_t height;
-  ChunkPtr<const Pixel> pixels;
-};
+inline fbs::ShaderValue ToFbs(gb::ShaderValue type) {
+  return RenderEnumToFbs<fbs::ShaderValue, gb::ShaderValue>(type);
+}
 
 }  // namespace gb
 

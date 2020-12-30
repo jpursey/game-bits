@@ -56,6 +56,21 @@ enum SamplerAddressMode : uint8 {
   ClampBorder,
 }
 
+// Must be kept in sync with gb::ShaderValue
+enum ShaderValue : int32 {
+  Float,
+  Vec2,
+  Vec3,
+  Vec4,
+  Color,
+}
+
+// Must match layout of gb::ShaderParam
+struct ShaderParam {
+  value : ShaderValue;
+  location : int32;
+}
+
 // Entry for binding chunk.
 table Binding {
   shaders : uint8;
@@ -67,35 +82,32 @@ table Binding {
 }
 
 // Entry for scene, material, or instance binding data chunk.
-table BindingData {
-  type : BindingType;
+table BindingDataEntry {
   index : int32;
+  type : BindingType;
   texture_id : uint64;
-  constants_data : [byte];
+  constants_data : [uint8];
 }
 
 // Chunk for mesh resource.
 table MeshChunk {
-  id :uint64;
   material_id : uint64;
   volatility : DataVolatility;
   vertex_size : int32;
-  vertices : [byte];
+  vertices : [uint8];
   indices : [uint16];
 }
 
 // Chunk for material resource.
 table MaterialChunk {
-  id : uint64;
   material_type_id : uint64;
   bindings : [Binding];
-  material_data : [BindingData];
-  instance_data : [BindingData];
+  material_data : [BindingDataEntry];
+  instance_data : [BindingDataEntry];
 }
 
 // Chunk for material type resource.
 table MaterialTypeChunk {
-  id : uint64;
   vertex_shader_id : uint64;
   fragment_shader_id : uint64;
   scene_type_name : string;
@@ -103,23 +115,17 @@ table MaterialTypeChunk {
   cull_mode : CullMode;
   depth_mode : DepthMode;
   bindings : [Binding];
-  material_data : [BindingData];
-  instance_data : [BindingData];
-}
-
-// Entry for shader parameters in a shader chunk
-struct ShaderParamEntry {
-  value : int32;
-  location : int32;
+  material_data : [BindingDataEntry];
+  instance_data : [BindingDataEntry];
 }
 
 // Chunk for shader resource.
 table ShaderChunk {
-  id : uint64;
   type : ShaderType;
-  inputs : [ShaderParamEntry];
-  outputs : [ShaderParamEntry];
-  code : [byte];
+  bindings: [Binding];
+  inputs : [ShaderParam];
+  outputs : [ShaderParam];
+  code : [uint8];
 }
 
 // Texture sampler options.
@@ -133,7 +139,6 @@ table SamplerOptions {
 
 // Chunk for texture resource.
 table TextureChunk {
-  id : uint64;
   volatility : DataVolatility;
   width : uint16;
   height : uint16;

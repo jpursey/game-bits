@@ -15,7 +15,6 @@
 #include "gb/file/file_system.h"
 #include "gb/render/render_backend.h"
 #include "gb/render/render_resource_chunks.h"
-#include "gb/render/render_resource_generated.h"
 #include "gb/resource/file/resource_file_reader.h"
 #include "gb/resource/file/resource_file_writer.h"
 #include "gb/resource/resource_manager.h"
@@ -23,6 +22,202 @@
 #include "stb_image.h"
 
 namespace gb {
+
+namespace fb = flatbuffers;
+using fb::FlatBufferBuilder;
+
+namespace {
+
+inline size_t GetBindingWriteSize(absl::Span<const Binding> bindings) {
+  return bindings.size() * (sizeof(Binding) + 128);
+}
+
+fb::Offset<fb::Vector<fb::Offset<fbs::Binding>>> WriteBindings(
+    FlatBufferBuilder* builder, absl::Span<const Binding> bindings) {
+  return builder->CreateVector<fb::Offset<fbs::Binding>>(
+      bindings.size(), [builder, &bindings](size_t i) {
+        fb::Offset<fb::String> fb_constants_name;
+        if (bindings[i].constants_type != nullptr) {
+          fb_constants_name = builder->CreateSharedString(
+              bindings[i].constants_type->GetName());
+        }
+
+        fbs::BindingBuilder binding_builder(*builder);
+        binding_builder.add_shaders(
+            static_cast<uint8_t>(bindings[i].shader_types.GetMask()));
+        binding_builder.add_set(ToFbs(bindings[i].set));
+        binding_builder.add_index(bindings[i].index);
+        binding_builder.add_type(ToFbs(bindings[i].binding_type));
+        binding_builder.add_volatility(ToFbs(bindings[i].volatility));
+        binding_builder.add_constants_name(fb_constants_name);
+        return binding_builder.Finish();
+      });
+}
+
+std::vector<Binding> ReadBindings(
+    RenderSystem* render_system,
+    const fb::Vector<fb::Offset<fbs::Binding>>* fb_bindings) {
+  if (fb_bindings == nullptr) {
+    return {};
+  }
+  const int count = static_cast<int>(fb_bindings->size());
+  std::vector<Binding> bindings(count);
+  for (int i = 0; i < count; ++i) {
+    auto* fb_binding = fb_bindings->Get(i);
+    if (fb_binding == nullptr) {
+      LOG(ERROR) << "Null binding at index " << i;
+      continue;
+    }
+    bindings[i].SetShaders(ShaderTypes(fb_binding->shaders()));
+    bindings[i].SetLocation(FromFbs(fb_binding->set()), fb_binding->index());
+    switch (fb_binding->type()) {
+      case fbs::BindingType_Texture:
+        bindings[i].SetTexture();
+        break;
+      case fbs::BindingType_Constants:
+        if (fb_binding->constants_name() == nullptr) {
+          LOG(ERROR) << "Unspecified constants name for binding";
+        } else {
+          bindings[i].SetConstants(render_system->GetConstantsType(
+                                       fb_binding->constants_name()->c_str()),
+                                   FromFbs(fb_binding->volatility()));
+        }
+        break;
+      default:
+        LOG(ERROR) << "Unhandled binding type: "
+                   << EnumNameBindingType(fb_binding->type());
+    }
+  }
+  return bindings;
+}
+
+std::vector<Binding> FilterBindings(BindingSet binding_set,
+                                    absl::Span<const Binding> all_bindings) {
+  std::vector<Binding> bindings;
+  bindings.reserve(all_bindings.size());
+  for (const auto& binding : all_bindings) {
+    if (binding.set == binding_set) {
+      bindings.emplace_back(binding);
+    }
+  }
+  return bindings;
+}
+
+fb::Offset<fb::Vector<fb::Offset<fbs::BindingDataEntry>>> WriteBindingData(
+    RenderInternal access_token, FlatBufferBuilder* builder,
+    BindingSet binding_set, absl::Span<const Binding> bindings,
+    const BindingData* binding_data) {
+  std::vector<fb::Offset<fbs::BindingDataEntry>> fb_binding_data;
+  fb_binding_data.reserve(bindings.size());
+  for (const auto& binding : bindings) {
+    if (binding.set != binding_set) {
+      continue;
+    }
+    ResourceId texture_id = 0;
+    fb::Offset<fb::Vector<uint8_t>> fb_constants_data;
+    switch (binding.binding_type) {
+      case BindingType::kTexture: {
+        const auto* texture = binding_data->GetTexture(binding.index);
+        if (texture != nullptr) {
+          texture_id = texture->GetResourceId();
+        }
+      } break;
+      case BindingType::kConstants: {
+        std::vector<uint8_t> buffer(binding.constants_type->GetSize());
+        binding_data->GetInternal(access_token, binding.index,
+                                  binding.constants_type->GetType(),
+                                  buffer.data());
+        fb_constants_data = builder->CreateVector(buffer);
+      } break;
+      default:
+        LOG(ERROR) << "Unspecified binding type: "
+                   << static_cast<int>(binding.binding_type);
+    }
+
+    fbs::BindingDataEntryBuilder binding_entry_builder(*builder);
+    binding_entry_builder.add_index(binding.index);
+    binding_entry_builder.add_type(ToFbs(binding.binding_type));
+    binding_entry_builder.add_texture_id(texture_id);
+    binding_entry_builder.add_constants_data(fb_constants_data);
+    fb_binding_data.emplace_back(binding_entry_builder.Finish());
+  }
+  if (fb_binding_data.empty()) {
+    return {};
+  }
+  return builder->CreateVector(fb_binding_data);
+}
+
+bool ReadBindingData(
+    RenderInternal access_token, const FileResources* file_resources,
+    absl::Span<const Binding> bindings,
+    const fb::Vector<fb::Offset<fbs::BindingDataEntry>>* fb_binding_data,
+    BindingData* binding_data) {
+  if (fb_binding_data == nullptr) {
+    // No binding data is valid.
+    return true;
+  }
+  const int count = static_cast<int>(fb_binding_data->size());
+  for (int i = 0; i < count; ++i) {
+    const auto* fb_binding_data_entry = fb_binding_data->Get(i);
+    if (fb_binding_data_entry == nullptr) {
+      LOG(ERROR) << "Null binding data entry at index " << i;
+      continue;
+    }
+    const auto index = fb_binding_data_entry->index();
+    switch (fb_binding_data_entry->type()) {
+      case fbs::BindingType_Texture: {
+        const ResourceId texture_id = fb_binding_data_entry->texture_id();
+        if (texture_id == 0) {
+          // No texture is valid.
+          break;
+        }
+        auto* texture = file_resources->GetResource<Texture>(texture_id);
+        if (texture == nullptr) {
+          LOG(ERROR) << "Referenced binding data texture at index " << index
+                     << " not loaded. ID=" << texture_id;
+          return false;
+        }
+        binding_data->SetTexture(index, texture);
+      } break;
+      case fbs::BindingType_Constants: {
+        const auto* fb_constants_data = fb_binding_data_entry->constants_data();
+        if (fb_constants_data == nullptr) {
+          // No constants data is valid. This results in default values.
+          break;
+        }
+        TypeKey* constants_type = nullptr;
+        for (const auto& binding : bindings) {
+          if (binding.index == index) {
+            if (binding.constants_type->GetSize() !=
+                fb_constants_data->size()) {
+              LOG(ERROR) << "Constants size " << fb_constants_data->size()
+                         << "does not match expected size "
+                         << binding.constants_type->GetSize() << " at index "
+                         << index << " for binding data";
+            }
+            constants_type = binding.constants_type->GetType();
+            break;
+          }
+        }
+        if (constants_type == nullptr) {
+          LOG(ERROR) << "Unknown constants type at index " << index
+                     << " for binding data";
+          return false;
+        }
+        binding_data->SetInternal(access_token, index, constants_type,
+                                  fb_constants_data->data());
+      } break;
+      default:
+        LOG(ERROR) << "Unhandled binding type "
+                   << EnumNameBindingType(fb_binding_data_entry->type())
+                   << " at binding data index " << i;
+        return false;
+    }
+  }
+  return true;
+}
+
+}  // namespace
 
 std::unique_ptr<RenderSystem> RenderSystem::Create(Contract contract) {
   ValidatedContext context(std::move(contract));
@@ -47,77 +242,65 @@ RenderSystem::RenderSystem(ValidatedContext context)
 
 bool RenderSystem::Init() {
   resource_writer_ = ResourceFileWriter::Create(context_);
-  resource_writer_->RegisterResourceWriter<Texture>(
-      kChunkTypeTexture, [this](Context* context, Texture* resource,
-                                std::vector<ChunkWriter>* out_chunks) {
-        return SaveTextureChunk(context, resource, out_chunks);
+  resource_writer_->RegisterResourceFlatBufferWriter<Texture>(
+      kChunkTypeTexture, 1,
+      [this](Context* context, Texture* resource, FlatBufferBuilder* builder) {
+        return SaveTextureChunk(context, resource, builder);
       });
-  resource_writer_->RegisterResourceWriter<Shader>(
-      kChunkTypeShader, [this](Context* context, Shader* resource,
-                               std::vector<ChunkWriter>* out_chunks) {
-        return SaveShaderChunk(context, resource, out_chunks);
+  resource_writer_->RegisterResourceFlatBufferWriter<Shader>(
+      kChunkTypeShader, 1,
+      [this](Context* context, Shader* resource, FlatBufferBuilder* builder) {
+        return SaveShaderChunk(context, resource, builder);
       });
-  resource_writer_->RegisterResourceWriter<MaterialType>(
-      kChunkTypeMaterialType, [this](Context* context, MaterialType* resource,
-                                     std::vector<ChunkWriter>* out_chunks) {
-        return SaveMaterialTypeChunk(context, resource, out_chunks);
+  resource_writer_->RegisterResourceFlatBufferWriter<MaterialType>(
+      kChunkTypeMaterialType, 1,
+      [this](Context* context, MaterialType* resource,
+             FlatBufferBuilder* builder) {
+        return SaveMaterialTypeChunk(context, resource, builder);
       });
-  resource_writer_->RegisterResourceWriter<Material>(
-      kChunkTypeMaterial, [this](Context* context, Material* resource,
-                                 std::vector<ChunkWriter>* out_chunks) {
-        return SaveMaterialChunk(context, resource, out_chunks);
+  resource_writer_->RegisterResourceFlatBufferWriter<Material>(
+      kChunkTypeMaterial, 1,
+      [this](Context* context, Material* resource, FlatBufferBuilder* builder) {
+        return SaveMaterialChunk(context, resource, builder);
       });
-  resource_writer_->RegisterResourceWriter<Mesh>(
-      kChunkTypeMesh, [this](Context* context, Mesh* resource,
-                             std::vector<ChunkWriter>* out_chunks) {
-        return SaveMeshChunk(context, resource, out_chunks);
+  resource_writer_->RegisterResourceFlatBufferWriter<Mesh>(
+      kChunkTypeMesh, 1,
+      [this](Context* context, Mesh* resource, FlatBufferBuilder* builder) {
+        return SaveMeshChunk(context, resource, builder);
       });
 
   resource_reader_ = ResourceFileReader::Create(context_);
-  resource_reader_->RegisterGenericChunk<BindingChunk>(
-      kChunkTypeBinding, 1,
-      [this](Context* context, ChunkReader* chunk_reader) {
-        return LoadBindingChunk(context, chunk_reader);
-      });
-  resource_reader_->RegisterGenericChunk<BindingDataChunk>(
-      kChunkTypeMaterialBindingData, 1,
-      [this](Context* context, ChunkReader* chunk_reader) {
-        return LoadBindingDataChunk(context, chunk_reader);
-      });
-  resource_reader_->RegisterGenericChunk<BindingDataChunk>(
-      kChunkTypeInstanceBindingData, 1,
-      [this](Context* context, ChunkReader* chunk_reader) {
-        return LoadBindingDataChunk(context, chunk_reader);
-      });
-  resource_reader_->RegisterGenericChunk<SamplerOptionsChunk>(
-      kChunkTypeSamplerOptions, 1,
-      [this](Context* context, ChunkReader* chunk_reader) {
-        return LoadSamplerOptionsChunk(context, chunk_reader);
-      });
-  resource_reader_->RegisterResourceChunk<Texture, TextureChunk>(
+  resource_reader_->RegisterResourceFlatBufferChunk<Texture, fbs::TextureChunk>(
       kChunkTypeTexture, 1,
-      [this](Context* context, ChunkReader* chunk_reader, ResourceEntry entry) {
-        return LoadTextureChunk(context, chunk_reader, std::move(entry));
+      [this](Context* context, const fbs::TextureChunk* chunk,
+             ResourceEntry entry) {
+        return LoadTextureChunk(context, chunk, std::move(entry));
       });
-  resource_reader_->RegisterResourceChunk<Shader, ShaderChunk>(
+  resource_reader_->RegisterResourceFlatBufferChunk<Shader, fbs::ShaderChunk>(
       kChunkTypeShader, 1,
-      [this](Context* context, ChunkReader* chunk_reader, ResourceEntry entry) {
-        return LoadShaderChunk(context, chunk_reader, std::move(entry));
+      [this](Context* context, const fbs::ShaderChunk* chunk,
+             ResourceEntry entry) {
+        return LoadShaderChunk(context, chunk, std::move(entry));
       });
-  resource_reader_->RegisterResourceChunk<MaterialType, MaterialTypeChunk>(
-      kChunkTypeMaterialType, 1,
-      [this](Context* context, ChunkReader* chunk_reader, ResourceEntry entry) {
-        return LoadMaterialTypeChunk(context, chunk_reader, std::move(entry));
-      });
-  resource_reader_->RegisterResourceChunk<Material, MaterialChunk>(
-      kChunkTypeMaterial, 1,
-      [this](Context* context, ChunkReader* chunk_reader, ResourceEntry entry) {
-        return LoadMaterialChunk(context, chunk_reader, std::move(entry));
-      });
-  resource_reader_->RegisterResourceChunk<Mesh, MeshChunk>(
+  resource_reader_
+      ->RegisterResourceFlatBufferChunk<MaterialType, fbs::MaterialTypeChunk>(
+          kChunkTypeMaterialType, 1,
+          [this](Context* context, const fbs::MaterialTypeChunk* chunk,
+                 ResourceEntry entry) {
+            return LoadMaterialTypeChunk(context, chunk, std::move(entry));
+          });
+  resource_reader_
+      ->RegisterResourceFlatBufferChunk<Material, fbs::MaterialChunk>(
+          kChunkTypeMaterial, 1,
+          [this](Context* context, const fbs::MaterialChunk* chunk,
+                 ResourceEntry entry) {
+            return LoadMaterialChunk(context, chunk, std::move(entry));
+          });
+  resource_reader_->RegisterResourceFlatBufferChunk<Mesh, fbs::MeshChunk>(
       kChunkTypeMesh, 1,
-      [this](Context* context, ChunkReader* chunk_reader, ResourceEntry entry) {
-        return LoadMeshChunk(context, chunk_reader, std::move(entry));
+      [this](Context* context, const fbs::MeshChunk* chunk,
+             ResourceEntry entry) {
+        return LoadMeshChunk(context, chunk, std::move(entry));
       });
 
   resource_manager_ = std::make_unique<ResourceManager>();
@@ -282,181 +465,6 @@ std::unique_ptr<RenderScene> RenderSystem::CreateScene(
   return backend_->CreateScene({}, scene_type, scene_order);
 }
 
-bool RenderSystem::LoadBindingChunk(Context* context,
-                                    ChunkReader* chunk_reader) {
-  std::vector<Binding> bindings(chunk_reader->GetCount());
-  for (int i = 0; i < chunk_reader->GetCount(); ++i) {
-    auto& binding = bindings[i];
-    auto& chunk = chunk_reader->GetChunkData<BindingChunk>()[i];
-    binding.shader_types = ShaderTypes(chunk.shaders);
-    binding.set = static_cast<BindingSet>(chunk.set);
-    binding.index = chunk.index;
-    binding.binding_type = static_cast<BindingType>(chunk.type);
-    binding.volatility = static_cast<DataVolatility>(chunk.volatility);
-    chunk_reader->ConvertToPtr(&chunk.constants_name);
-    if (chunk.constants_name.ptr != nullptr) {
-      binding.constants_type = GetConstantsType(chunk.constants_name.ptr);
-      if (binding.constants_type == nullptr) {
-        LOG(ERROR) << "Invalid constants type " << chunk.constants_name.ptr
-                   << " for binding " << i;
-        return false;
-      }
-    }
-    if (!binding.IsValid()) {
-      LOG(ERROR) << "Invalid binding " << i;
-      return false;
-    }
-  }
-  context->SetNew<std::vector<Binding>>(std::move(bindings));
-  return true;
-}
-
-bool RenderSystem::SaveBindingChunk(absl::Span<const Binding> bindings,
-                                    std::vector<ChunkWriter>* out_chunks) {
-  auto& chunk_writer = out_chunks->emplace_back(ChunkWriter::New<BindingChunk>(
-      kChunkTypeBinding, 1, static_cast<int32_t>(bindings.size())));
-  for (int i = 0; i < chunk_writer.GetCount(); ++i) {
-    const auto& binding = bindings[i];
-    auto& chunk = chunk_writer.GetChunkData<BindingChunk>()[i];
-    chunk.shaders = static_cast<uint8_t>(binding.shader_types.GetMask());
-    chunk.set = static_cast<uint8_t>(binding.set);
-    chunk.index = static_cast<uint16_t>(binding.index);
-    chunk.type = static_cast<uint16_t>(binding.binding_type);
-    chunk.volatility = static_cast<uint16_t>(binding.volatility);
-    if (binding.constants_type != nullptr) {
-      chunk.constants_name =
-          chunk_writer.AddString(binding.constants_type->GetName());
-    }
-  }
-  return true;
-}
-
-bool RenderSystem::LoadBindingDataChunk(Context* context,
-                                        ChunkReader* chunk_reader) {
-  BindingSet set;
-  if (chunk_reader->GetType() == kChunkTypeMaterialBindingData) {
-    set = BindingSet::kMaterial;
-  } else if (chunk_reader->GetType() == kChunkTypeInstanceBindingData) {
-    set = BindingSet::kInstance;
-  } else {
-    LOG(ERROR) << "Unhandled binding data chunk type: "
-               << chunk_reader->GetType().ToString();
-    return false;
-  }
-
-  auto all_bindings = context->GetValue<std::vector<Binding>>();
-  std::vector<Binding> bindings;
-  bindings.reserve(all_bindings.size());
-  for (const auto& binding : all_bindings) {
-    if (binding.set == set) {
-      bindings.emplace_back(binding);
-    }
-  }
-
-  const auto* resources = context->GetPtr<FileResources>();
-  auto binding_data =
-      std::make_unique<LocalBindingData>(RenderInternal{}, set, bindings);
-  for (int i = 0; i < chunk_reader->GetCount(); ++i) {
-    BindingDataChunk& chunk = chunk_reader->GetChunkData<BindingDataChunk>()[i];
-    BindingType type = static_cast<BindingType>(chunk.type);
-    if (type == BindingType::kTexture) {
-      if (chunk.texture_id != 0) {
-        Texture* texture = resources->GetResource<Texture>(chunk.texture_id);
-        if (texture == nullptr) {
-          LOG(ERROR) << "Failed to find texture (ID: " << chunk.texture_id
-                     << ") for binding data";
-          return false;
-        }
-        binding_data->SetTexture(chunk.index, texture);
-      }
-    } else if (type == BindingType::kConstants) {
-      chunk_reader->ConvertToPtr(&chunk.constants_data);
-      if (chunk.constants_data.ptr == nullptr) {
-        LOG(ERROR) << "Missing constants data for binding data";
-        return false;
-      }
-      TypeKey* constants_type = nullptr;
-      for (const auto& binding : bindings) {
-        if (binding.index == chunk.index) {
-          constants_type = binding.constants_type->GetType();
-          break;
-        }
-      }
-      if (constants_type == nullptr) {
-        LOG(ERROR) << "Unknown constants type at index " << chunk.index
-                   << " for binding data";
-        return false;
-      }
-      binding_data->SetInternal({}, chunk.index, constants_type,
-                                chunk.constants_data.ptr);
-    }
-  }
-
-  context->SetOwned<LocalBindingData>(chunk_reader->GetType().ToString(),
-                                      std::move(binding_data));
-  return true;
-}
-
-bool RenderSystem::SaveBindingDataChunk(BindingSet set,
-                                        absl::Span<const Binding> all_bindings,
-                                        BindingData* binding_data,
-                                        std::vector<ChunkWriter>* out_chunks) {
-  ChunkType chunk_type;
-  switch (set) {
-    case BindingSet::kMaterial:
-      chunk_type = kChunkTypeMaterialBindingData;
-      break;
-    case BindingSet::kInstance:
-      chunk_type = kChunkTypeInstanceBindingData;
-      break;
-    default:
-      LOG(ERROR) << "Invalid binding data set to save: "
-                 << static_cast<int>(set);
-      return false;
-  }
-
-  std::vector<Binding> bindings;
-  bindings.reserve(all_bindings.size());
-  for (const auto& binding : all_bindings) {
-    if (binding.set == set) {
-      bindings.emplace_back(binding);
-    }
-  }
-  if (bindings.empty()) {
-    return true;
-  }
-  auto& chunk_writer =
-      out_chunks->emplace_back(ChunkWriter::New<BindingDataChunk>(
-          chunk_type, 1, static_cast<int32_t>(bindings.size())));
-  for (int i = 0; i < chunk_writer.GetCount(); ++i) {
-    const auto& binding = bindings[i];
-    auto& chunk = chunk_writer.GetChunkData<BindingDataChunk>()[i];
-    chunk.type = static_cast<int32_t>(binding.binding_type);
-    chunk.index = static_cast<int32_t>(binding.index);
-    switch (binding.binding_type) {
-      case BindingType::kTexture: {
-        auto* texture = binding_data->GetTexture(binding.index);
-        if (texture != nullptr) {
-          chunk.texture_id = texture->GetResourceId();
-        }
-      } break;
-      case BindingType::kConstants: {
-        std::vector<uint8_t> buffer(binding.constants_type->GetSize());
-        binding_data->GetInternal({}, binding.index,
-                                  binding.constants_type->GetType(),
-                                  buffer.data());
-        chunk.constants_data = chunk_writer.AddData<const void>(
-            buffer.data(), static_cast<int32_t>(buffer.size()));
-      } break;
-      default:
-        LOG(ERROR) << "Unhandled binding type " << chunk.type
-                   << " writing binding data";
-        return false;
-    }
-  }
-  return true;
-}
-
 Mesh* RenderSystem::DoCreateMesh(Material* material, DataVolatility volatility,
                                  int max_vertices, int max_triangles) {
   if (material == nullptr) {
@@ -499,39 +507,37 @@ Mesh* RenderSystem::DoCreateMesh(Material* material, DataVolatility volatility,
                   std::move(index_buffer));
 }
 
-Mesh* RenderSystem::LoadMeshChunk(Context* context, ChunkReader* chunk_reader,
+Mesh* RenderSystem::LoadMeshChunk(Context* context, const fbs::MeshChunk* chunk,
                                   ResourceEntry entry) {
-  auto* chunk = chunk_reader->GetChunkData<MeshChunk>();
-  if (chunk == nullptr) {
-    LOG(ERROR) << "Invalid mesh chunk";
-    return nullptr;
-  }
-  chunk_reader->ConvertToPtr(&chunk->indices);
-  chunk_reader->ConvertToPtr(&chunk->vertices);
-
   auto* resources = context->GetPtr<FileResources>();
-  auto* material = resources->GetResource<Material>(chunk->material_id);
+  auto* material = resources->GetResource<Material>(chunk->material_id());
   if (material == nullptr) {
-    LOG(ERROR) << "Material (ID: " << chunk->material_id
+    LOG(ERROR) << "Material (ID: " << chunk->material_id()
                << ") not found when loading mesh";
     return nullptr;
   }
+  if (chunk->vertices() == nullptr || chunk->indices() == nullptr) {
+    LOG(ERROR) << "Mesh is empty";
+    return nullptr;
+  }
+  const int32_t vertex_count =
+      static_cast<int32_t>(chunk->vertices()->size()) / chunk->vertex_size();
 
-  auto volatility = static_cast<DataVolatility>(chunk->volatility);
+  auto volatility = FromFbs(chunk->volatility());
   if (edit_ && volatility == DataVolatility::kStaticWrite) {
     volatility = DataVolatility::kStaticReadWrite;
   }
   auto vertex_buffer = backend_->CreateVertexBuffer(
-      {}, volatility, chunk->vertex_size, chunk->vertex_count);
+      {}, volatility, chunk->vertex_size(), vertex_count);
   if (vertex_buffer == nullptr ||
-      !vertex_buffer->Set(chunk->vertices.ptr, chunk->vertex_count)) {
+      !vertex_buffer->Set(chunk->vertices()->data(), vertex_count)) {
     LOG(ERROR) << "Failed to initialize vertex buffer when loading mesh";
     return nullptr;
   }
-  auto index_buffer =
-      backend_->CreateIndexBuffer({}, volatility, chunk->index_count);
+  const int32_t index_count = static_cast<int32_t>(chunk->indices()->size());
+  auto index_buffer = backend_->CreateIndexBuffer({}, volatility, index_count);
   if (index_buffer == nullptr ||
-      !index_buffer->Set(chunk->indices.ptr, chunk->index_count)) {
+      !index_buffer->Set(chunk->indices()->data(), index_count)) {
     LOG(ERROR) << "Failed to initialize index buffer when loading mesh";
     return nullptr;
   }
@@ -548,7 +554,7 @@ bool RenderSystem::SaveMesh(std::string_view name, Mesh* mesh,
 }
 
 bool RenderSystem::SaveMeshChunk(Context* context, Mesh* mesh,
-                                 std::vector<ChunkWriter>* out_chunks) {
+                                 FlatBufferBuilder* builder) {
   if (mesh->GetVolatility() == DataVolatility::kStaticWrite) {
     LOG(ERROR) << "Cannot save mesh with kStaticWrite volatility.";
     return false;
@@ -559,20 +565,23 @@ bool RenderSystem::SaveMeshChunk(Context* context, Mesh* mesh,
     return false;
   }
 
-  auto& chunk_writer =
-      out_chunks->emplace_back(ChunkWriter::New<MeshChunk>(kChunkTypeMesh, 1));
-  auto* chunk = chunk_writer.GetChunkData<MeshChunk>();
-  chunk->id = mesh->GetResourceId();
-  chunk->material_id = mesh->GetMaterial()->GetResourceId();
-  chunk->volatility = static_cast<int32_t>(context->GetValue<DataVolatility>());
-  chunk->index_count = view->GetTriangleCount() * 3;
-  chunk->vertex_count = view->GetVertexCount();
-  chunk->vertex_size = static_cast<int32_t>(
+  const int32_t vertex_size = static_cast<int32_t>(
       mesh->GetMaterial()->GetType()->GetVertexType()->GetSize());
-  chunk->indices = chunk_writer.AddData<const uint16_t>(view->GetIndexData({}),
-                                                        chunk->index_count);
-  chunk->vertices = chunk_writer.AddData<const void>(
-      view->GetVertexData({}), chunk->vertex_count * chunk->vertex_size);
+  const auto fb_indices = builder->CreateVector(view->GetIndexData({}),
+                                                view->GetTriangleCount() * 3);
+  const auto fb_vertices = builder->CreateVector(
+      static_cast<const uint8_t*>(view->GetVertexData({})),
+      view->GetVertexCount() * vertex_size);
+
+  fbs::MeshChunkBuilder mesh_builder(*builder);
+  mesh_builder.add_material_id(mesh->GetMaterial()->GetResourceId());
+  mesh_builder.add_volatility(ToFbs(context->GetValue<DataVolatility>()));
+  mesh_builder.add_vertex_size(vertex_size);
+  mesh_builder.add_indices(fb_indices);
+  mesh_builder.add_vertices(fb_vertices);
+  const auto fb_mesh = mesh_builder.Finish();
+
+  builder->Finish(fb_mesh);
   return true;
 }
 
@@ -587,20 +596,14 @@ Material* RenderSystem::DoCreateMaterial(MaterialType* material_type) {
 }
 
 Material* RenderSystem::LoadMaterialChunk(Context* context,
-                                          ChunkReader* chunk_reader,
+                                          const fbs::MaterialChunk* chunk,
                                           ResourceEntry entry) {
-  auto* chunk = chunk_reader->GetChunkData<MaterialChunk>();
-  if (chunk == nullptr) {
-    LOG(ERROR) << "Invalid material chunk";
-    return nullptr;
-  }
-
   // Get the material type
   auto* resources = context->GetPtr<FileResources>();
   auto* material_type =
-      resources->GetResource<MaterialType>(chunk->material_type_id);
+      resources->GetResource<MaterialType>(chunk->material_type_id());
   if (material_type == nullptr) {
-    LOG(ERROR) << "Material type (ID: " << chunk->material_type_id
+    LOG(ERROR) << "Material type (ID: " << chunk->material_type_id()
                << ") not found when loading material";
     return nullptr;
   }
@@ -610,7 +613,7 @@ Material* RenderSystem::LoadMaterialChunk(Context* context,
   for (const auto& binding : material_type->GetBindings()) {
     mapped_bindings[{binding.set, binding.index}] = binding;
   }
-  auto bindings = context->GetValue<std::vector<Binding>>();
+  auto bindings = ReadBindings(this, chunk->bindings());
   for (const Binding& binding : bindings) {
     if (!mapped_bindings.contains({binding.set, binding.index})) {
       LOG(ERROR) << "Material binding not found in loaded material type";
@@ -619,16 +622,14 @@ Material* RenderSystem::LoadMaterialChunk(Context* context,
   }
 
   auto* material = new Material({}, std::move(entry), material_type);
-  const auto* material_binding_data = context->GetPtr<LocalBindingData>(
-      kChunkTypeMaterialBindingData.ToString());
-  if (material_binding_data != nullptr) {
-    material_binding_data->CopyTo(material->GetMaterialBindingData());
+
+  if (!ReadBindingData({}, resources, bindings, chunk->material_data(),
+                       material->GetMaterialBindingData()) ||
+      !ReadBindingData({}, resources, bindings, chunk->instance_data(),
+                       material->GetDefaultInstanceBindingData())) {
+    return nullptr;
   }
-  const auto* instance_binding_data = context->GetPtr<LocalBindingData>(
-      kChunkTypeInstanceBindingData.ToString());
-  if (instance_binding_data != nullptr) {
-    instance_binding_data->CopyTo(material->GetDefaultInstanceBindingData());
-  }
+
   return material;
 }
 
@@ -637,22 +638,25 @@ bool RenderSystem::SaveMaterial(std::string_view name, Material* material) {
 }
 
 bool RenderSystem::SaveMaterialChunk(Context* context, Material* material,
-                                     std::vector<ChunkWriter>* out_chunks) {
+                                     FlatBufferBuilder* builder) {
   auto* material_type = material->GetType();
-  if (!SaveBindingChunk(material_type->GetBindings(), out_chunks) ||
-      !SaveBindingDataChunk(BindingSet::kMaterial, material_type->GetBindings(),
-                            material->GetMaterialBindingData(), out_chunks) ||
-      !SaveBindingDataChunk(BindingSet::kInstance, material_type->GetBindings(),
-                            material->GetDefaultInstanceBindingData(),
-                            out_chunks)) {
-    return false;
-  }
+  const auto bindings = material_type->GetBindings();
+  const auto fb_bindings = WriteBindings(builder, bindings);
+  const auto fb_material_data =
+      WriteBindingData({}, builder, BindingSet::kMaterial, bindings,
+                       material->GetMaterialBindingData());
+  const auto fb_instance_data =
+      WriteBindingData({}, builder, BindingSet::kInstance, bindings,
+                       material->GetDefaultInstanceBindingData());
 
-  auto& chunk_writer = out_chunks->emplace_back(
-      ChunkWriter::New<MaterialChunk>(kChunkTypeMaterial, 1));
-  auto* chunk = chunk_writer.GetChunkData<MaterialChunk>();
-  chunk->id = material->GetResourceId();
-  chunk->material_type_id = material_type->GetResourceId();
+  fbs::MaterialChunkBuilder material_builder(*builder);
+  material_builder.add_material_type_id(material_type->GetResourceId());
+  material_builder.add_bindings(fb_bindings);
+  material_builder.add_material_data(fb_material_data);
+  material_builder.add_instance_data(fb_instance_data);
+  auto fb_material = material_builder.Finish();
+
+  builder->Finish(fb_material);
   return true;
 }
 
@@ -802,45 +806,45 @@ MaterialType* RenderSystem::DoCreateMaterialType(RenderSceneType* scene_type,
                           vertex_type, vertex_shader, fragment_shader, config);
 }
 
-MaterialType* RenderSystem::LoadMaterialTypeChunk(Context* context,
-                                                  ChunkReader* chunk_reader,
-                                                  ResourceEntry entry) {
+MaterialType* RenderSystem::LoadMaterialTypeChunk(
+    Context* context, const fbs::MaterialTypeChunk* chunk,
+    ResourceEntry entry) {
   auto* resources = context->GetPtr<FileResources>();
-  auto* chunk = chunk_reader->GetChunkData<MaterialTypeChunk>();
-  if (chunk == nullptr) {
-    LOG(ERROR) << "Invalid material type chunk";
-    return nullptr;
-  }
-  chunk_reader->ConvertToPtr(&chunk->scene_type_name);
-  chunk_reader->ConvertToPtr(&chunk->vertex_type_name);
 
   MaterialConfig config = {};
-  config.cull_mode = static_cast<CullMode>(chunk->cull_mode);
-  config.depth_mode = static_cast<DepthMode>(chunk->depth_mode);
+  config.cull_mode = FromFbs(chunk->cull_mode());
+  config.depth_mode = FromFbs(chunk->depth_mode());
 
-  RenderSceneType* scene_type = GetSceneType(chunk->scene_type_name.ptr);
+  std::string_view scene_type_name =
+      (chunk->scene_type_name() != nullptr ? chunk->scene_type_name()->c_str()
+                                           : "");
+  RenderSceneType* scene_type = GetSceneType(scene_type_name);
   if (scene_type == nullptr) {
     LOG(ERROR) << "Cannot load material type because scene type \""
-               << chunk->scene_type_name.ptr << "\" is not registered";
+               << scene_type_name << "\" is not registered";
     return nullptr;
   }
-  auto* vertex_shader = resources->GetResource<Shader>(chunk->vertex_shader_id);
+  auto* vertex_shader =
+      resources->GetResource<Shader>(chunk->vertex_shader_id());
   if (vertex_shader == nullptr) {
     LOG(ERROR) << "Cannot load material type becayse vertex shader (ID: "
-               << chunk->vertex_shader_id << ") is not loaded";
+               << chunk->vertex_shader_id() << ") is not loaded";
     return false;
   }
   auto* fragment_shader =
-      resources->GetResource<Shader>(chunk->fragment_shader_id);
+      resources->GetResource<Shader>(chunk->fragment_shader_id());
   if (fragment_shader == nullptr) {
     LOG(ERROR) << "Cannot load material type becayse fragment shader (ID: "
-               << chunk->fragment_shader_id << ") is not loaded";
+               << chunk->fragment_shader_id() << ") is not loaded";
     return false;
   }
-  const VertexType* vertex_type = GetVertexType(chunk->vertex_type_name.ptr);
+  std::string_view vertex_type_name =
+      (chunk->vertex_type_name() != nullptr ? chunk->vertex_type_name()->c_str()
+                                            : "");
+  const VertexType* vertex_type = GetVertexType(vertex_type_name);
   if (vertex_type == nullptr) {
     LOG(ERROR) << "Cannot load material type because vertex type \""
-               << chunk->vertex_type_name.ptr << "\" is not registered";
+               << vertex_type_name << "\" is not registered";
     return nullptr;
   }
 
@@ -852,7 +856,7 @@ MaterialType* RenderSystem::LoadMaterialTypeChunk(Context* context,
   // Validate all shader bindings are compatible with the the scene and
   // each other.
   absl::flat_hash_map<std::tuple<BindingSet, int>, Binding> mapped_bindings;
-  auto bindings = context->GetValue<std::vector<Binding>>();
+  auto bindings = ReadBindings(this, chunk->bindings());
   for (const auto& binding : bindings) {
     mapped_bindings[{binding.set, binding.index}] = binding;
   }
@@ -887,17 +891,11 @@ MaterialType* RenderSystem::LoadMaterialTypeChunk(Context* context,
   auto material_type = new MaterialType(
       {}, std::move(entry), scene_type, bindings, std::move(pipeline),
       vertex_type, vertex_shader, fragment_shader, config);
-  const auto* material_binding_data = context->GetPtr<LocalBindingData>(
-      kChunkTypeMaterialBindingData.ToString());
-  if (material_binding_data != nullptr) {
-    material_binding_data->CopyTo(
-        material_type->GetDefaultMaterialBindingData());
-  }
-  const auto* instance_binding_data = context->GetPtr<LocalBindingData>(
-      kChunkTypeInstanceBindingData.ToString());
-  if (instance_binding_data != nullptr) {
-    instance_binding_data->CopyTo(
-        material_type->GetDefaultInstanceBindingData());
+  if (!ReadBindingData({}, resources, bindings, chunk->material_data(),
+                       material_type->GetDefaultMaterialBindingData()) ||
+      !ReadBindingData({}, resources, bindings, chunk->instance_data(),
+                       material_type->GetDefaultInstanceBindingData())) {
+    return nullptr;
   }
   return material_type;
 }
@@ -909,31 +907,36 @@ bool RenderSystem::SaveMaterialType(std::string_view name,
 
 bool RenderSystem::SaveMaterialTypeChunk(Context* context,
                                          MaterialType* material_type,
-                                         std::vector<ChunkWriter>* out_chunks) {
-  if (!SaveBindingChunk(material_type->GetBindings(), out_chunks) ||
-      !SaveBindingDataChunk(BindingSet::kMaterial, material_type->GetBindings(),
-                            material_type->GetDefaultMaterialBindingData(),
-                            out_chunks) ||
-      !SaveBindingDataChunk(BindingSet::kInstance, material_type->GetBindings(),
-                            material_type->GetDefaultInstanceBindingData(),
-                            out_chunks)) {
-    return false;
-  }
+                                         FlatBufferBuilder* builder) {
+  const auto bindings = material_type->GetBindings();
+  const auto fb_bindings = WriteBindings(builder, bindings);
+  const auto fb_material_data =
+      WriteBindingData({}, builder, BindingSet::kMaterial, bindings,
+                       material_type->GetDefaultMaterialBindingData());
+  const auto fb_instance_data =
+      WriteBindingData({}, builder, BindingSet::kInstance, bindings,
+                       material_type->GetDefaultInstanceBindingData());
+  const auto fb_scene_type_name =
+      builder->CreateSharedString(material_type->GetSceneType()->GetName());
+  const auto fb_vertex_type_name =
+      builder->CreateSharedString(material_type->GetVertexType()->GetName());
 
-  auto& chunk_writer = out_chunks->emplace_back(
-      ChunkWriter::New<MaterialTypeChunk>(kChunkTypeMaterialType, 1));
-  auto* chunk = chunk_writer.GetChunkData<MaterialTypeChunk>();
-  chunk->id = material_type->GetResourceId();
-  chunk->scene_type_name =
-      chunk_writer.AddString(material_type->GetSceneType()->GetName());
-  chunk->vertex_shader_id = material_type->GetVertexShader()->GetResourceId();
-  chunk->fragment_shader_id =
-      material_type->GetFragmentShader()->GetResourceId();
-  chunk->vertex_type_name =
-      chunk_writer.AddString(material_type->GetVertexType()->GetName());
+  fbs::MaterialTypeChunkBuilder material_type_builder(*builder);
+  material_type_builder.add_scene_type_name(fb_scene_type_name);
+  material_type_builder.add_vertex_shader_id(
+      material_type->GetVertexShader()->GetResourceId());
+  material_type_builder.add_fragment_shader_id(
+      material_type->GetFragmentShader()->GetResourceId());
+  material_type_builder.add_vertex_type_name(fb_vertex_type_name);
   const MaterialConfig& config = material_type->GetConfig();
-  chunk->cull_mode = static_cast<uint8_t>(config.cull_mode);
-  chunk->depth_mode = static_cast<uint8_t>(config.depth_mode);
+  material_type_builder.add_cull_mode(ToFbs(config.cull_mode));
+  material_type_builder.add_depth_mode(ToFbs(config.depth_mode));
+  material_type_builder.add_bindings(fb_bindings);
+  material_type_builder.add_material_data(fb_material_data);
+  material_type_builder.add_instance_data(fb_instance_data);
+  const auto fb_material_type = material_type_builder.Finish();
+
+  builder->Finish(fb_material_type);
   return true;
 }
 
@@ -982,42 +985,35 @@ Shader* RenderSystem::DoCreateShader(ShaderType type,
 }
 
 Shader* RenderSystem::LoadShaderChunk(Context* context,
-                                      ChunkReader* chunk_reader,
+                                      const fbs::ShaderChunk* chunk,
                                       ResourceEntry entry) {
-  std::vector<Binding> all_bindings;
-  auto* bindings = context->GetPtr<std::vector<Binding>>();
-  if (bindings != nullptr) {
-    all_bindings = std::move(*bindings);
-  }
-
-  auto* chunk = chunk_reader->GetChunkData<ShaderChunk>();
-  if (chunk == nullptr) {
-    LOG(ERROR) << "Invalid shader chunk";
+  if (chunk->code() == nullptr) {
+    LOG(ERROR) << "Shader does not contain any code";
     return nullptr;
   }
-  chunk_reader->ConvertToPtr<const ShaderParamEntry>(&chunk->inputs);
-  chunk_reader->ConvertToPtr<const ShaderParamEntry>(&chunk->outputs);
-  chunk_reader->ConvertToPtr<const void>(&chunk->code);
 
-  std::vector<ShaderParam> inputs(chunk->input_count);
-  for (int i = 0; i < chunk->input_count; ++i) {
-    inputs[i].value = static_cast<ShaderValue>(chunk->inputs.ptr[i].value);
-    inputs[i].location = chunk->inputs.ptr[i].location;
-  }
-  std::vector<ShaderParam> outputs(chunk->output_count);
-  for (int i = 0; i < chunk->output_count; ++i) {
-    outputs[i].value = static_cast<ShaderValue>(chunk->outputs.ptr[i].value);
-    outputs[i].location = chunk->outputs.ptr[i].location;
-  }
-
-  auto shader_code =
-      backend_->CreateShaderCode({}, chunk->code.ptr, chunk->code_size);
+  auto shader_code = backend_->CreateShaderCode({}, chunk->code()->data(),
+                                                chunk->code()->size());
   if (shader_code == nullptr) {
     LOG(ERROR) << "Failed to create shader code for shader";
     return nullptr;
   }
 
-  return new Shader({}, std::move(entry), static_cast<ShaderType>(chunk->type),
+  std::vector<Binding> all_bindings = ReadBindings(this, chunk->bindings());
+
+  absl::Span<const ShaderParam> inputs;
+  if (chunk->inputs() != nullptr && chunk->inputs()->size() > 0) {
+    inputs = absl::MakeConstSpan(chunk->inputs()->GetAs<ShaderParam>(0),
+                                 chunk->inputs()->size());
+  }
+
+  absl::Span<const ShaderParam> outputs;
+  if (chunk->outputs() != nullptr && chunk->outputs()->size() > 0) {
+    outputs = absl::MakeConstSpan(chunk->outputs()->GetAs<ShaderParam>(0),
+                                  chunk->outputs()->size());
+  }
+
+  return new Shader({}, std::move(entry), FromFbs(chunk->type()),
                     std::move(shader_code), all_bindings, inputs, outputs);
 }
 
@@ -1026,7 +1022,7 @@ bool RenderSystem::SaveShader(std::string_view name, Shader* shader) {
 }
 
 bool RenderSystem::SaveShaderChunk(Context* context, Shader* shader,
-                                   std::vector<ChunkWriter>* out_chunks) {
+                                   FlatBufferBuilder* builder) {
   const auto& code = shader->GetCode()->GetData({});
   if (code.empty()) {
     LOG(ERROR) << "Cannot save shader because shader code is empty (likely the "
@@ -1034,39 +1030,31 @@ bool RenderSystem::SaveShaderChunk(Context* context, Shader* shader,
     return false;
   }
 
-  if (!SaveBindingChunk(shader->GetBindings(), out_chunks)) {
-    return false;
-  }
+  static_assert(sizeof(fbs::ShaderParam) == sizeof(ShaderParam));
+  const auto fb_bindings = WriteBindings(builder, shader->GetBindings());
+  const auto inputs = shader->GetInputs();
+  const auto fb_inputs = builder->CreateVectorOfStructs<fbs::ShaderParam>(
+      inputs.size(), [&inputs](size_t i, fbs::ShaderParam* out_param) {
+        *out_param =
+            fbs::ShaderParam(ToFbs(inputs[i].value), inputs[i].location);
+      });
+  const auto outputs = shader->GetOutputs();
+  const auto fb_outputs = builder->CreateVectorOfStructs<fbs::ShaderParam>(
+      outputs.size(), [&outputs](size_t i, fbs::ShaderParam* out_param) {
+        *out_param =
+            fbs::ShaderParam(ToFbs(outputs[i].value), outputs[i].location);
+      });
+  const auto fb_code = builder->CreateVector(code);
 
-  auto& chunk_writer = out_chunks->emplace_back(
-      ChunkWriter::New<ShaderChunk>(kChunkTypeShader, 1));
-  auto* chunk = chunk_writer.GetChunkData<ShaderChunk>();
+  fbs::ShaderChunkBuilder shader_builder(*builder);
+  shader_builder.add_type(ToFbs(shader->GetType()));
+  shader_builder.add_bindings(fb_bindings);
+  shader_builder.add_inputs(fb_inputs);
+  shader_builder.add_outputs(fb_outputs);
+  shader_builder.add_code(fb_code);
+  const auto fb_shader = shader_builder.Finish();
 
-  chunk->id = shader->GetResourceId();
-  chunk->type = static_cast<int32_t>(shader->GetType());
-
-  auto inputs = shader->GetInputs();
-  std::vector<ShaderParamEntry> input_entries;
-  input_entries.reserve(inputs.size());
-  for (const auto& input : inputs) {
-    input_entries.push_back(
-        {static_cast<int32_t>(input.value), input.location});
-  }
-  chunk->input_count = static_cast<int32_t>(inputs.size());
-  chunk->inputs = chunk_writer.AddData<const ShaderParamEntry>(input_entries);
-
-  auto outputs = shader->GetOutputs();
-  std::vector<ShaderParamEntry> output_entries;
-  output_entries.reserve(outputs.size());
-  for (const auto& output : outputs) {
-    output_entries.push_back(
-        {static_cast<int32_t>(output.value), output.location});
-  }
-  chunk->output_count = static_cast<int32_t>(outputs.size());
-  chunk->outputs = chunk_writer.AddData<const ShaderParamEntry>(output_entries);
-
-  chunk->code_size = static_cast<int32_t>(code.size());
-  chunk->code = chunk_writer.AddData<const void>(code.data(), chunk->code_size);
+  builder->Finish(fb_shader);
   return true;
 }
 
@@ -1104,37 +1092,6 @@ std::unique_ptr<ShaderCode> RenderSystem::LoadShaderCode(
   return shader_code;
 }
 
-bool RenderSystem::LoadSamplerOptionsChunk(Context* context,
-                                           ChunkReader* chunk_reader) {
-  // If the sampler options are overridden, then let them stand.
-  if (context->Exists<SamplerOptions>()) {
-    return true;
-  }
-
-  const auto* chunk = chunk_reader->GetChunkData<SamplerOptionsChunk>();
-  context->SetValue<SamplerOptions>(
-      SamplerOptions()
-          .SetFilter(chunk->filter != 0)
-          .SetMipmap(chunk->mipmap != 0)
-          .SetAddressMode(static_cast<SamplerAddressMode>(chunk->address_mode),
-                          chunk->border)
-          .SetTileSize(chunk->tile_size));
-  return true;
-}
-
-bool RenderSystem::SaveSamplerOptionsChunk(
-    const SamplerOptions& options, std::vector<ChunkWriter>* out_chunks) {
-  auto& chunk_writer = out_chunks->emplace_back(
-      ChunkWriter::New<SamplerOptionsChunk>(kChunkTypeSamplerOptions, 1));
-  auto* chunk = chunk_writer.GetChunkData<SamplerOptionsChunk>();
-  chunk->filter = (options.filter ? 1 : 0);
-  chunk->mipmap = (options.mipmap ? 1 : 0);
-  chunk->address_mode = static_cast<uint8_t>(options.address_mode);
-  chunk->border = options.border;
-  chunk->tile_size = options.tile_size;
-  return true;
-}
-
 Texture* RenderSystem::DoCreateTexture(DataVolatility volatility, int width,
                                        int height,
                                        const SamplerOptions& options) {
@@ -1163,49 +1120,55 @@ Texture* RenderSystem::LoadTexture(Context* context, std::string_view name) {
     LOG(ERROR) << "Invalid texture file: " << name;
     return nullptr;
   }
-  file->SeekBegin();
 
   if (chunk_type == kChunkTypeFile) {
     file.reset();
     return resource_reader_->Read<Texture>(name, context);
   }
+
+  file->SeekBegin();
   return LoadStbTexture(context, file.get());
 }
 
 Texture* RenderSystem::LoadTextureChunk(Context* context,
-                                        ChunkReader* chunk_reader,
+                                        const fbs::TextureChunk* chunk,
                                         ResourceEntry entry) {
-  auto* chunk = chunk_reader->GetChunkData<TextureChunk>();
-  if (chunk == nullptr) {
-    LOG(ERROR) << "Invalid texture chunk";
+  const auto width = chunk->width();
+  const auto height = chunk->height();
+  if (width <= 0 || height <= 0 || width >= kMaxTextureWidth ||
+      height >= kMaxTextureHeight) {
+    LOG(ERROR) << "Invalid texture dimensions in texture file: " << width
+               << " by " << height;
     return nullptr;
   }
-  if (chunk->width <= 0 || chunk->height <= 0 ||
-      chunk->width >= kMaxTextureWidth || chunk->height >= kMaxTextureHeight) {
-    LOG(ERROR) << "Invalid texture dimensions in texture file: " << chunk->width
-               << " by " << chunk->height;
-    return nullptr;
-  }
-  chunk_reader->ConvertToPtr(&chunk->pixels);
 
   gb::ValidatedContext validated_context = TextureLoadContract(context);
   DCHECK(validated_context.IsValid())
       << "TextureLoadContext does not have any requirements!";
+  SamplerOptions sampler_options;
+  auto* fb_sampler_options = chunk->options();
+  if (fb_sampler_options != nullptr) {
+    sampler_options.SetFilter(fb_sampler_options->filter());
+    sampler_options.SetMipmap(fb_sampler_options->mipmap());
+    sampler_options.SetTileSize(fb_sampler_options->tile_size());
+    sampler_options.SetAddressMode(FromFbs(fb_sampler_options->address_mode()),
+                                   Pixel(fb_sampler_options->border()));
+  }
 
-  DataVolatility volatility = static_cast<DataVolatility>(chunk->volatility);
+  DataVolatility volatility = FromFbs(chunk->volatility());
   if (edit_ && volatility == DataVolatility::kStaticWrite) {
     volatility = DataVolatility::kStaticReadWrite;
   }
   Texture* texture = backend_->CreateTexture(
-      {}, std::move(entry), volatility, chunk->width, chunk->height,
-      validated_context.GetValue<SamplerOptions>());
+      {}, std::move(entry), volatility, width, height,
+      validated_context.GetValueOrDefault<SamplerOptions>(sampler_options));
   if (texture == nullptr) {
-    LOG(ERROR) << "Failed to create texture of dimensions " << chunk->width
-               << "x" << chunk->height;
+    LOG(ERROR) << "Failed to create texture of dimensions " << width << "x"
+               << height;
     return nullptr;
   }
-  if (!texture->Set(chunk->pixels.ptr,
-                    chunk->width * chunk->height * sizeof(Pixel))) {
+  if (chunk->pixels() == nullptr ||
+      !texture->Set(chunk->pixels()->data(), width * height * sizeof(Pixel))) {
     LOG(ERROR) << "Failed to initialize texture with image data";
     return nullptr;
   }
@@ -1283,7 +1246,7 @@ bool RenderSystem::SaveTexture(std::string_view name, Texture* texture,
 }
 
 bool RenderSystem::SaveTextureChunk(Context* context, Texture* texture,
-                                    std::vector<ChunkWriter>* out_chunks) {
+                                    FlatBufferBuilder* builder) {
   if (texture->GetVolatility() == DataVolatility::kStaticWrite) {
     LOG(ERROR) << "Cannot save texture with kStaticWrite volatility.";
     return false;
@@ -1293,19 +1256,28 @@ bool RenderSystem::SaveTextureChunk(Context* context, Texture* texture,
     LOG(ERROR) << "Failed to read texture in order to save it";
     return false;
   }
-  if (!SaveSamplerOptionsChunk(texture->GetSamplerOptions(), out_chunks)) {
-    return false;
-  }
-  out_chunks->emplace_back(
-      ChunkWriter::New<TextureChunk>(kChunkTypeTexture, 1));
-  ChunkWriter& chunk_writer = out_chunks->back();
-  auto* chunk = chunk_writer.GetChunkData<TextureChunk>();
-  chunk->id = texture->GetResourceId();
-  chunk->volatility = static_cast<int32_t>(context->GetValue<DataVolatility>());
-  chunk->width = static_cast<uint16_t>(texture->GetWidth());
-  chunk->height = static_cast<uint16_t>(texture->GetHeight());
-  chunk->pixels = chunk_writer.AddData<const Pixel>(
-      view->GetPixels(), chunk->width * chunk->height);
+  auto& sampler_options = texture->GetSamplerOptions();
+
+  fbs::SamplerOptionsBuilder sampler_options_builder(*builder);
+  sampler_options_builder.add_filter(sampler_options.filter);
+  sampler_options_builder.add_mipmap(sampler_options.mipmap);
+  sampler_options_builder.add_border(sampler_options.border.Packed());
+  sampler_options_builder.add_tile_size(sampler_options.tile_size);
+  sampler_options_builder.add_address_mode(ToFbs(sampler_options.address_mode));
+  const auto fb_sampler_options = sampler_options_builder.Finish();
+
+  const auto fb_pixels = builder->CreateVector<uint32_t>(
+      view->GetPackedPixels(), texture->GetWidth() * texture->GetHeight());
+
+  fbs::TextureChunkBuilder texture_builder(*builder);
+  texture_builder.add_volatility(ToFbs(context->GetValue<DataVolatility>()));
+  texture_builder.add_width(texture->GetWidth());
+  texture_builder.add_height(texture->GetHeight());
+  texture_builder.add_options(fb_sampler_options);
+  texture_builder.add_pixels(fb_pixels);
+  const auto fb_texture = texture_builder.Finish();
+
+  builder->Finish(fb_texture);
   return true;
 }
 

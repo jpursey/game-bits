@@ -13,6 +13,7 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/types/span.h"
+#include "flatbuffers/flatbuffers.h"
 #include "gb/base/validated_context.h"
 #include "gb/file/file_types.h"
 #include "gb/render/binding.h"
@@ -359,26 +360,18 @@ class RenderSystem final {
 
   bool Init();
 
-  bool LoadBindingChunk(Context* context, ChunkReader* chunk_reader);
-  bool SaveBindingChunk(absl::Span<const Binding> bindings,
-                        std::vector<ChunkWriter>* out_chunks);
-  bool LoadBindingDataChunk(Context* context, ChunkReader* chunk_reader);
-  bool SaveBindingDataChunk(BindingSet set, absl::Span<const Binding> bindings,
-                            BindingData* binding_data,
-                            std::vector<ChunkWriter>* out_chunks);
-
   Mesh* DoCreateMesh(Material* material, DataVolatility volatility,
                      int max_vertices, int max_triangles);
-  Mesh* LoadMeshChunk(Context* context, ChunkReader* chunk_reader,
+  Mesh* LoadMeshChunk(Context* context, const fbs::MeshChunk* chunk,
                       ResourceEntry entry);
   bool SaveMeshChunk(Context* context, Mesh* mesh,
-                     std::vector<ChunkWriter>* out_chunks);
+                     flatbuffers::FlatBufferBuilder* builder);
 
   Material* DoCreateMaterial(MaterialType* material_type);
-  Material* LoadMaterialChunk(Context* context, ChunkReader* chunk_reader,
+  Material* LoadMaterialChunk(Context* context, const fbs::MaterialChunk* chunk,
                               ResourceEntry entry);
   bool SaveMaterialChunk(Context* context, Material* material,
-                         std::vector<ChunkWriter>* out_chunks);
+                         flatbuffers::FlatBufferBuilder* builder);
 
   bool ValidateMaterialTypeArguments(RenderSceneType* scene_type,
                                      const VertexType* vertex_type,
@@ -390,32 +383,28 @@ class RenderSystem final {
                                      Shader* fragment_shader,
                                      const MaterialConfig& config);
   MaterialType* LoadMaterialTypeChunk(Context* context,
-                                      ChunkReader* chunk_reader,
+                                      const fbs::MaterialTypeChunk* chunk,
                                       ResourceEntry entry);
   bool SaveMaterialTypeChunk(Context* context, MaterialType* material_type,
-                             std::vector<ChunkWriter>* out_chunks);
+                             flatbuffers::FlatBufferBuilder* builder);
 
   Shader* DoCreateShader(ShaderType type,
                          std::unique_ptr<ShaderCode> shader_code,
                          absl::Span<const Binding> bindings,
                          absl::Span<const ShaderParam> inputs,
                          absl::Span<const ShaderParam> outputs);
-  Shader* LoadShaderChunk(Context* context, ChunkReader* chunk_reader,
+  Shader* LoadShaderChunk(Context* context, const fbs::ShaderChunk* chunk,
                           ResourceEntry entry);
   bool SaveShaderChunk(Context* context, Shader* shader,
-                       std::vector<ChunkWriter>* out_chunks);
-
-  bool LoadSamplerOptionsChunk(Context* context, ChunkReader* chunk_reader);
-  bool SaveSamplerOptionsChunk(const SamplerOptions& options,
-                               std::vector<ChunkWriter>* out_chunks);
+                       flatbuffers::FlatBufferBuilder* builder);
 
   Texture* DoCreateTexture(DataVolatility volatility, int width, int height,
                            const SamplerOptions& options);
   Texture* LoadTexture(Context* context, std::string_view name);
-  Texture* LoadTextureChunk(Context* context, ChunkReader* chunk_reader,
+  Texture* LoadTextureChunk(Context* context, const fbs::TextureChunk* chunk,
                             ResourceEntry entry);
   bool SaveTextureChunk(Context* context, Texture* texture,
-                        std::vector<ChunkWriter>* out_chunks);
+                        flatbuffers::FlatBufferBuilder* builder);
   Texture* LoadStbTexture(TextureLoadContract contract, File* file);
 
   const RenderDataType* DoRegisterConstantsType(std::string_view name,

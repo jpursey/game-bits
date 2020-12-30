@@ -40,11 +40,13 @@ struct MaterialConfig;
 struct SamplerOptions;
 
 // Resource chunks
+namespace fbs {
 struct MeshChunk;
 struct MaterialChunk;
 struct MaterialTypeChunk;
 struct ShaderChunk;
 struct TextureChunk;
+}  // namespace fbs
 
 // Internal access token for functions callable by render classes.
 GB_DEFINE_ACCESS_TOKEN(RenderInternal, class RenderSystem,
@@ -109,7 +111,7 @@ inline constexpr ShaderTypes kAllShaderTypes = {
 //==============================================================================
 
 // A shader value specifies in/out types expected/provided by a shader.
-enum class ShaderValue : int {
+enum class ShaderValue : int32_t {
   kFloat,
   kVec2,
   kVec3,
@@ -125,7 +127,7 @@ struct ShaderParam {
       : value(value), location(location) {}
 
   ShaderValue value = ShaderValue::kFloat;
-  int location = 0;
+  int32_t location = 0;
 };
 
 inline constexpr bool operator==(const ShaderParam& a, const ShaderParam& b) {
