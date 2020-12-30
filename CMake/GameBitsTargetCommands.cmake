@@ -9,8 +9,9 @@
 ## For a given target name "Target", the following variables can be set
 ##  VS_FOLDER           Set to the visual studio folder the target should be in
 ##  Target_SOURCE       Source files to build for the target
-##  Target_TEST_SOURCE  Source files to build unit tests
 ##  Target_FBS          FlatBuffer schema files for this target
+##  Target_TEST_SOURCE  Source files to build unit tests
+##  Target_TEST_FBS     FlatBuffer schema files to build for unit tests
 ##  Target_DEPS         Target dependencies
 ##  Target_LIBS         External libraries for this target
 ###############################################################################
@@ -55,24 +56,33 @@ endfunction()
 function(gb_add_test NAME)
   add_executable(${NAME}_test ${${NAME}_TEST_SOURCE})
 
+  if(DEFINED ${NAME}_TEST_FBS)
+    STRING(REGEX REPLACE "_" "/" ${NAME}_TEST_FBS_PREFIX ${NAME})
+    flatbuffers_generate_headers(
+      TARGET ${NAME}_test_fbs_generated
+      INCLUDE_PREFIX ${${NAME}_TEST_FBS_PREFIX}
+      SCHEMAS ${${NAME}_TEST_FBS})
+    target_link_libraries(${NAME}_test PRIVATE ${NAME}_test_fbs_generated flatbuffers)
+  endif()
+
   target_include_directories(${NAME}_test PRIVATE
     "${GB_THIRD_PARTY_DIR}/googletest/googlemock/include"
     "${GB_THIRD_PARTY_DIR}/googletest/googletest/include"
   )
 
   add_dependencies(${NAME}_test ${NAME})
-  target_link_libraries(${NAME}_test
+  target_link_libraries(${NAME}_test PRIVATE
     ${NAME}
     "${GB_BUILD_DIR}/third_party/googletest/lib/$(Configuration)/gmock_main$<$<CONFIG:Debug>:d>.lib"
   )
   if(DEFINED ${NAME}_TEST_DEPS)
     add_dependencies(${NAME}_test ${${NAME}_TEST_DEPS})
-    target_link_libraries(${NAME}_test
+    target_link_libraries(${NAME}_test PRIVATE
       ${${NAME}_TEST_DEPS}
     )
   endif()
   if(DEFINED ${NAME}_TEST_LIBS)
-    target_link_libraries(${NAME}_test ${${NAME}_TEST_LIBS})
+    target_link_libraries(${NAME}_test PRIVATE ${${NAME}_TEST_LIBS})
   endif()
 
   if(DEFINED VS_FOLDER)
