@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
+#include "flatbuffers/flatbuffers.h"
 #include "gb/base/callback.h"
 #include "gb/base/validated_context.h"
 #include "gb/file/chunk_reader.h"
@@ -192,8 +193,29 @@ class ResourceFileReader final {
   using ResourceChunkReader = Callback<ResourceType*(
       Context* context, ChunkReader* chunk_reader, ResourceEntry entry)>;
 
-  // A generic chunk reader is called on generic chunks to do any patch-up on
-  // the chunk before it is generally available.
+  // A resource flat buffer chunk reader must return a resource of the specified
+  // type on success.
+  //
+  // When this is called, the chunk is valid and is of the
+  // version specified at registration. The chunk as already been converted into
+  // the specified FlatBufferType via flatbuffers::GetRoot<FlatBufferType>.
+  //
+  // Flat buffer resource chunks are never added to ResourceFileChunks, and the
+  // passed in FlatBufferType instance will become invalid immediately after the
+  // reader returns.
+  //
+  // The provided ResourceEntry should be used to initialize the resource, and
+  // it will be the same resource ID as is in the chunk. If a resource chunk was
+  // encountered, but resource already existed, the pre-existing resource will
+  // be returned instead of calling the resource chunk reader.
+  //
+  // See class description above for details on the passed in context.
+  template <typename ResourceType, typename FlatBufferType>
+  using ResourceFlatBufferChunkReader = Callback<ResourceType*(
+      Context* context, const FlatBufferType* chunk, ResourceEntry entry)>;
+
+  // A generic chunk reader is called on generic chunks to do any processing and
+  // patch-up on the chunk before it is generally available.
   //
   // When this is called, the chunk is valid and is of the version specified at
   // registration.
@@ -204,6 +226,23 @@ class ResourceFileReader final {
   // See class description above for details on the passed in context.
   using GenericChunkReader =
       Callback<bool(Context* context, ChunkReader* chunk_reader)>;
+
+  // A generic flat buffer chunk reader is called on generic chunks to do
+  // processing on the chunk (for instance, adding data to the context for later
+  // chunk readers).
+  //
+  // When this is called, the chunk is valid and is of the version specified at
+  // registration. The chunk as already been converted into the specified
+  // FlatBufferType via flatbuffers::GetRoot<FlatBufferType>.
+  //
+  // Flat buffer chunks are never added to ResourceFileChunks, and the passed in
+  // FlatBufferType instance will become invalid immediately after the reader
+  // returns.
+  //
+  // See class description above for details on the passed in context.
+  template <typename FlatBufferType>
+  using GenericFlatBufferChunkReader =
+      Callback<bool(Context* context, const FlatBufferType* chunk)>;
 
   //----------------------------------------------------------------------------
   // Contract constraints
@@ -275,16 +314,44 @@ class ResourceFileReader final {
   bool RegisterResourceChunk(const ChunkType& chunk_type, int version,
                              ResourceChunkReader<ResourceType> reader);
 
+  // Registers a resource chunk reader based on flat buffers.
+  //
+  // The ResourceType must be a derived class of Resource. This is validated at
+  // compile time.
+  //
+  // The version indicates which chunk version the reader supports. If there are
+  // multiple supported versions for resource, multiple chunk readers must be
+  // registered (one per version).
+  //
+  // See ResourceFlatBufferChunkReader for details on the reader callback
+  // itself.
+  template <typename ResourceType, typename FlatBufferType>
+  bool RegisterResourceFlatBufferChunk(
+      const ChunkType& chunk_type, int version,
+      ResourceFlatBufferChunkReader<ResourceType, FlatBufferType> reader);
+
   // Registers a generic chunk reader.
   //
   // The version indicates which chunk version the reader supports. If there are
-  // multiple supported versions for a chunk type, multiple chunk readers must
-  // be registered (one per version).
+  // multiple supported versions for resource, multiple chunk readers must be
+  // registered (one per version).
   //
   // See GenericChunkReader for details on the reader callback itself.
   template <typename ChunkStruct>
   bool RegisterGenericChunk(const ChunkType& chunk_type, int version,
                             GenericChunkReader reader);
+
+  // Registers a generic chunk reader based on flat buffers.
+  //
+  // The version indicates which chunk version the reader supports. If there are
+  // multiple supported versions for resource, multiple chunk readers must be
+  // registered (one per version).
+  //
+  // See GenericFlatBufferChunkReader for details on the reader callback itself.
+  template <typename FlatBufferType>
+  bool RegisterGenericFlatBufferChunk(
+      const ChunkType& chunk_type, int version,
+      GenericFlatBufferChunkReader<FlatBufferType> reader);
 
   //----------------------------------------------------------------------------
   // File loading
@@ -323,12 +390,22 @@ class ResourceFileReader final {
                  LoadContract contract = Context());
 
  private:
+  // Flat buffers always start with an 32-bit offset to the root. In the most
+  // degenerate case, this would be zero -- indicating there is no data. As all
+  // chunks are stored at 8-byte sizes, the minimum chunk size is 8.
+  static inline constexpr int kMinSizeFlatBufferGenericChunk = 8;
+
+  // Resource chunks always start with a ResourceId which is another 8 bytes.
+  static inline constexpr int kMinSizeFlatBufferResourceChunk =
+      kMinSizeFlatBufferGenericChunk + 8;
+
   using ChunkReaderCallback =
       Callback<bool(Context* context, ChunkReader* chunk_reader,
                     ResourceEntry resource_entry, Resource** out_resource)>;
   struct ChunkReaderInfo {
     TypeKey* resource_type = nullptr;
-    TypeKey* struct_type = nullptr;
+    TypeKey* struct_type =
+        nullptr;  // A null struct_type indicated a flat buffer chunk.
     int struct_size = 0;
     int version = 0;
     ChunkReaderCallback reader;
@@ -391,7 +468,7 @@ inline ChunkStruct* ResourceFileChunks::GetChunk(const ChunkType& type,
 }
 
 template <typename ResourceType, typename ChunkStruct>
-inline bool ResourceFileReader::RegisterResourceChunk(
+bool ResourceFileReader::RegisterResourceChunk(
     const ChunkType& chunk_type, int version,
     ResourceChunkReader<ResourceType> reader) {
   static_assert(std::is_trivially_copyable_v<ChunkStruct>,
@@ -413,9 +490,33 @@ inline bool ResourceFileReader::RegisterResourceChunk(
       });
 }
 
+template <typename ResourceType, typename FlatBufferType>
+bool ResourceFileReader::RegisterResourceFlatBufferChunk(
+    const ChunkType& chunk_type, int version,
+    ResourceFlatBufferChunkReader<ResourceType, FlatBufferType> reader) {
+  static_assert(std::is_base_of_v<Resource, ResourceType>,
+                "ResourceType must be a Resource");
+  return DoRegisterChunkReader(
+      chunk_type, version, TypeKey::Get<ResourceType>(), nullptr,
+      kMinSizeFlatBufferResourceChunk,
+      [this, reader = std::move(reader)](
+          Context* context, ChunkReader* chunk_reader,
+          ResourceEntry resource_entry, Resource** out_resource) {
+        auto* id = chunk_reader->GetChunkData<ResourceId>();
+        if (id == nullptr) {
+          return false;
+        }
+        *out_resource =
+            reader(context, flatbuffers::GetRoot<FlatBufferType>(id + 1),
+                   std::move(resource_entry));
+        return *out_resource != nullptr;
+      });
+}
+
 template <typename ChunkStruct>
-inline bool ResourceFileReader::RegisterGenericChunk(
-    const ChunkType& chunk_type, int version, GenericChunkReader reader) {
+bool ResourceFileReader::RegisterGenericChunk(const ChunkType& chunk_type,
+                                              int version,
+                                              GenericChunkReader reader) {
   static_assert(std::is_trivially_copyable_v<ChunkStruct>,
                 "Chunk structure must be trivially copyable");
   return DoRegisterChunkReader(
@@ -426,6 +527,25 @@ inline bool ResourceFileReader::RegisterGenericChunk(
           ResourceEntry resource_entry, Resource** out_resource) {
         *out_resource = nullptr;
         return reader(context, chunk_reader);
+      });
+}
+
+template <typename FlatBufferType>
+bool ResourceFileReader::RegisterGenericFlatBufferChunk(
+    const ChunkType& chunk_type, int version,
+    GenericFlatBufferChunkReader<FlatBufferType> reader) {
+  return DoRegisterChunkReader(
+      chunk_type, version, nullptr, nullptr, kMinSizeFlatBufferGenericChunk,
+      [this, reader = std::move(reader)](
+          Context* context, ChunkReader* chunk_reader,
+          ResourceEntry resource_entry, Resource** out_resource) {
+        auto* chunk_data = chunk_reader->GetChunkData<void>();
+        if (chunk_data == nullptr) {
+          return false;
+        }
+        *out_resource = nullptr;
+        return reader(context,
+                      flatbuffers::GetRoot<FlatBufferType>(chunk_data));
       });
 }
 

@@ -17,11 +17,16 @@ set(gb_resource_file_DEPS
 )
 
 set(gb_resource_file_LIBS
+  flatbuffers
   glog
 )
 
 set(gb_resource_file_TEST_SOURCE
   resource_file_test.cc
+)
+
+set(gb_resource_file_TEST_FBS
+  resource_file_test.fbs
 )
 
 gb_add_library(gb_resource_file)

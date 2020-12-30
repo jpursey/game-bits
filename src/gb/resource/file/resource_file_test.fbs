@@ -1,0 +1,35 @@
+// Copyright (c) 2020 John Pursey
+//
+// Use of this source code is governed by an MIT-style License that can be found
+// in the LICENSE file or at https://opensource.org/licenses/MIT.
+
+namespace gb.fbs;
+
+struct Point {
+  x : int32;
+  y : int32;
+  z : int32;
+}
+
+table KeyValue {
+  key : string;
+  value : float32;
+}
+
+table KeyValueChunk {
+  values : [KeyValue];
+}
+
+table ResourceAChunk {
+  name : string;
+}
+
+table ResourceBChunk {
+  points : [Point];
+  values : [KeyValue];
+}
+
+table ResourceCChunk {
+  a_id : uint64;
+  b_id : uint64;
+}

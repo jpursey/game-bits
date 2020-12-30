@@ -276,8 +276,10 @@ Resource* ResourceFileReader::Read(TypeKey* type, std::string_view name,
       file_resources.AddResource({}, reader_info->resource_type,
                                  chunk_resource_id, chunk_resource);
     }
-    file_chunks.AddChunk({}, reader_info->struct_type, reader_info->struct_size,
-                         &chunk_reader.value());
+    if (reader_info->struct_type != nullptr) {
+      file_chunks.AddChunk({}, reader_info->struct_type,
+                           reader_info->struct_size, &chunk_reader.value());
+    }
   }
 
   LOG(ERROR) << "Resource chunk \"" << file_type.ToString()

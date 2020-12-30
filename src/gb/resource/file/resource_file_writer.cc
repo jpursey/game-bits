@@ -88,6 +88,7 @@ bool ResourceFileWriter::Write(std::string_view name, Resource* resource,
     return false;
   }
 
+  FlatBuffers flat_buffers;
   std::vector<ChunkWriter> chunk_writers;
 
   // Write out resource load chunk if there are any dependencies.
@@ -123,7 +124,8 @@ bool ResourceFileWriter::Write(std::string_view name, Resource* resource,
     chunk_writers.emplace_back(std::move(chunk_writer));
   }
 
-  if (!writer_info.writer(context.GetContext(), resource, &chunk_writers)) {
+  if (!writer_info.writer(context.GetContext(), resource, &chunk_writers,
+                          &flat_buffers)) {
     return false;
   }
   success = WriteChunkFile(file.get(), writer_info.chunk_type, chunk_writers);

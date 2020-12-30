@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
+#include "flatbuffers/flatbuffers.h"
 #include "gb/base/callback.h"
 #include "gb/base/validated_context.h"
 #include "gb/file/chunk_writer.h"
@@ -42,6 +43,16 @@ class ResourceFileWriter final {
   template <typename ResourceType>
   using ResourceWriter = Callback<bool(Context* context, ResourceType* resource,
                                        std::vector<ChunkWriter>* out_chunks)>;
+
+  // A resource writer must write the resource to the provided flat buffer
+  // builder.
+  //
+  // If writing the resource is successful, the writer must call Finish on the
+  // builder before returning true.
+  template <typename ResourceType>
+  using ResourceFlatBufferWriter =
+      Callback<bool(Context* context, ResourceType* resource,
+                    flatbuffers::FlatBufferBuilder* builder)>;
 
   //----------------------------------------------------------------------------
   // Contract constraints
@@ -114,6 +125,17 @@ class ResourceFileWriter final {
   bool RegisterResourceWriter(const ChunkType& chunk_type,
                               ResourceWriter<ResourceType> writer);
 
+  // Registers a resource writer based on flat buffers.
+  //
+  // The ResourceType must be a derived class of Resource. This is validated at
+  // compile time.
+  //
+  // See ResourceFlatBufferWriter for details on the writer callback itself.
+  template <typename ResourceType>
+  bool RegisterResourceFlatBufferWriter(
+      const ChunkType& chunk_type, int32_t version,
+      ResourceFlatBufferWriter<ResourceType> writer);
+
   //----------------------------------------------------------------------------
   // File writing
   //----------------------------------------------------------------------------
@@ -123,11 +145,30 @@ class ResourceFileWriter final {
              WriteContract contract = Context());
 
  private:
+  static inline constexpr int kInitFlatBufferSize = 16 * 1024;
+
+  using FlatBuffers = std::vector<flatbuffers::FlatBufferBuilder>;
   using GenericWriter = Callback<bool(Context* context, Resource* resource,
-                                      std::vector<ChunkWriter>* out_chunks)>;
+                                      std::vector<ChunkWriter>* out_chunks,
+                                      FlatBuffers* flat_buffers)>;
   struct WriterInfo {
     ChunkType chunk_type;
     GenericWriter writer;
+  };
+
+  // Custom allocator to reserve room in the flat buffer for the required
+  // ResourceId in the chunk.
+  class ResourceFlatBufferAllocator : public flatbuffers::Allocator {
+   public:
+    static inline constexpr size_t kExtraSpace = sizeof(ResourceId);
+    uint8_t* allocate(size_t size) override {
+      uint8_t* ptr = new uint8_t[size + kExtraSpace];
+      return ptr + kExtraSpace;
+    }
+    void deallocate(uint8_t* ptr, size_t size) override {
+      uint8_t* const actual_ptr = ptr - kExtraSpace;
+      delete[] actual_ptr;
+    }
   };
 
   ResourceFileWriter(ValidatedContext context);
@@ -137,6 +178,7 @@ class ResourceFileWriter final {
 
   ValidatedContext context_;
   absl::flat_hash_map<TypeKey*, WriterInfo> writers_;
+  ResourceFlatBufferAllocator flat_buffer_allocator_;
 };
 
 //==============================================================================
@@ -151,9 +193,36 @@ bool ResourceFileWriter::RegisterResourceWriter(
   return DoRegisterResourceWriter(
       chunk_type, TypeKey::Get<ResourceType>(),
       [writer = std::move(writer)](Context* context, Resource* resource,
-                                   std::vector<ChunkWriter>* out_chunks) {
+                                   std::vector<ChunkWriter>* out_chunks,
+                                   FlatBuffers*) {
         return writer(context, static_cast<ResourceType*>(resource),
                       out_chunks);
+      });
+}
+
+template <typename ResourceType>
+bool ResourceFileWriter::RegisterResourceFlatBufferWriter(
+    const ChunkType& chunk_type, int32_t version,
+    ResourceFlatBufferWriter<ResourceType> writer) {
+  static_assert(std::is_base_of_v<Resource, ResourceType>,
+                "ResourceType must be a Resource");
+  return DoRegisterResourceWriter(
+      chunk_type, TypeKey::Get<ResourceType>(),
+      [this, chunk_type, version, writer = std::move(writer)](
+          Context* context, Resource* resource,
+          std::vector<ChunkWriter>* out_chunks, FlatBuffers* flat_buffers) {
+        flatbuffers::FlatBufferBuilder builder(kInitFlatBufferSize,
+                                               &flat_buffer_allocator_);
+        if (!writer(context, static_cast<ResourceType*>(resource), &builder)) {
+          return false;
+        }
+        ResourceId* id =
+            reinterpret_cast<ResourceId*>(builder.GetBufferPointer()) - 1;
+        *id = resource->GetResourceId();
+        out_chunks->emplace_back(ChunkWriter::New(
+            chunk_type, version, id, builder.GetSize() + sizeof(ResourceId)));
+        flat_buffers->emplace_back(std::move(builder));
+        return true;
       });
 }
 
