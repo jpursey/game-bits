@@ -45,7 +45,6 @@ struct ThreadType {
 
   void* user_data = nullptr;
   ThreadMain thread_main = nullptr;
-  uint64_t affinity = 0;
 
   absl::Mutex mutex;
   std::thread std_thread ABSL_GUARDED_BY(mutex);
@@ -70,12 +69,7 @@ std::string ToString(Thread thread) ABSL_LOCKS_EXCLUDED(thread->mutex) {
 
 void ThreadStartRoutine(void* param) {
   Thread thread = static_cast<Thread>(param);
-  {
-    // Lock to wait for std_thread to be set, so we can safely expose the thread
-    // to the thread function.
-    absl::MutexLock lock(&thread->mutex);
-    tls_this_thread = thread;
-  }
+  tls_this_thread = thread;
 
   GB_THREAD_LOG << "Starting thread " << ToString(thread);
   thread->thread_main(thread->user_data);
