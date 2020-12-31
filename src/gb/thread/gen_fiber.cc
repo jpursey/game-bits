@@ -12,31 +12,33 @@ bool SupportsFibers() { return false; }
 
 void SetFiberVerboseLogging(bool) {}
 
-int GetMaxConcurrency() { return 1; }
-
-std::vector<Fiber> CreateFiberThreads(int thread_count, bool pin_threads,
-                                      size_t stack_size, void* user_data,
-                                      FiberMain fiber_main) {
+std::vector<Fiber> CreateFiberThreads(int, bool, uint32_t, void*, FiberMain) {
   LOG(ERROR) << "Job fibers not supported on this platform";
   return {};
 }
 
-Fiber CreateFiber(size_t stack_size, void* user_data, FiberMain fiber_main) {
+Fiber CreateFiber(uint32_t, void*, FiberMain) {
   LOG(ERROR) << "Job fibers not supported on this platform";
   return nullptr;
 }
 
-void DeleteFiber(Fiber fiber) {
+void DeleteFiber(Fiber) {
   LOG(ERROR) << "Job fibers not supported on this platform";
 }
 
-bool SwitchToFiber(Fiber fiber) {
+bool SwitchToFiber(Fiber) {
   LOG(ERROR) << "Job fibers not supported on this platform";
   return false;
 }
 
+std::string_view GetFiberName(Fiber) { return "null"; }
+
+void SetFiberName(Fiber, std::string_view) {}
+
 Fiber GetThisFiber() { return nullptr; }
 
-bool IsFiberRunning(Fiber fiber) { return false; }
+bool IsFiberRunning(Fiber) { return false; }
+
+int GetRunningFiberCount() { return 0; }
 
 }  // namespace gb

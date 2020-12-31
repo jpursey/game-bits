@@ -7,6 +7,7 @@
 
 #include "absl/synchronization/notification.h"
 #include "gb/base/context_builder.h"
+#include "gb/thread/thread.h"
 #include "gtest/gtest.h"
 
 namespace gb {

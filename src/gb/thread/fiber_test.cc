@@ -11,6 +11,7 @@
 #include "absl/time/clock.h"
 #include "absl/types/span.h"
 #include "gb/base/queue.h"
+#include "gb/thread/thread.h"
 #include "glog/logging.h"
 #include "gtest/gtest.h"
 
@@ -326,6 +327,21 @@ TEST_F(FiberTest, SwapThreadsAndExit) {
   state.fiber_1 = fiber_3;
   WaitAndDeleteFibers({fiber_1[0], fiber_2[0], fiber_3});
   EXPECT_EQ(state.counter, 31);
+}
+
+TEST_F(FiberTest, FiberName) {
+  CHECK_FIBER_SUPPORT();
+  Fiber fiber = CreateFiber(
+      0, nullptr, +[](void* user_data) {});
+  ASSERT_NE(fiber, nullptr);
+  SetFiberName(fiber, "Test");
+  EXPECT_EQ(GetFiberName(fiber), "Test");
+  DeleteFiber(fiber);
+}
+
+TEST_F(FiberTest, AccessNulLFiberName) {
+  SetFiberName(nullptr, "Test");
+  EXPECT_EQ(GetFiberName(nullptr), "null");
 }
 
 TEST_F(FiberTest, ThreadAbuse) {

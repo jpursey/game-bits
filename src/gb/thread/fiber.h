@@ -33,20 +33,10 @@ bool SupportsFibers();
 
 // Sets whether the fiber module has verbose logging.
 //
-// This only has an effect if GB_BUILD_ENABLE_FIBER_LOGGING is defined to be
+// This only has an effect if GB_BUILD_ENABLE_THREAD_LOGGING is defined to be
 // non-zero (by default, this is true in debug builds). Otherwise, verbose
 // logging cannot be enabled.
 void SetFiberVerboseLogging(bool enabled);
-
-// Returns the maximum number of threads that can be running simultaneously in
-// this process on different hardware threads.
-//
-// Depending on the operating system and environment, this may be less than the
-// total number of hardware threads on the machine, if the running process does
-// not have access to them.
-//
-// This function is thread-safe.
-int GetMaxConcurrency();
 
 // Creates a set of fibers, each running on a separate thread.
 //
@@ -75,12 +65,12 @@ int GetMaxConcurrency();
 //
 // This function is thread-safe.
 std::vector<Fiber> CreateFiberThreads(int thread_count, bool pin_threads,
-                                      size_t stack_size, void* user_data,
+                                      uint32_t stack_size, void* user_data,
                                       FiberMain fiber_main);
 
 // Creates a suspended fiber.
 //
-// 'stack_size' determines the minimum size of the stack for every thread. If
+// 'stack_size' determines the minimum size of the stack for the fiber. If
 // this is zero (or if setting the stack size is not supported by the running
 // platform), then stack size will be the default stack size for threads.
 //
@@ -94,7 +84,7 @@ std::vector<Fiber> CreateFiberThreads(int thread_count, bool pin_threads,
 // DeleteFiber to delete the fiber when it is not running.
 //
 // This function is thread-safe.
-Fiber CreateFiber(size_t stack_size, void* user_data, FiberMain fiber_main);
+Fiber CreateFiber(uint32_t stack_size, void* user_data, FiberMain fiber_main);
 
 // Deletes the specified fiber.
 //
@@ -116,6 +106,19 @@ void DeleteFiber(Fiber fiber);
 // on the same fiber).
 bool SwitchToFiber(Fiber fiber);
 
+// Gets or sets the name of a fiber.
+//
+// The maximum name length is 128 bytes (including the null terminator). Any
+// excess bytes will be trimmed.
+//
+// It is valid to call these on a null fiber. If this is done, Get will return
+// "null" and Set will be a noop.
+//
+// These function is thread-safe (thread-compatible with DeleteFiber or
+// Get/SetFiberName on the same thread).
+std::string_view GetFiberName(Fiber fiber);
+void SetFiberName(Fiber fiber, std::string_view name);
+
 // Returns the fiber currently running, or null if this thread is not a running
 // a fiber.
 //
@@ -134,19 +137,6 @@ bool IsFiberRunning(Fiber fiber);
 //
 // This function is thread-safe.
 int GetRunningFiberCount();
-
-// Gets or sets the name of a fiber.
-//
-// The maximum name length is 128 bytes (including the null terminator). Any
-// excess bytes will be trimmed.
-//
-// It is valid to call these on a null fiber. If this is done, Get will return
-// "null" and Set will be a noop.
-//
-// These function is thread-safe (thread-compatible with DeleteFiber or
-// Get/SetFiberName on the same thread).
-std::string_view GetFiberName(Fiber fiber);
-void SetFiberName(Fiber fiber, std::string_view name);
 
 }  // namespace gb
 

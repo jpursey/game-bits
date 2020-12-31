@@ -3,6 +3,14 @@
 ## Use of this source code is governed by an MIT-style License that can be found
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
+if (WIN32)
+  set(gb_base_internal_SOURCE
+    win_platform.cc win_platform.h
+  )
+else()
+  set(gb_base_internal_SOURCE)
+endif()
+
 set(gb_base_SOURCE
   access_token.h
   allocator.cc allocator.h
@@ -20,6 +28,7 @@ set(gb_base_SOURCE
   type_info.h
   validated_context.cc validated_context.h
   weak_ptr.h
+  ${gb_base_internal_SOURCE}
 )
 
 set(gb_base_TEST_SOURCE
