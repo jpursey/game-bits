@@ -63,6 +63,8 @@ struct DrawCommand {
 // A draw list only remains valid if the mesh or resources added to it remain
 // loaded and unchanged. If a mesh is edited or binding data changed, the draw
 // list may no longer be valid and using it is undefined behavior.
+//
+// This class is thread-compatible.
 class DrawList final {
  public:
   //----------------------------------------------------------------------------

@@ -11,6 +11,9 @@
 
 namespace gb {
 
+// Vulkan implementation of RenderSceneType.
+//
+// This class is thread-safe.
 class VulkanSceneType final : public RenderSceneType {
  public:
   static std::unique_ptr<VulkanSceneType> Create(

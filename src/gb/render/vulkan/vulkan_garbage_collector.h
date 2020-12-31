@@ -9,11 +9,16 @@
 #include <type_traits>
 #include <vector>
 
+#include "absl/synchronization/mutex.h"
 #include "gb/render/vulkan/vulkan_allocator.h"
 #include "gb/render/vulkan/vulkan_types.h"
 
 namespace gb {
 
+// This class manages safe destruction of Vulkan resources once they are
+// guaranteed to no longer be used by any code.
+//
+// This class is thread-safe.
 class VulkanGarbageCollector {
  public:
   void Dispose(VkBuffer buffer, VmaAllocation allocation = VK_NULL_HANDLE);
@@ -48,18 +53,21 @@ class VulkanGarbageCollector {
   static void DisposePipelineLayout(vk::Device device, VulkanHandle handle);
   static void DisposeShaderModule(vk::Device device, VulkanHandle handle);
 
-  std::vector<Item> garbage_;
+  mutable absl::Mutex mutex_;
+  std::vector<Item> garbage_ ABSL_GUARDED_BY(mutex_);
 };
 
 inline void VulkanGarbageCollector::Dispose(VkBuffer buffer,
                                             VmaAllocation allocation) {
   if (buffer) {
+    absl::MutexLock lock(&mutex_);
     garbage_.push_back({DisposeBuffer, buffer, allocation});
   }
 }
 
 inline void VulkanGarbageCollector::Dispose(VkDescriptorPool descriptor_pool) {
   if (descriptor_pool) {
+    absl::MutexLock lock(&mutex_);
     garbage_.push_back({DisposeDescriptorPool, descriptor_pool});
   }
 }
@@ -67,6 +75,7 @@ inline void VulkanGarbageCollector::Dispose(VkDescriptorPool descriptor_pool) {
 inline void VulkanGarbageCollector::Dispose(
     VkDescriptorSetLayout descriptor_set_layout) {
   if (descriptor_set_layout) {
+    absl::MutexLock lock(&mutex_);
     garbage_.push_back({DisposeDescriptorSetLayout, descriptor_set_layout});
   }
 }
@@ -74,30 +83,35 @@ inline void VulkanGarbageCollector::Dispose(
 inline void VulkanGarbageCollector::Dispose(VkImage image,
                                             VmaAllocation allocation) {
   if (image) {
+    absl::MutexLock lock(&mutex_);
     garbage_.push_back({DisposeImage, image, allocation});
   }
 }
 
 inline void VulkanGarbageCollector::Dispose(VkImageView image_view) {
   if (image_view) {
+    absl::MutexLock lock(&mutex_);
     garbage_.push_back({DisposeImageView, image_view});
   }
 }
 
 inline void VulkanGarbageCollector::Dispose(VkPipeline pipeline) {
   if (pipeline) {
+    absl::MutexLock lock(&mutex_);
     garbage_.push_back({DisposePipeline, pipeline});
   }
 }
 
 inline void VulkanGarbageCollector::Dispose(VkPipelineLayout pipeline_layout) {
   if (pipeline_layout) {
+    absl::MutexLock lock(&mutex_);
     garbage_.push_back({DisposePipelineLayout, pipeline_layout});
   }
 }
 
 inline void VulkanGarbageCollector::Dispose(VkShaderModule shader) {
   if (shader) {
+    absl::MutexLock lock(&mutex_);
     garbage_.push_back({DisposeShaderModule, shader});
   }
 }

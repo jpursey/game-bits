@@ -17,6 +17,9 @@ namespace gb {
 // VulkanRenderBuffer
 //==============================================================================
 
+// Vulkan base-class implementation of RenderBuffer
+//
+// This class is thread-compatible, except as noted.
 class VulkanRenderBuffer : public RenderBuffer {
  public:
   struct BufferHandle {
@@ -28,6 +31,9 @@ class VulkanRenderBuffer : public RenderBuffer {
   // Construction / Destruction
   //----------------------------------------------------------------------------
 
+  // Creates a new VulkanRenderBuffer of the requested type.
+  //
+  // This function is thread-safe.
   static std::unique_ptr<VulkanRenderBuffer> Create(
       VulkanInternal, VulkanBackend* backend, VulkanBufferType type,
       DataVolatility volatility, int value_size, int capacity,

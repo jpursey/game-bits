@@ -13,15 +13,26 @@
 
 namespace gb {
 
+// This interface defines the window requirements for Vulkan rendering.
+//
+// Derived class implementations must be thread-compatible.
 class VulkanWindow {
  public:
   virtual ~VulkanWindow() = default;
 
+  // Registers a callback which should be triggered when the window's render
+  // size changes.
   virtual void SetSizeChangedCallback(
       gb::Callback<void()> size_changed_callback) {}
+
+  // This returns any required extensions for rendering to the window.
   virtual bool GetExtensions(vk::Instance instance,
                              std::vector<const char*>* extensions) = 0;
+
+  // This creates a new rendering surface for the window.
   virtual vk::SurfaceKHR CreateSurface(vk::Instance instance) = 0;
+
+  // This returns the window size.
   virtual vk::Extent2D GetSize() = 0;
 };
 

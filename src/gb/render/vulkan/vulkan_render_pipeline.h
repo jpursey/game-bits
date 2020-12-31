@@ -15,6 +15,9 @@
 
 namespace gb {
 
+// Vulkan implementation of RenderPipeline.
+//
+// This class is thread-safe.
 class VulkanRenderPipeline final : public RenderPipeline {
  public:
   static std::unique_ptr<VulkanRenderPipeline> Create(

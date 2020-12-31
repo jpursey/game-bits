@@ -11,6 +11,9 @@
 
 namespace gb {
 
+// Managed a Vulkan image resource, and its view / memory.
+//
+// This class is thread-safe.
 class VulkanImage final {
  public:
   //----------------------------------------------------------------------------

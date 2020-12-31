@@ -9,13 +9,19 @@ namespace gb {
 
 void VulkanGarbageCollector::Collect(vk::Device device,
                                      VmaAllocator allocator) {
-  for (const Item& item : garbage_) {
+  std::vector<Item> garbage;
+  {
+    absl::MutexLock lock(&mutex_);
+    garbage.reserve(garbage_.size());
+    garbage.swap(garbage_);
+  }
+
+  for (const Item& item : garbage) {
     item.callback(device, item.handle);
     if (item.allocation) {
       vmaFreeMemory(allocator, item.allocation);
     }
   }
-  garbage_.clear();
 }
 
 void VulkanGarbageCollector::DisposeBuffer(vk::Device device,

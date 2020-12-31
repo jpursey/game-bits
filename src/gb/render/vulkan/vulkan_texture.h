@@ -17,6 +17,9 @@
 
 namespace gb {
 
+// Vulkan implementation of a texture.
+//
+// This class is thread-compatible, except as noted.
 class VulkanTexture : public Texture {
  public:
   struct ImageHandle {
@@ -28,6 +31,9 @@ class VulkanTexture : public Texture {
   // Construction / Destruction
   //----------------------------------------------------------------------------
 
+  // Creates a new VulkanTexture.
+  //
+  // This is thread-safe.
   static VulkanTexture* Create(gb::ResourceEntry entry, VulkanBackend* backend,
                                vk::Sampler sampler, DataVolatility volatility,
                                int width, int height,

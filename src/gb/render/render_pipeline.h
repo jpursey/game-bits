@@ -21,7 +21,7 @@ namespace gb {
 // additional checking is required, outside of limits that are specific to the
 // derived class implementation or underlying graphics API or GPU.
 //
-// This class and all derived classes must be thread-compatible.
+// This class and all derived classes must be thread-safe.
 class RenderPipeline {
  public:
   //----------------------------------------------------------------------------

@@ -37,8 +37,6 @@ GB_DEFINE_ACCESS_TOKEN(VulkanInternal, class VulkanBackend,
                        class VulkanBindingDataFactory,
                        class VulkanRenderPipeline, VulkanSceneType);
 
-using FrameCounter = std::atomic<int>;
-
 enum class VulkanBufferType {
   kUniform,
   kVertex,

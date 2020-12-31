@@ -11,6 +11,9 @@
 
 namespace gb {
 
+// Vulkan implementation of ShaderCode
+//
+// This class is thread-safe.
 class VulkanShaderCode final : public ShaderCode {
  public:
   static std::unique_ptr<VulkanShaderCode> Create(VulkanInternal,

@@ -7,11 +7,13 @@
 #define GB_RENDER_VULKAN_VULKAN_BACKEND_H_
 
 #include <array>
+#include <atomic>
 #include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
+#include "absl/synchronization/mutex.h"
 #include "gb/base/callback_scope.h"
 #include "gb/base/validated_context.h"
 #include "gb/render/render_backend.h"
@@ -23,6 +25,10 @@
 
 namespace gb {
 
+// This is the Vulkan implementation of RenderBackend.
+//
+// This class meets the thread-safety standards required by all RenderBackend
+// derived classes. See below for thread-safety of additional public methods.
 class VulkanBackend final : public RenderBackend {
  public:
   //----------------------------------------------------------------------------
@@ -105,11 +111,14 @@ class VulkanBackend final : public RenderBackend {
   // Construction / Destruction
   //----------------------------------------------------------------------------
 
+  // This function is thread-compatible.
   static std::unique_ptr<VulkanBackend> Create(Contract contract);
   ~VulkanBackend() override;
 
   //----------------------------------------------------------------------------
-  // Properties
+  // General properties
+  //
+  // Thread-safety: These are set at creation, and so are thread-safe.
   //----------------------------------------------------------------------------
 
   // Vulkan handles
@@ -123,27 +132,35 @@ class VulkanBackend final : public RenderBackend {
     return queues_.graphics_index.value();
   }
   vk::Queue GetGraphicsQueue() const { return queues_.graphics; }
-  int GetSwapImageCount() const {
-    return static_cast<int>(frame_buffers_.size());
-  }
   vk::RenderPass GetRenderPass() const { return render_pass_; }
   vk::SampleCountFlagBits GetMsaaSampleCount() const { return msaa_count_; }
 
   // Allocator
   VmaAllocator GetAllocator() { return allocator_; }
 
+  //----------------------------------------------------------------------------
+  // Render properties
+  //
+  // Thread-safety: These are updated each render frame. These are used
+  // generally throughout the Vulkan implementation and so are thread-safe.
+  //----------------------------------------------------------------------------
+
   // Garbage collector that defers destruction until frame is not in use.
   VulkanGarbageCollector* GetGarbageCollector() {
-    return &garbage_collectors_[garbage_collector_index_];
+    return &garbage_collectors_[garbage_collector_index_.load(
+        std::memory_order_acquire)];
   }
 
   // Current frame
-  int GetFrame() const { return frame_counter_; }
+  int GetFrame() const {
+    return frame_counter_.load(std::memory_order_acquire);
+  }
 
   //----------------------------------------------------------------------------
   // Helper methods
   //----------------------------------------------------------------------------
 
+  // This method is thread-safe.
   std::optional<vk::Format> VulkanBackend::FindSupportedFormat(
       absl::Span<const vk::Format> formats, vk::ImageTiling tiling,
       vk::FormatFeatureFlags features);
@@ -152,13 +169,14 @@ class VulkanBackend final : public RenderBackend {
   // Backend hooks
   //----------------------------------------------------------------------------
 
+  // This method is thread-compatible. If called, it must be synchronized with
+  // BeginFrame/EndFrame calls.
   void AddFrameCallback(RenderStage stage, FrameCallback callback);
 
   //----------------------------------------------------------------------------
   // RenderBackend overrides
   //----------------------------------------------------------------------------
 
-  void SetClearColor(RenderInternal, Pixel color) override;
   FrameDimensions GetFrameDimensions(RenderInternal) const override;
 
   Texture* CreateTexture(RenderInternal, gb::ResourceEntry entry,
@@ -183,6 +201,7 @@ class VulkanBackend final : public RenderBackend {
                                                   DataVolatility volatility,
                                                   int index_capacity) override;
 
+  void SetClearColor(RenderInternal, Pixel color) override;
   bool BeginFrame(RenderInternal) override;
   void Draw(RenderInternal, RenderScene* scene, RenderPipeline* pipeline,
             BindingData* material_data, BindingData* instance_data,
@@ -260,6 +279,11 @@ class VulkanBackend final : public RenderBackend {
   void EndFrameRenderPass();
   void EndFramePresent();
 
+  //----------------------------------------------------------------------------
+  // The following members are set at construction / initialization, and then
+  // never updated. They are implicitly thread-safe to access.
+  //----------------------------------------------------------------------------
+
   // General properties
   gb::ValidatedContext context_;
   const bool debug_;
@@ -286,6 +310,31 @@ class VulkanBackend final : public RenderBackend {
   // Render pass
   vk::RenderPass render_pass_;
 
+  //----------------------------------------------------------------------------
+  // The following members may be updated during render system initialization,
+  // and so are externally synchronized.
+  //----------------------------------------------------------------------------
+
+  std::vector<VulkanSceneType*> scene_types_;
+
+  //----------------------------------------------------------------------------
+  // The following members may be changed and/or queried at any time, and so
+  // must be synchronized.
+  //----------------------------------------------------------------------------
+
+  mutable absl::Mutex frame_dimensions_mutex_;
+  FrameDimensions frame_dimensions_
+      ABSL_GUARDED_BY(frame_dimensions_mutex_) = {};
+
+  mutable absl::Mutex samplers_mutex_;
+  absl::flat_hash_map<SamplerOptions, vk::Sampler> samplers_
+      ABSL_GUARDED_BY(samplers_mutex_);
+
+  //----------------------------------------------------------------------------
+  // The following members are accessed only during rendering and initializtion
+  // only, except as noted.
+  //----------------------------------------------------------------------------
+
   // Swap chain
   vk::Extent2D swap_extent_;
   vk::SwapchainKHR swap_chain_;
@@ -295,21 +344,19 @@ class VulkanBackend final : public RenderBackend {
   bool recreate_swap_ = false;
 
   // Frame management
-  FrameCounter frame_counter_ = 0;
+  std::atomic<int> frame_counter_;
   int frame_index_ = 0;
   uint32_t frame_buffer_index_ = 0;
   std::array<Frame, kMaxFramesInFlight> frames_;
   VulkanRenderState render_state_;
 
-  // Global resources
+  // Global render properties
   vk::ClearColorValue clear_color_;
-  absl::flat_hash_map<SamplerOptions, vk::Sampler> samplers_;
-  std::vector<VulkanSceneType*> scene_types_;
 
   // Garbage collection
   std::array<VulkanGarbageCollector, kMaxFramesInFlight + 1>
       garbage_collectors_;
-  int garbage_collector_index_ = 0;
+  std::atomic<int> garbage_collector_index_;
 
   // Callbacks
   std::vector<FrameCallback> begin_frame_callbacks_;
@@ -317,7 +364,10 @@ class VulkanBackend final : public RenderBackend {
   std::vector<FrameCallback> end_render_callbacks_;
   std::vector<FrameCallback> post_render_callbacks_;
 
+  //----------------------------------------------------------------------------
   // Must be last
+  //----------------------------------------------------------------------------
+
   gb::CallbackScope callback_scope_;
 };
 

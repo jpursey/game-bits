@@ -79,14 +79,17 @@ VulkanBindingDataFactory::~VulkanBindingDataFactory() {
 
 std::unique_ptr<VulkanBindingData> VulkanBindingDataFactory::NewBindingData(
     RenderPipeline* pipeline, BindingSet set) {
+  mutex_.Lock();
   if (free_index_ == -1) {
     if (!AddBindingGroup()) {
+      mutex_.Unlock();
       return nullptr;
     }
   }
 
   if (binding_size_ == 0) {
     // Empty binding data.
+    mutex_.Unlock();
     return std::make_unique<VulkanBindingData>(VulkanInternal{}, this, pipeline,
                                                set);
   }
@@ -95,12 +98,14 @@ std::unique_ptr<VulkanBindingData> VulkanBindingDataFactory::NewBindingData(
   for (auto& descriptor_set : descriptor_sets) {
     descriptor_set = descriptor_pool_->NewSet();
     if (!descriptor_set) {
+      mutex_.Unlock();
       return nullptr;
     }
   }
 
   if (buffer_count_ == 0) {
     // Bufferless binding data.
+    mutex_.Unlock();
     return std::make_unique<VulkanBindingData>(
         VulkanInternal{}, this, pipeline, set,
         binding_groups_.front().binding_data, descriptor_sets);
@@ -111,6 +116,8 @@ std::unique_ptr<VulkanBindingData> VulkanBindingDataFactory::NewBindingData(
   auto& binding_group = binding_groups_[group];
   free_index_ = binding_group.buffer_free[index];
   binding_group.buffer_free[index] = -1;
+
+  mutex_.Unlock();
   return std::make_unique<VulkanBindingData>(
       VulkanInternal{}, this, pipeline, set, group, index,
       binding_group.binding_data, descriptor_sets);
@@ -118,6 +125,7 @@ std::unique_ptr<VulkanBindingData> VulkanBindingDataFactory::NewBindingData(
 
 void VulkanBindingDataFactory::DisposeBindingData(
     int index, int offset, absl::Span<vk::DescriptorSet> descriptor_sets) {
+  absl::MutexLock lock(&mutex_);
   if (buffer_count_ > 0) {
     binding_groups_[index].buffer_free[offset] = free_index_;
     free_index_ = index * buffer_slots_ + offset;

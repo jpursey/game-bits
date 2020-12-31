@@ -16,6 +16,9 @@
 
 namespace gb {
 
+// This is the Vulkan implementation of BindingData.
+//
+// This class is thread-compatible.
 class VulkanBindingData : public BindingData {
  public:
   struct TextureInfo {

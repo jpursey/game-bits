@@ -94,7 +94,9 @@ std::unique_ptr<VulkanBackend> VulkanBackend::Create(Contract contract) {
 VulkanBackend::VulkanBackend(gb::ValidatedContext context)
     : debug_(context.GetValue<bool>(kKeyEnableDebug)),
       window_(context.GetPtr<VulkanWindow>()),
-      clear_color_(kColorClearValue) {
+      frame_counter_(0),
+      clear_color_(kColorClearValue),
+      garbage_collector_index_(0) {
   context_ = std::move(context);
 }
 
@@ -432,6 +434,11 @@ bool VulkanBackend::InitSwapChain() {
         std::clamp(size.height, capabilities.minImageExtent.height,
                    capabilities.maxImageExtent.height);
   }
+  {
+    absl::MutexLock frame_dimensions_lock(&frame_dimensions_mutex_);
+    frame_dimensions_ = {static_cast<int>(swap_extent_.width),
+                         static_cast<int>(swap_extent_.height)};
+  }
   if (swap_extent_.width == 0 || swap_extent_.height == 0) {
     return false;
   }
@@ -568,8 +575,11 @@ void VulkanBackend::CleanUp() {
   if (render_pass_) {
     device_.destroyRenderPass(render_pass_);
   }
-  for (auto it : samplers_) {
-    device_.destroySampler(it.second);
+  {
+    absl::MutexLock lock(&samplers_mutex_);
+    for (const auto& it : samplers_) {
+      device_.destroySampler(it.second);
+    }
   }
   for (Frame& frame : frames_) {
     if (frame.image_available_semaphore) {
@@ -691,6 +701,7 @@ vk::Sampler VulkanBackend::GetSampler(SamplerOptions options, int width,
     options.tile_size = 0;
   }
 
+  absl::MutexLock lock(&samplers_mutex_);
   auto it = samplers_.find(options);
   if (it != samplers_.end()) {
     return it->second;
@@ -775,8 +786,8 @@ void VulkanBackend::SetClearColor(RenderInternal, Pixel color) {
 }
 
 FrameDimensions VulkanBackend::GetFrameDimensions(RenderInternal) const {
-  return {static_cast<int>(swap_extent_.width),
-          static_cast<int>(swap_extent_.height)};
+  absl::MutexLock lock(&frame_dimensions_mutex_);
+  return frame_dimensions_;
 }
 
 std::optional<vk::Format> VulkanBackend::FindSupportedFormat(
@@ -895,7 +906,7 @@ std::unique_ptr<RenderBuffer> VulkanBackend::CreateIndexBuffer(
 
 bool VulkanBackend::BeginFrame(RenderInternal) {
   auto& frame = frames_[frame_index_];
-  render_state_.frame = frame_counter_;
+  render_state_.frame = GetFrame();
 
   // This wait is to ensure the command buffer for this frame is no longer
   // executing.
@@ -903,9 +914,14 @@ bool VulkanBackend::BeginFrame(RenderInternal) {
                         std::numeric_limits<uint64_t>::max());
 
   // Any data from this frame is now unused, so collect the next set of garbage.
-  garbage_collector_index_ =
-      (garbage_collector_index_ + 1) % (kMaxFramesInFlight + 1);
-  garbage_collectors_[garbage_collector_index_].Collect(device_, allocator_);
+  // Note: memory_order_relaxed is used for the load, as this is the *only*
+  // place that the garbage_collector_index_ is updated, and the subsequent
+  // store will ensure proper ordering.
+  const int next_gc_index =
+      (garbage_collector_index_.load(std::memory_order_relaxed) + 1) %
+      (kMaxFramesInFlight + 1);
+  garbage_collectors_[next_gc_index].Collect(device_, allocator_);
+  garbage_collector_index_.store(next_gc_index, std::memory_order_release);
 
   if (recreate_swap_) {
     auto size = window_->GetSize();
@@ -1435,7 +1451,11 @@ void VulkanBackend::EndFramePresent() {
 
   render_state_ = {};
   frame_index_ = (frame_index_ + 1) % kMaxFramesInFlight;
-  ++frame_counter_;
+
+  // This the the only place that frame_counter_ is updated, and calls to this
+  // method already must be externally synchronized, so there is no need to have
+  // to use std::memory_order_acq_rel.
+  frame_counter_.fetch_add(1, std::memory_order_release);
 }
 
 }  // namespace gb

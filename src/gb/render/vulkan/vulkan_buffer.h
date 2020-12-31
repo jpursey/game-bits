@@ -15,12 +15,15 @@
 namespace gb {
 
 // This class wraps a vk::Buffer and its associated memory allocation.
+//
+// This class is thread-compatible, except as noted.
 class VulkanBuffer final {
  public:
   //----------------------------------------------------------------------------
   // Construction / Destruction
   //----------------------------------------------------------------------------
 
+  // The Create functions are thread-safe.
   static std::unique_ptr<VulkanBuffer> Create(
       VulkanBackend* backend, const vk::BufferCreateInfo& create_info,
       VmaMemoryUsage memory_usage = VMA_MEMORY_USAGE_GPU_ONLY);
@@ -38,6 +41,7 @@ class VulkanBuffer final {
   // Properties
   //----------------------------------------------------------------------------
 
+  // These functions are thread-safe.
   vk::Buffer Get() const { return buffer_; }
   vk::DeviceSize GetSize() const { return size_; }
   VmaMemoryUsage GetMemoryUsage() const { return memory_usage_; }

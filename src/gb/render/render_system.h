@@ -50,7 +50,7 @@ namespace gb {
 // interface which the RenderSystem uses. A valid RenderBackend is required in
 // order to construct the RenderSystem.
 //
-// This class is thread-compatible.
+// See section details for thread-safety.
 class RenderSystem final {
  public:
   //----------------------------------------------------------------------------
@@ -123,6 +123,10 @@ class RenderSystem final {
 
   //----------------------------------------------------------------------------
   // Initialization
+  //
+  // Thread-safety: Initialization functions are thread-compatible relative to
+  // all other other methods. The safest approach is to do all initialization
+  // first, before making any other calls (in any thread).
   //----------------------------------------------------------------------------
 
   // Registers a constants type with a name, to allow serialization of material
@@ -153,6 +157,9 @@ class RenderSystem final {
 
   //----------------------------------------------------------------------------
   // Properies
+  //
+  // Thread-safety: All property methods are thread-safe (except relative to
+  // initialization functions).
   //----------------------------------------------------------------------------
 
   // Retrieves the context used by the render system.
@@ -170,11 +177,13 @@ class RenderSystem final {
   // Return frame dimensions in pixels or null otherwise.
   FrameDimensions GetFrameDimensions();
 
-  // Sets the clear color for the background before rendering takes place.
-  void SetClearColor(Pixel color);
-
   //----------------------------------------------------------------------------
   // Resource / Scene creation
+  //
+  // Thread-safety: All resource creation, saves, and loads (generally via the
+  // ResourceSystem) are thread-safe (except relative to initialization
+  // functions). However, all functions are thread-compatible relative to
+  // modification of the resources referenced by a call.
   //----------------------------------------------------------------------------
 
   // Creates a render scene which must be used in order to draw any render
@@ -315,7 +324,20 @@ class RenderSystem final {
 
   //----------------------------------------------------------------------------
   // Rendering
+  //
+  // Thread-safety: These functions are thread-compatible relative to each
+  // other. After a resource is queued for rendering, it CANNOT be modified
+  // until the subsequent EndFrame is called. Further, if resources are modified
+  // on a different thread than they are rendered, then some form of external
+  // synchronization is required.
+  //
+  // Note: It is allowed to build DrawLists in simultaneously across multiple
+  // threads. Only calls to Draw must happen synchronized relative to each
+  // other.
   //----------------------------------------------------------------------------
+
+  // Sets the clear color for the background before rendering takes place.
+  void SetClearColor(Pixel color);
 
   // Begins rendering, returning a render context for the current frame.
   //
@@ -413,19 +435,25 @@ class RenderSystem final {
       std::string_view name, TypeKey* type, size_t size,
       absl::Span<const ShaderValue> attributes);
 
+  // Members set at creation and never modified afterward. These do not require
+  // additional synchronization.
   ValidatedContext context_;
   RenderBackend* backend_;
   std::unique_ptr<ResourceManager> resource_manager_;
+  bool debug_ = false;
+  bool edit_ = false;
   std::unique_ptr<ResourceFileReader> resource_reader_;
   std::unique_ptr<ResourceFileWriter> resource_writer_;
+
+  // Members set by initialization functions only. These must be externally
+  // synchronized.
   absl::flat_hash_map<std::string, std::unique_ptr<RenderDataType>>
       constants_types_;
   absl::flat_hash_map<std::string, std::unique_ptr<VertexType>> vertex_types_;
   absl::flat_hash_map<std::string, std::unique_ptr<RenderSceneType>>
       scene_types_;
 
-  bool debug_ = false;
-  bool edit_ = false;
+  // Members set during rendering. All rendering is externally synchronized.
   bool is_rendering_ = false;
 };
 

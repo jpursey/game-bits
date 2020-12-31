@@ -16,19 +16,29 @@
 
 namespace gb {
 
+// This class manages a pool of descriptor sets.
+//
+// This class is used solely by VulkanBindingDataFactory to create
+// VulkanBindingData.
+//
+// This class is thread-compatible, except as noted.
 class VulkanDescriptorPool final {
  public:
+  // The create function is thread-safe.
   static std::unique_ptr<VulkanDescriptorPool> Create(
       VulkanInternal, VulkanBackend* backend, int init_pool_size,
       absl::Span<const Binding> bindings);
+
   VulkanDescriptorPool(const VulkanDescriptorPool&) = delete;
   VulkanDescriptorPool(VulkanDescriptorPool&&) = delete;
   VulkanDescriptorPool& operator=(const VulkanDescriptorPool&) = delete;
   VulkanDescriptorPool& operator=(VulkanDescriptorPool&&) = delete;
   ~VulkanDescriptorPool();
 
+  // This function is thread-safe.
   const vk::DescriptorSetLayout& GetLayout() const { return layout_; }
 
+  // These functions are thread-compatible.
   vk::DescriptorSet NewSet();
   void DisposeSet(vk::DescriptorSet set);
 

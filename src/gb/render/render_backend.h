@@ -31,7 +31,7 @@ namespace gb {
 // additional checking is required, outside of limits that are specific to the
 // derived class implementation or underlying graphics API or GPU.
 //
-// This class and all derived classes must be thread-compatible.
+// See section details for thread-safety.
 class RenderBackend {
  public:
   //----------------------------------------------------------------------------
@@ -43,17 +43,24 @@ class RenderBackend {
   virtual ~RenderBackend() = default;
 
   //----------------------------------------------------------------------------
-  // Derived class interface
+  // Properties
+  //
+  // Thread-safety: All property methods must be thread-safe.
   //----------------------------------------------------------------------------
-
-  // Sets the clear color for the background before rendering takes place.
-  virtual void SetClearColor(RenderInternal, Pixel color) = 0;
 
   // Returns the current dimensions of the render frame.
   //
   // This may change from frame to frame if the render target changes size
   // (for instance, a window resize or resolution change).
   virtual FrameDimensions GetFrameDimensions(RenderInternal) const = 0;
+
+  //----------------------------------------------------------------------------
+  // Factory methods
+  //
+  // Thread-safety: All factory methods must be thread-safe. However, all
+  // functions are thread-compatible relative to modification of the resources
+  // referenced by a call.
+  //----------------------------------------------------------------------------
 
   // Creates a new 2D RGBA texture of the specified width and height.
   //
@@ -131,6 +138,19 @@ class RenderBackend {
   // If the RenderBuffer could not be created, this returns null.
   virtual std::unique_ptr<RenderBuffer> CreateIndexBuffer(
       RenderInternal, DataVolatility volatility, int index_capacity) = 0;
+
+  //----------------------------------------------------------------------------
+  // Rendering
+  //
+  // Thread-safety: These functions need need only be thread-compatible with
+  // each other, but must be thread-safe relative to other factory and property
+  // methods in this interface. However by interface contract, backend resources
+  // added via a Draw command will not be modified until EndFrame is called (so
+  // no additional synchronization is required during rendering).
+  //----------------------------------------------------------------------------
+
+  // Sets the clear color for the background before rendering takes place.
+  virtual void SetClearColor(RenderInternal, Pixel color) = 0;
 
   // Begins drawing the next frame.
   //

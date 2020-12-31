@@ -12,6 +12,9 @@
 
 namespace gb {
 
+// Vulkan implementation of Scene.
+//
+// This class is thread-safe.
 class VulkanScene : public RenderScene {
  public:
   static std::unique_ptr<VulkanScene> Create(VulkanInternal,
