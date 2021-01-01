@@ -8,6 +8,12 @@ game-bits.sublime-workspace
 # Assets
 *.spv
 
+# Binary built output
+bin/Debug
+bin/Release
+bin/MinSizeRel
+bin/RelWithDebInfo
+
 # Binary working output
 /*.ini
 
