@@ -3,7 +3,9 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
+#include <atomic>
 #include <cstdio>
+#include <iostream>
 
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"

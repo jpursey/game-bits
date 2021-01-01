@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <iostream>
 
 #include "absl/strings/str_format.h"
 #include "absl/synchronization/mutex.h"
