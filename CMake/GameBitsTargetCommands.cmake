@@ -73,7 +73,7 @@ function(gb_add_test NAME)
   add_dependencies(${NAME}_test ${NAME})
   target_link_libraries(${NAME}_test PRIVATE
     ${NAME}
-    "${GB_BUILD_DIR}/third_party/googletest/lib/$(Configuration)/gmock_main$<$<CONFIG:Debug>:d>.lib"
+    "${GB_THIRD_PARTY_BUILD_DIR}/googletest/lib/$(Configuration)/gmock_main$<$<CONFIG:Debug>:d>.lib"
   )
   if(DEFINED ${NAME}_TEST_DEPS)
     add_dependencies(${NAME}_test ${${NAME}_TEST_DEPS})
@@ -90,10 +90,8 @@ function(gb_add_test NAME)
   else()
     set_target_properties(${NAME}_test PROPERTIES FOLDER Tests)
   endif()
-  set_target_properties(${NAME}_test PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${GB_BUILD_DIR}/tests")
 
   add_test(${NAME}_test ${NAME}_test)
-  set_tests_properties(${NAME}_test PROPERTIES WORKING_DIRECTORY "${GB_BUILD_DIR}/tests")
 endfunction()
 
 function(gb_add_library NAME)
@@ -110,6 +108,7 @@ function(gb_add_executable NAME)
   if(DEFINED ${NAME}_TEST_SOURCE)
     gb_add_test(${NAME})
   endif()
+  set_target_properties(${NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${GB_BIN_DIR}")
   set_property(TARGET ${NAME} PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "${GB_BIN_DIR}")
 endfunction()
 
@@ -119,5 +118,6 @@ function(gb_add_win_executable NAME)
   if(DEFINED ${NAME}_TEST_SOURCE)
     gb_add_test(${NAME})
   endif()
+  set_target_properties(${NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${GB_BIN_DIR}")
   set_property(TARGET ${NAME} PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "${GB_BIN_DIR}")
 endfunction()

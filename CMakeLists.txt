@@ -15,6 +15,8 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# This allows the <target>_FBS and <target>_TEST_FBS variables to work with
+# local file paths.
 cmake_policy(SET CMP0076 NEW)
 
 ###############################################################################
@@ -29,7 +31,6 @@ gb_config()
 ###############################################################################
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${GB_BIN_DIR}")
 enable_testing()
 add_compile_definitions(_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS)
 
@@ -37,13 +38,18 @@ list(APPEND CMAKE_MODULE_PATH
   "${GB_DIR}/CMake"
   "${GB_THIRD_PARTY_DIR}/flatbuffers/CMake"
 )
-set(FLATBUFFERS_FLATC_EXECUTABLE "${GB_BUILD_DIR}/third_party/flatbuffers/Release/flatc")
+set(FLATBUFFERS_FLATC_EXECUTABLE "${GB_THIRD_PARTY_BUILD_DIR}/flatbuffers/Release/flatc")
+set(FLATBUFFERS_FLATC_EXECUTABLE "${FLATBUFFERS_FLATC_EXECUTABLE}" PARENT_SCOPE)
 set(FLATBUFFERS_INCLUDE_DIR "${GB_THIRD_PARTY_DIR}/flatbuffers/include")
+set(FLATBUFFERS_INCLUDE_DIR "${FLATBUFFERS_INCLUDE_DIR}" PARENT_SCOPE)
 include(BuildFlatBuffers)
 include(GameBitsTargetCommands)
 include(GameBitsExternalLibraries)
 gb_external_libraries()
 
+###############################################################################
+# Third party source
+###############################################################################
 
 ####### absl
 

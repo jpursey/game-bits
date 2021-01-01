@@ -36,7 +36,7 @@ function(gb_external_libraries)
 
   add_library(glog STATIC IMPORTED)
   target_include_directories(glog INTERFACE
-    "${GB_BUILD_DIR}/third_party/glog"
+    "${GB_THIRD_PARTY_BUILD_DIR}/glog"
     "${GB_THIRD_PARTY_DIR}/glog/src/windows"
   )
   target_compile_definitions(glog INTERFACE
@@ -47,9 +47,9 @@ function(gb_external_libraries)
   )
   set_target_properties(glog PROPERTIES
     IMPORTED_LOCATION
-      "${GB_BUILD_DIR}/third_party/glog/$(Configuration)/glog.lib" 
+      "${GB_THIRD_PARTY_BUILD_DIR}/glog/$(Configuration)/glog.lib" 
     IMPORTED_LOCATION_DEBUG
-      "${GB_BUILD_DIR}/third_party/glog/$(Configuration)/glogd.lib" 
+      "${GB_THIRD_PARTY_BUILD_DIR}/glog/$(Configuration)/glogd.lib" 
   )
 
   ####### flatbuffers
@@ -60,7 +60,7 @@ function(gb_external_libraries)
   )
   set_target_properties(flatbuffers PROPERTIES
     IMPORTED_LOCATION
-      "${GB_BUILD_DIR}/third_party/flatbuffers/$(Configuration)/flatbuffers.lib" 
+      "${GB_THIRD_PARTY_BUILD_DIR}/flatbuffers/$(Configuration)/flatbuffers.lib" 
   )
 
   ####### Vulkan

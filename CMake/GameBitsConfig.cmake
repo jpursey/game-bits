@@ -11,8 +11,13 @@ function(gb_config)
   # Directory to the root of the game-bits repository. If not defined, it is
   # assumed this is the game-bits repository or a copy/clone of it.
   if (NOT DEFINED GB_DIR)
+    # Define a local variable, and ensure it has only forward slash directory
+    # separators for safe string composition.
     set(GB_DIR "${CMAKE_CURRENT_LIST_DIR}")
-    set(GB_DIR "${CMAKE_CURRENT_LIST_DIR}" PARENT_SCOPE)
+    STRING(REGEX REPLACE "\\\\" "/" GB_DIR ${GB_DIR})
+
+    # Export GB_DIR to the caller (directory or function).
+    set(GB_DIR "${GB_DIR}" PARENT_SCOPE)
   endif()
 
   # Directory to the third party libraries Game Bits depends on. By default,
@@ -22,11 +27,13 @@ function(gb_config)
     set(GB_THIRD_PARTY_DIR "${GB_DIR}/third_party" PARENT_SCOPE)
   endif()
 
-  # Directory to where all build output should go. This is where all cmake
-  # output is put for Game Bits, and code that uses the the Game Bits target
-  # utility functions.
-  if (NOT DEFINED GB_BUILD_DIR)
-    set(GB_BUILD_DIR "${GB_DIR}/build" PARENT_SCOPE)
+  # Directory where all third party library build output is generated.
+  # By default, it is expected that third party libraries are built as part of
+  # a separate Game Bits installation. However, if Game Bits is being used as a
+  # submodule or the third party directory is overridden, this may be
+  # overridden.
+  if (NOT DEFINED GB_THIRD_PARTY_BUILD_DIR)
+    set(GB_THIRD_PARTY_BUILD_DIR "${GB_DIR}/build/third_party" PARENT_SCOPE)
   endif()
 
   # Directory to where all final executable output will go.

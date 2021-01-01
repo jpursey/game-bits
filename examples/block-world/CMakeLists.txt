@@ -20,15 +20,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 ################################################################################
 
 STRING(REGEX REPLACE "\\\\" "/" CURRENT_DIR ${CMAKE_CURRENT_LIST_DIR})
-
-# Set the GB_DIR directory to wherever it is located, in your install. Since
-# this is part of Game Bits, it is simply farther up the directory tree.
 set(GB_DIR "${CURRENT_DIR}/../..")
-
-# Optionally set your own build and bin directories. The examples just use the
-# same directory as game-bits.
-# set(GB_BUILD_DIR "${CURRENT_DIR}/build")
-# set(GB_BIN_DIR "${CURRENT_DIR}/bin")
 
 add_subdirectory("${GB_DIR}" gb)
 gb_config()
