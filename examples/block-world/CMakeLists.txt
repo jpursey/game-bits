@@ -69,3 +69,5 @@ set(block_world_LIBS
 )
 
 gb_add_win_executable(block_world)
+
+set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT block_world)

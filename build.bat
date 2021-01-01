@@ -28,7 +28,7 @@ call ..\third_party\build.bat %*
 rem ---------------------------------------------------------------------------
 rem Build Source
 
-echo ======== BUILDING Source ========
+echo ======== CREATING Game Bits Project ========
 cmake .. %*
 
 rem ---------------------------------------------------------------------------
@@ -39,7 +39,7 @@ if not exist examples (
 )
 cd examples
 
-echo ======== BUILDING Block World Example ========
+echo ======== CREATING Block World Project ========
 if not exist block-world (
   mkdir block-world
 )
