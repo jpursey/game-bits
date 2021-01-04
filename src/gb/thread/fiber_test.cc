@@ -45,7 +45,7 @@ TEST_F(FiberTest, CreateMaxConcurrencyThreadCount) {
     std::atomic<int> counter = 0;
   } state;
   auto fibers = CreateFiberThreads(
-      0, false, 0, &state, +[](void* user_data) {
+      0, {}, 0, &state, +[](void* user_data) {
         auto& state = *static_cast<State*>(user_data);
         ++state.counter;
       });
@@ -61,7 +61,7 @@ TEST_F(FiberTest, CreateMaxConcurrencyMinusOneThreadCount) {
     std::atomic<int> counter = 0;
   } state;
   auto fibers = CreateFiberThreads(
-      -1, false, 0, &state, +[](void* user_data) {
+      -1, {}, 0, &state, +[](void* user_data) {
         auto& state = *static_cast<State*>(user_data);
         ++state.counter;
       });
@@ -77,7 +77,7 @@ TEST_F(FiberTest, CreateMaxConcurrencyMinusAllThreadCount) {
     std::atomic<int> counter = 0;
   } state;
   auto fibers = CreateFiberThreads(
-      -GetMaxConcurrency(), false, 0, &state, +[](void* user_data) {
+      -GetMaxConcurrency(), {}, 0, &state, +[](void* user_data) {
         auto& state = *static_cast<State*>(user_data);
         ++state.counter;
       });
@@ -93,7 +93,7 @@ TEST_F(FiberTest, CreateOneThreadCount) {
     std::atomic<int> counter = 0;
   } state;
   auto fibers = CreateFiberThreads(
-      1, false, 0, &state, +[](void* user_data) {
+      1, {}, 0, &state, +[](void* user_data) {
         auto& state = *static_cast<State*>(user_data);
         ++state.counter;
       });
@@ -109,7 +109,7 @@ TEST_F(FiberTest, CreateMaxConcurrencyPlusOneThreadCount) {
     std::atomic<int> counter = 0;
   } state;
   auto fibers = CreateFiberThreads(
-      GetMaxConcurrency() + 1, false, 0, &state, +[](void* user_data) {
+      GetMaxConcurrency() + 1, {}, 0, &state, +[](void* user_data) {
         auto& state = *static_cast<State*>(user_data);
         ++state.counter;
       });
@@ -125,7 +125,7 @@ TEST_F(FiberTest, CreateMaxConcurrencyThreadCountPinned) {
     std::atomic<int> counter = 0;
   } state;
   auto fibers = CreateFiberThreads(
-      0, true, 0, &state, +[](void* user_data) {
+      0, FiberOption::kPinThreads, 0, &state, +[](void* user_data) {
         auto& state = *static_cast<State*>(user_data);
         ++state.counter;
       });
@@ -141,7 +141,8 @@ TEST_F(FiberTest, CreateMaxConcurrencyPlusOneThreadCountPinned) {
     std::atomic<int> counter = 0;
   } state;
   auto fibers = CreateFiberThreads(
-      GetMaxConcurrency() + 1, true, 0, &state, +[](void* user_data) {
+      GetMaxConcurrency() + 1, FiberOption::kPinThreads, 0, &state,
+      +[](void* user_data) {
         auto& state = *static_cast<State*>(user_data);
         ++state.counter;
       });
@@ -157,7 +158,7 @@ TEST_F(FiberTest, CreateThreadsWithExplicitStackSize) {
     std::atomic<int> counter = 0;
   } state;
   auto fibers = CreateFiberThreads(
-      0, false, 32 * 1024, &state, +[](void* user_data) {
+      0, {}, 32 * 1024, &state, +[](void* user_data) {
         auto& state = *static_cast<State*>(user_data);
         ++state.counter;
       });
@@ -173,7 +174,7 @@ TEST_F(FiberTest, GetThisFiber) {
     std::atomic<Fiber> fiber = nullptr;
   } state;
   auto fibers = CreateFiberThreads(
-      1, false, 0, &state, +[](void* user_data) {
+      1, {}, 0, &state, +[](void* user_data) {
         auto& state = *static_cast<State*>(user_data);
         while (state.fiber == nullptr) {
           std::this_thread::yield();
@@ -192,7 +193,7 @@ TEST_F(FiberTest, CreateFiber) {
     std::atomic<int> counter = 0;
   } state;
   auto fiber = CreateFiber(
-      0, &state, +[](void* user_data) {
+      {}, 0, &state, +[](void* user_data) {
         auto& state = *static_cast<State*>(user_data);
         ++state.counter;
       });
@@ -209,7 +210,7 @@ TEST_F(FiberTest, CreateFiberWithExplicitStackSize) {
     std::atomic<int> counter = 0;
   } state;
   auto fiber = CreateFiber(
-      32 * 1024, &state, +[](void* user_data) {
+      {}, 32 * 1024, &state, +[](void* user_data) {
         auto& state = *static_cast<State*>(user_data);
         ++state.counter;
       });
@@ -227,7 +228,7 @@ TEST_F(FiberTest, SwitchToFiberAndExit) {
     std::atomic<Fiber> fiber = nullptr;
   } state;
   auto fibers = CreateFiberThreads(
-      1, false, 0, &state, +[](void* user_data) {
+      1, {}, 0, &state, +[](void* user_data) {
         auto& state = *static_cast<State*>(user_data);
         while (state.fiber == nullptr) {
           std::this_thread::yield();
@@ -236,7 +237,7 @@ TEST_F(FiberTest, SwitchToFiberAndExit) {
         state.counter += 2;
       });
   state.fiber = CreateFiber(
-      0, &state, +[](void* user_data) {
+      {}, 0, &state, +[](void* user_data) {
         auto& state = *static_cast<State*>(user_data);
         state.counter += 1;
       });
@@ -254,7 +255,7 @@ TEST_F(FiberTest, SwitchToFiberAndBackThenExit) {
     std::atomic<Fiber> fiber = nullptr;
   } state;
   auto fibers = CreateFiberThreads(
-      1, false, 0, &state, +[](void* user_data) {
+      1, {}, 0, &state, +[](void* user_data) {
         auto& state = *static_cast<State*>(user_data);
         while (state.fiber == nullptr) {
           std::this_thread::yield();
@@ -265,7 +266,7 @@ TEST_F(FiberTest, SwitchToFiberAndBackThenExit) {
         state.counter += 2;
       });
   auto new_fiber = CreateFiber(
-      0, &state, +[](void* user_data) {
+      {}, 0, &state, +[](void* user_data) {
         auto& state = *static_cast<State*>(user_data);
         state.counter += 1;
         SwitchToFiber(state.fiber);
@@ -287,7 +288,7 @@ TEST_F(FiberTest, SwapThreadsAndExit) {
     std::atomic<Fiber> fiber_3 = nullptr;
   } state;
   auto fiber_1 = CreateFiberThreads(
-      1, false, 0, &state, +[](void* user_data) {
+      1, {}, 0, &state, +[](void* user_data) {
         auto& state = *static_cast<State*>(user_data);
         while (state.fiber_1 == nullptr) {
           std::this_thread::yield();
@@ -301,7 +302,7 @@ TEST_F(FiberTest, SwapThreadsAndExit) {
       });
   ASSERT_EQ(fiber_1.size(), 1);
   auto fiber_2 = CreateFiberThreads(
-      1, false, 0, &state, +[](void* user_data) {
+      1, {}, 0, &state, +[](void* user_data) {
         auto& state = *static_cast<State*>(user_data);
         while (state.fiber_2 == nullptr) {
           std::this_thread::yield();
@@ -314,7 +315,7 @@ TEST_F(FiberTest, SwapThreadsAndExit) {
       });
   ASSERT_EQ(fiber_2.size(), 1);
   auto fiber_3 = CreateFiber(
-      0, &state, +[](void* user_data) {
+      {}, 0, &state, +[](void* user_data) {
         auto& state = *static_cast<State*>(user_data);
         state.fiber_2 = state.fiber_1.load();
         while (state.fiber_3 == nullptr) {
@@ -332,7 +333,7 @@ TEST_F(FiberTest, SwapThreadsAndExit) {
 TEST_F(FiberTest, FiberName) {
   CHECK_FIBER_SUPPORT();
   Fiber fiber = CreateFiber(
-      0, nullptr, +[](void* user_data) {});
+      {}, 0, nullptr, +[](void* user_data) {});
   ASSERT_NE(fiber, nullptr);
   SetFiberName(fiber, "Test");
   EXPECT_EQ(GetFiberName(fiber), "Test");
@@ -368,7 +369,8 @@ TEST_F(FiberTest, ThreadAbuse) {
         done = true;
       }
       if (count % 50 == 0) {
-        Fiber fiber = CreateFiber(4096, &state, state.callback);
+        Fiber fiber = CreateFiber(FiberOption::kSetThreadName, 4096, &state,
+                                  state.callback);
         state.mutex.Lock();
         state.all_fibers.push_back(fiber);
         state.idle_fibers.push(fiber);
@@ -400,10 +402,12 @@ TEST_F(FiberTest, ThreadAbuse) {
 
   state.mutex.Lock();
   const int num_threads = std::max(4, GetMaxConcurrency());
-  state.all_fibers =
-      CreateFiberThreads(num_threads, true, 4096, &state, state.callback);
+  state.all_fibers = CreateFiberThreads(
+      num_threads, {FiberOption::kPinThreads, FiberOption::kSetThreadName},
+      4096, &state, state.callback);
   for (int i = 0; i < 5; ++i) {
-    Fiber fiber = CreateFiber(4096, &state, state.callback);
+    Fiber fiber =
+        CreateFiber(FiberOption::kSetThreadName, 4096, &state, state.callback);
     state.all_fibers.push_back(fiber);
     state.idle_fibers.push(fiber);
   }

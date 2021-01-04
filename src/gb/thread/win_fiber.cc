@@ -45,15 +45,20 @@ std::atomic<int> g_running_count = 0;
 }  // namespace
 
 struct FiberType {
-  FiberType(void* in_user_data, FiberMain in_fiber_main)
-      : user_data(in_user_data), fiber_main(in_fiber_main) {
+  FiberType(FiberOptions in_options, void* in_user_data,
+            FiberMain in_fiber_main)
+      : user_data(in_user_data),
+        fiber_main(in_fiber_main),
+        set_thread_name(in_options.IsSet(FiberOption::kSetThreadName)) {
     std::snprintf(name, sizeof(name), "Fiber-%d", ++g_fiber_index);
   }
 
   void* user_data = nullptr;
   FiberMain fiber_main = nullptr;
+  bool set_thread_name = false;
 
   absl::Mutex mutex;
+  Thread thread ABSL_GUARDED_BY(mutex) = nullptr;
   WinFiber thread_win_fiber ABSL_GUARDED_BY(mutex) = nullptr;
   WinFiber win_fiber ABSL_GUARDED_BY(mutex) = nullptr;
   char name[kMaxFiberNameSize] ABSL_GUARDED_BY(mutex) = {};
@@ -74,7 +79,8 @@ std::string ToString(Fiber fiber) ABSL_LOCKS_EXCLUDED(fiber->mutex) {
 // Temporary data used when starting a thread-based fiber.
 struct FiberThreadStartInfo {
   FiberThreadStartInfo() = default;
-  HANDLE win_thread = NULL;
+  FiberOptions options;
+  Thread win_thread = NULL;
   void* user_data = nullptr;
   FiberMain fiber_main = nullptr;
   Fiber fiber = nullptr;
@@ -93,6 +99,7 @@ void RunFiberMain(Fiber fiber) {
   // shutdown (ending the thread).
   GB_FIBER_LOG << "Exiting fiber " << ToString(fiber);
   fiber->mutex.Lock();
+  fiber->thread = nullptr;
   WinFiber thread_win_fiber = std::exchange(fiber->thread_win_fiber, nullptr);
   fiber->win_fiber = nullptr;
   --g_running_count;
@@ -116,9 +123,13 @@ void FiberStartRoutineFromThread(void* param) {
   // on 'running' being true.
   fiber->mutex.Lock();
   ++g_running_count;
+  fiber->thread = GetThisThread();
   fiber->thread_win_fiber = start_info->thread_win_fiber;
   fiber->user_data = start_info->user_data;
   fiber->fiber_main = start_info->fiber_main;
+  if (fiber->set_thread_name) {
+    SetThreadName(fiber->thread, fiber->name);
+  }
   fiber->mutex.Unlock();
   GB_FIBER_LOG << "Attached thread to fiber " << ToString(fiber);
   start_info->error = ERROR_SUCCESS;
@@ -127,15 +138,15 @@ void FiberStartRoutineFromThread(void* param) {
   // Never gets here, RunFiberMain never returns.
 }
 
-unsigned __stdcall FiberThreadStartRoutine(void* param) {
+void FiberThreadStartRoutine(void* param) {
   auto* start_info = static_cast<FiberThreadStartInfo*>(param);
-  HANDLE win_thread = start_info->win_thread;
+  Thread win_thread = start_info->win_thread;
   WinFiber thread_win_fiber =
       ::ConvertThreadToFiberEx(param, FIBER_FLAG_FLOAT_SWITCH);
   if (thread_win_fiber == nullptr) {
     start_info->error = GetLastError();
     start_info->started.Notify();  // start_info is deleted after this call.
-    return 1;
+    return;
   }
   start_info->thread_win_fiber = thread_win_fiber;
 
@@ -154,8 +165,6 @@ unsigned __stdcall FiberThreadStartRoutine(void* param) {
   // state.
   ::ConvertFiberToThread();
   GB_FIBER_LOG << "Exiting thread " << thread_win_fiber;
-  ::CloseHandle(win_thread);
-  return 0;
 }
 
 }  // namespace
@@ -168,7 +177,7 @@ void SetFiberVerboseLogging(bool enabled) {
 #endif  // GB_BUILD_ENABLE_THREAD_LOGGING
 }
 
-std::vector<Fiber> CreateFiberThreads(int thread_count, bool pin_threads,
+std::vector<Fiber> CreateFiberThreads(int thread_count, FiberOptions options,
                                       uint32_t stack_size, void* user_data,
                                       FiberMain fiber_main) {
   auto affinities = GetHardwareThreadAffinities();
@@ -179,12 +188,14 @@ std::vector<Fiber> CreateFiberThreads(int thread_count, bool pin_threads,
       thread_count = 1;
     }
   }
-  if (pin_threads && thread_count > max_concurrency) {
-    pin_threads = false;
+  if (options.IsSet(FiberOption::kPinThreads) &&
+      thread_count > max_concurrency) {
+    options.Clear(FiberOption::kPinThreads);
   }
   GB_FIBER_LOG << "Creating " << thread_count << " fiber threads of stack size "
                << stack_size << " that are "
-               << (pin_threads ? "pinned" : "not pinned");
+               << (options.IsSet(FiberOption::kPinThreads) ? "pinned"
+                                                           : "not pinned");
 
   std::vector<Fiber> fibers;
   fibers.reserve(thread_count);
@@ -196,29 +207,24 @@ std::vector<Fiber> CreateFiberThreads(int thread_count, bool pin_threads,
     // caller, and second one converted from the thread which is switched back
     // to when any other executing fiber on the thread exits.
     FiberThreadStartInfo start_info;
+    start_info.options = options;
     start_info.user_data = user_data;
     start_info.fiber_main = fiber_main;
-    start_info.fiber =
-        gb::CreateFiber(stack_size, &start_info, FiberStartRoutineFromThread);
+    start_info.fiber = gb::CreateFiber(options, stack_size, &start_info,
+                                       FiberStartRoutineFromThread);
     if (start_info.fiber == nullptr) {
       break;
     }
-    start_info.win_thread = reinterpret_cast<HANDLE>(
-        _beginthreadex(nullptr, 4096, FiberThreadStartRoutine, &start_info,
-                       CREATE_SUSPENDED, nullptr));
-    if (start_info.win_thread == NULL) {
-      LOG(ERROR) << "Failed to create fiber thread " << i << ": "
-                 << GetWindowsError();
+    const uint64_t affinity =
+        (options.IsSet(FiberOption::kPinThreads) ? affinities[i] : 0);
+    start_info.win_thread =
+        gb::CreateThread(affinity, 4096, &start_info, FiberThreadStartRoutine);
+    if (start_info.win_thread == nullptr) {
+      LOG(ERROR) << "Failed to create fiber thread " << i;
       gb::DeleteFiber(start_info.fiber);
       break;
     }
-    if (pin_threads) {
-      if (SetThreadAffinityMask(start_info.win_thread, affinities[i]) == 0) {
-        LOG(ERROR) << "Failed to set affinity for fiber thread " << i << ": "
-                   << GetWindowsError();
-      }
-    }
-    ::ResumeThread(start_info.win_thread);
+    gb::DetachThread(start_info.win_thread);
 
     start_info.started.WaitForNotification();
     if (start_info.error != ERROR_SUCCESS) {
@@ -232,8 +238,9 @@ std::vector<Fiber> CreateFiberThreads(int thread_count, bool pin_threads,
   return fibers;
 }
 
-Fiber CreateFiber(uint32_t stack_size, void* user_data, FiberMain fiber_main) {
-  Fiber fiber = new FiberType(user_data, fiber_main);
+Fiber CreateFiber(FiberOptions options, uint32_t stack_size, void* user_data,
+                  FiberMain fiber_main) {
+  Fiber fiber = new FiberType(options, user_data, fiber_main);
   fiber->mutex.Lock();
   fiber->win_fiber = ::CreateFiberEx(stack_size, 0, FIBER_FLAG_FLOAT_SWITCH,
                                      FiberStartRoutine, fiber);
@@ -278,13 +285,18 @@ bool SwitchToFiber(Fiber fiber) {
     fiber->mutex.Unlock();
     return false;
   }
+  fiber->thread = GetThisThread();
   fiber->thread_win_fiber = thread_win_fiber;
+  if (fiber->set_thread_name) {
+    SetThreadName(GetThisThread(), fiber->name);
+  }
   fiber->mutex.Unlock();
 
   GB_FIBER_LOG << "Switching thread from fiber " << ToString(current_fiber)
                << " to fiber " << ToString(fiber);
 
   current_fiber->mutex.Lock();
+  current_fiber->thread = nullptr;
   current_fiber->thread_win_fiber = nullptr;
   current_fiber->mutex.Unlock();
 
@@ -308,6 +320,9 @@ void SetFiberName(Fiber fiber, std::string_view name) {
   size_t name_size = std::max<size_t>(name.size(), kMaxFiberNameSize - 1);
   std::memcpy(fiber->name, name.data(), name_size);
   fiber->name[name_size] = 0;
+  if (fiber->set_thread_name && fiber->thread != nullptr) {
+    SetThreadName(fiber->thread, fiber->name);
+  }
 }
 
 Fiber GetThisFiber() {

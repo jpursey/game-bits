@@ -9,6 +9,7 @@
 
 #include "absl/strings/str_format.h"
 #include "absl/synchronization/mutex.h"
+#include "gb/base/unicode.h"
 #include "gb/base/win_platform.h"
 #include "gb/thread/thread.h"
 #include "glog/logging.h"
@@ -65,6 +66,16 @@ absl::Span<const uint64_t> GetHardwareThreadAffinitiesImpl() {
   return absl::MakeConstSpan(&s_indices[0], s_count);
 }
 
+void SetWinThreadName(void* win_thread, std::string_view name) {
+  auto thread_description = ToUtf16(name);
+  HRESULT result = SetThreadDescription(
+      static_cast<HANDLE>(win_thread),
+      reinterpret_cast<const WCHAR*>(thread_description.c_str()));
+  if (FAILED(result)) {
+    LOG(WARNING) << "Failed to set thread description to: " << name;
+  }
+}
+
 }  // namespace
 
 struct ThreadType {
@@ -101,8 +112,14 @@ std::string ToString(Thread thread) ABSL_LOCKS_EXCLUDED(thread->mutex) {
 
 unsigned __stdcall ThreadStartRoutine(void* param) {
   Thread thread = static_cast<Thread>(param);
-  HANDLE win_thread = thread->win_thread;
+  HANDLE win_thread = NULL;
   tls_this_thread = thread;
+
+  {
+    absl::MutexLock lock(&thread->mutex);
+    win_thread = thread->win_thread;
+    SetWinThreadName(win_thread, thread->name);
+  }
 
   GB_THREAD_LOG << "Starting thread " << ToString(thread);
   thread->thread_main(thread->user_data);
@@ -225,6 +242,9 @@ void SetThreadName(Thread thread, std::string_view name) {
   size_t name_size = std::max<size_t>(name.size(), kMaxThreadNameSize - 1);
   std::memcpy(thread->name, name.data(), name_size);
   thread->name[name_size] = 0;
+  if (thread->win_thread != NULL) {
+    SetWinThreadName(thread->win_thread, thread->name);
+  }
 }
 
 Thread GetThisThread() { return tls_this_thread; }

@@ -9,6 +9,7 @@
 #include <string_view>
 #include <vector>
 
+#include "gb/base/flags.h"
 #include "gb/thread/thread_types.h"
 
 namespace gb {
@@ -25,6 +26,18 @@ using Fiber = FiberType*;
 
 // Signature for the main function of a fiber.
 using FiberMain = void (*)(void* user_data);
+
+// Options when creating fiber threads.
+enum class FiberOption {
+  // Fibers created as part of a thread should be pinned to a core. This has no
+  // effect when creating a suspended fiber (CreateFiber).
+  kPinThreads,
+
+  // When a fiber with this option becomes active, it will set the thread's name
+  // to its own name.
+  kSetThreadName,
+};
+using FiberOptions = Flags<FiberOption>;
 
 // Returns true if the running platform supports fibers.
 //
@@ -46,8 +59,9 @@ void SetFiberVerboseLogging(bool enabled);
 //   - Positive value: Creates thread_count threads/fibers
 //   - Zero: Creates max_concurrency threads/fibers.
 //   - Negative: Creates max(max_concurrency - thread_count, 1) threads/fibers.
-// If 'pin_threads' is true AND the number of threads created is less than or
-// equal to max_concurrency, then each thread will be bound to a specific core.
+// If 'FiberOption::kPinThreads' is set AND the number of threads created is
+// less than or equal to max_concurrency, then each thread will be bound to a
+// specific core.
 //
 // 'stack_size' determines the minimum size of the stack for every thread. If
 // this is zero (or if setting the stack size is not supported by the running
@@ -64,7 +78,7 @@ void SetFiberVerboseLogging(bool enabled);
 // called to delete each fiber when it is not running.
 //
 // This function is thread-safe.
-std::vector<Fiber> CreateFiberThreads(int thread_count, bool pin_threads,
+std::vector<Fiber> CreateFiberThreads(int thread_count, FiberOptions options,
                                       uint32_t stack_size, void* user_data,
                                       FiberMain fiber_main);
 
@@ -84,7 +98,8 @@ std::vector<Fiber> CreateFiberThreads(int thread_count, bool pin_threads,
 // DeleteFiber to delete the fiber when it is not running.
 //
 // This function is thread-safe.
-Fiber CreateFiber(uint32_t stack_size, void* user_data, FiberMain fiber_main);
+Fiber CreateFiber(FiberOptions options, uint32_t stack_size, void* user_data,
+                  FiberMain fiber_main);
 
 // Deletes the specified fiber.
 //

@@ -59,9 +59,12 @@ bool FiberJobSystem::Init(ValidatedContext context) {
     thread_count = kMaxThreadCount;
   }
 
+  FiberOptions options;
+  if (context.GetValue<bool>(kKeyPinThreads)) {
+    options += FiberOption::kPinThreads;
+  }
   auto threads = CreateFiberThreads(
-      thread_count, context.GetValue<bool>(kKeyPinThreads), 0, this,
-      +[](void* user_data) {
+      thread_count, options, 0, this, +[](void* user_data) {
         auto* job_system = static_cast<FiberJobSystem*>(user_data);
         job_system->SetThreadState();
         job_system->JobMain();
@@ -268,7 +271,7 @@ void FiberJobSystem::DoWait(JobCounter* counter) {
 
   // Create a new fiber for this thread.
   Fiber new_fiber = CreateFiber(
-      0, this, +[](void* user_data) {
+      {}, 0, this, +[](void* user_data) {
         static_cast<FiberJobSystem*>(user_data)->JobMain();
         // Nothing can happen as the job system may be in its destructor.
       });

@@ -41,6 +41,7 @@ set(gb_thread_SOURCE
 )
 
 set(gb_thread_DEPS
+  gb_base
   ${gb_thread_internal_DEPS}
 )
 
