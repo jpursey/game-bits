@@ -6,6 +6,8 @@
 #ifndef GB_JOB_JOB_SYSTEM_H_
 #define GB_JOB_JOB_SYSTEM_H_
 
+#include <string_view>
+
 #include "gb/base/callback.h"
 #include "gb/job/job_counter.h"
 #include "gb/job/job_types.h"
@@ -47,7 +49,10 @@ class JobSystem {
   //
   // If a counter is provided, it must outlive the job. Counters can only be
   // used within a single JobSystem.
+  bool Run(std::string_view name, JobCounter* counter,
+           Callback<void()> callback);
   bool Run(JobCounter* counter, Callback<void()> callback);
+  bool Run(std::string_view name, Callback<void()> callback);
   bool Run(Callback<void()> callback);
 
   //----------------------------------------------------------------------------
@@ -72,16 +77,26 @@ class JobSystem {
   // for each thread they run jobs on.
   void SetThreadState();
 
-  virtual bool DoRun(JobCounter* counter, Callback<void()> callback) = 0;
+  virtual bool DoRun(std::string_view name, JobCounter* counter,
+                     Callback<void()> callback) = 0;
   virtual void DoWait(JobCounter* counter) = 0;
 };
 
+inline bool JobSystem::Run(std::string_view name, JobCounter* counter,
+                           Callback<void()> callback) {
+  return DoRun(name, counter, std::move(callback));
+}
+
 inline bool JobSystem::Run(JobCounter* counter, Callback<void()> callback) {
-  return DoRun(counter, std::move(callback));
+  return DoRun({}, counter, std::move(callback));
+}
+
+inline bool JobSystem::Run(std::string_view name, Callback<void()> callback) {
+  return DoRun(name, nullptr, std::move(callback));
 }
 
 inline bool JobSystem::Run(Callback<void()> callback) {
-  return DoRun(nullptr, std::move(callback));
+  return DoRun({}, nullptr, std::move(callback));
 }
 
 inline void JobSystem::Wait(JobCounter* counter) { Get()->DoWait(counter); }

@@ -56,8 +56,16 @@ class FiberJobSystem : public JobSystem {
   static GB_CONTEXT_CONSTRAINT_NAMED_DEFAULT(kConstraintPinThreads, kInOptional,
                                              bool, kKeyPinThreads, true);
 
+  // OPTIONAL: If set to true, thread and fiber names will be updated with the
+  // name of the job they are running. If this is not set, then job names will
+  // be propagated only in debug builds.
+  static inline constexpr char* kKeySetFiberNames = "set_fiber_names";
+  static GB_CONTEXT_CONSTRAINT_NAMED(kConstraintSetFiberNames, kInOptional,
+                                     bool, kKeySetFiberNames);
+
   using CreateContract =
-      gb::ContextContract<kConstraintThreadCount, kConstraintPinThreads>;
+      gb::ContextContract<kConstraintThreadCount, kConstraintPinThreads,
+                          kConstraintSetFiberNames>;
 
   //----------------------------------------------------------------------------
   // Construction / Destruction
@@ -85,13 +93,17 @@ class FiberJobSystem : public JobSystem {
   int GetFiberCount() const;
 
  protected:
-  bool DoRun(JobCounter* counter, Callback<void()> callback) override;
+  bool DoRun(std::string_view name, JobCounter* counter,
+             Callback<void()> callback) override;
   void DoWait(JobCounter* counter) override;
 
  private:
   // Represents a job tracked by the system.
   struct Job {
     Job() = default;
+
+    // Optional name for the job.
+    std::string name;
 
     // Callback that is executed to perform this job.
     Callback<void()> callback;
@@ -119,6 +131,9 @@ class FiberJobSystem : public JobSystem {
 
   void JobMain();
   bool HasNoFibersInUse() const ABSL_SHARED_LOCKS_REQUIRED(mutex_);
+  static std::string_view GetJobName(Job* job);
+
+  bool set_fiber_names_ = false;
 
   mutable absl::Mutex mutex_;  // All state is guarded by this mutex.
 
