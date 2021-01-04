@@ -26,6 +26,7 @@ set(gb_base_SOURCE
   scoped_call.h
   string_util.h
   type_info.h
+  unicode.cc unicode.h
   validated_context.cc validated_context.h
   weak_ptr.h
   ${gb_base_internal_SOURCE}
@@ -39,6 +40,7 @@ set(gb_base_TEST_SOURCE
   flags_test.cc
   queue_test.cc
   type_info_test.cc
+  unicode_test.cc
   validated_context_test.cc
   weak_ptr_test.cc
 )

@@ -26,6 +26,11 @@ static_assert(sizeof(uint16_t) == 2, "uint16_t is required");
 static_assert(sizeof(uint32_t) == 4, "uint32_t is required");
 static_assert(sizeof(uint64_t) == 8, "uint64_t is required");
 
+// It is required that char16_t be exactly 2 bytes, as it is used for
+// representing UTF-16 strings that may be serialized to/from disk as well as in
+// memory (byte ordering is not assumed, however).
+static_assert(sizeof(char16_t) == 2, "char16_t must be 2 bytes");
+
 // Float types must be of a defined size in bytes.
 static_assert(sizeof(float) == 4, "float must be 4 bytes");
 static_assert(sizeof(double) == 8, "double must be 8 bytes");
