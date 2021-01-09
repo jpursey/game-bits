@@ -5,8 +5,8 @@ on: [push]
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   GB_BUILD_TYPE: Release
-  VK_SDK_PATH: \VulkanSDK\1.2.162.0
-  VULKAN_SDK: \VulkanSDK\1.2.162.0
+  VK_SDK_PATH: C:\VulkanSDK\1.2.162.0
+  VULKAN_SDK: C:\VulkanSDK\1.2.162.0
 
 jobs:
   build:
