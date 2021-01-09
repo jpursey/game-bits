@@ -13,6 +13,11 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
+    - name: Get dependencies
+      shell: cmd
+      working-directory: ${{github.workspace}}
+      run: git submodule update --init
+      
     - name: Build projects and third_party
       shell: cmd
       working-directory: ${{github.workspace}}
