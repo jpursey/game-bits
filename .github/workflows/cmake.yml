@@ -5,6 +5,8 @@ on: [push]
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   GB_BUILD_TYPE: Release
+  VK_SDK_PATH: \VulkanSDK\1.2.162.0
+  VULKAN_SDK: \VulkanSDK\1.2.162.0
 
 jobs:
   build:
@@ -31,12 +33,12 @@ jobs:
       shell: cmd
       run: cmake --build . --config %GB_BUILD_TYPE%
 
-    - name: Build Block World
-      working-directory: ${{github.workspace}}/build/examples/block-world
-      shell: cmd
-      run: cmake --build . --config %GB_BUILD_TYPE%
-
-    - name: Test
+    - name: Test Game Bits
       working-directory: ${{github.workspace}}/build
       shell: cmd
       run: ctest -C %GB_BUILD_TYPE%
+
+    - name: Build Block World
+      working-directory: ${{github.workspace}}/build/examples/block-world
+      shell: cmd
+      run: cmake --build . --config %GB_BUILD_TYPE% --target block_world
