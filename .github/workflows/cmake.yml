@@ -1,0 +1,36 @@
+name: CMake
+
+on: [push]
+
+env:
+  # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
+  BUILD_TYPE: Release
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Build projects and third_party
+      shell: cmd
+      working-directory: ${{github.workspace}}
+      run: build_vs2019
+
+    - name: Build Game Bits
+      working-directory: ${{github.workspace}}/build
+      shell: cmd
+      run: cmake --build . --config $BUILD_TYPE
+
+    - name: Build Block World
+      working-directory: ${{github.workspace}}/build/examples/block-world
+      shell: cmd
+      run: cmake --build . --config $BUILD_TYPE
+
+    - name: Test
+      working-directory: ${{github.workspace}}/build
+      shell: cmd
+      # Execute tests defined by the CMake configuration.  
+      # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
+      run: ctest -C $BUILD_TYPE
