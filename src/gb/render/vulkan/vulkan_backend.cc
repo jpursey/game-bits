@@ -120,7 +120,7 @@ bool VulkanBackend::InitInstance(std::vector<const char*>* layers) {
     return false;
   }
   if (debug_) {
-    layers->push_back("VK_LAYER_LUNARG_standard_validation");
+    layers->push_back("VK_LAYER_KHRONOS_validation");
     extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
   }
 
@@ -211,8 +211,12 @@ bool VulkanBackend::InitDevice(const std::vector<const char*>& layers) {
         queues.graphics_index = i;
       }
       vk::Bool32 supports_present_ = false;
-      physical_device.getSurfaceSupportKHR(i, window_surface_,
-                                           &supports_present_);
+      result = physical_device.getSurfaceSupportKHR(i, window_surface_,
+                                                    &supports_present_);
+      if (result != vk::Result::eSuccess) {
+        LOG(ERROR) << "Failed to query surface support for queue family";
+        return false;
+      }
       if (supports_present_) {
         queues.present_index = i;
       }
@@ -569,7 +573,10 @@ void VulkanBackend::CleanUp() {
   LOG_IF(ERROR, !context_.Complete())
       << "Failed to complete VulkanBackend context.";
   if (device_) {
-    device_.waitIdle();
+    auto result = device_.waitIdle();
+    if (result != vk::Result::eSuccess) {
+      LOG(ERROR) << "Wait idle failed on device";
+    }
   }
   CleanUpSwap();
   if (render_pass_) {
@@ -638,7 +645,10 @@ void VulkanBackend::CleanUpSwap() {
 }
 
 bool VulkanBackend::RecreateSwap() {
-  device_.waitIdle();
+  auto result = device_.waitIdle();
+  if (result != vk::Result::eSuccess) {
+    return false;
+  }
   for (auto& garbage_collector : garbage_collectors_) {
     garbage_collector.Collect(device_, allocator_);
   }
@@ -910,8 +920,11 @@ bool VulkanBackend::BeginFrame(RenderInternal) {
 
   // This wait is to ensure the command buffer for this frame is no longer
   // executing.
-  device_.waitForFences({frame.render_finished_fence}, VK_TRUE,
-                        std::numeric_limits<uint64_t>::max());
+  auto result = device_.waitForFences({frame.render_finished_fence}, VK_TRUE,
+                                      std::numeric_limits<uint64_t>::max());
+  if (result != vk::Result::eSuccess) {
+    return false;
+  }
 
   // Any data from this frame is now unused, so collect the next set of garbage.
   // Note: memory_order_relaxed is used for the load, as this is the *only*
@@ -1326,8 +1339,9 @@ void VulkanBackend::EndFrameRenderPass() {
               break;
             }
             case DrawCommand::Type::kScissor: {
-              scissor.offset = {command.rect.x, command.rect.y};
-              scissor.extent = {command.rect.width, command.rect.height};
+              scissor.offset = vk::Offset2D{command.rect.x, command.rect.y};
+              scissor.extent =
+                  vk::Extent2D{command.rect.width, command.rect.height};
               frame.commands.setScissor(0, {scissor});
               break;
             }
@@ -1406,8 +1420,15 @@ void VulkanBackend::EndFramePresent() {
   // entered the presentation queue, which means the image_available_semaphore
   // is valid to wait on for this execution.
   if (frame_buffer.render_finished_fence) {
-    device_.waitForFences({frame_buffer.render_finished_fence}, VK_TRUE,
-                          std::numeric_limits<uint64_t>::max());
+    auto result =
+        device_.waitForFences({frame_buffer.render_finished_fence}, VK_TRUE,
+                              std::numeric_limits<uint64_t>::max());
+    if (result != vk::Result::eSuccess) {
+      // TODO: Handle this more gracefully...
+      // If this happens we will be unrecoverably broken as the fence is in an
+      // unknown state.
+      LOG(FATAL) << "Failed to wait for render finished fence";
+    }
   }
   frame_buffer.render_finished_fence = frame.render_finished_fence;
   device_.resetFences({frame.render_finished_fence});
