@@ -99,6 +99,7 @@ TEST_P(FiberJobSystemTest, WaitOnJob) {
     notify.Notify();
   }));
   notify.WaitForNotificationWithTimeout(absl::Seconds(10));
+  EXPECT_EQ(call_count, 1);
 }
 
 TEST_P(FiberJobSystemTest, WaitOnMultipleJobs) {
@@ -118,6 +119,7 @@ TEST_P(FiberJobSystemTest, WaitOnMultipleJobs) {
     notify.Notify();
   }));
   notify.WaitForNotificationWithTimeout(absl::Seconds(10));
+  EXPECT_EQ(call_count, 10);
 }
 
 TEST_P(FiberJobSystemTest, MultipleJobsWaitOnOneCounter) {
@@ -139,14 +141,15 @@ TEST_P(FiberJobSystemTest, MultipleJobsWaitOnOneCounter) {
   }
   notify_start.Notify();
   notify_complete.WaitForNotificationWithTimeout(absl::Seconds(10));
+  EXPECT_EQ(call_count, 10);
 }
 
 TEST_P(FiberJobSystemTest, JobHierarchy) {
   CHECK_FIBER_SUPPORT();
   absl::Notification notify;
-  EXPECT_TRUE(job_system_->Run([&notify] {
+  std::atomic<uint32_t> count = 0;
+  EXPECT_TRUE(job_system_->Run([&notify, &count] {
     JobCounter counter;
-    std::atomic<uint32_t> count = 0;
     auto* system = JobSystem::Get();
     for (uint32_t i = 0; i < 8; ++i) {
       EXPECT_TRUE(system->Run(&counter, [&count, i] {
@@ -169,6 +172,7 @@ TEST_P(FiberJobSystemTest, JobHierarchy) {
     notify.Notify();
   }));
   notify.WaitForNotificationWithTimeout(absl::Seconds(10));
+  EXPECT_EQ(count, 0xFFFFFFFF);
 }
 
 TestParams test_params[] = {

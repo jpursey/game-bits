@@ -156,7 +156,7 @@ void FiberJobSystem::JobMain() {
     FiberState* state = nullptr;
 
     if (!pending_fibers_.empty()) {
-      // This fiber is now unused, as we will be switching to the pnding fiber.
+      // This fiber is now unused, as we will be switching to the pending fiber.
       unused_fibers_.push(fiber);
 
       // The new fiber is no longer pending, but running.
@@ -285,30 +285,32 @@ bool FiberJobSystem::DoRun(std::string_view name, JobCounter* counter,
 void FiberJobSystem::DoWait(JobCounter* counter) {
   const Fiber fiber = GetThisFiber();
   DCHECK(fiber != nullptr) << "Wait can only be called from within a job";
-  if (counter == nullptr || counter->Get({}) == 0) {
+  if (counter == nullptr) {
     return;
   }
 
-  {
-    absl::MutexLock lock(&mutex_);
-    FiberState* state = nullptr;
-    for (auto* running_state : running_fibers_) {
-      if (running_state->fiber == fiber) {
-        state = running_state;
-        break;
-      }
-    }
-    CHECK(state != nullptr)
-        << "Attempting to wait on a different fiber job system";
-
-    GB_FIBER_JOB_SYSTEM_LOG << "Waiting job " << GetJobName(state->job)
-                            << " on fiber " << fiber;
-
-    // This fiber is now waiting, and a new fiber will be created.
-    running_fibers_.erase(state);
-    waiting_fibers_[counter].push_back(state);
-    ++total_fiber_count_;
+  mutex_.Lock();
+  if (counter->Get({}) == 0) {
+    mutex_.Unlock();
+    return;
   }
+  FiberState* state = nullptr;
+  for (auto* running_state : running_fibers_) {
+    if (running_state->fiber == fiber) {
+      state = running_state;
+      break;
+    }
+  }
+  CHECK(state != nullptr)
+      << "Attempting to wait on a different fiber job system";
+
+  GB_FIBER_JOB_SYSTEM_LOG << "Waiting job " << GetJobName(state->job)
+                          << " on fiber " << fiber;
+
+  // This fiber is now waiting, and a new fiber will be created.
+  running_fibers_.erase(state);
+  waiting_fibers_[counter].push_back(state);
+  ++total_fiber_count_;
 
   // Create a new fiber for this thread.
   FiberOptions options;
@@ -317,7 +319,9 @@ void FiberJobSystem::DoWait(JobCounter* counter) {
   }
   Fiber new_fiber = CreateFiber(
       options, 0, this, +[](void* user_data) {
-        static_cast<FiberJobSystem*>(user_data)->JobMain();
+        auto* system = static_cast<FiberJobSystem*>(user_data);
+        system->mutex_.Unlock();
+        system->JobMain();
         // Nothing can happen as the job system may be in its destructor.
       });
   CHECK(new_fiber != nullptr)

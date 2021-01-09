@@ -152,7 +152,8 @@ class FiberJobSystem : public JobSystem {
   // Pending jobs waiting for a fiber to become available.
   Queue<Job*> pending_jobs_ ABSL_GUARDED_BY(mutex_);
 
-  // Pending fibers that are waiting for a thread to become available.
+  // Pending fibers with an active job that are waiting for a thread to become
+  // available.
   Queue<FiberState*> pending_fibers_ ABSL_GUARDED_BY(mutex_);
 
   // Fibers that are idling on a thread waiting to receive a job to
