@@ -78,7 +78,8 @@ TEST(GameTest, RunNoContextNoArgs) {
   EXPECT_EQ(game.Context().GetValue<int>(Game::kKeyMaxFps),
             Game::kDefaultMaxFps);
   EXPECT_GE(game.GetLastDeltaTime(),
-            absl::Seconds(1.0 / static_cast<double>(Game::kDefaultMaxFps)));
+            absl::Seconds(1.0 / static_cast<double>(Game::kDefaultMaxFps)) -
+                absl::Microseconds(1));
   EXPECT_THAT(game.GetInitArgs(), IsEmpty());
 }
 
@@ -98,7 +99,8 @@ TEST(GameTest, RunSpecifiedFps) {
   TestGame game;
   EXPECT_TRUE(game.Run(&context, {}));
   EXPECT_EQ(game.Context().GetValue<int>(Game::kKeyMaxFps), 30);
-  EXPECT_GE(game.GetLastDeltaTime(), absl::Seconds(1.0 / 30.0));
+  EXPECT_GE(game.GetLastDeltaTime(),
+            absl::Seconds(1.0 / 30.0) - absl::Microseconds(1));
 }
 
 TEST(GameTest, RunNoContextWithArgs) {

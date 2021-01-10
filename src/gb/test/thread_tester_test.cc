@@ -125,7 +125,7 @@ TEST(ThreadTesterTest, RunLoopFails) {
   };
   tester.RunLoop(100, "test", func);
   while (count < 2) {
-    EXPECT_EQ(tester.GetRunResult("test"), ThreadTester::kRunning);
+    std::this_thread::yield();
   }
   EXPECT_FALSE(tester.Complete()) << tester.GetResultString();
   EXPECT_EQ(tester.GetRunResult("test"), ThreadTester::kFailure);
