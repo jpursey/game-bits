@@ -36,7 +36,7 @@ jobs:
     - name: Test Game Bits
       working-directory: ${{github.workspace}}/build
       shell: cmd
-      run: ctest -C %GB_BUILD_TYPE%
+      run: ctest -V -C %GB_BUILD_TYPE%
 
     - name: Build Block World
       working-directory: ${{github.workspace}}/build/examples/block-world
