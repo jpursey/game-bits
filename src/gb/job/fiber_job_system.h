@@ -140,9 +140,11 @@ class FiberJobSystem : public JobSystem {
   // True if the the fiber system is running (not being destructed).
   bool running_ ABSL_GUARDED_BY(mutex_) = true;
 
+  // All threads used to run jobs.
+  std::vector<Thread> threads_ ABSL_GUARDED_BY(mutex_);
+
   // Total number of threads and fibers created. These only increases, as fibers
   // are recycled.
-  int total_thread_count_ ABSL_GUARDED_BY(mutex_) = 0;
   int total_fiber_count_ ABSL_GUARDED_BY(mutex_) = 0;
 
   // Allocates used for job and fiber state.

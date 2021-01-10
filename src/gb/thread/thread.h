@@ -21,11 +21,6 @@ namespace gb {
 // for specifying hardware thread affinity and specifying thread names.
 //==============================================================================
 
-// A Thread is a handle to a platform-specific thread. Null indicates an
-// invalid/non-existant thread.
-struct ThreadType;
-using Thread = ThreadType*;
-
 // Signature for the main function of a thread.
 using ThreadMain = void (*)(void* user_data);
 

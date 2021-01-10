@@ -9,6 +9,7 @@
 #include <thread>
 
 #include "absl/memory/memory.h"
+#include "gb/thread/thread.h"
 #include "glog/logging.h"
 
 namespace gb {
@@ -75,20 +76,24 @@ bool FiberJobSystem::Init(ValidatedContext context) {
   if (set_fiber_names_) {
     options += FiberOption::kSetThreadName;
   }
-  auto threads = CreateFiberThreads(
+  auto fiber_threads = CreateFiberThreads(
       thread_count, options, 0, this, +[](void* user_data) {
         auto* job_system = static_cast<FiberJobSystem*>(user_data);
         job_system->SetThreadState();
         job_system->JobMain();
         // Nothing can happen as the job system may be in its destructor.
       });
-  if (threads.empty()) {
+  if (fiber_threads.empty()) {
     LOG(ERROR) << "No threads could be created to run FiberJobSystem.";
     return false;
   }
 
   absl::MutexLock lock(&mutex_);
-  total_thread_count_ = total_fiber_count_ = static_cast<int>(threads.size());
+  threads_.reserve(fiber_threads.size());
+  for (const auto& fiber_thread : fiber_threads) {
+    threads_.push_back(fiber_thread.thread);
+  }
+  total_fiber_count_ = static_cast<int>(fiber_threads.size());
   return true;
 }
 
@@ -100,10 +105,13 @@ FiberJobSystem::FiberJobSystem()
       unused_fibers_(200) {}
 
 FiberJobSystem::~FiberJobSystem() {
-  absl::MutexLock lock(&mutex_);
-
-  running_ = false;
-  mutex_.Await(absl::Condition(this, &FiberJobSystem::HasNoFibersInUse));
+  {
+    absl::MutexLock lock(&mutex_);
+    running_ = false;
+  }
+  for (auto thread : threads_) {
+    JoinThread(thread);
+  }
   DCHECK(pending_fibers_.empty());
   DCHECK(idle_fibers_.empty());
   DCHECK(running_fibers_.empty());
@@ -114,11 +122,6 @@ FiberJobSystem::~FiberJobSystem() {
     pending_jobs_.pop();
   }
   while (!unused_fibers_.empty()) {
-    // There is a race between JobMain exiting and the fiber to actually stop
-    // running.
-    while (IsFiberRunning(unused_fibers_.front())) {
-      std::this_thread::yield();
-    }
     DeleteFiber(unused_fibers_.front());
     unused_fibers_.pop();
   }
@@ -136,7 +139,7 @@ std::string_view FiberJobSystem::GetJobName(Job* job) {
 
 int FiberJobSystem::GetThreadCount() const {
   absl::ReaderMutexLock lock(&mutex_);
-  return total_thread_count_;
+  return static_cast<int>(threads_.size());
 }
 
 int FiberJobSystem::GetFiberCount() const {

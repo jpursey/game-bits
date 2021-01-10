@@ -12,8 +12,8 @@ bool SupportsFibers() { return false; }
 
 void SetFiberVerboseLogging(bool) {}
 
-std::vector<Fiber> CreateFiberThreads(int, FiberOptions, uint32_t, void*,
-                                      FiberMain) {
+std::vector<FiberThread> CreateFiberThreads(int, FiberOptions, uint32_t, void*,
+                                            FiberMain) {
   LOG(ERROR) << "Job fibers not supported on this platform";
   return {};
 }

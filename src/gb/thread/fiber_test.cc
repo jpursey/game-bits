@@ -23,12 +23,12 @@ namespace {
     return;                   \
   }
 
-void WaitAndDeleteFibers(absl::Span<const Fiber> fibers) {
-  while (GetRunningFiberCount() > 0) {
-    std::this_thread::yield();
+void WaitAndDeleteFibers(absl::Span<const FiberThread> fiber_threads) {
+  for (const auto& fiber_thread : fiber_threads) {
+    JoinThread(fiber_thread.thread);
   }
-  for (Fiber fiber : fibers) {
-    DeleteFiber(fiber);
+  for (const auto& fiber_thread : fiber_threads) {
+    DeleteFiber(fiber_thread.fiber);
   }
 }
 
@@ -182,7 +182,7 @@ TEST_F(FiberTest, GetThisFiber) {
         EXPECT_EQ(state.fiber, GetThisFiber());
       });
   ASSERT_EQ(fibers.size(), 1);
-  state.fiber = fibers[0];
+  state.fiber = fibers[0].fiber;
   WaitAndDeleteFibers(fibers);
 }
 
@@ -242,8 +242,8 @@ TEST_F(FiberTest, SwitchToFiberAndExit) {
         state.counter += 1;
       });
   ASSERT_NE(state.fiber, nullptr);
-  fibers.push_back(state.fiber);
   WaitAndDeleteFibers(fibers);
+  DeleteFiber(state.fiber);
   EXPECT_EQ(state.counter, 1);
 }
 
@@ -273,8 +273,8 @@ TEST_F(FiberTest, SwitchToFiberAndBackThenExit) {
       });
   ASSERT_NE(new_fiber, nullptr);
   state.fiber = new_fiber;
-  fibers.push_back(new_fiber);
   WaitAndDeleteFibers(fibers);
+  DeleteFiber(new_fiber);
   EXPECT_EQ(state.counter, 3);
 }
 
@@ -326,7 +326,8 @@ TEST_F(FiberTest, SwapThreadsAndExit) {
         SwitchToFiber(next_fiber);
       });
   state.fiber_1 = fiber_3;
-  WaitAndDeleteFibers({fiber_1[0], fiber_2[0], fiber_3});
+  WaitAndDeleteFibers({fiber_1[0], fiber_2[0]});
+  DeleteFiber(fiber_3);
   EXPECT_EQ(state.counter, 31);
 }
 
@@ -402,9 +403,12 @@ TEST_F(FiberTest, ThreadAbuse) {
 
   state.mutex.Lock();
   const int num_threads = std::max(4, GetMaxConcurrency());
-  state.all_fibers = CreateFiberThreads(
+  auto fiber_threads = CreateFiberThreads(
       num_threads, {FiberOption::kPinThreads, FiberOption::kSetThreadName},
       4096, &state, state.callback);
+  for (const auto& fiber_thread : fiber_threads) {
+    state.all_fibers.push_back(fiber_thread.fiber);
+  }
   for (int i = 0; i < 5; ++i) {
     Fiber fiber =
         CreateFiber(FiberOption::kSetThreadName, 4096, &state, state.callback);
@@ -419,7 +423,12 @@ TEST_F(FiberTest, ThreadAbuse) {
 
   state.mutex.Lock();
   EXPECT_EQ(state.counter, 1000 + num_threads);
-  WaitAndDeleteFibers(state.all_fibers);
+  for (const auto& fiber_thread : fiber_threads) {
+    JoinThread(fiber_thread.thread);
+  }
+  for (auto fiber : state.all_fibers) {
+    DeleteFiber(fiber);
+  }
   state.mutex.Unlock();
 }
 

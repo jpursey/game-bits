@@ -176,9 +176,11 @@ void SetFiberVerboseLogging(bool enabled) {
 #endif  // GB_BUILD_ENABLE_THREAD_LOGGING
 }
 
-std::vector<Fiber> CreateFiberThreads(int thread_count, FiberOptions options,
-                                      uint32_t stack_size, void* user_data,
-                                      FiberMain fiber_main) {
+std::vector<FiberThread> CreateFiberThreads(int thread_count,
+                                            FiberOptions options,
+                                            uint32_t stack_size,
+                                            void* user_data,
+                                            FiberMain fiber_main) {
   auto affinities = GetHardwareThreadAffinities();
   const int max_concurrency = static_cast<int>(affinities.size());
   if (thread_count <= 0) {
@@ -196,8 +198,8 @@ std::vector<Fiber> CreateFiberThreads(int thread_count, FiberOptions options,
                << (options.IsSet(FiberOption::kPinThreads) ? "pinned"
                                                            : "not pinned");
 
-  std::vector<Fiber> fibers;
-  fibers.reserve(thread_count);
+  std::vector<FiberThread> fiber_threads;
+  fiber_threads.reserve(thread_count);
   for (int i = 0; i < thread_count; ++i) {
     // Unfortunately, the Windows fiber library seems to have some undocumented
     // requirements that prevent safely exiting a thread from anything other
@@ -223,18 +225,18 @@ std::vector<Fiber> CreateFiberThreads(int thread_count, FiberOptions options,
       gb::DeleteFiber(start_info.fiber);
       break;
     }
-    gb::DetachThread(start_info.win_thread);
 
     start_info.started.WaitForNotification();
     if (start_info.error != ERROR_SUCCESS) {
       LOG(ERROR) << "Failed to convert fiber thread " << i
                  << " to fiber: " << GetWindowsError(start_info.error);
       gb::DeleteFiber(start_info.fiber);
+      gb::DetachThread(start_info.win_thread);
       break;
     }
-    fibers.emplace_back(start_info.fiber);
+    fiber_threads.emplace_back(start_info.fiber, start_info.win_thread);
   }
-  return fibers;
+  return fiber_threads;
 }
 
 Fiber CreateFiber(FiberOptions options, uint32_t stack_size, void* user_data,

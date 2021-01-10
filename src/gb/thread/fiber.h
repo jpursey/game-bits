@@ -19,13 +19,21 @@ namespace gb {
 // fibers for platforms that support it.
 //==============================================================================
 
-// A Fiber is a handle to a platform-specific fiber. Null indicates an
-// invalid/non-existant fiber.
-struct FiberType;
-using Fiber = FiberType*;
-
 // Signature for the main function of a fiber.
 using FiberMain = void (*)(void* user_data);
+
+// This class represents an initial pairing of a fiber and the thread it begain
+// running on.
+//
+// This is returned by CreateFiberThreads.
+struct FiberThread {
+  FiberThread() {}
+  FiberThread(Fiber in_fiber, Thread in_thread)
+      : fiber(in_fiber), thread(in_thread) {}
+
+  Fiber fiber = nullptr;
+  Thread thread = nullptr;
+};
 
 // Options when creating fiber threads.
 enum class FiberOption {
@@ -74,13 +82,17 @@ void SetFiberVerboseLogging(bool enabled);
 //
 // Returns the successfully created set of fibers, each running on their own
 // thread. If fibers are not supported or creation fails this may be less that
-// the requested number of fibers (potentially empty). DeleteFiber must be
-// called to delete each fiber when it is not running.
+// the requested number of fibers (potentially empty). Both the threads and
+// fibers returned must be managed by the caller. DeleteFiber must be called to
+// delete each fiber when it is not running in a thread, and either DetachThread
+// or JoinThread must eventually be called on each thread.
 //
 // This function is thread-safe.
-std::vector<Fiber> CreateFiberThreads(int thread_count, FiberOptions options,
-                                      uint32_t stack_size, void* user_data,
-                                      FiberMain fiber_main);
+std::vector<FiberThread> CreateFiberThreads(int thread_count,
+                                            FiberOptions options,
+                                            uint32_t stack_size,
+                                            void* user_data,
+                                            FiberMain fiber_main);
 
 // Creates a suspended fiber.
 //

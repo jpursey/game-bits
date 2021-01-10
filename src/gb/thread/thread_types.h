@@ -16,6 +16,16 @@ namespace gb {
 #endif  // NDEBUG
 #endif  // GB_BUILD_ENABLE_THREAD_LOGGING
 
+// A Fiber is a handle to a platform-specific fiber. Null indicates an
+// invalid/non-existant fiber.
+struct FiberType;
+using Fiber = FiberType*;
+
+// A Thread is a handle to a platform-specific thread. Null indicates an
+// invalid/non-existant thread.
+struct ThreadType;
+using Thread = ThreadType*;
+
 }  // namespace gb
 
 #endif  // GB_THREAD_TYPES_H_
