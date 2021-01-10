@@ -124,6 +124,7 @@ TEST(WeakPtrTest, InvalidateBlocksOnLock) {
     EXPECT_EQ(lock->GetValue(), 42);
     return true;
   });
+  tester.Wait(1);
   tester.Complete();
 }
 

@@ -12,11 +12,6 @@
 namespace gb {
 namespace {
 
-struct PartialType;
-struct StructType {};
-class ClassType {};
-enum class EnumType { kValueZero, kValueOne, kValueTwo };
-
 struct Counts {
   Counts() = default;
   int destruct = 0;
@@ -56,6 +51,11 @@ class NoDestructItem final {
 };
 
 TEST(TypeKeyTest, KeyIsNotNull) {
+  struct PartialType;
+  struct StructType {};
+  class ClassType {};
+  enum class EnumType { kValueZero, kValueOne, kValueTwo };
+
   EXPECT_NE(TypeKey::Get<PartialType>(), nullptr);
   EXPECT_NE(TypeKey::Get<StructType>(), nullptr);
   EXPECT_NE(TypeKey::Get<ClassType>(), nullptr);
@@ -68,6 +68,11 @@ TEST(TypeKeyTest, KeyIsNotNull) {
 }
 
 TEST(TypeKeyTest, KeyIsStable) {
+  struct PartialType;
+  struct StructType {};
+  class ClassType {};
+  enum class EnumType { kValueZero, kValueOne, kValueTwo };
+
   EXPECT_EQ(TypeKey::Get<PartialType>(), TypeKey::Get<PartialType>());
   EXPECT_EQ(TypeKey::Get<StructType>(), TypeKey::Get<StructType>());
   EXPECT_EQ(TypeKey::Get<ClassType>(), TypeKey::Get<ClassType>());
@@ -80,6 +85,9 @@ TEST(TypeKeyTest, KeyIsStable) {
 }
 
 TEST(TypeKeyTest, DefaultTypeName) {
+  struct PartialType;
+  class ClassType {};
+
   EXPECT_STREQ(TypeKey::Get<PartialType>()->GetTypeName(), "");
   EXPECT_STREQ(TypeKey::Get<ClassType>()->GetTypeName(), "");
 }
@@ -117,6 +125,11 @@ TEST(TypeKeyTest, SetTypeNameThreadAbuse) {
 }
 
 TEST(TypeInfoTest, InfoIsNotNull) {
+  struct PartialType;
+  struct StructType {};
+  class ClassType {};
+  enum class EnumType { kValueZero, kValueOne, kValueTwo };
+
   EXPECT_NE(TypeInfo::Get<StructType>(), nullptr);
   EXPECT_NE(TypeInfo::Get<ClassType>(), nullptr);
   EXPECT_NE(TypeInfo::Get<EnumType>(), nullptr);
@@ -128,10 +141,16 @@ TEST(TypeInfoTest, InfoIsNotNull) {
 }
 
 TEST(TypeInfoTest, InfoIsStable) {
+  struct StructType {};
   EXPECT_EQ(TypeInfo::Get<StructType>(), TypeInfo::Get<StructType>());
 }
 
 TEST(TypeInfoTest, PlaceholderInfoIsNotNull) {
+  struct PartialType;
+  struct StructType {};
+  class ClassType {};
+  enum class EnumType { kValueZero, kValueOne, kValueTwo };
+
   EXPECT_NE(TypeInfo::GetPlaceholder<PartialType>(), nullptr);
   EXPECT_NE(TypeInfo::GetPlaceholder<StructType>(), nullptr);
   EXPECT_NE(TypeInfo::GetPlaceholder<ClassType>(), nullptr);
@@ -144,6 +163,11 @@ TEST(TypeInfoTest, PlaceholderInfoIsNotNull) {
 }
 
 TEST(TypeInfoTest, PlaceholderCannotDestroy) {
+  struct PartialType;
+  struct StructType {};
+  class ClassType {};
+  enum class EnumType { kValueZero, kValueOne, kValueTwo };
+
   EXPECT_FALSE(TypeInfo::GetPlaceholder<PartialType>()->CanDestroy());
   EXPECT_FALSE(TypeInfo::GetPlaceholder<StructType>()->CanDestroy());
   EXPECT_FALSE(TypeInfo::GetPlaceholder<ClassType>()->CanDestroy());
@@ -156,6 +180,11 @@ TEST(TypeInfoTest, PlaceholderCannotDestroy) {
 }
 
 TEST(TypeInfoTest, PlaceholderCannotClone) {
+  struct PartialType;
+  struct StructType {};
+  class ClassType {};
+  enum class EnumType { kValueZero, kValueOne, kValueTwo };
+
   EXPECT_FALSE(TypeInfo::GetPlaceholder<PartialType>()->CanClone());
   EXPECT_FALSE(TypeInfo::GetPlaceholder<StructType>()->CanClone());
   EXPECT_FALSE(TypeInfo::GetPlaceholder<ClassType>()->CanClone());
@@ -168,42 +197,52 @@ TEST(TypeInfoTest, PlaceholderCannotClone) {
 }
 
 TEST(TypeInfoTest, PlaceholderInfoIsStable) {
+  struct PartialType;
   EXPECT_EQ(TypeInfo::GetPlaceholder<PartialType>(),
             TypeInfo::GetPlaceholder<PartialType>());
 }
 
 TEST(TypeInfoTest, PlaceholderInfoIsNotInfo) {
+  struct StructType {};
   EXPECT_NE(TypeInfo::GetPlaceholder<StructType>(),
             TypeInfo::Get<StructType>());
 }
 
 TEST(TypeInfoTest, PlayerholderInfoForPartialType) {
+  struct PartialType;
   EXPECT_NE(TypeInfo::GetPlaceholder<PartialType>(), nullptr);
   EXPECT_EQ(TypeInfo::GetPlaceholder<PartialType>(),
             TypeInfo::GetPlaceholder<PartialType>());
 }
 
 TEST(TypeInfoTest, KeyMatches) {
+  struct PartialType;
+  struct StructType {};
   EXPECT_EQ(TypeInfo::Get<StructType>()->Key(), TypeKey::Get<StructType>());
   EXPECT_EQ(TypeInfo::GetPlaceholder<PartialType>()->Key(),
             TypeKey::Get<PartialType>());
 }
 
 TEST(TypeInfoTest, DefaultTypeName) {
-  EXPECT_TRUE(absl::StrContains(TypeKey::Get<StructType>()->GetTypeName(),
+  struct StructType {};
+  EXPECT_TRUE(absl::StrContains(TypeInfo::Get<StructType>()->GetTypeName(),
                                 "StructType"))
-      << "Name is \"" << TypeKey::Get<StructType>()->GetTypeName() << "\"";
+      << "Name is \"" << TypeInfo::Get<StructType>()->GetTypeName() << "\"";
 }
 
 TEST(TypeInfoTest, GetNameMatchesKey) {
-  EXPECT_EQ(TypeInfo::Get<StructType>()->GetTypeName(),
-            TypeKey::Get<StructType>()->GetTypeName());
-  EXPECT_EQ(TypeInfo::GetPlaceholder<PartialType>()->GetTypeName(),
-            TypeKey::Get<PartialType>()->GetTypeName());
+  struct PartialType;
+  struct StructType {};
+
+  const char* info_name_ptr = TypeInfo::Get<StructType>()->GetTypeName();
+  EXPECT_EQ(info_name_ptr, TypeKey::Get<StructType>()->GetTypeName());
+
+  info_name_ptr = TypeInfo::GetPlaceholder<PartialType>()->GetTypeName();
+  EXPECT_EQ(info_name_ptr, TypeKey::Get<PartialType>()->GetTypeName());
 }
 
 TEST(TypeInfoTest, SetNameMatches) {
-  struct TestType {};
+  struct StructType {};
   TypeInfo::Get<StructType>()->SetTypeName("A");
   EXPECT_STREQ(TypeInfo::Get<StructType>()->GetTypeName(), "A");
   EXPECT_STREQ(TypeInfo::GetPlaceholder<StructType>()->GetTypeName(), "A");
@@ -217,6 +256,9 @@ TEST(TypeInfoTest, SetNameMatches) {
 }
 
 TEST(TypeInfoTest, InfoCanDestroy) {
+  struct StructType {};
+  class ClassType {};
+  enum class EnumType { kValueZero, kValueOne, kValueTwo };
   EXPECT_TRUE(TypeInfo::Get<StructType>()->CanDestroy());
   EXPECT_TRUE(TypeInfo::Get<ClassType>()->CanDestroy());
   EXPECT_TRUE(TypeInfo::Get<EnumType>()->CanDestroy());
@@ -229,6 +271,9 @@ TEST(TypeInfoTest, InfoCanDestroy) {
 }
 
 TEST(TypeInfoTest, InfoCanClone) {
+  struct StructType {};
+  class ClassType {};
+  enum class EnumType { kValueZero, kValueOne, kValueTwo };
   EXPECT_TRUE(TypeInfo::Get<StructType>()->CanClone());
   EXPECT_TRUE(TypeInfo::Get<ClassType>()->CanClone());
   EXPECT_TRUE(TypeInfo::Get<EnumType>()->CanClone());
