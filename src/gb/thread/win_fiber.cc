@@ -101,7 +101,6 @@ void RunFiberMain(Fiber fiber) {
   fiber->mutex.Lock();
   fiber->thread = nullptr;
   WinFiber thread_win_fiber = std::exchange(fiber->thread_win_fiber, nullptr);
-  fiber->win_fiber = nullptr;
   --g_running_count;
   fiber->mutex.Unlock();
 
