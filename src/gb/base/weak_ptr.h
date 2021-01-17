@@ -288,7 +288,7 @@ template <typename Type>
 template <typename Scope>
 inline WeakPtr<Type>::WeakPtr(Scope* scope) {
   if (scope != nullptr) {
-    *this = scope->GetWeakPtr<Type>();
+    *this = scope->template GetWeakPtr<Type>();
   }
 }
 

@@ -1,6 +1,8 @@
 # Build directories
-/Build/
-/3rdparty/Build/
+/build/
+/3rdparty/build/
+out/
+.vs/
 
 # Sublime files
 game-bits.sublime-workspace
@@ -13,6 +15,9 @@ bin/Debug
 bin/Release
 bin/MinSizeRel
 bin/RelWithDebInfo
+bin/*.exe
+bin/*.pdb
+bin/*.ilk
 
 # Binary working output
 /*.ini

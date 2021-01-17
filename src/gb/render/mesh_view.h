@@ -184,6 +184,7 @@ class MeshView final {
         vertex_view_(std::move(vertex_view)),
         index_view_(std::move(index_view)) {}
 
+  TypeKey* GetVertexType(RenderInternal) const { return vertex_type_; }
   const void* GetVertexData(RenderInternal) const;
   const uint16_t* GetIndexData(RenderInternal) const;
 

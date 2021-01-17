@@ -32,7 +32,7 @@ class ImGuiInstance final {
 
   // OPTIONAL: Scene order for the GUI scene. By default this is 100, which is
   // suitably late.
-  static inline constexpr char* kKeySceneOrder = "SceneOrder";
+  static inline constexpr const char* kKeySceneOrder = "SceneOrder";
   static GB_CONTEXT_CONSTRAINT_NAMED_DEFAULT(kConstraintSceneOrder, kInOptional,
                                              int, kKeySceneOrder, 100);
 

@@ -39,11 +39,17 @@ using ResourceId = uint64_t;
 using ResourceKey = std::tuple<TypeKey*, ResourceId>;
 
 // Internal access token for the resource system.
-GB_DEFINE_ACCESS_TOKEN(ResourceInternal, class Resource, class ResourceEntry,
-                       class ResourceNameReservation, class ResourceManager,
-                       class ResourcePtrBase, class ResourceSet,
-                       class ResourceSystem, class ResourceFileReader,
-                       class ResourceFileWriter);
+GB_BEGIN_ACCESS_TOKEN(ResourceInternal)
+friend class Resource;
+friend class ResourceEntry;
+friend class ResourceNameReservation;
+friend class ResourceManager;
+friend class ResourcePtrBase;
+friend class ResourceSet;
+friend class ResourceSystem;
+friend class ResourceFileReader;
+friend class ResourceFileWriter;
+GB_END_ACCESS_TOKEN()
 
 }  // namespace gb
 

@@ -32,7 +32,7 @@ class BlockWorld final : public gb::Game {
                                gb::MessageSystem);
   static GB_CONTEXT_CONSTRAINT(kConstraintStateEndpoint, kScoped,
                                gb::MessageStackEndpoint);
-  static inline constexpr char* kKeySdlEndpointId = "SdlEndpointId";
+  static inline constexpr const char* kKeySdlEndpointId = "SdlEndpointId";
   static GB_CONTEXT_CONSTRAINT_NAMED(kConstraintSdlEndpointId, kScoped,
                                      gb::MessageEndpointId, kKeySdlEndpointId);
   static GB_CONTEXT_CONSTRAINT(kConstraintStateMachine, kScoped,

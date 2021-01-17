@@ -16,7 +16,10 @@
 //
 // Example:
 //
-// GB_DEFINE_ACCESS_TOKEN(ModuleInternal, class Foo, void GlobalFunc());
+// GB_BEGIN_ACCESS_TOKEN(ModuleInternal)
+// friend class Foo;
+// friend void GlobalFunc();
+// GB_END_ACCESS_TOKEN()
 //
 // class Bar {
 //  public:
@@ -45,80 +48,21 @@
 //   bar.FuncA({}, 100, 200);
 // }
 
-#define GB_CALL(Name, Args) Name Args
-#define GB_NTH_ARG(_1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, \
-                   _14, _15, N, ...)                                       \
-  N
+#define GB_BEGIN_ACCESS_TOKEN(Name)         \
+  class Name {                              \
+   public:                                  \
+    Name(const Name&) = default;            \
+    Name(Name&&) = default;                 \
+    Name& operator=(const Name&) = default; \
+    Name& operator=(Name&&) = default;      \
+                                            \
+   private:                                 \
+    Name() = default;                       \
+    gb::AccessToken token_;
 
-#define GB_DEFINE_FRIEND_LIST1(Friend) friend Friend;
-#define GB_DEFINE_FRIEND_LIST2(Friend, ...) \
-  friend Friend;                            \
-  GB_CALL(GB_DEFINE_FRIEND_LIST1, (__VA_ARGS__))
-#define GB_DEFINE_FRIEND_LIST3(Friend, ...) \
-  friend Friend;                            \
-  GB_CALL(GB_DEFINE_FRIEND_LIST2, (__VA_ARGS__))
-#define GB_DEFINE_FRIEND_LIST4(Friend, ...) \
-  friend Friend;                            \
-  GB_CALL(GB_DEFINE_FRIEND_LIST3, (__VA_ARGS__))
-#define GB_DEFINE_FRIEND_LIST5(Friend, ...) \
-  friend Friend;                            \
-  GB_CALL(GB_DEFINE_FRIEND_LIST4, (__VA_ARGS__))
-#define GB_DEFINE_FRIEND_LIST6(Friend, ...) \
-  friend Friend;                            \
-  GB_CALL(GB_DEFINE_FRIEND_LIST5, (__VA_ARGS__))
-#define GB_DEFINE_FRIEND_LIST7(Friend, ...) \
-  friend Friend;                            \
-  GB_CALL(GB_DEFINE_FRIEND_LIST6, (__VA_ARGS__))
-#define GB_DEFINE_FRIEND_LIST8(Friend, ...) \
-  friend Friend;                            \
-  GB_CALL(GB_DEFINE_FRIEND_LIST7, (__VA_ARGS__))
-#define GB_DEFINE_FRIEND_LIST9(Friend, ...) \
-  friend Friend;                            \
-  GB_CALL(GB_DEFINE_FRIEND_LIST8, (__VA_ARGS__))
-#define GB_DEFINE_FRIEND_LIST10(Friend, ...) \
-  friend Friend;                             \
-  GB_CALL(GB_DEFINE_FRIEND_LIST9, (__VA_ARGS__))
-#define GB_DEFINE_FRIEND_LIST11(Friend, ...) \
-  friend Friend;                             \
-  GB_CALL(GB_DEFINE_FRIEND_LIST10, (__VA_ARGS__))
-#define GB_DEFINE_FRIEND_LIST12(Friend, ...) \
-  friend Friend;                             \
-  GB_CALL(GB_DEFINE_FRIEND_LIST11, (__VA_ARGS__))
-#define GB_DEFINE_FRIEND_LIST13(Friend, ...) \
-  friend Friend;                             \
-  GB_CALL(GB_DEFINE_FRIEND_LIST12, (__VA_ARGS__))
-#define GB_DEFINE_FRIEND_LIST14(Friend, ...) \
-  friend Friend;                             \
-  GB_CALL(GB_DEFINE_FRIEND_LIST13, (__VA_ARGS__))
-#define GB_DEFINE_FRIEND_LIST15(Friend, ...) \
-  friend Friend;                             \
-  GB_CALL(GB_DEFINE_FRIEND_LIST14, (__VA_ARGS__))
-
-#define GB_DEFINE_FRIEND_LIST(...)                                           \
-  GB_CALL(                                                                   \
-      GB_CALL(GB_NTH_ARG, (__VA_ARGS__, GB_DEFINE_FRIEND_LIST15,             \
-                           GB_DEFINE_FRIEND_LIST14, GB_DEFINE_FRIEND_LIST13, \
-                           GB_DEFINE_FRIEND_LIST12, GB_DEFINE_FRIEND_LIST11, \
-                           GB_DEFINE_FRIEND_LIST10, GB_DEFINE_FRIEND_LIST9,  \
-                           GB_DEFINE_FRIEND_LIST8, GB_DEFINE_FRIEND_LIST7,   \
-                           GB_DEFINE_FRIEND_LIST6, GB_DEFINE_FRIEND_LIST5,   \
-                           GB_DEFINE_FRIEND_LIST4, GB_DEFINE_FRIEND_LIST3,   \
-                           GB_DEFINE_FRIEND_LIST2, GB_DEFINE_FRIEND_LIST1)), \
-      (__VA_ARGS__))
-
-#define GB_DEFINE_ACCESS_TOKEN(Name, ...)         \
-  class Name {                                    \
-   public:                                        \
-    Name(const Name&) = default;                  \
-    Name(Name&&) = default;                       \
-    Name& operator=(const Name&) = default;       \
-    Name& operator=(Name&&) = default;            \
-                                                  \
-   private:                                       \
-    Name() = default;                             \
-    gb::AccessToken token_;                       \
-    GB_CALL(GB_DEFINE_FRIEND_LIST, (__VA_ARGS__)) \
-  }
+#define GB_END_ACCESS_TOKEN() \
+  }                           \
+  ;
 
 namespace gb {
 // This class is required so the named access token defined above is not

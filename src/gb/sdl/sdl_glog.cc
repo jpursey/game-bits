@@ -60,6 +60,8 @@ void SdlToGLog(void* user_data, int category, SDL_LogPriority priority,
     case SDL_LOG_PRIORITY_CRITICAL:
       LOG(DFATAL) << category_string << message;
       break;
+    default:
+      break;
   }
 }
 

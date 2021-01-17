@@ -118,7 +118,7 @@ struct DefaultGlobalAllocatorTraits {
 template <typename Type>
 struct GlobalAllocatorTraits {
   static Allocator* Get() noexcept {
-    static alignas(Type) char instance_memory[sizeof(Type)];
+    alignas(Type) static char instance_memory[sizeof(Type)];
     static Type* instance = new (instance_memory) Type();
     return instance;
   }

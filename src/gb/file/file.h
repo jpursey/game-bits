@@ -290,7 +290,7 @@ void File::ReadRemaining(std::vector<Type>* buffer) {
   const int64_t type_size = static_cast<int64_t>(sizeof(Type));
   const int64_t count = remaining / type_size;
   remaining = count * type_size;
-  buffer->resize(static_cast<std::vector<Type>::size_type>(count));
+  buffer->resize(static_cast<typename std::vector<Type>::size_type>(count));
   if (remaining == 0) {
     return;
   }
@@ -362,7 +362,7 @@ inline std::vector<std::string> File::ReadRemainingLines() {
 
 template <typename Container>
 int64_t File::WriteLines(const Container& lines, std::string_view line_end) {
-  Container::size_type count = 0;
+  typename Container::size_type count = 0;
   for (const auto& line : lines) {
     if (!WriteLine(line, line_end)) {
       break;

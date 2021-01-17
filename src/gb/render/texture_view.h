@@ -33,9 +33,9 @@ class TextureView final {
   //----------------------------------------------------------------------------
 
   TextureView(const TextureView& other) = delete;
-  TextureView(TextureView&& other) = default;
+  TextureView(TextureView&& other) = delete;
   TextureView& operator=(const TextureView& other) = delete;
-  TextureView& operator=(TextureView&& other) = default;
+  TextureView& operator=(TextureView&& other) = delete;
   ~TextureView();
 
   //----------------------------------------------------------------------------

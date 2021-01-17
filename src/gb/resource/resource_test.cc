@@ -165,8 +165,8 @@ TEST(ResourceTest, ResourceDeletedWhenManagerIsDestroyed) {
   auto manager = std::make_unique<ResourceManager>();
   EXPECT_TRUE(system->Register<TestResource>(manager.get()));
 
-  auto* resource = new TestResource(
-      &counts, manager->NewResourceEntryWithId<TestResource>(1), {});
+  new TestResource(&counts, manager->NewResourceEntryWithId<TestResource>(1),
+                   {});
   manager.reset();
   EXPECT_EQ(counts.destruct, 1);
 }
@@ -178,8 +178,8 @@ TEST(ResourceTest, ResourceDeletedWhenSystemIsDestroyed) {
   auto manager = std::make_unique<ResourceManager>();
   EXPECT_TRUE(system->Register<TestResource>(manager.get()));
 
-  auto* resource = new TestResource(
-      &counts, manager->NewResourceEntryWithId<TestResource>(1), {});
+  new TestResource(&counts, manager->NewResourceEntryWithId<TestResource>(1),
+                   {});
   system.reset();
   EXPECT_EQ(counts.destruct, 1);
 }
@@ -263,7 +263,8 @@ TEST(ResourceTest, ResourcePtrCopy) {
   EXPECT_EQ(other_resource_ptr.Get(), resource);
   EXPECT_TRUE(resource->IsResourceReferenced());
 
-  other_resource_ptr = other_resource_ptr;
+  auto& self = other_resource_ptr;
+  other_resource_ptr = self;
   EXPECT_EQ(other_resource_ptr.Get(), resource);
   EXPECT_TRUE(resource->IsResourceReferenced());
 
@@ -335,7 +336,8 @@ TEST(ResourceTest, ResourcePtrMove) {
   EXPECT_EQ(other_resource_ptr.Get(), resource);
   EXPECT_TRUE(resource->IsResourceReferenced());
 
-  other_resource_ptr = std::move(other_resource_ptr);
+  auto& self = other_resource_ptr;
+  other_resource_ptr = std::move(self);
   EXPECT_EQ(other_resource_ptr.Get(), resource);
   EXPECT_TRUE(resource->IsResourceReferenced());
 

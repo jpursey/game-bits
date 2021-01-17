@@ -162,6 +162,8 @@ bool PlayState::OnSdlEvent(const SDL_Event& event) {
       case SDL_SCANCODE_D:
         camera_strafe_mod_ = 1.0f;
         return true;
+      default:
+        break;
     }
     return false;
   }
@@ -189,6 +191,8 @@ bool PlayState::OnSdlEvent(const SDL_Event& event) {
         }
         return true;
       }
+      default:
+        break;
     }
     return false;
   }

@@ -305,7 +305,8 @@ TEST(CallbackTest, UniquePointerConstructMethodCounter) {
 TEST(CallbackTest, SelfAssignMethodCounter) {
   MethodCounter::Reset();
   Callback<void(void)> callback(MethodCounter{});
-  callback = std::move(callback);
+  auto&& src_callback = std::move(callback);
+  callback = std::move(src_callback);
   EXPECT_EQ(MethodCounter::Info().default_constructor_count_, 1);
   EXPECT_EQ(MethodCounter::Info().copy_constructor_count_, 0);
   EXPECT_EQ(MethodCounter::Info().move_constructor_count_, 1);

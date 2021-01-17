@@ -63,10 +63,10 @@ class Item {
   Counts* counts;
 };
 
-constexpr char* kNameWidth = "Width";
-constexpr char* kNameHeight = "Height";
-constexpr char* kNameScore = "Score";
-constexpr char* kNameValue = "Value";
+constexpr const char* kNameWidth = "Width";
+constexpr const char* kNameHeight = "Height";
+constexpr const char* kNameScore = "Score";
+constexpr const char* kNameValue = "Value";
 
 constexpr int kDefaultInWidth = 100;
 constexpr int kDefaultInHeight = 200;
@@ -351,7 +351,7 @@ struct ValidatedContextDestructorTestType {
 // ConstraintMacroTest
 
 constexpr int kTestConstraintValue = 10;
-constexpr char* kTestConstraintName = "name";
+constexpr const char* kTestConstraintName = "name";
 
 GB_CONTEXT_CONSTRAINT(kTestConstraint, kInRequired, int);
 GB_CONTEXT_CONSTRAINT_DEFAULT(kTestConstraintDefault, kInRequired, int,
@@ -456,9 +456,8 @@ TYPED_TEST(AssignContextTest, EmptyContextValidWithNoValues) {
 
 TYPED_TEST(AssignContextTest, EmptyContextValidWithOptionalValues) {
   Context context;
-  EXPECT_TRUE(
-      (TypeParam::Assign<kInOptionalWidth, kInOptionalHeight, kInOptionalItem>(
-          &context)));
+  EXPECT_TRUE((TypeParam::template Assign<kInOptionalWidth, kInOptionalHeight,
+                                          kInOptionalItem>(&context)));
   EXPECT_TRUE(context.Exists<int>(kNameWidth));
   EXPECT_TRUE(context.Exists<int>(kNameHeight));
   EXPECT_EQ(context.GetValue<int>(kNameWidth), kDefaultInWidth);
@@ -467,13 +466,13 @@ TYPED_TEST(AssignContextTest, EmptyContextValidWithOptionalValues) {
 
 TYPED_TEST(AssignContextTest, EmptyContextInvalidWithRequiredValue) {
   Context context;
-  EXPECT_FALSE((TypeParam::Assign<kInRequiredItem>(&context)));
+  EXPECT_FALSE((TypeParam::template Assign<kInRequiredItem>(&context)));
   EXPECT_FALSE(context.Exists<Item>());
 }
 
 TYPED_TEST(AssignContextTest, EmptyContextInvalidWithRequiredNamedValue) {
   Context context;
-  EXPECT_FALSE((TypeParam::Assign<kInRequiredWidth>(&context)));
+  EXPECT_FALSE((TypeParam::template Assign<kInRequiredWidth>(&context)));
   EXPECT_FALSE(context.NameExists(kNameWidth));
 }
 
@@ -490,31 +489,30 @@ TYPED_TEST(AssignContextTest, ContextValidWithRequiredValue) {
   Counts counts;
   Context context;
   context.SetValue<Item>(&counts);
-  EXPECT_TRUE((TypeParam::Assign<kInRequiredItem>(&context)));
+  EXPECT_TRUE((TypeParam::template Assign<kInRequiredItem>(&context)));
 }
 
 TYPED_TEST(AssignContextTest, ContextValidWithRequiredNamedValues) {
   Context context;
   context.SetValue<int>(kNameWidth, 10);
   context.SetValue<int>(kNameHeight, 20);
-  EXPECT_TRUE(
-      (TypeParam::Assign<kInRequiredWidth, kInRequiredHeight>(&context)));
+  EXPECT_TRUE((TypeParam::template Assign<kInRequiredWidth, kInRequiredHeight>(
+      &context)));
 }
 
 TYPED_TEST(AssignContextTest, ContextValidWithOptionalValue) {
   Counts counts;
   Context context;
   context.SetValue<Item>(&counts);
-  EXPECT_TRUE((TypeParam::Assign<kInOptionalItem>(&context)));
+  EXPECT_TRUE((TypeParam::template Assign<kInOptionalItem>(&context)));
 }
 
 TYPED_TEST(AssignContextTest, ContextValidWithOptionalNamedValues) {
   Context context;
   context.SetValue<int>(kNameWidth, 10);
   context.SetValue<int>(kNameHeight, 20);
-  EXPECT_TRUE(
-      (TypeParam::Assign<kInOptionalWidth, kInOptionalHeight, kInOptionalItem>(
-          &context)));
+  EXPECT_TRUE((TypeParam::template Assign<kInOptionalWidth, kInOptionalHeight,
+                                          kInOptionalItem>(&context)));
   EXPECT_EQ(context.GetValue<int>(kNameWidth), 10);
   EXPECT_EQ(context.GetValue<int>(kNameHeight), 20);
 }
@@ -523,21 +521,19 @@ TYPED_TEST(AssignContextTest, ContextInvalidWithOptionalNamedValueOfWrongType) {
   Context context;
   context.SetValue<double>(kNameWidth, 10.0);
   context.SetValue<double>(kNameHeight, 20.0);
-  EXPECT_FALSE(
-      (TypeParam::Assign<kInOptionalWidth, kInOptionalHeight>(&context)));
+  EXPECT_FALSE((TypeParam::template Assign<kInOptionalWidth, kInOptionalHeight>(
+      &context)));
   EXPECT_EQ(context.GetValue<double>(kNameWidth), 10.0);
   EXPECT_EQ(context.GetValue<double>(kNameHeight), 20.0);
 }
 
 TYPED_TEST(AssignContextTest, OnlyInputValuesAreValidated) {
-  Counts counts;
   Context context;
   context.SetValue<double>(kNameWidth, 10.0);
   context.SetValue<double>(kNameHeight, 20.0);
   context.SetValue<double>(kNameScore, 30.0);
-  EXPECT_TRUE(
-      (TypeParam::Assign<kOutOptionalWidth, kOutOptionalHeight, kScopedScore>(
-          &context)));
+  EXPECT_TRUE((TypeParam::template Assign<kOutOptionalWidth, kOutOptionalHeight,
+                                          kScopedScore>(&context)));
   EXPECT_EQ(context.GetValue<double>(kNameWidth), 10.0);
   EXPECT_EQ(context.GetValue<double>(kNameHeight), 20.0);
   EXPECT_EQ(context.GetValue<double>(kNameScore), 30.0);
@@ -546,7 +542,8 @@ TYPED_TEST(AssignContextTest, OnlyInputValuesAreValidated) {
 TYPED_TEST(AssignContextTest, OptionalOutputValuesAreInitialized) {
   Context context;
   EXPECT_TRUE(
-      (TypeParam::Assign<kOutOptionalWidth, kOutOptionalHeight>(&context)));
+      (TypeParam::template Assign<kOutOptionalWidth, kOutOptionalHeight>(
+          &context)));
   EXPECT_TRUE(context.Exists<int>(kNameWidth));
   EXPECT_TRUE(context.Exists<int>(kNameHeight));
   EXPECT_EQ(context.GetValue<int>(kNameWidth), kDefaultOutWidth);
@@ -558,7 +555,8 @@ TYPED_TEST(AssignContextTest, ScopedValuesAreDeleted) {
   Context context;
   context.SetValue<int>(kNameScore, 42);
   context.SetValue<Item>(&counts);
-  EXPECT_TRUE((TypeParam::Assign<kScopedItem, kScopedScore>(&context)));
+  EXPECT_TRUE(
+      (TypeParam::template Assign<kScopedItem, kScopedScore>(&context)));
   EXPECT_FALSE(context.Exists<int>(kNameScore));
   EXPECT_FALSE(context.Exists<Item>());
   EXPECT_EQ(counts.destruct, 1);
@@ -586,7 +584,7 @@ TYPED_TEST(CompleteContextTest, MissingRequiredOutputValue) {
   ValidatedContext validated_context(&context, {kOutRequiredItem});
   EXPECT_FALSE(validated_context.IsValidToComplete());
   EXPECT_FALSE(TypeParam::Complete(&new_context, &validated_context));
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
 }
 
 TYPED_TEST(CompleteContextTest, MissingNamedRequiredOutputValue) {
@@ -595,7 +593,7 @@ TYPED_TEST(CompleteContextTest, MissingNamedRequiredOutputValue) {
   ValidatedContext validated_context(&context, {kOutRequiredWidth});
   EXPECT_FALSE(validated_context.IsValidToComplete());
   EXPECT_FALSE(TypeParam::Complete(&new_context, &validated_context));
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
 }
 
 TYPED_TEST(CompleteContextTest, InvalidNamedRequiredOutputValueType) {
@@ -605,7 +603,7 @@ TYPED_TEST(CompleteContextTest, InvalidNamedRequiredOutputValueType) {
   ValidatedContext validated_context(&context, {kOutRequiredWidth});
   EXPECT_FALSE(validated_context.IsValidToComplete());
   EXPECT_FALSE(TypeParam::Complete(&new_context, &validated_context));
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
 }
 
 TYPED_TEST(CompleteContextTest, ValidRequiredOutputValues) {
@@ -619,7 +617,7 @@ TYPED_TEST(CompleteContextTest, ValidRequiredOutputValues) {
       &context, {kOutRequiredItem, kOutRequiredWidth, kOutRequiredHeight});
   EXPECT_TRUE(validated_context.IsValidToComplete());
   EXPECT_TRUE(TypeParam::Complete(&new_context, &validated_context));
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
 }
 
 TYPED_TEST(CompleteContextTest, InvalidNamedOptionalOutputValueType) {
@@ -629,7 +627,7 @@ TYPED_TEST(CompleteContextTest, InvalidNamedOptionalOutputValueType) {
   ValidatedContext validated_context(&context, {kOutOptionalWidth});
   EXPECT_FALSE(validated_context.IsValidToComplete());
   EXPECT_FALSE(TypeParam::Complete(&new_context, &validated_context));
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
 }
 
 TYPED_TEST(CompleteContextTest, OptionalOutputValuesAreInitialized) {
@@ -639,7 +637,7 @@ TYPED_TEST(CompleteContextTest, OptionalOutputValuesAreInitialized) {
       &context, {kOutOptionalItem, kOutOptionalWidth, kOutOptionalHeight});
   EXPECT_TRUE(validated_context.IsValidToComplete());
   EXPECT_TRUE(TypeParam::Complete(&new_context, &validated_context));
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
   EXPECT_FALSE(context.Exists<Item>());
   EXPECT_EQ(context.GetValue<int>(kNameWidth), kDefaultOutWidth);
   EXPECT_EQ(context.GetValue<int>(kNameHeight), kDefaultOutHeight);
@@ -657,7 +655,7 @@ TYPED_TEST(CompleteContextTest, OptionalOutputValuesAreNotOverwritten) {
       &context, {kOutOptionalItem, kOutOptionalWidth, kOutOptionalHeight});
   EXPECT_TRUE(validated_context.IsValidToComplete());
   EXPECT_TRUE(TypeParam::Complete(&new_context, &validated_context));
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
   EXPECT_EQ(context.GetPtr<Item>(), &item);
   EXPECT_EQ(context.GetValue<int>(kNameWidth), 10);
   EXPECT_EQ(context.GetValue<int>(kNameHeight), 20);
@@ -672,7 +670,7 @@ TYPED_TEST(CompleteContextTest, ScopedValuesAreDeleted) {
   ValidatedContext validated_context(&context, {kScopedItem, kScopedScore});
   EXPECT_TRUE(validated_context.IsValidToComplete());
   EXPECT_TRUE(TypeParam::Complete(&new_context, &validated_context));
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
   EXPECT_FALSE(context.Exists<Item>());
   EXPECT_FALSE(context.NameExists(kNameScore));
 }
@@ -710,49 +708,49 @@ class ReadNamedSucceedsTest : public ContextConstraintTest {};
 TEST_P(WriteFailsTest, SetNew) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_FALSE(validated_context.SetNew<int>(value));
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
   EXPECT_EQ(context.GetValue<int>(), kInitialValue);
 }
 
 TEST_P(WriteFailsTest, SetOwned) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_FALSE(validated_context.SetOwned<int>(std::make_unique<int>(value)));
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
   EXPECT_EQ(context.GetValue<int>(), kInitialValue);
 }
 
 TEST_P(WriteFailsTest, SetPtr) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_FALSE(validated_context.SetPtr<int>(&value));
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
   EXPECT_EQ(context.GetValue<int>(), kInitialValue);
 }
 
 TEST_P(WriteFailsTest, SetValue) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_FALSE(validated_context.SetValue<int>(value));
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
   EXPECT_EQ(context.GetValue<int>(), kInitialValue);
 }
 
 TEST_P(WriteFailsTest, Release) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_EQ(validated_context.Release<int>(), nullptr);
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
   EXPECT_EQ(context.GetValue<int>(), kInitialValue);
 }
 
 TEST_P(WriteFailsTest, Clear) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_FALSE(validated_context.Clear<int>());
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
   EXPECT_EQ(context.GetValue<int>(), kInitialValue);
 }
 
 TEST_P(WriteNamedFailsTest, SetNamedNew) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_FALSE(validated_context.SetNamedNew<int>(kNameValue, value));
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
   EXPECT_EQ(context.GetValue<int>(kNameValue), kInitialNamedValue);
 }
 
@@ -760,70 +758,70 @@ TEST_P(WriteNamedFailsTest, SetOwned) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_FALSE(validated_context.SetOwned<int>(kNameValue,
                                                std::make_unique<int>(value)));
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
   EXPECT_EQ(context.GetValue<int>(kNameValue), kInitialNamedValue);
 }
 
 TEST_P(WriteNamedFailsTest, SetPtr) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_FALSE(validated_context.SetPtr<int>(kNameValue, &value));
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
   EXPECT_EQ(context.GetValue<int>(kNameValue), kInitialNamedValue);
 }
 
 TEST_P(WriteNamedFailsTest, SetValue) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_FALSE(validated_context.SetValue<int>(kNameValue, value));
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
   EXPECT_EQ(context.GetValue<int>(kNameValue), kInitialNamedValue);
 }
 
 TEST_P(WriteNamedFailsTest, Release) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_EQ(validated_context.Release<int>(kNameValue), nullptr);
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
   EXPECT_EQ(context.GetValue<int>(kNameValue), kInitialNamedValue);
 }
 
 TEST_P(WriteNamedFailsTest, Clear) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_FALSE(validated_context.Clear<int>(kNameValue));
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
   EXPECT_EQ(context.GetValue<int>(kNameValue), kInitialNamedValue);
 }
 
 TEST_P(WriteNamedFailsTest, ClearName) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_FALSE(validated_context.ClearName(kNameValue));
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
   EXPECT_EQ(context.GetValue<int>(kNameValue), kInitialNamedValue);
 }
 
 TEST_P(WriteSucceedsTest, SetNew) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_TRUE(validated_context.SetNew<int>(value));
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
   EXPECT_EQ(context.GetValue<int>(), kNewValue);
 }
 
 TEST_P(WriteSucceedsTest, SetOwned) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_TRUE(validated_context.SetOwned<int>(std::make_unique<int>(value)));
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
   EXPECT_EQ(context.GetValue<int>(), kNewValue);
 }
 
 TEST_P(WriteSucceedsTest, SetPtr) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_TRUE(validated_context.SetPtr<int>(&value));
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
   EXPECT_EQ(context.GetValue<int>(), kNewValue);
 }
 
 TEST_P(WriteSucceedsTest, SetValue) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_TRUE(validated_context.SetValue<int>(value));
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
   EXPECT_EQ(context.GetValue<int>(), kNewValue);
 }
 
@@ -832,21 +830,21 @@ TEST_P(WriteSucceedsTest, Release) {
   auto result = validated_context.Release<int>();
   ASSERT_NE(result, nullptr);
   EXPECT_EQ(*result, kInitialValue);
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
   EXPECT_FALSE(context.Exists<int>());
 }
 
 TEST_P(WriteSucceedsTest, Clear) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_TRUE(validated_context.Clear<int>());
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
   EXPECT_FALSE(context.Exists<int>());
 }
 
 TEST_P(WriteNamedSucceedsTest, SetNamedNew) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_TRUE(validated_context.SetNamedNew<int>(kNameValue, value));
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
   EXPECT_EQ(context.GetValue<int>(kNameValue), kNewValue);
 }
 
@@ -854,21 +852,21 @@ TEST_P(WriteNamedSucceedsTest, SetOwned) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_TRUE(validated_context.SetOwned<int>(kNameValue,
                                               std::make_unique<int>(value)));
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
   EXPECT_EQ(context.GetValue<int>(kNameValue), kNewValue);
 }
 
 TEST_P(WriteNamedSucceedsTest, SetPtr) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_TRUE(validated_context.SetPtr<int>(kNameValue, &value));
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
   EXPECT_EQ(context.GetValue<int>(kNameValue), kNewValue);
 }
 
 TEST_P(WriteNamedSucceedsTest, SetValue) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_TRUE(validated_context.SetValue<int>(kNameValue, value));
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
   EXPECT_EQ(context.GetValue<int>(kNameValue), kNewValue);
 }
 
@@ -877,95 +875,95 @@ TEST_P(WriteNamedSucceedsTest, Release) {
   auto result = validated_context.Release<int>(kNameValue);
   ASSERT_NE(result, nullptr);
   EXPECT_EQ(*result, kInitialNamedValue);
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
   EXPECT_FALSE(context.Exists<int>(kNameValue));
 }
 
 TEST_P(WriteNamedSucceedsTest, Clear) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_TRUE(validated_context.Clear<int>(kNameValue));
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
   EXPECT_FALSE(context.Exists<int>(kNameValue));
 }
 
 TEST_P(WriteNamedSucceedsTest, ClearName) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_TRUE(validated_context.ClearName(kNameValue));
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
   EXPECT_FALSE(context.NameExists(kNameValue));
 }
 
 TEST_P(ReadFailsTest, GetPtr) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_EQ(validated_context.GetPtr<int>(), nullptr);
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
 }
 
 TEST_P(ReadFailsTest, GetValue) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_EQ(validated_context.GetValue<int>(), 0);
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
 }
 
 TEST_P(ReadFailsTest, GetValueOrDefault) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_EQ(validated_context.GetValueOrDefault<int>(kNewValue), kNewValue);
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
 }
 
 TEST_P(ReadFailsTest, Exists) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_FALSE(validated_context.Exists<int>());
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
 }
 
 TEST_P(ReadFailsTest, ExistsWithContextType) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_FALSE(validated_context.Exists(TypeKey::Get<int>()));
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
 }
 
 TEST_P(ReadFailsTest, Owned) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_FALSE(validated_context.Owned<int>());
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
 }
 
 TEST_P(ReadNamedFailsTest, GetPtr) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_EQ(validated_context.GetPtr<int>(kNameValue), nullptr);
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
 }
 
 TEST_P(ReadNamedFailsTest, GetValue) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_EQ(validated_context.GetValue<int>(kNameValue), 0);
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
 }
 
 TEST_P(ReadNamedFailsTest, GetValueOrDefault) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_EQ(validated_context.GetValueOrDefault<int>(kNameValue, kNewValue),
             kNewValue);
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
 }
 
 TEST_P(ReadNamedFailsTest, Exists) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_FALSE(validated_context.Exists<int>(kNameValue));
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
 }
 
 TEST_P(ReadNamedFailsTest, ExistsWithContextType) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_FALSE(validated_context.Exists(kNameValue, TypeKey::Get<int>()));
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
 }
 
 TEST_P(ReadNamedFailsTest, Owned) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_FALSE(validated_context.Owned<int>(kNameValue));
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
 }
 
 TEST_P(ReadSucceedsTest, GetPtr) {
@@ -973,37 +971,37 @@ TEST_P(ReadSucceedsTest, GetPtr) {
   auto* result = validated_context.GetPtr<int>();
   ASSERT_NE(result, nullptr);
   EXPECT_EQ(*result, kInitialValue);
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
 }
 
 TEST_P(ReadSucceedsTest, GetValue) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_EQ(validated_context.GetValue<int>(), kInitialValue);
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
 }
 
 TEST_P(ReadSucceedsTest, GetValueOrDefault) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_EQ(validated_context.GetValueOrDefault<int>(kNewValue), kInitialValue);
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
 }
 
 TEST_P(ReadSucceedsTest, Exists) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_TRUE(validated_context.Exists<int>());
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
 }
 
 TEST_P(ReadSucceedsTest, ExistsWithContextType) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_TRUE(validated_context.Exists(TypeKey::Get<int>()));
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
 }
 
 TEST_P(ReadSucceedsTest, Owned) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_TRUE(validated_context.Owned<int>());
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
 }
 
 TEST_P(ReadNamedSucceedsTest, GetPtr) {
@@ -1011,38 +1009,38 @@ TEST_P(ReadNamedSucceedsTest, GetPtr) {
   auto* result = validated_context.GetPtr<int>(kNameValue);
   ASSERT_NE(result, nullptr);
   EXPECT_EQ(*result, kInitialNamedValue);
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
 }
 
 TEST_P(ReadNamedSucceedsTest, GetValue) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_EQ(validated_context.GetValue<int>(kNameValue), kInitialNamedValue);
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
 }
 
 TEST_P(ReadNamedSucceedsTest, GetValueOrDefault) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_EQ(validated_context.GetValueOrDefault<int>(kNameValue, kNewValue),
             kInitialNamedValue);
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
 }
 
 TEST_P(ReadNamedSucceedsTest, Exists) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_TRUE(validated_context.Exists<int>(kNameValue));
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
 }
 
 TEST_P(ReadNamedSucceedsTest, ExistsWithContextType) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_TRUE(validated_context.Exists(kNameValue, TypeKey::Get<int>()));
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
 }
 
 TEST_P(ReadNamedSucceedsTest, Owned) {
   ValidatedContext validated_context(&context, GetParam());
   EXPECT_TRUE(validated_context.Owned<int>(kNameValue));
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -1107,7 +1105,7 @@ TEST_F(ContextOwnershipTest, ConstructContractMoveContextSuccess) {
   context.SetValue<Item>(&counts);
   Counts init_counts = counts;
   ContextContract<kInOptionalItem> contract(std::move(context));
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
   EXPECT_TRUE(contract.IsValid());
   EXPECT_TRUE(context.Empty());
   ValidatedContext validated_context(std::move(contract));
@@ -1127,7 +1125,7 @@ TEST_F(ContextOwnershipTest, ConstructContractMoveContextFailure) {
   Counts init_counts = counts;
   ContextContract<kInOptionalItem, kInRequiredValue> contract(
       std::move(context));
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
   EXPECT_FALSE(contract.IsValid());
   EXPECT_TRUE(context.Empty());
   ValidatedContext validated_context(std::move(contract));
@@ -1146,7 +1144,7 @@ TEST_F(ContextOwnershipTest, ConstructContractUniqueContextSuccess) {
   context->SetValue<Item>(&counts);
   Counts init_counts = counts;
   ContextContract<kInOptionalItem> contract(std::move(context));
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
   EXPECT_TRUE(contract.IsValid());
   EXPECT_EQ(context, nullptr);
   ValidatedContext validated_context(std::move(contract));
@@ -1166,7 +1164,7 @@ TEST_F(ContextOwnershipTest, ConstructContractUniqueContextFailure) {
   Counts init_counts = counts;
   ContextContract<kInOptionalItem, kInRequiredValue> contract(
       std::move(context));
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
   EXPECT_FALSE(contract.IsValid());
   EXPECT_EQ(context, nullptr);
   ValidatedContext validated_context(std::move(contract));
@@ -1185,7 +1183,7 @@ TEST_F(ContextOwnershipTest, ConstructContractSharedContextSuccess) {
   context->SetValue<Item>(&counts);
   Counts init_counts = counts;
   ContextContract<kInOptionalItem> contract(context);
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
   EXPECT_TRUE(contract.IsValid());
   EXPECT_TRUE(context->Exists<Item>());
   ValidatedContext validated_context(std::move(contract));
@@ -1204,7 +1202,7 @@ TEST_F(ContextOwnershipTest, ConstructContractSharedContextFailure) {
   context->SetValue<Item>(&counts);
   Counts init_counts = counts;
   ContextContract<kInOptionalItem, kInRequiredValue> contract(context);
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
   EXPECT_FALSE(contract.IsValid());
   EXPECT_TRUE(context->Exists<Item>());
   ValidatedContext validated_context(std::move(contract));
@@ -1223,7 +1221,7 @@ TEST_F(ContextOwnershipTest, ConstructValidatedContextMoveContextSuccess) {
   context.SetValue<Item>(&counts);
   Counts init_counts = counts;
   ValidatedContext validated_context(std::move(context), {kInOptionalItem});
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
   EXPECT_TRUE(validated_context.IsValid());
   EXPECT_TRUE(context.Empty());
   EXPECT_TRUE(validated_context.Exists<Item>());
@@ -1242,7 +1240,7 @@ TEST_F(ContextOwnershipTest, ConstructValidatedContextMoveContextFailure) {
   Counts init_counts = counts;
   ValidatedContext validated_context(std::move(context),
                                      {kInOptionalItem, kInRequiredValue});
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
   EXPECT_FALSE(validated_context.IsValid());
   EXPECT_TRUE(context.Empty());
   EXPECT_FALSE(validated_context.Exists<Item>());
@@ -1260,7 +1258,7 @@ TEST_F(ContextOwnershipTest, ConstructValidatedContextUniqueContextSuccess) {
   context->SetValue<Item>(&counts);
   Counts init_counts = counts;
   ValidatedContext validated_context(std::move(context), {kInOptionalItem});
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
   EXPECT_TRUE(validated_context.IsValid());
   EXPECT_EQ(context, nullptr);
   EXPECT_TRUE(validated_context.Exists<Item>());
@@ -1279,7 +1277,7 @@ TEST_F(ContextOwnershipTest, ConstructValidatedContextUniqueContextFailure) {
   Counts init_counts = counts;
   ValidatedContext validated_context(std::move(context),
                                      {kInOptionalItem, kInRequiredValue});
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
   EXPECT_FALSE(validated_context.IsValid());
   EXPECT_EQ(context, nullptr);
   EXPECT_FALSE(validated_context.Exists<Item>());
@@ -1297,7 +1295,7 @@ TEST_F(ContextOwnershipTest, ConstructValidatedContextSharedContextSuccess) {
   context->SetValue<Item>(&counts);
   Counts init_counts = counts;
   ValidatedContext validated_context(context, {kInOptionalItem});
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
   EXPECT_TRUE(validated_context.IsValid());
   EXPECT_TRUE(context->Exists<Item>());
   EXPECT_TRUE(validated_context.Exists<Item>());
@@ -1316,7 +1314,7 @@ TEST_F(ContextOwnershipTest, ConstructValidatedContextSharedContextFailure) {
   Counts init_counts = counts;
   ValidatedContext validated_context(context,
                                      {kInOptionalItem, kInRequiredValue});
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
   EXPECT_FALSE(validated_context.IsValid());
   EXPECT_TRUE(context->Exists<Item>());
   EXPECT_FALSE(validated_context.Exists<Item>());
@@ -1338,7 +1336,7 @@ TEST_F(ContextOwnershipTest, AssignValidatedContextMoveContextSuccess) {
   ValidatedContext validated_context(&original_context,
                                      {kInOptionalValue, kOutOptionalWidth});
   EXPECT_TRUE(validated_context.Assign(std::move(context), {kInOptionalItem}));
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
   EXPECT_NE(validated_context.GetContext(), &original_context);
   EXPECT_EQ(original_context.GetValue<int>(kNameWidth), kDefaultOutWidth);
   EXPECT_FALSE(validated_context.Exists<int>());
@@ -1364,7 +1362,7 @@ TEST_F(ContextOwnershipTest, AssignValidatedContextMoveContextFailure) {
                                      {kInOptionalValue, kOutOptionalWidth});
   EXPECT_FALSE(validated_context.Assign(std::move(context),
                                         {kInOptionalItem, kInRequiredValue}));
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
   EXPECT_EQ(validated_context.GetContext(), &original_context);
   EXPECT_FALSE(original_context.NameExists(kNameWidth));
   EXPECT_EQ(validated_context.GetValue<int>(), kDefaultInValue);
@@ -1388,7 +1386,7 @@ TEST_F(ContextOwnershipTest, AssignValidatedContextUniqueContextSuccess) {
   ValidatedContext validated_context(&original_context,
                                      {kInOptionalValue, kOutOptionalWidth});
   EXPECT_TRUE(validated_context.Assign(std::move(context), {kInOptionalItem}));
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
   EXPECT_NE(validated_context.GetContext(), &original_context);
   EXPECT_EQ(original_context.GetValue<int>(kNameWidth), kDefaultOutWidth);
   EXPECT_FALSE(validated_context.Exists<int>());
@@ -1414,7 +1412,7 @@ TEST_F(ContextOwnershipTest, AssignValidatedContextUniqueContextFailure) {
                                      {kInOptionalValue, kOutOptionalWidth});
   EXPECT_FALSE(validated_context.Assign(std::move(context),
                                         {kInOptionalItem, kInRequiredValue}));
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
   EXPECT_EQ(validated_context.GetContext(), &original_context);
   EXPECT_FALSE(original_context.NameExists(kNameWidth));
   EXPECT_EQ(validated_context.GetValue<int>(), kDefaultInValue);
@@ -1438,7 +1436,7 @@ TEST_F(ContextOwnershipTest, AssignValidatedContextSharedContextSuccess) {
   ValidatedContext validated_context(&original_context,
                                      {kInOptionalValue, kOutOptionalWidth});
   EXPECT_TRUE(validated_context.Assign(context, {kInOptionalItem}));
-  EXPECT_EQ(GetErrorCount(), 0);
+  EXPECT_EQ(this->GetErrorCount(), 0);
   EXPECT_NE(validated_context.GetContext(), &original_context);
   EXPECT_EQ(original_context.GetValue<int>(kNameWidth), kDefaultOutWidth);
   EXPECT_FALSE(validated_context.Exists<int>());
@@ -1464,7 +1462,7 @@ TEST_F(ContextOwnershipTest, AssignValidatedContextSharedContextFailure) {
                                      {kInOptionalValue, kOutOptionalWidth});
   EXPECT_FALSE(
       validated_context.Assign(context, {kInOptionalItem, kInRequiredValue}));
-  EXPECT_EQ(GetErrorCount(), 1);
+  EXPECT_EQ(this->GetErrorCount(), 1);
   EXPECT_EQ(validated_context.GetContext(), &original_context);
   EXPECT_FALSE(original_context.NameExists(kNameWidth));
   EXPECT_EQ(validated_context.GetValue<int>(), kDefaultInValue);

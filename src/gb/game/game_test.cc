@@ -114,7 +114,7 @@ TEST(GameTest, RunNoContextWithArgcArgv) {
   TestGame game;
   std::vector<std::string_view> args = {"one", "two", "three"};
   char* argv[] = {
-      "executable-name",
+      const_cast<char*>("executable-name"),
       const_cast<char*>(args[0].data()),
       const_cast<char*>(args[1].data()),
       const_cast<char*>(args[2].data()),
@@ -139,7 +139,7 @@ TEST(GameTest, RunWithContextWithArgcArgv) {
   TestGame game;
   std::vector<std::string_view> args = {"one", "two", "three"};
   char* argv[] = {
-      "executable-name",
+      const_cast<char*>("executable-name"),
       const_cast<char*>(args[0].data()),
       const_cast<char*>(args[1].data()),
       const_cast<char*>(args[2].data()),

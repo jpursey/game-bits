@@ -28,10 +28,6 @@ using fb::FlatBufferBuilder;
 
 namespace {
 
-inline size_t GetBindingWriteSize(absl::Span<const Binding> bindings) {
-  return bindings.size() * (sizeof(Binding) + 128);
-}
-
 fb::Offset<fb::Vector<fb::Offset<fbs::Binding>>> WriteBindings(
     FlatBufferBuilder* builder, absl::Span<const Binding> bindings) {
   return builder->CreateVector<fb::Offset<fbs::Binding>>(
@@ -86,18 +82,6 @@ std::vector<Binding> ReadBindings(
       default:
         LOG(ERROR) << "Unhandled binding type: "
                    << EnumNameBindingType(fb_binding->type());
-    }
-  }
-  return bindings;
-}
-
-std::vector<Binding> FilterBindings(BindingSet binding_set,
-                                    absl::Span<const Binding> all_bindings) {
-  std::vector<Binding> bindings;
-  bindings.reserve(all_bindings.size());
-  for (const auto& binding : all_bindings) {
-    if (binding.set == binding_set) {
-      bindings.emplace_back(binding);
     }
   }
   return bindings;
@@ -771,7 +755,7 @@ MaterialType* RenderSystem::DoCreateMaterialType(RenderSceneType* scene_type,
                     "scene: set="
                  << static_cast<int>(binding.set)
                  << ", index=" << binding.index;
-      return false;
+      return nullptr;
     }
     all_bindings.push_back(binding);
   }
@@ -786,7 +770,7 @@ MaterialType* RenderSystem::DoCreateMaterialType(RenderSceneType* scene_type,
                     "scene: set="
                  << static_cast<int>(binding.set)
                  << ", index=" << binding.index;
-      return false;
+      return nullptr;
     }
     all_bindings.push_back(binding);
   }
@@ -829,14 +813,14 @@ MaterialType* RenderSystem::LoadMaterialTypeChunk(
   if (vertex_shader == nullptr) {
     LOG(ERROR) << "Cannot load material type becayse vertex shader (ID: "
                << chunk->vertex_shader_id() << ") is not loaded";
-    return false;
+    return nullptr;
   }
   auto* fragment_shader =
       resources->GetResource<Shader>(chunk->fragment_shader_id());
   if (fragment_shader == nullptr) {
     LOG(ERROR) << "Cannot load material type becayse fragment shader (ID: "
                << chunk->fragment_shader_id() << ") is not loaded";
-    return false;
+    return nullptr;
   }
   std::string_view vertex_type_name =
       (chunk->vertex_type_name() != nullptr ? chunk->vertex_type_name()->c_str()
@@ -1214,7 +1198,7 @@ Texture* RenderSystem::LoadStbTexture(TextureLoadContract contract,
   if (pixels == nullptr) {
     LOG(ERROR) << "Failed to read texture file with error: "
                << stbi_failure_reason();
-    return false;
+    return nullptr;
   }
   ScopedCall free_pixels([pixels]() { stbi_image_free(pixels); });
 

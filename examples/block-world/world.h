@@ -147,4 +147,4 @@ class World final {
   gb::Pixel sky_color_;
 };
 
-#endif WORLD_H_
+#endif  // WORLD_H_

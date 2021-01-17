@@ -355,8 +355,8 @@ TEST_F(FiberTest, ThreadAbuse) {
     std::atomic<int> counter = 0;
 
     absl::Mutex mutex;
-    Queue<Fiber> idle_fibers{100} ABSL_GUARDED_BY(mutex);
-    Queue<Fiber> fibers_to_idle{100} ABSL_GUARDED_BY(mutex);
+    Queue<Fiber> idle_fibers ABSL_GUARDED_BY(mutex){100};
+    Queue<Fiber> fibers_to_idle ABSL_GUARDED_BY(mutex){100};
     std::vector<Fiber> all_fibers ABSL_GUARDED_BY(mutex);
   } state;
 

@@ -28,7 +28,6 @@ class MeshViewTest : public RenderTest {
   };
   static constexpr int kCubeVertexCount = 8;
   static constexpr int kCubeTriangleCount = 12;
-  static constexpr int kCubeIndexCount = 36;
   static constexpr int kVertexCapacity = kCubeVertexCount + 4;
   static constexpr int kTriangleCapacity = kCubeTriangleCount + 4;
 

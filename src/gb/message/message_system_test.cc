@@ -828,12 +828,12 @@ TEST(MessageSystemTest, SubscribeUnsubscribeInsideHandler) {
   auto message_system = MessageSystem::Create();
   MessageEndpointId channel = message_system->AddChannel();
   auto endpoint_1 = message_system->CreateEndpoint();
-  endpoint_1->SetHandler<int>([&counts, &message_system, &channel, &endpoint_1](
-                                  MessageEndpointId, const int&) {
-    counts.counts[0] += 1;
-    EXPECT_TRUE(endpoint_1->Subscribe(channel));
-    EXPECT_TRUE(endpoint_1->IsSubscribed(channel));
-  });
+  endpoint_1->SetHandler<int>(
+      [&counts, &channel, &endpoint_1](MessageEndpointId, const int&) {
+        counts.counts[0] += 1;
+        EXPECT_TRUE(endpoint_1->Subscribe(channel));
+        EXPECT_TRUE(endpoint_1->IsSubscribed(channel));
+      });
   endpoint_1->SetHandler<float>(
       [&counts, &endpoint_1, &channel](MessageEndpointId, const float&) {
         counts.counts[1] += 1;
@@ -1202,13 +1202,12 @@ TEST(MessageSystemTest, RemoveEndpointOnThreadWhileDispatchingToSubscribers) {
     // being dispatched to, but it does not have a handler running currently.
     return endpoint_1->Send(endpoint_1->GetId(), 1.0f);
   });
-  tester.RunThenSignal(3, "delete",
-                       [&tester, &value, &message_system, &endpoint_1]() {
-                         tester.Wait(1);
-                         endpoint_1.reset();
-                         EXPECT_EQ(value, 5);
-                         return true;
-                       });
+  tester.RunThenSignal(3, "delete", [&tester, &value, &endpoint_1]() {
+    tester.Wait(1);
+    endpoint_1.reset();
+    EXPECT_EQ(value, 5);
+    return true;
+  });
   tester.Wait(1);
   absl::SleepFor(absl::Milliseconds(10));
   tester.Signal(2);

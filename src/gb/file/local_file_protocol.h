@@ -40,7 +40,7 @@ class LocalFileProtocol : public FileProtocol {
   // will be relative to the current working directory. This must be a path to a
   // valid folder or a new path whose parent folder is a valid folder. In the
   // latter case, a folder will be created if possible.
-  static inline constexpr char* kKeyRoot = "root";
+  static inline constexpr const char* kKeyRoot = "root";
   static GB_CONTEXT_CONSTRAINT_NAMED(kConstraintRoot, kInRequired, std::string,
                                      kKeyRoot);
 
@@ -50,14 +50,14 @@ class LocalFileProtocol : public FileProtocol {
   //   folder will be created below it.
   // - If kConstraintRoot refers to a new path, that path will be used as a
   //   prefix for generating a randomly named folder.
-  static inline constexpr char* kKeyUniqueRoot = "unique_root";
+  static inline constexpr const char* kKeyUniqueRoot = "unique_root";
   static GB_CONTEXT_CONSTRAINT_NAMED(kConstraintUniqueRoot, kInOptional, bool,
                                      kKeyUniqueRoot);
 
   // This can optionally be set to true, which will result in any files and
   // folders under the root folder to be deleted. If kConstraintUniqueRoot is
   // true, then this will also delete the root folder itself.
-  static inline constexpr char* kKeyDeleteAtExit = "delete_at_exit";
+  static inline constexpr const char* kKeyDeleteAtExit = "delete_at_exit";
   static GB_CONTEXT_CONSTRAINT_NAMED(kConstraintDeleteAtExit, kInOptional, bool,
                                      kKeyDeleteAtExit);
 

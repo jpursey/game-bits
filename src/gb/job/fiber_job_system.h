@@ -43,7 +43,7 @@ class FiberJobSystem : public JobSystem {
   //   kConstraintPinThreads.
   // This will never result in more than kMaxThreadCount threads.
   static inline constexpr int kMaxThreadCount = 64;
-  static inline constexpr char* kKeyThreadCount = "thread_count";
+  static inline constexpr const char* kKeyThreadCount = "thread_count";
   static GB_CONTEXT_CONSTRAINT_NAMED(kConstraintThreadCount, kInOptional, int,
                                      kKeyThreadCount);
 
@@ -52,14 +52,14 @@ class FiberJobSystem : public JobSystem {
   // the requested thread count is specified to be larger than the maximum
   // hardware concurrency, then this constraint is ignored and threads will not
   // be pinned.
-  static inline constexpr char* kKeyPinThreads = "pin_threads";
+  static inline constexpr const char* kKeyPinThreads = "pin_threads";
   static GB_CONTEXT_CONSTRAINT_NAMED_DEFAULT(kConstraintPinThreads, kInOptional,
                                              bool, kKeyPinThreads, true);
 
   // OPTIONAL: If set to true, thread and fiber names will be updated with the
   // name of the job they are running. If this is not set, then job names will
   // be propagated only in debug builds.
-  static inline constexpr char* kKeySetFiberNames = "set_fiber_names";
+  static inline constexpr const char* kKeySetFiberNames = "set_fiber_names";
   static GB_CONTEXT_CONSTRAINT_NAMED(kConstraintSetFiberNames, kInOptional,
                                      bool, kKeySetFiberNames);
 

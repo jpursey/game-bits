@@ -33,9 +33,12 @@ class VulkanShaderCode;
 class VulkanTexture;
 class VulkanWindow;
 
-GB_DEFINE_ACCESS_TOKEN(VulkanInternal, class VulkanBackend,
-                       class VulkanBindingDataFactory,
-                       class VulkanRenderPipeline, VulkanSceneType);
+GB_BEGIN_ACCESS_TOKEN(VulkanInternal)
+friend class VulkanBackend;
+friend class VulkanBindingDataFactory;
+friend class VulkanRenderPipeline;
+friend class VulkanSceneType;
+GB_END_ACCESS_TOKEN()
 
 enum class VulkanBufferType {
   kUniform,

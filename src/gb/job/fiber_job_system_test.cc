@@ -128,9 +128,8 @@ TEST_P(FiberJobSystemTest, MultipleJobsWaitOnOneCounter) {
   std::atomic<int> call_count = 0;
   absl::Notification notify_start;
   absl::Notification notify_complete;
-  EXPECT_TRUE(job_system_->Run(&counter, [&notify_start, &call_count] {
-    notify_start.WaitForNotification();
-  }));
+  EXPECT_TRUE(job_system_->Run(
+      &counter, [&notify_start] { notify_start.WaitForNotification(); }));
   for (int i = 0; i < 10; ++i) {
     EXPECT_TRUE(job_system_->Run([&notify_complete, &counter, &call_count] {
       JobSystem::Get()->Wait(&counter);

@@ -180,7 +180,7 @@ void EncodingDetector::ValidateUtf16() {
   while (i < count) {
     char16_t word = data[i++];
     if (needs_byte_swap_) {
-      word = ((word >> 8) || (word << 8));
+      word = ((word >> 8) | (word << 8));
     }
 
     // Embedded null (while technically valid) is not supported.
@@ -207,7 +207,7 @@ void EncodingDetector::ValidateUtf16() {
     }
     char16_t next_word = data[i++];
     if (needs_byte_swap_) {
-      next_word = ((next_word >> 8) || (next_word << 8));
+      next_word = ((next_word >> 8) | (next_word << 8));
     }
     if ((word & 0xFC00) != 0xD800 || (next_word & 0xFC00) != 0xDC00) {
       is_utf16_ = false;
@@ -258,8 +258,10 @@ StringEncoding GetStringEncoding(std::string_view str,
 }
 
 std::u16string ToUtf16(std::string_view utf8_string) {
-  const bool has_bom = (utf8_string.size() >= 3 && utf8_string[0] == 'xEF' &&
-                        utf8_string[1] == 'xBB' && utf8_string[2] == 'xBF');
+  const unsigned char* const bom =
+      reinterpret_cast<const unsigned char*>(utf8_string.data());
+  const bool has_bom = (utf8_string.size() >= 3 && bom[0] == 0xEF &&
+                        bom[1] == 0xBB && bom[2] == 0xBF);
   const char* begin = utf8_string.data() + (has_bom ? 3 : 0);
   const char* const end = utf8_string.data() + utf8_string.size();
   return std::wstring_convert<std::codecvt<char16_t, char, std::mbstate_t>,

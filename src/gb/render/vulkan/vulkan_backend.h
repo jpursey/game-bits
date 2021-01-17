@@ -59,7 +59,7 @@ class VulkanBackend final : public RenderBackend {
   //----------------------------------------------------------------------------
 
   // REQUIRED: The application name which is passed to Vulkan.
-  static inline constexpr char* kKeyAppName = "AppName";
+  static inline constexpr const char* kKeyAppName = "AppName";
   static GB_CONTEXT_CONSTRAINT_NAMED(kConstraintAppName, kInRequired,
                                      std::string, kKeyAppName);
 
@@ -68,7 +68,7 @@ class VulkanBackend final : public RenderBackend {
 
   // OPTIONAL: Debug flag which controls whether validation and debug logging
   // are enabled.
-  static inline constexpr char* kKeyEnableDebug = "EnableDebug";
+  static inline constexpr const char* kKeyEnableDebug = "EnableDebug";
 #ifdef _DEBUG
   static inline constexpr bool kDefaultEnableDebug = true;
 #else
@@ -161,7 +161,7 @@ class VulkanBackend final : public RenderBackend {
   //----------------------------------------------------------------------------
 
   // This method is thread-safe.
-  std::optional<vk::Format> VulkanBackend::FindSupportedFormat(
+  std::optional<vk::Format> FindSupportedFormat(
       absl::Span<const vk::Format> formats, vk::ImageTiling tiling,
       vk::FormatFeatureFlags features);
 

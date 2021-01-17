@@ -9,7 +9,7 @@ cmake_minimum_required (VERSION 3.8)
 ## Set project configuration
 ################################################################################
 
-project(BlockWorld CXX)
+project(BlockWorld C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -29,6 +29,13 @@ gb_external_libraries()
 ################################################################################
 ## Game Source
 ################################################################################
+
+# Enable warnings as errors
+if (MSVC)
+  add_compile_options(/WX)
+else()
+  add_compile_options(-Werror)
+endif()
 
 set(block_world_SOURCE
   base_state.cc base_state.h

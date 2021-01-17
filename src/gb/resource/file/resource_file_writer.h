@@ -71,7 +71,7 @@ class ResourceFileWriter final {
 
   // OPTIONAL: Determines whether the resource name is updated when a resource
   // is written. By default, the resource name is updated.
-  static inline constexpr char* kKeySetResourceName = "SetResourceName";
+  static inline constexpr const char* kKeySetResourceName = "SetResourceName";
   static GB_CONTEXT_CONSTRAINT_NAMED_DEFAULT(kConstraintSetResourceName,
                                              kInOptional, bool,
                                              kKeySetResourceName, true);
@@ -79,7 +79,7 @@ class ResourceFileWriter final {
   // OPTIONAL: Determines whether the resource may be saved if it has unnamed
   // resource dependencies. By default, this is not allowed as it likely could
   // never be loaded again.
-  static inline constexpr char* kKeyAllowUnnamedDependencies =
+  static inline constexpr const char* kKeyAllowUnnamedDependencies =
       "AllowUnnamedDependencies";
   static GB_CONTEXT_CONSTRAINT_NAMED_DEFAULT(
       kConstraintAllowUnnamedDependencies, kInOptional, bool,
@@ -89,7 +89,7 @@ class ResourceFileWriter final {
   // for error messages, or may be used to determine the correct resource ID to
   // write into the file (this is recommended to avoid resource ID collisions
   // between resource names).
-  static inline constexpr char* kKeyResourceName = "ResourceName";
+  static inline constexpr const char* kKeyResourceName = "ResourceName";
   static GB_CONTEXT_CONSTRAINT_NAMED(kConstraintResourceName, kScoped,
                                      std::string, kKeyResourceName);
 

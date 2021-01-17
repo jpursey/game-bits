@@ -49,11 +49,18 @@ struct TextureChunk;
 }  // namespace fbs
 
 // Internal access token for functions callable by render classes.
-GB_DEFINE_ACCESS_TOKEN(RenderInternal, class RenderSystem,
-                       class LocalBindingData, class Material, class Mesh,
-                       class RenderFrame, class RenderBuffer,
-                       class RenderSceneType, class Texture, class DrawList,
-                       class RenderTest);
+GB_BEGIN_ACCESS_TOKEN(RenderInternal)
+friend class RenderSystem;
+friend class LocalBindingData;
+friend class Material;
+friend class Mesh;
+friend class RenderFrame;
+friend class RenderBuffer;
+friend class RenderSceneType;
+friend class Texture;
+friend class DrawList;
+friend class RenderTest;
+GB_END_ACCESS_TOKEN()
 
 //==============================================================================
 // FrameDimensions

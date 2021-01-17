@@ -8,6 +8,7 @@
 
 #include <stdint.h>
 
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -164,9 +165,9 @@ class MessageEndpoint final {
   bool DoSend(MessageEndpointId to, TypeInfo* type, const void* message);
 
   mutable absl::Mutex handler_mutex_;  // Guards access to the handlers.
+  WeakPtr<MessageSystem> system_;
   MessageEndpointId id_;
   std::string name_;
-  WeakPtr<MessageSystem> system_;
   Handlers handlers_ ABSL_GUARDED_BY(handler_mutex_);
   bool calling_handler_ ABSL_GUARDED_BY(handler_mutex_) = false;
   std::thread::id calling_thread_ ABSL_GUARDED_BY(handler_mutex_);

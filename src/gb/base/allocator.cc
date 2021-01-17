@@ -19,7 +19,7 @@ namespace {
 
 Allocator* DefaultAllocator(Allocator* allocator) {
   static Allocator* default_allocator = allocator;
-  return allocator;
+  return default_allocator;
 }
 
 class SystemAllocator : public Allocator {

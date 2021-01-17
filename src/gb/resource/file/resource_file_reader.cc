@@ -155,7 +155,6 @@ Resource* ResourceFileReader::Read(TypeKey* type, std::string_view name,
 
   auto* resource_set = load_context.GetPtr<ResourceSet>();
   auto* resource_system = context_.GetPtr<ResourceSystem>();
-  Resource* file_resource = nullptr;
   bool has_error = false;
   while (true) {
     auto chunk_reader = ChunkReader::Read(file.get(), &has_error);
@@ -171,7 +170,7 @@ Resource* ResourceFileReader::Read(TypeKey* type, std::string_view name,
         LOG(ERROR) << "Unknown version " << chunk_reader->GetVersion()
                    << " for chunk \"" << kChunkTypeResourceLoad.ToString()
                    << "\" in file: " << name;
-        return false;
+        return nullptr;
       }
       ResourceSystem* resource_system = context_.GetPtr<ResourceSystem>();
       auto* chunks = chunk_reader->GetChunkData<ResourceLoadChunk>();
@@ -182,13 +181,13 @@ Resource* ResourceFileReader::Read(TypeKey* type, std::string_view name,
         if (chunk.id == 0 || chunk.type.ptr == nullptr) {
           LOG(ERROR) << "Invalid resource load chunk " << i
                      << " in file: " << name;
-          return false;
+          return nullptr;
         }
         TypeKey* type = resource_system->GetResourceType(chunk.type.ptr);
         if (type == nullptr) {
           LOG(ERROR) << "Unknown resource type " << chunk.type.ptr
                      << " in for resource system in file: " << name;
-          return false;
+          return nullptr;
         }
         Resource* resource = resource_system->Find({}, type, chunk.id);
         if (resource == nullptr) {
@@ -200,7 +199,7 @@ Resource* ResourceFileReader::Read(TypeKey* type, std::string_view name,
             LOG(ERROR) << "Could not load or find resource " << chunk.type.ptr
                        << " (ID: " << chunk.id << ") of name \""
                        << chunk.name.ptr << "\"";
-            return false;
+            return nullptr;
           }
         }
         file_resources.AddResource({}, type, chunk.id, resource);

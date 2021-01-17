@@ -117,7 +117,6 @@ std::unique_ptr<Chunk> World::NewChunk(const ChunkIndex& index) {
 }
 
 void World::InitFlatWorldChunk(Chunk* chunk) {
-  ChunkIndex index = chunk->GetIndex();
   for (int x = 0; x < Chunk::kSize.x; ++x) {
     for (int y = 0; y < Chunk::kSize.y; ++y) {
       for (int z = 0; z < Chunk::kSize.z; ++z) {

@@ -16,9 +16,13 @@ class MessageStackEndpoint;
 class MessageStackHandlers;
 class MessageSystem;
 
-GB_DEFINE_ACCESS_TOKEN(MessageInternal, class MessageDispatcher,
-                       class MessageEndpoint, class MessageStackEndpoint,
-                       class MessageStackHandlers, class MessageSystem);
+GB_BEGIN_ACCESS_TOKEN(MessageInternal)
+friend class MessageDispatcher;
+friend class MessageEndpoint;
+friend class MessageStackEndpoint;
+friend class MessageStackHandlers;
+friend class MessageSystem;
+GB_END_ACCESS_TOKEN()
 
 }  // namespace gb
 

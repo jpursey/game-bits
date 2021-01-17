@@ -290,7 +290,6 @@ TEST(FileTest, ReadString) {
   file_system.Register(std::make_unique<TestProtocol>(&state), "test");
 
   state.paths["/file"] = TestProtocol::PathState::NewFile("1234567890");
-  auto* file_state = state.paths["/file"].GetFile();
   auto file = file_system.OpenFile("test:/file", FileFlag::kRead);
   ASSERT_NE(file, nullptr);
   std::string buffer;

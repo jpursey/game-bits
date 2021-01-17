@@ -25,7 +25,7 @@ class Game {
  public:
   // Maximum frame rate that the game will run at. This can be set to zero to
   // run at an unlimited frame rate. By default, games are limited to 60 FPS.
-  static inline constexpr char* kKeyMaxFps = "max_fps";
+  static inline constexpr const char* kKeyMaxFps = "max_fps";
   static inline constexpr int kDefaultMaxFps = 60;
   static GB_CONTEXT_CONSTRAINT_NAMED_DEFAULT(kConstraintMaxFps, kInOptional,
                                              int, kKeyMaxFps, kDefaultMaxFps);

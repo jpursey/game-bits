@@ -71,7 +71,7 @@ class RenderSystem final {
 
   // OPTIONAL: Debug flag which controls whether validation and debug logging
   // are enabled.
-  static inline constexpr char* kKeyEnableDebug = "EnableDebug";
+  static inline constexpr const char* kKeyEnableDebug = "EnableDebug";
 #ifdef _DEBUG
   static inline constexpr bool kDefaultEnableDebug = true;
 #else
@@ -85,7 +85,7 @@ class RenderSystem final {
   // editable when loaded via the resource system (at least
   // DataVolatility::kStaticReadWrite). This also the only mode which allows
   // saving Shader resources (which otherwise are always write-only).
-  static inline constexpr char* kKeyEnableEdit = "EnableEdit";
+  static inline constexpr const char* kKeyEnableEdit = "EnableEdit";
   static GB_CONTEXT_CONSTRAINT_NAMED_DEFAULT(kConstraintEnableEdit, kInOptional,
                                              bool, kKeyEnableEdit, false);
 

@@ -29,7 +29,6 @@ std::unique_ptr<VulkanBuffer> VulkanBuffer::Create(
 VulkanBuffer::VulkanBuffer() {}
 
 VulkanBuffer::~VulkanBuffer() {
-  auto device = backend_->GetDevice();
   UnmapData();
   auto* gc = backend_->GetGarbageCollector();
   gc->Dispose(buffer_, allocation_);
@@ -40,8 +39,6 @@ bool VulkanBuffer::Init(VulkanBackend* backend,
                         VmaMemoryUsage memory_usage) {
   backend_ = backend;
   memory_usage_ = memory_usage;
-
-  auto device = backend_->GetDevice();
 
   VmaAllocationCreateInfo alloc_info = {};
   alloc_info.usage = memory_usage;

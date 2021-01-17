@@ -54,8 +54,6 @@ static_assert(Flags<BasicEnum>(kBasicEnum_Zero).IsSet(kBasicEnum_Zero),
 static_assert(!Flags<BasicEnum>(kBasicEnum_Zero).IsSet(kBasicEnum_One),
               "BasicEnum Zero has One set");
 static_assert(Flags<BasicEnum>({}).GetMask() == 0, "BasicEnum {} is not 0");
-static_assert(Flags<BasicEnum>({kBasicEnum_Zero}).GetMask() == 1,
-              "BasicEnum {kBasicEnum_Zero}  is not 1");
 static_assert(Flags<BasicEnum>({kBasicEnum_Zero, kBasicEnum_One}).GetMask() ==
                   3,
               "BasicEnum {Zero,One} is not 3");
@@ -156,9 +154,6 @@ static_assert(Intersect(Flags<BasicEnum>({kBasicEnum_Zero, kBasicEnum_One}),
                         Flags<BasicEnum>(kBasicEnum_Two))
                   .IsEmpty(),
               "BasicEnum {Zero,One} intersect Two is not empty");
-static_assert(Flags<BasicEnum>({kBasicEnum_One}) ==
-                  Flags<BasicEnum>(kBasicEnum_One),
-              "BasicEnum {One} is not equal to (One)");
 static_assert(Flags<BasicEnum>({kBasicEnum_One, kBasicEnum_Two}) ==
                   Flags<BasicEnum>(kBasicEnum_One, kBasicEnum_Two),
               "BasicEnum {One,Two} is not equal to (One,Two)");
@@ -190,8 +185,6 @@ static_assert(Flags<SizedEnum>(kSizedEnum_Zero).IsSet(kSizedEnum_Zero),
 static_assert(!Flags<SizedEnum>(kSizedEnum_Zero).IsSet(kSizedEnum_One),
               "SizedEnum Zero has One set");
 static_assert(Flags<SizedEnum>({}).GetMask() == 0, "SizedEnum {} is not 0");
-static_assert(Flags<SizedEnum>({kSizedEnum_Zero}).GetMask() == 1,
-              "SizedEnum {kSizedEnum_Zero}  is not 1");
 static_assert(Flags<SizedEnum>({kSizedEnum_Zero, kSizedEnum_One}).GetMask() ==
                   3,
               "SizedEnum {Zero,One} is not 3");
@@ -292,9 +285,6 @@ static_assert(Intersect(Flags<SizedEnum>({kSizedEnum_Zero, kSizedEnum_One}),
                         Flags<SizedEnum>(kSizedEnum_Two))
                   .IsEmpty(),
               "SizedEnum {Zero,One} intersect Two is not empty");
-static_assert(Flags<SizedEnum>({kSizedEnum_One}) ==
-                  Flags<SizedEnum>(kSizedEnum_One),
-              "SizedEnum {One} is not equal to (One)");
 static_assert(Flags<SizedEnum>({kSizedEnum_One, kSizedEnum_Two}) ==
                   Flags<SizedEnum>(kSizedEnum_One, kSizedEnum_Two),
               "SizedEnum {One,Two} is not equal to (One,Two)");
@@ -326,8 +316,6 @@ static_assert(Flags<ClassEnum>(ClassEnum::kZero).IsSet(ClassEnum::kZero),
 static_assert(!Flags<ClassEnum>(ClassEnum::kZero).IsSet(ClassEnum::kOne),
               "ClassEnum Zero has One set");
 static_assert(Flags<ClassEnum>({}).GetMask() == 0, "ClassEnum {} is not 0");
-static_assert(Flags<ClassEnum>({ClassEnum::kZero}).GetMask() == 1,
-              "ClassEnum {ClassEnum::kZero}  is not 1");
 static_assert(Flags<ClassEnum>({ClassEnum::kZero, ClassEnum::kOne}).GetMask() ==
                   3,
               "ClassEnum {Zero,One} is not 3");
@@ -434,9 +422,6 @@ static_assert(Intersect(Flags<ClassEnum>({ClassEnum::kZero, ClassEnum::kOne}),
                         Flags<ClassEnum>(ClassEnum::kTwo))
                   .IsEmpty(),
               "ClassEnum {Zero,One} intersect Two is not empty");
-static_assert(Flags<ClassEnum>({ClassEnum::kOne}) ==
-                  Flags<ClassEnum>(ClassEnum::kOne),
-              "ClassEnum {One} is not equal to (One)");
 static_assert(Flags<ClassEnum>({ClassEnum::kOne, ClassEnum::kTwo}) ==
                   Flags<ClassEnum>(ClassEnum::kOne, ClassEnum::kTwo),
               "ClassEnum {One,Two} is not equal to (One,Two)");
@@ -457,8 +442,6 @@ static_assert(
 TEST(FlagsTest, BasicImplicitParameterConversions) {
   EXPECT_EQ(BasicIdentity({}), Flags<BasicEnum>({}));
   EXPECT_EQ(BasicIdentity(kBasicEnum_One), Flags<BasicEnum>(kBasicEnum_One));
-  EXPECT_EQ(BasicIdentity({kBasicEnum_One}),
-            Flags<BasicEnum>({kBasicEnum_One}));
   EXPECT_EQ(BasicIdentity({kBasicEnum_One, kBasicEnum_Two}),
             Flags<BasicEnum>(kBasicEnum_One, kBasicEnum_Two));
 }
@@ -521,8 +504,6 @@ TEST(FlagsTest, BasicSubAssign) {
 TEST(FlagsTest, SizedImplicitParameterConversions) {
   EXPECT_EQ(SizedIdentity({}), Flags<SizedEnum>({}));
   EXPECT_EQ(SizedIdentity(kSizedEnum_One), Flags<SizedEnum>(kSizedEnum_One));
-  EXPECT_EQ(SizedIdentity({kSizedEnum_One}),
-            Flags<SizedEnum>({kSizedEnum_One}));
   EXPECT_EQ(SizedIdentity({kSizedEnum_One, kSizedEnum_Two}),
             Flags<SizedEnum>(kSizedEnum_One, kSizedEnum_Two));
 }
@@ -585,8 +566,6 @@ TEST(FlagsTest, SizedSubAssign) {
 TEST(FlagsTest, ClassImplicitParameterConversions) {
   EXPECT_EQ(ClassIdentity({}), Flags<ClassEnum>({}));
   EXPECT_EQ(ClassIdentity(ClassEnum::kOne), Flags<ClassEnum>(ClassEnum::kOne));
-  EXPECT_EQ(ClassIdentity({ClassEnum::kOne}),
-            Flags<ClassEnum>({ClassEnum::kOne}));
   EXPECT_EQ(ClassIdentity({ClassEnum::kOne, ClassEnum::kTwo}),
             Flags<ClassEnum>(ClassEnum::kOne, ClassEnum::kTwo));
 }

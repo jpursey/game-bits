@@ -33,4 +33,4 @@ inline constexpr glm::vec2 kBlockUvOffset[5] = {
     {1 * kBlockUvScale, 0 * kBlockUvScale},  // kBlockRock2
 };
 
-#endif BLOCK_H_
+#endif  // BLOCK_H_

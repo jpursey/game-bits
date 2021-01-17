@@ -8,6 +8,11 @@
 
 #include <memory>
 
+#ifdef __clang__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wc++20-extensions"
+#endif
+
 namespace gb {
 
 // Non-specialized template declaration for Callback. Only the following
@@ -57,12 +62,12 @@ class Callback<Return(Args...)> final {
     static_assert(!std::is_invocable<CallableType, Args...>::value ||
                       std::is_invocable_r<Return, CallableType, Args...>::value,
                   "Return type does not match callback");
-    Init(std::forward<Callable>(callable),
-         std::conditional<
-             std::is_convertible<Callable, Return (*)(Args...)>::value,
-             FunctionPtrTag,
-             std::conditional<std::is_lvalue_reference<Callable>::value,
-                              LValueTag, RValueTag>::type>::type());
+    using TagType = typename std::conditional<
+        std::is_convertible<Callable, Return (*)(Args...)>::value,
+        FunctionPtrTag,
+        typename std::conditional<std::is_lvalue_reference<Callable>::value,
+                                  LValueTag, RValueTag>::type>::type;
+    Init(std::forward<Callable>(callable), TagType{});
   }
 
   // Construct from a std::unique_ptr to callable type. This is used for types
@@ -103,7 +108,7 @@ class Callback<Return(Args...)> final {
                   "Return type does not match callback");
     callback_ = callable;
     call_callback_ = [](void* callable, Args&&... args) -> Return {
-      return (*static_cast<CallableType*>(callable))(
+      return (*reinterpret_cast<CallableType*>(callable))(
           std::forward<Args>(args)...);
     };
     delete_callback_ = nullptr;
@@ -116,9 +121,9 @@ class Callback<Return(Args...)> final {
   // needless allocation. Non-template overloads are always chosen over template
   // overloads for resolution purposes.
   Callback(Return (*callable)(Args...)) {
-    callback_ = callable;
+    callback_ = reinterpret_cast<void*>(callable);
     call_callback_ = [](void* callable, Args&&... args) -> Return {
-      return (*static_cast<Return (*)(Args...)>(callable))(
+      return (*reinterpret_cast<Return (*)(Args...)>(callable))(
           std::forward<Args>(args)...);
     };
     delete_callback_ = nullptr;
@@ -176,9 +181,10 @@ class Callback<Return(Args...)> final {
 
   template <typename Callable>
   void Init(Callable&& callable, FunctionPtrTag) {
-    callback_ = static_cast<Return (*)(Args...)>(callable);
+    using FunctionPtr = Return (*)(Args...);
+    callback_ = reinterpret_cast<void*>(static_cast<FunctionPtr>(callable));
     call_callback_ = [](void* callable, Args&&... args) -> Return {
-      return (*static_cast<Return (*)(Args...)>(callable))(
+      return (*reinterpret_cast<FunctionPtr>(callable))(
           std::forward<Args>(args)...);
     };
     delete_callback_ = nullptr;
@@ -188,7 +194,7 @@ class Callback<Return(Args...)> final {
     using CallableType = typename std::decay<Callable>::type;
     callback_ = new CallableType(std::move(callable));
     call_callback_ = [](void* callable, Args&&... args) -> Return {
-      return (*static_cast<CallableType*>(callable))(
+      return (*reinterpret_cast<CallableType*>(callable))(
           std::forward<Args>(args)...);
     };
     delete_callback_ = [](void* callable) {
@@ -200,7 +206,7 @@ class Callback<Return(Args...)> final {
     using CallableType = typename std::decay<Callable>::type;
     callback_ = new CallableType(callable);
     call_callback_ = [](void* callable, Args&&... args) -> Return {
-      return (*static_cast<CallableType*>(callable))(
+      return (*reinterpret_cast<CallableType*>(callable))(
           std::forward<Args>(args)...);
     };
     delete_callback_ = [](void* callable) {
@@ -234,5 +240,9 @@ inline bool operator!=(std::nullptr_t, const Callback<Callable>& callback) {
 }
 
 }  // namespace gb
+
+#ifdef __clang__
+#pragma GCC diagnostic pop
+#endif
 
 #endif  // GB_BASE_CALLBACK_H_

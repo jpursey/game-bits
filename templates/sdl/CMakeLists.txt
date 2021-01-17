@@ -4,7 +4,7 @@ cmake_minimum_required (VERSION 3.8)
 ## Set project configuration
 ################################################################################
 
-project(sdl-template CXX)
+project(sdl-template C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

@@ -644,7 +644,6 @@ bool TestGetHostName(const char* path, PathFlags flags,
                      const std::string& result) {
   std::string_view path_view(path);
   std::string_view result_view;
-  std::string_view out_view;
 
   std::string path_string(path);
   std::string result_string;

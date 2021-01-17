@@ -7,6 +7,7 @@
 #define GB_BASE_QUEUE_H_
 
 #include <cstdlib>
+#include <limits>
 #include <new>
 #include <type_traits>
 

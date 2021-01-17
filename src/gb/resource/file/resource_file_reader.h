@@ -481,9 +481,9 @@ bool ResourceFileReader::RegisterResourceChunk(
   return DoRegisterChunkReader(
       chunk_type, version, TypeKey::Get<ResourceType>(),
       TypeKey::Get<ChunkStruct>(), static_cast<int>(sizeof(ChunkStruct)),
-      [this, reader = std::move(reader)](
-          Context* context, ChunkReader* chunk_reader,
-          ResourceEntry resource_entry, Resource** out_resource) {
+      [reader = std::move(reader)](Context* context, ChunkReader* chunk_reader,
+                                   ResourceEntry resource_entry,
+                                   Resource** out_resource) {
         *out_resource =
             reader(context, chunk_reader, std::move(resource_entry));
         return *out_resource != nullptr;
@@ -499,9 +499,9 @@ bool ResourceFileReader::RegisterResourceFlatBufferChunk(
   return DoRegisterChunkReader(
       chunk_type, version, TypeKey::Get<ResourceType>(), nullptr,
       kMinSizeFlatBufferResourceChunk,
-      [this, reader = std::move(reader)](
-          Context* context, ChunkReader* chunk_reader,
-          ResourceEntry resource_entry, Resource** out_resource) {
+      [reader = std::move(reader)](Context* context, ChunkReader* chunk_reader,
+                                   ResourceEntry resource_entry,
+                                   Resource** out_resource) {
         auto* id = chunk_reader->GetChunkData<ResourceId>();
         if (id == nullptr) {
           return false;
@@ -522,9 +522,9 @@ bool ResourceFileReader::RegisterGenericChunk(const ChunkType& chunk_type,
   return DoRegisterChunkReader(
       chunk_type, version, nullptr, TypeKey::Get<ChunkStruct>(),
       static_cast<int>(sizeof(ChunkStruct)),
-      [this, reader = std::move(reader)](
-          Context* context, ChunkReader* chunk_reader,
-          ResourceEntry resource_entry, Resource** out_resource) {
+      [reader = std::move(reader)](Context* context, ChunkReader* chunk_reader,
+                                   ResourceEntry resource_entry,
+                                   Resource** out_resource) {
         *out_resource = nullptr;
         return reader(context, chunk_reader);
       });
@@ -536,9 +536,9 @@ bool ResourceFileReader::RegisterGenericFlatBufferChunk(
     GenericFlatBufferChunkReader<FlatBufferType> reader) {
   return DoRegisterChunkReader(
       chunk_type, version, nullptr, nullptr, kMinSizeFlatBufferGenericChunk,
-      [this, reader = std::move(reader)](
-          Context* context, ChunkReader* chunk_reader,
-          ResourceEntry resource_entry, Resource** out_resource) {
+      [reader = std::move(reader)](Context* context, ChunkReader* chunk_reader,
+                                   ResourceEntry resource_entry,
+                                   Resource** out_resource) {
         auto* chunk_data = chunk_reader->GetChunkData<void>();
         if (chunk_data == nullptr) {
           return false;

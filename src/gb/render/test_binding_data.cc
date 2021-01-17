@@ -29,8 +29,8 @@ TestBindingData::Value::Value(Binding binding) : binding_(binding) {
 TestBindingData::Value::Value(Value&& other)
     : binding_(std::exchange(other.binding_, Binding())),
       type_(std::exchange(other.type_, nullptr)),
-      size_(std::exchange(other.size_, 0)),
-      value_(std::exchange(other.value_, nullptr)) {}
+      value_(std::exchange(other.value_, nullptr)),
+      size_(std::exchange(other.size_, 0)) {}
 
 TestBindingData::Value& TestBindingData::Value::operator=(Value&& other) {
   if (&other != this) {

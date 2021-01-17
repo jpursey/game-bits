@@ -35,7 +35,7 @@ class SdlVulkanWindow final : public VulkanWindow {
 
   // OPTIONAL: Message channel ID on the corresponding kConstraintMessageSystem
   // which sends SDL_Event messages.
-  static inline constexpr char* kKeySdlEndpointId = "SdlEndpointId";
+  static inline constexpr const char* kKeySdlEndpointId = "SdlEndpointId";
   static GB_CONTEXT_CONSTRAINT_NAMED(kConstraintSdlEndpointId, kInOptional,
                                      gb::MessageEndpointId, kKeySdlEndpointId);
 
@@ -49,8 +49,8 @@ class SdlVulkanWindow final : public VulkanWindow {
 
   // Constructs with valid contract.
   static std::unique_ptr<SdlVulkanWindow> Create(Contract contract);
-  SdlVulkanWindow(const SdlVulkanWindow&) = default;
-  SdlVulkanWindow& operator=(const SdlVulkanWindow&) = default;
+  SdlVulkanWindow(const SdlVulkanWindow&) = delete;
+  SdlVulkanWindow& operator=(const SdlVulkanWindow&) = delete;
   ~SdlVulkanWindow() override = default;
 
   //----------------------------------------------------------------------------

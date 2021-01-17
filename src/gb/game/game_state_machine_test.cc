@@ -97,14 +97,14 @@ class TestState : public GameState {
       GetStateMachine()->ChangeState(new_parent_, new_state_);
     }
   }
-  void OnChildEnter(GameStateId child) {
+  void OnChildEnter(GameStateId child) override {
     Info().child_enter_count += 1;
     Info().last_child_enter_id = child;
     if (event_ == GameStateTraceType::kOnChildEnter) {
       GetStateMachine()->ChangeState(new_parent_, new_state_);
     }
   }
-  void OnChildExit(GameStateId child) {
+  void OnChildExit(GameStateId child) override {
     Info().child_exit_count += 1;
     Info().last_child_exit_id = child;
     if (event_ == GameStateTraceType::kOnChildExit) {

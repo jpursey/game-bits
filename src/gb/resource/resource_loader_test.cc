@@ -108,7 +108,6 @@ TEST(ResourceLoaderTest, TypeSpecificLoader) {
 }
 
 TEST(ResourceLoaderTest, DuplicateInitLoaderFails) {
-  TestResource::Counts counts;
   auto system = ResourceSystem::Create();
   ASSERT_NE(system, nullptr);
   ResourceManager manager;
@@ -148,7 +147,6 @@ TEST(ResourceLoaderTest, DuplicateInitLoaderFails) {
 }
 
 TEST(ResourceLoaderTest, InitLoaderAfterRegisterFails) {
-  TestResource::Counts counts;
   auto system = ResourceSystem::Create();
   ASSERT_NE(system, nullptr);
   ResourceManager manager;
@@ -235,7 +233,7 @@ TEST(ResourceLoaderTest, ManagerDestructEdgeConditions) {
         TestResource* resource = new TestResource(
             &counts, manager->NewResourceEntry<TestResource>(),
             {ResourceFlag::kAutoRelease, ResourceFlag::kAutoVisible});
-        resource->SetDeleteCallback([resource, system_ptr] {
+        resource->SetDeleteCallback([system_ptr] {
           auto resource_ptr = system_ptr->Get<TestResource>("name");
           EXPECT_EQ(resource_ptr, nullptr);
           resource_ptr = system_ptr->Load<TestResource>("name");
@@ -259,7 +257,7 @@ TEST(ResourceLoaderTest, SystemDestructEdgeConditions) {
         TestResource* resource = new TestResource(
             &counts, manager->NewResourceEntry<TestResource>(),
             {ResourceFlag::kAutoRelease, ResourceFlag::kAutoVisible});
-        resource->SetDeleteCallback([resource, system_ptr] {
+        resource->SetDeleteCallback([system_ptr] {
           auto resource_ptr = system_ptr->Get<TestResource>("name");
           EXPECT_EQ(resource_ptr, nullptr);
           resource_ptr = system_ptr->Load<TestResource>("name");

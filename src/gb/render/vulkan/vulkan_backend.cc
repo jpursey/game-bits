@@ -56,7 +56,7 @@ namespace {
 
 static const vk::ClearColorValue kColorClearValue(std::array<float, 4>{
     0.0f, 0.0f, 0.0f, 1.0f});
-static const vk::ClearDepthStencilValue kDepthClearValue({1.0f, 0});
+static const vk::ClearDepthStencilValue kDepthClearValue(1.0f, 0);
 
 }  // namespace
 
@@ -1051,8 +1051,6 @@ void VulkanBackend::CallFrameCallbacks(std::vector<FrameCallback>* callbacks) {
 }
 
 void VulkanBackend::EndFrameProcessUpdates() {
-  auto& frame = frames_[frame_index_];
-
   // Binding data may add buffers and textures to the render state, so we need
   // to process them first.
   for (VulkanBindingData* binding_data : render_state_.binding_data) {

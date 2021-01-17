@@ -9,7 +9,7 @@ cmake_minimum_required(VERSION 3.8)
 ## Set project configuration
 ###############################################################################
 
-project(game-bits CXX)
+project(game-bits C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -28,7 +28,10 @@ gb_config()
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 enable_testing()
-add_compile_definitions(_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS)
+add_compile_definitions(
+  _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS
+  _CRT_SECURE_NO_WARNINGS
+)
 
 list(APPEND CMAKE_MODULE_PATH
   "${GB_DIR}/CMake"

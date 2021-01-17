@@ -184,7 +184,7 @@ class ResourceFileTest : public ::testing::Test {
 
   ResourceFileReader::GenericFlatBufferChunkReader<fbs::KeyValueChunk>
   GetKeyValueFlatBufferLoader() {
-    return [this](Context* context, const fbs::KeyValueChunk* chunk) {
+    return [](Context* context, const fbs::KeyValueChunk* chunk) {
       EXPECT_NE(chunk, nullptr);
       if (chunk == nullptr) {
         return false;
@@ -210,8 +210,8 @@ class ResourceFileTest : public ::testing::Test {
   }
 
   ResourceFileReader::ResourceChunkReader<ResourceA> GetResourceALoader() {
-    return [this](Context* context, ChunkReader* chunk_reader,
-                  ResourceEntry entry) -> ResourceA* {
+    return [](Context* context, ChunkReader* chunk_reader,
+              ResourceEntry entry) -> ResourceA* {
       auto* chunk = chunk_reader->GetChunkData<ResourceAChunk>();
       EXPECT_NE(chunk, nullptr);
       if (chunk == nullptr) {
@@ -224,8 +224,8 @@ class ResourceFileTest : public ::testing::Test {
     };
   }
   ResourceFileWriter::ResourceWriter<ResourceA> GetResourceAWriter() {
-    return [this](Context* context, ResourceA* resource,
-                  std::vector<ChunkWriter>* out_chunks) {
+    return [](Context* context, ResourceA* resource,
+              std::vector<ChunkWriter>* out_chunks) {
       auto chunk_writer =
           ChunkWriter::New<ResourceAChunk>(kChunkTypeResourceA, 1);
       auto* chunk = chunk_writer.GetChunkData<ResourceAChunk>();
@@ -237,8 +237,8 @@ class ResourceFileTest : public ::testing::Test {
   }
 
   ResourceFileReader::ResourceChunkReader<ResourceB> GetResourceBLoader() {
-    return [this](Context* context, ChunkReader* chunk_reader,
-                  ResourceEntry entry) -> ResourceB* {
+    return [](Context* context, ChunkReader* chunk_reader,
+              ResourceEntry entry) -> ResourceB* {
       auto* chunk = chunk_reader->GetChunkData<ResourceBChunk>();
       EXPECT_NE(chunk, nullptr);
       if (chunk == nullptr) {
@@ -269,8 +269,8 @@ class ResourceFileTest : public ::testing::Test {
     };
   }
   ResourceFileWriter::ResourceWriter<ResourceB> GetResourceBWriter() {
-    return [this](Context* context, ResourceB* resource,
-                  std::vector<ChunkWriter>* out_chunks) {
+    return [](Context* context, ResourceB* resource,
+              std::vector<ChunkWriter>* out_chunks) {
       const auto& values = resource->GetValues();
       if (!values.empty()) {
         auto value_writer = ChunkWriter::New<KeyValueChunk>(
@@ -296,8 +296,8 @@ class ResourceFileTest : public ::testing::Test {
   }
 
   ResourceFileReader::ResourceChunkReader<ResourceC> GetResourceCLoader() {
-    return [this](Context* context, ChunkReader* chunk_reader,
-                  ResourceEntry entry) -> ResourceC* {
+    return [](Context* context, ChunkReader* chunk_reader,
+              ResourceEntry entry) -> ResourceC* {
       auto* chunk = chunk_reader->GetChunkData<ResourceCChunk>();
       EXPECT_NE(chunk, nullptr);
       if (chunk == nullptr) {
@@ -316,8 +316,8 @@ class ResourceFileTest : public ::testing::Test {
     };
   }
   ResourceFileWriter::ResourceWriter<ResourceC> GetResourceCWriter() {
-    return [this](Context* context, ResourceC* resource,
-                  std::vector<ChunkWriter>* out_chunks) {
+    return [](Context* context, ResourceC* resource,
+              std::vector<ChunkWriter>* out_chunks) {
       auto chunk_writer =
           ChunkWriter::New<ResourceCChunk>(kChunkTypeResourceC, 1);
       auto* chunk = chunk_writer.GetChunkData<ResourceCChunk>();
@@ -335,8 +335,8 @@ class ResourceFileTest : public ::testing::Test {
 
   ResourceFileReader::ResourceChunkReader<ResourceB>
   GetResourceBHybridLoader() {
-    return [this](Context* context, ChunkReader* chunk_reader,
-                  ResourceEntry entry) -> ResourceB* {
+    return [](Context* context, ChunkReader* chunk_reader,
+              ResourceEntry entry) -> ResourceB* {
       auto* chunk = chunk_reader->GetChunkData<ResourceBChunk>();
       EXPECT_NE(chunk, nullptr);
       if (chunk == nullptr) {
@@ -353,8 +353,8 @@ class ResourceFileTest : public ::testing::Test {
     };
   }
   ResourceFileWriter::ResourceWriter<ResourceB> GetResourceBHybridWriter() {
-    return [this](Context* context, ResourceB* resource,
-                  std::vector<ChunkWriter>* out_chunks) {
+    return [](Context* context, ResourceB* resource,
+              std::vector<ChunkWriter>* out_chunks) {
       const auto& values = resource->GetValues();
       if (!values.empty()) {
         FlatBufferBuilder builder;
@@ -388,8 +388,8 @@ class ResourceFileTest : public ::testing::Test {
   ResourceFileReader::ResourceFlatBufferChunkReader<ResourceA,
                                                     fbs::ResourceAChunk>
   GetResourceAFlatBufferLoader() {
-    return [this](Context* context, const fbs::ResourceAChunk* chunk,
-                  ResourceEntry entry) -> ResourceA* {
+    return [](Context* context, const fbs::ResourceAChunk* chunk,
+              ResourceEntry entry) -> ResourceA* {
       EXPECT_NE(chunk, nullptr);
       if (chunk == nullptr) {
         return nullptr;
@@ -403,20 +403,20 @@ class ResourceFileTest : public ::testing::Test {
   }
   ResourceFileWriter::ResourceFlatBufferWriter<ResourceA>
   GetResourceAFlatBufferWriter() {
-    return [this](Context* context, ResourceA* resource,
-                  FlatBufferBuilder* builder) {
-      const auto fb_name = builder->CreateString(resource->GetName());
-      const auto fb_resource = fbs::CreateResourceAChunk(*builder, fb_name);
-      builder->Finish(fb_resource);
-      return true;
-    };
+    return
+        [](Context* context, ResourceA* resource, FlatBufferBuilder* builder) {
+          const auto fb_name = builder->CreateString(resource->GetName());
+          const auto fb_resource = fbs::CreateResourceAChunk(*builder, fb_name);
+          builder->Finish(fb_resource);
+          return true;
+        };
   }
 
   ResourceFileReader::ResourceFlatBufferChunkReader<ResourceB,
                                                     fbs::ResourceBChunk>
   GetResourceBFlatBufferLoader() {
-    return [this](Context* context, const fbs::ResourceBChunk* chunk,
-                  ResourceEntry entry) -> ResourceB* {
+    return [](Context* context, const fbs::ResourceBChunk* chunk,
+              ResourceEntry entry) -> ResourceB* {
       EXPECT_NE(chunk, nullptr);
       if (chunk == nullptr) {
         return nullptr;
@@ -447,8 +447,8 @@ class ResourceFileTest : public ::testing::Test {
   }
   ResourceFileWriter::ResourceFlatBufferWriter<ResourceB>
   GetResourceBFlatBufferWriter() {
-    return [this](Context* context, ResourceB* resource,
-                  FlatBufferBuilder* builder) {
+    return [](Context* context, ResourceB* resource,
+              FlatBufferBuilder* builder) {
       const auto fb_points = builder->CreateVectorOfNativeStructs<fbs::Point>(
           resource->GetPoints().data(), resource->GetPoints().size());
 
@@ -469,8 +469,8 @@ class ResourceFileTest : public ::testing::Test {
   ResourceFileReader::ResourceFlatBufferChunkReader<ResourceC,
                                                     fbs::ResourceCChunk>
   GetResourceCFlatBufferLoader() {
-    return [this](Context* context, const fbs::ResourceCChunk* chunk,
-                  ResourceEntry entry) -> ResourceC* {
+    return [](Context* context, const fbs::ResourceCChunk* chunk,
+              ResourceEntry entry) -> ResourceC* {
       EXPECT_NE(chunk, nullptr);
       if (chunk == nullptr) {
         return nullptr;
@@ -488,19 +488,19 @@ class ResourceFileTest : public ::testing::Test {
   }
   ResourceFileWriter::ResourceFlatBufferWriter<ResourceC>
   GetResourceCFlatBufferWriter() {
-    return [this](Context* context, ResourceC* resource,
-                  FlatBufferBuilder* builder) {
-      fbs::ResourceCChunkBuilder fb_resource_builder(*builder);
-      if (resource->GetA() != nullptr) {
-        fb_resource_builder.add_a_id(resource->GetA()->GetResourceId());
-      }
-      if (resource->GetB() != nullptr) {
-        fb_resource_builder.add_b_id(resource->GetB()->GetResourceId());
-      }
-      const auto fb_resource = fb_resource_builder.Finish();
-      builder->Finish(fb_resource);
-      return true;
-    };
+    return
+        [](Context* context, ResourceC* resource, FlatBufferBuilder* builder) {
+          fbs::ResourceCChunkBuilder fb_resource_builder(*builder);
+          if (resource->GetA() != nullptr) {
+            fb_resource_builder.add_a_id(resource->GetA()->GetResourceId());
+          }
+          if (resource->GetB() != nullptr) {
+            fb_resource_builder.add_b_id(resource->GetB()->GetResourceId());
+          }
+          const auto fb_resource = fb_resource_builder.Finish();
+          builder->Finish(fb_resource);
+          return true;
+        };
   }
 
   std::unique_ptr<FileSystem> file_system_;
@@ -822,8 +822,9 @@ TEST_F(ResourceFileTest, InvalidLoaderCreateContext) {
 }
 
 TEST_F(ResourceFileTest, DuplicateLoader) {
-  EXPECT_TRUE((reader_->RegisterResourceChunk<ResourceA, ResourceAChunk>(
-      kChunkTypeResourceA, 1, GetResourceALoader())));
+  EXPECT_TRUE(
+      (reader_->template RegisterResourceChunk<ResourceA, ResourceAChunk>(
+          kChunkTypeResourceA, 1, GetResourceALoader())));
   // New version is ok
   EXPECT_TRUE((reader_->RegisterResourceChunk<ResourceA, ResourceAChunk>(
       kChunkTypeResourceA, 2, GetResourceALoader())));

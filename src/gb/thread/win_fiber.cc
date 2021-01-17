@@ -139,7 +139,6 @@ void FiberStartRoutineFromThread(void* param) {
 
 void FiberThreadStartRoutine(void* param) {
   auto* start_info = static_cast<FiberThreadStartInfo*>(param);
-  Thread win_thread = start_info->win_thread;
   WinFiber thread_win_fiber =
       ::ConvertThreadToFiberEx(param, FIBER_FLAG_FLOAT_SWITCH);
   if (thread_win_fiber == nullptr) {

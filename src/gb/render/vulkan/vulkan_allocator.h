@@ -9,6 +9,15 @@
 #include "gb/render/vulkan/vulkan_types.h"
 
 // MUST be after vulkan_types.h
+#ifdef __clang__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnullability-completeness"
+#endif
+
 #include "vk_mem_alloc.h"
+
+#ifdef __clang__
+#pragma GCC diagnostic pop
+#endif
 
 #endif  // GB_RENDER_VULKAN_VULKAN_ALLOCATOR_H_

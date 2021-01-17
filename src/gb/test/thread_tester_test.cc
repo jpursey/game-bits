@@ -119,7 +119,7 @@ TEST(ThreadTesterTest, RunLoopSucceeds) {
 TEST(ThreadTesterTest, RunLoopFails) {
   ThreadTester tester;
   std::atomic<int> count = 0;
-  auto func = [&tester, &count]() {
+  auto func = [&count]() {
     ++count;
     return count < 2;
   };
@@ -163,9 +163,9 @@ TEST(ThreadTesterTest, MultipleNamedThreadsSuccess) {
 
 TEST(ThreadTesterTest, MultipleNamedThreadsOneFailure) {
   ThreadTester tester;
-  tester.Run("a", [&tester]() { return true; });
-  tester.Run("b", [&tester]() { return false; });
-  tester.Run("c", [&tester]() { return true; });
+  tester.Run("a", [] { return true; });
+  tester.Run("b", [] { return false; });
+  tester.Run("c", [] { return true; });
   EXPECT_FALSE(tester.Complete()) << tester.GetResultString();
   EXPECT_EQ(tester.GetRunResult("a"), ThreadTester::kSuccess);
   EXPECT_EQ(tester.GetRunResult("b"), ThreadTester::kFailure);

@@ -118,4 +118,4 @@ inline void VulkanGarbageCollector::Dispose(VkShaderModule shader) {
 
 }  // namespace gb
 
-#endif VULKAN_GARBAGE_COLLECTOR_H_
+#endif  // VULKAN_GARBAGE_COLLECTOR_H_

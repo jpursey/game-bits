@@ -22,7 +22,10 @@ class JobCounter;
 class JobSystem;
 class FiberJobSystem;
 
-GB_DEFINE_ACCESS_TOKEN(JobInternal, class JobSystem, class FiberJobSystem);
+GB_BEGIN_ACCESS_TOKEN(JobInternal)
+friend class JobSystem;
+friend class FiberJobSystem;
+GB_END_ACCESS_TOKEN()
 
 }  // namespace gb
 

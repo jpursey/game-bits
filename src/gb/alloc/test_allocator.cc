@@ -34,7 +34,7 @@ void TestAllocator::Free(void* ptr) {
 
 bool TestAllocator::IsValidMemory(void* ptr, size_t size, size_t align) const {
   uintptr_t ptr_address = reinterpret_cast<uintptr_t>(ptr);
-  if (ptr_address & (align - 1) != 0) {
+  if ((ptr_address & (align - 1)) != 0) {
     LOG(ERROR) << "Pointer address " << ptr_address << " is not aligned to "
                << align;
     return false;

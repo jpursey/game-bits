@@ -194,7 +194,7 @@ class ChunkWriter final {
   ChunkWriter(const ChunkType& type, int32_t version, int32_t count,
               int32_t item_size, void* chunk_data = nullptr);
 
-  std::tuple<int64_t, void*> ChunkWriter::ReserveExtra(int64_t total_size);
+  std::tuple<int64_t, void*> ReserveExtra(int64_t total_size);
 
   ChunkHeader header_;
   void* chunk_buffer_ = nullptr;

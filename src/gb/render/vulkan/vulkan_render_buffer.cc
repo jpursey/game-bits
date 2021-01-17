@@ -450,6 +450,8 @@ std::unique_ptr<VulkanRenderBuffer> VulkanRenderBuffer::Create(
     VulkanInternal, VulkanBackend* backend, VulkanBufferType type,
     DataVolatility volatility, int value_size, int capacity, int align_size) {
   switch (volatility) {
+    case DataVolatility::kInvalid:
+      break;
     case DataVolatility::kStaticWrite:
       return VulkanStaticWriteBuffer::Create(backend, type, value_size,
                                              capacity, align_size);

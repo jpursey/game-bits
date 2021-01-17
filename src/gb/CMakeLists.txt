@@ -5,6 +5,13 @@
 
 set(VS_FOLDER GameBits)
 
+# Enable warnings as errors for the Game Bits libraries themselves
+if (MSVC)
+  add_compile_options(/WX)
+else()
+  add_compile_options(-Werror)
+endif()
+
 add_subdirectory(alloc)
 add_subdirectory(base)
 add_subdirectory(file)
