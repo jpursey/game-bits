@@ -33,14 +33,13 @@ STRING(REGEX REPLACE "\\\\" "/" GB_DIR ${GB_DIR})
 # otherwise binary output will go into the Game Bits directory.
 set(GB_BIN_DIR "${CURRENT_DIR}/bin")
 
-# Optionally set a different third_party source and build directory. This is not
+# Optionally set a different third_party source directory. This is not
 # recommended, unless you want to control the version of libraries used (the
 # caveat being that Game Bits is only tested with its own version). If set, it
 # must be a superset of what Game Bits needs. Game Bits third_party directories
 # are unmodified from their source locations (most are submodules), which makes
 # this a bit more maintainable.
 # set(GB_THIRD_PARTY_DIR "${GB_DIR}/third_party")
-# set(GB_THIRD_PARTY_BUILD_DIR "${GB_DIR}/build/third_party")
 
 # Add the Game Bits libraries and tools. This also makes the gb_* commands
 # available.

@@ -27,15 +27,6 @@ function(gb_config)
     set(GB_THIRD_PARTY_DIR "${GB_DIR}/third_party" PARENT_SCOPE)
   endif()
 
-  # Directory where all third party library build output is generated.
-  # By default, it is expected that third party libraries are built as part of
-  # a separate Game Bits installation. However, if Game Bits is being used as a
-  # submodule or the third party directory is overridden, this may be
-  # overridden.
-  if (NOT DEFINED GB_THIRD_PARTY_BUILD_DIR)
-    set(GB_THIRD_PARTY_BUILD_DIR "${GB_DIR}/build/third_party" PARENT_SCOPE)
-  endif()
-
   # Directory to where all final executable output will go.
   if (NOT DEFINED GB_BIN_DIR)
     set(GB_BIN_DIR "${GB_DIR}/bin" PARENT_SCOPE)

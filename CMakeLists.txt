@@ -15,10 +15,6 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# This allows the <target>_FBS and <target>_TEST_FBS variables to work with
-# local file paths.
-cmake_policy(SET CMP0076 NEW)
-
 ###############################################################################
 # Game Bits configuration
 ###############################################################################
@@ -36,16 +32,7 @@ add_compile_definitions(_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS)
 
 list(APPEND CMAKE_MODULE_PATH
   "${GB_DIR}/CMake"
-  "${GB_THIRD_PARTY_DIR}/flatbuffers/CMake"
 )
-set(FLATBUFFERS_FLATC_EXECUTABLE "${GB_THIRD_PARTY_BUILD_DIR}/flatbuffers/Release/flatc")
-set(FLATBUFFERS_INCLUDE_DIR "${GB_THIRD_PARTY_DIR}/flatbuffers/include")
-get_property(is_sub_project DIRECTORY PROPERTY PARENT_DIRECTORY)
-if (is_sub_project)
-  set(FLATBUFFERS_FLATC_EXECUTABLE "${FLATBUFFERS_FLATC_EXECUTABLE}" PARENT_SCOPE)
-  set(FLATBUFFERS_INCLUDE_DIR "${FLATBUFFERS_INCLUDE_DIR}" PARENT_SCOPE)
-endif()
-include(BuildFlatBuffers)
 include(GameBitsTargetCommands)
 include(GameBitsExternalLibraries)
 gb_external_libraries()
@@ -59,11 +46,33 @@ gb_external_libraries()
 # Disable Testing for abseil
 set(BUILD_TESTING OFF) 
 add_subdirectory("${GB_THIRD_PARTY_DIR}/abseil-cpp")
-set(BUILD_TESTING ON) 
+set(BUILD_TESTING) 
 
-####### GLM
+####### glm
 
 add_subdirectory("${GB_THIRD_PARTY_DIR}/glm")
+
+####### glog
+
+option(WITH_GFLAGS "" OFF)
+option(BUILD_TESTING "" OFF)
+add_subdirectory("${GB_THIRD_PARTY_DIR}/glog")
+set_target_properties(glog PROPERTIES FOLDER External/glog)
+
+####### googletest
+
+option(INSTALL_GTEST "" OFF)
+option(gtest_force_shared_crt "" ON)
+add_subdirectory("${GB_THIRD_PARTY_DIR}/googletest")
+set_target_properties(gmock gmock_main gtest gtest_main PROPERTIES FOLDER External/googletest)
+
+####### flatbuffers
+
+set(FLATBUFFERS_FLATC_EXECUTABLE "${GB_DIR}/bin/flatc")
+option(FLATBUFFERS_BUILD_TESTS "" OFF)
+option(FLATBUFFERS_INSTALL "" OFF)
+add_subdirectory("${GB_THIRD_PARTY_DIR}/flatbuffers")
+set_target_properties(flatbuffers flatc flathash PROPERTIES FOLDER External/flatbuffers)
 
 ###############################################################################
 ## Add Game Bits source

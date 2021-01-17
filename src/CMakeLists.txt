@@ -5,5 +5,5 @@
 
 add_subdirectory(gb)
 
-set(VS_FOLDER stb)
+set(VS_FOLDER External/stb)
 add_subdirectory(stb)

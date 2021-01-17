@@ -38,10 +38,14 @@ function(gb_set_target_properties NAME)
   endif()
   if(DEFINED ${NAME}_FBS)
     STRING(REGEX REPLACE "_" "/" ${NAME}_FBS_PREFIX ${NAME})
+    foreach(_file IN LISTS ${NAME}_FBS)
+      get_filename_component(_path ${_file} ABSOLUTE)
+      list(APPEND ${NAME}_FBS_ABSOLUTE ${_path})
+    endforeach()
     flatbuffers_generate_headers(
       TARGET ${NAME}_fbs_generated
       INCLUDE_PREFIX ${${NAME}_FBS_PREFIX}
-      SCHEMAS ${${NAME}_FBS})
+      SCHEMAS ${${NAME}_FBS_ABSOLUTE})
     target_link_libraries(${NAME} PRIVATE ${NAME}_fbs_generated flatbuffers)
   endif()
   
@@ -58,22 +62,21 @@ function(gb_add_test NAME)
 
   if(DEFINED ${NAME}_TEST_FBS)
     STRING(REGEX REPLACE "_" "/" ${NAME}_TEST_FBS_PREFIX ${NAME})
+    foreach(_file IN LISTS ${NAME}_TEST_FBS)
+      get_filename_component(_path ${_file} ABSOLUTE)
+      list(APPEND ${NAME}_TEST_FBS_ABSOLUTE ${_path})
+    endforeach()
     flatbuffers_generate_headers(
       TARGET ${NAME}_test_fbs_generated
       INCLUDE_PREFIX ${${NAME}_TEST_FBS_PREFIX}
-      SCHEMAS ${${NAME}_TEST_FBS})
+      SCHEMAS ${${NAME}_TEST_FBS_ABSOLUTE})
     target_link_libraries(${NAME}_test PRIVATE ${NAME}_test_fbs_generated flatbuffers)
   endif()
 
-  target_include_directories(${NAME}_test PRIVATE
-    "${GB_THIRD_PARTY_DIR}/googletest/googlemock/include"
-    "${GB_THIRD_PARTY_DIR}/googletest/googletest/include"
-  )
-
-  add_dependencies(${NAME}_test ${NAME})
+  add_dependencies(${NAME}_test ${NAME} gmock_main)
   target_link_libraries(${NAME}_test PRIVATE
     ${NAME}
-    "${GB_THIRD_PARTY_BUILD_DIR}/googletest/lib/$(Configuration)/gmock_main$<$<CONFIG:Debug>:d>.lib"
+    gmock_main
   )
   if(DEFINED ${NAME}_TEST_DEPS)
     add_dependencies(${NAME}_test ${${NAME}_TEST_DEPS})
