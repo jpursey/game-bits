@@ -122,7 +122,7 @@ std::vector<std::string> MemoryFileProtocol::GetDefaultNames() const {
   return {"mem"};
 }
 
-void MemoryFileProtocol::Lock(LockType type) {
+void MemoryFileProtocol::Lock(LockType type) ABSL_NO_THREAD_SAFETY_ANALYSIS {
   if (type == LockType::kQuery) {
     mutex_.ReaderLock();
   } else {
@@ -130,7 +130,7 @@ void MemoryFileProtocol::Lock(LockType type) {
   }
 }
 
-void MemoryFileProtocol::Unlock(LockType type) {
+void MemoryFileProtocol::Unlock(LockType type) ABSL_NO_THREAD_SAFETY_ANALYSIS {
   if (type == LockType::kQuery) {
     mutex_.ReaderUnlock();
   } else {

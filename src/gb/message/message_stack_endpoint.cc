@@ -9,8 +9,8 @@ namespace gb {
 
 void MessageStackHandlers::SetStack(MessageInternal,
                                     MessageStackEndpoint* stack) {
-  CHECK(stack_ == nullptr || stack == nullptr);
   absl::MutexLock lock(&mutex_);
+  CHECK(stack_ == nullptr || stack == nullptr);
   stack_ = stack;
   if (stack_ != nullptr) {
     for (const auto& handler_info : handlers_) {

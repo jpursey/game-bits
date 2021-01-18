@@ -149,8 +149,8 @@ class ResourceSystem final {
                                    ResourceId id);
   ResourceId GetResourceIdFromName(ResourceInternal, TypeKey* type,
                                    std::string_view name);
-  void ResourceLock(ResourceInternal);
-  void ResourceUnlock(ResourceInternal);
+  void ResourceLock(ResourceInternal) ABSL_EXCLUSIVE_LOCK_FUNCTION(mutex_);
+  void ResourceUnlock(ResourceInternal) ABSL_UNLOCK_FUNCTION(mutex_);
   Resource* Find(ResourceInternal, TypeKey* type, ResourceId id);
   bool ReserveResourceName(ResourceInternal, TypeKey* type, ResourceId id,
                            const std::string& name);
@@ -184,7 +184,8 @@ class ResourceSystem final {
 
   bool DoRegister(std::initializer_list<TypeKey*> types,
                   ResourceManager* manager) ABSL_LOCKS_EXCLUDED(mutex_);
-  ResourceId DoGetResourceIdFromName(TypeKey* type, std::string_view name);
+  ResourceId DoGetResourceIdFromName(TypeKey* type, std::string_view name)
+      ABSL_SHARED_LOCKS_REQUIRED(mutex_);
   Resource* DoGet(TypeKey* type, ResourceId id)
       ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
   Resource* DoGet(ResourceSet* set, TypeKey* type, ResourceId id)

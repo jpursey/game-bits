@@ -125,14 +125,15 @@ void ThreadMessageDispatcher::AddMessage(MessageInternal,
   messages_.emplace_back(message);
 }
 
+bool ThreadMessageDispatcher::ProcessMessagesReady() {
+  return exit_thread_ || !messages_.empty();
+}
+
 void ThreadMessageDispatcher::ProcessMessages() {
   absl::MutexLock lock(&thread_mutex_);
   while (!exit_thread_) {
-    thread_mutex_.Await(absl::Condition(
-        +[](ThreadMessageDispatcher* self) {
-          return self->exit_thread_ || !self->messages_.empty();
-        },
-        this));
+    thread_mutex_.Await(
+        absl::Condition(this, &ThreadMessageDispatcher::ProcessMessagesReady));
 
     std::vector<Message> messages;
     messages.swap(messages_);

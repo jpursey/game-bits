@@ -215,7 +215,7 @@ inline GameStateId GetGameStateId(GameStateInfo* info) {
 // happens directly with in the GameStateMachine::Update call (never while
 // executing any GameState callback).
 //
-// This class is thread-safe.
+// This class is thread-safe, except as noted.
 class GameStateMachine final {
  public:
   GameStateMachine(const GameStateMachine&) = delete;
@@ -243,6 +243,8 @@ class GameStateMachine final {
   // Sets the trace level for the state machine.
   //
   // The default trace level is kError.
+  //
+  // This function is thread-compatible relative to all other functions.
   void SetTraceLevel(GameStateTraceLevel trace_level);
 
   // Set the trace handler for this state machine.
@@ -255,6 +257,8 @@ class GameStateMachine final {
   // called from multiple threads concurrently. This GameStateMachine instance
   // must not be called from within the registered handler, or deadlock will
   // occur.
+  //
+  // This function is thread-compatible relative to all other functions.
   void SetTraceHandler(GameStateTraceHandler handler);
 
   // Adds an additional trace handler for this state machine.
@@ -266,6 +270,8 @@ class GameStateMachine final {
   // called from multiple threads concurrently. This GameStateMachine instance
   // must not be called from within the registered handler, or deadlock will
   // occur.
+  //
+  // This function is thread-compatible relative to all other functions.
   void AddTraceHandler(GameStateTraceHandler handler);
 
   // Registers a GameState derived class with the state machine.
@@ -417,9 +423,8 @@ class GameStateMachine final {
   ValidatedContext context_;
 
   // Trace information.
-  GameStateTraceLevel trace_level_ GUARDED_BY(mutex_) =
-      GameStateTraceLevel::kError;
-  GameStateTraceHandler trace_handler_ GUARDED_BY(mutex_);
+  GameStateTraceLevel trace_level_ = GameStateTraceLevel::kError;
+  GameStateTraceHandler trace_handler_;
 
   // Map of all registered states.
   States states_ GUARDED_BY(mutex_);

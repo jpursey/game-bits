@@ -388,7 +388,10 @@ TEST_F(FiberTest, ThreadAbuse) {
       Fiber next_fiber = nullptr;
       if (!done) {
         state.mutex.Await(absl::Condition(
-            +[](State* state) { return !state->idle_fibers.empty(); }, &state));
+            +[](State* state) ABSL_NO_THREAD_SAFETY_ANALYSIS {
+              return !state->idle_fibers.empty();
+            },
+            &state));
         next_fiber = state.idle_fibers.front();
         state.idle_fibers.pop();
       }

@@ -129,9 +129,14 @@ class FiberJobSystem : public JobSystem {
   FiberJobSystem();
   bool Init(ValidatedContext context);
 
-  void JobMain();
+  void JobMain() ABSL_LOCKS_EXCLUDED(mutex_);
   bool HasNoFibersInUse() const ABSL_SHARED_LOCKS_REQUIRED(mutex_);
   static std::string_view GetJobName(Job* job);
+  void ImpliedUnlockFromPreviousFiber()
+      ABSL_UNLOCK_FUNCTION(mutex_) ABSL_NO_THREAD_SAFETY_ANALYSIS {}
+  void UnlockFromPreviousFiber() ABSL_NO_THREAD_SAFETY_ANALYSIS {
+    mutex_.Unlock();
+  }
 
   bool set_fiber_names_ = false;
 

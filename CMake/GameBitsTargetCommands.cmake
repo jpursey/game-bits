@@ -20,15 +20,21 @@ function(gb_set_target_properties NAME)
   if(DEFINED VS_FOLDER)
     set_target_properties(${NAME} PROPERTIES FOLDER ${VS_FOLDER})
   endif()
+  if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(${NAME} PRIVATE -Wthread-safety)
+  endif()
+
   target_include_directories(${NAME} PUBLIC "${GB_DIR}/src" ${GB_INCLUDE_DIRS})
   if(DEFINED ${NAME}_INCLUDES)
     target_include_directories(${NAME} PUBLIC ${${NAME}_INCLUDES})
   endif()
+
   if(DEFINED ${NAME}_DEFINES)
     target_compile_definitions(${NAME} PUBLIC NOMINMAX ${${NAME}_DEFINES})
   else()
     target_compile_definitions(${NAME} PUBLIC NOMINMAX)
   endif()
+
   if(DEFINED ${NAME}_DEPS)
     add_dependencies(${NAME} ${${NAME}_DEPS})
     target_link_libraries(${NAME} PUBLIC ${${NAME}_DEPS})
@@ -36,6 +42,7 @@ function(gb_set_target_properties NAME)
   if(DEFINED ${NAME}_LIBS)
     target_link_libraries(${NAME} PUBLIC ${${NAME}_LIBS})
   endif()
+
   if(DEFINED ${NAME}_FBS)
     STRING(REGEX REPLACE "_" "/" ${NAME}_FBS_PREFIX ${NAME})
     foreach(_file IN LISTS ${NAME}_FBS)
@@ -48,7 +55,7 @@ function(gb_set_target_properties NAME)
       SCHEMAS ${${NAME}_FBS_ABSOLUTE})
     target_link_libraries(${NAME} PRIVATE ${NAME}_fbs_generated flatbuffers)
   endif()
-  
+
   # The version of ABSL synced generates some warnings for C++17 in VS2019.
   # This disables those warnings. Since these often come up in headers,
   # visibility must be PUBLIC 

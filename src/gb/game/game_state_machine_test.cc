@@ -2091,32 +2091,6 @@ TEST_F(GameStateMachineTest, ThreadAbuse) {
     info->GetChild();
     return true;
   });
-  GameStateTrace last_trace, other_trace;
-  GameStateTraceLevel trace_level = GameStateTraceLevel::kNone;
-  tester.RunLoop(
-      1, "trace-handler", [this, &last_trace, &other_trace, &trace_level]() {
-        state_machine_->SetTraceHandler(
-            [&last_trace](const GameStateTrace& trace) { last_trace = trace; });
-        state_machine_->AddTraceHandler(
-            [&other_trace](const GameStateTrace& trace) {
-              other_trace = trace;
-            });
-        switch (trace_level) {
-          case GameStateTraceLevel::kNone:
-            trace_level = GameStateTraceLevel::kError;
-            break;
-          case GameStateTraceLevel::kError:
-            trace_level = GameStateTraceLevel::kInfo;
-            break;
-          case GameStateTraceLevel::kInfo:
-            trace_level = GameStateTraceLevel::kVerbose;
-            break;
-          case GameStateTraceLevel::kVerbose:
-            trace_level = GameStateTraceLevel::kNone;
-            break;
-        }
-        return true;
-      });
   absl::SleepFor(absl::Seconds(1));
   EXPECT_TRUE(tester.Complete()) << tester.GetResultString();
   state_machine_->SetTraceHandler([](const GameStateTrace&) {});

@@ -198,7 +198,7 @@ void FiberJobSystem::JobMain() {
       idle_fibers_.insert(state);
       GB_FIBER_JOB_SYSTEM_LOG << "Idling fiber " << fiber;
       mutex_.Await(absl::Condition(
-          +[](FiberState* state) {
+          +[](FiberState* state) ABSL_NO_THREAD_SAFETY_ANALYSIS {
             return state->job != nullptr || !state->system->running_;
           },
           state));
@@ -323,7 +323,7 @@ void FiberJobSystem::DoWait(JobCounter* counter) {
   Fiber new_fiber = CreateFiber(
       options, 0, this, +[](void* user_data) {
         auto* system = static_cast<FiberJobSystem*>(user_data);
-        system->mutex_.Unlock();
+        system->UnlockFromPreviousFiber();
         system->JobMain();
         // Nothing can happen as the job system may be in its destructor.
       });
@@ -333,6 +333,8 @@ void FiberJobSystem::DoWait(JobCounter* counter) {
     SetFiberName(new_fiber, "Idle Job Fiber");
   }
   CHECK(SwitchToFiber(new_fiber)) << "Failed to switch to new fiber";
+  ImpliedUnlockFromPreviousFiber();  // The mutex is unlocked before the fiber
+                                     // returns.
 }
 
 }  // namespace gb

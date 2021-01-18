@@ -59,17 +59,14 @@ std::string ToString(const GameStateTrace& trace) {
 }
 
 void GameStateMachine::SetTraceLevel(GameStateTraceLevel trace_level) {
-  absl::MutexLock lock(&mutex_);
   trace_level_ = trace_level;
 }
 
 void GameStateMachine::SetTraceHandler(GameStateTraceHandler handler) {
-  absl::MutexLock lock(&mutex_);
   trace_handler_ = std::move(handler);
 }
 
 void GameStateMachine::AddTraceHandler(GameStateTraceHandler handler) {
-  absl::MutexLock lock(&mutex_);
   auto new_handler = [handler_1 = std::move(trace_handler_),
                       handler_2 =
                           std::move(handler)](const GameStateTrace& trace) {

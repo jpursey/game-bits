@@ -131,6 +131,7 @@ class ThreadMessageDispatcher : public MessageDispatcher {
   void AddMessage(MessageInternal, const Message& message) override;
 
  private:
+  bool ProcessMessagesReady() ABSL_SHARED_LOCKS_REQUIRED(thread_mutex_);
   void ProcessMessages();
 
   std::thread thread_;

@@ -143,7 +143,7 @@ class MessageStackEndpoint final {
   // The following methods are internal to the message system, callable only by
   // other classes that are part of the system.
   template <typename Message>
-  void RegisterMessage(MessageInternal) {
+  void RegisterMessage(MessageInternal) ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_) {
     GetMessageInfo<Message>();
   }
 
@@ -197,9 +197,10 @@ void MessageStackHandlers::SetHandler(MessageStackHandler<Message> callback) {
                               MessageEndpointId from, const void* message) {
     return callback(from, *static_cast<const Message*>(message));
   };
-  handler_info.register_message = [this]() {
-    stack_->RegisterMessage<Message>({});
-  };
+  handler_info.register_message = [this]()
+                                      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_) {
+                                        stack_->RegisterMessage<Message>({});
+                                      };
   if (stack_ != nullptr) {
     stack_->RegisterMessage<Message>({});
   }
