@@ -5,11 +5,11 @@
 
 set(VS_FOLDER GameBits)
 
-# Enable warnings as errors for the Game Bits libraries themselves
-if (MSVC)
-  add_compile_options(/WX)
-else()
+# Extra warnings and errors for the Game Bits libraries themselves
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Werror)
+elseif (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+  add_compile_options(/WX)
 endif()
 
 add_subdirectory(alloc)

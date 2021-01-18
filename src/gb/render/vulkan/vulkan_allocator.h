@@ -12,6 +12,7 @@
 #ifdef __clang__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wnullability-completeness"
+#pragma GCC diagnostic ignored "-Wunused-variable"
 #endif
 
 #include "vk_mem_alloc.h"

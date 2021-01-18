@@ -30,11 +30,11 @@ gb_external_libraries()
 ## Game Source
 ################################################################################
 
-# Enable warnings as errors
-if (MSVC)
-  add_compile_options(/WX)
-else()
+# Extra warnings and errors for example code
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Werror)
+elseif (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+  add_compile_options(/WX)
 endif()
 
 set(block_world_SOURCE

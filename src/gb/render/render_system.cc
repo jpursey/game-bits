@@ -504,6 +504,13 @@ Mesh* RenderSystem::LoadMeshChunk(Context* context, const fbs::MeshChunk* chunk,
     LOG(ERROR) << "Mesh is empty";
     return nullptr;
   }
+  if (chunk->vertex_size() == 0 ||
+      chunk->vertex_size() != material->GetType()->GetVertexType()->GetSize()) {
+    LOG(ERROR) << "Mesh has mismatched vertex size " << chunk->vertex_size()
+               << " compared to material vertex size of "
+               << material->GetType()->GetVertexType()->GetSize();
+    return nullptr;
+  }
   const int32_t vertex_count =
       static_cast<int32_t>(chunk->vertices()->size()) / chunk->vertex_size();
 
