@@ -102,6 +102,29 @@ TEST_P(FiberJobSystemTest, WaitOnJob) {
   EXPECT_EQ(call_count, 1);
 }
 
+TEST_P(FiberJobSystemTest, WaitOnCompletedJob) {
+  CHECK_FIBER_SUPPORT();
+  JobCounter counter;
+  std::atomic<int> call_count = 0;
+
+  absl::Notification notify_1;
+  EXPECT_TRUE(job_system_->Run(&counter, [&call_count, &notify_1] {
+    ++call_count;
+    notify_1.Notify();
+  }));
+  notify_1.WaitForNotificationWithTimeout(absl::Seconds(10));
+  EXPECT_EQ(call_count, 1);
+
+  absl::Notification notify_2;
+  EXPECT_TRUE(job_system_->Run([&counter, &call_count, &notify_2] {
+    JobSystem::Get()->Wait(&counter);
+    EXPECT_EQ(call_count, 1);
+    notify_2.Notify();
+  }));
+  notify_2.WaitForNotificationWithTimeout(absl::Seconds(10));
+  EXPECT_EQ(call_count, 1);
+}
+
 TEST_P(FiberJobSystemTest, WaitOnMultipleJobs) {
   CHECK_FIBER_SUPPORT();
   JobCounter counter;

@@ -49,7 +49,8 @@ struct FiberType {
             FiberMain in_fiber_main)
       : user_data(in_user_data),
         fiber_main(in_fiber_main),
-        set_thread_name(in_options.IsSet(FiberOption::kSetThreadName)) {
+        set_thread_name(in_options.IsSet(FiberOption::kSetThreadName)),
+        custom_data(nullptr) {
     std::snprintf(name, sizeof(name), "Fiber-%d", ++g_fiber_index);
   }
 
@@ -62,6 +63,7 @@ struct FiberType {
   WinFiber thread_win_fiber ABSL_GUARDED_BY(mutex) = nullptr;
   WinFiber win_fiber ABSL_GUARDED_BY(mutex) = nullptr;
   char name[kMaxFiberNameSize] ABSL_GUARDED_BY(mutex) = {};
+  std::atomic<void*> custom_data;
 };
 
 namespace {
@@ -323,6 +325,27 @@ void SetFiberName(Fiber fiber, std::string_view name) {
   if (fiber->set_thread_name && fiber->thread != nullptr) {
     SetThreadName(fiber->thread, fiber->name);
   }
+}
+
+void* GetFiberData(Fiber fiber) {
+  if (fiber == nullptr) {
+    return nullptr;
+  }
+  return fiber->custom_data.load(std::memory_order_acquire);
+}
+
+void SetFiberData(Fiber fiber, void* data) {
+  if (fiber == nullptr) {
+    return;
+  }
+  fiber->custom_data.store(data, std::memory_order_release);
+}
+
+void* SwapFiberData(Fiber fiber, void* data) {
+  if (fiber == nullptr) {
+    return nullptr;
+  }
+  return fiber->custom_data.exchange(data, std::memory_order_acq_rel);
 }
 
 Fiber GetThisFiber() {

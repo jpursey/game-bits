@@ -36,6 +36,12 @@ std::string_view GetFiberName(Fiber) { return "null"; }
 
 void SetFiberName(Fiber, std::string_view) {}
 
+void* GetFiberData(Fiber) { return nullptr; }
+
+void SetFiberData(Fiber, void*) {}
+
+void* SwapFiberData(Fiber, void*) { return nullptr; }
+
 Fiber GetThisFiber() { return nullptr; }
 
 bool IsFiberRunning(Fiber) { return false; }

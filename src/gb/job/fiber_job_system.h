@@ -7,7 +7,7 @@
 #define GB_JOB_FIBER_JOB_SYSTEM_H_
 
 #include "absl/container/flat_hash_map.h"
-#include "absl/container/flat_hash_set.h"
+#include "concurrentqueue.h"
 #include "gb/alloc/pool_allocator.h"
 #include "gb/base/context.h"
 #include "gb/base/queue.h"
@@ -114,68 +114,71 @@ class FiberJobSystem : public JobSystem {
   };
 
   struct FiberState {
-    FiberState(FiberJobSystem* in_system) : system(in_system) {}
+    FiberState(FiberJobSystem* in_system) : system(in_system), idle(false) {}
 
     // Job system for this fiber.
     FiberJobSystem* const system;
+
+    // Fiber the state was switch from. This is not null when switching to a
+    // waiting fiber, which then must mark this fiber as unused.
+    Fiber prev_fiber = nullptr;
+
+    // Wait counter which is set when a state goes into a Wait state.
+    JobCounter* wait_counter = nullptr;
 
     // Fiber this state is for.
     Fiber fiber = nullptr;
 
     // Job this fiber is currently running.
     Job* job = nullptr;
+
+    // Set when the fiber becomes idle.
+    std::atomic<bool> idle;
   };
+
+  template <typename Type>
+  using ConcurrentQueue = moodycamel::ConcurrentQueue<Type>;
 
   FiberJobSystem();
   bool Init(ValidatedContext context);
 
-  void JobMain() ABSL_LOCKS_EXCLUDED(mutex_);
-  bool HasNoFibersInUse() const ABSL_SHARED_LOCKS_REQUIRED(mutex_);
+  // Switches this fiber to the now-unblocked fiber in the specified state.
+  void ResumeJobFiber(Fiber fiber, FiberState* state);
+
+  // Must be called when switched to from a Wait call in another fiber to
+  // complete the wait operation.
+  void CompleteWait(Fiber fiber);
+
+  // Main routine for a job fiber which runs jobs
+  void JobMain(Fiber fiber);
+
   static std::string_view GetJobName(Job* job);
-  void ImpliedUnlockFromPreviousFiber()
-      ABSL_UNLOCK_FUNCTION(mutex_) ABSL_NO_THREAD_SAFETY_ANALYSIS {}
-  void UnlockFromPreviousFiber() ABSL_NO_THREAD_SAFETY_ANALYSIS {
-    mutex_.Unlock();
-  }
 
   bool set_fiber_names_ = false;
 
-  mutable absl::Mutex mutex_;  // All state is guarded by this mutex.
-
   // True if the the fiber system is running (not being destructed).
-  bool running_ ABSL_GUARDED_BY(mutex_) = true;
+  std::atomic<bool> running_;
 
   // All threads used to run jobs.
-  std::vector<Thread> threads_ ABSL_GUARDED_BY(mutex_);
+  std::vector<Thread> threads_;
 
-  // Total number of threads and fibers created. These only increases, as fibers
-  // are recycled.
-  int total_fiber_count_ ABSL_GUARDED_BY(mutex_) = 0;
+  // Total number of fibers created. This only increases, as fibers are
+  // recycled.
+  std::atomic<int> total_fiber_count_;
 
   // Allocates used for job and fiber state.
-  PoolAllocator job_allocator_ ABSL_GUARDED_BY(mutex_);
-  PoolAllocator fiber_allocator_ ABSL_GUARDED_BY(mutex_);
+  TsPoolAllocator job_allocator_;
+  TsPoolAllocator fiber_allocator_;
 
   // Pending jobs waiting for a fiber to become available.
-  Queue<Job*> pending_jobs_ ABSL_GUARDED_BY(mutex_);
+  ConcurrentQueue<Job*> pending_jobs_;
 
   // Pending fibers with an active job that are waiting for a thread to become
   // available.
-  Queue<FiberState*> pending_fibers_ ABSL_GUARDED_BY(mutex_);
-
-  // Fibers that are idling on a thread waiting to receive a job to
-  // process.
-  absl::flat_hash_set<FiberState*> idle_fibers_ ABSL_GUARDED_BY(mutex_);
-
-  // Fibers that are actively running a job on a thread.
-  absl::flat_hash_set<FiberState*> running_fibers_ ABSL_GUARDED_BY(mutex_);
-
-  // Contains fibers waiting on a job counter.
-  absl::flat_hash_map<JobCounter*, std::vector<FiberState*>> waiting_fibers_
-      ABSL_GUARDED_BY(mutex_);
+  ConcurrentQueue<FiberState*> pending_fibers_;
 
   // Fibers that were created but are not currently in use.
-  Queue<Fiber> unused_fibers_ ABSL_GUARDED_BY(mutex_);
+  ConcurrentQueue<Fiber> unused_fibers_;
 };
 
 }  // namespace gb

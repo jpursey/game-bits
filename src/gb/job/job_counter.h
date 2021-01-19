@@ -6,6 +6,8 @@
 #ifndef GB_JOB_JOB_COUNTER_H_
 #define GB_JOB_JOB_COUNTER_H_
 
+#include "absl/container/inlined_vector.h"
+#include "absl/synchronization/mutex.h"
 #include "gb/job/job_types.h"
 
 namespace gb {
@@ -38,12 +40,47 @@ class JobCounter {
   // Internal
   //----------------------------------------------------------------------------
 
-  void Increment(JobInternal) { ++counter_; }
-  int Decrement(JobInternal) { return --counter_; }
-  int Get(JobInternal) const { return counter_; }
+  typedef absl::InlinedVector<void*, 1> Waiters;
+
+  // Increments the counter.
+  void Increment(JobInternal) {
+    absl::WriterMutexLock lock(&mutex_);
+    ++counter_;
+  }
+
+  // Decrements the counter and returns any waiters that are now unblocked.
+  //
+  // Returns true if waiters were returned.
+  bool Decrement(JobInternal, Waiters& waiters) {
+    absl::WriterMutexLock lock(&mutex_);
+    if (--counter_ > 0) {
+      return false;
+    }
+
+    // absl::InlinedVector does not have a defined "moved-from" state, so we
+    // cannot simply std::move waiters.
+    waiters.swap(waiters_);
+    waiters_.clear();
+    return true;
+  }
+
+  // Adds a waiter if the counter is not already complete.
+  //
+  // Returns true if the waiter was added (otherwise the counter is already at
+  // zero).
+  bool AddWaiter(JobInternal, void* waiter) {
+    absl::WriterMutexLock lock(&mutex_);
+    if (counter_ == 0) {
+      return false;
+    }
+    waiters_.push_back(waiter);
+    return true;
+  }
 
  private:
-  int counter_;
+  mutable absl::Mutex mutex_;
+  int counter_ ABSL_GUARDED_BY(mutex_);
+  Waiters waiters_ ABSL_GUARDED_BY(mutex_);
 };
 
 }  // namespace gb

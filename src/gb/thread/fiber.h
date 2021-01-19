@@ -141,10 +141,35 @@ bool SwitchToFiber(Fiber fiber);
 // It is valid to call these on a null fiber. If this is done, Get will return
 // "null" and Set will be a noop.
 //
-// These function is thread-safe (thread-compatible with DeleteFiber or
+// These functions are thread-safe (thread-compatible with DeleteFiber or
 // Get/SetFiberName on the same thread).
 std::string_view GetFiberName(Fiber fiber);
 void SetFiberName(Fiber fiber, std::string_view name);
+
+// Gets or sets arbitrary data on a fiber.
+//
+// This does not take ownership or do anything other than store the pointer. It
+// is the callers responsibility to ensure any pointed-to data is correctly
+// cleaned up.
+//
+// It is valid to call these on a null fiber. If this is done, Get will return
+// null and Set will be a noop.
+//
+// These functions are thread-safe (thread-compatible with DeleteFiber).
+void* GetFiberData(Fiber fiber);
+void SetFiberData(Fiber fiber, void* data);
+
+// Atomically sets the fiber data and returns the previously set data.
+//
+// This does not take ownership or do anything other than store the pointer. It
+// is the callers responsibility to ensure any pointed-to data is correctly
+// cleaned up.
+//
+// Like Get and Set, it is valid to call on a null fiber. If this is done it
+// will do nothing and return null.
+//
+// This function is thread-safe (thread-compatible with DeleteFiber).
+void* SwapFiberData(Fiber fiber, void* data);
 
 // Returns the fiber currently running, or null if this thread is not a running
 // a fiber.

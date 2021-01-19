@@ -342,8 +342,32 @@ TEST_F(FiberTest, FiberName) {
 }
 
 TEST_F(FiberTest, AccessNulLFiberName) {
+  CHECK_FIBER_SUPPORT();
   SetFiberName(nullptr, "Test");
   EXPECT_EQ(GetFiberName(nullptr), "null");
+}
+
+TEST_F(FiberTest, FiberData) {
+  CHECK_FIBER_SUPPORT();
+  Fiber fiber = CreateFiber(
+      {}, 0, nullptr, +[](void* user_data) {});
+  ASSERT_NE(fiber, nullptr);
+  auto data = std::make_unique<int>();
+  SetFiberData(fiber, data.get());
+  EXPECT_EQ(GetFiberData(fiber), data.get());
+  auto new_data = std::make_unique<int>();
+  EXPECT_EQ(SwapFiberData(fiber, new_data.get()), data.get());
+  EXPECT_EQ(GetFiberData(fiber), new_data.get());
+  DeleteFiber(fiber);
+}
+
+TEST_F(FiberTest, AccessNulLFiberData) {
+  CHECK_FIBER_SUPPORT();
+  auto data = std::make_unique<int>();
+  SetFiberData(nullptr, data.get());
+  EXPECT_EQ(GetFiberData(nullptr), nullptr);
+  EXPECT_EQ(SwapFiberData(nullptr, data.get()), nullptr);
+  EXPECT_EQ(GetFiberData(nullptr), nullptr);
 }
 
 TEST_F(FiberTest, ThreadAbuse) {

@@ -10,6 +10,10 @@ set(gb_job_SOURCE
   job_types.h
 )
 
+set(gb_job_INCLUDES
+  ${GB_THIRD_PARTY_DIR}/concurrentqueue
+)
+
 set(gb_job_TEST_SOURCE
   fiber_job_system_test.cc
 )

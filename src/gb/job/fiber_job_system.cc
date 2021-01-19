@@ -16,6 +16,14 @@ namespace gb {
 
 namespace {
 
+// This may be set to CHECK or LOG_IF as needed. As there is overhead, the
+// default is to DCHECK which compiles out in release builds.
+#define GB_JOB_CHECK(test) DCHECK(test)
+#define GB_JOB_CHECK_ALWAYS_RUN(action) \
+  if (!(action))                        \
+    DCHECK(false) << #action;           \
+  else
+
 #if GB_BUILD_ENABLE_JOB_LOGGING
 bool g_enable_fiber_job_system_logging_ = false;
 #define GB_FIBER_JOB_SYSTEM_LOG \
@@ -78,9 +86,11 @@ bool FiberJobSystem::Init(ValidatedContext context) {
   }
   auto fiber_threads = CreateFiberThreads(
       thread_count, options, 0, this, +[](void* user_data) {
-        auto* job_system = static_cast<FiberJobSystem*>(user_data);
+        auto* const job_system = static_cast<FiberJobSystem*>(user_data);
+        const Fiber fiber = GetThisFiber();
+        GB_FIBER_JOB_SYSTEM_LOG << fiber << ": Starting fiber";
         job_system->SetThreadState();
-        job_system->JobMain();
+        job_system->JobMain(fiber);
         // Nothing can happen as the job system may be in its destructor.
       });
   if (fiber_threads.empty()) {
@@ -88,42 +98,37 @@ bool FiberJobSystem::Init(ValidatedContext context) {
     return false;
   }
 
-  absl::MutexLock lock(&mutex_);
   threads_.reserve(fiber_threads.size());
   for (const auto& fiber_thread : fiber_threads) {
     threads_.push_back(fiber_thread.thread);
   }
-  total_fiber_count_ = static_cast<int>(fiber_threads.size());
+  total_fiber_count_.store(static_cast<int>(fiber_threads.size()),
+                           std::memory_order_release);
   return true;
 }
 
 FiberJobSystem::FiberJobSystem()
-    : job_allocator_(1000, sizeof(Job)),
-      fiber_allocator_(200, sizeof(FiberState)),
-      pending_jobs_(1000),
-      pending_fibers_(200),
-      unused_fibers_(200) {}
+    : running_(true),
+      job_allocator_(1000, sizeof(Job)),
+      fiber_allocator_(200, sizeof(FiberState)) {}
 
 FiberJobSystem::~FiberJobSystem() {
-  {
-    absl::MutexLock lock(&mutex_);
-    running_ = false;
-  }
+  running_.store(false, std::memory_order_release);
   for (auto thread : threads_) {
     JoinThread(thread);
   }
-  DCHECK(pending_fibers_.empty());
-  DCHECK(idle_fibers_.empty());
-  DCHECK(running_fibers_.empty());
-  DCHECK(waiting_fibers_.empty());
+  GB_JOB_CHECK(unused_fibers_.size_approx() ==
+               total_fiber_count_.load(std::memory_order_acquire));
+  GB_JOB_CHECK(pending_fibers_.size_approx() == 0);
 
-  while (!pending_jobs_.empty()) {
-    job_allocator_.Delete(pending_jobs_.front());
-    pending_jobs_.pop();
+  Job* job = nullptr;
+  while (pending_jobs_.try_dequeue(job)) {
+    job_allocator_.Delete(job);
   }
-  while (!unused_fibers_.empty()) {
-    DeleteFiber(unused_fibers_.front());
-    unused_fibers_.pop();
+  Fiber fiber = nullptr;
+  while (unused_fibers_.try_dequeue(fiber)) {
+    GB_JOB_CHECK(GetFiberData(fiber) == nullptr);
+    DeleteFiber(fiber);
   }
 }
 
@@ -138,120 +143,116 @@ std::string_view FiberJobSystem::GetJobName(Job* job) {
 }
 
 int FiberJobSystem::GetThreadCount() const {
-  absl::ReaderMutexLock lock(&mutex_);
   return static_cast<int>(threads_.size());
 }
 
 int FiberJobSystem::GetFiberCount() const {
-  absl::ReaderMutexLock lock(&mutex_);
-  return total_fiber_count_;
+  return total_fiber_count_.load(std::memory_order_acquire);
 }
 
-bool FiberJobSystem::HasNoFibersInUse() const {
-  return static_cast<int>(unused_fibers_.size()) == total_fiber_count_;
+void FiberJobSystem::ResumeJobFiber(Fiber fiber, FiberState* state) {
+  GB_JOB_CHECK(fiber == GetThisFiber());
+
+  // This fiber is now unused, as we will be switching to the pending
+  // fiber.
+  state->prev_fiber = fiber;
+
+  // Associate this state with the fiber we are swiching to.
+  GB_JOB_CHECK(GetFiberData(state->fiber) == state);
+
+  // Switch this thread to the fiber.
+  GB_FIBER_JOB_SYSTEM_LOG << state->prev_fiber << ": Resuming job "
+                          << GetJobName(state->job);
+  GB_JOB_CHECK_ALWAYS_RUN(SwitchToFiber(state->fiber));
 }
 
-void FiberJobSystem::JobMain() {
-  mutex_.Lock();
-  const Fiber fiber = GetThisFiber();
-  GB_FIBER_JOB_SYSTEM_LOG << "Starting fiber " << fiber;
-  while (running_) {
+void FiberJobSystem::CompleteWait(Fiber fiber) {
+  GB_JOB_CHECK(fiber == GetThisFiber());
+  while (true) {
+    auto* state = static_cast<FiberState*>(SwapFiberData(fiber, nullptr));
+    GB_JOB_CHECK(state != nullptr && state->wait_counter != nullptr);
+    if (state->wait_counter->AddWaiter({}, state)) {
+      return;
+    }
+
+    // The state is no longer waiting, so we need to immediately resume it.
+    // (which the loop does).
+    state->wait_counter = nullptr;
+    ResumeJobFiber(fiber, state);
+
+    // Code may never get to this point. If it does, then fiber was
+    // removed from the unused_fibers_ queue by a Wait call and must attempt
+    // to wait the previous state.
+  }
+}
+
+void FiberJobSystem::JobMain(Fiber fiber) {
+  GB_JOB_CHECK(fiber == GetThisFiber());
+  while (running_.load(std::memory_order_acquire)) {
     FiberState* state = nullptr;
 
-    if (!pending_fibers_.empty()) {
-      // This fiber is now unused, as we will be switching to the pending fiber.
-      unused_fibers_.push(fiber);
+    if (pending_fibers_.try_dequeue(state)) {
+      ResumeJobFiber(fiber, state);
 
-      // The new fiber is no longer pending, but running.
-      state = pending_fibers_.front();
-      pending_fibers_.pop();
-      running_fibers_.insert(state);
-
-      // Switch this thread to the fiber.
-      GB_FIBER_JOB_SYSTEM_LOG << "Resuming job " << GetJobName(state->job)
-                              << " on fiber " << fiber;
-      mutex_.Unlock();
-      SwitchToFiber(state->fiber);
-
-      // Code may never get to this point. If it does, then fiber was removed
-      // from the unused_fibers_ queue and is now assigned to a thread.
-      mutex_.Lock();
+      // Code may never get to this point. If it does, then fiber was
+      // removed from the unused_fibers_ queue by a Wait call and must attempt
+      // to wait the previous state.
+      CompleteWait(fiber);
       continue;
     }
 
-    if (!pending_jobs_.empty()) {
+    if (Job * next_job; pending_jobs_.try_dequeue(next_job)) {
       // Create fiber state to track the running job.
       state = fiber_allocator_.New<FiberState>(this);
       state->fiber = fiber;
-      state->job = pending_jobs_.front();
-      pending_jobs_.pop();
+      state->job = next_job;
       if (set_fiber_names_) {
         SetFiberName(fiber, state->job->name);
       }
-      GB_FIBER_JOB_SYSTEM_LOG << "Acquiring job " << GetJobName(state->job)
-                              << " on fiber " << fiber;
-    } else {
-      // There is no work to do, so we switch into an idle state waiting for the
-      // job system to end or a new job is ready to run.
-      state = fiber_allocator_.New<FiberState>(this);
-      state->fiber = fiber;
-      idle_fibers_.insert(state);
-      GB_FIBER_JOB_SYSTEM_LOG << "Idling fiber " << fiber;
-      mutex_.Await(absl::Condition(
-          +[](FiberState* state) ABSL_NO_THREAD_SAFETY_ANALYSIS {
-            return state->job != nullptr || !state->system->running_;
-          },
-          state));
-      if (!running_) {
-        GB_FIBER_JOB_SYSTEM_LOG << "Ending idle fiber " << fiber;
-        idle_fibers_.erase(state);
-        fiber_allocator_.Delete(state);
-        break;
-      }
-      GB_FIBER_JOB_SYSTEM_LOG << "Resuming idle fiber " << fiber << " with job "
+      GB_FIBER_JOB_SYSTEM_LOG << fiber << ": Acquiring job "
                               << GetJobName(state->job);
+    } else {
+      // There is no work to do, so spin until the job system ends or a new job
+      // is ready to run.
+      std::this_thread::yield();
+      continue;
     }
 
-    // This is now a running fiber!
-    running_fibers_.insert(state);
+    // Set the fiber state for the running job.
+    SetFiberData(fiber, state);
 
     // Run the job
-    GB_FIBER_JOB_SYSTEM_LOG << "Running job " << GetJobName(state->job)
-                            << " callback on fiber " << fiber;
-    mutex_.Unlock();
+    GB_FIBER_JOB_SYSTEM_LOG << fiber << ": Running job "
+                            << GetJobName(state->job) << " callback";
     state->job->callback();
-    mutex_.Lock();
-    GB_FIBER_JOB_SYSTEM_LOG << "Completed job " << GetJobName(state->job)
-                            << " callback on fiber " << fiber;
+    GB_FIBER_JOB_SYSTEM_LOG << fiber << ": Completed job "
+                            << GetJobName(state->job) << " callback";
 
     // Decrement run counter and unblock any waiting jobs.
     JobCounter* const counter = state->job->run_counter;
-    if (counter != nullptr && counter->Decrement({}) == 0) {
-      auto it = waiting_fibers_.find(counter);
-      if (it != waiting_fibers_.end()) {
-        for (auto* waiting_state : it->second) {
-          pending_fibers_.push(waiting_state);
-        }
-        waiting_fibers_.erase(it);
+    JobCounter::Waiters waiters;
+    if (counter != nullptr && counter->Decrement({}, waiters)) {
+      for (void* waiter : waiters) {
+        FiberState* const wait_state = static_cast<FiberState*>(waiter);
+        wait_state->wait_counter = nullptr;
+        pending_fibers_.enqueue(wait_state);
       }
     }
 
     // Clean up the job and fiber state.
+    SetFiberData(fiber, nullptr);
     if (set_fiber_names_) {
       SetFiberName(fiber, "Idle Job Fiber");
     }
-    running_fibers_.erase(state);
     job_allocator_.Delete(state->job);
     fiber_allocator_.Delete(state);
   }
-  unused_fibers_.push(fiber);
-  GB_FIBER_JOB_SYSTEM_LOG << "Exiting fiber " << fiber;
-  mutex_.Unlock();
+  unused_fibers_.enqueue(fiber);
+  GB_FIBER_JOB_SYSTEM_LOG << fiber << ": Exiting fiber";
 }
 
 bool FiberJobSystem::DoRun(std::string_view name, JobCounter* counter,
                            Callback<void()> callback) {
-  absl::MutexLock lock(&mutex_);
   Job* job = job_allocator_.New<Job>();
   if (job == nullptr) {
     return false;
@@ -268,73 +269,60 @@ bool FiberJobSystem::DoRun(std::string_view name, JobCounter* counter,
           "Job-", job_index.fetch_add(1, std::memory_order_relaxed));
     }
   }
-  GB_FIBER_JOB_SYSTEM_LOG << "Created job " << GetJobName(job);
+  GB_FIBER_JOB_SYSTEM_LOG << GetThisFiber() << ": Created job";
   job->run_counter = counter;
   job->callback = std::move(callback);
-  if (idle_fibers_.empty()) {
-    pending_jobs_.push(job);
-  } else {
-    auto it = idle_fibers_.begin();
-    FiberState* state = *it;
-    idle_fibers_.erase(it);
-    state->job = job;
-    if (set_fiber_names_) {
-      SetFiberName(state->fiber, job->name);
-    }
-  }
+  pending_jobs_.enqueue(job);
   return true;
 }
 
 void FiberJobSystem::DoWait(JobCounter* counter) {
   const Fiber fiber = GetThisFiber();
-  DCHECK(fiber != nullptr) << "Wait can only be called from within a job";
+  GB_JOB_CHECK(fiber != nullptr);
   if (counter == nullptr) {
     return;
   }
 
-  mutex_.Lock();
-  if (counter->Get({}) == 0) {
-    mutex_.Unlock();
-    return;
-  }
-  FiberState* state = nullptr;
-  for (auto* running_state : running_fibers_) {
-    if (running_state->fiber == fiber) {
-      state = running_state;
-      break;
-    }
-  }
-  CHECK(state != nullptr)
-      << "Attempting to wait on a different fiber job system";
+  FiberState* state = static_cast<FiberState*>(GetFiberData(fiber));
+  GB_JOB_CHECK(state != nullptr);
 
-  GB_FIBER_JOB_SYSTEM_LOG << "Waiting job " << GetJobName(state->job)
-                          << " on fiber " << fiber;
-
-  // This fiber is now waiting, and a new fiber will be created.
-  running_fibers_.erase(state);
-  waiting_fibers_[counter].push_back(state);
-  ++total_fiber_count_;
+  GB_FIBER_JOB_SYSTEM_LOG << fiber << ": Waiting job "
+                          << GetJobName(state->job);
 
   // Create a new fiber for this thread.
   FiberOptions options;
   if (set_fiber_names_) {
     options += FiberOption::kSetThreadName;
   }
-  Fiber new_fiber = CreateFiber(
-      options, 0, this, +[](void* user_data) {
-        auto* system = static_cast<FiberJobSystem*>(user_data);
-        system->UnlockFromPreviousFiber();
-        system->JobMain();
-        // Nothing can happen as the job system may be in its destructor.
-      });
-  CHECK(new_fiber != nullptr)
-      << "Failed to create new fiber to replace waiting fiber on thread";
+  Fiber new_fiber = nullptr;
+  if (!unused_fibers_.try_dequeue(new_fiber)) {
+    total_fiber_count_.fetch_add(1, std::memory_order_release);
+    new_fiber = CreateFiber(
+        options, 0, this, +[](void* user_data) {
+          auto* const system = static_cast<FiberJobSystem*>(user_data);
+          const Fiber fiber = GetThisFiber();
+          GB_FIBER_JOB_SYSTEM_LOG << fiber << ": Starting fiber";
+          system->CompleteWait(fiber);
+          system->JobMain(fiber);
+          // Nothing can happen as the job system may be in its destructor.
+        });
+  }
+  GB_JOB_CHECK(new_fiber != nullptr);
   if (set_fiber_names_) {
     SetFiberName(new_fiber, "Idle Job Fiber");
   }
-  CHECK(SwitchToFiber(new_fiber)) << "Failed to switch to new fiber";
-  ImpliedUnlockFromPreviousFiber();  // The mutex is unlocked before the fiber
-                                     // returns.
+
+  // Set the state for the new fiber, so it can execute the wait safely (when
+  // this fiber is no longer running).
+  state->wait_counter = counter;
+  SetFiberData(new_fiber, state);
+
+  GB_JOB_CHECK_ALWAYS_RUN(SwitchToFiber(new_fiber));
+
+  // We returned from our wait, so there MUST be a previous fiber (which is now
+  // unused).
+  GB_JOB_CHECK(state->prev_fiber != nullptr);
+  unused_fibers_.enqueue(std::exchange(state->prev_fiber, nullptr));
 }
 
 }  // namespace gb
