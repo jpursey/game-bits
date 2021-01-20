@@ -67,10 +67,29 @@ absl::Span<const uint64_t> GetHardwareThreadAffinitiesImpl() {
 }
 
 void SetWinThreadName(void* win_thread, std::string_view name) {
-  auto thread_description = ToUtf16(name);
-  HRESULT result = SetThreadDescription(
-      static_cast<HANDLE>(win_thread),
-      reinterpret_cast<const WCHAR*>(thread_description.c_str()));
+  std::u16string slow_thread_description;
+  WCHAR fast_thread_description[kMaxThreadNameSize];
+  const WCHAR* thread_description = fast_thread_description;
+  int i = 0;
+  for (char ch : name) {
+    unsigned char u8ch = *reinterpret_cast<unsigned char*>(&ch);
+    if (u8ch > 127) {
+      thread_description = nullptr;
+      break;
+    }
+    fast_thread_description[i++] = u8ch;
+  }
+
+  if (thread_description != nullptr) {
+    fast_thread_description[i] = 0;
+  } else {
+    slow_thread_description = ToUtf16(name);
+    thread_description =
+        reinterpret_cast<const WCHAR*>(slow_thread_description.c_str());
+  }
+
+  HRESULT result =
+      SetThreadDescription(static_cast<HANDLE>(win_thread), thread_description);
   if (FAILED(result)) {
     LOG(WARNING) << "Failed to set thread description to: " << name;
   }
