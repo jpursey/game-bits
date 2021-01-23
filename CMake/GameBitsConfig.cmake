@@ -31,4 +31,9 @@ function(gb_config)
   if (NOT DEFINED GB_BIN_DIR)
     set(GB_BIN_DIR "${GB_DIR}/bin" PARENT_SCOPE)
   endif()
+
+  # Specify whether test targets for game-bits itself should be generated
+  if (NOT DEFINED GB_BUILD_TESTS)
+    set(GB_BUILD_TESTS ON PARENT_SCOPE)
+  endif()
 endfunction()
