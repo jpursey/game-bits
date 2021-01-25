@@ -14,6 +14,7 @@ endif()
 
 add_subdirectory(alloc)
 add_subdirectory(base)
+add_subdirectory(container)
 add_subdirectory(file)
 add_subdirectory(game)
 add_subdirectory(imgui)
