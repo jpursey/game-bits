@@ -109,11 +109,13 @@ TEST(ThreadTesterTest, RunLoopSucceeds) {
   tester.Signal(3);
   tester.Wait(4);
   EXPECT_EQ(count, 2);
-  tester.Signal(100);
   tester.Signal(5);
+  tester.Wait(6);
+  EXPECT_EQ(count, 3);
   EXPECT_TRUE(tester.Complete()) << tester.GetResultString();
   EXPECT_EQ(tester.GetRunResult("test"), ThreadTester::kSuccess);
-  EXPECT_EQ(count, 3);
+  // "count" could validly be 3 or 4 here, depending on whether Complete()
+  // joined the thread before the next iteration of the loop could start.
 }
 
 TEST(ThreadTesterTest, RunLoopFails) {

@@ -26,7 +26,8 @@ namespace gb {
 // but are completed by the end of the test.
 class ThreadTester {
  public:
-  // std::function is required here as the TestFunction *must* be copiable.
+  // A test function does work, and then returns true on success or false if the
+  // test should fail (Complete() will return false).
   using TestFunction = std::function<bool()>;
 
   enum Result {
@@ -56,7 +57,8 @@ class ThreadTester {
                int thread_count = 1);
 
   // Waits on or signals a notification. Notifications can only be signaled
-  // once.
+  // once. Wait returns false if the timeout was reached before the signal
+  // occurred.
   bool Wait(int signal_id, absl::Duration timeout = absl::Seconds(30));
   void Signal(int signal_id);
 
