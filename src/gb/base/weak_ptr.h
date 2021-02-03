@@ -27,8 +27,8 @@ class WeakPtrData {
 
  private:
   absl::Mutex mutex_;
-  std::atomic<bool> clear_pending_ = false;
-  int count_ = 0;  // Number of WeakLocks active.
+  bool clear_pending_ ABSL_GUARDED_BY(mutex_) = false;
+  int count_ ABSL_GUARDED_BY(mutex_) = 0;  // Number of WeakLocks active.
   void* ptr_ = nullptr;
 };
 
@@ -263,8 +263,9 @@ class WeakScope {
 // Implementation
 
 inline void internal::WeakPtrData::Clear() {
-  clear_pending_ = true;
   absl::MutexLock lock(&mutex_);
+  DCHECK(!clear_pending_);
+  clear_pending_ = true;
   mutex_.Await(absl::Condition(
       +[](int* count) { return *count == 0; }, &count_));
   ptr_ = nullptr;
@@ -274,8 +275,7 @@ inline void internal::WeakPtrData::Clear() {
 inline void internal::WeakPtrData::ReaderLock() {
   absl::MutexLock lock(&mutex_);
   mutex_.Await(absl::Condition(
-      +[](std::atomic<bool>* clear_pending) { return !*clear_pending; },
-      &clear_pending_));
+      +[](bool* clear_pending) { return !*clear_pending; }, &clear_pending_));
   ++count_;
 }
 
