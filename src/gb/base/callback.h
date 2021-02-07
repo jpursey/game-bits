@@ -65,8 +65,10 @@ class Callback<Return(Args...)> final {
     using TagType = typename std::conditional<
         std::is_convertible<Callable, Return (*)(Args...)>::value,
         FunctionPtrTag,
-        typename std::conditional<std::is_lvalue_reference<Callable>::value,
-                                  LValueTag, RValueTag>::type>::type;
+        typename std::conditional<
+            std::is_lvalue_reference<Callable>::value, LValueTag,
+            typename std::conditional<std::is_const<Callable>::value, ConstTag,
+                                      RValueTag>::type>::type>::type;
     Init(std::forward<Callable>(callable), TagType{});
   }
 
@@ -178,6 +180,7 @@ class Callback<Return(Args...)> final {
   struct FunctionPtrTag {};
   struct RValueTag {};
   struct LValueTag {};
+  struct ConstTag {};
 
   template <typename Callable>
   void Init(Callable&& callable, FunctionPtrTag) {
@@ -212,6 +215,11 @@ class Callback<Return(Args...)> final {
     delete_callback_ = [](void* callable) {
       delete static_cast<CallableType*>(callable);
     };
+  }
+  template <typename Callable>
+  void Init(Callable&& callable, ConstTag) {
+    static_assert(
+        false, "Passed in callback is a const reference that cannot be copied");
   }
 
   void* callback_ = nullptr;
