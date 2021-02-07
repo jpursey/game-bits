@@ -48,16 +48,20 @@
 //   bar.FuncA({}, 100, 200);
 // }
 
-#define GB_BEGIN_ACCESS_TOKEN(Name)         \
-  class Name {                              \
-   public:                                  \
-    Name(const Name&) = default;            \
-    Name(Name&&) = default;                 \
-    Name& operator=(const Name&) = default; \
-    Name& operator=(Name&&) = default;      \
-                                            \
-   private:                                 \
-    Name() = default;                       \
+#define GB_BEGIN_ACCESS_TOKEN(Name)                        \
+  class Name {                                             \
+   public:                                                 \
+    Name(const Name&) = default;                           \
+    Name(Name&&) = default;                                \
+    Name& operator=(const Name&) = default;                \
+    Name& operator=(Name&&) = default;                     \
+                                                           \
+    bool ClangWarningWorkaround(const Name& other) const { \
+      return &other.token_ == &token_;                     \
+    }                                                      \
+                                                           \
+   private:                                                \
+    Name() = default;                                      \
     gb::AccessToken token_;
 
 #define GB_END_ACCESS_TOKEN() \
