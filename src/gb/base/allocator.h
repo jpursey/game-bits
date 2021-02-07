@@ -29,11 +29,32 @@ class Allocator {
     return new (Alloc(sizeof(Type), alignof(Type)))
         Type(std::forward<Args>(args)...);
   }
+
   template <typename Type>
   void Delete(Type* object) {
     if (object != nullptr) {
       object->~Type();
       Free(object);
+    }
+  }
+
+  // Helper methods to new/delete arrays using this allocator.
+  template <typename Type, typename... Args>
+  Type* NewArray(int count, Args... args) {
+    Type* objects =
+        static_cast<Type*>(Alloc(sizeof(Type) * count, alignof(Type)));
+    for (int i = 0; i < count; ++i) {
+      new (objects + i) Type(std::forward<Args>(args)...);
+    }
+    return objects;
+  }
+  template <typename Type>
+  void DeleteArray(Type* objects, int count) {
+    if (objects != nullptr) {
+      for (int i = 0; i < count; ++i) {
+        objects[i].~Type();
+      }
+      Free(objects);
     }
   }
 
