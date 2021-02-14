@@ -246,6 +246,9 @@ struct alignas(uint16_t) Triangle {
 static_assert(sizeof(Triangle) == sizeof(uint16_t) * 3,
               "Triangle must be equivalent to three uint16_t values");
 
+inline constexpr Triangle operator+(const Triangle& triangle, int i) {
+  return Triangle(triangle.a + i, triangle.b + i, triangle.c + i);
+}
 inline constexpr bool operator==(const Triangle& i, const Triangle& j) {
   return i.a == j.a && i.b == j.b && i.c == j.c;
 }
