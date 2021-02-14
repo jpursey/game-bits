@@ -33,6 +33,10 @@ class Callback;
 // references to callables, and has minimal overhead for plain function
 // pointers (one extra call).
 //
+// A callback's moved-from state is defined to be the same as a default
+// constructed callback (aka it has no underlying callback, compares equal to
+// nullptr, and is implicitly false).
+//
 // This class is thread-compatible.
 template <typename Return, typename... Args>
 class Callback<Return(Args...)> final {
@@ -45,6 +49,7 @@ class Callback<Return(Args...)> final {
 
   // Copy construction is not supported.
   Callback(const Callback&) = delete;
+  Callback(Callback&) = delete;
 
   // Move constructor.
   Callback(Callback&& other)
