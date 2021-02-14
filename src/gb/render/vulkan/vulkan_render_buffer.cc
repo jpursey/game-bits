@@ -95,11 +95,11 @@ bool VulkanStaticWriteBuffer::PrepForWrite() {
 }
 
 bool VulkanStaticWriteBuffer::DoClear(int offset, int size) {
-  RENDER_ASSERT(GetValueSize() == GetAlignSize());
+  RENDER_ASSERT(offset == 0 || GetValueSize() == GetAlignSize());
   if (dirty_) {
     std::memset(static_cast<uint8_t*>(host_buffer_->GetData()) +
                     (offset * GetAlignSize()),
-                0, size * GetAlignSize());
+                0, size * GetValueSize());
     return true;
   }
 
@@ -109,15 +109,15 @@ bool VulkanStaticWriteBuffer::DoClear(int offset, int size) {
 
   std::memset(static_cast<uint8_t*>(host_buffer_->GetData()) +
                   (offset * GetAlignSize()),
-              0, size * GetAlignSize());
+              0, size * GetValueSize());
   dirty_ = true;
   return true;
 }
 
 bool VulkanStaticWriteBuffer::DoSet(const void* data, int size) {
-  RENDER_ASSERT(GetValueSize() == GetAlignSize());
+  RENDER_ASSERT(size == 1 || GetValueSize() == GetAlignSize());
   if (dirty_) {
-    std::memcpy(host_buffer_->GetData(), data, size * GetAlignSize());
+    std::memcpy(host_buffer_->GetData(), data, size * GetValueSize());
     return true;
   }
 
@@ -125,7 +125,7 @@ bool VulkanStaticWriteBuffer::DoSet(const void* data, int size) {
     return false;
   }
 
-  std::memcpy(host_buffer_->GetData(), data, size * GetAlignSize());
+  std::memcpy(host_buffer_->GetData(), data, size * GetValueSize());
   dirty_ = true;
   return true;
 }
@@ -209,14 +209,14 @@ bool VulkanStaticReadWriteBuffer::Init() {
 VulkanStaticReadWriteBuffer::~VulkanStaticReadWriteBuffer() {}
 
 bool VulkanStaticReadWriteBuffer::DoClear(int offset, int size) {
-  RENDER_ASSERT(GetValueSize() == GetAlignSize());
+  RENDER_ASSERT(offset == 0 || GetValueSize() == GetAlignSize());
 
   if (!EnsureHostBufferIsWritable(false)) {
     return false;
   }
   std::memset(static_cast<uint8_t*>(host_buffer_->GetData()) +
                   (offset * GetAlignSize()),
-              0, size * GetAlignSize());
+              0, size * GetValueSize());
 
   if (dirty_) {
     return true;
@@ -230,11 +230,11 @@ bool VulkanStaticReadWriteBuffer::DoClear(int offset, int size) {
 }
 
 bool VulkanStaticReadWriteBuffer::DoSet(const void* data, int size) {
-  RENDER_ASSERT(GetValueSize() == GetAlignSize());
+  RENDER_ASSERT(size == 1 || GetValueSize() == GetAlignSize());
   if (!EnsureHostBufferIsWritable(false)) {
     return false;
   }
-  std::memcpy(host_buffer_->GetData(), data, size * GetAlignSize());
+  std::memcpy(host_buffer_->GetData(), data, size * GetValueSize());
 
   if (dirty_) {
     return true;
@@ -394,8 +394,9 @@ bool VulkanPerFrameBuffer::Init() {
 VulkanPerFrameBuffer::~VulkanPerFrameBuffer() { std::free(local_buffer_); }
 
 bool VulkanPerFrameBuffer::DoClear(int offset, int size) {
+  RENDER_ASSERT(offset == 0 || GetValueSize() == GetAlignSize());
   std::memset(static_cast<uint8_t*>(local_buffer_) + (offset * GetAlignSize()),
-              0, size * GetAlignSize());
+              0, size * GetValueSize());
   for (auto& buffers : buffers_) {
     buffers.dirty = true;
   }
@@ -403,8 +404,8 @@ bool VulkanPerFrameBuffer::DoClear(int offset, int size) {
 }
 
 bool VulkanPerFrameBuffer::DoSet(const void* data, int size) {
-  RENDER_ASSERT(GetValueSize() == GetAlignSize());
-  std::memcpy(local_buffer_, data, size * GetAlignSize());
+  RENDER_ASSERT(size == 1 || GetValueSize() == GetAlignSize());
+  std::memcpy(local_buffer_, data, size * GetValueSize());
   for (auto& buffers : buffers_) {
     buffers.dirty = true;
   }
