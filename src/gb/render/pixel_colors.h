@@ -12,6 +12,7 @@ namespace gb {
 
 namespace Colors {
 
+inline constexpr Pixel kTransparent(0, 0, 0, 0);
 inline constexpr Pixel kBlack(0, 0, 0);
 inline constexpr Pixel kBlue(0, 0, 255);
 inline constexpr Pixel kCyan(0, 255, 255);
