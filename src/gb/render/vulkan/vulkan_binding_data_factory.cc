@@ -62,7 +62,10 @@ VulkanBindingDataFactory::VulkanBindingDataFactory(
 
   if (buffer_count_ > 0) {
     const auto& limits = backend_->GetPhysicalDeviceProperties().limits;
-    const int max_buffer_size = static_cast<int>(limits.maxUniformBufferRange);
+    int max_buffer_size = static_cast<int>(limits.maxUniformBufferRange);
+    if (max_buffer_size < 0) {
+      max_buffer_size = std::numeric_limits<int>::max();
+    }
     buffer_value_alignment_ =
         static_cast<int>(limits.minUniformBufferOffsetAlignment);
     max_constants_size = Align(max_constants_size, buffer_value_alignment_);
