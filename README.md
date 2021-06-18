@@ -4,7 +4,7 @@ This is a collection of libraries used to make games... or really anything else.
 
 # Getting started
 
-While Game Bits code is designed to be cross platform, it is currently only developed and maintained on Windows with Visual Studio 2019 using CMake 3.14.0 (although many earlier versions of CMake are likely to work). The instructions here are for
+While Game Bits code is designed to be cross platform, it is currently only developed and maintained on Windows with Visual Studio 2019 using CMake 3.14.0 (although many earlier versions of CMake are likely to work).
 
 ## Dependencies
 
@@ -14,7 +14,7 @@ Game Bits stores most of its library dependencies in the third_party directory. 
 git submodule update --init --recursive
 ```
 
-Alternatively, you may maintain your own third party directory by defining the GB_THIRD_PARTY_DIR in CMake projects that use Game Bits. The caveat being, that it must be a strict superset of what Game Bits requires. See the `templates/` directory for examples.
+Alternatively, you may maintain your own third party directory by defining the GB_THIRD_PARTY_DIR in CMake projects that use Game Bits. The caveat being, that it must be a strict superset of what Game Bits requires. See the [templates](templates) directory for examples.
 
 ### SDL
 
@@ -39,13 +39,13 @@ Game Bits can be built directly from its own CMakeLists.txt file, or more common
 
 A project can be generated is done by running the [build_vs2019.bat](build_vs2019.bat). This builds Visual Studio projects for both the Game Bits libaries, and the BlockWorld example. The solution files are located under a `build/` subdirectory, which is created if it does not already exist. Specifically, `build/game-bits.sln` and `build/examples/block-world/BlockWorld.sln`.
 
-If you have your own project (as is most likely), you can also follow this pattern by copying one of the `templates/` sub-directories to a new location, defining the `GB_DIR` environment variable to refer to the root `game-bits` folder, and then run that version of `build_vs2019.bat`. See documentation in the template directories for more on configuring a dependent project.
+If you have your own project (as is most likely), you can also follow this pattern by copying one of the [templates](templates) sub-directories to a new location, defining the `GB_DIR` environment variable to refer to the root `game-bits` folder, and then run that version of `build_vs2019.bat`. See documentation in the template directories for more on configuring a dependent project.
 
 ### Using Visual Studio CMake support directly
 
 Alternatively, Visual Studio now has direct support for CMake, which provides more direct control over configurations and removes the need to generate solutions. It supports multiple toolchains (Game Bits currently supports both the Visual Studio 2019 and LLVM clang 11 toolchains).
 
-To build this way, simply choose to "open a local folder" instead of a solution. It will pick up the CMake targets using the configurations defined in CMakeSettings.json. When making your own project from a template, change this as desired for your project.
+To build this way, simply choose to "open a local folder" instead of a solution. It will pick up the CMake targets using the configurations defined in [CMakeSettings.json](CMakeSettings.json). When making your own project from a template, change this as desired for your project.
 
 For the best Visual Studio experience using Game Bits, it is recommended to switch the Solution Explorer view to be the "CMake Targets View". 
 
