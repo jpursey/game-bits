@@ -7,13 +7,15 @@
 ## Target generation functions
 ##
 ## For a given target name "Target", the following variables can be set
-##  VS_FOLDER           Set to the visual studio folder the target should be in
+##  VS_FOLDER           Set to the visual studio folder targets should be in
 ##  Target_SOURCE       Source files to build for the target
 ##  Target_FBS          FlatBuffer schema files for this target
-##  Target_TEST_SOURCE  Source files to build unit tests
-##  Target_TEST_FBS     FlatBuffer schema files to build for unit tests
 ##  Target_DEPS         Target dependencies
 ##  Target_LIBS         External libraries for this target
+##  Target_TEST_SOURCE  Source files to build unit tests
+##  Target_TEST_FBS     FlatBuffer schema files to build for unit tests
+##  Target_TEST_DEPS    Additional unit test target dependencies
+##  Target_TEST_LIBS    Additional external libraries for this unit test target
 ###############################################################################
 
 function(gb_set_target_properties NAME)

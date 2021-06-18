@@ -41,6 +41,12 @@ set(GB_BIN_DIR "${CURRENT_DIR}/bin")
 # this a bit more maintainable.
 # set(GB_THIRD_PARTY_DIR "${GB_DIR}/third_party")
 
+# Disable tests for Game Bits itself. This only affects tests for targets
+# starting with the "gb_" prefix, which should be limited just those defined in
+# Game Bits itself. Any other tests defined with the gb_*_TEST_SOURCE command
+# will still be generated.
+set(GB_BUILD_TESTS OFF)
+
 # Add the Game Bits libraries and tools. This also makes the gb_* commands
 # available.
 add_subdirectory("${GB_DIR}" gb)
