@@ -12,6 +12,8 @@
 ##  Target_FBS          FlatBuffer schema files for this target
 ##  Target_DEPS         Target dependencies
 ##  Target_LIBS         External libraries for this target
+##  Target_DEFINES      Additional preprocessor defines for this target
+##  Target_INCLUDES     Additional include directories for this target
 ##  Target_TEST_SOURCE  Source files to build unit tests
 ##  Target_TEST_FBS     FlatBuffer schema files to build for unit tests
 ##  Target_TEST_DEPS    Additional unit test target dependencies

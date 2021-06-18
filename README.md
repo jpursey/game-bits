@@ -72,6 +72,8 @@ All three ultimately call the CMake functions `add_library` or `add_executable`,
 | `Target_FBS`         | FlatBuffer schema files for this target. These are compiled with flatc and the corresponding generated headers are made available to this Target |
 | `Target_DEPS`        | Target dependencies. Dependencies are any other CMake target defined in the project. These should always be libraries. Changing a source in a dependency results in this target rebuilding. Dependencies are always linked to the target. |
 | `Target_LIBS`        | External libraries for this target. This is for external dependencies (aka Vulkan, SDL, or any other externally built library). |
+| `Target_DEFINES`     | Additional preprocessor defines for this target. |
+| `Target_INCLUDES`    | Additional include directories for this target. |
 | `Target_TEST_SOURCE` | Source files to build unit tests. If this is defined, then an additional `Target_test` target will be built that implicitly depends on `Target` and links in Google Test libraries and corresponding `main` function. All test targets are put under a `Test` subfolder in Visual Studio. |
 | `Target_TEST_FBS`    | FlatBuffer schema files to build for unit tests |
 | `Target_TEST_DEPS`   | Additional unit test target dependencies |
