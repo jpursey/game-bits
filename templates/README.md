@@ -5,10 +5,10 @@ project based on these templates, just the copy the directory and run one of the
 
 ## Templates
 
-  - **cli**: This template is the most minimal and has nothing but glog 
+  - **[cli](cli)**: This template is the most minimal and has nothing but glog 
     initialization in command line application.
-  - **sdl**: This template brings up a bare bones SDL application with glog
-    integration.
+  - **[sdl](sdl)**: This template brings up a bare bones SDL application with 
+    glog integration.
 
 ## Examples
 
