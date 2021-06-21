@@ -128,8 +128,8 @@ sub-libraries (organized as subdirectories).
       or where resources are serialized from/to.
       *  [`gb_resource_file`](src/gb/resource/file): This combines the
          `gb_resource` and `gb_file` libraries to support reading and writing
-         general purpose resource files as a chunk file. It supports multiple
-         embedding dependent resources in a single file (for instance, a "level"
+         general purpose resource files as a chunk file. It supports embedding
+         dependent resources in the same file (for instance, a "level"
          resource file could contain all dependent assets directly in the same
          file).
    *  [`stb`](src/stb): Family of libraries that convert the header-only
