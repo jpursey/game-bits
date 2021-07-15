@@ -74,7 +74,7 @@ principles:
 *  *Google dependent:* While not really a "principle" per-se, Game Bits uses
    other Google open source libraries when they could be applied. In other
    words, if Google has an open source library for a domain useful to Game Bits,
-   that will be preferred over other options. This is both to reduce cognative
+   that will be preferred over other options. This is both to reduce cognitive
    load for myself (being a Google engineer as my day job), and to explore the
    libraries in a different context.
 
@@ -141,7 +141,7 @@ sub-libraries (organized as subdirectories).
 *  *Tier 2:* These are high level libraries that combine functionality across
    Game Bits to provide more complex services commonly needed across games.
    Dependencies within this tier are still minimized, but cross dependencies are
-   allowed and more common as needed.
+   allowed and so are more common.
    *  [`gb_render`](src/gb/render): Graphics API independent interface to
       support basic rendering, with resource system integration.
       *  [`gb_render_vulkan`](src/gb/render/vulkan): An implementation of the
@@ -173,9 +173,9 @@ git submodule update --init --recursive
 ```
 
 Alternatively, you may maintain your own third party directory by defining the
-GB_THIRD_PARTY_DIR in CMake projects that use Game Bits. The caveat being, that
+GB_THIRD_PARTY_DIR in CMake projects that use Game Bits. The caveat being that
 it must be a strict superset of what Game Bits requires. See the
-`CMakeLists.txt` files in the [templates] (templates) directory for more on
+`CMakeLists.txt` files in the [templates](templates) directory for more on
 this.
 
 ### SDL
@@ -194,11 +194,11 @@ Game Bits.
 
 If you are not using Game Bits for 3D graphics (specifically the render
 library), Vulkan is not required. However, for 3D graphics Game Bits uses
-Vulkan 1.2. This must be installed separately from the [Vulkan SDK]
-(https://vulkan.lunarg.com/sdk/home). Installing the Vulkan SDK should set the
-`VULKAN_SDK` environment variable, which Game Bits depends on to locate the
-installed version. For example, at the time of this writing, Game Bits was
-built with Vulkan 1.2.162.0, where VULKAN_SDK is defined as
+Vulkan 1.2. This must be installed separately from the
+[Vulkan SDK](https://vulkan.lunarg.com/sdk/home). Installing the Vulkan SDK
+should set the `VULKAN_SDK` environment variable, which Game Bits depends on
+to locate the installed version. For example, at the time of this writing,
+Game Bits was built with Vulkan 1.2.162.0, where VULKAN_SDK is defined as
 `VULKAN_SDK=C:\VulkanSDK\1.2.162.0`
 
 Vulkan may be linked to by depending on the `Vulkan` library target in CMake
@@ -218,11 +218,11 @@ Game Bits supports Visual Studio 2019 in two ways:
 
 ### Generating a Visual Studio project from CMake
 
-A project can be generated is done by running the [build_vs2019.bat]
-(build_vs2019.bat). This builds Visual Studio projects for both the Game Bits
-libaries, and the BlockWorld example. The solution files are located under a
-`build/` subdirectory, which is created if it does not already exist.
-Specifically, `build/game-bits.sln` and
+A project can be generated is done by running the
+[build_vs2019.bat](build_vs2019.bat). This builds Visual Studio projects for
+both the Game Bits libaries, and the BlockWorld example. The solution files
+are located under a `build/` subdirectory, which is created if it does not
+already exist. Specifically, `build/game-bits.sln` and
 `build/examples/block-world/BlockWorld.sln`.
 
 If you have your own project (as is most likely), you can also follow this
@@ -242,24 +242,25 @@ the Visual Studio 2019 and LLVM clang 11 toolchains).
 To build this way, simply choose to "open a local folder" instead of a solution.
 It will pick up the CMake targets using the configurations defined in
 [CMakeSettings.json](CMakeSettings.json). When making your own project from a
-template, change this as desired for your project.
+template, change the copy as desired for your project.
 
 For the best Visual Studio experience using Game Bits, it is recommended to
-switch the Solution Explorer view to be the "CMake Targets View". 
+switch the Solution Explorer view to be the "CMake Targets View", as it will
+allow you to navigate more easily to Game Bits source files.
 
 ### Running the BlockWorld example
 
 The BlockWorld example is a voxel-style example that uses most of the Game Bits
 libraries and is a full example of how the different pieces can fit together.
 However, in order to run the example, you must first build the required
-shaders, by running the [assets/shaders/build-shaders.bat]
-(assets/shaders/build-shaders.bat) file (it must be run from the
-`assets/shaders` directory).
+shaders, by running the
+[assets/shaders/build-shaders.bat](assets/shaders/build-shaders.bat) file
+(it must be run from the `assets/shaders` directory).
 
 ## Using Game Bits CMake commands
 
 Game Bits has its own funny way of defining CMake targets and tests via various
-gb_* target commands. All of the Game Bits examples and templates make use of
+`gb_*` target commands. All of the Game Bits examples and templates make use of
 these to define their own targets, and you are of course welcome to for your
 own projects as well. Here is a quick rundown of what they do and how to use
 them.
@@ -271,8 +272,9 @@ not use this prefix.*
 1. `gb_add_library(Target)`: Adds a standard statically linked library of the
    given name.
 2. `gb_add_executable(Target)`: Adds a non-windowed executable
-   target (aka a command line interface). 3. `gb_add_win_executable(Target)`:
-   Adds a windowed executable target (aka there is no console component).
+   target (aka a command line interface).
+3. `gb_add_win_executable(Target)`: Adds a windowed executable target
+   (aka there is no console component).
 
 All three ultimately call the CMake functions `add_library` or `add_executable`,
 and then configure them according to other variables prefixed with the name of
