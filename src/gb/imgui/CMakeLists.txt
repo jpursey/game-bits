@@ -26,6 +26,7 @@ set(gb_imgui_INCLUDES
 
 set(gb_imgui_DEFINES
   IMGUI_USER_CONFIG="gb/imgui/gb_imconfig.h"
+  IMGUI_DISABLE_OBSOLETE_FUNCTIONS
 )
 
 set(gb_imgui_DEPS
