@@ -226,7 +226,7 @@ bool BlockWorld::InitStates() {
 }
 
 void BlockWorld::UpdateStateMachine(absl::Duration delta_time) {
-  ImGui_ImplSDL2_NewFrame(window_);
+  ImGui_ImplSDL2_NewFrame();
   ImGui::NewFrame();
 
   auto render_size = render_system_->GetFrameDimensions();
