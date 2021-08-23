@@ -64,10 +64,10 @@ void Camera::DrawGui(const char* title) {
   }
 
   ImGui::Begin(title);
-  if (ImGui::InputFloat3("Position", &position_.x, 3)) {
+  if (ImGui::InputFloat3("Position", &position_.x)) {
     UpdateView();
   }
-  if (ImGui::InputFloat3("Direction", &direction_.x, 3)) {
+  if (ImGui::InputFloat3("Direction", &direction_.x)) {
     direction_ = glm::normalize(direction_);
     UpdateView();
     UpdateStrafe();

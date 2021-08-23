@@ -6,7 +6,7 @@
 add_subdirectory(sdl)
 
 set(gb_render_vulkan_SOURCE
-  ${GB_THIRD_PARTY_DIR}/VulkanMemoryAllocator/src/vk_mem_alloc.h
+  ${GB_THIRD_PARTY_DIR}/VulkanMemoryAllocator/include/vk_mem_alloc.h
   vulkan_allocator.cc vulkan_allocator.h
   vulkan_backend.cc vulkan_backend.h
   vulkan_binding_data.cc vulkan_binding_data.h
@@ -28,7 +28,7 @@ set(gb_render_vulkan_SOURCE
 )
 
 set(gb_render_vulkan_INCLUDES
-  ${GB_THIRD_PARTY_DIR}/VulkanMemoryAllocator/src
+  ${GB_THIRD_PARTY_DIR}/VulkanMemoryAllocator/include
 )
 
 set(gb_render_vulkan_DEFINES

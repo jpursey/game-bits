@@ -4,12 +4,12 @@
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
 set(gb_imgui_sdl_SOURCE
-  ${GB_THIRD_PARTY_DIR}/imgui/examples/imgui_impl_sdl.cpp
-  ${GB_THIRD_PARTY_DIR}/imgui/examples/imgui_impl_sdl.h
+  ${GB_THIRD_PARTY_DIR}/imgui/backends/imgui_impl_sdl.cpp
+  ${GB_THIRD_PARTY_DIR}/imgui/backends/imgui_impl_sdl.h
 )
 
 set(gb_imgui_sdl_INCLUDES
-  ${GB_THIRD_PARTY_DIR}/imgui/examples
+  ${GB_THIRD_PARTY_DIR}/imgui/backends
 )
 
 set(gb_imgui_sdl_DEPS

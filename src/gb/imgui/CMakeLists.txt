@@ -13,6 +13,7 @@ set(gb_imgui_SOURCE
   ${GB_THIRD_PARTY_DIR}/imgui/imgui.h
   ${GB_THIRD_PARTY_DIR}/imgui/imgui_draw.cpp
   ${GB_THIRD_PARTY_DIR}/imgui/imgui_internal.h
+  ${GB_THIRD_PARTY_DIR}/imgui/imgui_tables.cpp
   ${GB_THIRD_PARTY_DIR}/imgui/imgui_widgets.cpp
   ${GB_THIRD_PARTY_DIR}/imgui/imstb_rectpack.h
   ${GB_THIRD_PARTY_DIR}/imgui/imstb_textedit.h
