@@ -9,7 +9,7 @@ set(VS_FOLDER GameBits)
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Werror)
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-  add_compile_options(/WX)
+  add_compile_options(/WX /Zc:__cplusplus)
 endif()
 
 add_subdirectory(alloc)

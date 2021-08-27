@@ -44,12 +44,17 @@ gb_external_libraries()
 # Third party source
 ###############################################################################
 
+# Turn CMake global variables BUILD_TESTING and BUILD_SHARED_LIBS explicitly off
+# while building dependencies.
+
+option(BUILD_TESTING "" ON)
+set(BUILD_TESTING OFF)
+option(BUILD_SHARED_LIBS "" OFF)
+set(BUILD_SHARED_LIBS OFF)
+
 ####### absl
 
-# Disable Testing for abseil
-set(BUILD_TESTING OFF) 
 add_subdirectory("${GB_THIRD_PARTY_DIR}/abseil-cpp")
-set(BUILD_TESTING) 
 
 ####### glm
 
@@ -58,24 +63,42 @@ add_subdirectory("${GB_THIRD_PARTY_DIR}/glm")
 ####### glog
 
 option(WITH_GFLAGS "" OFF)
-option(BUILD_TESTING "" OFF)
+set(WITH_GFLAGS OFF)
+option(WITH_GTEST "" OFF)
+set(WITH_GTEST OFF)
+option(WITH_PKGCONFIG "" OFF)
+set(WITH_PKGCONFIG OFF)
 add_subdirectory("${GB_THIRD_PARTY_DIR}/glog")
 set_target_properties(glog PROPERTIES FOLDER External/glog)
+if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+  target_compile_options(glog PUBLIC /Zc:__cplusplus)
+endif()
+unset(WITH_GFLAGS)
+unset(WITH_GTEST)
+unset(WITH_PKGCONFIG)
 
 ####### googletest
 
 option(INSTALL_GTEST "" OFF)
+set(INSTALL_GTEST OFF)
 option(gtest_force_shared_crt "" ON)
+set(gtest_force_shared_crt ON)
 add_subdirectory("${GB_THIRD_PARTY_DIR}/googletest")
 set_target_properties(gmock gmock_main gtest gtest_main PROPERTIES FOLDER External/googletest)
+unset(INSTALL_GTEST)
+unset(gtest_force_shared_crt)
 
 ####### flatbuffers
 
 set(FLATBUFFERS_FLATC_EXECUTABLE "${GB_DIR}/bin/flatc")
 option(FLATBUFFERS_BUILD_TESTS "" OFF)
+set(FLATBUFFERS_BUILD_TESTS OFF)
 option(FLATBUFFERS_INSTALL "" OFF)
+set(FLATBUFFERS_INSTALL OFF)
 add_subdirectory("${GB_THIRD_PARTY_DIR}/flatbuffers")
 set_target_properties(flatbuffers flatc flathash PROPERTIES FOLDER External/flatbuffers)
+unset(FLATBUFFERS_BUILD_TESTS)
+unset(FLATBUFFERS_INSTALL)
 
 ###############################################################################
 ## Add Game Bits source
