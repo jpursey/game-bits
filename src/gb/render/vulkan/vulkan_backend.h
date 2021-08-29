@@ -182,6 +182,10 @@ class VulkanBackend final : public RenderBackend {
   Texture* CreateTexture(RenderInternal, gb::ResourceEntry entry,
                          DataVolatility volatility, int width, int height,
                          const SamplerOptions& options) override;
+  TextureArray* CreateTextureArray(RenderInternal, ResourceEntry entry,
+                                   DataVolatility volatility, int count,
+                                   int width, int height,
+                                   const SamplerOptions& options) override;
   std::unique_ptr<ShaderCode> CreateShaderCode(RenderInternal, const void* code,
                                                int64_t code_size) override;
   std::unique_ptr<RenderSceneType> CreateSceneType(

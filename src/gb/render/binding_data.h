@@ -9,6 +9,7 @@
 #include "gb/render/binding.h"
 #include "gb/render/render_types.h"
 #include "gb/render/texture.h"
+#include "gb/render/texture_array.h"
 
 namespace gb {
 
@@ -76,6 +77,14 @@ class BindingData {
   void SetTexture(int index, Texture* texture);
   const Texture* GetTexture(int index) const;
 
+  // Get or set texture array resource.
+  //
+  // Calling this on an undefined binding index for the set, or a binding of a
+  // different binding type is undefined behavior, and likely will result in a
+  // crash.
+  void SetTextureArray(int index, TextureArray* texture_array);
+  const TextureArray* GetTextureArray(int index) const;
+
   //----------------------------------------------------------------------------
   // Operations
   //----------------------------------------------------------------------------
@@ -138,6 +147,18 @@ inline const Texture* BindingData::GetTexture(int index) const {
   Texture* texture = nullptr;
   DoGet(index, &texture);
   return texture;
+}
+
+inline void BindingData::SetTextureArray(int index, TextureArray* texture) {
+  RENDER_ASSERT(Validate(index, TypeKey::Get<Texture*>()));
+  DoSet(index, &texture);
+}
+
+inline const TextureArray* BindingData::GetTextureArray(int index) const {
+  RENDER_ASSERT(Validate(index, TypeKey::Get<TextureArray*>()));
+  TextureArray* texture_array = nullptr;
+  DoGet(index, &texture_array);
+  return texture_array;
 }
 
 template <typename Type>

@@ -322,6 +322,29 @@ class RenderSystem final {
   bool SaveTexture(std::string_view name, Texture* texture,
                    DataVolatility volatility = DataVolatility::kStaticWrite);
 
+  // Creates a texture array with the specified parameters.
+  //
+  // If successful, the texture array will be created uninitialized (pixel
+  // values are undefined). The caller should call Set or Clear initialize its
+  // contents.
+  ResourcePtr<TextureArray> CreateTextureArray(
+      DataVolatility volatility, int count, int width, int height,
+      const SamplerOptions& options = SamplerOptions());
+  TextureArray* CreateTextureArray(
+      ResourceSet* resource_set, DataVolatility volatility, int count,
+      int width, int height, const SamplerOptions& options = SamplerOptions());
+
+  // Saves a texture array to the specified resource name.
+  //
+  // The texture array must be readable (not DataVolatility::kStaticWrite).
+  // Optionally, DataVolatility may be specified for the mesh to indicate what
+  // it should be when it is reloaded later.
+  //
+  // Returns true if the texture was successfully saved.
+  bool SaveTextureArray(
+      std::string_view name, TextureArray* texture_array,
+      DataVolatility volatility = DataVolatility::kStaticWrite);
+
   //----------------------------------------------------------------------------
   // Rendering
   //
@@ -428,6 +451,15 @@ class RenderSystem final {
   bool SaveTextureChunk(Context* context, Texture* texture,
                         flatbuffers::FlatBufferBuilder* builder);
   Texture* LoadStbTexture(TextureLoadContract contract, File* file);
+
+  TextureArray* DoCreateTextureArray(DataVolatility volatility, int count,
+                                     int width, int height,
+                                     const SamplerOptions& options);
+  TextureArray* LoadTextureArrayChunk(Context* context,
+                                      const fbs::TextureArrayChunk* chunk,
+                                      ResourceEntry entry);
+  bool SaveTextureArrayChunk(Context* context, TextureArray* texture_array,
+                             flatbuffers::FlatBufferBuilder* builder);
 
   const RenderDataType* DoRegisterConstantsType(std::string_view name,
                                                 TypeKey* type, size_t size);
@@ -552,6 +584,21 @@ inline Texture* RenderSystem::CreateTexture(ResourceSet* resource_set,
   Texture* texture = DoCreateTexture(volatility, width, height, options);
   resource_set->Add(texture);
   return texture;
+}
+
+inline ResourcePtr<TextureArray> RenderSystem::CreateTextureArray(
+    DataVolatility volatility, int count, int width, int height,
+    const SamplerOptions& options) {
+  return DoCreateTextureArray(volatility, count, width, height, options);
+}
+
+inline TextureArray* RenderSystem::CreateTextureArray(
+    ResourceSet* resource_set, DataVolatility volatility, int count, int width,
+    int height, const SamplerOptions& options) {
+  TextureArray* texture_array =
+      DoCreateTextureArray(volatility, count, width, height, options);
+  resource_set->Add(texture_array);
+  return texture_array;
 }
 
 }  // namespace gb

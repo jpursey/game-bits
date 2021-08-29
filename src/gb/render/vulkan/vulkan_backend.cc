@@ -868,6 +868,13 @@ Texture* VulkanBackend::CreateTexture(RenderInternal, gb::ResourceEntry entry,
                                width, height, options);
 }
 
+TextureArray* VulkanBackend::CreateTextureArray(
+    RenderInternal, ResourceEntry entry, DataVolatility volatility, int count,
+    int width, int height, const SamplerOptions& options) {
+  // TODO
+  return nullptr;
+}
+
 std::unique_ptr<ShaderCode> VulkanBackend::CreateShaderCode(RenderInternal,
                                                             const void* code,
                                                             int64_t code_size) {

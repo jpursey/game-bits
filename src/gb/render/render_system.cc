@@ -70,6 +70,9 @@ std::vector<Binding> ReadBindings(
       case fbs::BindingType_Texture:
         bindings[i].SetTexture();
         break;
+      case fbs::BindingType_TextureArray:
+        bindings[i].SetTextureArray();
+        break;
       case fbs::BindingType_Constants:
         if (fb_binding->constants_name() == nullptr) {
           LOG(ERROR) << "Unspecified constants name for binding";
@@ -98,12 +101,20 @@ fb::Offset<fb::Vector<fb::Offset<fbs::BindingDataEntry>>> WriteBindingData(
       continue;
     }
     ResourceId texture_id = 0;
+    ResourceId texture_array_id = 0;
     fb::Offset<fb::Vector<uint8_t>> fb_constants_data;
     switch (binding.binding_type) {
       case BindingType::kTexture: {
         const auto* texture = binding_data->GetTexture(binding.index);
         if (texture != nullptr) {
           texture_id = texture->GetResourceId();
+        }
+      } break;
+      case BindingType::kTextureArray: {
+        const auto* texture_array =
+            binding_data->GetTextureArray(binding.index);
+        if (texture_array != nullptr) {
+          texture_array_id = texture_array->GetResourceId();
         }
       } break;
       case BindingType::kConstants: {
@@ -122,6 +133,7 @@ fb::Offset<fb::Vector<fb::Offset<fbs::BindingDataEntry>>> WriteBindingData(
     binding_entry_builder.add_index(binding.index);
     binding_entry_builder.add_type(ToFbs(binding.binding_type));
     binding_entry_builder.add_texture_id(texture_id);
+    binding_entry_builder.add_texture_array_id(texture_array_id);
     binding_entry_builder.add_constants_data(fb_constants_data);
     fb_binding_data.emplace_back(binding_entry_builder.Finish());
   }
@@ -162,6 +174,22 @@ bool ReadBindingData(
           return false;
         }
         binding_data->SetTexture(index, texture);
+      } break;
+      case fbs::BindingType_TextureArray: {
+        const ResourceId texture_array_id =
+            fb_binding_data_entry->texture_array_id();
+        if (texture_array_id == 0) {
+          // No texture_array is valid.
+          break;
+        }
+        auto* texture_array =
+            file_resources->GetResource<TextureArray>(texture_array_id);
+        if (texture_array == nullptr) {
+          LOG(ERROR) << "Referenced binding data texture array at index "
+                     << index << " not loaded. ID=" << texture_array_id;
+          return false;
+        }
+        binding_data->SetTextureArray(index, texture_array);
       } break;
       case fbs::BindingType_Constants: {
         const auto* fb_constants_data = fb_binding_data_entry->constants_data();
@@ -231,6 +259,12 @@ bool RenderSystem::Init() {
       [this](Context* context, Texture* resource, FlatBufferBuilder* builder) {
         return SaveTextureChunk(context, resource, builder);
       });
+  resource_writer_->RegisterResourceFlatBufferWriter<TextureArray>(
+      kChunkTypeTextureArray, 1,
+      [this](Context* context, TextureArray* resource,
+             FlatBufferBuilder* builder) {
+        return SaveTextureArrayChunk(context, resource, builder);
+      });
   resource_writer_->RegisterResourceFlatBufferWriter<Shader>(
       kChunkTypeShader, 1,
       [this](Context* context, Shader* resource, FlatBufferBuilder* builder) {
@@ -260,6 +294,13 @@ bool RenderSystem::Init() {
              ResourceEntry entry) {
         return LoadTextureChunk(context, chunk, std::move(entry));
       });
+  resource_reader_
+      ->RegisterResourceFlatBufferChunk<TextureArray, fbs::TextureArrayChunk>(
+          kChunkTypeTextureArray, 1,
+          [this](Context* context, const fbs::TextureArrayChunk* chunk,
+                 ResourceEntry entry) {
+            return LoadTextureArrayChunk(context, chunk, std::move(entry));
+          });
   resource_reader_->RegisterResourceFlatBufferChunk<Shader, fbs::ShaderChunk>(
       kChunkTypeShader, 1,
       [this](Context* context, const fbs::ShaderChunk* chunk,
@@ -298,13 +339,14 @@ bool RenderSystem::Init() {
       });
 
   TypeKey::Get<Texture>()->SetTypeName("Texture");
+  TypeKey::Get<TextureArray>()->SetTypeName("TextureArray");
   TypeKey::Get<Shader>()->SetTypeName("Shader");
   TypeKey::Get<MaterialType>()->SetTypeName("MaterialType");
   TypeKey::Get<Material>()->SetTypeName("Material");
   TypeKey::Get<Mesh>()->SetTypeName("Mesh");
   auto* resource_system = context_.GetPtr<ResourceSystem>();
-  if (!resource_system->Register<Texture, Shader, MaterialType, Material, Mesh>(
-          resource_manager_.get())) {
+  if (!resource_system->Register<Texture, TextureArray, Shader, MaterialType,
+                                 Material, Mesh>(resource_manager_.get())) {
     return false;
   }
   return true;
@@ -1158,8 +1200,14 @@ Texture* RenderSystem::LoadTextureChunk(Context* context,
                << height;
     return nullptr;
   }
-  if (chunk->pixels() == nullptr ||
-      !texture->Set(chunk->pixels()->data(), width * height * sizeof(Pixel))) {
+  const auto* pixels = chunk->pixels();
+  if (pixels == nullptr || static_cast<int>(pixels->size()) < width * height) {
+    LOG(ERROR) << "Failed to create texture as it contains "
+               << (pixels != nullptr ? pixels->size() : 0) << " pixels, but "
+               << width * height << " are required.";
+    return nullptr;
+  }
+  if (!texture->Set(pixels->data(), width * height * sizeof(Pixel))) {
     LOG(ERROR) << "Failed to initialize texture with image data";
     return nullptr;
   }
@@ -1269,6 +1317,156 @@ bool RenderSystem::SaveTextureChunk(Context* context, Texture* texture,
   const auto fb_texture = texture_builder.Finish();
 
   builder->Finish(fb_texture);
+  return true;
+}
+
+TextureArray* RenderSystem::DoCreateTextureArray(
+    DataVolatility volatility, int count, int width, int height,
+    const SamplerOptions& options) {
+  if (count <= 0 || count > kMaxTextureArrayCount) {
+    LOG(ERROR) << "Invalid texture array count in CreateTextureArray: "
+               << count;
+    return nullptr;
+  }
+  if (width <= 0 || width > kMaxTextureWidth || height <= 0 ||
+      height > kMaxTextureHeight) {
+    LOG(ERROR) << "Invalid texture dimensions in CreateTextureArray: " << width
+               << " by " << height;
+    return nullptr;
+  }
+  const uint64_t total_pixel_count =
+      static_cast<uint64_t>(count) * static_cast<uint64_t>(width * height);
+  if (total_pixel_count > static_cast<uint64_t>(kMaxTextureArrayPixels)) {
+    LOG(ERROR) << "Texture array is too large with " << total_pixel_count
+               << "pixels. Maximum is " << kMaxTextureArrayPixels << ".";
+    return nullptr;
+  }
+  return backend_->CreateTextureArray(
+      {}, resource_manager_->NewResourceEntry<TextureArray>(), volatility,
+      count, width, height, options);
+}
+
+TextureArray* RenderSystem::LoadTextureArrayChunk(
+    Context* context, const fbs::TextureArrayChunk* chunk,
+    ResourceEntry entry) {
+  const auto count = chunk->count();
+  if (count <= 0 || count > kMaxTextureArrayCount) {
+    LOG(ERROR) << "Invalid texture count in texture array: " << count;
+  }
+  const auto width = chunk->width();
+  const auto height = chunk->height();
+  if (width <= 0 || height <= 0 || width >= kMaxTextureWidth ||
+      height >= kMaxTextureHeight) {
+    LOG(ERROR) << "Invalid texture dimensions in texture array: " << width
+               << " by " << height;
+    return nullptr;
+  }
+
+  const uint64_t total_pixel_count =
+      static_cast<uint64_t>(count) * static_cast<uint64_t>(width * height);
+  if (total_pixel_count > static_cast<uint64_t>(kMaxTextureArrayPixels)) {
+    LOG(ERROR) << "Texture array is too large with " << total_pixel_count
+               << "pixels. Maximum is " << kMaxTextureArrayPixels << ".";
+  }
+
+  gb::ValidatedContext validated_context = TextureLoadContract(context);
+  DCHECK(validated_context.IsValid())
+      << "TextureLoadContext does not have any requirements!";
+  SamplerOptions sampler_options;
+  auto* fb_sampler_options = chunk->options();
+  if (fb_sampler_options != nullptr) {
+    sampler_options.SetFilter(fb_sampler_options->filter());
+    sampler_options.SetMipmap(fb_sampler_options->mipmap());
+    sampler_options.SetTileSize(fb_sampler_options->tile_size());
+    sampler_options.SetAddressMode(FromFbs(fb_sampler_options->address_mode()),
+                                   Pixel(fb_sampler_options->border()));
+  }
+
+  DataVolatility volatility = FromFbs(chunk->volatility());
+  if (edit_ && volatility == DataVolatility::kStaticWrite) {
+    volatility = DataVolatility::kStaticReadWrite;
+  }
+  TextureArray* texture_array = backend_->CreateTextureArray(
+      {}, std::move(entry), volatility, count, width, height,
+      validated_context.GetValueOrDefault<SamplerOptions>(sampler_options));
+  if (texture_array == nullptr) {
+    LOG(ERROR) << "Failed to create texture array of count " << count
+               << " and dimensions " << width << "x" << height;
+    return nullptr;
+  }
+  const auto* pixels = chunk->pixels();
+  const int image_pixel_count = width * height;
+  if (pixels == nullptr ||
+      static_cast<int>(pixels->size()) < count * image_pixel_count) {
+    LOG(ERROR) << "Failed to create texture array as it contains "
+               << (pixels != nullptr ? pixels->size() : 0) << " pixels, but "
+               << count * image_pixel_count << " are required.";
+    return nullptr;
+  }
+  const uint32_t* pixel_data = pixels->data();
+  for (int i = 0; i < count; ++i) {
+    if (!texture_array->Set(i, pixel_data, image_pixel_count * sizeof(Pixel))) {
+      LOG(ERROR)
+          << "Failed to initialize texture array with image data at index: "
+          << i;
+      return nullptr;
+    }
+    pixel_data += image_pixel_count;
+  }
+  return texture_array;
+}
+
+bool RenderSystem::SaveTextureArray(std::string_view name,
+                                    TextureArray* texture_array,
+                                    DataVolatility volatility) {
+  return resource_writer_->Write(
+      name, texture_array,
+      ContextBuilder().SetValue<DataVolatility>(volatility).Build());
+}
+
+bool RenderSystem::SaveTextureArrayChunk(
+    Context* context, TextureArray* texture_array,
+    flatbuffers::FlatBufferBuilder* builder) {
+  if (texture_array->GetVolatility() == DataVolatility::kStaticWrite) {
+    LOG(ERROR) << "Cannot save texture array with kStaticWrite volatility.";
+    return false;
+  }
+  const int texture_pixel_count =
+      texture_array->GetWidth() * texture_array->GetHeight();
+  const int total_pixel_count = texture_array->GetCount() * texture_pixel_count;
+  std::vector<uint32_t> pixels(total_pixel_count);
+  for (int i = 0; i < texture_array->GetCount(); ++i) {
+    if (!texture_array->Get(i, pixels.data() + (i * texture_pixel_count),
+                            texture_pixel_count * sizeof(uint32_t))) {
+      LOG(ERROR) << "Failed to read texture " << i
+                 << " from texture array in order to save it";
+      return false;
+    }
+  }
+  auto& sampler_options = texture_array->GetSamplerOptions();
+
+  fbs::SamplerOptionsBuilder sampler_options_builder(*builder);
+  sampler_options_builder.add_filter(sampler_options.filter);
+  sampler_options_builder.add_mipmap(sampler_options.mipmap);
+  sampler_options_builder.add_border(sampler_options.border.Packed());
+  sampler_options_builder.add_tile_size(sampler_options.tile_size);
+  sampler_options_builder.add_address_mode(ToFbs(sampler_options.address_mode));
+  const auto fb_sampler_options = sampler_options_builder.Finish();
+
+  const auto fb_pixels =
+      builder->CreateVector<uint32_t>(pixels.data(), total_pixel_count);
+
+  fbs::TextureArrayChunkBuilder texture_array_builder(*builder);
+  texture_array_builder.add_volatility(
+      ToFbs(context->GetValue<DataVolatility>()));
+  texture_array_builder.add_count(texture_array->GetCount());
+  texture_array_builder.add_width(texture_array->GetWidth());
+  texture_array_builder.add_height(texture_array->GetHeight());
+  texture_array_builder.add_options(fb_sampler_options);
+  texture_array_builder.add_pixels(fb_pixels);
+  const auto fb_texture_array = texture_array_builder.Finish();
+
+  builder->Finish(fb_texture_array);
   return true;
 }
 

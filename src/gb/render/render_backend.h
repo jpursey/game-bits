@@ -16,6 +16,7 @@
 #include "gb/render/render_types.h"
 #include "gb/render/shader_code.h"
 #include "gb/render/texture.h"
+#include "gb/render/texture_array.h"
 #include "gb/resource/resource_entry.h"
 
 namespace gb {
@@ -70,6 +71,17 @@ class RenderBackend {
   virtual Texture* CreateTexture(RenderInternal, ResourceEntry entry,
                                  DataVolatility volatility, int width,
                                  int height, const SamplerOptions& options) = 0;
+
+  // Creates a new 2D RGBA texture array of the specified count, width, and
+  // height.
+  //
+  // If the texture array could not be created, this returns null. On success,
+  // the resulting texture array is considered uninitialized (all pixels are of
+  // unknown value).
+  virtual TextureArray* CreateTextureArray(RenderInternal, ResourceEntry entry,
+                                           DataVolatility volatility, int count,
+                                           int width, int height,
+                                           const SamplerOptions& options) = 0;
 
   // Creates the shader code compatible with this backend from the raw shader
   // code data.

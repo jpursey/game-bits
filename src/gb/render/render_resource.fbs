@@ -23,6 +23,7 @@ enum BindingType : uint8 {
   None,
   Constants,
   Texture,
+  TextureArray,
 }
 
 // Must be kept in sync with gb::DataVolatility
@@ -86,6 +87,7 @@ table BindingDataEntry {
   index : int32;
   type : BindingType;
   texture_id : uint64;
+  texture_array_id : uint64;
   constants_data : [uint8];
 }
 
@@ -140,6 +142,16 @@ table SamplerOptions {
 // Chunk for texture resource.
 table TextureChunk {
   volatility : DataVolatility;
+  width : uint16;
+  height : uint16;
+  pixels : [uint32];
+  options : SamplerOptions;
+}
+
+// Chunk for texture array resource.
+table TextureArrayChunk {
+  volatility : DataVolatility;
+  count : uint16;
   width : uint16;
   height : uint16;
   pixels : [uint32];

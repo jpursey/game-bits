@@ -22,6 +22,7 @@ inline constexpr ChunkType kChunkTypeMaterialType = {'G', 'B', 'M', 'T'};
 inline constexpr ChunkType kChunkTypeMesh = {'G', 'B', 'M', 'E'};
 inline constexpr ChunkType kChunkTypeShader = {'G', 'B', 'S', 'H'};
 inline constexpr ChunkType kChunkTypeTexture = {'G', 'B', 'T', 'X'};
+inline constexpr ChunkType kChunkTypeTextureArray = {'G', 'B', 'T', 'A'};
 
 template <typename FbsType, typename GbType>
 inline FbsType RenderEnumToFbs(GbType type) {

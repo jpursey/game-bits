@@ -66,6 +66,12 @@ struct Binding {
   // if it is accessed by a shader.
   Binding& SetTexture();
 
+  // Sets the binding to be a 2D RGBA texture array.
+  //
+  // The actual texture array must be set within a BindingData object for this
+  // binding if it is accessed by a shader.
+  Binding& SetTextureArray();
+
   // Sets the binding to be a constants structure/
   //
   // Constants are defined by registering a C++ type that conforms to the
@@ -146,6 +152,13 @@ inline Binding& Binding::SetTexture() {
   return *this;
 }
 
+inline Binding& Binding::SetTextureArray() {
+  binding_type = BindingType::kTextureArray;
+  constants_type = nullptr;
+  volatility = DataVolatility::kStaticReadWrite;
+  return *this;
+}
+
 inline Binding& Binding::SetConstants(const RenderDataType* type,
                                       DataVolatility data_volatility) {
   binding_type = BindingType::kConstants;
@@ -158,7 +171,8 @@ inline bool Binding::IsValid() const {
   return !shader_types.IsEmpty() &&
          Union(shader_types, kAllShaderTypes) == kAllShaderTypes &&
          (binding_type == BindingType::kConstants ||
-          binding_type == BindingType::kTexture) &&
+          binding_type == BindingType::kTexture ||
+          binding_type == BindingType::kTextureArray) &&
          (binding_type != BindingType::kConstants ||
           constants_type != nullptr) &&
          (volatility == DataVolatility::kPerFrame ||

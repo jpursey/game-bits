@@ -14,6 +14,7 @@
 #include "gb/render/test_render_scene_type.h"
 #include "gb/render/test_shader_code.h"
 #include "gb/render/test_texture.h"
+#include "gb/render/test_texture_array.h"
 #include "glog/logging.h"
 
 namespace gb {
@@ -42,11 +43,13 @@ class TestRenderBackend final : public RenderBackend {
     bool rendering = false;
     std::vector<DrawItem> draw_list;
     TestTexture::Config texture_config;
+    TestTextureArray::Config texture_array_config;
     TestRenderPipeline::Config render_pipeline_config;
     TestRenderBuffer::Config vertex_buffer_config;
     TestRenderBuffer::Config index_buffer_config;
 
     bool fail_create_texture = false;
+    bool fail_create_texture_array = false;
     bool fail_create_shader_code = false;
     bool fail_create_scene_type = false;
     bool fail_create_scene = false;
@@ -73,6 +76,10 @@ class TestRenderBackend final : public RenderBackend {
   Texture* CreateTexture(RenderInternal, ResourceEntry entry,
                          DataVolatility volatility, int width, int height,
                          const SamplerOptions& options) override;
+  TextureArray* CreateTextureArray(RenderInternal, ResourceEntry entry,
+                                   DataVolatility volatility, int count,
+                                   int width, int height,
+                                   const SamplerOptions& options) override;
   std::unique_ptr<ShaderCode> CreateShaderCode(RenderInternal, const void* code,
                                                int64_t code_size) override;
   std::unique_ptr<RenderSceneType> CreateSceneType(

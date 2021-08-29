@@ -30,6 +30,16 @@ Texture* TestRenderBackend::CreateTexture(RenderInternal, ResourceEntry entry,
                          width, height, options);
 }
 
+TextureArray* TestRenderBackend::CreateTextureArray(
+    RenderInternal, ResourceEntry entry, DataVolatility volatility, int count,
+    int width, int height, const SamplerOptions& options) {
+  if (state_->fail_create_texture_array) {
+    return nullptr;
+  }
+  return new TestTextureArray(&state_->texture_array_config, std::move(entry),
+                              volatility, count, width, height, options);
+}
+
 std::unique_ptr<ShaderCode> TestRenderBackend::CreateShaderCode(
     RenderInternal, const void* code, int64_t code_size) {
   if (state_->fail_create_shader_code) {

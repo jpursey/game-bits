@@ -44,6 +44,18 @@ class RenderSystemTest : public RenderTest {
     return pixels;
   }
 
+  // Alternate image data with arbitrarily changing gradiants.
+  std::vector<Pixel> MakeAlternateImageData() {
+    std::vector<Pixel> pixels(16 * 16, Pixel(0, 0, 0, 255));
+    for (int i = 0; i < 256; ++i) {
+      pixels[i].r = 0;
+      pixels[i].g = i % 16;
+      pixels[i].b = 256 - i;
+      pixels[i].a = (i / 16) * 16;
+    }
+    return pixels;
+  }
+
   // 16x16 test image as PNG.
   const std::vector<uint8_t> kPngImage = {
       0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
@@ -163,9 +175,13 @@ TEST_F(RenderSystemTest, RegisterSceneType) {
           .SetShaders(ShaderType::kFragment)
           .SetLocation(BindingSet::kMaterial, 1)
           .SetTexture(),
+      Binding()
+          .SetShaders(ShaderType::kFragment)
+          .SetLocation(BindingSet::kMaterial, 2)
+          .SetTextureArray(),
   };
   auto scene_type = render_system_->RegisterSceneType("scene", bindings);
-  EXPECT_NE(scene_type, nullptr);
+  ASSERT_NE(scene_type, nullptr);
   EXPECT_EQ(scene_type->GetName(), "scene");
   EXPECT_THAT(scene_type->GetBindings(), ElementsAreArray(bindings));
   EXPECT_EQ(render_system_->GetSceneType("scene"), scene_type);
@@ -239,8 +255,8 @@ TEST_F(RenderSystemTest, SaveLoadTexture) {
   auto expected_pixels = MakeImageData();
   auto texture =
       render_system_->CreateTexture(DataVolatility::kStaticReadWrite, 16, 16);
-  auto texture_id = texture->GetResourceId();
   ASSERT_NE(texture, nullptr);
+  auto texture_id = texture->GetResourceId();
   ASSERT_TRUE(texture->Set(expected_pixels));
   ASSERT_TRUE(render_system_->SaveTexture("mem:/image.gbtx", texture.Get()));
   EXPECT_EQ(texture->GetResourceName(), "mem:/image.gbtx");
@@ -269,8 +285,8 @@ TEST_F(RenderSystemTest, SaveLoadTextureWithSamplerOptions) {
   auto expected_pixels = MakeImageData();
   auto texture = render_system_->CreateTexture(DataVolatility::kStaticReadWrite,
                                                16, 16, expected_options);
-  auto texture_id = texture->GetResourceId();
   ASSERT_NE(texture, nullptr);
+  auto texture_id = texture->GetResourceId();
   ASSERT_TRUE(texture->Set(expected_pixels));
   ASSERT_TRUE(render_system_->SaveTexture("mem:/image.gbtx", texture.Get()));
   EXPECT_EQ(texture->GetResourceName(), "mem:/image.gbtx");
@@ -299,8 +315,8 @@ TEST_F(RenderSystemTest, SaveLoadTextureOverridingSamplerOptions) {
   auto expected_pixels = MakeImageData();
   auto texture =
       render_system_->CreateTexture(DataVolatility::kStaticReadWrite, 16, 16);
-  auto texture_id = texture->GetResourceId();
   ASSERT_NE(texture, nullptr);
+  auto texture_id = texture->GetResourceId();
   ASSERT_TRUE(texture->Set(expected_pixels));
   ASSERT_TRUE(render_system_->SaveTexture("mem:/image.gbtx", texture.Get()));
   EXPECT_EQ(texture->GetResourceName(), "mem:/image.gbtx");
@@ -325,8 +341,8 @@ TEST_F(RenderSystemTest, SaveLoadTextureWithVolatility) {
   auto expected_pixels = MakeImageData();
   auto texture =
       render_system_->CreateTexture(DataVolatility::kStaticReadWrite, 16, 16);
-  auto texture_id = texture->GetResourceId();
   ASSERT_NE(texture, nullptr);
+  auto texture_id = texture->GetResourceId();
   ASSERT_TRUE(texture->Set(expected_pixels));
   ASSERT_TRUE(render_system_->SaveTexture("mem:/image.gbtx", texture.Get(),
                                           DataVolatility::kPerFrame));
@@ -349,8 +365,8 @@ TEST_F(RenderSystemTest, SaveLoadTextureInEditMode) {
   auto expected_pixels = MakeImageData();
   auto texture =
       render_system_->CreateTexture(DataVolatility::kPerFrame, 16, 16);
-  auto texture_id = texture->GetResourceId();
   ASSERT_NE(texture, nullptr);
+  auto texture_id = texture->GetResourceId();
   ASSERT_TRUE(texture->Set(expected_pixels));
   ASSERT_TRUE(render_system_->SaveTexture("mem:/image.gbtx", texture.Get()));
   EXPECT_EQ(texture->GetResourceName(), "mem:/image.gbtx");
@@ -365,6 +381,160 @@ TEST_F(RenderSystemTest, SaveLoadTextureInEditMode) {
   EXPECT_EQ(texture->GetHeight(), 16);
   auto* test_texture = static_cast<TestTexture*>(texture.Get());
   EXPECT_THAT(test_texture->GetPixels(), ElementsAreArray(expected_pixels));
+}
+
+TEST_F(RenderSystemTest, SaveLoadTextureArray) {
+  CreateSystem();
+  const SamplerOptions expected_options;
+  std::vector<Pixel> expected_pixels[] = {
+      MakeImageData(),
+      MakeAlternateImageData(),
+  };
+  auto texture_array = render_system_->CreateTextureArray(
+      DataVolatility::kStaticReadWrite, 2, 16, 16);
+  ASSERT_NE(texture_array, nullptr);
+  auto texture_array_id = texture_array->GetResourceId();
+  ASSERT_TRUE(texture_array->Set(0, expected_pixels[0]));
+  ASSERT_TRUE(texture_array->Set(1, expected_pixels[1]));
+  ASSERT_TRUE(render_system_->SaveTextureArray("mem:/texture_array.gbta",
+                                               texture_array.Get()));
+  EXPECT_EQ(texture_array->GetResourceName(), "mem:/texture_array.gbta");
+  texture_array.Reset();
+
+  texture_array =
+      resource_system_->Load<TextureArray>("mem:/texture_array.gbta");
+  ASSERT_NE(texture_array, nullptr);
+  EXPECT_EQ(texture_array->GetResourceId(), texture_array_id);
+  EXPECT_EQ(texture_array->GetResourceName(), "mem:/texture_array.gbta");
+  EXPECT_EQ(texture_array->GetVolatility(), DataVolatility::kStaticWrite);
+  EXPECT_EQ(texture_array->GetCount(), 2);
+  EXPECT_EQ(texture_array->GetWidth(), 16);
+  EXPECT_EQ(texture_array->GetHeight(), 16);
+  EXPECT_EQ(texture_array->GetSamplerOptions(), expected_options);
+  auto* test_texture_array =
+      static_cast<TestTextureArray*>(texture_array.Get());
+  EXPECT_THAT(test_texture_array->GetPixels(0),
+              ElementsAreArray(expected_pixels[0]));
+  EXPECT_THAT(test_texture_array->GetPixels(1),
+              ElementsAreArray(expected_pixels[1]));
+}
+
+TEST_F(RenderSystemTest, SaveLoadTextureArrayWithSamplerOptions) {
+  CreateSystem();
+  SamplerOptions expected_options =
+      SamplerOptions()
+          .SetFilter(false)
+          .SetMipmap(false)
+          .SetAddressMode(SamplerAddressMode::kClampBorder, Pixel(32, 64, 128))
+          .SetTileSize(48);
+  std::vector<Pixel> expected_pixels[] = {
+      MakeImageData(),
+      MakeAlternateImageData(),
+  };
+  auto texture_array = render_system_->CreateTextureArray(
+      DataVolatility::kStaticReadWrite, 2, 16, 16, expected_options);
+  ASSERT_NE(texture_array, nullptr);
+  auto texture_array_id = texture_array->GetResourceId();
+  ASSERT_TRUE(texture_array->Set(0, expected_pixels[0]));
+  ASSERT_TRUE(texture_array->Set(1, expected_pixels[1]));
+  ASSERT_TRUE(render_system_->SaveTextureArray("mem:/texture_array.gbta",
+                                               texture_array.Get()));
+  EXPECT_EQ(texture_array->GetResourceName(), "mem:/texture_array.gbta");
+  texture_array.Reset();
+
+  texture_array =
+      resource_system_->Load<TextureArray>("mem:/texture_array.gbta");
+  ASSERT_NE(texture_array, nullptr);
+  EXPECT_EQ(texture_array->GetResourceId(), texture_array_id);
+  EXPECT_EQ(texture_array->GetResourceName(), "mem:/texture_array.gbta");
+  EXPECT_EQ(texture_array->GetVolatility(), DataVolatility::kStaticWrite);
+  EXPECT_EQ(texture_array->GetCount(), 2);
+  EXPECT_EQ(texture_array->GetWidth(), 16);
+  EXPECT_EQ(texture_array->GetHeight(), 16);
+  EXPECT_EQ(texture_array->GetSamplerOptions(), expected_options);
+  auto* test_texture_array =
+      static_cast<TestTextureArray*>(texture_array.Get());
+  EXPECT_THAT(test_texture_array->GetPixels(0),
+              ElementsAreArray(expected_pixels[0]));
+  EXPECT_THAT(test_texture_array->GetPixels(1),
+              ElementsAreArray(expected_pixels[1]));
+}
+
+TEST_F(RenderSystemTest, SaveLoadTextureArrayOverridingSamplerOptions) {
+  CreateSystem();
+  SamplerOptions expected_options =
+      SamplerOptions()
+          .SetFilter(false)
+          .SetMipmap(false)
+          .SetAddressMode(SamplerAddressMode::kClampBorder, Pixel(32, 64, 128))
+          .SetTileSize(48);
+  std::vector<Pixel> expected_pixels[] = {
+      MakeImageData(),
+      MakeAlternateImageData(),
+  };
+  auto texture_array = render_system_->CreateTextureArray(
+      DataVolatility::kStaticReadWrite, 2, 16, 16);
+  ASSERT_NE(texture_array, nullptr);
+  auto texture_array_id = texture_array->GetResourceId();
+  ASSERT_TRUE(texture_array->Set(0, expected_pixels[0]));
+  ASSERT_TRUE(texture_array->Set(1, expected_pixels[1]));
+  ASSERT_TRUE(render_system_->SaveTextureArray("mem:/texture_array.gbta",
+                                               texture_array.Get()));
+  EXPECT_EQ(texture_array->GetResourceName(), "mem:/texture_array.gbta");
+  texture_array.Reset();
+
+  texture_array = resource_system_->Load<TextureArray>(
+      "mem:/texture_array.gbta",
+      ContextBuilder().SetValue<SamplerOptions>(expected_options).Build());
+  ASSERT_NE(texture_array, nullptr);
+  EXPECT_EQ(texture_array->GetResourceId(), texture_array_id);
+  EXPECT_EQ(texture_array->GetResourceName(), "mem:/texture_array.gbta");
+  EXPECT_EQ(texture_array->GetVolatility(), DataVolatility::kStaticWrite);
+  EXPECT_EQ(texture_array->GetCount(), 2);
+  EXPECT_EQ(texture_array->GetWidth(), 16);
+  EXPECT_EQ(texture_array->GetHeight(), 16);
+  EXPECT_EQ(texture_array->GetSamplerOptions(), expected_options);
+  auto* test_texture_array =
+      static_cast<TestTextureArray*>(texture_array.Get());
+  EXPECT_THAT(test_texture_array->GetPixels(0),
+              ElementsAreArray(expected_pixels[0]));
+  EXPECT_THAT(test_texture_array->GetPixels(1),
+              ElementsAreArray(expected_pixels[1]));
+}
+
+TEST_F(RenderSystemTest, SaveLoadTextureArrayWithVolatility) {
+  CreateSystem();
+  std::vector<Pixel> expected_pixels[] = {
+      MakeImageData(),
+      MakeAlternateImageData(),
+  };
+  auto texture_array = render_system_->CreateTextureArray(
+      DataVolatility::kStaticReadWrite, 2, 16, 16);
+  ASSERT_NE(texture_array, nullptr);
+  auto texture_array_id = texture_array->GetResourceId();
+  ASSERT_TRUE(texture_array->Set(0, expected_pixels[0]));
+  ASSERT_TRUE(texture_array->Set(1, expected_pixels[1]));
+  ASSERT_TRUE(render_system_->SaveTextureArray("mem:/texture_array.gbta",
+                                               texture_array.Get(),
+                                               DataVolatility::kPerFrame));
+  EXPECT_EQ(texture_array->GetResourceName(), "mem:/texture_array.gbta");
+  texture_array.Reset();
+
+  texture_array =
+      resource_system_->Load<TextureArray>("mem:/texture_array.gbta");
+  ASSERT_NE(texture_array, nullptr);
+  EXPECT_EQ(texture_array->GetResourceId(), texture_array_id);
+  EXPECT_EQ(texture_array->GetResourceName(), "mem:/texture_array.gbta");
+  EXPECT_EQ(texture_array->GetVolatility(), DataVolatility::kPerFrame);
+  EXPECT_EQ(texture_array->GetCount(), 2);
+  EXPECT_EQ(texture_array->GetWidth(), 16);
+  EXPECT_EQ(texture_array->GetHeight(), 16);
+  auto* test_texture_array =
+      static_cast<TestTextureArray*>(texture_array.Get());
+  EXPECT_THAT(test_texture_array->GetPixels(0),
+              ElementsAreArray(expected_pixels[0]));
+  EXPECT_THAT(test_texture_array->GetPixels(1),
+              ElementsAreArray(expected_pixels[1]));
 }
 
 TEST_F(RenderSystemTest, SaveShaderNotInEditMode) {

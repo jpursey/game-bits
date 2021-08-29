@@ -32,6 +32,7 @@ set(gb_render_SOURCE
   shader.h
   shader_code.h
   texture.cc texture.h
+  texture_array.cc texture_array.h
   texture_view.cc texture_view.h
 )
 
@@ -61,7 +62,9 @@ set(gb_render_TEST_SOURCE
   test_render_scene_type.h
   test_shader_code.cc test_shader_code.h
   test_texture.cc test_texture.h
+  test_texture_array.cc test_texture_array.h
   texture_test.cc
+  texture_array_test.cc
   texture_view_test.cc
 )
 

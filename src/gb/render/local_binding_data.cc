@@ -22,6 +22,7 @@ LocalBindingData::LocalBindingData(RenderInternal, BindingSet set,
   data_.resize(binding_count);
 
   const RenderDataType* const texture_type = GetTextureDataType();
+  const RenderDataType* const texture_array_type = GetTextureArrayDataType();
   size_t size = 0;
   for (const auto& binding : bindings) {
     const RenderDataType*& type =
@@ -35,6 +36,9 @@ LocalBindingData::LocalBindingData(RenderInternal, BindingSet set,
         break;
       case BindingType::kTexture:
         type = texture_type;
+        break;
+      case BindingType::kTextureArray:
+        type = texture_array_type;
         break;
       default:
         LOG(FATAL) << "Unhandled binding type in LocalBindingData constructor";
@@ -85,6 +89,12 @@ const RenderDataType* LocalBindingData::GetTextureDataType() {
   return &type;
 }
 
+const RenderDataType* LocalBindingData::GetTextureArrayDataType() {
+  static RenderDataType type({}, "", TypeKey::Get<TextureArray*>(),
+                             sizeof(TextureArray*));
+  return &type;
+}
+
 void LocalBindingData::CopyTo(BindingData* binding_data) const {
   const int count = static_cast<int>(data_.size());
   for (int i = 0; i < count; ++i) {
@@ -118,11 +128,20 @@ void LocalBindingData::DoGet(int index, void* value) const {
 void LocalBindingData::DoGetDependencies(
     ResourceDependencyList* dependencies) const {
   const RenderDataType* const texture_type = GetTextureDataType();
+  const RenderDataType* const texture_array_type = GetTextureArrayDataType();
   for (const auto& value : data_) {
-    if (std::get<const RenderDataType*>(value) == texture_type) {
+    const RenderDataType* const type = std::get<const RenderDataType*>(value);
+    if (type == texture_type) {
       Texture** texture = static_cast<Texture**>(std::get<void*>(value));
       if (*texture != nullptr) {
         dependencies->push_back(*texture);
+      }
+    }
+    if (type == texture_array_type) {
+      TextureArray** texture_array =
+          static_cast<TextureArray**>(std::get<void*>(value));
+      if (*texture_array != nullptr) {
+        dependencies->push_back(*texture_array);
       }
     }
   }

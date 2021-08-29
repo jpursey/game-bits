@@ -46,6 +46,7 @@ struct MaterialChunk;
 struct MaterialTypeChunk;
 struct ShaderChunk;
 struct TextureChunk;
+struct TextureArrayChunk;
 }  // namespace fbs
 
 // Internal access token for functions callable by render classes.
@@ -206,9 +207,10 @@ enum class DataVolatility : int {
 // A binding type specifies what kind of resource is or may be bound within a
 // binding set.
 enum class BindingType : int {
-  kNone,       // No binding.
-  kConstants,  // Binds structured constant data.
-  kTexture,    // Binds a texture.
+  kNone,          // No binding.
+  kConstants,     // Binds structured constant data.
+  kTexture,       // Binds a texture.
+  kTextureArray,  // Binds a texture array.
 };
 
 //==============================================================================
@@ -327,9 +329,13 @@ inline constexpr Pixel operator*(double mod, Pixel pixel) {
 // This defines the upper limit for a binding index for a Binding.
 inline constexpr int kMaxBindingIndex = 1023;
 
-// Maximum dimensions for a texture.
+// Maximum dimensions for a texture or texture array.
 inline constexpr int kMaxTextureWidth = 8096;
 inline constexpr int kMaxTextureHeight = 8096;
+
+// Maximum count and total pixel count for a texture array.
+inline constexpr int kMaxTextureArrayCount = 2048;
+inline constexpr int kMaxTextureArrayPixels = 512 * 1024 * 1024;
 
 }  // namespace gb
 

@@ -57,6 +57,7 @@ class LocalBindingData : public BindingData {
 
  private:
   static const RenderDataType* GetTextureDataType();
+  static const RenderDataType* GetTextureArrayDataType();
 
   std::vector<std::tuple<const RenderDataType*, void*>> data_;
   size_t backing_buffer_size_ = 0;
