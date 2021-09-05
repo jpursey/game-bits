@@ -11,13 +11,14 @@
 
 namespace gb {
 
-std::unique_ptr<VulkanImage> VulkanImage::Create(
-    VulkanBackend* backend, int width, int height, int mip_levels,
-    vk::Format format, vk::ImageUsageFlags usage, vk::ImageTiling tiling,
-    vk::SampleCountFlagBits sample_count) {
-  auto image = absl::WrapUnique(
-      new VulkanImage(backend, width, height, mip_levels, format));
-  if (!image->Init(usage, tiling, sample_count)) {
+std::unique_ptr<VulkanImage> VulkanImage::Create(VulkanBackend* backend,
+                                                 int width, int height,
+                                                 int layers, vk::Format format,
+                                                 vk::ImageUsageFlags usage,
+                                                 const Options& options) {
+  auto image = absl::WrapUnique(new VulkanImage(backend, width, height, layers,
+                                                options.mip_levels, format));
+  if (!image->Init(usage, options)) {
     return nullptr;
   }
   return image;
@@ -29,21 +30,20 @@ VulkanImage::~VulkanImage() {
   gc->Dispose(image_, allocation_);
 }
 
-bool VulkanImage::Init(vk::ImageUsageFlags usage, vk::ImageTiling tiling,
-                       vk::SampleCountFlagBits sample_count) {
+bool VulkanImage::Init(vk::ImageUsageFlags usage, const Options& options) {
   auto device = backend_->GetDevice();
   auto create_info = vk::ImageCreateInfo()
                          .setImageType(vk::ImageType::e2D)
                          .setExtent({static_cast<uint32_t>(width_),
                                      static_cast<uint32_t>(height_), 1})
                          .setMipLevels(mip_levels_)
-                         .setArrayLayers(1)
+                         .setArrayLayers(layers_)
                          .setFormat(format_)
-                         .setTiling(tiling)
+                         .setTiling(options.tiling)
                          .setInitialLayout(vk::ImageLayout::eUndefined)
                          .setUsage(usage)
                          .setSharingMode(vk::SharingMode::eExclusive)
-                         .setSamples(sample_count)
+                         .setSamples(options.sample_count)
                          .setFlags({});
 
   VmaAllocationCreateInfo alloc_info = {};
@@ -63,14 +63,14 @@ bool VulkanImage::Init(vk::ImageUsageFlags usage, vk::ImageTiling tiling,
   auto [create_view_result, image_view] = device.createImageView(
       vk::ImageViewCreateInfo()
           .setImage(image_)
-          .setViewType(vk::ImageViewType::e2D)
+          .setViewType(options.view_type)
           .setFormat(format_)
           .setSubresourceRange(vk::ImageSubresourceRange()
                                    .setAspectMask(aspect_flags)
                                    .setBaseMipLevel(0)
                                    .setLevelCount(mip_levels_)
                                    .setBaseArrayLayer(0)
-                                   .setLayerCount(1)));
+                                   .setLayerCount(layers_)));
   if (create_view_result != vk::Result::eSuccess) {
     return false;
   }

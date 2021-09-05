@@ -487,9 +487,9 @@ VulkanTexture::VulkanTexture(gb::ResourceEntry entry, VulkanBackend* backend,
       size = std::min(GetWidth(), GetHeight());
     }
     size >>= 1;
-    int mip = 1;
     while (size != 0) {
-      host_size_ += (width >> mip) * (height >> mip) * sizeof(Pixel);
+      host_size_ +=
+          (width >> mip_levels_) * (height >> mip_levels_) * sizeof(Pixel);
       size >>= 1;
       ++mip_levels_;
     }
@@ -531,8 +531,9 @@ VulkanTexture* VulkanTexture::Create(gb::ResourceEntry entry,
 
 std::unique_ptr<VulkanImage> VulkanTexture::CreateImage() {
   return VulkanImage::Create(
-      backend_, GetWidth(), GetHeight(), mip_levels_, vk::Format::eR8G8B8A8Srgb,
-      vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled);
+      backend_, GetWidth(), GetHeight(), 1, vk::Format::eR8G8B8A8Srgb,
+      vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+      VulkanImage::Options().SetMipLevels(mip_levels_));
 }
 
 std::unique_ptr<VulkanBuffer> VulkanTexture::CreateHostBuffer() {
@@ -548,9 +549,13 @@ std::unique_ptr<VulkanBuffer> VulkanTexture::CreateHostBuffer() {
 void VulkanTexture::UpdateImage(VulkanRenderState* state,
                                 VulkanBuffer* host_buffer, VulkanImage* image,
                                 const DirtyRegion& region, bool update_mips) {
-  state->image_updates.emplace_back(host_buffer->Get(), 0, image->Get(), 0,
-                                    GetWidth(), GetHeight(), region.x, region.y,
-                                    region.width, region.height);
+  state->image_updates.emplace_back(
+      host_buffer->Get(), /*src_offset=*/0, image->Get(), /*mip_level=*/0,
+      GetWidth(), GetHeight(),
+      /*image_layer=*/0, region.x, region.y, region.width, region.height);
+  if (update_mips) {
+    state->image_barriers.emplace_back(image->Get(), mip_levels_);
+  }
   if (!update_mips || mip_levels_ == 1) {
     return;
   }
@@ -588,8 +593,7 @@ void VulkanTexture::UpdateImage(VulkanRenderState* state,
     }
 
     state->image_updates.emplace_back(host_buffer->Get(), offset, image->Get(),
-                                      mip, dst_width, dst_height, 0, 0,
-                                      dst_width, dst_height);
+                                      mip, dst_width, dst_height);
 
     src = dst;
     src_width = dst_width;

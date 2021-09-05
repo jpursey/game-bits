@@ -33,8 +33,6 @@ struct SamplerOptions {
   }
 
   // Enables mipmaps for the texture.
-  //
-  // This is ignored for texture arrays, which are never mipmapped.
   SamplerOptions& SetMipmap(bool in_mipmap) {
     mipmap = in_mipmap;
     return *this;
@@ -56,8 +54,6 @@ struct SamplerOptions {
 
   // If not zero, texture is treated as a square grid texture atlas with this
   // grid tile size. This affects mip map generation.
-  //
-  // This is ignored for texture arrays, which are never mipmapped.
   SamplerOptions& SetTileSize(int in_tile_size) {
     tile_size = in_tile_size;
     return *this;

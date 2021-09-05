@@ -8,6 +8,7 @@
 #include "gb/render/vulkan/vulkan_binding_data_factory.h"
 #include "gb/render/vulkan/vulkan_render_pipeline.h"
 #include "gb/render/vulkan/vulkan_texture.h"
+#include "gb/render/vulkan/vulkan_texture_array.h"
 #include "glog/logging.h"
 
 namespace gb {
@@ -64,32 +65,47 @@ void VulkanBindingData::OnRender(VulkanRenderState* state) {
   const int num_bindings = static_cast<int>(data_.size());
   for (int binding = 0; binding < num_bindings; ++binding) {
     DataItem& item = data_[binding];
-    if (item.binding_type == BindingType::kTexture) {
-      auto& info = item.texture;
-      state->textures.insert(info.texture);
-      const auto& handle = info.texture->GetImageHandle(state->frame);
-      if (info.bound[index] != handle.version) {
-        info.bound[index] = handle.version;
-        state->set_image_updates.emplace_back(descriptor_set, binding,
-                                              info.texture->GetSampler(),
-                                              handle.image->GetView());
-      }
-    } else if (item.binding_type == BindingType::kConstants) {
-      auto& info = item.constants;
-      state->buffers.insert(info.buffer);
-      const auto& handle = info.buffer->GetBufferHandle(state->frame);
-      if (info.bound[index] != handle.version) {
-        info.bound[index] = handle.version;
-        state->set_buffer_updates.emplace_back(descriptor_set, binding,
-                                               handle.buffer,
-                                               info.buffer->GetValueSize());
-      }
+    switch (item.binding_type) {
+      case BindingType::kTexture: {
+        auto& info = item.texture;
+        state->textures.insert(info.texture);
+        const auto& handle = info.texture->GetImageHandle(state->frame);
+        if (info.bound[index] != handle.version) {
+          info.bound[index] = handle.version;
+          state->set_image_updates.emplace_back(descriptor_set, binding,
+                                                info.texture->GetSampler(),
+                                                handle.image->GetView());
+        }
+      } break;
+      case BindingType::kTextureArray: {
+        auto& info = item.texture_array;
+        state->texture_arrays.insert(info.texture_array);
+        const auto& handle = info.texture_array->GetImageHandle();
+        if (info.bound[index] != handle.version) {
+          info.bound[index] = handle.version;
+          state->set_image_updates.emplace_back(
+              descriptor_set, binding, info.texture_array->GetSampler(),
+              handle.image->GetView());
+        }
+      } break;
+      case BindingType::kConstants: {
+        auto& info = item.constants;
+        state->buffers.insert(info.buffer);
+        const auto& handle = info.buffer->GetBufferHandle(state->frame);
+        if (info.bound[index] != handle.version) {
+          info.bound[index] = handle.version;
+          state->set_buffer_updates.emplace_back(descriptor_set, binding,
+                                                 handle.buffer,
+                                                 info.buffer->GetValueSize());
+        }
+      } break;
     }
   }
 }
 
 bool VulkanBindingData::Validate(int index, gb::TypeKey* type) const {
   static gb::TypeKey* texture_type = gb::TypeKey::Get<Texture*>();
+  static gb::TypeKey* texture_array_type = gb::TypeKey::Get<TextureArray*>();
 
   if (index < 0 || index > static_cast<int>(data_.size())) {
     return false;
@@ -102,6 +118,8 @@ bool VulkanBindingData::Validate(int index, gb::TypeKey* type) const {
       return false;
     case BindingType::kTexture:
       return type == texture_type;
+    case BindingType::kTextureArray:
+      return type == texture_array_type;
     case BindingType::kConstants:
       return item.constants.type->GetType() == type;
   }
@@ -111,36 +129,64 @@ bool VulkanBindingData::Validate(int index, gb::TypeKey* type) const {
 
 void VulkanBindingData::DoSet(int index, const void* value) {
   auto& item = data_[index];
-  if (item.binding_type == BindingType::kConstants) {
-    item.constants.buffer->SetValue(buffer_offset_index_, value);
-  } else {
-    auto* texture = *static_cast<VulkanTexture* const*>(value);
-    auto& info = item.texture;
-    if (texture != info.texture) {
-      info.texture = texture;
-      for (auto& bound : info.bound) {
-        bound = -1;
+  switch (item.binding_type) {
+    case BindingType::kConstants:
+      item.constants.buffer->SetValue(buffer_offset_index_, value);
+      break;
+    case BindingType::kTexture: {
+      auto* texture = *static_cast<VulkanTexture* const*>(value);
+      auto& info = item.texture;
+      if (texture != info.texture) {
+        info.texture = texture;
+        for (auto& bound : info.bound) {
+          bound = -1;
+        }
       }
-    }
+    } break;
+    case BindingType::kTextureArray: {
+      auto* texture_array = *static_cast<VulkanTextureArray* const*>(value);
+      auto& info = item.texture_array;
+      if (texture_array != info.texture_array) {
+        info.texture_array = texture_array;
+        for (auto& bound : info.bound) {
+          bound = -1;
+        }
+      }
+    } break;
   }
 }
 
 void VulkanBindingData::DoGet(int index, void* value) const {
   const auto& item = data_[index];
-  if (item.binding_type == BindingType::kConstants) {
-    item.constants.buffer->GetValue(buffer_offset_index_, value);
-  } else {
-    *static_cast<Texture**>(value) =
-        static_cast<Texture*>(item.texture.texture);
+  switch (item.binding_type) {
+    case BindingType::kConstants:
+      item.constants.buffer->GetValue(buffer_offset_index_, value);
+      break;
+    case BindingType::kTexture:
+      *static_cast<Texture**>(value) = item.texture.texture;
+      break;
+    case BindingType::kTextureArray:
+      *static_cast<TextureArray**>(value) = item.texture_array.texture_array;
+      break;
   }
 }
 
 void VulkanBindingData::DoGetDependencies(
     gb::ResourceDependencyList* dependencies) const {
   for (const auto& item : data_) {
-    if (item.binding_type == BindingType::kTexture &&
-        item.texture.texture != nullptr) {
-      dependencies->push_back(item.texture.texture);
+    switch (item.binding_type) {
+      case BindingType::kConstants:
+        break;
+      case BindingType::kTexture:
+        if (item.texture.texture != nullptr) {
+          dependencies->push_back(item.texture.texture);
+        }
+        break;
+      case BindingType::kTextureArray:
+        if (item.texture_array.texture_array != nullptr) {
+          dependencies->push_back(item.texture_array.texture_array);
+        }
+        break;
     }
   }
 }

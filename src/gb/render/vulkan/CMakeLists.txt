@@ -23,6 +23,7 @@ set(gb_render_vulkan_SOURCE
   vulkan_scene_type.cc vulkan_scene_type.h
   vulkan_shader_code.cc vulkan_shader_code.h
   vulkan_texture.cc vulkan_texture.h
+  vulkan_texture_array.cc vulkan_texture_array.h
   vulkan_types.h
   vulkan_window.h
 )

@@ -24,7 +24,8 @@ std::unique_ptr<VulkanDescriptorPool> VulkanDescriptorPool::Create(
     }
 
     vk::DescriptorType type;
-    if (binding.binding_type == BindingType::kTexture) {
+    if (binding.binding_type == BindingType::kTexture ||
+        binding.binding_type == BindingType::kTextureArray) {
       counts.texture += 1;
       type = vk::DescriptorType::eCombinedImageSampler;
     } else {

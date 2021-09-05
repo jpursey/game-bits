@@ -150,7 +150,7 @@ inline const Texture* BindingData::GetTexture(int index) const {
 }
 
 inline void BindingData::SetTextureArray(int index, TextureArray* texture) {
-  RENDER_ASSERT(Validate(index, TypeKey::Get<Texture*>()));
+  RENDER_ASSERT(Validate(index, TypeKey::Get<TextureArray*>()));
   DoSet(index, &texture);
 }
 

@@ -31,6 +31,7 @@ class VulkanScene;
 class VulkanSceneType;
 class VulkanShaderCode;
 class VulkanTexture;
+class VulkanTextureArray;
 class VulkanWindow;
 
 GB_BEGIN_ACCESS_TOKEN(VulkanInternal)

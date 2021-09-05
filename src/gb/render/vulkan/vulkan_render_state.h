@@ -35,17 +35,40 @@ struct VulkanRenderState {
   using SceneDraw = absl::flat_hash_map<VulkanScene*, PipelineDraw>;
   using SceneGroupDraw = std::map<int, SceneDraw>;
 
+  struct ImageBarrier {
+    ImageBarrier(vk::Image image, uint32_t mip_level_count, uint32_t layer = 0)
+        : image(image), mip_level_count(mip_level_count), layer(layer) {}
+    vk::Image image;
+    uint32_t mip_level_count;
+    uint32_t layer;
+  };
+
   struct ImageUpdate {
     ImageUpdate(vk::Buffer src_buffer, uint32_t src_offset, vk::Image dst_image,
                 uint32_t mip_level, uint32_t image_width, uint32_t image_height,
-                int32_t region_x, int32_t region_y, uint32_t region_width,
-                uint32_t region_height)
+                uint32_t image_layer = 0)
         : src_buffer(src_buffer),
           src_offset(src_offset),
           dst_image(dst_image),
           mip_level(mip_level),
           image_width(image_width),
           image_height(image_height),
+          image_layer(image_layer),
+          region_x(0),
+          region_y(0),
+          region_width(image_width),
+          region_height(image_height) {}
+    ImageUpdate(vk::Buffer src_buffer, uint32_t src_offset, vk::Image dst_image,
+                uint32_t mip_level, uint32_t image_width, uint32_t image_height,
+                uint32_t image_layer, int32_t region_x, int32_t region_y,
+                uint32_t region_width, uint32_t region_height)
+        : src_buffer(src_buffer),
+          src_offset(src_offset),
+          dst_image(dst_image),
+          mip_level(mip_level),
+          image_width(image_width),
+          image_height(image_height),
+          image_layer(image_layer),
           region_x(region_x),
           region_y(region_y),
           region_width(region_width),
@@ -56,6 +79,7 @@ struct VulkanRenderState {
     uint32_t mip_level;
     uint32_t image_width;
     uint32_t image_height;
+    uint32_t image_layer;
     int32_t region_x;
     int32_t region_y;
     uint32_t region_width;
@@ -107,8 +131,10 @@ struct VulkanRenderState {
   absl::flat_hash_set<VulkanBindingData*> binding_data;
   absl::flat_hash_set<VulkanRenderBuffer*> buffers;
   absl::flat_hash_set<VulkanTexture*> textures;
+  absl::flat_hash_set<VulkanTextureArray*> texture_arrays;
 
   // Accumulates all updates to resources in a frame.
+  std::vector<ImageBarrier> image_barriers;
   std::vector<ImageUpdate> image_updates;
   std::vector<BufferUpdate> buffer_updates;
   std::vector<SetImageUpdate> set_image_updates;

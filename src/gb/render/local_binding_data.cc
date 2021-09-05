@@ -136,8 +136,7 @@ void LocalBindingData::DoGetDependencies(
       if (*texture != nullptr) {
         dependencies->push_back(*texture);
       }
-    }
-    if (type == texture_array_type) {
+    } else if (type == texture_array_type) {
       TextureArray** texture_array =
           static_cast<TextureArray**>(std::get<void*>(value));
       if (*texture_array != nullptr) {

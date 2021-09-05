@@ -154,6 +154,12 @@ bool VulkanBindingDataFactory::AddBindingGroup() {
       for (auto& bound : info.bound) {
         bound = false;
       }
+    } else if (binding.binding_type == BindingType::kTextureArray) {
+      auto& info = item.texture_array;
+      info.texture_array = nullptr;
+      for (auto& bound : info.bound) {
+        bound = false;
+      }
     } else if (binding.binding_type == BindingType::kConstants) {
       const int value_size = binding.constants_type->GetSize();
       auto buffer = VulkanRenderBuffer::Create(

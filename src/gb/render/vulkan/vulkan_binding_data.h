@@ -25,6 +25,10 @@ class VulkanBindingData : public BindingData {
     VulkanTexture* texture;
     int bound[kMaxFramesInFlight];
   };
+  struct TextureArrayInfo {
+    VulkanTextureArray* texture_array;
+    int bound[kMaxFramesInFlight];
+  };
   struct ConstantsInfo {
     const RenderDataType* type;
     VulkanRenderBuffer* buffer;
@@ -37,6 +41,11 @@ class VulkanBindingData : public BindingData {
       texture.texture = texture_resource;
       std::memset(texture.bound, 0, sizeof(texture.bound));
     }
+    explicit DataItem(VulkanTextureArray* texture_array_resource)
+        : binding_type(BindingType::kTextureArray) {
+      texture_array.texture_array = texture_array_resource;
+      std::memset(texture_array.bound, 0, sizeof(texture_array.bound));
+    }
     DataItem(const RenderDataType* type, VulkanRenderBuffer* buffer)
         : binding_type(BindingType::kConstants) {
       constants.type = type;
@@ -47,6 +56,7 @@ class VulkanBindingData : public BindingData {
     BindingType binding_type;
     union {
       TextureInfo texture;
+      TextureArrayInfo texture_array;
       ConstantsInfo constants;
     };
   };

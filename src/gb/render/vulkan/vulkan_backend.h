@@ -94,7 +94,6 @@ class VulkanBackend final : public RenderBackend {
       kConstraintDebugMessageType, kInOptional,
       vk::DebugUtilsMessageTypeFlagsEXT,
       vk::DebugUtilsMessageTypeFlagsEXT{
-          vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
           vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance |
           vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation});
 
@@ -273,6 +272,8 @@ class VulkanBackend final : public RenderBackend {
                        vk::Semaphore* semaphore);
   bool CreateFence(const vk::FenceCreateInfo& create_info, vk::Fence* fence);
   vk::ImageView CreateImageView(vk::Image image, vk::Format format);
+  vk::Sampler GetSamplerWithValidation(SamplerOptions options, int width,
+                                       int height);
   vk::Sampler GetSampler(SamplerOptions options, int width, int height);
 
   void CallFrameCallbacks(std::vector<FrameCallback>* callbacks);

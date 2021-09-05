@@ -20,6 +20,7 @@
 #include "gb/render/vulkan/vulkan_scene_type.h"
 #include "gb/render/vulkan/vulkan_shader_code.h"
 #include "gb/render/vulkan/vulkan_texture.h"
+#include "gb/render/vulkan/vulkan_texture_array.h"
 #include "gb/render/vulkan/vulkan_window.h"
 #include "glog/logging.h"
 
@@ -486,7 +487,7 @@ bool VulkanBackend::InitSwapChain() {
       static_cast<int>(swap_extent_.height), 1, format_.format,
       vk::ImageUsageFlagBits::eTransientAttachment |
           vk::ImageUsageFlagBits::eColorAttachment,
-      vk::ImageTiling::eOptimal, msaa_count_);
+      VulkanImage::Options().SetSampleCount(msaa_count_));
   if (color_image_ == nullptr) {
     LOG(ERROR) << "Failed to create color image for swapchain";
     return false;
@@ -496,7 +497,7 @@ bool VulkanBackend::InitSwapChain() {
       this, static_cast<int>(swap_extent_.width),
       static_cast<int>(swap_extent_.height), 1, depth_format_,
       vk::ImageUsageFlagBits::eDepthStencilAttachment,
-      vk::ImageTiling::eOptimal, msaa_count_);
+      VulkanImage::Options().SetSampleCount(msaa_count_));
   if (depth_image_ == nullptr) {
     LOG(ERROR) << "Failed to create depth image for swapchain";
     return false;
@@ -660,13 +661,6 @@ void VulkanBackend::OnDebugMessage(
     vk::DebugUtilsMessageSeverityFlagBitsEXT message_severity,
     vk::DebugUtilsMessageTypeFlagsEXT message_type,
     const vk::DebugUtilsMessengerCallbackDataEXT& callback_data) {
-  // The first call is always that this messenger was registered, which is
-  // profoundly uninteresting.
-  static bool first_call = true;
-  if (first_call) {
-    first_call = false;
-    return;
-  }
   LOG(INFO) << "Vulkan layer: " << callback_data.pMessage;
 }
 
@@ -698,6 +692,32 @@ vk::ImageView VulkanBackend::CreateImageView(vk::Image image,
     return nullptr;
   }
   return image_view;
+}
+
+vk::Sampler VulkanBackend::GetSamplerWithValidation(SamplerOptions options,
+                                                    int width, int height) {
+  if (options.tile_size != 0 &&
+      (width % options.tile_size != 0 || height % options.tile_size != 0)) {
+    LOG(ERROR) << "Texture tile size " << options.tile_size
+               << " is not evenly divisible into dimensions " << width << ","
+               << height;
+    return {};
+  }
+
+  if (options.mipmap) {
+    if ((width & (width - 1)) != 0 || (height & (height - 1)) != 0) {
+      LOG(ERROR) << "Texture dimensions " << width << "," << height
+                 << " must be a power of two for mipmapping";
+      return {};
+    }
+    if ((options.tile_size & (options.tile_size - 1)) != 0) {
+      LOG(ERROR) << "Texture tile size " << options.tile_size
+                 << " must be a power of two for mipmapping";
+      return {};
+    }
+  }
+
+  return GetSampler(options, width, height);
 }
 
 vk::Sampler VulkanBackend::GetSampler(SamplerOptions options, int width,
@@ -839,28 +859,7 @@ Texture* VulkanBackend::CreateTexture(RenderInternal, gb::ResourceEntry entry,
                                       DataVolatility volatility, int width,
                                       int height,
                                       const SamplerOptions& options) {
-  if (options.tile_size != 0 &&
-      (width % options.tile_size != 0 || height % options.tile_size != 0)) {
-    LOG(ERROR) << "Texture tile size " << options.tile_size
-               << " is not evenly divisible into dimensions " << width << ","
-               << height;
-    return nullptr;
-  }
-
-  if (options.mipmap) {
-    if ((width & (width - 1)) != 0 || (height & (height - 1)) != 0) {
-      LOG(ERROR) << "Texture dimensions " << width << "," << height
-                 << " must be a power of two for mipmapping";
-      return nullptr;
-    }
-    if ((options.tile_size & (options.tile_size - 1)) != 0) {
-      LOG(ERROR) << "Texture tile size " << options.tile_size
-                 << " must be a power of two for mipmapping";
-      return nullptr;
-    }
-  }
-
-  auto sampler = GetSampler(options, width, height);
+  auto sampler = GetSamplerWithValidation(options, width, height);
   if (!sampler) {
     return nullptr;
   }
@@ -871,8 +870,12 @@ Texture* VulkanBackend::CreateTexture(RenderInternal, gb::ResourceEntry entry,
 TextureArray* VulkanBackend::CreateTextureArray(
     RenderInternal, ResourceEntry entry, DataVolatility volatility, int count,
     int width, int height, const SamplerOptions& options) {
-  // TODO
-  return nullptr;
+  auto sampler = GetSamplerWithValidation(options, width, height);
+  if (!sampler) {
+    return nullptr;
+  }
+  return VulkanTextureArray::Create(std::move(entry), this, sampler, volatility,
+                                    count, width, height, options);
 }
 
 std::unique_ptr<ShaderCode> VulkanBackend::CreateShaderCode(RenderInternal,
@@ -1069,6 +1072,9 @@ void VulkanBackend::EndFrameProcessUpdates() {
   for (VulkanTexture* texture : render_state_.textures) {
     texture->OnRender(&render_state_);
   }
+  for (VulkanTextureArray* texture_array : render_state_.texture_arrays) {
+    texture_array->OnRender(&render_state_);
+  }
 
   // Update all changed resources.
   if (!render_state_.buffer_updates.empty()) {
@@ -1111,31 +1117,22 @@ void VulkanBackend::EndFrameUpdateImages() {
   auto& frame = frames_[frame_index_];
 
   std::vector<vk::ImageMemoryBarrier> barriers;
-  barriers.reserve(render_state_.image_updates.size());
+  barriers.reserve(render_state_.image_barriers.size());
 
   // Prep images for receiving new image data.
-  vk::Image last_image;
-  for (size_t i = 0; i < render_state_.image_updates.size(); ++i) {
-    const auto& update = render_state_.image_updates[i];
-
-    // The lowest level mip may have multiple regions being updated, but we
-    // don't want/need to have a barrier for all of them.
-    if (update.dst_image == last_image && update.mip_level == 0) {
-      continue;
-    }
-
-    last_image = update.dst_image;
+  for (size_t i = 0; i < render_state_.image_barriers.size(); ++i) {
+    const auto& barrier = render_state_.image_barriers[i];
     barriers.emplace_back()
         .setOldLayout(vk::ImageLayout::eUndefined)
         .setNewLayout(vk::ImageLayout::eTransferDstOptimal)
         .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
         .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-        .setImage(update.dst_image)
+        .setImage(barrier.image)
         .setSubresourceRange(vk::ImageSubresourceRange()
                                  .setAspectMask(vk::ImageAspectFlagBits::eColor)
-                                 .setBaseMipLevel(update.mip_level)
-                                 .setLevelCount(1)
-                                 .setBaseArrayLayer(0)
+                                 .setBaseMipLevel(0)
+                                 .setLevelCount(barrier.mip_level_count)
+                                 .setBaseArrayLayer(barrier.layer)
                                  .setLayerCount(1))
         .setSrcAccessMask({})
         .setDstAccessMask(vk::AccessFlagBits::eTransferWrite);
@@ -1164,7 +1161,7 @@ void VulkanBackend::EndFrameUpdateImages() {
                  vk::ImageSubresourceLayers()
                      .setAspectMask(vk::ImageAspectFlagBits::eColor)
                      .setMipLevel(update.mip_level)
-                     .setBaseArrayLayer(0)
+                     .setBaseArrayLayer(update.image_layer)
                      .setLayerCount(1))
              .setImageOffset({update.region_x, update.region_y, 0})
              .setImageExtent({update.region_width, update.region_height, 1})});

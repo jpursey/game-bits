@@ -33,6 +33,7 @@ class RenderTest;
 class Shader;
 class ShaderCode;
 class Texture;
+class TextureArray;
 class TextureView;
 struct Binding;
 struct DrawCommand;
