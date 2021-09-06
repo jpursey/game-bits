@@ -32,5 +32,6 @@ inline constexpr glm::vec2 kBlockUvOffset[5] = {
     {0 * kBlockUvScale, 0 * kBlockUvScale},  // kBlockRock1
     {1 * kBlockUvScale, 0 * kBlockUvScale},  // kBlockRock2
 };
+inline constexpr int kBlockTextureIndex[5] = {0, 3, 2, 1, 0};
 
 #endif  // BLOCK_H_

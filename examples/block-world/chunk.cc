@@ -351,7 +351,7 @@ void Chunk::AddMesh(MeshContext* context, int x, int y, int z) {
       const int vertex_index = kCubeSideVertex[side][i];
       vertex.color = kShadowColor[context->vertex_block_count[vertex_index]];
       vertex.pos = position + kCubePosition[vertex_index];
-      vertex.uv = kBlockUvOffset[block_id] + kCubeSideUv[i] * kBlockUvEndScale;
+      vertex.uv = glm::vec3(kCubeSideUv[i], kBlockTextureIndex[block_id]);
       context->vertices.push_back(vertex);
     }
     for (int face = 0; face < 2; ++face) {

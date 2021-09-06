@@ -8,7 +8,7 @@
 
 layout(location = 0) in vec3 in_pos;
 layout(location = 1) in vec3 in_normal;
-layout(location = 2) in vec2 in_uv;
+layout(location = 2) in vec3 in_uv;
 layout(location = 3) in vec4 in_color;
 
 layout(location = 0) out vec4 out_color;
@@ -19,7 +19,7 @@ layout(set = 0, binding = 1) uniform SceneLightData {
   vec3 s_sun_direction;
 };
 
-layout(set = 1, binding = 0) uniform sampler2D m_sampler;
+layout(set = 1, binding = 0) uniform sampler2DArray m_sampler;
 
 vec3 GetDirectionalLight(vec3 normal, vec4 color, vec3 direction) {
   vec3 to_light = normalize(-direction);

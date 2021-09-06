@@ -4,6 +4,7 @@
 #include <memory>
 
 #include "gb/base/validated_context.h"
+#include "gb/file/file_types.h"
 #include "gb/imgui/imgui_types.h"
 #include "gb/render/material.h"
 #include "gb/render/render_scene_type.h"
@@ -16,6 +17,10 @@ class WorldResources {
   //----------------------------------------------------------------------------
   // Contract constraints
   //----------------------------------------------------------------------------
+
+  // REQUIRED: FileSystem interface.
+  static GB_CONTEXT_CONSTRAINT(kConstraintFileSystem, kInRequired,
+                               gb::FileSystem);
 
   // REQUIRED: ResourceSystem interface.
   static GB_CONTEXT_CONSTRAINT(kConstraintResourceSystem, kInRequired,
@@ -30,8 +35,8 @@ class WorldResources {
                                gb::ImGuiInstance);
 
   using Contract =
-      gb::ContextContract<kConstraintResourceSystem, kConstraintRenderSystem,
-                          kConstraintGuiInstance>;
+      gb::ContextContract<kConstraintFileSystem, kConstraintResourceSystem,
+                          kConstraintRenderSystem, kConstraintGuiInstance>;
 
   //----------------------------------------------------------------------------
   // Construction / Destruction
@@ -56,7 +61,9 @@ class WorldResources {
   // GUI resources
   //----------------------------------------------------------------------------
 
-  ImTextureID GetBlockGuiTexture() const { return chunk_gui_texture_; }
+  ImTextureID GetBlockGuiTexture(int block_id) const {
+    return chunk_gui_textures_[block_id];
+  }
 
  private:
   WorldResources(gb::ValidatedContext context);
@@ -68,8 +75,8 @@ class WorldResources {
   gb::ResourceSet resources_;
   gb::RenderSceneType* scene_type_ = nullptr;
   gb::Material* chunk_material_ = nullptr;
-  gb::Texture* block_texture_ = nullptr;
-  ImTextureID chunk_gui_texture_ = nullptr;
+  gb::TextureArray* block_texture_ = nullptr;
+  std::vector<ImTextureID> chunk_gui_textures_;
 };
 
 #endif  // WORLD_RESOURCES_H_

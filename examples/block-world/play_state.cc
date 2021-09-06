@@ -128,12 +128,9 @@ void PlayState::DrawGui() {
   for (BlockId block = kFirstSolidBlock; block <= kLastSoldBlock; ++block) {
     ImGui::SetCursorScreenPos(hud_start);
     ImGui::Image(
-        world_resources_->GetBlockGuiTexture(),
+        world_resources_->GetBlockGuiTexture(block),
         {static_cast<float>(kHudBlockSize), static_cast<float>(kHudBlockSize)},
-        {kBlockUvOffset[block].x, kBlockUvOffset[block].y},
-        {kBlockUvOffset[block].x + kBlockUvEndScale,
-         kBlockUvOffset[block].y + kBlockUvEndScale},
-        {1, 1, 1, 1},
+        {0, 0}, {1, 1}, {1, 1, 1, 1},
         {1, 1, 1, static_cast<float>(block == selected_block_ ? 1 : 0)});
     ImGui::SetCursorScreenPos(hud_start);
     if (ImGui::Selectable(absl::StrCat("##HUD_", block).c_str(), true, 0,
