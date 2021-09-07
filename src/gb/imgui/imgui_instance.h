@@ -79,6 +79,7 @@ class ImGuiInstance final {
   //
   // The texture will remain loaded until the ImGuiInstance is destroyed.
   ImTextureID AddTexture(gb::Texture* texture);
+  ImTextureID AddTexture(gb::TextureArray* texture_array, int index);
 
   //----------------------------------------------------------------------------
   // Properties
