@@ -55,7 +55,7 @@ void ResourceManager::InitGenericReleaseHandler(
     return;
   }
   if (generic_release_handler_ != nullptr) {
-    LOG(ERROR) << "Generic resource handler already set.";
+    LOG(ERROR) << "Generic release handler already set.";
     return;
   }
   generic_release_handler_ = std::move(callback);
@@ -70,7 +70,7 @@ void ResourceManager::DoInitReleaseHandler(TypeKey* type,
   }
   auto& callbacks = typed_callbacks_[type];
   if (callbacks.release_handler) {
-    LOG(ERROR) << "Type-specific resource handler already set for type "
+    LOG(ERROR) << "Type-specific release handler already set for type "
                << type->GetTypeName();
     return;
   }

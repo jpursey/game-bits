@@ -116,22 +116,22 @@ class Resource {
   // anonymous (no name), but if the name is set, then it will be unique within
   // its resource type.
   //
-  // Resource IDs should be preferred as a programmatic key to another resource
-  // when a pointer is not possible or appropriate. For instance, when a weak
-  // reference to a resource is desired, or when serializing resources to/from
-  // storage.
+  // Resource IDs should be preferred over resource names as a programmatic key
+  // to another resource when a pointer is not possible or appropriate. For
+  // instance, when a weak reference to a resource is desired, or when
+  // serializing resources to/from storage.
   std::string_view GetResourceName() const { return entry_.GetName(); }
 
-  // Set the resource visibility in the ResourceSystem.
+  // Set the resource visibility in the associated ResourceSystem.
   //
   // Resource visibility determines whether a resource may be looked up by ID or
-  // name via ResourceManager::Get. The default behavior is that a resource
+  // name via ResourceSystem::Get. The default behavior is that a resource
   // becomes visible the first time it is referenced (held by a ResourcePtr or
   // ResourceSet). Specific resource types may leave resources hidden by
   // default, or their managers may make the resource visible prior to it being
   // explicitiy referenced.
   //
-  // Note that visibility has no effect on the ResourceManager::Load
+  // Note that visibility has no effect on the ResourceSystem::Load
   // operation, which may retrieve an existing resource if it was already loaded
   // under the specified name.
   void SetResourceVisible(bool visible = true);
@@ -144,7 +144,7 @@ class Resource {
   // implicit dependency graph to be circular.
   //
   // This method must NOT remove, clear, or otherwise modifiy the passed in
-  // dependency list, as this method may be used to accumulaate dependencies.
+  // dependency list, as this method may be used to accumulate dependencies.
   virtual void GetResourceDependencies(
       ResourceDependencyList* dependencies) const {}
 
@@ -175,12 +175,12 @@ class Resource {
                     ResourceFlags flags = kDefaultResourceFlags);
 
   // Derived resource types should also have protected or private destructors.
-  // The only valid way to delete a resource is by calling
-  // Delete (if it is not referenced and was never visible in the resource
-  // system), or via ResourceManager::MaybeDeleteResource (at any time).
+  // The only valid way to delete a resource is by calling Delete (if it is not
+  // referenced and was never visible in the resource system), or via
+  // ResourceManager::MaybeDeleteResource (at any time).
   virtual ~Resource();
 
-  // Explicitly delete the resource.
+  // Explicitly delete the resource, invoking the destructor.
   //
   // This may be called only if there are no references to the resource, and it
   // is has never been visible in the resource system. This is intended to be

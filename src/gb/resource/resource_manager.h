@@ -18,18 +18,30 @@
 
 namespace gb {
 
-// A resource manager controls the lifecycle for resources.
+// A resource manager defines the lifecycle for resources of one or more
+// resource types in a resource system.
 //
-// Every resource requires a resource manager to be constructed and can only be
-// deleted via its manager.
+// Every resource requires a resource manager to be constructed and registered
+// with a resource system in order to be loaded, created, and subsequently
+// deleted. The ResourceManager class itself is a utility class that allows
+// other classes to create and delete resources (generally as a private member
+// of a system like the RenderSystem or other internal implementation). Only one
+// ResourceManager instance can create or delete resources of a given type for a
+// ResourceSystem.
 //
-// Resource types that are set to auto-release, inform the ResourceManager when
-// there are no more ResourceSet or ResourcePtr references to it. By default,
-// this will result in the resource being deleted, but individual resource types
-// may override this behavior.
+// Resource types that are set to auto-release, use the registered release
+// handler when there are no more ResourceSet or ResourcePtr references to it.
+// By default, this will result in the resource being deleted, but individual
+// resource types may override this behavior.
 //
 // Resources can also be deleted by calling MaybeDeleteResource, which will
-// delete the resource iff there are no existing references to it.
+// delete the resource iff there are no existing references to it (it does not
+// call the release handler).
+//
+// Similarly, resource types may have loaders registered, which are used by the
+// resource system to load a resource by type and resource name. If no londers
+// are registered with a ResourceManager for a resource, then loading is not
+// supported for that resource type.
 //
 // A ResourceManager MUST outlive any ResourceSet or ResourcePtr that refers to
 // a resource within this manager. Otherwise, any change to those classes will
@@ -62,6 +74,10 @@ class ResourceManager final {
 
   // Initializes a loader for the specified type.
   //
+  // If a type-specific loader is not specified, then loading will fall back on
+  // the generic loader. If no generic loader is specified either, then loading
+  // will fail.
+  //
   // InitLoader must only be called before the manager is registered with a
   // ResourceSystem, and may only be called once for any given type. Additional
   // calls for a previously used type will log an error and be ignored.
@@ -71,6 +87,9 @@ class ResourceManager final {
   // Initializes a generic loader which will handle all resource load requests
   // that do not have type-specific loaders.
   //
+  // If neither a type-specific or generic loader is registered for a resource
+  // type, then loading will fail.
+  //
   // InitGenericLoader must only be called before the manager is registered with
   // a ResourceSystem, and may only be called once. Additional calls will log an
   // error and be ignored.
@@ -78,6 +97,10 @@ class ResourceManager final {
 
   // Intializes a handler which will be called when the last reference to a
   // resource of the specified type is reached.
+  //
+  // If a type-specific release handler is not specified, then release handling
+  // will fallback on the generic release handler. If no generic release handler
+  // is specified either, then MaybeDeleteResource is called.
   //
   // InitReleaseHandler must only be called before the manager is registered
   // with a ResourceSystem, and may only be called once for any given type.
@@ -89,7 +112,8 @@ class ResourceManager final {
   // Initializes a generic release handler, which will handle release behavior
   // for any resource types that do not have type-specific release handlers.
   //
-  // If this is not set, the generic behavior is to call MaybeDeleteResource.
+  // If neither a type-specific or generic release handler is registered for a
+  // resource type, the generic behavior is to call MaybeDeleteResource.
   //
   // InitGenericReleaseHandler must only be called before the manager is
   // registered with a ResourceSystem, and may only be called once. Additional
