@@ -4,68 +4,14 @@
 #include "gb/file/file.h"
 #include "gb/file/file_system.h"
 #include "gb/image/image.h"
+#include "gb/image/image_file.h"
 #include "gb/imgui/imgui_instance.h"
 #include "gb/render/render_system.h"
 #include "gb/resource/resource_system.h"
-#include "stb_image.h"
 
 // Game includes
 #include "block.h"
 #include "scene_types.h"
-
-namespace {
-
-std::unique_ptr<gb::Image> LoadImage(gb::FileSystem* file_system,
-                                     absl::string_view filename) {
-  auto file = file_system->OpenFile(filename, gb::kReadFileFlags);
-  if (file == nullptr) {
-    LOG(ERROR) << "Could not open iamge: " << filename;
-    return nullptr;
-  }
-
-  struct IoState {
-    int64_t size;
-    gb::File* file;
-  };
-  static stbi_io_callbacks io_callbacks = {
-      // Read callback.
-      [](void* user, char* data, int size) -> int {
-        auto* state = static_cast<IoState*>(user);
-        return static_cast<int>(state->file->Read(data, size));
-      },
-      // Skip callback.
-      [](void* user, int n) -> void {
-        auto* state = static_cast<IoState*>(user);
-        state->file->SeekBy(n);
-      },
-      // End-of-file callback.
-      [](void* user) -> int {
-        auto* state = static_cast<IoState*>(user);
-        const int64_t position = state->file->GetPosition();
-        return position < 0 || position == state->size;
-      },
-  };
-
-  IoState state;
-  file->SeekEnd();
-  state.size = file->GetPosition();
-  state.file = file.get();
-  file->SeekBegin();
-
-  int width;
-  int height;
-  int channels;
-  void* pixels = stbi_load_from_callbacks(&io_callbacks, &state, &width,
-                                          &height, &channels, STBI_rgb_alpha);
-  if (pixels == nullptr) {
-    LOG(ERROR) << "Failed to read texture file with error: "
-               << stbi_failure_reason();
-    return nullptr;
-  }
-  return std::make_unique<gb::Image>(width, height, pixels, stbi_image_free);
-}
-
-}  // namespace
 
 WorldResources::WorldResources(gb::ValidatedContext context)
     : context_(std::move(context)) {}
@@ -214,8 +160,8 @@ bool WorldResources::InitGraphics() {
     return false;
   }
 
-  auto block_image =
-      LoadImage(context_.GetPtr<gb::FileSystem>(), "asset:/textures/block.png");
+  auto block_image = gb::LoadImage(context_.GetPtr<gb::FileSystem>(),
+                                   "asset:/textures/block.png");
   if (block_image == nullptr) {
     return false;
   }

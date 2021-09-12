@@ -59,6 +59,7 @@ set(block_world_DEPS
   absl::strings
   gb_file
   gb_game
+  gb_image
   gb_imgui
   gb_imgui_sdl
   gb_message

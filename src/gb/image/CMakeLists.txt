@@ -5,6 +5,7 @@
 
 set(gb_image_SOURCE
   image.cc image.h
+  image_file.cc image_file.h
   image_types.h
   image_view.cc image_view.h
   pixel.h
@@ -13,6 +14,8 @@ set(gb_image_SOURCE
 set(gb_image_DEPS
   absl::span
   gb_base
+  gb_file
+  stb_image
 )
 
 set(gb_image_LIBS
