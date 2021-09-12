@@ -19,6 +19,16 @@
 
 namespace gb {
 
+// This HAS to have external linkage or we get a compile warning (which becomes
+// an error) in flatbuffers.h
+struct ResourceFileTestPoint {
+  int x;
+  int y;
+  int z;
+};
+
+namespace {
+
 using ::testing::Contains;
 using ::testing::IsEmpty;
 using ::testing::Not;
@@ -34,11 +44,7 @@ constexpr ChunkType kChunkTypeResourceC = {'G', 'T', 'R', 'C'};
 
 using KeyValueMap = std::map<std::string, float>;
 
-struct Point {
-  int x;
-  int y;
-  int z;
-};
+using Point = ResourceFileTestPoint;
 
 struct KeyValueChunk {
   ChunkPtr<const char> key;
@@ -1422,4 +1428,5 @@ TEST_F(ResourceFileTest, LoadResourceDependencies) {
   EXPECT_EQ(resource->GetB()->GetResourceName(), "mem:/b");
 }
 
+}  // namespace
 }  // namespace gb
