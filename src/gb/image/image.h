@@ -39,15 +39,19 @@ class Image final {
   // Properties
   //----------------------------------------------------------------------------
 
-  // Returns the current width and height in pixels.
+  // Returns the current image attributes.
   int GetWidth() const { return view_.GetWidth(); }
   int GetHeight() const { return view_.GetHeight(); }
+  int GetCount() const { return view_.GetCount(); }
+  int GetSizeInBytes() const { return view_.GetSizeInBytes(); }
 
   // The following methods return direct read-only access to the entire pixel
   // buffer as either RGBA pixels (Pixel*), packed pixels (uint32_t*), or raw
   // memory (void*).
-  const Pixel* GetPixels() const { return view_.GetPixels(); }
-  const uint32_t* GetPackedPixels() const { return view_.GetPackedPixels(); }
+  absl::Span<const Pixel> GetPixels() const { return view_.GetPixels(); }
+  absl::Span<const uint32_t> GetPackedPixels() const {
+    return view_.GetPackedPixels();
+  }
   const void* GetRawPixels() const { return view_.GetRawPixels(); }
 
   //----------------------------------------------------------------------------

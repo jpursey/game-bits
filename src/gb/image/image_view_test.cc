@@ -88,8 +88,8 @@ TEST(ImageViewTest, Properties) {
   EXPECT_EQ(const_view.GetCount(), kImageWidth * kImageHeight);
   EXPECT_EQ(const_view.GetSizeInBytes(),
             kImageWidth * kImageHeight * sizeof(Pixel));
-  EXPECT_EQ(const_view.GetPixels(), image.GetRawPixels());
-  EXPECT_EQ(const_view.GetPackedPixels(), image.GetRawPixels());
+  EXPECT_EQ(const_view.GetPixels(), image.GetPixels());
+  EXPECT_EQ(const_view.GetPackedPixels(), image.GetPackedPixels());
   EXPECT_EQ(const_view.GetRawPixels(), image.GetRawPixels());
   EXPECT_FALSE(const_view.IsModified());
 }

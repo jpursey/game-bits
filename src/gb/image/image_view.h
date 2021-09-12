@@ -71,9 +71,11 @@ class ImageView {
   // The following methods return direct read-only access to the entire pixel
   // buffer as either RGBA pixels (Pixel*), packed pixels (uint32_t*), or raw
   // memory (void*).
-  const Pixel* GetPixels() const { return static_cast<const Pixel*>(pixels_); }
-  const uint32_t* GetPackedPixels() const {
-    return static_cast<const uint32_t*>(pixels_);
+  absl::Span<const Pixel> GetPixels() const {
+    return absl::Span(static_cast<const Pixel*>(pixels_), width_ * height_);
+  }
+  absl::Span<const uint32_t> GetPackedPixels() const {
+    return absl::Span(static_cast<const uint32_t*>(pixels_), width_ * height_);
   }
   const void* GetRawPixels() const { return pixels_; }
 
