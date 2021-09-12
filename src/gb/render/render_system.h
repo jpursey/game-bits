@@ -450,7 +450,7 @@ class RenderSystem final {
                             ResourceEntry entry);
   bool SaveTextureChunk(Context* context, Texture* texture,
                         flatbuffers::FlatBufferBuilder* builder);
-  Texture* LoadStbTexture(TextureLoadContract contract, File* file);
+  Texture* LoadTextureFile(TextureLoadContract contract, File* file);
 
   TextureArray* DoCreateTextureArray(DataVolatility volatility, int count,
                                      int width, int height,

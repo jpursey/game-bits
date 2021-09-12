@@ -13,13 +13,13 @@
 #include "gb/base/scoped_call.h"
 #include "gb/file/file.h"
 #include "gb/file/file_system.h"
+#include "gb/image/image_file.h"
 #include "gb/render/render_backend.h"
 #include "gb/render/render_resource_chunks.h"
 #include "gb/resource/file/resource_file_reader.h"
 #include "gb/resource/file/resource_file_writer.h"
 #include "gb/resource/resource_manager.h"
 #include "gb/resource/resource_system.h"
-#include "stb_image.h"
 
 namespace gb {
 
@@ -1160,7 +1160,7 @@ Texture* RenderSystem::LoadTexture(Context* context, std::string_view name) {
   }
 
   file->SeekBegin();
-  return LoadStbTexture(context, file.get());
+  return LoadTextureFile(context, file.get());
 }
 
 Texture* RenderSystem::LoadTextureChunk(Context* context,
@@ -1214,48 +1214,13 @@ Texture* RenderSystem::LoadTextureChunk(Context* context,
   return texture;
 }
 
-Texture* RenderSystem::LoadStbTexture(TextureLoadContract contract,
-                                      File* file) {
-  struct IoState {
-    int64_t size;
-    gb::File* file;
-  };
-  static stbi_io_callbacks io_callbacks = {
-      // Read callback.
-      [](void* user, char* data, int size) -> int {
-        auto* state = static_cast<IoState*>(user);
-        return static_cast<int>(state->file->Read(data, size));
-      },
-      // Skip callback.
-      [](void* user, int n) -> void {
-        auto* state = static_cast<IoState*>(user);
-        state->file->SeekBy(n);
-      },
-      // End-of-file callback.
-      [](void* user) -> int {
-        auto* state = static_cast<IoState*>(user);
-        const int64_t position = state->file->GetPosition();
-        return position < 0 || position == state->size;
-      },
-  };
-
-  IoState state;
-  file->SeekEnd();
-  state.size = file->GetPosition();
-  state.file = file;
-  file->SeekBegin();
-
-  int channels = 0;
-  int width = 0;
-  int height = 0;
-  void* pixels = stbi_load_from_callbacks(&io_callbacks, &state, &width,
-                                          &height, &channels, STBI_rgb_alpha);
-  if (pixels == nullptr) {
-    LOG(ERROR) << "Failed to read texture file with error: "
-               << stbi_failure_reason();
+Texture* RenderSystem::LoadTextureFile(TextureLoadContract contract,
+                                       File* file) {
+  auto image = LoadImage(file);
+  if (image == nullptr) {
+    LOG(ERROR) << "Failed to read texture file";
     return nullptr;
   }
-  ScopedCall free_pixels([pixels]() { stbi_image_free(pixels); });
 
   gb::ValidatedContext validated_context = std::move(contract);
   DCHECK(validated_context.IsValid())
@@ -1264,13 +1229,14 @@ Texture* RenderSystem::LoadStbTexture(TextureLoadContract contract,
   Texture* texture = backend_->CreateTexture(
       {}, resource_manager_->NewResourceEntry<Texture>(),
       (edit_ ? DataVolatility::kStaticReadWrite : DataVolatility::kStaticWrite),
-      width, height, validated_context.GetValue<SamplerOptions>());
+      image->GetWidth(), image->GetHeight(),
+      validated_context.GetValue<SamplerOptions>());
   if (texture == nullptr) {
-    LOG(ERROR) << "Failed to create texture of dimensions " << width << "x"
-               << height;
+    LOG(ERROR) << "Failed to create texture of dimensions " << image->GetWidth()
+               << "x" << image->GetHeight();
     return nullptr;
   }
-  if (!texture->Set(pixels, width * height * sizeof(Pixel))) {
+  if (!texture->Set(image->GetPixels())) {
     LOG(ERROR) << "Failed to initialize texture with image data";
     return nullptr;
   }
@@ -1305,8 +1271,9 @@ bool RenderSystem::SaveTextureChunk(Context* context, Texture* texture,
   sampler_options_builder.add_address_mode(ToFbs(sampler_options.address_mode));
   const auto fb_sampler_options = sampler_options_builder.Finish();
 
-  const auto fb_pixels = builder->CreateVector<uint32_t>(
-      view->GetPackedPixels(), texture->GetWidth() * texture->GetHeight());
+  const auto packed_pixels = view->GetPackedPixels();
+  const auto fb_pixels = builder->CreateVector<uint32_t>(packed_pixels.data(),
+                                                         packed_pixels.size());
 
   fbs::TextureChunkBuilder texture_builder(*builder);
   texture_builder.add_volatility(ToFbs(context->GetValue<DataVolatility>()));
