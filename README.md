@@ -86,8 +86,8 @@ tiers or with external libraries (like SDL or Vulkan) are implemented as
 sub-libraries (organized as subdirectories).
 
 *  *Tier 0:* These are foundational libraries that define universal utility
-   classes, cross-cutting funtionality common to all code, and OS-level platform
-   abstraction.
+   classes, cross-cutting funtionality common to all code, third-party wrappers
+   and OS-level platform abstraction.
    *  [`gb_base`](src/gb/base): Every other library depends on base (even in
       tier 0). It contains utility types and classes universal across Game Bits.
       It also includes fundamental interfaces (like `Allocator`) that are
@@ -108,6 +108,11 @@ sub-libraries (organized as subdirectories).
    *  [`gb_test`](src/gb/test): Test-only utilities to support unit testing and
       benchmarking code.
    *  [`gb_sdl`](src/gb/sdl): Extension library when using SDL.
+   *  [`stb`](src/stb): Family of libraries that convert the header-only
+      [STB](https://github.com/nothings/stb) libraries into actual libraries.
+      Libraries are made on an as-needed basis. Currently, the following
+      libraries are available: `stb_image`, `stb_image_resize`, and
+      `stb_perlin`.
 
 *  *Tier 1:* These are lower level game components that can be taken
    individually, and do not depend on each other (except potentially via
@@ -131,11 +136,6 @@ sub-libraries (organized as subdirectories).
       embedding dependent resources in the same file (for instance, a "level"
       resource file could contain all dependent assets directly in the same
       file).
-   *  [`stb`](src/stb): Family of libraries that convert the header-only
-      [STB](https://github.com/nothings/stb) libraries into actual libraries.
-      Libraries are made on an as-needed basis. Currently, the following
-      libraries are available: `stb_image`, `stb_image_resize`, and
-      `stb_perlin`.
 
 *  *Tier 2:* These are high level libraries that combine functionality across
    Game Bits to provide more complex services commonly needed across games.
