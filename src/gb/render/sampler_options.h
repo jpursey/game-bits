@@ -6,6 +6,7 @@
 #ifndef GB_RENDER_SAMPLER_OPTIONS_H_
 #define GB_RENDER_SAMPLER_OPTIONS_H_
 
+#include "gb/image/pixel.h"
 #include "gb/render/render_types.h"
 
 namespace gb {

@@ -3,6 +3,7 @@
 #include "gb/base/context_builder.h"
 #include "gb/file/file.h"
 #include "gb/file/file_system.h"
+#include "gb/image/image.h"
 #include "gb/imgui/imgui_instance.h"
 #include "gb/render/render_system.h"
 #include "gb/resource/resource_system.h"
@@ -13,22 +14,13 @@
 #include "scene_types.h"
 
 namespace {
-struct Image {
-  Image() = default;
-  ~Image();
 
-  bool Load(gb::FileSystem* file_system, absl::string_view filename);
-
-  int width;
-  int height;
-  void* pixels;
-};
-
-bool Image::Load(gb::FileSystem* file_system, absl::string_view filename) {
+std::unique_ptr<gb::Image> LoadImage(gb::FileSystem* file_system,
+                                     absl::string_view filename) {
   auto file = file_system->OpenFile(filename, gb::kReadFileFlags);
   if (file == nullptr) {
     LOG(ERROR) << "Could not open iamge: " << filename;
-    return false;
+    return nullptr;
   }
 
   struct IoState {
@@ -60,21 +52,17 @@ bool Image::Load(gb::FileSystem* file_system, absl::string_view filename) {
   state.file = file.get();
   file->SeekBegin();
 
+  int width;
+  int height;
   int channels;
-  pixels = stbi_load_from_callbacks(&io_callbacks, &state, &width, &height,
-                                    &channels, STBI_rgb_alpha);
+  void* pixels = stbi_load_from_callbacks(&io_callbacks, &state, &width,
+                                          &height, &channels, STBI_rgb_alpha);
   if (pixels == nullptr) {
     LOG(ERROR) << "Failed to read texture file with error: "
                << stbi_failure_reason();
-    return false;
+    return nullptr;
   }
-  return true;
-}
-
-Image::~Image() {
-  if (pixels != nullptr) {
-    stbi_image_free(pixels);
-  }
+  return std::make_unique<gb::Image>(width, height, pixels, stbi_image_free);
 }
 
 }  // namespace
@@ -227,13 +215,14 @@ bool WorldResources::InitGraphics() {
     return false;
   }
 
-  Image block_image;
-  if (!block_image.Load(context_.GetPtr<gb::FileSystem>(),
-                        "asset:/textures/block.png")) {
+  auto block_image =
+      LoadImage(context_.GetPtr<gb::FileSystem>(), "asset:/textures/block.png");
+  if (block_image == nullptr) {
     return false;
   }
-  const int tile_width = block_image.width / 2;
-  const int tile_height = block_image.height / 2;
+  const gb::ImageView& view = block_image->View();
+  const int tile_width = view.GetWidth() / 2;
+  const int tile_height = view.GetHeight() / 2;
   block_texture_ = render_system->CreateTextureArray(
       &resources_, gb::DataVolatility::kStaticWrite, 4, tile_width,
       tile_height);
@@ -242,23 +231,11 @@ bool WorldResources::InitGraphics() {
     return false;
   }
 
-  std::vector<gb::Pixel> pixels(tile_width * tile_height);
-  int offsets[4] = {
-      0,
-      tile_width,
-      block_image.width * tile_height,
-      block_image.width * tile_height + tile_width,
-  };
+  std::vector<gb::Pixel> pixels;
   for (int i = 0; i < 4; ++i) {
-    const gb::Pixel* src =
-        static_cast<const gb::Pixel*>(block_image.pixels) + offsets[i];
-    gb::Pixel* dst = pixels.data();
-    for (int row = 0; row < tile_height; ++row) {
-      CHECK(dst + tile_width <= pixels.data() + pixels.size());
-      std::memcpy(dst, src, tile_width * sizeof(gb::Pixel));
-      dst += tile_width;
-      src += block_image.width;
-    }
+    view.GetRegion((i % 2) * tile_width, (i / 2) * tile_height, tile_width,
+                   tile_height)
+        .GetAll(&pixels);
     if (!block_texture_->Set(i, pixels)) {
       LOG(ERROR) << "Failed to initialize block texture array";
       return false;

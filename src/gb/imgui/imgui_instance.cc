@@ -10,7 +10,6 @@
 #include "gb/file/file_system.h"
 #include "gb/render/binding.h"
 #include "gb/render/draw_list.h"
-#include "gb/render/pixel_colors.h"
 #include "gb/render/render_system.h"
 
 ImFileHandle ImFileOpen(const char* filename, const char* mode) {
@@ -450,7 +449,7 @@ bool ImGuiInstance::Init() {
           .SetDepthMode(DepthMode::kNone));
 
   // Initialize the material type with default bindings.
-  const Pixel default_pixel = Colors::kBlack;
+  const Pixel default_pixel = PixelColor::kBlack;
   auto* default_texture = render_system->CreateTexture(
       &resources_, DataVolatility::kStaticWrite, 1, 1,
       SamplerOptions().SetFilter(false).SetMipmap(false));
@@ -506,7 +505,7 @@ bool ImGuiInstance::LoadFonts() {
   auto texture = render_system->CreateTexture(
       DataVolatility::kStaticWrite, width, height,
       SamplerOptions().SetFilter(false).SetMipmap(false).SetAddressMode(
-          SamplerAddressMode::kClampBorder, Colors::kBlack.WithAlpha(0)));
+          SamplerAddressMode::kClampBorder, PixelColor::kBlack.WithAlpha(0)));
   if (texture == nullptr ||
       !texture->Set(pixels, width * height * sizeof(Pixel))) {
     LOG(ERROR) << "Failed to initialize font texture for Dear ImGui";

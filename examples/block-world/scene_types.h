@@ -1,6 +1,7 @@
 #ifndef SCENE_TYPES_H_
 #define SCENE_TYPES_H_
 
+#include "gb/image/pixel.h"
 #include "gb/render/render_types.h"
 #include "glm/glm.hpp"
 

@@ -1,24 +1,28 @@
-// Copyright (c) 2020 John Pursey
+// Copyright (c) 2021 John Pursey
 //
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "gb/render/texture_view.h"
-
-#include "gb/render/texture.h"
+#include "gb/image/image_view.h"
 
 namespace gb {
 
-TextureView::TextureView(RenderInternal, Texture* texture, void* pixels)
-    : texture_(texture),
-      width_(texture->GetWidth()),
-      height_(texture->GetHeight()),
-      pixels_(pixels) {}
+ImageView::ImageView(int width, int height, void* pixels)
+    : width_(width), height_(height), pixels_(pixels) {}
+ImageView::ImageView(int width, int height, void* pixels,
+                     Callback<void(bool modified)> on_delete)
+    : width_(width),
+      height_(height),
+      pixels_(pixels),
+      on_delete_(std::move(on_delete)) {}
 
-TextureView::~TextureView() { texture_->OnViewDeleted(modified_); }
+ImageView::~ImageView() {
+  if (on_delete_) {
+    on_delete_(modified_);
+  }
+}
 
-void TextureView::ConstRegion::GetAll(void* pixels,
-                                      size_t size_in_bytes) const {
+void ImageView::ConstRegion::GetAll(void* pixels, size_t size_in_bytes) const {
   size_t copy_size = width_ * height_ * sizeof(uint32_t);
   if (copy_size > size_in_bytes) {
     copy_size = size_in_bytes;
@@ -45,7 +49,7 @@ void TextureView::ConstRegion::GetAll(void* pixels,
   }
 }
 
-void TextureView::Region::SetAll(const void* pixels, size_t size_in_bytes) {
+void ImageView::Region::SetAll(const void* pixels, size_t size_in_bytes) {
   size_t copy_size = width_ * height_ * sizeof(uint32_t);
   if (size_in_bytes < copy_size) {
     copy_size = size_in_bytes;
@@ -76,7 +80,7 @@ void TextureView::Region::SetAll(const void* pixels, size_t size_in_bytes) {
   }
 }
 
-void TextureView::Region::Clear(Pixel pixel) {
+void ImageView::Region::Clear(Pixel pixel) {
   *modified_ = true;
   if (pixel.Packed() == 0) {
     if (width_ == stride_) {

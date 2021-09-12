@@ -7,8 +7,8 @@
 #define GB_RENDER_TEXTURE_H_
 
 #include "absl/types/span.h"
+#include "gb/image/image_view.h"
 #include "gb/render/sampler_options.h"
-#include "gb/render/texture_view.h"
 #include "gb/resource/resource.h"
 
 namespace gb {
@@ -88,7 +88,7 @@ class Texture : public Resource {
   //
   // This may be called for kPerFrame or kStaticReadWrite volatility textures
   // only, but may have additional overhead for kStaticReadWrite volatility. Any
-  // changes to a view are propagated to the texture when the TextureView is
+  // changes to a view are propagated to the texture when the ImageView is
   // destructed, and will be visible the next time RenderSystem::EndFrame is
   // called.
   //
@@ -97,11 +97,11 @@ class Texture : public Resource {
   // updated, prefer calling SetRegion instead. If no modifications are made
   // through an EditView, then this is not an issue.
   //
-  // Only one TextureView may be active at any given time. If Edit is called
-  // again before the a previous TextureView is destructed, this will return
-  // null. The TextureView will also be null if the mesh volatility is
+  // Only one ImageView may be active at any given time. If Edit is called
+  // again before the a previous ImageView is destructed, this will return
+  // null. The ImageView will also be null if the mesh volatility is
   // kStaticWrite.
-  std::unique_ptr<TextureView> Edit();
+  std::unique_ptr<ImageView> Edit();
 
  protected:
   Texture(ResourceEntry entry, DataVolatility volatility, int width, int height,
@@ -159,8 +159,6 @@ class Texture : public Resource {
   virtual void OnEditEnd(bool modified) = 0;
 
  private:
-  friend class TextureView;
-
   // Returns true if the region is fully clipped, false width or height is
   // greater than zero after clipping.
   bool Clip(int* x, int* y, int* width, int* height,

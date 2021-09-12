@@ -12,7 +12,6 @@
 #include "gb/render/material.h"
 #include "gb/render/material_type.h"
 #include "gb/render/mesh.h"
-#include "gb/render/pixel_colors.h"
 #include "gb/render/render_system.h"
 #include "gb/render/shader.h"
 #include "gb/render/texture.h"

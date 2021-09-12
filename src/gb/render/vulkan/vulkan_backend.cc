@@ -9,7 +9,6 @@
 
 #include "absl/memory/memory.h"
 #include "gb/base/context_builder.h"
-#include "gb/render/pixel_colors.h"
 #include "gb/render/vulkan/vulkan_binding_data.h"
 #include "gb/render/vulkan/vulkan_binding_data_factory.h"
 #include "gb/render/vulkan/vulkan_descriptor_pool.h"
@@ -757,11 +756,11 @@ vk::Sampler VulkanBackend::GetSampler(SamplerOptions options, int width,
   }
 
   vk::BorderColor border_color;
-  if (options.border == Colors::kWhite) {
+  if (options.border == PixelColor::kWhite) {
     border_color = vk::BorderColor::eIntOpaqueWhite;
-  } else if (options.border == Colors::kBlack) {
+  } else if (options.border == PixelColor::kBlack) {
     border_color = vk::BorderColor::eIntOpaqueBlack;
-  } else if (options.border == Colors::kBlack.WithAlpha(0)) {
+  } else if (options.border == PixelColor::kBlack.WithAlpha(0)) {
     border_color = vk::BorderColor::eIntTransparentBlack;
   } else {
     // TODO: Support other border colors VkSamplerCustomBorderColorCreateInfoEXT

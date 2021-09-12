@@ -17,7 +17,6 @@ set(gb_render_SOURCE
   material_type.cc material_type.h
   mesh.cc mesh.h
   mesh_view.cc mesh_view.h
-  pixel_colors.h
   render_assert.cc render_assert.h
   render_backend.h
   render_buffer.cc render_buffer.h
@@ -33,7 +32,6 @@ set(gb_render_SOURCE
   shader_code.h
   texture.cc texture.h
   texture_array.cc texture_array.h
-  texture_view.cc texture_view.h
 )
 
 set(gb_render_FBS
@@ -65,7 +63,6 @@ set(gb_render_TEST_SOURCE
   test_texture_array.cc test_texture_array.h
   texture_test.cc
   texture_array_test.cc
-  texture_view_test.cc
 )
 
 set(gb_render_DEPS
@@ -76,6 +73,7 @@ set(gb_render_DEPS
   absl::strings
   gb_base
   gb_file
+  gb_image
   gb_resource
   gb_resource_file
   stb_image

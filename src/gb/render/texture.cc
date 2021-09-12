@@ -39,7 +39,7 @@ bool Texture::Clip(int* x, int* y, int* width, int* height,
 
 bool Texture::Clear(Pixel pixel) {
   if (editing_) {
-    LOG(ERROR) << "Failed to clear pixels, as a TextureView is still active";
+    LOG(ERROR) << "Failed to clear pixels, as an ImageView is still active";
     return false;
   }
   return DoClear(0, 0, width_, height_, pixel);
@@ -47,7 +47,7 @@ bool Texture::Clear(Pixel pixel) {
 
 bool Texture::Set(const void* pixels, size_t size_in_bytes) {
   if (editing_) {
-    LOG(ERROR) << "Failed to set pixels, as a TextureView is still active";
+    LOG(ERROR) << "Failed to set pixels, as an ImageView is still active";
     return false;
   }
   if (size_in_bytes < width_ * height_ * sizeof(Pixel)) {
@@ -60,7 +60,7 @@ bool Texture::Set(const void* pixels, size_t size_in_bytes) {
 
 bool Texture::ClearRegion(int x, int y, int width, int height, Pixel pixel) {
   if (editing_) {
-    LOG(ERROR) << "Failed to clear pixels, as a TextureView is still active";
+    LOG(ERROR) << "Failed to clear pixels, as an ImageView is still active";
     return false;
   }
 
@@ -73,7 +73,7 @@ bool Texture::ClearRegion(int x, int y, int width, int height, Pixel pixel) {
 bool Texture::SetRegion(int x, int y, int width, int height, const void* pixels,
                         size_t size_in_bytes) {
   if (editing_) {
-    LOG(ERROR) << "Failed to set pixels, as a TextureView is still active";
+    LOG(ERROR) << "Failed to set pixels, as an ImageView is still active";
     return false;
   }
   if (width <= 0 || height <= 0) {
@@ -91,9 +91,9 @@ bool Texture::SetRegion(int x, int y, int width, int height, const void* pixels,
   return DoSet(x, y, width, height, pixels, stride);
 }
 
-std::unique_ptr<TextureView> Texture::Edit() {
+std::unique_ptr<ImageView> Texture::Edit() {
   if (editing_) {
-    LOG(ERROR) << "TextureView cannot be created as an existing TextureView is "
+    LOG(ERROR) << "ImageView cannot be created as an existing ImageView is "
                   "still active";
     return nullptr;
   }
@@ -105,12 +105,14 @@ std::unique_ptr<TextureView> Texture::Edit() {
 
   void* pixels = DoEditBegin();
   if (pixels == nullptr) {
-    LOG(ERROR) << "Failed to create TextureView for texture";
+    LOG(ERROR) << "Failed to create ImageView for texture";
     return nullptr;
   }
 
   editing_ = true;
-  return std::make_unique<TextureView>(RenderInternal{}, this, pixels);
+  return std::make_unique<ImageView>(
+      width_, height_, pixels,
+      [this](bool modified) { OnViewDeleted(modified); });
 }
 
 void Texture::OnViewDeleted(bool modified) {
