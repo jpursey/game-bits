@@ -39,7 +39,7 @@ bool TextureArray::Get(int index, void* out_pixels, size_t size_in_bytes) {
   if (volatility_ == DataVolatility::kStaticWrite) {
     LOG(ERROR)
         << "Texture array cannot be read as its volatility is kStaticWrite";
-    return nullptr;
+    return false;
   }
   if (size_in_bytes < width_ * height_ * sizeof(Pixel)) {
     LOG(ERROR) << "Failed to get pixels, as provided buffer is too small";

@@ -85,7 +85,6 @@ std::unique_ptr<WorldResources> WorldResources::Create(Contract contract) {
 }
 
 bool WorldResources::InitGraphics() {
-  auto* resource_system = context_.GetPtr<gb::ResourceSystem>();
   auto* render_system = context_.GetPtr<gb::RenderSystem>();
 
   auto vertex_shader_code =

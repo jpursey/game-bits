@@ -66,6 +66,8 @@ void VulkanBindingData::OnRender(VulkanRenderState* state) {
   for (int binding = 0; binding < num_bindings; ++binding) {
     DataItem& item = data_[binding];
     switch (item.binding_type) {
+      case BindingType::kNone:
+        break;
       case BindingType::kTexture: {
         auto& info = item.texture;
         state->textures.insert(info.texture);
@@ -130,6 +132,8 @@ bool VulkanBindingData::Validate(int index, gb::TypeKey* type) const {
 void VulkanBindingData::DoSet(int index, const void* value) {
   auto& item = data_[index];
   switch (item.binding_type) {
+    case BindingType::kNone:
+      break;
     case BindingType::kConstants:
       item.constants.buffer->SetValue(buffer_offset_index_, value);
       break;
@@ -159,6 +163,8 @@ void VulkanBindingData::DoSet(int index, const void* value) {
 void VulkanBindingData::DoGet(int index, void* value) const {
   const auto& item = data_[index];
   switch (item.binding_type) {
+    case BindingType::kNone:
+      break;
     case BindingType::kConstants:
       item.constants.buffer->GetValue(buffer_offset_index_, value);
       break;
@@ -175,6 +181,8 @@ void VulkanBindingData::DoGetDependencies(
     gb::ResourceDependencyList* dependencies) const {
   for (const auto& item : data_) {
     switch (item.binding_type) {
+      case BindingType::kNone:
+        break;
       case BindingType::kConstants:
         break;
       case BindingType::kTexture:
