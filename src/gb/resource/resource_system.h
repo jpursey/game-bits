@@ -80,8 +80,8 @@ class ResourceSystem final {
   // All specified resource types should have type names specified:
   //   TypeKey::Get<Example>()->SetTypeName("Example");
   // Each type registered with a resource system must have a unique name. This
-  // is used in some resource serialization libraries (like gb_resource_file) to
-  // support generic resource type serialization.
+  // is used to support generic resource type serialization (see
+  // ResourceFileReader and ResourceFileWriter).
   //
   // A single manager can handle multiple resource types, but a type may only be
   // registered against one manager. This returns true if the manager could be

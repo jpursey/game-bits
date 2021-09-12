@@ -97,6 +97,11 @@ sub-libraries (organized as subdirectories).
       allocator interface.
    *  [`gb_container`](src/gb/container): Additional game-oriented containers
       and container algorithms that go beyond basic STL-equivalent containers.
+   *  [`gb_file`](src/gb/file): This is a file system abstraction that allows
+      multiple custom backend implementations simultaneously without dependent
+      code needing to know about it. Currently, a fully in-memory file system
+      and local file system are supported. A custom IFF-style chunk file format
+      is also provided.
    *  [`gb_thread`](src/gb/thread): Low level threading API providing additional
       functionality over the standard library (thread names, core pinning,
       fibers, etc.)
@@ -107,13 +112,10 @@ sub-libraries (organized as subdirectories).
 *  *Tier 1:* These are lower level game components that can be taken
    individually, and do not depend on each other (except potentially via
    sub-library extension).
-   *  [`gb_file`](src/gb/file): This is a file system abstraction that allows
-      multiple custom backend implementations simultaneously without dependent
-      code needing to know about it. Currently, a fully in-memory file system
-      and local file system are supported. A custom IFF-style chunk file format
-      is also provided.
    *  [`gb_game`](src/gb/game): This library defines the game "main" and a
       hierarchical game state machine system.
+   *  [`gb_image`](src/gb/image): This library defines general purpose image
+      loading and processing.
    *  [`gb_job`](src/gb/job): This library defines a generic "job" system for
       running tasks asynchronously.
    *  [`gb_message`](src/gb/message): This library defines a typed message
@@ -124,14 +126,11 @@ sub-libraries (organized as subdirectories).
       supported.
    *  [`gb_resource`](src/gb/resource): This library defines a generic resource
       system for referencing, retrieving, sharing, and managing the lifecycle
-      and dependencies of typed resources. Notably, this does *not* define how
-      or where resources are serialized from/to.
-      *  [`gb_resource_file`](src/gb/resource/file): This combines the
-         `gb_resource` and `gb_file` libraries to support reading and writing
-         general purpose resource files as a chunk file. It supports embedding
-         dependent resources in the same file (for instance, a "level"
-         resource file could contain all dependent assets directly in the same
-         file).
+      and dependencies of typed resources. This also supports optional reading
+      and writing of general purpose resource files as a chunk file. It supports
+      embedding dependent resources in the same file (for instance, a "level"
+      resource file could contain all dependent assets directly in the same
+      file).
    *  [`stb`](src/stb): Family of libraries that convert the header-only
       [STB](https://github.com/nothings/stb) libraries into actual libraries.
       Libraries are made on an as-needed basis. Currently, the following

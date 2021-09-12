@@ -3,8 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef GB_RESOURCE_FILE_RESOURCE_FILE_READER_H_
-#define GB_RESOURCE_FILE_RESOURCE_FILE_READER_H_
+#ifndef GB_RESOURCE_RESOURCE_FILE_READER_H_
+#define GB_RESOURCE_RESOURCE_FILE_READER_H_
 
 #include <type_traits>
 #include <vector>
@@ -558,4 +558,4 @@ inline Type* ResourceFileReader::Read(std::string_view name,
 
 }  // namespace gb
 
-#endif  // GB_RESOURCE_FILE_RESOURCE_FILE_READER_H_
+#endif  // GB_RESOURCE_RESOURCE_FILE_READER_H_

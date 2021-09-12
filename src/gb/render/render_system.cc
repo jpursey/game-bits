@@ -16,8 +16,9 @@
 #include "gb/image/image_file.h"
 #include "gb/render/render_backend.h"
 #include "gb/render/render_resource_chunks.h"
-#include "gb/resource/file/resource_file_reader.h"
-#include "gb/resource/file/resource_file_writer.h"
+#include "gb/resource/resource_chunks.h"
+#include "gb/resource/resource_file_reader.h"
+#include "gb/resource/resource_file_writer.h"
 #include "gb/resource/resource_manager.h"
 #include "gb/resource/resource_system.h"
 

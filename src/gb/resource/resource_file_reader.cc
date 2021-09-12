@@ -3,13 +3,13 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "gb/resource/file/resource_file_reader.h"
+#include "gb/resource/resource_file_reader.h"
 
 #include "absl/memory/memory.h"
 #include "gb/base/scoped_call.h"
 #include "gb/file/file.h"
 #include "gb/file/file_system.h"
-#include "gb/resource/file/resource_chunks.h"
+#include "gb/resource/resource_chunks.h"
 #include "gb/resource/resource_system.h"
 #include "glog/logging.h"
 

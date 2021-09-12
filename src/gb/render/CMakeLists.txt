@@ -75,7 +75,6 @@ set(gb_render_DEPS
   gb_file
   gb_image
   gb_resource
-  gb_resource_file
 )
 
 set(gb_render_LIBS

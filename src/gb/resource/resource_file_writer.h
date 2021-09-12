@@ -3,8 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef GB_RESOURCE_FILE_RESOURCE_FILE_WRITER_H_
-#define GB_RESOURCE_FILE_RESOURCE_FILE_WRITER_H_
+#ifndef GB_RESOURCE_RESOURCE_FILE_WRITER_H_
+#define GB_RESOURCE_RESOURCE_FILE_WRITER_H_
 
 #include <type_traits>
 #include <vector>
@@ -228,4 +228,4 @@ bool ResourceFileWriter::RegisterResourceFlatBufferWriter(
 
 }  // namespace gb
 
-#endif  // GB_RESOURCE_FILE_RESOURCE_FILE_WRITER_H_
+#endif  // GB_RESOURCE_RESOURCE_FILE_WRITER_H_

@@ -3,11 +3,12 @@
 ## Use of this source code is governed by an MIT-style License that can be found
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-add_subdirectory(file)
-
 set(gb_resource_SOURCE
   resource.cc resource.h
+  resource_chunks.h
   resource_entry.cc resource_entry.h
+  resource_file_reader.cc resource_file_reader.h
+  resource_file_writer.cc resource_file_writer.h
   resource_manager.cc resource_manager.h
   resource_name_reservation.cc resource_name_reservation.h
   resource_ptr.h
@@ -22,22 +23,29 @@ set(gb_resource_DEPS
   absl::memory
   absl::synchronization
   gb_base
+  gb_file
+)
+
+set(gb_resource_LIBS
+  flatbuffers
+  glog
 )
 
 set(gb_resource_TEST_SOURCE
-  resource_test.cc
+  resource_file_test.cc
   resource_loader_test.cc
   resource_set_test.cc
+  resource_test.cc
   resource_thread_test.cc
   test_resources.h
 )
 
-set(gb_resource_TEST_DEPS
-  gb_test
+set(gb_resource_TEST_FBS
+  resource_file_test.fbs
 )
 
-set(gb_resource_LIBS
-  glog
+set(gb_resource_TEST_DEPS
+  gb_test
 )
 
 gb_add_library(gb_resource)
