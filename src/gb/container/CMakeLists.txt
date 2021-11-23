@@ -9,6 +9,7 @@ set(gb_container_SOURCE
   buffer_view_3d.h
   buffer_view_operations.h
   container_stub.cc
+  offset_array.h
 )
 
 set(gb_container_TEST_SOURCE
