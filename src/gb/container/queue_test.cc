@@ -3,7 +3,7 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "gb/base/queue.h"
+#include "gb/container/queue.h"
 
 #include "gtest/gtest.h"
 

@@ -5,7 +5,7 @@
 
 #include "gb/file/file_protocol.h"
 
-#include "gb/base/queue.h"
+#include "gb/container/queue.h"
 #include "gb/file/path.h"
 #include "gb/file/raw_file.h"
 #include "glog/logging.h"

@@ -22,7 +22,6 @@ set(gb_base_SOURCE
   fake_clock.h
   flags.h
   platform_requirements.cc platform_requirements.h
-  queue.h
   scoped_call.h
   string_util.h
   type_info.h
@@ -38,7 +37,6 @@ set(gb_base_TEST_SOURCE
   clock_test.cc
   context_test.cc
   flags_test.cc
-  queue_test.cc
   type_info_test.cc
   unicode_test.cc
   validated_context_test.cc

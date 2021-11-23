@@ -10,7 +10,7 @@
 #include "absl/synchronization/mutex.h"
 #include "absl/time/clock.h"
 #include "absl/types/span.h"
-#include "gb/base/queue.h"
+#include "gb/container/queue.h"
 #include "gb/thread/thread.h"
 #include "glog/logging.h"
 #include "gtest/gtest.h"

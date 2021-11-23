@@ -10,7 +10,6 @@
 #include "concurrentqueue.h"
 #include "gb/alloc/pool_allocator.h"
 #include "gb/base/context.h"
-#include "gb/base/queue.h"
 #include "gb/base/validated_context.h"
 #include "gb/job/job_system.h"
 #include "gb/thread/fiber.h"

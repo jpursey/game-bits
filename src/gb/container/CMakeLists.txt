@@ -10,12 +10,14 @@ set(gb_container_SOURCE
   buffer_view_operations.h
   container_stub.cc
   offset_array.h
+  queue.h
 )
 
 set(gb_container_TEST_SOURCE
   buffer_view_test.cc
   buffer_view_2d_test.cc
   buffer_view_3d_test.cc
+  queue_test.cc
 )
 
 set(gb_container_DEPS

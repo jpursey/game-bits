@@ -10,7 +10,7 @@
 #include <vector>
 
 #include "absl/types/span.h"
-#include "gb/base/queue.h"
+#include "gb/container/queue.h"
 #include "gb/render/binding.h"
 #include "gb/render/vulkan/vulkan_types.h"
 
