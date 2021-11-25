@@ -20,6 +20,7 @@ set(gb_image_DEPS
 
 set(gb_image_LIBS
   glog
+  glm
 )
 
 set(gb_image_TEST_SOURCE
