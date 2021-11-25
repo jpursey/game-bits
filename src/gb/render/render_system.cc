@@ -376,24 +376,129 @@ const VertexType* RenderSystem::DoRegisterVertexType(
   // Validate that the type size matches the expected size based on the
   // attributes.
   size_t expected_size = 0;
-  for (ShaderValue attribute : attributes) {
-    switch (attribute) {
-      case ShaderValue::kFloat:
+  size_t expected_align = 1;
+  for (int i = 0; i < attributes.size(); ++i) {
+    switch (attributes[i]) {
+      case ShaderValue::kInt8:
+      case ShaderValue::kUint8:
+        expected_size += 1;
+        break;
+      case ShaderValue::kI8Vec2:
+      case ShaderValue::kU8Vec2:
+        expected_size += 2;
+        break;
+      case ShaderValue::kInt16:
+      case ShaderValue::kUint16:
+        if (expected_size % 2 != 0) {
+          LOG(ERROR) << "Vertex attribute " << i << " of type "
+                     << type->GetTypeName()
+                     << " is misaligned (expected alignment of 2 bytes) ";
+          return nullptr;
+        }
+        expected_align = std::max<size_t>(expected_align, 2);
+        expected_size += 2;
+        break;
+      case ShaderValue::kI8Norm3:
+      case ShaderValue::kI8Vec3:
+      case ShaderValue::kU8Vec3:
+        expected_size += 3;
+        break;
       case ShaderValue::kColor:
+      case ShaderValue::kI8Vec4:
+      case ShaderValue::kU8Vec4:
         expected_size += 4;
         break;
+      case ShaderValue::kI16Vec2:
+      case ShaderValue::kU16Vec2:
+        if (expected_size % 2 != 0) {
+          LOG(ERROR) << "Vertex attribute " << i << " of type "
+                     << type->GetTypeName()
+                     << " is misaligned (expected alignment of 2 bytes) ";
+          return nullptr;
+        }
+        expected_align = std::max<size_t>(expected_align, 2);
+        expected_size += 4;
+        break;
+      case ShaderValue::kFloat:
+      case ShaderValue::kInt:
+      case ShaderValue::kUint:
+        if (expected_size % 4 != 0) {
+          LOG(ERROR) << "Vertex attribute " << i << " of type "
+                     << type->GetTypeName()
+                     << " is misaligned (expected alignment of 4 bytes) ";
+          return nullptr;
+        }
+        expected_align = std::max<size_t>(expected_align, 4);
+        expected_size += 4;
+        break;
+      case ShaderValue::kI16Norm3:
+      case ShaderValue::kI16Vec3:
+      case ShaderValue::kU16Vec3:
+        if (expected_size % 2 != 0) {
+          LOG(ERROR) << "Vertex attribute " << i << " of type "
+                     << type->GetTypeName()
+                     << " is misaligned (expected alignment of 2 bytes) ";
+          return nullptr;
+        }
+        expected_align = std::max<size_t>(expected_align, 2);
+        expected_size += 6;
+        break;
+      case ShaderValue::kI16Vec4:
+      case ShaderValue::kU16Vec4:
+        if (expected_size % 2 != 0) {
+          LOG(ERROR) << "Vertex attribute " << i << " of type "
+                     << type->GetTypeName()
+                     << " is misaligned (expected alignment of 2 bytes) ";
+          return nullptr;
+        }
+        expected_align = std::max<size_t>(expected_align, 2);
+        expected_size += 8;
+        break;
       case ShaderValue::kVec2:
+      case ShaderValue::kIVec2:
+      case ShaderValue::kUVec2:
+        if (expected_size % 4 != 0) {
+          LOG(ERROR) << "Vertex attribute " << i << " of type "
+                     << type->GetTypeName()
+                     << " is misaligned (expected alignment of 4 bytes) ";
+          return nullptr;
+        }
+        expected_align = std::max<size_t>(expected_align, 4);
         expected_size += 8;
         break;
       case ShaderValue::kVec3:
+      case ShaderValue::kIVec3:
+      case ShaderValue::kUVec3:
+        if (expected_size % 4 != 0) {
+          LOG(ERROR) << "Vertex attribute " << i << " of type "
+                     << type->GetTypeName()
+                     << " is misaligned (expected alignment of 4 bytes) ";
+          return nullptr;
+        }
+        expected_align = std::max<size_t>(expected_align, 4);
         expected_size += 12;
         break;
       case ShaderValue::kVec4:
+      case ShaderValue::kIVec4:
+      case ShaderValue::kUVec4:
+        if (expected_size % 4 != 0) {
+          LOG(ERROR) << "Vertex attribute " << i << " of type "
+                     << type->GetTypeName()
+                     << " is misaligned (expected alignment of 4 bytes) ";
+          return nullptr;
+        }
+        expected_align = std::max<size_t>(expected_align, 4);
         expected_size += 16;
         break;
       default:
         LOG(FATAL) << "Unhandled shader value type for vertex";
     }
+  }
+  if (expected_size % expected_align != 0) {
+    LOG(ERROR) << "Vertex attributes have an alignment requirement of "
+               << expected_align << ", but type " << type->GetTypeName()
+               << " has a packed size of " << expected_size;
+    return nullptr;
   }
   if (expected_size != size) {
     LOG(ERROR) << "Vertex attributes have a size of " << expected_size
@@ -716,15 +821,63 @@ bool RenderSystem::ValidateMaterialTypeArguments(RenderSceneType* scene_type,
                  << " attributes.";
       return false;
     }
-    bool match = (input.value == attributes[input.location]);
-    if (!match) {
-      switch (attributes[input.location]) {
-        case ShaderValue::kColor:
-          match = (input.value == ShaderValue::kVec4);
-          break;
-        default:
-          break;
-      }
+    bool match = false;
+    switch (attributes[input.location]) {
+      case ShaderValue::kFloat:
+        match = (input.value == ShaderValue::kFloat);
+        break;
+      case ShaderValue::kVec2:
+        match = (input.value == ShaderValue::kVec2);
+        break;
+      case ShaderValue::kVec3:
+      case ShaderValue::kI8Norm3:
+      case ShaderValue::kI16Norm3:
+        match = (input.value == ShaderValue::kVec3);
+        break;
+      case ShaderValue::kVec4:
+      case ShaderValue::kColor:
+        match = (input.value == ShaderValue::kVec4);
+        break;
+      case ShaderValue::kInt8:
+      case ShaderValue::kInt16:
+      case ShaderValue::kInt:
+        match = (input.value == ShaderValue::kInt);
+        break;
+      case ShaderValue::kI8Vec2:
+      case ShaderValue::kI16Vec2:
+      case ShaderValue::kIVec2:
+        match = (input.value == ShaderValue::kIVec2);
+        break;
+      case ShaderValue::kI8Vec3:
+      case ShaderValue::kI16Vec3:
+      case ShaderValue::kIVec3:
+        match = (input.value == ShaderValue::kIVec3);
+        break;
+      case ShaderValue::kI8Vec4:
+      case ShaderValue::kI16Vec4:
+      case ShaderValue::kIVec4:
+        match = (input.value == ShaderValue::kIVec4);
+        break;
+      case ShaderValue::kUint8:
+      case ShaderValue::kUint16:
+      case ShaderValue::kUint:
+        match = (input.value == ShaderValue::kUint);
+        break;
+      case ShaderValue::kU8Vec2:
+      case ShaderValue::kU16Vec2:
+      case ShaderValue::kUVec2:
+        match = (input.value == ShaderValue::kUVec2);
+        break;
+      case ShaderValue::kU8Vec3:
+      case ShaderValue::kU16Vec3:
+      case ShaderValue::kUVec3:
+        match = (input.value == ShaderValue::kUVec3);
+        break;
+      case ShaderValue::kU8Vec4:
+      case ShaderValue::kU16Vec4:
+      case ShaderValue::kUVec4:
+        match = (input.value == ShaderValue::kUVec4);
+        break;
     }
     if (!match) {
       LOG(ERROR) << "Shader type mismatch for vertex input and vertex "

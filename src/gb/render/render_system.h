@@ -138,8 +138,8 @@ class RenderSystem final {
 
   // Registers a vertex type with a name, to allow serialization of material
   // types and provide type safety when setting constant data. This must be a
-  // trivially copyable type that is packed (each shader value has 4-byte
-  // alignment).
+  // trivially copyable type that is packed, with ShaderValue at its natural
+  // alignment (1, 2, or 4 bytes).
   template <typename Type>
   const VertexType* RegisterVertexType(
       std::string_view name, absl::Span<const ShaderValue> attributes);

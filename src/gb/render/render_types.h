@@ -120,11 +120,39 @@ inline constexpr ShaderTypes kAllShaderTypes = {
 
 // A shader value specifies in/out types expected/provided by a shader.
 enum class ShaderValue : int32_t {
-  kFloat,
-  kVec2,
-  kVec3,
-  kVec4,
-  kColor,
+  //            C++           Shader   Conversion
+  //             ------------- -------- ---------------------------
+  kFloat,     // float         float    direct
+  kVec2,      // glm::vec2     vec2     direct
+  kVec3,      // glm::vec3     vec3     direct
+  kVec4,      // glm::vec4     vec4     direct
+  kColor,     // gb::Pixel     vec4     [0, 255] to [0, 1]
+  kI8Norm3,   // glm::i8vec3   vec3     [-127, 127] to [-1, 1]
+  kI16Norm3,  // glm::i16vec3  vec3     [-32767, 32767] to [-1, 1]
+  kInt8,      // int8_t        int      direct
+  kI8Vec2,    // glm::i8vec2   ivec2    direct
+  kI8Vec3,    // glm::i8vec3   ivec3    direct
+  kI8Vec4,    // glm::i8vec4   ivec4    direct
+  kInt16,     // int16_t       int      direct
+  kI16Vec2,   // glm::i16vec2  ivec2    direct
+  kI16Vec3,   // glm::i16vec3  ivec3    direct
+  kI16Vec4,   // glm::i16vec4  ivec4    direct
+  kInt,       // int32_t       int      direct
+  kIVec2,     // glm::ivec2    ivec2    direct
+  kIVec3,     // glm::ivec3    ivec3    direct
+  kIVec4,     // glm::ivec4    ivec4    direct
+  kUint8,     // uint8_t       uint      direct
+  kU8Vec2,    // glm::u8vec2   uvec2    direct
+  kU8Vec3,    // glm::u8vec3   uvec3    direct
+  kU8Vec4,    // glm::u8vec4   uvec4    direct
+  kUint16,    // uint16_t      uint      direct
+  kU16Vec2,   // glm::u16vec2  uvec2    direct
+  kU16Vec3,   // glm::u16vec3  uvec3    direct
+  kU16Vec4,   // glm::u16vec4  uvec4    direct
+  kUint,      // uint32_t      uint      direct
+  kUVec2,     // glm::uvec2    uvec2    direct
+  kUVec3,     // glm::uvec3    uvec3    direct
+  kUVec4,     // glm::uvec4    uvec4    direct
 };
 
 // A shader parameter binds a ShaderValue to a shader pipeline input or output

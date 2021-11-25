@@ -106,6 +106,110 @@ bool VulkanRenderPipeline::Init(
         format = vk::Format::eR8G8B8A8Unorm;
         size = 4;
         break;
+      case ShaderValue::kI8Norm3:
+        format = vk::Format::eR8G8B8Snorm;
+        size = 3;
+        break;
+      case ShaderValue::kI16Norm3:
+        format = vk::Format::eR16G16B16Snorm;
+        size = 6;
+        break;
+      case ShaderValue::kInt8:
+        format = vk::Format::eR8Sint;
+        size = 1;
+        break;
+      case ShaderValue::kI8Vec2:
+        format = vk::Format::eR8G8Sint;
+        size = 2;
+        break;
+      case ShaderValue::kI8Vec3:
+        format = vk::Format::eR8G8B8Sint;
+        size = 3;
+        break;
+      case ShaderValue::kI8Vec4:
+        format = vk::Format::eR8G8B8A8Sint;
+        size = 4;
+        break;
+      case ShaderValue::kInt16:
+        format = vk::Format::eR16Sint;
+        size = 2;
+        break;
+      case ShaderValue::kI16Vec2:
+        format = vk::Format::eR16G16Sint;
+        size = 4;
+        break;
+      case ShaderValue::kI16Vec3:
+        format = vk::Format::eR16G16B16Sint;
+        size = 6;
+        break;
+      case ShaderValue::kI16Vec4:
+        format = vk::Format::eR16G16B16A16Sint;
+        size = 8;
+        break;
+      case ShaderValue::kInt:
+        format = vk::Format::eR32Sint;
+        size = 4;
+        break;
+      case ShaderValue::kIVec2:
+        format = vk::Format::eR32G32Sint;
+        size = 8;
+        break;
+      case ShaderValue::kIVec3:
+        format = vk::Format::eR32G32B32Sint;
+        size = 12;
+        break;
+      case ShaderValue::kIVec4:
+        format = vk::Format::eR32G32B32A32Sint;
+        size = 16;
+        break;
+      case ShaderValue::kUint8:
+        format = vk::Format::eR8Uint;
+        size = 1;
+        break;
+      case ShaderValue::kU8Vec2:
+        format = vk::Format::eR8G8Uint;
+        size = 2;
+        break;
+      case ShaderValue::kU8Vec3:
+        format = vk::Format::eR8G8B8Uint;
+        size = 3;
+        break;
+      case ShaderValue::kU8Vec4:
+        format = vk::Format::eR8G8B8A8Uint;
+        size = 4;
+        break;
+      case ShaderValue::kUint16:
+        format = vk::Format::eR16Uint;
+        size = 2;
+        break;
+      case ShaderValue::kU16Vec2:
+        format = vk::Format::eR16G16Uint;
+        size = 4;
+        break;
+      case ShaderValue::kU16Vec3:
+        format = vk::Format::eR16G16B16Uint;
+        size = 6;
+        break;
+      case ShaderValue::kU16Vec4:
+        format = vk::Format::eR16G16B16A16Uint;
+        size = 8;
+        break;
+      case ShaderValue::kUint:
+        format = vk::Format::eR32Uint;
+        size = 4;
+        break;
+      case ShaderValue::kUVec2:
+        format = vk::Format::eR32G32Uint;
+        size = 8;
+        break;
+      case ShaderValue::kUVec3:
+        format = vk::Format::eR32G32B32Uint;
+        size = 12;
+        break;
+      case ShaderValue::kUVec4:
+        format = vk::Format::eR32G32B32A32Uint;
+        size = 16;
+        break;
       default:
         LOG(ERROR) << "Unhandled vertex attribute type";
         return false;
