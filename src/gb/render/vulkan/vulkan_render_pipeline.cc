@@ -106,13 +106,53 @@ bool VulkanRenderPipeline::Init(
         format = vk::Format::eR8G8B8A8Unorm;
         size = 4;
         break;
+      case ShaderValue::kI8Norm2:
+        format = vk::Format::eR8G8Snorm;
+        size = 2;
+        break;
       case ShaderValue::kI8Norm3:
         format = vk::Format::eR8G8B8Snorm;
         size = 3;
         break;
+      case ShaderValue::kI8Norm4:
+        format = vk::Format::eR8G8B8A8Snorm;
+        size = 4;
+        break;
+      case ShaderValue::kI16Norm2:
+        format = vk::Format::eR16G16Snorm;
+        size = 4;
+        break;
       case ShaderValue::kI16Norm3:
         format = vk::Format::eR16G16B16Snorm;
         size = 6;
+        break;
+      case ShaderValue::kI16Norm4:
+        format = vk::Format::eR16G16B16A16Snorm;
+        size = 8;
+        break;
+      case ShaderValue::kU8Norm2:
+        format = vk::Format::eR8G8Unorm;
+        size = 2;
+        break;
+      case ShaderValue::kU8Norm3:
+        format = vk::Format::eR8G8B8Unorm;
+        size = 3;
+        break;
+      case ShaderValue::kU8Norm4:
+        format = vk::Format::eR8G8B8A8Unorm;
+        size = 4;
+        break;
+      case ShaderValue::kU16Norm2:
+        format = vk::Format::eR16G16Unorm;
+        size = 4;
+        break;
+      case ShaderValue::kU16Norm3:
+        format = vk::Format::eR16G16B16Unorm;
+        size = 6;
+        break;
+      case ShaderValue::kU16Norm4:
+        format = vk::Format::eR16G16B16A16Unorm;
+        size = 8;
         break;
       case ShaderValue::kInt8:
         format = vk::Format::eR8Sint;

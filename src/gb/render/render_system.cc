@@ -383,6 +383,8 @@ const VertexType* RenderSystem::DoRegisterVertexType(
       case ShaderValue::kUint8:
         expected_size += 1;
         break;
+      case ShaderValue::kI8Norm2:
+      case ShaderValue::kU8Norm2:
       case ShaderValue::kI8Vec2:
       case ShaderValue::kU8Vec2:
         expected_size += 2;
@@ -399,15 +401,20 @@ const VertexType* RenderSystem::DoRegisterVertexType(
         expected_size += 2;
         break;
       case ShaderValue::kI8Norm3:
+      case ShaderValue::kU8Norm3:
       case ShaderValue::kI8Vec3:
       case ShaderValue::kU8Vec3:
         expected_size += 3;
         break;
       case ShaderValue::kColor:
+      case ShaderValue::kI8Norm4:
+      case ShaderValue::kU8Norm4:
       case ShaderValue::kI8Vec4:
       case ShaderValue::kU8Vec4:
         expected_size += 4;
         break;
+      case ShaderValue::kI16Norm2:
+      case ShaderValue::kU16Norm2:
       case ShaderValue::kI16Vec2:
       case ShaderValue::kU16Vec2:
         if (expected_size % 2 != 0) {
@@ -432,6 +439,7 @@ const VertexType* RenderSystem::DoRegisterVertexType(
         expected_size += 4;
         break;
       case ShaderValue::kI16Norm3:
+      case ShaderValue::kU16Norm3:
       case ShaderValue::kI16Vec3:
       case ShaderValue::kU16Vec3:
         if (expected_size % 2 != 0) {
@@ -443,6 +451,8 @@ const VertexType* RenderSystem::DoRegisterVertexType(
         expected_align = std::max<size_t>(expected_align, 2);
         expected_size += 6;
         break;
+      case ShaderValue::kI16Norm4:
+      case ShaderValue::kU16Norm4:
       case ShaderValue::kI16Vec4:
       case ShaderValue::kU16Vec4:
         if (expected_size % 2 != 0) {
@@ -827,15 +837,25 @@ bool RenderSystem::ValidateMaterialTypeArguments(RenderSceneType* scene_type,
         match = (input.value == ShaderValue::kFloat);
         break;
       case ShaderValue::kVec2:
+      case ShaderValue::kI8Norm2:
+      case ShaderValue::kI16Norm2:
+      case ShaderValue::kU8Norm2:
+      case ShaderValue::kU16Norm2:
         match = (input.value == ShaderValue::kVec2);
         break;
       case ShaderValue::kVec3:
       case ShaderValue::kI8Norm3:
       case ShaderValue::kI16Norm3:
+      case ShaderValue::kU8Norm3:
+      case ShaderValue::kU16Norm3:
         match = (input.value == ShaderValue::kVec3);
         break;
       case ShaderValue::kVec4:
       case ShaderValue::kColor:
+      case ShaderValue::kI8Norm4:
+      case ShaderValue::kI16Norm4:
+      case ShaderValue::kU8Norm4:
+      case ShaderValue::kU16Norm4:
         match = (input.value == ShaderValue::kVec4);
         break;
       case ShaderValue::kInt8:

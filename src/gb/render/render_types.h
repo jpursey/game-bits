@@ -120,15 +120,25 @@ inline constexpr ShaderTypes kAllShaderTypes = {
 
 // A shader value specifies in/out types expected/provided by a shader.
 enum class ShaderValue : int32_t {
-  //            C++           Shader   Conversion
+  //             C++           Shader   Conversion
   //             ------------- -------- ---------------------------
   kFloat,     // float         float    direct
   kVec2,      // glm::vec2     vec2     direct
   kVec3,      // glm::vec3     vec3     direct
   kVec4,      // glm::vec4     vec4     direct
   kColor,     // gb::Pixel     vec4     [0, 255] to [0, 1]
+  kI8Norm2,   // glm::i8vec2   vec2     [-127, 127] to [-1, 1]
   kI8Norm3,   // glm::i8vec3   vec3     [-127, 127] to [-1, 1]
+  kI8Norm4,   // glm::i8vec4   vec4     [-127, 127] to [-1, 1]
+  kI16Norm2,  // glm::i16vec2  vec3     [-32767, 32767] to [-1, 1]
   kI16Norm3,  // glm::i16vec3  vec3     [-32767, 32767] to [-1, 1]
+  kI16Norm4,  // glm::i16vec4  vec3     [-32767, 32767] to [-1, 1]
+  kU8Norm2,   // glm::u8vec2   vec2     [0, 255] to [0, 1]
+  kU8Norm3,   // glm::u8vec3   vec3     [0, 255] to [0, 1]
+  kU8Norm4,   // glm::u8vec4   vec4     [0, 255] to [0, 1]
+  kU16Norm2,  // glm::u16vec2  vec2     [0, 65535] to [0, 1]
+  kU16Norm3,  // glm::u16vec3  vec3     [0, 65535] to [0, 1]
+  kU16Norm4,  // glm::u16vec4  vec4     [0, 65535] to [0, 1]
   kInt8,      // int8_t        int      direct
   kI8Vec2,    // glm::i8vec2   ivec2    direct
   kI8Vec3,    // glm::i8vec3   ivec3    direct
