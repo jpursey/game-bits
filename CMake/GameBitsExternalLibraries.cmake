@@ -21,17 +21,6 @@ function(gb_external_libraries)
       "${GB_THIRD_PARTY_DIR}/SDL2-2.0.10/lib/x64/SDL2main.lib"
   )
 
-  ####### SDL2_image
-
-  add_library(sdl2_image SHARED IMPORTED)
-  target_include_directories(sdl2_image INTERFACE
-    "${GB_THIRD_PARTY_DIR}/SDL2_image-2.0.5/include"
-  )
-  set_target_properties(sdl2_image PROPERTIES
-    IMPORTED_IMPLIB
-      "${GB_THIRD_PARTY_DIR}/SDL2_image-2.0.5/lib/x64/SDL2_image.lib"
-  )
-
   ####### Vulkan
 
   if(DEFINED ENV{VULKAN_SDK})

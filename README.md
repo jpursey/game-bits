@@ -184,10 +184,9 @@ layer implementation. There are no direct dependencies on SDL from any Game
 Bits library, except those that implement required platform abstraction
 interfaces in terms of SDL as a convenience.
 
-The Windows build of SDL 2.10.0 and SDL2_image 2.0.5 are included in
-`third_party/` and `bin/` folders as a convenience. They can be linked to
-directly via the `sdl` and `sdl2_image` library targets in CMake files that use
-Game Bits.
+The Windows build of SDL 2.10.0 is included in `third_party/` and `bin/` folders
+as a convenience. It can be linked to directly via the `sdl` library target in
+CMake files that use Game Bits.
 
 ### Vulkan
 
