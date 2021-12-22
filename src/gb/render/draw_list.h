@@ -32,8 +32,8 @@ struct DrawCommand {
     uint16_t height;
   };
   struct Draw {
-    uint16_t index_offset;
-    uint16_t index_count;
+    uint32_t index_offset;
+    uint32_t index_count;
     uint16_t vertex_offset;
   };
 

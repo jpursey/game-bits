@@ -60,7 +60,7 @@ void DrawList::Draw() {
       DrawCommand::Type::kDraw,
       DrawCommand::Draw{
           0,
-          static_cast<uint16_t>(current_mesh_->GetIndexBuffer({})->GetSize()),
+          static_cast<uint32_t>(current_mesh_->GetIndexBuffer({})->GetSize()),
           0});
 }
 
@@ -70,8 +70,8 @@ void DrawList::DrawPartial(int first_triangle, int triangle_count,
                 triangle_count >= 0);
   commands_.emplace_back(
       DrawCommand::Type::kDraw,
-      DrawCommand::Draw{static_cast<uint16_t>(first_triangle * 3),
-                        static_cast<uint16_t>(triangle_count * 3),
+      DrawCommand::Draw{static_cast<uint32_t>(first_triangle * 3),
+                        static_cast<uint32_t>(triangle_count * 3),
                         static_cast<uint16_t>(first_vertex)});
 }
 

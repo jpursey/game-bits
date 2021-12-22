@@ -622,7 +622,7 @@ Mesh* RenderSystem::DoCreateMesh(Material* material, DataVolatility volatility,
     return nullptr;
   }
   if (max_triangles < 1) {
-    LOG(ERROR) << "Invalid max number of triangls, must be greater than zero. "
+    LOG(ERROR) << "Invalid max number of triangles, must be greater than zero. "
                   "Value specified was: "
                << max_triangles;
     return nullptr;
