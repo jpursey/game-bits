@@ -279,6 +279,11 @@ struct alignas(uint16_t) Triangle {
   constexpr Triangle() = default;
   constexpr Triangle(uint16_t a, uint16_t b, uint16_t c) : a(a), b(b), c(c) {}
 
+  uint16_t& operator[](int i) { return i == 0 ? a : (i == 1 ? b : c); }
+  const uint16_t& operator[](int i) const {
+    return i == 0 ? a : (i == 1 ? b : c);
+  }
+
   uint16_t a = 0;
   uint16_t b = 0;
   uint16_t c = 0;
