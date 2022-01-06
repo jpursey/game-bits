@@ -4,6 +4,7 @@
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
 set(gb_container_SOURCE
+  array.h
   buffer_view.h
   buffer_view_2d.h
   buffer_view_3d.h
