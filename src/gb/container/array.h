@@ -55,7 +55,11 @@ template <typename Type, int Size>
 class BaseArray : private std::array<Type, Size> {
  public:
   // Explicit default constructor that zero-initializes POD types.
-  constexpr BaseArray() : array({}) {}
+  constexpr BaseArray() {
+    if (std::is_trivially_constructible_v<Type>) {
+      std::memset(data(), 0, size() * sizeof(Type));
+    }
+  }
 
   // Container types
   using array::const_iterator;
