@@ -15,6 +15,15 @@ thread_local JobSystem* tls_job_system = nullptr;
 
 JobSystem* JobSystem::Get() { return tls_job_system; }
 
+void JobSystem::FreeJobData(JobData& job_data) {
+  absl::ReaderMutexLock lock(&job_data_mutex_);
+  for (size_t i = 0; i < job_data.size(); ++i) {
+    if (job_data[i] != nullptr) {
+      job_data_types_[i].type->Destroy(job_data[i]);
+    }
+  }
+}
+
 void JobSystem::SetThreadState() { tls_job_system = this; }
 
 }  // namespace gb

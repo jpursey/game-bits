@@ -63,8 +63,8 @@ class FiberJobSystem : public JobSystem {
                                      bool, kKeySetFiberNames);
 
   using CreateContract =
-      gb::ContextContract<kConstraintThreadCount, kConstraintPinThreads,
-                          kConstraintSetFiberNames>;
+      ContextContract<kConstraintThreadCount, kConstraintPinThreads,
+                      kConstraintSetFiberNames>;
 
   //----------------------------------------------------------------------------
   // Construction / Destruction
@@ -92,9 +92,11 @@ class FiberJobSystem : public JobSystem {
   int GetFiberCount() const;
 
  protected:
-  bool DoRun(std::string_view name, JobCounter* counter,
+  bool DoRun(std::string_view name, JobCounter* counter, Context* context,
              Callback<void()> callback) override;
   void DoWait(JobCounter* counter) override;
+  Context& DoGetContext() override;
+  JobData& DoGetJobData() override;
 
  private:
   // Represents a job tracked by the system.
@@ -110,6 +112,12 @@ class FiberJobSystem : public JobSystem {
     // Run counter which if not null is incremented when the job is initially
     // queued, and decremented when the job completes.
     JobCounter* run_counter = nullptr;
+
+    // Optional context for a job. Created on demand.
+    std::unique_ptr<Context> context;
+
+    // Arbitrary job-specific data.
+    JobData data;
   };
 
   struct FiberState {

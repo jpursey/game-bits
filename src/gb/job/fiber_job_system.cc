@@ -123,6 +123,7 @@ FiberJobSystem::~FiberJobSystem() {
 
   Job* job = nullptr;
   while (pending_jobs_.try_dequeue(job)) {
+    FreeJobData(job->data);
     job_allocator_.Delete(job);
   }
   Fiber fiber = nullptr;
@@ -228,6 +229,11 @@ void FiberJobSystem::JobMain(Fiber fiber) {
     GB_FIBER_JOB_SYSTEM_LOG << fiber << ": Completed job "
                             << GetJobName(state->job) << " callback";
 
+    // Reset job data and context, as waiting jobs may depend on this. For
+    // consistency, context must always be destructed *after* job data.
+    FreeJobData(state->job->data);
+    state->job->context.reset();
+
     // Decrement run counter and unblock any waiting jobs.
     JobCounter* const counter = state->job->run_counter;
     JobCounter::Waiters waiters;
@@ -252,7 +258,7 @@ void FiberJobSystem::JobMain(Fiber fiber) {
 }
 
 bool FiberJobSystem::DoRun(std::string_view name, JobCounter* counter,
-                           Callback<void()> callback) {
+                           Context* context, Callback<void()> callback) {
   Job* job = job_allocator_.New<Job>();
   if (job == nullptr) {
     return false;
@@ -272,6 +278,9 @@ bool FiberJobSystem::DoRun(std::string_view name, JobCounter* counter,
   GB_FIBER_JOB_SYSTEM_LOG << GetThisFiber() << ": Created job";
   job->run_counter = counter;
   job->callback = std::move(callback);
+  if (context != nullptr) {
+    job->context = std::make_unique<Context>(std::move(*context));
+  }
   pending_jobs_.enqueue(job);
   return true;
 }
@@ -323,6 +332,30 @@ void FiberJobSystem::DoWait(JobCounter* counter) {
   // unused).
   GB_JOB_CHECK(state->prev_fiber != nullptr);
   unused_fibers_.enqueue(std::exchange(state->prev_fiber, nullptr));
+}
+
+Context& FiberJobSystem::DoGetContext() {
+  const Fiber fiber = GetThisFiber();
+  GB_JOB_CHECK(fiber != nullptr);
+
+  FiberState* state = static_cast<FiberState*>(GetFiberData(fiber));
+  GB_JOB_CHECK(state != nullptr);
+
+  auto& context = state->job->context;
+  if (context == nullptr) {
+    context = std::make_unique<Context>();
+  }
+  return *context;
+}
+
+JobSystem::JobData& FiberJobSystem::DoGetJobData() {
+  const Fiber fiber = GetThisFiber();
+  GB_JOB_CHECK(fiber != nullptr);
+
+  FiberState* state = static_cast<FiberState*>(GetFiberData(fiber));
+  GB_JOB_CHECK(state != nullptr);
+
+  return state->job->data;
 }
 
 }  // namespace gb

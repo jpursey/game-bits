@@ -46,6 +46,7 @@ class FiberJobSystemTest : public ::testing::TestWithParam<TestParams> {
                            GetParam().thread_count)
             .SetValue<bool>(FiberJobSystem::kKeyPinThreads,
                             GetParam().pin_threads)
+            .SetValue<bool>(FiberJobSystem::kKeySetFiberNames, true)
             .Build());
     ASSERT_NE(job_system_, nullptr);
     if (GetParam().thread_count > 0) {
@@ -84,6 +85,52 @@ TEST_P(FiberJobSystemTest, RunJob) {
   EXPECT_EQ(call_count, 1);
 }
 
+TEST_P(FiberJobSystemTest, RunJobWithName) {
+  CHECK_FIBER_SUPPORT();
+  std::atomic<int> call_count = 0;
+  absl::Notification notify;
+  EXPECT_TRUE(job_system_->Run("TestJob", [this, &call_count, &notify] {
+    EXPECT_EQ(job_system_.get(), JobSystem::Get());
+    EXPECT_EQ(GetFiberName(GetThisFiber()), "TestJob");
+    ++call_count;
+    notify.Notify();
+  }));
+  notify.WaitForNotificationWithTimeout(absl::Seconds(10));
+  EXPECT_EQ(call_count, 1);
+}
+
+TEST_P(FiberJobSystemTest, RunJobWithContext) {
+  CHECK_FIBER_SUPPORT();
+  std::atomic<int> call_count = 0;
+  absl::Notification notify;
+  EXPECT_TRUE(job_system_->Run(
+      ContextBuilder().SetValue<int>(42).Build(), [this, &call_count, &notify] {
+        EXPECT_EQ(job_system_.get(), JobSystem::Get());
+        EXPECT_EQ(JobSystem::GetContext().GetValue<int>(), 42);
+        ++call_count;
+        notify.Notify();
+      }));
+  notify.WaitForNotificationWithTimeout(absl::Seconds(10));
+  EXPECT_EQ(call_count, 1);
+}
+
+TEST_P(FiberJobSystemTest, RunJobWithNameAndContext) {
+  CHECK_FIBER_SUPPORT();
+  std::atomic<int> call_count = 0;
+  absl::Notification notify;
+  EXPECT_TRUE(
+      job_system_->Run("TestJob", ContextBuilder().SetValue<int>(42).Build(),
+                       [this, &call_count, &notify] {
+                         EXPECT_EQ(job_system_.get(), JobSystem::Get());
+                         EXPECT_EQ(JobSystem::GetContext().GetValue<int>(), 42);
+                         EXPECT_EQ(GetFiberName(GetThisFiber()), "TestJob");
+                         ++call_count;
+                         notify.Notify();
+                       }));
+  notify.WaitForNotificationWithTimeout(absl::Seconds(10));
+  EXPECT_EQ(call_count, 1);
+}
+
 TEST_P(FiberJobSystemTest, WaitOnJob) {
   CHECK_FIBER_SUPPORT();
   JobCounter counter;
@@ -94,7 +141,7 @@ TEST_P(FiberJobSystemTest, WaitOnJob) {
     ++call_count;
   }));
   EXPECT_TRUE(job_system_->Run([&counter, &call_count, &notify] {
-    JobSystem::Get()->Wait(&counter);
+    JobSystem::Wait(&counter);
     EXPECT_EQ(call_count, 1);
     notify.Notify();
   }));
@@ -117,7 +164,7 @@ TEST_P(FiberJobSystemTest, WaitOnCompletedJob) {
 
   absl::Notification notify_2;
   EXPECT_TRUE(job_system_->Run([&counter, &call_count, &notify_2] {
-    JobSystem::Get()->Wait(&counter);
+    JobSystem::Wait(&counter);
     EXPECT_EQ(call_count, 1);
     notify_2.Notify();
   }));
@@ -137,7 +184,7 @@ TEST_P(FiberJobSystemTest, WaitOnMultipleJobs) {
     }));
   }
   EXPECT_TRUE(job_system_->Run([&counter, &call_count, &notify] {
-    JobSystem::Get()->Wait(&counter);
+    JobSystem::Wait(&counter);
     EXPECT_EQ(call_count, 10);
     notify.Notify();
   }));
@@ -155,7 +202,7 @@ TEST_P(FiberJobSystemTest, MultipleJobsWaitOnOneCounter) {
       &counter, [&notify_start] { notify_start.WaitForNotification(); }));
   for (int i = 0; i < 10; ++i) {
     EXPECT_TRUE(job_system_->Run([&notify_complete, &counter, &call_count] {
-      JobSystem::Get()->Wait(&counter);
+      JobSystem::Wait(&counter);
       if (++call_count == 10) {
         notify_complete.Notify();
       }
@@ -164,6 +211,139 @@ TEST_P(FiberJobSystemTest, MultipleJobsWaitOnOneCounter) {
   notify_start.Notify();
   notify_complete.WaitForNotificationWithTimeout(absl::Seconds(10));
   EXPECT_EQ(call_count, 10);
+}
+
+TEST_P(FiberJobSystemTest, ContextIsDestroyedAtJobEnd) {
+  CHECK_FIBER_SUPPORT();
+  std::atomic<int> call_count = 0;
+  absl::Notification notify;
+  struct TestStruct {
+    explicit TestStruct(absl::Notification* in_notify) : notify(in_notify) {}
+    ~TestStruct() { notify->Notify(); }
+    absl::Notification* notify;
+  };
+  EXPECT_TRUE(job_system_->Run(
+      ContextBuilder().SetNew<TestStruct>(&notify).Build(), [&call_count] {
+        absl::SleepFor(absl::Milliseconds(10));
+        ++call_count;
+      }));
+  notify.WaitForNotificationWithTimeout(absl::Seconds(10));
+  EXPECT_EQ(call_count, 1);
+}
+
+TEST_P(FiberJobSystemTest, SetData) {
+  CHECK_FIBER_SUPPORT();
+
+  struct Counters {
+    Counters() = default;
+    std::atomic<int> create = 0;
+    std::atomic<int> destroy = 0;
+  };
+  Counters counters;
+  Context context;
+  context.SetPtr(&counters);
+
+  struct TestData {
+    TestData() : counters(JobSystem::GetContext().GetPtr<Counters>()) {
+      ++counters->create;
+    }
+    ~TestData() { ++counters->destroy; }
+    Counters* const counters;
+  };
+
+  JobDataHandle handle_1 = job_system_->AllocDataHandle<TestData>();
+  JobDataHandle handle_2 = job_system_->AllocDataHandle<TestData>();
+  EXPECT_NE(handle_1, 0);
+  EXPECT_NE(handle_2, 0);
+  EXPECT_NE(handle_1, handle_2);
+
+  JobCounter counter_1;
+  JobCounter counter_2;
+  std::atomic<int> call_count = 0;
+  absl::Notification notify;
+  EXPECT_TRUE(job_system_->Run(
+      &counter_1, ContextBuilder().SetParent(&context).Build(),
+      [&call_count, handle_1] {
+        auto* counters = JobSystem::GetContext().GetPtr<Counters>();
+        EXPECT_EQ(counters->create, 0);
+        EXPECT_EQ(counters->destroy, 0);
+        auto* test_data = JobSystem::GetData<TestData>(handle_1);
+        EXPECT_NE(test_data, nullptr);
+        EXPECT_EQ(test_data->counters, counters);
+        EXPECT_EQ(counters->create, 1);
+        EXPECT_EQ(counters->destroy, 0);
+        absl::SleepFor(absl::Milliseconds(10));
+        ++call_count;
+      }));
+  EXPECT_TRUE(job_system_->Run(
+      &counter_2, ContextBuilder().SetParent(&context).Build(),
+      [&counter_1, &call_count, handle_2] {
+        JobSystem::Wait(&counter_1);
+        auto* counters = JobSystem::GetContext().GetPtr<Counters>();
+        EXPECT_EQ(counters->create, 1);
+        EXPECT_EQ(counters->destroy, 1);
+        auto* test_data = JobSystem::GetData<TestData>(handle_2);
+        EXPECT_NE(test_data, nullptr);
+        EXPECT_EQ(test_data->counters->create, 2);
+        EXPECT_EQ(test_data->counters->destroy, 1);
+        absl::SleepFor(absl::Milliseconds(10));
+        ++call_count;
+      }));
+  EXPECT_TRUE(job_system_->Run([&counter_2, &call_count, &notify] {
+    JobSystem::Wait(&counter_2);
+    EXPECT_EQ(call_count, 2);
+    notify.Notify();
+  }));
+  notify.WaitForNotificationWithTimeout(absl::Seconds(10));
+  EXPECT_EQ(call_count, 2);
+  EXPECT_EQ(counters.create, 2);
+  EXPECT_EQ(counters.destroy, 2);
+}
+
+TEST_P(FiberJobSystemTest, SetDataWithCustomAlloc) {
+  CHECK_FIBER_SUPPORT();
+
+  struct Counters {
+    Counters() = default;
+    std::atomic<int> create = 0;
+    std::atomic<int> destroy = 0;
+  };
+  Counters counters;
+
+  struct TestData {
+    explicit TestData(Counters* in_counters) : counters(in_counters) {
+      ++counters->create;
+    }
+    ~TestData() { ++counters->destroy; }
+    Counters* const counters;
+  };
+
+  JobDataHandle handle = job_system_->AllocDataHandle<TestData>(
+      [&counters]() { return new TestData(&counters); });
+  EXPECT_NE(handle, 0);
+
+  JobCounter counter;
+  std::atomic<int> call_count = 0;
+  absl::Notification notify;
+  EXPECT_TRUE(job_system_->Run(&counter, [&counters, &call_count, handle] {
+    EXPECT_EQ(counters.create, 0);
+    EXPECT_EQ(counters.destroy, 0);
+    auto* test_data = JobSystem::GetData<TestData>(handle);
+    EXPECT_NE(test_data, nullptr);
+    EXPECT_EQ(test_data->counters, &counters);
+    EXPECT_EQ(counters.create, 1);
+    EXPECT_EQ(counters.destroy, 0);
+    absl::SleepFor(absl::Milliseconds(10));
+    ++call_count;
+  }));
+  EXPECT_TRUE(job_system_->Run([&counter, &call_count, &notify] {
+    JobSystem::Wait(&counter);
+    notify.Notify();
+  }));
+  notify.WaitForNotificationWithTimeout(absl::Seconds(10));
+  EXPECT_EQ(call_count, 1);
+  EXPECT_EQ(counters.create, 1);
+  EXPECT_EQ(counters.destroy, 1);
 }
 
 TEST_P(FiberJobSystemTest, JobHierarchy) {
