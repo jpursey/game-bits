@@ -248,10 +248,16 @@ class WeakScope {
   //
   // If InvalidateWeakPtrs was already called (or the scope was constructed with
   // nullptr), this will return a null WeakPtr.
-  template <typename OtherType,
+  template <typename OtherType = const Type,
+            typename = std::enable_if_t<
+                std::is_convertible<const Type*, OtherType*>::value>>
+  WeakPtr<OtherType> GetWeakPtr() const {
+    return WeakPtr<OtherType>(data_);
+  }
+  template <typename OtherType = Type,
             typename =
                 std::enable_if_t<std::is_convertible<Type*, OtherType*>::value>>
-  WeakPtr<OtherType> GetWeakPtr() const {
+  WeakPtr<OtherType> GetWeakPtr() {
     return WeakPtr<OtherType>(data_);
   }
 
