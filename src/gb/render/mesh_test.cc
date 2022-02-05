@@ -32,10 +32,11 @@ class MeshTest : public RenderTest {
 
 TEST_F(MeshTest, CreateAsResourcePtr) {
   CreateSystem();
-  auto material = CreateMaterial({});
-  EXPECT_NE(material, nullptr);
-  ResourcePtr<Mesh> mesh =
-      render_system_->CreateMesh(material, DataVolatility::kStaticWrite, 3, 1);
+  auto material_type = CreateMaterialType({});
+  EXPECT_NE(material_type, nullptr);
+  const VertexType* vertex_type = material_type->GetVertexType();
+  ResourcePtr<Mesh> mesh = render_system_->CreateMesh(
+      vertex_type, DataVolatility::kStaticWrite, 3, 1);
   ASSERT_NE(mesh, nullptr);
 
   EXPECT_EQ(state_.invalid_call_count, 0);
@@ -51,23 +52,14 @@ TEST_F(MeshTest, CreateAsResourcePtr) {
 
 TEST_F(MeshTest, CreateInResourceSet) {
   CreateSystem();
-  auto material = CreateMaterial({});
-  EXPECT_NE(material, nullptr);
+  auto material_type = CreateMaterialType({});
+  EXPECT_NE(material_type, nullptr);
+  const VertexType* vertex_type = material_type->GetVertexType();
   ResourceSet resource_set;
-  Mesh* mesh = render_system_->CreateMesh(&resource_set, material,
+  Mesh* mesh = render_system_->CreateMesh(&resource_set, vertex_type,
                                           DataVolatility::kStaticWrite,
                                           64 * 1024 - 1, 128 * 1024);
   ASSERT_NE(mesh, nullptr);
-  EXPECT_EQ(resource_set.Get<Shader>(
-                material->GetType()->GetVertexShader()->GetResourceId()),
-            material->GetType()->GetVertexShader());
-  EXPECT_EQ(resource_set.Get<Shader>(
-                material->GetType()->GetFragmentShader()->GetResourceId()),
-            material->GetType()->GetFragmentShader());
-  EXPECT_EQ(
-      resource_set.Get<MaterialType>(material->GetType()->GetResourceId()),
-      material->GetType());
-  EXPECT_EQ(resource_set.Get<Material>(material->GetResourceId()), material);
   EXPECT_EQ(resource_set.Get<Mesh>(mesh->GetResourceId()), mesh);
 
   EXPECT_EQ(state_.invalid_call_count, 0);
@@ -90,19 +82,20 @@ TEST_F(MeshTest, FailCreate) {
       nullptr);
 
   // Invalid number of vertices.
-  auto material = CreateMaterial({});
-  EXPECT_NE(material, nullptr);
-  EXPECT_EQ(
-      render_system_->CreateMesh(material, DataVolatility::kStaticWrite, 0, 30),
-      nullptr);
-  EXPECT_EQ(
-      render_system_->CreateMesh(material, DataVolatility::kStaticWrite, 1, 30),
-      nullptr);
-  EXPECT_EQ(
-      render_system_->CreateMesh(material, DataVolatility::kStaticWrite, 2, 30),
-      nullptr);
-  EXPECT_EQ(render_system_->CreateMesh(material, DataVolatility::kStaticWrite,
-                                       64 * 1024, 30),
+  auto material_type = CreateMaterialType({});
+  EXPECT_NE(material_type, nullptr);
+  const VertexType* vertex_type = material_type->GetVertexType();
+  EXPECT_EQ(render_system_->CreateMesh(vertex_type,
+                                       DataVolatility::kStaticWrite, 0, 30),
+            nullptr);
+  EXPECT_EQ(render_system_->CreateMesh(vertex_type,
+                                       DataVolatility::kStaticWrite, 1, 30),
+            nullptr);
+  EXPECT_EQ(render_system_->CreateMesh(vertex_type,
+                                       DataVolatility::kStaticWrite, 2, 30),
+            nullptr);
+  EXPECT_EQ(render_system_->CreateMesh(
+                vertex_type, DataVolatility::kStaticWrite, 64 * 1024, 30),
             nullptr);
 
   // Invalid number of indices.
@@ -112,15 +105,15 @@ TEST_F(MeshTest, FailCreate) {
 
   // Fail vertex buffer creation.
   state_.fail_create_vertex_buffer = true;
-  EXPECT_EQ(render_system_->CreateMesh(material, DataVolatility::kStaticWrite,
-                                       30, 30),
+  EXPECT_EQ(render_system_->CreateMesh(vertex_type,
+                                       DataVolatility::kStaticWrite, 30, 30),
             nullptr);
 
   // Fail index buffer creation.
   state_.ResetState();
   state_.fail_create_index_buffer = true;
-  EXPECT_EQ(render_system_->CreateMesh(material, DataVolatility::kStaticWrite,
-                                       30, 30),
+  EXPECT_EQ(render_system_->CreateMesh(vertex_type,
+                                       DataVolatility::kStaticWrite, 30, 30),
             nullptr);
 
   EXPECT_EQ(state_.invalid_call_count, 0);
@@ -128,13 +121,14 @@ TEST_F(MeshTest, FailCreate) {
 
 TEST_F(MeshTest, Properties) {
   CreateSystem();
-  auto material = CreateMaterial({});
-  EXPECT_NE(material, nullptr);
+  auto material_type = CreateMaterialType({});
+  EXPECT_NE(material_type, nullptr);
+  const VertexType* vertex_type = material_type->GetVertexType();
   auto mesh = render_system_->CreateMesh(
-      material, DataVolatility::kStaticReadWrite, 30, 60);
+      vertex_type, DataVolatility::kStaticReadWrite, 30, 60);
   ASSERT_NE(mesh, nullptr);
 
-  EXPECT_EQ(mesh->GetMaterial(), material);
+  EXPECT_EQ(mesh->GetVertexType(), vertex_type);
   EXPECT_EQ(mesh->GetVolatility(), DataVolatility::kStaticReadWrite);
   EXPECT_EQ(mesh->GetVertexCount(), 0);
   EXPECT_EQ(mesh->GetVertexCapacity(), 30);
@@ -166,10 +160,11 @@ TEST_F(MeshTest, Properties) {
 
 TEST_F(MeshTest, SetWithTriangles) {
   CreateSystem();
-  auto material = CreateMaterial({});
-  EXPECT_NE(material, nullptr);
-  auto mesh = render_system_->CreateMesh(material, DataVolatility::kStaticWrite,
-                                         10, 14);
+  auto material_type = CreateMaterialType({});
+  EXPECT_NE(material_type, nullptr);
+  const VertexType* vertex_type = material_type->GetVertexType();
+  auto mesh = render_system_->CreateMesh(vertex_type,
+                                         DataVolatility::kStaticWrite, 10, 14);
   ASSERT_NE(mesh, nullptr);
 
   TestRenderBuffer* test_vertex_buffer =
@@ -302,10 +297,11 @@ TEST_F(MeshTest, SetWithTriangles) {
 
 TEST_F(MeshTest, SetWithIndices) {
   CreateSystem();
-  auto material = CreateMaterial({});
-  EXPECT_NE(material, nullptr);
-  auto mesh = render_system_->CreateMesh(material, DataVolatility::kStaticWrite,
-                                         10, 14);
+  auto material_type = CreateMaterialType({});
+  EXPECT_NE(material_type, nullptr);
+  const VertexType* vertex_type = material_type->GetVertexType();
+  auto mesh = render_system_->CreateMesh(vertex_type,
+                                         DataVolatility::kStaticWrite, 10, 14);
   ASSERT_NE(mesh, nullptr);
 
   TestRenderBuffer* test_vertex_buffer =
@@ -438,10 +434,11 @@ TEST_F(MeshTest, SetWithIndices) {
 
 TEST_F(MeshTest, FailSet) {
   CreateSystem();
-  auto material = CreateMaterial({});
-  EXPECT_NE(material, nullptr);
-  auto mesh = render_system_->CreateMesh(material, DataVolatility::kStaticWrite,
-                                         30, 60);
+  auto material_type = CreateMaterialType({});
+  EXPECT_NE(material_type, nullptr);
+  const VertexType* vertex_type = material_type->GetVertexType();
+  auto mesh = render_system_->CreateMesh(vertex_type,
+                                         DataVolatility::kStaticWrite, 30, 60);
   ASSERT_NE(mesh, nullptr);
 
   ASSERT_TRUE(mesh->Set<Vector3>({kCubeVertices.data(), 3},
@@ -481,10 +478,11 @@ TEST_F(MeshTest, FailSet) {
 
 TEST_F(MeshTest, EditPreventsModification) {
   CreateSystem();
-  auto material = CreateMaterial({});
-  EXPECT_NE(material, nullptr);
+  auto material_type = CreateMaterialType({});
+  EXPECT_NE(material_type, nullptr);
+  const VertexType* vertex_type = material_type->GetVertexType();
   auto mesh = render_system_->CreateMesh(
-      material, DataVolatility::kStaticReadWrite, 30, 60);
+      vertex_type, DataVolatility::kStaticReadWrite, 30, 60);
   ASSERT_NE(mesh, nullptr);
 
   auto view = mesh->Edit();
@@ -510,10 +508,11 @@ TEST_F(MeshTest, EditPreventsModification) {
 
 TEST_F(MeshTest, CannotEditStaticWrite) {
   CreateSystem();
-  auto material = CreateMaterial({});
-  EXPECT_NE(material, nullptr);
-  auto mesh = render_system_->CreateMesh(material, DataVolatility::kStaticWrite,
-                                         30, 60);
+  auto material_type = CreateMaterialType({});
+  EXPECT_NE(material_type, nullptr);
+  const VertexType* vertex_type = material_type->GetVertexType();
+  auto mesh = render_system_->CreateMesh(vertex_type,
+                                         DataVolatility::kStaticWrite, 30, 60);
   ASSERT_NE(mesh, nullptr);
   EXPECT_EQ(mesh->Edit(), nullptr);
 
@@ -530,10 +529,11 @@ TEST_F(MeshTest, CannotEditStaticWrite) {
 
 TEST_F(MeshTest, FailEdit) {
   CreateSystem();
-  auto material = CreateMaterial({});
-  EXPECT_NE(material, nullptr);
+  auto material_type = CreateMaterialType({});
+  EXPECT_NE(material_type, nullptr);
+  const VertexType* vertex_type = material_type->GetVertexType();
   auto mesh = render_system_->CreateMesh(
-      material, DataVolatility::kStaticReadWrite, 30, 60);
+      vertex_type, DataVolatility::kStaticReadWrite, 30, 60);
   ASSERT_NE(mesh, nullptr);
 
   state_.vertex_buffer_config.fail_edit_begin = true;

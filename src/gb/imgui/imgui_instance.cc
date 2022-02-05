@@ -396,7 +396,7 @@ bool ImGuiInstance::Init() {
     LOG(ERROR) << "Could not create ImGui render scene";
     return false;
   }
-  const auto* vertex_type = render_system->RegisterVertexType<ImGuiVertex>(
+  vertex_type_ = render_system->RegisterVertexType<ImGuiVertex>(
       "ImGuiVertex",
       {ShaderValue::kVec2, ShaderValue::kVec2, ShaderValue::kColor});
 
@@ -443,7 +443,7 @@ bool ImGuiInstance::Init() {
       {ShaderParam(ShaderValue::kVec4, 0), ShaderParam(ShaderValue::kVec2, 1)},
       {});
   auto* material_type = render_system->CreateMaterialType(
-      &resources_, scene_type, vertex_type, vertex_shader, fragment_shader,
+      &resources_, scene_type, vertex_type_, vertex_shader, fragment_shader,
       MaterialConfig()
           .SetCullMode(CullMode::kNone)
           .SetDepthMode(DepthMode::kNone));
@@ -467,7 +467,7 @@ bool ImGuiInstance::Init() {
                   // texture array.
 
   material_ = render_system->CreateMaterial(&resources_, material_type);
-  mesh_ = render_system->CreateMesh(&resources_, material_,
+  mesh_ = render_system->CreateMesh(&resources_, vertex_type_,
                                     DataVolatility::kPerFrame, 1000, 1000);
   if (mesh_ == nullptr) {
     LOG(ERROR) << "Failed to create ImGui render resources";
@@ -563,7 +563,7 @@ void ImGuiInstance::Draw(ImDrawData* draw_data) {
     const int max_indices = std::max(draw_data->TotalIdxCount * 2,
                                      mesh_->GetTriangleCapacity() * 3);
     resources_.Remove(mesh_, false);
-    mesh_ = render_system->CreateMesh(&resources_, material_,
+    mesh_ = render_system->CreateMesh(&resources_, vertex_type_,
                                       DataVolatility::kPerFrame, max_vertices,
                                       max_indices / 3);
     if (mesh_ == nullptr) {
@@ -585,8 +585,9 @@ void ImGuiInstance::Draw(ImDrawData* draw_data) {
   float frame_height = static_cast<float>(dimensions.height);
 
   DrawList draw;
+  draw.SetMaterial(material_);
   draw.SetMesh(mesh_, instance_data_.get());
-  ImTextureID last_texture_id = static_cast<ImTextureID>(mesh_->GetMaterial());
+  ImTextureID last_texture_id = static_cast<ImTextureID>(material_);
   ImVec2 clip_off = draw_data->DisplayPos;
   ImVec2 clip_scale = draw_data->FramebufferScale;
   int vertex_offset = 0;
@@ -634,8 +635,7 @@ void ImGuiInstance::Draw(ImDrawData* draw_data) {
                             static_cast<int>(clip_rect.w - clip_rect.y));
             if (cmd->TextureId != last_texture_id) {
               last_texture_id = cmd->TextureId;
-              draw.SetMaterialData(static_cast<gb::Material*>(cmd->TextureId)
-                                       ->GetMaterialBindingData());
+              draw.SetMaterial(static_cast<gb::Material*>(cmd->TextureId));
             }
             draw.DrawPartial((cmd->IdxOffset + index_offset) / 3,
                              cmd->ElemCount / 3,

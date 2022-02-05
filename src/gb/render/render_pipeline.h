@@ -47,6 +47,11 @@ class RenderPipeline {
   virtual std::unique_ptr<BindingData> CreateMaterialBindingData() = 0;
   virtual std::unique_ptr<BindingData> CreateInstanceBindingData() = 0;
 
+  // Validates binding data for the specified binding set.
+  virtual bool ValidateInstanceBindingData(BindingData* binding_data) {
+    return true;
+  }
+
  protected:
   RenderPipeline() = default;
 };

@@ -33,11 +33,11 @@ class MeshViewTest : public RenderTest {
 
   void SetUp() override {
     CreateSystem();
-    auto material = CreateMaterial({});
-    EXPECT_NE(material, nullptr);
-    mesh_ = render_system_->CreateMesh(&temp_resource_set_, material,
-                                       DataVolatility::kPerFrame,
-                                       kVertexCapacity, kTriangleCapacity);
+    auto material_type = CreateMaterialType({});
+    EXPECT_NE(material_type, nullptr);
+    mesh_ = render_system_->CreateMesh(
+        &temp_resource_set_, material_type->GetVertexType(),
+        DataVolatility::kPerFrame, kVertexCapacity, kTriangleCapacity);
     ASSERT_NE(mesh_, nullptr);
     ASSERT_TRUE(mesh_->Set<Vector3>(kCubeVertices, kCubeTriangles));
     test_vertex_buffer_ = static_cast<TestRenderBuffer*>(

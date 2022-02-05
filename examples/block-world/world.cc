@@ -87,6 +87,8 @@ bool World::InitGraphics() {
   auto* render_system = context_.GetPtr<gb::RenderSystem>();
   auto* resources = context_.GetPtr<WorldResources>();
 
+  material_ = resources->GetChunkMaterial();
+
   scene_ = render_system->CreateScene(resources->GetSceneType());
   if (scene_ == nullptr) {
     LOG(ERROR) << "Could not create scene";
@@ -446,7 +448,7 @@ void World::Draw(const Camera& camera) {
       if (instance_data != nullptr && !meshes.empty()) {
         for (gb::Mesh* mesh : meshes) {
           debug_triangle_count += mesh->GetTriangleCount();
-          render_system->Draw(scene_.get(), mesh, instance_data);
+          render_system->Draw(scene_.get(), mesh, material_, instance_data);
         }
       }
     }

@@ -198,9 +198,10 @@ class RenderSystem final {
   //
   // If successful, the mesh will be created empty. The caller should call
   // Set or Edit to initialize its contents.
-  ResourcePtr<Mesh> CreateMesh(Material* material, DataVolatility volatility,
-                               int max_vertices, int max_triangles);
-  Mesh* CreateMesh(ResourceSet* resource_set, Material* material,
+  ResourcePtr<Mesh> CreateMesh(const VertexType* vertex_type,
+                               DataVolatility volatility, int max_vertices,
+                               int max_triangles);
+  Mesh* CreateMesh(ResourceSet* resource_set, const VertexType* vertex_type,
                    DataVolatility volatility, int max_vertices,
                    int max_triangles);
 
@@ -382,7 +383,8 @@ class RenderSystem final {
   // This is based on the mesh's material's material type:
   // - The scene's type must match the material type's scene type.
   // - The instance data be created from a material of the same material type.
-  void Draw(RenderScene* scene, Mesh* mesh, BindingData* instance_data);
+  void Draw(RenderScene* scene, Mesh* mesh, Material* material,
+            BindingData* instance_data);
 
   // Renderss a list of ordered draw commands in the scene.
   //
@@ -405,7 +407,7 @@ class RenderSystem final {
 
   bool Init();
 
-  Mesh* DoCreateMesh(Material* material, DataVolatility volatility,
+  Mesh* DoCreateMesh(const VertexType* vertex_type, DataVolatility volatility,
                      int max_vertices, int max_triangles);
   Mesh* LoadMeshChunk(Context* context, const fbs::MeshChunk* chunk,
                       ResourceEntry entry);
@@ -506,18 +508,19 @@ inline const VertexType* RenderSystem::RegisterVertexType(
                               attributes);
 }
 
-inline ResourcePtr<Mesh> RenderSystem::CreateMesh(Material* material,
+inline ResourcePtr<Mesh> RenderSystem::CreateMesh(const VertexType* vertex_type,
                                                   DataVolatility volatility,
                                                   int max_vertices,
                                                   int max_triangles) {
-  return DoCreateMesh(material, volatility, max_vertices, max_triangles);
+  return DoCreateMesh(vertex_type, volatility, max_vertices, max_triangles);
 }
 
 inline Mesh* RenderSystem::CreateMesh(ResourceSet* resource_set,
-                                      Material* material,
+                                      const VertexType* vertex_type,
                                       DataVolatility volatility,
                                       int max_vertices, int max_triangles) {
-  Mesh* mesh = DoCreateMesh(material, volatility, max_vertices, max_triangles);
+  Mesh* mesh =
+      DoCreateMesh(vertex_type, volatility, max_vertices, max_triangles);
   resource_set->Add(mesh);
   return mesh;
 }

@@ -86,7 +86,7 @@ bool Chunk::UpdateMesh() {
     const int triangle_count = std::min(num_triangles, kMaxTrianglesPerMesh);
     if (mesh_[i] == nullptr) {
       mesh_[i] = render_system->CreateMesh(
-          &resources_, world_resources->GetChunkMaterial(),
+          &resources_, world_resources->GetChunkVertexType(),
           gb::DataVolatility::kStaticWrite, vertex_count, triangle_count);
       if (mesh_[i] == nullptr) {
         LOG(ERROR) << "Failed to create mesh for chunk";

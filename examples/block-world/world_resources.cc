@@ -47,11 +47,11 @@ bool WorldResources::InitGraphics() {
     return false;
   }
 
-  const auto* vertex_type = render_system->RegisterVertexType<Vertex>(
+  chunk_vertex_type_ = render_system->RegisterVertexType<Vertex>(
       "Vertex",
       {/*pos=*/gb::ShaderValue::kVec3, /*normal=*/gb::ShaderValue::kVec3,
        /*uv=*/gb::ShaderValue::kVec3, /*color=*/gb::ShaderValue::kColor});
-  if (vertex_type == nullptr) {
+  if (chunk_vertex_type_ == nullptr) {
     LOG(ERROR) << "Vertex type could not be registered (likely a size or "
                   "alignment issue)";
     return false;
@@ -148,7 +148,8 @@ bool WorldResources::InitGraphics() {
   }
 
   gb::MaterialType* material_type = render_system->CreateMaterialType(
-      &resources_, scene_type_, vertex_type, vertex_shader, fragment_shader);
+      &resources_, scene_type_, chunk_vertex_type_, vertex_shader,
+      fragment_shader);
   if (material_type == nullptr) {
     LOG(ERROR) << "Could not create material type";
     return false;

@@ -85,21 +85,45 @@ class DrawList final {
   // will persist until it is explicitly changed.
   //----------------------------------------------------------------------------
 
-  // Sets the mesh and instance data (and implicitly the material data) for the
-  // next Draw command.
+  // Clears material, mesh, and any instance data currently set in the draw
+  // list.
+  void ClearBindings();
+
+  // Sets the material and material data for the next Draw command.
+  //
+  // If material data is not provided, the material's default material data will
+  // be used.
+  //
+  // If mesh is currently set, then this material must be compatible with the
+  // current mesh (it must support the mesh's vertex type).
   //
   // This must be called before SetMaterialData or SetInstanceData are called.
-  void SetMesh(Mesh* mesh, BindingData* instance_data);
+  void SetMaterial(Material* material, BindingData* material_data = nullptr);
 
   // Overrides the material data for subsequent draw commands.
   //
-  // This must be compatible with the currently set mesh.
+  // This must be compatible with the currently set material.
   void SetMaterialData(BindingData* material_data);
 
   // Overrides the instance data for subsequent draw commands.
   //
-  // This must be compatible with the currently set mesh.
+  // This must be compatible with the currently set material.
   void SetInstanceData(BindingData* instance_data);
+
+  // Sets the mesh (and optionally material and instance data) for the
+  // next Draw command.
+  //
+  // If a material is not provided, then the material must already be set and be
+  // compatible with this mesh's vertex type.
+  //
+  // If instance data is provided, it must be compatible with the material. If
+  // it is not provided, then the existing instance data will be used.
+  void SetMesh(Mesh* mesh, Material* material,
+               BindingData* instance_data = nullptr);
+  void SetMesh(Mesh* mesh, BindingData* instance_data) {
+    SetMesh(mesh, nullptr, instance_data);
+  }
+  void SetMesh(Mesh* mesh) { SetMesh(mesh, nullptr, nullptr); }
 
   // Sets the scissor rectangle for subsequent draw commands.
   //
@@ -129,6 +153,8 @@ class DrawList final {
   }
 
  private:
+  MaterialType* current_material_type_ = nullptr;
+  BindingData* current_instance_data_ = nullptr;
   Mesh* current_mesh_ = nullptr;
   std::vector<DrawCommand> commands_;
 };

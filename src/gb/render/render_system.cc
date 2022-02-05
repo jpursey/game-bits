@@ -607,10 +607,11 @@ std::unique_ptr<RenderScene> RenderSystem::CreateScene(
   return backend_->CreateScene({}, scene_type, scene_order);
 }
 
-Mesh* RenderSystem::DoCreateMesh(Material* material, DataVolatility volatility,
-                                 int max_vertices, int max_triangles) {
-  if (material == nullptr) {
-    LOG(ERROR) << "Null material passed to CreateMesh";
+Mesh* RenderSystem::DoCreateMesh(const VertexType* vertex_type,
+                                 DataVolatility volatility, int max_vertices,
+                                 int max_triangles) {
+  if (vertex_type == nullptr) {
+    LOG(ERROR) << "Null vertex type passed in to CreateMesh";
     return nullptr;
   }
 
@@ -629,8 +630,7 @@ Mesh* RenderSystem::DoCreateMesh(Material* material, DataVolatility volatility,
   }
 
   auto vertex_buffer = backend_->CreateVertexBuffer(
-      {}, volatility, material->GetType()->GetVertexType()->GetSize(),
-      max_vertices);
+      {}, volatility, vertex_type->GetSize(), max_vertices);
   if (vertex_buffer == nullptr) {
     LOG(ERROR) << "Failed to create vertex buffer with space for "
                << max_vertices << " vertices.";
@@ -645,28 +645,33 @@ Mesh* RenderSystem::DoCreateMesh(Material* material, DataVolatility volatility,
   }
 
   return new Mesh({}, resource_manager_->NewResourceEntry<Mesh>(), backend_,
-                  material, volatility, std::move(vertex_buffer),
+                  vertex_type, volatility, std::move(vertex_buffer),
                   std::move(index_buffer));
 }
 
 Mesh* RenderSystem::LoadMeshChunk(Context* context, const fbs::MeshChunk* chunk,
                                   ResourceEntry entry) {
   auto* resources = context->GetPtr<FileResources>();
-  auto* material = resources->GetResource<Material>(chunk->material_id());
-  if (material == nullptr) {
-    LOG(ERROR) << "Material (ID: " << chunk->material_id()
-               << ") not found when loading mesh";
+
+  std::string_view vertex_type_name =
+      (chunk->vertex_type_name() != nullptr ? chunk->vertex_type_name()->c_str()
+                                            : "");
+  const VertexType* vertex_type = GetVertexType(vertex_type_name);
+  if (vertex_type == nullptr) {
+    LOG(ERROR) << "Cannot load mesh because vertex type \"" << vertex_type_name
+               << "\" is not registered";
     return nullptr;
   }
+
   if (chunk->vertices() == nullptr || chunk->indices() == nullptr) {
     LOG(ERROR) << "Mesh is empty";
     return nullptr;
   }
   if (chunk->vertex_size() == 0 ||
-      chunk->vertex_size() != material->GetType()->GetVertexType()->GetSize()) {
+      chunk->vertex_size() != vertex_type->GetSize()) {
     LOG(ERROR) << "Mesh has mismatched vertex size " << chunk->vertex_size()
                << " compared to material vertex size of "
-               << material->GetType()->GetVertexType()->GetSize();
+               << vertex_type->GetSize();
     return nullptr;
   }
   const int32_t vertex_count =
@@ -691,7 +696,7 @@ Mesh* RenderSystem::LoadMeshChunk(Context* context, const fbs::MeshChunk* chunk,
     return nullptr;
   }
 
-  return new Mesh({}, std::move(entry), backend_, material, volatility,
+  return new Mesh({}, std::move(entry), backend_, vertex_type, volatility,
                   std::move(vertex_buffer), std::move(index_buffer));
 }
 
@@ -714,16 +719,18 @@ bool RenderSystem::SaveMeshChunk(Context* context, Mesh* mesh,
     return false;
   }
 
-  const int32_t vertex_size = static_cast<int32_t>(
-      mesh->GetMaterial()->GetType()->GetVertexType()->GetSize());
+  const int32_t vertex_size =
+      static_cast<int32_t>(mesh->GetVertexType()->GetSize());
   const auto fb_indices = builder->CreateVector(view->GetIndexData({}),
                                                 view->GetTriangleCount() * 3);
   const auto fb_vertices = builder->CreateVector(
       static_cast<const uint8_t*>(view->GetVertexData({})),
       view->GetVertexCount() * vertex_size);
+  const auto fb_vertex_type_name =
+      builder->CreateSharedString(mesh->GetVertexType()->GetName());
 
   fbs::MeshChunkBuilder mesh_builder(*builder);
-  mesh_builder.add_material_id(mesh->GetMaterial()->GetResourceId());
+  mesh_builder.add_vertex_type_name(fb_vertex_type_name);
   mesh_builder.add_volatility(ToFbs(context->GetValue<DataVolatility>()));
   mesh_builder.add_vertex_size(vertex_size);
   mesh_builder.add_indices(fb_indices);
@@ -1625,13 +1632,13 @@ bool RenderSystem::BeginFrame() {
   return true;
 }
 
-void RenderSystem::Draw(RenderScene* scene, Mesh* mesh,
+void RenderSystem::Draw(RenderScene* scene, Mesh* mesh, Material* material,
                         BindingData* instance_data) {
   RENDER_ASSERT(is_rendering_);
-  RENDER_ASSERT(scene != nullptr && mesh != nullptr &&
+  RENDER_ASSERT(scene != nullptr && mesh != nullptr && material != nullptr &&
                 instance_data != nullptr);
-  Material* const material = mesh->GetMaterial();
   MaterialType* const material_type = material->GetType();
+  RENDER_ASSERT(mesh->GetVertexType() == material_type->GetVertexType());
   RenderPipeline* const pipeline = material_type->GetPipeline({});
   RENDER_ASSERT(instance_data->GetPipeline({}) == pipeline);
   RENDER_ASSERT(scene->GetType() == material_type->GetSceneType());

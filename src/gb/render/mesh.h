@@ -22,11 +22,13 @@
 
 namespace gb {
 
-// A mesh combines a set of triangles with a material.
+// A mesh defines a set of triangles for a specified vertex type.
 //
 // Mesh is defined by a list of vertices and a list of indices into the vertex
 // list. Each triple of indices specifies a triangle in the mesh. The data
-// associated with a vertex is defined by the type of material used.
+// associated with a vertex is defined by the vertex type.
+//
+// A mesh may be used with any material that uses the same vertex type.
 //
 // This class is thread-compatible.
 class Mesh final : public Resource {
@@ -35,8 +37,8 @@ class Mesh final : public Resource {
   // Properies
   //----------------------------------------------------------------------------
 
-  // Returns the material associated with this mesh.
-  Material* GetMaterial() const { return material_; }
+  // Returns the layout type for vertices in this mesh.
+  const VertexType* GetVertexType() const { return vertex_type_; }
 
   // Returns the data volatility for the vertex and index data.
   //
@@ -92,18 +94,11 @@ class Mesh final : public Resource {
   std::unique_ptr<MeshView> Edit();
 
   //----------------------------------------------------------------------------
-  // Resource overrides
-  //----------------------------------------------------------------------------
-
-  void GetResourceDependencies(
-      ResourceDependencyList* dependencies) const override;
-
-  //----------------------------------------------------------------------------
   // Internal
   //----------------------------------------------------------------------------
 
   Mesh(RenderInternal, ResourceEntry entry, RenderBackend* backend,
-       Material* material, DataVolatility volatility,
+       const VertexType* vertex_type, DataVolatility volatility,
        std::unique_ptr<RenderBuffer> vertex_buffer,
        std::unique_ptr<RenderBuffer> index_buffer);
 
@@ -122,7 +117,7 @@ class Mesh final : public Resource {
   bool DoEdit(std::unique_ptr<RenderBuffer>, std::unique_ptr<RenderBuffer>);
 
   RenderBackend* const backend_;
-  Material* const material_;
+  const VertexType* const vertex_type_;
   const DataVolatility volatility_;
   std::unique_ptr<RenderBuffer> vertex_buffer_;
   std::unique_ptr<RenderBuffer> index_buffer_;
@@ -133,8 +128,7 @@ bool Mesh::Set(absl::Span<const Vertex> vertices,
                absl::Span<const uint16_t> indices, int min_vertex_capacity,
                int min_triangle_capacity) {
   RENDER_ASSERT(indices.size() % 3 == 0);
-  if (TypeKey::Get<Vertex>() !=
-      material_->GetType()->GetVertexType()->GetType()) {
+  if (TypeKey::Get<Vertex>() != vertex_type_->GetType()) {
     LOG(ERROR) << "Invalid vertex type for mesh";
     return false;
   }
@@ -151,8 +145,7 @@ template <typename Vertex>
 bool Mesh::Set(absl::Span<const Vertex> vertices,
                absl::Span<const Triangle> triangles, int min_vertex_capacity,
                int min_triangle_capacity) {
-  if (TypeKey::Get<Vertex>() !=
-      material_->GetType()->GetVertexType()->GetType()) {
+  if (TypeKey::Get<Vertex>() != vertex_type_->GetType()) {
     LOG(ERROR) << "Invalid vertex type for mesh";
     return false;
   }

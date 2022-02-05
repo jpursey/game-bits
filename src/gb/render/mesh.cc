@@ -11,12 +11,12 @@
 namespace gb {
 
 Mesh::Mesh(RenderInternal, ResourceEntry entry, RenderBackend* backend,
-           Material* material, DataVolatility volatility,
+           const VertexType* vertex_type, DataVolatility volatility,
            std::unique_ptr<RenderBuffer> vertex_buffer,
            std::unique_ptr<RenderBuffer> index_buffer)
     : Resource(std::move(entry)),
       backend_(backend),
-      material_(material),
+      vertex_type_(vertex_type),
       volatility_(volatility),
       vertex_buffer_(std::move(vertex_buffer)),
       index_buffer_(std::move(index_buffer)) {}
@@ -31,10 +31,6 @@ int Mesh::GetTriangleCount() const { return index_buffer_->GetSize() / 3; }
 
 int Mesh::GetTriangleCapacity() const {
   return index_buffer_->GetCapacity() / 3;
-}
-
-void Mesh::GetResourceDependencies(ResourceDependencyList* dependencies) const {
-  dependencies->push_back(material_);
 }
 
 bool Mesh::DoSet(const void* vertex_data, int vertex_count, int vertex_capacity,
@@ -95,9 +91,9 @@ std::unique_ptr<MeshView> Mesh::Edit() {
     return nullptr;
   }
 
-  return std::make_unique<MeshView>(
-      RenderInternal{}, material_->GetType()->GetVertexType()->GetType(),
-      std::move(vertex_view), std::move(index_view));
+  return std::make_unique<MeshView>(RenderInternal{}, vertex_type_->GetType(),
+                                    std::move(vertex_view),
+                                    std::move(index_view));
 }
 
 }  // namespace gb

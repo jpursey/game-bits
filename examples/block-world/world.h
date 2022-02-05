@@ -143,6 +143,7 @@ class World final {
   bool use_cull_camera_ = false;
   Camera cull_camera_;
   std::unique_ptr<gb::RenderScene> scene_;
+  gb::Material* material_ = nullptr;
   SceneLightData lights_;
   gb::Pixel sky_color_;
 };

@@ -93,7 +93,7 @@ table BindingDataEntry {
 
 // Chunk for mesh resource.
 table MeshChunk {
-  material_id : uint64;
+  vertex_type_name : string;
   volatility : DataVolatility;
   vertex_size : int32;
   vertices : [uint8];

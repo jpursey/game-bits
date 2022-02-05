@@ -56,6 +56,9 @@ class WorldResources {
 
   gb::RenderSceneType* GetSceneType() const { return scene_type_; }
   gb::Material* GetChunkMaterial() const { return chunk_material_; }
+  const gb::VertexType* GetChunkVertexType() const {
+    return chunk_vertex_type_;
+  }
 
   //----------------------------------------------------------------------------
   // GUI resources
@@ -75,6 +78,7 @@ class WorldResources {
   gb::ResourceSet resources_;
   gb::RenderSceneType* scene_type_ = nullptr;
   gb::Material* chunk_material_ = nullptr;
+  const gb::VertexType* chunk_vertex_type_ = nullptr;
   gb::TextureArray* block_texture_ = nullptr;
   std::vector<ImTextureID> chunk_gui_textures_;
 };

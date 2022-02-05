@@ -766,24 +766,16 @@ TEST_F(RenderSystemTest, SaveLoadMaterialAndDependencies) {
 
 TEST_F(RenderSystemTest, SaveLoadMeshAndDependencies) {
   CreateSystem(true);
-  auto* material = CreateMaterial({});
-  auto* material_type = material->GetType();
-  auto* vertex_shader = material_type->GetVertexShader();
-  auto* fragment_shader = material_type->GetFragmentShader();
+  auto* material_type = CreateMaterialType({});
 
   const int vertex_count = static_cast<int>(kCubeVertices.size());
   const int triangle_count = static_cast<int>(kCubeTriangles.size());
-  auto mesh = render_system_->CreateMesh(
-      material, DataVolatility::kStaticReadWrite, vertex_count, triangle_count);
+  auto mesh = render_system_->CreateMesh(material_type->GetVertexType(),
+                                         DataVolatility::kStaticReadWrite,
+                                         vertex_count, triangle_count);
   mesh->Set<Vector3>(kCubeVertices, kCubeTriangles);
   auto mesh_id = mesh->GetResourceId();
 
-  ASSERT_TRUE(render_system_->SaveShader("mem:/vertex.gbsh", vertex_shader));
-  ASSERT_TRUE(
-      render_system_->SaveShader("mem:/fragment.gbsh", fragment_shader));
-  ASSERT_TRUE(render_system_->SaveMaterialType("mem:/material_type.gbmt",
-                                               material_type));
-  ASSERT_TRUE(render_system_->SaveMaterial("mem:/material.gbma", material));
   ASSERT_TRUE(render_system_->SaveMesh("mem:/mesh.gbme", mesh.Get()));
   EXPECT_EQ(mesh->GetResourceName(), "mem:/mesh.gbme");
   mesh.Reset();
@@ -793,7 +785,7 @@ TEST_F(RenderSystemTest, SaveLoadMeshAndDependencies) {
   ASSERT_NE(mesh, nullptr);
   EXPECT_EQ(mesh->GetResourceId(), mesh_id);
   EXPECT_EQ(mesh->GetResourceName(), "mem:/mesh.gbme");
-  EXPECT_NE(mesh->GetMaterial(), nullptr);
+  EXPECT_NE(mesh->GetVertexType(), nullptr);
   auto view = mesh->Edit();
   ASSERT_NE(view, nullptr);
   ASSERT_EQ(view->GetVertexCount(), vertex_count);

@@ -122,6 +122,7 @@ class ImGuiInstance final {
   ValidatedContext context_;
   std::unique_ptr<RenderScene> scene_;
   ResourceSet resources_;
+  const VertexType* vertex_type_ = nullptr;
   Material* material_ = nullptr;
   Mesh* mesh_ = nullptr;
   std::unique_ptr<BindingData> instance_data_;
