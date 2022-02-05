@@ -42,4 +42,11 @@ std::unique_ptr<BindingData> TestRenderPipeline::CreateInstanceBindingData() {
                                            bindings_);
 }
 
+bool TestRenderPipeline::ValidateInstanceBindingData(
+    BindingData* binding_data) {
+  // This is only used in RENDER_ASSERT calls, and there are not tests for this,
+  // so we just return true for now.
+  return true;
+}
+
 }  // namespace gb

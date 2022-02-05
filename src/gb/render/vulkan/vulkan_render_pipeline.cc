@@ -385,4 +385,10 @@ std::unique_ptr<BindingData> VulkanRenderPipeline::CreateInstanceBindingData() {
   return instance_data_factory_->NewBindingData(this, BindingSet::kInstance);
 }
 
+bool VulkanRenderPipeline::ValidateInstanceBindingData(
+    BindingData* binding_data) {
+  return static_cast<VulkanBindingData*>(binding_data)
+      ->ValidateBindings(instance_data_factory_->GetBindings());
+}
+
 }  // namespace gb

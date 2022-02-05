@@ -39,6 +39,7 @@ class VulkanBindingDataFactory final
     return descriptor_pool_->GetLayout();
   }
   int GetBufferCount() const { return buffer_count_; }
+  absl::Span<const Binding> GetBindings() const { return bindings_; }
 
   std::unique_ptr<VulkanBindingData> NewBindingData(RenderPipeline* pipeline,
                                                     BindingSet set);

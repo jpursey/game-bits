@@ -89,6 +89,10 @@ class VulkanBindingData : public BindingData {
   // Collect all required descriptor set updates and affected render buffers.
   void OnRender(VulkanRenderState* state);
 
+  // Validates that all of this binding data is included in the provided
+  // bindings.
+  bool ValidateBindings(absl::Span<const Binding> bindings) const;
+
  protected:
   bool Validate(int index, gb::TypeKey* type) const override;
   void DoSet(int index, const void* value) override;

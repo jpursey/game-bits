@@ -38,6 +38,7 @@ class TestRenderPipeline final : public RenderPipeline {
 
   std::unique_ptr<BindingData> CreateMaterialBindingData() override;
   std::unique_ptr<BindingData> CreateInstanceBindingData() override;
+  bool ValidateInstanceBindingData(BindingData* binding_data) override;
 
  private:
   Config* const config_;

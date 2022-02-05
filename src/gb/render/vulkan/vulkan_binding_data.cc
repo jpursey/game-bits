@@ -105,6 +105,38 @@ void VulkanBindingData::OnRender(VulkanRenderState* state) {
   }
 }
 
+bool VulkanBindingData::ValidateBindings(
+    absl::Span<const Binding> bindings) const {
+  if (bindings.size() < data_.size()) {
+    return false;
+  }
+  for (int index = 0; index < data_.size(); ++index) {
+    // Bindings are usually in order, so we test that first.
+    const Binding* binding = &bindings[index];
+    if (binding->index != index) {
+      for (const auto& search_binding : bindings) {
+        if (search_binding.index == index) {
+          binding = &search_binding;
+          break;
+        }
+      }
+      if (binding->index != index) {
+        return false;
+      }
+    }
+
+    if (data_[index].binding_type != binding->binding_type) {
+      return false;
+    }
+    if (binding->binding_type == BindingType::kConstants &&
+        data_[index].constants.type->GetType() !=
+            binding->constants_type->GetType()) {
+      return false;
+    }
+  }
+  return true;
+}
+
 bool VulkanBindingData::Validate(int index, gb::TypeKey* type) const {
   static gb::TypeKey* texture_type = gb::TypeKey::Get<Texture*>();
   static gb::TypeKey* texture_array_type = gb::TypeKey::Get<TextureArray*>();
