@@ -16,6 +16,22 @@ enum class DepthMode {
   kTestAndWrite,  // Depth test is done and depth is updated.
 };
 
+// If DepthMode is kTest or kTestAndWrite, the DepthTest value specifies how the
+// depth value of a new fragment will compare to what is in the depth buffer.
+enum class DepthTest {
+  kLess,
+  kLessOrEqual,
+  kEqual,
+  kGreaterOrEqual,
+  kGreater,
+};
+
+// Determines how polygon primitives are rasterized.
+enum class RasterMode {
+  kFill,  // Polygons are filled in.
+  kLine,  // Polygons render only line (aka wireframe).
+};
+
 // Determines how faces are culled, given CCW winding
 enum class CullMode {
   kNone,   // No culling is done, both the front and back face are drawn.
@@ -32,8 +48,14 @@ struct MaterialConfig {
   MaterialConfig() = default;
 
   // Helper functions for constructing MaterialConfig as a temporary.
-  MaterialConfig& SetDepthMode(DepthMode mode) {
+  MaterialConfig& SetDepthMode(DepthMode mode,
+                               DepthTest test = DepthTest::kLess) {
     depth_mode = mode;
+    depth_test = test;
+    return *this;
+  }
+  MaterialConfig& SetRasterMode(RasterMode mode) {
+    raster_mode = mode;
     return *this;
   }
   MaterialConfig& SetCullMode(CullMode mode) {
@@ -42,6 +64,8 @@ struct MaterialConfig {
   }
 
   DepthMode depth_mode = DepthMode::kTestAndWrite;
+  DepthTest depth_test = DepthTest::kLess;
+  RasterMode raster_mode = RasterMode::kFill;
   CullMode cull_mode = CullMode::kBack;
 };
 

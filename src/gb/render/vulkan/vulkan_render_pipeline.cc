@@ -290,8 +290,11 @@ bool VulkanRenderPipeline::Init(
   } else if (config.cull_mode == CullMode::kFront) {
     cull_mode = vk::CullModeFlagBits::eFront;
   }
+  vk::PolygonMode polygon_mode =
+      (config.raster_mode == RasterMode::kFill ? vk::PolygonMode::eFill
+                                               : vk::PolygonMode::eLine);
   auto rasterizer = vk::PipelineRasterizationStateCreateInfo()
-                        .setPolygonMode(vk::PolygonMode::eFill)
+                        .setPolygonMode(polygon_mode)
                         .setLineWidth(1.0f)
                         .setCullMode(cull_mode)
                         .setFrontFace(vk::FrontFace::eCounterClockwise);
@@ -300,13 +303,31 @@ bool VulkanRenderPipeline::Init(
       vk::PipelineMultisampleStateCreateInfo().setRasterizationSamples(
           backend_->GetMsaaSampleCount());
 
+  vk::CompareOp depth_compare_op = {};
+  switch (config.depth_test) {
+    case DepthTest::kLess:
+      depth_compare_op = vk::CompareOp::eLess;
+      break;
+    case DepthTest::kLessOrEqual:
+      depth_compare_op = vk::CompareOp::eLessOrEqual;
+      break;
+    case DepthTest::kEqual:
+      depth_compare_op = vk::CompareOp::eEqual;
+      break;
+    case DepthTest::kGreaterOrEqual:
+      depth_compare_op = vk::CompareOp::eGreaterOrEqual;
+      break;
+    case DepthTest::kGreater:
+      depth_compare_op = vk::CompareOp::eGreater;
+      break;
+  }
   auto depth_stencil =
       vk::PipelineDepthStencilStateCreateInfo()
           .setDepthTestEnable(config.depth_mode == DepthMode::kTest ||
                               config.depth_mode == DepthMode::kTestAndWrite)
           .setDepthWriteEnable(config.depth_mode == DepthMode::kWrite ||
                                config.depth_mode == DepthMode::kTestAndWrite)
-          .setDepthCompareOp(vk::CompareOp::eLess)
+          .setDepthCompareOp(depth_compare_op)
           .setDepthBoundsTestEnable(VK_FALSE)
           .setMinDepthBounds(0.0f)
           .setMaxDepthBounds(1.0f)
