@@ -100,6 +100,12 @@ set_target_properties(flatbuffers flatc flathash PROPERTIES FOLDER External/flat
 unset(FLATBUFFERS_BUILD_TESTS)
 unset(FLATBUFFERS_INSTALL)
 
+####### libccd
+
+add_subdirectory("${GB_THIRD_PARTY_DIR}/libccd")
+set_target_properties(ccd PROPERTIES FOLDER External/ccd)
+target_compile_definitions(ccd PUBLIC CCD_STATIC_DEFINE)
+
 ###############################################################################
 ## Add Game Bits source
 ###############################################################################

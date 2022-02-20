@@ -8,6 +8,11 @@ set(gb_collide_SOURCE
   shapes.cc shapes.h
 )
 
+set(gb_collide_DEPS
+  absl::base
+  ccd
+)
+
 set (gb_collide_LIBS
   glm
   glog

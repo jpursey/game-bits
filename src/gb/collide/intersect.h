@@ -16,13 +16,24 @@ inline constexpr float kCEpsilon = 0.0000001f;
 //------------------------------------------------------------------------------
 // Direct intersection routines.
 //
-// Volume intersections return only whether the shapes in question collide, but
-// do not return the penetration depth. Ray/line intersection however can
-// optionally provide the intersection (via the *At function variants).
+// Volume intersections return only whether the shapes in question collide, and
+// may optionally support a CollisionInfo result to give further detail on the
+// intersection. Ray/line intersection can also optionally provide the
+// intersection (via the *At function variants).
+//
+// Requesting an intersection point or collision result is generally a more
+// expensive operation, so should be used only when needed.
 //
 // Convenience "Intersects" overloads for every combination of C* shape classes
 // are defined after.
 //------------------------------------------------------------------------------
+
+// Contains further information about a collision.
+struct CollisionInfo {
+  // Penetration depth of first shape into the second shape. Moving the first
+  // shape in the opposite direction will result in the shapes just touching.
+  glm::vec3 penetration;
+};
 
 //------------------------------------------------------------------------------
 // Point / Triangle intersection
@@ -304,6 +315,75 @@ inline bool SphereHitsSphere(const glm::vec3& a_center, float a_radius,
 
 inline bool Intersects(const CSphere& a, const CSphere& b) {
   return SphereHitsSphere(a.center, a.radius, b.center, b.radius);
+}
+
+//------------------------------------------------------------------------------
+// Sphere / Capsule intersection
+//------------------------------------------------------------------------------
+
+bool SphereHitsCapsule(const CSphere& a, const CCapsule& b);
+inline bool SphereHitsCapsule(const glm::vec3& a_center, float a_radius,
+                              const glm::vec3& b_v1, const glm::vec3& b_v2,
+                              float b_radius) {
+  return SphereHitsCapsule(CSphere(a_center, a_radius),
+                           CCapsule(b_v1, b_v2, b_radius));
+}
+
+inline bool Intersects(const CSphere& a, const CCapsule& b) {
+  return SphereHitsCapsule(a, b);
+}
+inline bool Intersects(const CCapsule& a, const CSphere& b) {
+  return SphereHitsCapsule(b, a);
+}
+
+//------------------------------------------------------------------------------
+// Sphere / Convex mesh intersection
+//------------------------------------------------------------------------------
+
+bool SphereHitsConvexMesh(const CSphere& a, const CPointCloud& b,
+                          CollisionInfo* result = nullptr);
+inline bool SphereHitsConvexMesh(const glm::vec3& a_center, float a_radius,
+                                 const glm::vec3* b_points, int b_point_count,
+                                 CollisionInfo* result = nullptr) {
+  return SphereHitsConvexMesh(CSphere(a_center, a_radius),
+                              CPointCloud(b_points, b_point_count), result);
+}
+
+inline bool Intersects(const CSphere& a, const CPointCloud& b,
+                       CollisionInfo* result = nullptr) {
+  return SphereHitsConvexMesh(a, b, result);
+}
+
+//------------------------------------------------------------------------------
+// Capsule / Capsule intersection
+//------------------------------------------------------------------------------
+
+bool CapsuleHitsCapsule(const CCapsule& a, const CCapsule& b);
+inline bool CapsuleHitsCapsule(const glm::vec3& a_v1, const glm::vec3& a_v2,
+                               float a_radius, const glm::vec3& b_v1,
+                               const glm::vec3& b_v2, float b_radius) {
+  return CapsuleHitsCapsule(CCapsule(a_v1, a_v2, a_radius),
+                            CCapsule(b_v1, b_v2, b_radius));
+}
+
+inline bool Intersects(const CCapsule& a, const CCapsule& b) {
+  return CapsuleHitsCapsule(a, b);
+}
+
+//------------------------------------------------------------------------------
+// Capsule / Convex mesh intersection
+//------------------------------------------------------------------------------
+
+bool CapsuleHitsConvexMesh(const CCapsule& a, const CPointCloud& b);
+inline bool CapsuleHitsConvexMesh(const glm::vec3& a_v1, const glm::vec3& a_v2,
+                                  float a_radius, const glm::vec3* b_points,
+                                  int b_point_count) {
+  return CapsuleHitsConvexMesh(CCapsule(a_v1, a_v2, a_radius),
+                               CPointCloud(b_points, b_point_count));
+}
+
+inline bool Intersects(const CCapsule& a, const CPointCloud& b) {
+  return CapsuleHitsConvexMesh(a, b);
 }
 
 //------------------------------------------------------------------------------

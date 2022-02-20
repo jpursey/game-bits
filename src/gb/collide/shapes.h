@@ -8,6 +8,7 @@
 
 #include <algorithm>
 
+#include "absl/types/span.h"
 #include "glm/glm.hpp"
 
 namespace gb {
@@ -113,6 +114,31 @@ struct CSphere {
 
   glm::vec3 center;
   float radius;
+};
+
+// A capsule is defined by two points and a radius,
+struct CCapsule {
+  CCapsule() = default;
+  CCapsule(const glm::vec3& v0, const glm::vec3& v1, float in_radius)
+      : vertex{v0, v1}, radius(in_radius) {}
+  CCapsule(glm::vec3 v[2], float in_radius)
+      : vertex{v[0], v[1]}, radius(in_radius) {}
+
+  glm::vec3 vertex[2];
+  float radius;
+};
+
+// A point cloud is can be used to define a convex polytope in simple collision
+// tests where additional topology specification is not needed (like GJK and MPR
+// collision).
+struct CPointCloud {
+  CPointCloud() = default;
+  explicit CPointCloud(absl::Span<const glm::vec3> in_points)
+      : points(in_points) {}
+  CPointCloud(const glm::vec3* in_points, int count)
+      : points(in_points, count) {}
+
+  absl::Span<const glm::vec3> points;
 };
 
 // An axis-aligned bounding box is defined by the volume [pos, pos + size].
