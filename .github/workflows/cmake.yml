@@ -26,7 +26,7 @@ jobs:
     - name: Build external libraries and projects
       shell: cmd
       working-directory: ${{github.workspace}}
-      run: build_vs2019
+      run: build_vs2022
 
     - name: Build Game Bits
       working-directory: ${{github.workspace}}/build
