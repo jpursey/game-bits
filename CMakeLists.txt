@@ -3,7 +3,8 @@
 ## Use of this source code is governed by an MIT-style License that can be found
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-cmake_minimum_required(VERSION 3.8)
+cmake_minimum_required(VERSION 3.13 FATAL_ERROR)
+set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 
 ###############################################################################
 ## Set project configuration
@@ -54,6 +55,7 @@ set(BUILD_SHARED_LIBS OFF)
 
 ####### absl
 
+set(ABSL_PROPAGATE_CXX_STD ON)
 add_subdirectory("${GB_THIRD_PARTY_DIR}/abseil-cpp")
 
 ####### glm

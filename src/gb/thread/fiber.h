@@ -47,6 +47,24 @@ enum class FiberOption {
 };
 using FiberOptions = Flags<FiberOption>;
 
+// Running state for a fiber.
+//
+// Note that querying fiber state is inherently stale information, and should
+// only be used as a hint, without some other form of external synchronization.
+enum class FiberState {
+  // The fiber is not currently running. It must be switched to via
+  // SwitchToFiber to continue running. It may be deleted via DeleteFiber,
+  // although doing so will not execute any cleanup code on the fiber's stack.
+  kSuspended,
+
+  // The fiber is currently running on a thread. It cannot be switched to or
+  // deleted.
+  kRunning,
+
+  // The fiber has exited. It cannot be switched to, but it is safe to delete.
+  kExited,
+};
+
 // Returns true if the running platform supports fibers.
 //
 // This function is thread-safe.
@@ -126,8 +144,9 @@ void DeleteFiber(Fiber fiber);
 //
 // This returns true if the fiber was switched to. SwitchToFiber will fail if
 // the calling thread is not a fiber, or if the fiber being switched to is
-// already running. Attempting to switch to an invalid and/or deleted fiber is
-// undefined behavior (and will likely crash).
+// not currently suspended (not running and not exited). Attempting to switch to
+// an invalid and/or deleted fiber is undefined behavior (and will likely
+// crash).
 //
 // This function is thread-safe (thread-compatible with DeleteFiber or itself
 // on the same fiber).
@@ -177,13 +196,13 @@ void* SwapFiberData(Fiber fiber, void* data);
 // This function is thread-safe.
 Fiber GetThisFiber();
 
-// Returns true if the fiber is currently running.
+// Returns the current fiber running state.
 //
 // This function itself is thread-safe (thread-compatible with DeleteFiber or
 // SwitchToFiber on/from the same fiber). However, as it is inherently stale
 // information, it should only be used as a hint without additional external
 // synchronization guarantees provided by the caller.
-bool IsFiberRunning(Fiber fiber);
+FiberState GetFiberState(Fiber fiber);
 
 // Returns the number of fibers currently executing in a thread.
 //

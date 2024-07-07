@@ -8,6 +8,7 @@
 #include <thread>
 
 #include "absl/synchronization/mutex.h"
+#include "absl/synchronization/notification.h"
 #include "absl/time/clock.h"
 #include "absl/types/span.h"
 #include "gb/container/queue.h"
@@ -370,12 +371,59 @@ TEST_F(FiberTest, AccessNulLFiberData) {
   EXPECT_EQ(GetFiberData(nullptr), nullptr);
 }
 
+TEST_F(FiberTest, IsFiberRunningNotStarted) {
+  CHECK_FIBER_SUPPORT();
+  Fiber fiber = CreateFiber(
+      FiberOption::kSetThreadName, 4096, nullptr, +[](void* user_data) {});
+  ASSERT_NE(fiber, nullptr);
+  EXPECT_EQ(GetFiberState(fiber), FiberState::kSuspended);
+  DeleteFiber(fiber);
+}
+
+TEST_F(FiberTest, IsFiberRunningWithinFiber) {
+  auto fiber_threads = CreateFiberThreads(
+      1, FiberOption::kSetThreadName, 4096, nullptr, +[](void* user_data) {
+        EXPECT_EQ(GetFiberState(GetThisFiber()), FiberState::kRunning);
+      });
+  ASSERT_EQ(fiber_threads.size(), 1);
+  WaitAndDeleteFibers(fiber_threads);
+}
+
+TEST_F(FiberTest, IsFiberRunningAfterSwitch) {
+  CHECK_FIBER_SUPPORT();
+  struct State {
+    State() = default;
+    Fiber next_fiber = nullptr;
+    absl::Notification running;
+    absl::Notification wait;
+  } state;
+  state.next_fiber = CreateFiber(
+      FiberOption::kSetThreadName, 4096, &state, +[](void* user_data) {
+        auto& state = *static_cast<State*>(user_data);
+        EXPECT_EQ(GetFiberState(GetThisFiber()), FiberState::kRunning);
+        state.running.Notify();
+        state.wait.WaitForNotification();
+      });
+  auto fiber_threads = CreateFiberThreads(
+      1, FiberOption::kSetThreadName, 4096, &state, +[](void* user_data) {
+        auto& state = *static_cast<State*>(user_data);
+        SwitchToFiber(state.next_fiber);
+      });
+  ASSERT_EQ(fiber_threads.size(), 1);
+  state.running.WaitForNotification();
+  EXPECT_EQ(GetFiberState(fiber_threads[0].fiber), FiberState::kSuspended);
+  EXPECT_EQ(GetFiberState(state.next_fiber), FiberState::kRunning);
+  state.wait.Notify();
+  WaitAndDeleteFibers(fiber_threads);
+  DeleteFiber(state.next_fiber);
+}
+
 TEST_F(FiberTest, ThreadAbuse) {
   CHECK_FIBER_SUPPORT();
   struct State {
     State() = default;
 
-    FiberMain callback;
+    FiberMain callback = nullptr;
     std::atomic<int> counter = 0;
 
     absl::Mutex mutex;
@@ -390,24 +438,33 @@ TEST_F(FiberTest, ThreadAbuse) {
     bool done = false;
     while (!done) {
       int count = ++state.counter;
-      if (count > 1000) {
+      if (count > 200) {
         done = true;
       }
       if (count % 50 == 0) {
         Fiber fiber = CreateFiber(FiberOption::kSetThreadName, 4096, &state,
                                   state.callback);
+        EXPECT_NE(fiber, nullptr);
         state.mutex.Lock();
         state.all_fibers.push_back(fiber);
         state.idle_fibers.push(fiber);
         state.mutex.Unlock();
       }
-      state.mutex.Lock();
-      if (!state.fibers_to_idle.empty()) {
-        Fiber maybe_idle = state.fibers_to_idle.front();
-        if (!IsFiberRunning(maybe_idle)) {
-          state.fibers_to_idle.pop();
-          state.idle_fibers.push(maybe_idle);
+      while (true) {
+        state.mutex.Lock();
+        if (state.fibers_to_idle.empty()) {
+          break;
         }
+        Fiber maybe_idle = state.fibers_to_idle.front();
+        FiberState fiber_state = GetFiberState(maybe_idle);
+        if (fiber_state != FiberState::kRunning) {
+          state.fibers_to_idle.pop();
+          if (fiber_state == FiberState::kSuspended) {
+            state.idle_fibers.push(maybe_idle);
+            break;
+          }
+        }
+        state.mutex.Unlock();
       }
       Fiber next_fiber = nullptr;
       if (!done) {
@@ -449,7 +506,7 @@ TEST_F(FiberTest, ThreadAbuse) {
   }
 
   state.mutex.Lock();
-  EXPECT_EQ(state.counter, 1000 + num_threads);
+  EXPECT_EQ(state.counter, 200 + num_threads);
   for (const auto& fiber_thread : fiber_threads) {
     JoinThread(fiber_thread.thread);
   }

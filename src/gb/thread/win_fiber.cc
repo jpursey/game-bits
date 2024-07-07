@@ -62,6 +62,7 @@ struct FiberType {
   Thread thread ABSL_GUARDED_BY(mutex) = nullptr;
   WinFiber thread_win_fiber ABSL_GUARDED_BY(mutex) = nullptr;
   WinFiber win_fiber ABSL_GUARDED_BY(mutex) = nullptr;
+  bool exited ABSL_GUARDED_BY(mutex) = false;
   char name[kMaxFiberNameSize] ABSL_GUARDED_BY(mutex) = {};
   std::atomic<void*> custom_data;
 };
@@ -101,6 +102,7 @@ void RunFiberMain(Fiber fiber) {
   // shutdown (ending the thread).
   GB_FIBER_LOG << "Exiting fiber " << ToString(fiber);
   fiber->mutex.Lock();
+  fiber->exited = true;
   fiber->thread = nullptr;
   WinFiber thread_win_fiber = std::exchange(fiber->thread_win_fiber, nullptr);
   --g_running_count;
@@ -283,7 +285,8 @@ bool SwitchToFiber(Fiber fiber) {
   WinFiber win_fiber;
   fiber->mutex.Lock();
   win_fiber = fiber->win_fiber;
-  if (fiber->thread_win_fiber != nullptr || win_fiber == nullptr) {
+  if (fiber->exited || fiber->thread_win_fiber != nullptr ||
+      win_fiber == nullptr) {
     fiber->mutex.Unlock();
     return false;
   }
@@ -355,12 +358,18 @@ Fiber GetThisFiber() {
   return static_cast<Fiber>(::GetFiberData());
 }
 
-bool IsFiberRunning(Fiber fiber) {
+FiberState GetFiberState(Fiber fiber) {
   if (fiber == nullptr) {
-    return false;
+    return FiberState::kExited;
   }
   absl::MutexLock lock(&fiber->mutex);
-  return fiber->thread_win_fiber != nullptr;
+  if (fiber->thread_win_fiber != nullptr) {
+    return FiberState::kRunning;
+  }
+  if (fiber->exited) {
+    return FiberState::kExited;
+  }
+  return FiberState::kSuspended;
 }
 
 int GetRunningFiberCount() { return g_running_count; }
