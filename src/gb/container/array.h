@@ -54,6 +54,8 @@ namespace internal {
 template <typename Type, int Size>
 class BaseArray : private std::array<Type, Size> {
  public:
+  using Base = typename std::array<Type, Size>;
+
   // Explicit default constructor that zero-initializes POD types.
   constexpr BaseArray() {
     if (std::is_trivially_constructible_v<Type>) {
@@ -62,42 +64,42 @@ class BaseArray : private std::array<Type, Size> {
   }
 
   // Container types
-  using array::const_iterator;
-  using array::const_pointer;
-  using array::const_reference;
-  using array::difference_type;
-  using array::iterator;
-  using array::pointer;
-  using array::reference;
-  using array::reverse_iterator;
-  using array::size_type;
-  using array::value_type;
+  using Base::const_iterator;
+  using Base::const_pointer;
+  using Base::const_reference;
+  using Base::difference_type;
+  using Base::iterator;
+  using Base::pointer;
+  using Base::reference;
+  using Base::reverse_iterator;
+  using Base::size_type;
+  using Base::value_type;
 
   // Container iteration
-  using array::begin;
-  using array::end;
+  using Base::begin;
+  using Base::end;
 
-  using array::cbegin;
-  using array::cend;
+  using Base::cbegin;
+  using Base::cend;
 
-  using array::rbegin;
-  using array::rend;
+  using Base::rbegin;
+  using Base::rend;
 
-  using array::crbegin;
-  using array::crend;
+  using Base::crbegin;
+  using Base::crend;
 
   // Container capacity
-  using array::empty;
-  using array::max_size;
-  using array::size;
+  using Base::empty;
+  using Base::max_size;
+  using Base::size;
 
   // container operations
-  using array::fill;
-  using array::swap;
+  using Base::fill;
+  using Base::swap;
 
  protected:
   // Make available to derived classes
-  using array::data;
+  using Base::data;
 };
 
 }  // namespace internal
@@ -109,11 +111,12 @@ class BaseArray : private std::array<Type, Size> {
 template <typename Type, int Size>
 class Array : public internal::BaseArray<Type, Size> {
  public:
+  using Base = typename internal::BaseArray<Type, Size>;
   using index_type = int;
 
   constexpr index_type dim() const { return Size; }
 
-  using BaseArray::data;
+  using Base::data;
   constexpr int int_index(index_type i) const { return i; }
 
   constexpr const Type& operator[](index_type i) const { return data()[i]; }
@@ -139,11 +142,12 @@ class Array : public internal::BaseArray<Type, Size> {
 template <typename Type, int XSize, int YSize = XSize>
 class ArrayXY : public internal::BaseArray<Type, XSize * YSize> {
  public:
+  using Base = typename internal::BaseArray<Type, XSize * YSize>;
   using index_type = glm::ivec2;
 
   constexpr index_type dim() const { return {XSize, YSize}; }
 
-  using BaseArray::data;
+  using Base::data;
   constexpr int int_index(int x, int y) const { return x * YSize + y; }
   constexpr int int_index(const index_type& i) const {
     return int_index(i.x, i.y);
@@ -171,11 +175,12 @@ class ArrayXY : public internal::BaseArray<Type, XSize * YSize> {
 template <typename Type, int XSize, int YSize = XSize>
 class ArrayYX : public internal::BaseArray<Type, XSize * YSize> {
  public:
+  using Base = typename internal::BaseArray<Type, XSize * YSize>;
   using index_type = glm::ivec2;
 
   constexpr index_type dim() const { return {XSize, YSize}; }
 
-  using BaseArray::data;
+  using Base::data;
   constexpr int int_index(int x, int y) const { return y * XSize + x; }
   constexpr int int_index(const index_type& i) const {
     return int_index(i.x, i.y);
@@ -219,11 +224,12 @@ using Array2d = ArrayYX<Type, XSize, YSize>;
 template <typename Type, int XSize, int YSize = XSize, int ZSize = XSize>
 class ArrayXYZ : public internal::BaseArray<Type, XSize * YSize * ZSize> {
  public:
+  using Base = typename internal::BaseArray<Type, XSize * YSize * ZSize>;
   using index_type = glm::ivec3;
 
   constexpr index_type dim() const { return {XSize, YSize, ZSize}; }
 
-  using BaseArray::data;
+  using Base::data;
   constexpr int int_index(int x, int y, int z) const {
     return (x * YSize + y) * ZSize + z;
   }
@@ -255,11 +261,12 @@ class ArrayXYZ : public internal::BaseArray<Type, XSize * YSize * ZSize> {
 template <typename Type, int XSize, int YSize = XSize, int ZSize = XSize>
 class ArrayZYX : public internal::BaseArray<Type, XSize * YSize * ZSize> {
  public:
+  using Base = typename internal::BaseArray<Type, XSize * YSize * ZSize>;
   using index_type = glm::ivec3;
 
   constexpr index_type dim() const { return {XSize, YSize, ZSize}; }
 
-  using BaseArray::data;
+  using Base::data;
   constexpr int int_index(int x, int y, int z) const {
     return (z * YSize + y) * XSize + x;
   }
