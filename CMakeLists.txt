@@ -98,7 +98,7 @@ set(FLATBUFFERS_BUILD_TESTS OFF)
 option(FLATBUFFERS_INSTALL "" OFF)
 set(FLATBUFFERS_INSTALL OFF)
 add_subdirectory("${GB_THIRD_PARTY_DIR}/flatbuffers")
-set_target_properties(flatbuffers flatc flathash PROPERTIES FOLDER External/flatbuffers)
+set_target_properties(flatbuffers flatc PROPERTIES FOLDER External/flatbuffers)
 unset(FLATBUFFERS_BUILD_TESTS)
 unset(FLATBUFFERS_INSTALL)
 
