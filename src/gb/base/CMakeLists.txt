@@ -62,3 +62,6 @@ set(gb_base_LIBS
 )
 
 gb_add_library(gb_base)
+
+target_include_directories(gb_base PRIVATE "${GB_THIRD_PARTY_DIR}/utfcpp/source")
+target_include_directories(gb_base_test PRIVATE "${GB_THIRD_PARTY_DIR}/utfcpp/source")

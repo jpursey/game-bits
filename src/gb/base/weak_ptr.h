@@ -322,8 +322,8 @@ WeakLock<Type>::WeakLock(const WeakLock& other)
 
 template <typename Type>
 WeakLock<Type>::WeakLock(WeakLock&& other)
-    : data_(std::exhange(other.data_, nullptr)),
-      ptr_(std::exhange(other.ptr_, nullptr)) {}
+    : data_(std::exchange(other.data_, nullptr)),
+      ptr_(std::exchange(other.ptr_, nullptr)) {}
 
 template <typename Type>
 WeakLock<Type>& WeakLock<Type>::operator=(const WeakLock& other) {

@@ -15,6 +15,7 @@
 #include "gb/base/validated_context.h"
 #include "gb/file/chunk_writer.h"
 #include "gb/file/file_types.h"
+#include "gb/resource/resource.h"
 #include "gb/resource/resource_types.h"
 
 namespace gb {

@@ -96,7 +96,7 @@ int64_t LocalFile::Read(void* buffer, int64_t size) {
 }
 
 std::string ToString(const fs::path& path) {
-  return NormalizePath(path.generic_u8string());
+  return NormalizePath(path.generic_string());
 }
 
 fs::path ToPath(std::string_view path) {

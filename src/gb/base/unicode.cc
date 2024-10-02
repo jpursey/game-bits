@@ -5,7 +5,10 @@
 
 #include "gb/base/unicode.h"
 
-#include <locale>
+#include <iterator>
+#include <string>
+
+#include "utf8.h"
 
 namespace gb {
 
@@ -264,9 +267,9 @@ std::u16string ToUtf16(std::string_view utf8_string) {
                         bom[1] == 0xBB && bom[2] == 0xBF);
   const char* begin = utf8_string.data() + (has_bom ? 3 : 0);
   const char* const end = utf8_string.data() + utf8_string.size();
-  return std::wstring_convert<std::codecvt<char16_t, char, std::mbstate_t>,
-                              char16_t>(std::string(), std::u16string())
-      .from_bytes(begin, end);
+  std::u16string result;
+  utf8::utf8to16(begin, end, std::back_insert_iterator<std::u16string>(result));
+  return result;
 }
 
 std::string ToUtf8(std::u16string_view utf16_string) {
@@ -282,9 +285,9 @@ std::string ToUtf8(std::u16string_view utf16_string) {
   }
   const char16_t* const begin = utf16_string.data() + (has_bom ? 1 : 0);
   const char16_t* const end = utf16_string.data() + utf16_string.size();
-  return std::wstring_convert<std::codecvt<char16_t, char, std::mbstate_t>,
-                              char16_t>(std::string(), std::u16string())
-      .to_bytes(begin, end);
+  std::string result;
+  utf8::utf16to8(begin, end, std::back_insert_iterator<std::string>(result));
+  return result;
 }
 
 }  // namespace gb

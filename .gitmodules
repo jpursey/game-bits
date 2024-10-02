@@ -28,3 +28,6 @@
 [submodule "third_party/libccd"]
 	path = third_party/libccd
 	url = https://github.com/danfis/libccd.git
+[submodule "third_party/utfcpp"]
+	path = third_party/utfcpp
+	url = https://github.com/nemtrif/utfcpp.git

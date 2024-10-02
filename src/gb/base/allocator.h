@@ -212,7 +212,7 @@ class StdAllocator {
   StdAllocator(Allocator* allocator) noexcept : allocator_(allocator) {}
   StdAllocator(const StdAllocator& other) noexcept
       : allocator_(other.allocator_) {}
-  StdAllocator(StdAllocator&&) noexcept : allocator_(other.allocator_) {}
+  StdAllocator(StdAllocator&& other) noexcept : allocator_(other.allocator_) {}
   template <typename OtherType>
   StdAllocator(const StdAllocator<OtherType>& other) noexcept
       : allocator_(other.allocator_) {}

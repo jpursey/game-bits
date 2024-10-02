@@ -100,14 +100,14 @@ TEST(LocalFileProtocolTest, InvalidRoot) {
   Context context =
       ContextBuilder()
           .SetValue<std::string>(LocalFileProtocol::kKeyRoot,
-                                 NormalizePath(file_path.generic_u8string()))
+                                 NormalizePath(file_path.generic_string()))
           .Build();
   EXPECT_EQ(LocalFileProtocol::Create(std::move(context)), nullptr);
 
   context = ContextBuilder()
                 .SetValue<std::string>(
                     LocalFileProtocol::kKeyRoot,
-                    NormalizePath((file_path / "subfile").generic_u8string()))
+                    NormalizePath((file_path / "subfile").generic_string()))
                 .Build();
   EXPECT_EQ(LocalFileProtocol::Create(std::move(context)), nullptr);
 
@@ -115,7 +115,7 @@ TEST(LocalFileProtocolTest, InvalidRoot) {
       ContextBuilder()
           .SetValue<std::string>(
               LocalFileProtocol::kKeyRoot,
-              NormalizePath((root_path / "missing/parent").generic_u8string()))
+              NormalizePath((root_path / "missing/parent").generic_string()))
           .Build();
   EXPECT_EQ(LocalFileProtocol::Create(std::move(context)), nullptr);
 }
@@ -136,13 +136,13 @@ TEST(LocalFileProtocolTest, RelativeRoot) {
                         .SetValue<std::string>(LocalFileProtocol::kKeyRoot, "")
                         .Build();
   auto protocol = LocalFileProtocol::Create(std::move(context));
-  EXPECT_EQ(protocol->GetRoot(), NormalizePath(subdir_path.generic_u8string()));
+  EXPECT_EQ(protocol->GetRoot(), NormalizePath(subdir_path.generic_string()));
 
   context = ContextBuilder()
                 .SetValue<std::string>(LocalFileProtocol::kKeyRoot, "..")
                 .Build();
   protocol = LocalFileProtocol::Create(std::move(context));
-  EXPECT_EQ(protocol->GetRoot(), NormalizePath(root_path.generic_u8string()));
+  EXPECT_EQ(protocol->GetRoot(), NormalizePath(root_path.generic_string()));
 
   context =
       ContextBuilder()
@@ -150,7 +150,7 @@ TEST(LocalFileProtocolTest, RelativeRoot) {
           .Build();
   protocol = LocalFileProtocol::Create(std::move(context));
   EXPECT_EQ(protocol->GetRoot(),
-            NormalizePath((subdir_path / "new-folder").generic_u8string()));
+            NormalizePath((subdir_path / "new-folder").generic_string()));
   EXPECT_TRUE(fs::is_directory(subdir_path / "new-folder", error))
       << error.message();
 }
@@ -161,7 +161,7 @@ TEST(LocalFileProtocolTest, UniqueRoot) {
   ASSERT_TRUE(fs::create_directory(root_path, error)) << error.message();
   ScopedCall scoped([&] { fs::remove_all(root_path, error); });
 
-  std::string root = NormalizePath(root_path.generic_u8string());
+  std::string root = NormalizePath(root_path.generic_string());
   Context context =
       ContextBuilder()
           .SetValue<std::string>(LocalFileProtocol::kKeyRoot, root)
@@ -188,7 +188,7 @@ TEST(LocalFileProtocolTest, DeleteAtExit) {
   ASSERT_TRUE(fs::create_directory(root_path, error)) << error.message();
   ScopedCall scoped([&] { fs::remove_all(root_path, error); });
 
-  std::string root = NormalizePath(root_path.generic_u8string());
+  std::string root = NormalizePath(root_path.generic_string());
   Context context =
       ContextBuilder()
           .SetValue<std::string>(LocalFileProtocol::kKeyRoot, root)

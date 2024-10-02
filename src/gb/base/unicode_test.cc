@@ -5,12 +5,13 @@
 
 #include "gb/base/unicode.h"
 
-#include <locale>
+#include <iterator>
 #include <string>
 #include <type_traits>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "utf8.h"
 
 namespace gb {
 
@@ -84,17 +85,15 @@ std::u32string CreateAllInvalidCodePoints() {
 TEST(UnicodeTest, ProcessAllValidCodePoints) {
   const std::u32string u32_all = CreateAllValidCodePoints();
 
-  const std::string u8_all =
-      std::wstring_convert<std::codecvt<char32_t, char, std::mbstate_t>,
-                           char32_t>(std::string(), std::u32string())
-          .to_bytes(u32_all.data(), u32_all.data() + u32_all.size());
+  std::string u8_all;
+  utf8::utf32to8(u32_all.begin(), u32_all.end(),
+                 std::back_insert_iterator<std::string>(u8_all));
   ASSERT_FALSE(u8_all.empty());
   EXPECT_EQ(GetStringEncoding(u8_all, nullptr), StringEncoding::kUtf8);
 
-  const std::u16string u16_all =
-      std::wstring_convert<std::codecvt<char16_t, char, std::mbstate_t>,
-                           char16_t>(std::string(), std::u16string())
-          .from_bytes(u8_all.data(), u8_all.data() + u8_all.size());
+  std::u16string u16_all;
+  utf8::utf8to16(u8_all.begin(), u8_all.end(),
+                 std::back_insert_iterator<std::u16string>(u16_all));
   ASSERT_FALSE(u16_all.empty());
   EXPECT_EQ(GetStringEncoding(ToBytes(u16_all), nullptr),
             StringEncoding::kUtf16);
