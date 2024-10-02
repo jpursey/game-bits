@@ -6,8 +6,8 @@
 #include "gb/collide/intersect.h"
 
 #undef _CRT_SECURE_NO_WARNINGS
+#include "absl/log/check.h"
 #include "ccd/ccd.h"
-#include "glog/logging.h"
 
 namespace gb {
 

@@ -20,7 +20,8 @@ set(gb_alloc_DEPS
   gb_base
 )
 set(gb_alloc_LIBS
-  glog
+  absl::check
+  absl::log
 )
 
 gb_add_library(gb_alloc)

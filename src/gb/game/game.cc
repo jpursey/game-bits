@@ -5,8 +5,8 @@
 
 #include "gb/game/game.h"
 
+#include "absl/log/log.h"
 #include "absl/time/clock.h"
-#include "glog/logging.h"
 
 namespace gb {
 

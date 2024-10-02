@@ -5,8 +5,8 @@
 
 #include "gb/message/message_endpoint.h"
 
+#include "absl/log/log.h"
 #include "gb/message/message_system.h"
-#include "glog/logging.h"
 
 namespace gb {
 

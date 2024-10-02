@@ -8,11 +8,11 @@
 #include <algorithm>
 
 #include "absl/container/inlined_vector.h"
+#include "absl/log/log.h"
 #include "absl/memory/memory.h"
 #include "gb/base/scoped_call.h"
 #include "gb/render/vulkan/vulkan_backend.h"
 #include "gb/render/vulkan/vulkan_buffer.h"
-#include "glog/logging.h"
 #include "stb_image_resize.h"
 
 namespace gb {

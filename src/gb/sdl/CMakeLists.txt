@@ -8,7 +8,8 @@ set(gb_sdl_SOURCE
 )
 
 set(gb_sdl_LIBS
-  glog
+  absl::check
+  absl::log
   sdl2
 )
 

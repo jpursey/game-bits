@@ -5,8 +5,8 @@
 
 #include "gb/render/mesh.h"
 
+#include "absl/log/log.h"
 #include "gb/render/render_backend.h"
-#include "glog/logging.h"
 
 namespace gb {
 

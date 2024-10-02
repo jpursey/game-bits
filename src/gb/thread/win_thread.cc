@@ -7,12 +7,12 @@
 #include <atomic>
 #include <iostream>
 
+#include "absl/log/log.h"
 #include "absl/strings/str_format.h"
 #include "absl/synchronization/mutex.h"
 #include "gb/base/unicode.h"
 #include "gb/base/win_platform.h"
 #include "gb/thread/thread.h"
-#include "glog/logging.h"
 
 // MUST be last, as windows pollutes the global namespace with many macros.
 #define WIN32_LEAN_AND_MEAN

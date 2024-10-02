@@ -8,10 +8,10 @@
 #include <memory>
 #include <thread>
 
+#include "absl/log/log.h"
 #include "absl/strings/str_format.h"
 #include "absl/synchronization/mutex.h"
 #include "gb/thread/thread.h"
-#include "glog/logging.h"
 
 namespace gb {
 

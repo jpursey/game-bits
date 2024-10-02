@@ -8,8 +8,8 @@
 
 #include <memory>
 
+#include "absl/log/check.h"
 #include "absl/synchronization/mutex.h"
-#include "glog/logging.h"
 
 namespace gb {
 

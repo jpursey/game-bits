@@ -37,7 +37,8 @@ set(gb_file_DEPS
 )
 
 set(gb_file_LIBS
-  glog
+  absl::check
+  absl::log
 )
 
 gb_add_library(gb_file)

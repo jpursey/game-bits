@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <memory>
 
+#include "absl/log/log.h"
 #include "absl/types/span.h"
 #include "gb/render/binding_data.h"
 #include "gb/render/material.h"
@@ -18,7 +19,6 @@
 #include "gb/render/render_buffer_view.h"
 #include "gb/render/render_types.h"
 #include "gb/resource/resource.h"
-#include "glog/logging.h"
 
 namespace gb {
 

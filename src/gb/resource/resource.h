@@ -10,11 +10,11 @@
 #include <string>
 
 #include "absl/container/inlined_vector.h"
+#include "absl/log/log.h"
 #include "absl/synchronization/mutex.h"
 #include "gb/base/flags.h"
 #include "gb/resource/resource_entry.h"
 #include "gb/resource/resource_types.h"
-#include "glog/logging.h"
 
 namespace gb {
 

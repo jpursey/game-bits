@@ -7,10 +7,10 @@
 
 #include <random>
 
+#include "absl/log/log.h"
 #include "absl/time/clock.h"
 #include "gb/resource/resource.h"
 #include "gb/resource/resource_manager.h"
-#include "glog/logging.h"
 
 namespace gb {
 

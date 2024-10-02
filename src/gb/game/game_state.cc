@@ -5,8 +5,8 @@
 
 #include "gb/game/game_state.h"
 
+#include "absl/log/log.h"
 #include "gb/game/game_state_machine.h"
-#include "glog/logging.h"
 
 namespace gb {
 

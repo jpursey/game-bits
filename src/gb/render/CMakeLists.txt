@@ -78,7 +78,8 @@ set(gb_render_DEPS
 )
 
 set(gb_render_LIBS
-  glog
+  absl::check
+  absl::log
 )
 
 gb_add_library(gb_render)

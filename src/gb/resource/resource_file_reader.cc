@@ -5,13 +5,13 @@
 
 #include "gb/resource/resource_file_reader.h"
 
+#include "absl/log/log.h"
 #include "absl/memory/memory.h"
 #include "gb/base/scoped_call.h"
 #include "gb/file/file.h"
 #include "gb/file/file_system.h"
 #include "gb/resource/resource_chunks.h"
 #include "gb/resource/resource_system.h"
-#include "glog/logging.h"
 
 namespace gb {
 

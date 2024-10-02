@@ -27,7 +27,8 @@ set(gb_message_DEPS
 )
 
 set(gb_base_LIBS
-  glog
+  absl::check
+  absl::log
 )
 
 gb_add_library(gb_message)

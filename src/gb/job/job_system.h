@@ -8,11 +8,11 @@
 
 #include <string_view>
 
+#include "absl/log/log.h"
 #include "gb/base/callback.h"
 #include "gb/base/context.h"
 #include "gb/job/job_counter.h"
 #include "gb/job/job_types.h"
-#include "glog/logging.h"
 
 namespace gb {
 

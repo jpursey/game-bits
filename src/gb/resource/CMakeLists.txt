@@ -28,7 +28,8 @@ set(gb_resource_DEPS
 
 set(gb_resource_LIBS
   flatbuffers
-  glog
+  absl::check
+  absl::log
 )
 
 set(gb_resource_TEST_SOURCE

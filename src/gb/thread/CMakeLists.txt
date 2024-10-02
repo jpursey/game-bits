@@ -15,7 +15,8 @@ if (WIN32)
     gb_base
   )
   set(gb_thread_internal_LIBS
-    glog
+    absl::check
+    absl::log
   )
 else()
   set(gb_thread_internal_SOURCE
@@ -29,7 +30,8 @@ else()
     gb_base
   )
   set(gb_thread_internal_LIBS
-    glog
+    absl::check
+    absl::log
   )
 endif()
 
@@ -62,7 +64,8 @@ set(gb_thread_TEST_DEPS
 )
 
 set(gb_thread_TEST_LIBS
-  glog
+  absl::check
+  absl::log
 )
 
 gb_add_library(gb_thread)

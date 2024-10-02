@@ -19,7 +19,8 @@ set(gb_image_DEPS
 )
 
 set(gb_image_LIBS
-  glog
+  absl::check
+  absl::log
   glm
 )
 

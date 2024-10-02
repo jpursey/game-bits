@@ -5,9 +5,9 @@
 
 #include "gb/render/vulkan/vulkan_render_buffer.h"
 
+#include "absl/log/log.h"
 #include "absl/memory/memory.h"
 #include "gb/render/vulkan/vulkan_render_state.h"
-#include "glog/logging.h"
 
 namespace gb {
 

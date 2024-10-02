@@ -7,6 +7,7 @@
 
 #include <vector>
 
+#include "absl/log/log.h"
 #include "absl/memory/memory.h"
 #include "gb/base/context_builder.h"
 #include "gb/render/vulkan/vulkan_binding_data.h"
@@ -21,7 +22,6 @@
 #include "gb/render/vulkan/vulkan_texture.h"
 #include "gb/render/vulkan/vulkan_texture_array.h"
 #include "gb/render/vulkan/vulkan_window.h"
-#include "glog/logging.h"
 
 //------------------------------------------------------------------------------
 // Define Vulkan extension functions that will auto-load iff the extension is

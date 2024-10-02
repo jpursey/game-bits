@@ -7,11 +7,11 @@
 
 #include <cstring>
 
+#include "absl/log/check.h"
 #include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
 #include "gb/file/path.h"
 #include "gb/file/raw_file.h"
-#include "glog/logging.h"
 
 namespace gb {
 

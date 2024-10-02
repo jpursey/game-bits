@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <cstddef>
 
-#include "glog/logging.h"
+#include "absl/log/check.h"
 
 namespace gb {
 

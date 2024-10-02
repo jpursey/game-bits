@@ -6,8 +6,8 @@
 #ifndef GB_CONTAINER_OFFSET_ARRAY_H_
 #define GB_CONTAINER_OFFSET_ARRAY_H_
 
+#include "absl/log/log.h"
 #include "glm/glm.hpp"
-#include "glog/logging.h"
 
 namespace gb {
 

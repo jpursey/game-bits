@@ -11,7 +11,7 @@
 
 #include <cstdlib>
 
-#include "glog/logging.h"
+#include "absl/log/log.h"
 
 namespace gb {
 

@@ -5,8 +5,8 @@
 
 #include "gb/file/chunk_reader.h"
 
+#include "absl/log/log.h"
 #include "gb/file/file.h"
-#include "glog/logging.h"
 
 namespace gb {
 

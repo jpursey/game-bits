@@ -8,8 +8,8 @@
 #include <string>
 #include <vector>
 
+#include "absl/log/log.h"
 #include "gb/test/thread_tester.h"
-#include "glog/logging.h"
 #include "gtest/gtest.h"
 
 namespace gb {

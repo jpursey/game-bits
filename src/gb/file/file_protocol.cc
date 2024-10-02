@@ -5,10 +5,10 @@
 
 #include "gb/file/file_protocol.h"
 
+#include "absl/log/log.h"
 #include "gb/container/queue.h"
 #include "gb/file/path.h"
 #include "gb/file/raw_file.h"
-#include "glog/logging.h"
 
 namespace gb {
 

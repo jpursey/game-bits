@@ -8,10 +8,10 @@
 #include <iostream>
 #include <thread>
 
+#include "absl/log/log.h"
 #include "absl/memory/memory.h"
 #include "absl/strings/str_cat.h"
 #include "gb/thread/thread.h"
-#include "glog/logging.h"
 
 namespace gb {
 

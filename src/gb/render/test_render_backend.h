@@ -6,6 +6,8 @@
 #ifndef GB_RENDER_TEST_RENDER_BACKEND_H_
 #define GB_RENDER_TEST_RENDER_BACKEND_H_
 
+#include "absl/log/check.h"
+#include "absl/log/log.h"
 #include "gb/render/render_backend.h"
 #include "gb/render/test_binding_data.h"
 #include "gb/render/test_render_buffer.h"
@@ -15,7 +17,6 @@
 #include "gb/render/test_shader_code.h"
 #include "gb/render/test_texture.h"
 #include "gb/render/test_texture_array.h"
-#include "glog/logging.h"
 
 namespace gb {
 

@@ -3,8 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
+#include "absl/log/log.h"
 #include "gb/thread/fiber.h"
-#include "glog/logging.h"
 
 namespace gb {
 

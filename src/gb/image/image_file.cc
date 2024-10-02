@@ -5,9 +5,9 @@
 
 #include "gb/image/image_file.h"
 
+#include "absl/log/log.h"
 #include "gb/file/file.h"
 #include "gb/file/file_system.h"
-#include "glog/logging.h"
 #include "stb_image.h"
 
 namespace gb {

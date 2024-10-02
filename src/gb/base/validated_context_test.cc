@@ -5,7 +5,7 @@
 
 #include "gb/base/validated_context.h"
 
-#include "glog/logging.h"
+#include "absl/log/log.h"
 #include "gtest/gtest.h"
 
 namespace gb {

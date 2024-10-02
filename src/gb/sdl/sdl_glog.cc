@@ -5,7 +5,7 @@
 
 #include "gb/sdl/sdl_glog.h"
 
-#include "glog/logging.h"
+#include "absl/log/log.h"
 
 namespace gb {
 

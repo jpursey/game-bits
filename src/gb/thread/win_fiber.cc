@@ -7,6 +7,8 @@
 #include <cstdio>
 #include <iostream>
 
+#include "absl/log/check.h"
+#include "absl/log/log.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/synchronization/notification.h"
@@ -14,7 +16,6 @@
 #include "gb/base/win_platform.h"
 #include "gb/thread/fiber.h"
 #include "gb/thread/thread.h"
-#include "glog/logging.h"
 
 // MUST be last, as windows pollutes the global namespace with many macros.
 #define WIN32_LEAN_AND_MEAN

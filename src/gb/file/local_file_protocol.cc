@@ -10,12 +10,12 @@
 #include <fstream>
 #include <random>
 
+#include "absl/log/log.h"
 #include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
 #include "gb/base/context_builder.h"
 #include "gb/file/path.h"
 #include "gb/file/raw_file.h"
-#include "glog/logging.h"
 
 namespace gb {
 

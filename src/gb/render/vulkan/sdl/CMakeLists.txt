@@ -13,7 +13,8 @@ set(gb_render_vulkan_sdl_DEPS
 )
 
 set(gb_render_vulkan_sdl_LIBS
-  glog
+  absl::check
+  absl::log
   sdl2
   Vulkan
 )

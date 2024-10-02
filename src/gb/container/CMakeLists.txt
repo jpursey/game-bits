@@ -26,7 +26,8 @@ set(gb_container_DEPS
 )
 
 set(gb_container_LIBS
-  glog
+  absl::check
+  absl::log
   glm
 )
 

@@ -62,23 +62,6 @@ add_subdirectory("${GB_THIRD_PARTY_DIR}/abseil-cpp")
 
 add_subdirectory("${GB_THIRD_PARTY_DIR}/glm")
 
-####### glog
-
-option(WITH_GFLAGS "" OFF)
-set(WITH_GFLAGS OFF)
-option(WITH_GTEST "" OFF)
-set(WITH_GTEST OFF)
-option(WITH_PKGCONFIG "" OFF)
-set(WITH_PKGCONFIG OFF)
-add_subdirectory("${GB_THIRD_PARTY_DIR}/glog")
-set_target_properties(glog PROPERTIES FOLDER External/glog)
-if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-  target_compile_options(glog PUBLIC /Zc:__cplusplus)
-endif()
-unset(WITH_GFLAGS)
-unset(WITH_GTEST)
-unset(WITH_PKGCONFIG)
-
 ####### googletest
 
 option(INSTALL_GTEST "" OFF)

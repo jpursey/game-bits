@@ -19,7 +19,8 @@ set(gb_test_DEPS
 )
 
 set(gb_test_LIBS
-  glog
+  absl::check
+  absl::log
 )
 
 gb_add_library(gb_test)

@@ -5,9 +5,9 @@
 
 #include "gb/message/message_system.h"
 
+#include "absl/log/log.h"
 #include "absl/memory/memory.h"
 #include "gb/message/message_dispatcher.h"
-#include "glog/logging.h"
 
 namespace gb {
 

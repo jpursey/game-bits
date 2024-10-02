@@ -5,9 +5,9 @@
 
 #include "gb/resource/resource_manager.h"
 
+#include "absl/log/log.h"
 #include "gb/resource/resource.h"
 #include "gb/resource/resource_system.h"
-#include "glog/logging.h"
 
 namespace gb {
 

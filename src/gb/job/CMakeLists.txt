@@ -28,7 +28,8 @@ set(gb_job_DEPS
 )
 
 set(gb_job_LIBS
-  glog
+  absl::check
+  absl::log
 )
 
 gb_add_library(gb_job)

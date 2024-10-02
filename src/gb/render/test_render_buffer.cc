@@ -5,7 +5,7 @@
 
 #include "gb/render/test_render_buffer.h"
 
-#include "glog/logging.h"
+#include "absl/log/check.h"
 
 namespace gb {
 

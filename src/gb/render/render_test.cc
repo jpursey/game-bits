@@ -5,9 +5,9 @@
 
 #include "gb/render/render_test.h"
 
+#include "absl/log/log.h"
 #include "gb/base/context_builder.h"
 #include "gb/file/memory_file_protocol.h"
-#include "glog/logging.h"
 
 namespace gb {
 

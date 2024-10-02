@@ -5,9 +5,9 @@
 
 #include "gb/test/thread_tester.h"
 
+#include "absl/log/log.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
-#include "glog/logging.h"
 
 namespace gb {
 

@@ -6,10 +6,11 @@
 #ifndef GB_CONTAINER_BUFFER_VIEW_2D_H_
 #define GB_CONTAINER_BUFFER_VIEW_2D_H_
 
+#include "absl/log/check.h"
+#include "absl/log/log.h"
 #include "gb/base/allocator.h"
 #include "gb/container/buffer_view_operations.h"
 #include "glm/glm.hpp"
-#include "glog/logging.h"
 
 namespace gb {
 

@@ -15,7 +15,8 @@ set(gb_collide_DEPS
 
 set (gb_collide_LIBS
   glm
-  glog
+  absl::check
+  absl::log
 )
 
 gb_add_library(gb_collide)
