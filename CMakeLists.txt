@@ -45,6 +45,19 @@ gb_external_libraries()
 # Third party source
 ###############################################################################
 
+# The following is necessary to prevent warnings that result in errors.
+set(GB_3P_MSVC_COMPILE_OPTIONS 
+  /wd4005  # L1: Macro redefinition
+  /wd4068  # L1: Unknown pragma
+  /wd4189  # L3: Local variable is initialized but not referenced
+  /wd4244  # L3: Conversion from 'type1' to 'type2', possible loss of data
+  /wd4267  # L3: Conversion from 'size_t' to 'type', possible loss of data
+  /wd4800  # L3: Implicit conversion from 'type' to bool, possible loss of data
+  /wd4100  # L4: Unreferenced formal parameter
+  /wd4127  # L4: Consider using 'if constexpr' statement instead
+  /wd4324  # L4: Structure was padded due to alignment specifier
+)
+
 # Turn CMake global variables BUILD_TESTING and BUILD_SHARED_LIBS explicitly off
 # while building dependencies.
 
@@ -52,11 +65,19 @@ option(BUILD_TESTING "" ON)
 set(BUILD_TESTING OFF)
 option(BUILD_SHARED_LIBS "" OFF)
 set(BUILD_SHARED_LIBS OFF)
+set(CMAKE_SKIP_INSTALL_RULES TRUE)
 
 ####### absl
 
 set(ABSL_PROPAGATE_CXX_STD ON)
 add_subdirectory("${GB_THIRD_PARTY_DIR}/abseil-cpp")
+
+####### re2
+
+add_subdirectory("${GB_THIRD_PARTY_DIR}/re2")
+if (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
+  target_compile_options(re2 PUBLIC ${GB_3P_MSVC_COMPILE_OPTIONS})
+endif()
 
 ####### glm
 
@@ -66,12 +87,20 @@ add_subdirectory("${GB_THIRD_PARTY_DIR}/glm")
 
 option(INSTALL_GTEST "" OFF)
 set(INSTALL_GTEST OFF)
+option(GTEST_HAS_ABSL "" ON)
+set(GTEST_HAS_ABSL ON)
 option(gtest_force_shared_crt "" ON)
 set(gtest_force_shared_crt ON)
 add_subdirectory("${GB_THIRD_PARTY_DIR}/googletest")
 set_target_properties(gmock gmock_main gtest gtest_main PROPERTIES FOLDER External/googletest)
 unset(INSTALL_GTEST)
 unset(gtest_force_shared_crt)
+if (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
+  target_compile_options(gtest PUBLIC ${GB_3P_MSVC_COMPILE_OPTIONS})
+endif()
+if (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
+  target_compile_options(gmock PUBLIC ${GB_3P_MSVC_COMPILE_OPTIONS})
+endif()
 
 ####### flatbuffers
 
@@ -90,6 +119,9 @@ unset(FLATBUFFERS_INSTALL)
 add_subdirectory("${GB_THIRD_PARTY_DIR}/libccd")
 set_target_properties(ccd PROPERTIES FOLDER External/ccd)
 target_compile_definitions(ccd PUBLIC CCD_STATIC_DEFINE)
+if (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
+  target_compile_options(ccd PUBLIC ${GB_3P_MSVC_COMPILE_OPTIONS})
+endif()
 
 ###############################################################################
 ## Add Game Bits source
