@@ -76,7 +76,7 @@ add_subdirectory("${GB_THIRD_PARTY_DIR}/abseil-cpp")
 
 add_subdirectory("${GB_THIRD_PARTY_DIR}/re2")
 if (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
-  target_compile_options(re2 PUBLIC ${GB_3P_MSVC_COMPILE_OPTIONS})
+  target_compile_options(re2 PRIVATE ${GB_3P_MSVC_COMPILE_OPTIONS})
 endif()
 
 ####### glm
@@ -96,10 +96,10 @@ set_target_properties(gmock gmock_main gtest gtest_main PROPERTIES FOLDER Extern
 unset(INSTALL_GTEST)
 unset(gtest_force_shared_crt)
 if (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
-  target_compile_options(gtest PUBLIC ${GB_3P_MSVC_COMPILE_OPTIONS})
+  target_compile_options(gtest PRIVATE ${GB_3P_MSVC_COMPILE_OPTIONS})
 endif()
 if (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
-  target_compile_options(gmock PUBLIC ${GB_3P_MSVC_COMPILE_OPTIONS})
+  target_compile_options(gmock PRIVATE ${GB_3P_MSVC_COMPILE_OPTIONS})
 endif()
 
 ####### flatbuffers
@@ -120,7 +120,7 @@ add_subdirectory("${GB_THIRD_PARTY_DIR}/libccd")
 set_target_properties(ccd PROPERTIES FOLDER External/ccd)
 target_compile_definitions(ccd PUBLIC CCD_STATIC_DEFINE)
 if (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
-  target_compile_options(ccd PUBLIC ${GB_3P_MSVC_COMPILE_OPTIONS})
+  target_compile_options(ccd PRIVATE ${GB_3P_MSVC_COMPILE_OPTIONS})
 endif()
 
 ###############################################################################

@@ -28,7 +28,10 @@ function(gb_set_target_properties NAME)
     target_compile_options(${NAME} PRIVATE -Wthread-safety)
   endif()
   if (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
-    target_compile_options(${NAME} PUBLIC /wd4005 /wd4068 /wd4244 /wd4267 /wd4800)
+    # These are primarily for Abseil
+    target_compile_options(${NAME} PUBLIC 
+      /wd4244 /wd4267 /wd4800  # 'type1' to 'type2', possible loss of data
+    )
   endif()
 
   target_include_directories(${NAME} PUBLIC "${GB_DIR}/src" ${GB_INCLUDE_DIRS})
