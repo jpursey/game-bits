@@ -427,16 +427,16 @@ class GameStateMachine final {
   GameStateTraceHandler trace_handler_;
 
   // Map of all registered states.
-  States states_ GUARDED_BY(mutex_);
+  States states_ ABSL_GUARDED_BY(mutex_);
 
   // The current top state that is active.
-  GameStateInfo* top_state_ GUARDED_BY(mutex_) = nullptr;
+  GameStateInfo* top_state_ ABSL_GUARDED_BY(mutex_) = nullptr;
 
   // Current pending transition as specified by ChangeState and reset by
   // ProcessTransition.
-  bool transition_ GUARDED_BY(mutex_) = false;
-  GameStateInfo* transition_parent_ GUARDED_BY(mutex_) = nullptr;
-  GameStateInfo* transition_state_ GUARDED_BY(mutex_) = nullptr;
+  bool transition_ ABSL_GUARDED_BY(mutex_) = false;
+  GameStateInfo* transition_parent_ ABSL_GUARDED_BY(mutex_) = nullptr;
+  GameStateInfo* transition_state_ ABSL_GUARDED_BY(mutex_) = nullptr;
 };
 
 }  // namespace gb

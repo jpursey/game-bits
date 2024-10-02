@@ -5,6 +5,7 @@
 
 #include "gb/file/memory_file_protocol.h"
 
+#include "absl/strings/str_cat.h"
 #include "gb/file/common_protocol_test.h"
 #include "gb/file/file_system.h"
 #include "gmock/gmock.h"

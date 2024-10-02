@@ -9,6 +9,7 @@
 #include <thread>
 
 #include "absl/memory/memory.h"
+#include "absl/strings/str_cat.h"
 #include "gb/thread/thread.h"
 #include "glog/logging.h"
 

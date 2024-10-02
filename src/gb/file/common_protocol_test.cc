@@ -5,6 +5,7 @@
 
 #include "gb/file/common_protocol_test.h"
 
+#include "absl/strings/str_cat.h"
 #include "gb/file/file_system.h"
 #include "gb/file/raw_file.h"
 #include "gb/test/test_util.h"
@@ -674,7 +675,8 @@ TEST_P(CommonProtocolTest, WriteFile) {
   EXPECT_EQ(file->WriteString("abcde"), 5);
   EXPECT_EQ(file->GetPosition(), 5);
   file.reset();
-  EXPECT_TRUE(!check_contents || CheckContents(file_system, "test:/file", "abcde"));
+  EXPECT_TRUE(!check_contents ||
+              CheckContents(file_system, "test:/file", "abcde"));
 
   file = file_system.OpenFile("test:/file", kWriteFileFlags);
   ASSERT_NE(file, nullptr);
