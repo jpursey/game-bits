@@ -19,6 +19,7 @@
 // All chunks are logically zero for Y.
 struct ChunkIndex {
   ChunkIndex() = default;
+  ChunkIndex(int in_x, int in_y) : x(in_x), y(in_y) {}
   int x = 0;
   int y = 0;
 };

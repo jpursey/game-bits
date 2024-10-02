@@ -5,8 +5,12 @@
 
 #include "play_state.h"
 
+#define GLM_ENABLE_EXPERIMENTAL
+
 #include <cmath>
 
+#include "absl/log/log.h"
+#include "absl/strings/str_cat.h"
 #include "absl/time/time.h"
 #include "gb/imgui/imgui_instance.h"
 #include "gb/render/material.h"
@@ -19,7 +23,6 @@
 #include "glm/ext/matrix_clip_space.hpp"
 #include "glm/ext/matrix_transform.hpp"
 #include "glm/gtx/rotate_vector.hpp"
-#include "glog/logging.h"
 #include "imgui.h"
 
 // Game includes

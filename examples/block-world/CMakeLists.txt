@@ -11,7 +11,7 @@ cmake_minimum_required (VERSION 3.8)
 
 project(BlockWorld C CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -71,7 +71,8 @@ set(block_world_DEPS
 )
 
 set(block_world_LIBS
-  glog
+  absl::check
+  absl::log
   sdl2
   sdl2_main
 )

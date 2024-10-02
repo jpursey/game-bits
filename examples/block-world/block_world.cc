@@ -7,6 +7,8 @@
 
 #include <filesystem>
 
+#include "absl/log/check.h"
+#include "absl/log/log.h"
 #include "absl/strings/str_cat.h"
 #include "gb/base/context_builder.h"
 #include "gb/file/local_file_protocol.h"
@@ -15,7 +17,6 @@
 #include "gb/render/vulkan/sdl/sdl_vulkan_window.h"
 #include "gb/render/vulkan/vulkan_backend.h"
 #include "gb/resource/resource_system.h"
-#include "glog/logging.h"
 #include "imgui_impl_sdl.h"
 
 // Game includes
@@ -81,7 +82,7 @@ bool BlockWorld::InitFileSystem() {
   auto file_system = std::make_unique<gb::FileSystem>();
 
   const std::string game_root =
-      gb::NormalizePath(game_root_path.generic_u8string());
+      gb::NormalizePath(game_root_path.generic_string());
   if (!file_system->Register(
           gb::LocalFileProtocol::Create(
               gb::ContextBuilder()

@@ -6,6 +6,7 @@
 #include "base_state.h"
 
 #include "SDL.h"
+#include "absl/log/log.h"
 #include "imgui.h"
 #include "imgui_impl_sdl.h"
 
