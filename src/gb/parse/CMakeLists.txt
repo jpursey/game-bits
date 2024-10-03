@@ -4,7 +4,7 @@
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
 set(gb_parse_SOURCE
-  source_file.cc source_file.h
+  lexer.cc lexer.h
 )
 
 set(gb_parse_DEPS
@@ -18,7 +18,7 @@ set(gb_parse_LIBS
 )
 
 set(gb_parse_TEST_SOURCE
-  source_file_test.cc
+  lexer_test.cc
 )
 
 gb_add_library(gb_parse)
