@@ -3,341 +3,80 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
+#ifndef GB_PARSE_LEXER_H_
+#define GB_PARSE_LEXER_H_
+
+#include <cstdint>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/log/check.h"
 #include "gb/base/flags.h"
-#include "gb/parse/parse_types.h"
+#include "gb/parse/lexer_config.h"
+#include "gb/parse/lexer_types.h"
+#include "gb/parse/token.h"
 
 namespace gb {
 
-// Unique ID of the LexerContent.
-using LexerContentId = uint32_t;
-
-// Location of a token in a file. This can be retrieved from the Lexer given a
-// token that was parsed from it. If it is an unknown token, or one not from
-// the lexer, the values will be 0 / empty.
-struct TokenLocation {
-  LexerContentId id = 0;      // The id of the content within the lexer
-  std::string_view filename;  // The filename of the content, if there is one
-  int line = 0;               // The line number of the token (0 is unknown)
-  int column = 0;             // The column number of the token (0 is unknown)
-};
-
-// Token type.
-using TokenType = uint8_t;
-
-// Predefined token types.
-inline constexpr TokenType kTokenNone = 0;
-inline constexpr TokenType kTokenEnd = 1;
-inline constexpr TokenType kTokenError = 2;
-inline constexpr TokenType kTokenSymbol = 3;
-inline constexpr TokenType kTokenString = 4;
-inline constexpr TokenType kTokenInt = 5;
-inline constexpr TokenType kTokenFloat = 6;
-inline constexpr TokenType kTokenIdentifier = 7;
-inline constexpr TokenType kTokenKeyword = 8;
-inline constexpr TokenType kTokenNewline = 9;
-inline constexpr TokenType kTokenComment = 10;
-
-// The types of underlying values that a token can have.
-enum TokenValueType : uint8_t {
-  kNone = 0,
-  kFloat = 1,
-  kInt = 2,
-  kString = 3,
-  kIndex = 4,
-};
-
-// A token represents a single parsed token from a lexer.
+// This class is used to parse text content into tokens.
 //
-// Tokens are lightweight and can be freely copied and deleted. They are only
-// valid as long as the Lexer that created them is still valid.
+// The lexer is configured with a LexerConfig, which determines how the lexer
+// will parse the text. The lexer can be used to parse multiple files or
+// file-less text blocks identified as separate "lexer content", with each
+// identified by a LexerContentId.
+//
+// The Lexer maintains ownership of all source added to it, and provides access
+// via Tokens (as defined by LexerConfig), and Lines which are views into the
+// data (zero copy). It is stateful, tracking the current line and token
+// position within each content, and can be rewound or parsed by token or line.
+//
+// It also provides built in transformations for built-in token types like
+// decoding escaping on string constants or normalizing identifiers (for
+// case-insensitive tokenization).
+//
+// Uniqueness may also be tracked as well for tokens that are represented as an
+// index into an internally maintained value table. This allows for fast
+// comparison of token index values instead of strings. The built-in token types
+// kTokenIdentifier and kTokenKeyword are examples of this.
+//
+// Tokens are parsed on demand, allowing for mixed-mode parsing where lines can
+// be parsed individually, or tokens can be parsed from the current line. Random
+// access is also supported at the line level, and supports reseting to a
+// specific line number in the content.
+//
+// Example usage:
+//   LexerConfig config;
+//   config.flags = {
+//     // Specific flags for custom control over number parsing.
+//     LexerFlag::kInt32, LexerFlag::kNegativeIntegers,
+//     LexerFlag::kDecimalIntegers,
+//
+//     // Bundled options to follow C style identifiers
+//     kLexerFlags_CIdentifiers
+//   };
+//   config.symbols = {'{', '}', ':', ',', ".."};
+//
+//   // Create the lexer with the configuration.
+//   Lexer lexer(config);
+//   LexerContentId content_id = lexer.AddFileContent("filename.txt",
+//      "list: {one: 1, two: 2}\n"
+//      "range: -100..100\n");
+//
+//   int line = 0;
+//   for (Token token = lexer.NextToken(content_id); token.type != kTokenEnd;
+//        token = lexer.NextToken(content_id)) {
+//     if (lexer.GetCurrentLine() > line) { std::cout << std::endl; ++line; }
+//     std::cout << token.type << "(" << lexer.GetTokenText(token) << ") ";
+//   }
+//
+// This outputs:
+//    7(list) 3(:) 3({) 7(one) 3(:) 5(1) 3(,) 7(two) 3(:) 5(2) 3(})
+//    7(range) 3(:) 5(-100) 3(..) 5(100)
 //
 // This class is thread-compatible.
-class Token final {
- public:
-  Token() = default;
-  Token(const Token&) = default;
-  Token& operator=(const Token&) = default;
-  ~Token() = default;
-
-  // Returns the type of the token.
-  TokenType GetType() const { return type_; }
-
-  // Returns the type of value stored (this can generally be inferred from the
-  // type of the token).
-  TokenValueType GetValueType() const { return value_type_; }
-
-  // Returns the value of the token as an integer. It is an error to call this
-  // if the value type is not kInt.
-  int64_t GetInt() const {
-    DCHECK(value_type_ == TokenValueType::kInt);
-    return int_;
-  }
-
-  // Returns the value of the token as a float. It is an error to call this if
-  // the value type is not kFloat.
-  double GetFloat() const {
-    DCHECK(value_type_ == TokenValueType::kFloat);
-    return float_;
-  }
-
-  // Returns the value of the token as a string. It is an error to call this if
-  // the value type is not kString.
-  std::string_view GetString() const {
-    DCHECK(value_type_ == TokenValueType::kString);
-    return std::string_view(string_, value_size_);
-  }
-
-  // Returns the index value of the token. It is an error to call this if the
-  // value type is not kIndex.
-  int GetIndex() const {
-    DCHECK(value_type_ == TokenValueType::kIndex);
-    return index_;
-  }
-
-  // Returns the symbol value of the token. It is an error to call this if the
-  // token type is not kSymbol.
-  int GetSymbol() const {
-    DCHECK(type_ == kTokenSymbol && value_type_ == TokenValueType::kIndex);
-    return index_;
-  }
-
-  // Returns the keyword value of the token. It is an error to call this if the
-  // token type is not kKeyword.
-  int GetKeyword() const {
-    DCHECK(type_ == kTokenKeyword && value_type_ == TokenValueType::kIndex);
-    return index_;
-  }
-
-  // Returns the identifier value of the token. It is an error to call this if
-  // the token type is not kIdentifier.
-  std::string_view GetIdentifier() const {
-    DCHECK(type_ == kTokenIdentifier && value_type_ == TokenValueType::kString);
-    return std::string_view(string_, value_size_);
-  }
-
-  // Lexer factory methods for creating specific token types.
-  static Token TokenEnd(LexerInternal, uint32_t lexer_index) {
-    return Token(lexer_index, kTokenEnd);
-  }
-  static Token TokenError(LexerInternal, uint32_t lexer_index) {
-    return Token(lexer_index, kTokenError);
-  }
-  static Token TokenSymbol(LexerInternal, uint32_t lexer_index, int symbol) {
-    return Token(lexer_index, kTokenSymbol).Index(symbol);
-  }
-  static Token TokenString(LexerInternal, uint32_t lexer_index,
-                           std::string_view value) {
-    DCHECK(value.size() <= std::numeric_limits<decltype(value_size_)>::max());
-    return Token(lexer_index, kTokenString).String(value.data(), value.size());
-  }
-  static Token TokenInt(LexerInternal, uint32_t lexer_index, int64_t value) {
-    return Token(lexer_index, kTokenInt).Int(value);
-  }
-  static Token TokenFloat(LexerInternal, uint32_t lexer_index, double value) {
-    return Token(lexer_index, kTokenFloat).Float(value);
-  }
-  static Token TokenIdentifier(LexerInternal, uint32_t lexer_index,
-                               std::string_view value) {
-    DCHECK(value.size() <= std::numeric_limits<decltype(value_size_)>::max());
-    return Token(lexer_index, kTokenIdentifier)
-        .String(value.data(), value.size());
-  }
-  static Token TokenKeyword(LexerInternal, uint32_t lexer_index, int keyword) {
-    return Token(lexer_index, kTokenKeyword).Index(keyword);
-  }
-  static Token TokenNewline(LexerInternal, uint32_t lexer_index) {
-    return Token(lexer_index, kTokenNewline);
-  }
-  static Token TokenComment(LexerInternal, uint32_t lexer_index,
-                            uint32_t comment_end_lexer_index) {
-    return Token(lexer_index, kTokenComment)
-        .CommentEnd(comment_end_lexer_index);
-  }
-
- private:
-  Token(uint32_t lexer_index, TokenType type)
-      : lexer_index_(lexer_index), type_(type) {}
-  Token& Int(int64_t value, uint16_t size = sizeof(int64_t)) {
-    value_type_ = TokenValueType::kInt;
-    value_size_ = size;
-    int_ = value;
-    return *this;
-  }
-  Token& Float(double value, uint16_t size = sizeof(double)) {
-    value_type_ = TokenValueType::kFloat;
-    value_size_ = size;
-    float_ = value;
-    return *this;
-  }
-  Token& String(const char* value, uint16_t size) {
-    value_type_ = TokenValueType::kString;
-    value_size_ = size;
-    string_ = value;
-    return *this;
-  }
-  Token& Index(int value) {
-    value_type_ = TokenValueType::kIndex;
-    index_ = value;
-    return *this;
-  }
-  Token& CommentEnd(uint32_t value) {
-    comment_end_lexer_index_ = value;
-    return *this;
-  }
-
-  uint32_t lexer_index_ = 0;
-  TokenType type_ = kTokenNone;
-  TokenValueType value_type_ = kNone;
-  uint16_t value_size_ = 0;
-  union {
-    int64_t int_;
-    double float_;
-    const char* string_;
-    int index_;
-    uint32_t comment_end_lexer_index_;
-  };
-};
-
-// Configuration flags for the lexer.
-enum class LexerFlag {
-  // Integer parsing flags.
-  kInt8,
-  kInt16,
-  kInt32,
-  kInt64,
-  kNegativeIntegers,
-  kDecimalIntegers,
-  kHexIntegers,
-  kOctalIntegers,
-  kBinaryIntegers,
-
-  // Float parsing flags.
-  kFloat32,
-  kFloat64,
-  kNegativeFloats,
-
-  // String and character parsing flags.
-  kDoubleQuoteString,     // "abc"
-  kSingleQuoteString,     // 'abc'
-  kDoubleQuoteCharacter,  // "a"
-  kSingleQuoteCharacter,  // 'a'
-
-  // String and character escape settings.
-  kDoubleQuoteEscape,  // Allows "" or '' inside double quoted strings.
-  kEscapeCharacter,    // Escape character provides escape (set in config).
-  kNewlineEscape,      // Allows newline escape character (set in config).
-  kTabEscape,          // Allows tab escape character (set in config).
-  kHexEscape,          // Allows hex escape character (set in config).
-  kDecodeEscape,       // Decodes escape sequences in strings and characters.
-
-  // Identifier parsing flags.
-  kIdentUpper,               // Allows uppercase ASCII letters.
-  kIdentLower,               // Allows lowercase ASCII letters.
-  kIdentDigit,               // Allows non-leading decimal digits.
-  kIdentUnderscore,          // Allows underscores in the middle of identifiers.
-  kIdentLeadingUnderscore,   // Allows leading underscores.
-  kIdentTrailingUnderscore,  // Allows trailing underscores.
-  kIdentDash,                // Allows dashes in the middle of identifiers.
-  kIdentLeadingDash,         // Allows leading dashes.
-  kIdentTrailingDash,        // Allows trailing dashes.
-  kIdentForceUpper,          // Forces all identifiers to be uppercase.
-  kIdentForceLower,          // Forces all identifiers to be lowercase.
-  kIdentForceUnderscore,     // Forces all dashes to be underscores.
-  kIdentForceDash,           // Forces all underscores to be dashes.
-
-  // Whitespace and comment parsing flags.
-  kLineBreak,      // Newlines are not hitespace (enables kTokenNewline).
-  kEscapeNewline,  // Newlines can be escaped (set in config).
-  kLineComments,   // Allows line comments (set in config).
-  kBlockComments,  // Allows block comments (set in config).
-};
-using LexerFlags = Flags<LexerFlag>;
-inline constexpr LexerFlags kLexerFlags_MaxSizeNumbers = {
-    LexerFlag::kInt64, LexerFlag::kFloat64, LexerFlag::kDecimalIntegers};
-inline constexpr LexerFlags kLexerFlags_NegativeNumbers = {
-    LexerFlag::kNegativeIntegers, LexerFlag::kNegativeFloats};
-
-inline constexpr LexerFlags kLexerFlags_AllPositiveIntegers = {
-    LexerFlag::kInt8, LexerFlag::kInt16, LexerFlag::kInt32, LexerFlag::kInt64,
-    LexerFlag::kDecimalIntegers};
-inline constexpr LexerFlags kLexerFlags_AllIntegers = {
-    LexerFlag::kInt8,
-    LexerFlag::kInt16,
-    LexerFlag::kInt32,
-    LexerFlag::kInt64,
-    LexerFlag::kNegativeIntegers,
-    LexerFlag::kDecimalIntegers};
-inline constexpr LexerFlags kLexerFlags_AllIntegerFormats = {
-    LexerFlag::kDecimalIntegers, LexerFlag::kHexIntegers,
-    LexerFlag::kOctalIntegers, LexerFlag::kBinaryIntegers};
-
-inline constexpr LexerFlags kLexerFlags_PositiveFloats = {LexerFlag::kFloat32,
-                                                          LexerFlag::kFloat64};
-inline constexpr LexerFlags kLexerFlags_AllFloats = {
-    LexerFlag::kFloat32, LexerFlag::kFloat64, LexerFlag::kNegativeFloats};
-
-inline constexpr LexerFlags kLexerFlags_CStrings = {
-    LexerFlag::kDoubleQuoteString, LexerFlag::kEscapeCharacter,
-    LexerFlag::kNewlineEscape, LexerFlag::kTabEscape, LexerFlag::kHexEscape};
-inline constexpr LexerFlags kLexerFlags_CCharacters = {
-    LexerFlag::kSingleQuoteCharacter, LexerFlag::kEscapeCharacter,
-    LexerFlag::kNewlineEscape, LexerFlag::kTabEscape, LexerFlag::kHexEscape};
-
-inline constexpr LexerFlags kLexerFlags_CIdentifiers = {
-    LexerFlag::kIdentUpper,
-    LexerFlag::kIdentLower,
-    LexerFlag::kIdentDigit,
-    LexerFlag::kIdentUnderscore,
-    LexerFlag::kIdentLeadingUnderscore,
-    LexerFlag::kIdentTrailingUnderscore};
-
-inline constexpr LexerFlags kLexerFlags_C = {
-    kLexerFlags_AllIntegers,       kLexerFlags_AllFloats,
-    kLexerFlags_AllIntegerFormats, kLexerFlags_CStrings,
-    kLexerFlags_CCharacters,       kLexerFlags_CIdentifiers,
-    LexerFlag::kLineComments,      LexerFlag::kBlockComments,
-    LexerFlag::kEscapeNewline};
-
-// Configuration for the lexer.
-struct LexerConfig {
-  // Overall flags that control lexer behavior.
-  LexerFlags flags;
-
-  // Integer prefixes and suffixes.
-  std::string_view hex_prefix = "0x";     // Used for kHexIntegers.
-  std::string_view hex_suffix = "";       // Used for kHexIntegers.
-  std::string_view octal_prefix = "0";    // Used for kOctalIntegers.
-  std::string_view octal_suffix = "";     // Used for kOctalIntegers.
-  std::string_view binary_prefix = "0b";  // Used for kBinaryIntegers.
-  std::string_view binary_suffix = "";    // Used for kBinaryIntegers.
-
-  // Escape character settings
-  char escape = 0;          // Used for kCharacterEscaping or kEscapeNewLine.
-  char escape_newline = 0;  // Used for kNewlineEscape.
-  char escape_tab = 0;      // Used for kTabEscape.
-  char escape_hex = 0;      // Used for kHexEscape.
-
-  // Comment settings.
-  struct BlockComment {
-    std::string_view start;
-    std::string_view end;
-  };
-  absl::Span<std::string_view> line_comments;
-  absl::Span<BlockComment> block_comments;
-
-  // All valid symbols and keywords. This must include even single character
-  // symbols, or they will not be allowed.
-  absl::Span<std::string_view> symbols;
-  absl::Span<std::string_view> keywords;
-};
-
-// The lexer is used to parse text content into tokens.
 class Lexer final {
  public:
   explicit Lexer(const LexerConfig& config);
@@ -345,25 +84,118 @@ class Lexer final {
   Lexer& operator=(const Lexer&) = delete;
   ~Lexer() = default;
 
+  //----------------------------------------------------------------------------
+  // Content management
+  //----------------------------------------------------------------------------
+
   // Adds a file to the lexer, returning the LexerContentId which can be used to
   // parse the file.
-  LexerContentId AddFileContent(std::string_view filename, std::string content);
+  LexerContentId AddFileContent(std::string_view filename, std::string text);
 
   // Adds text content without a specific filename to the lexer. Returns the
   // LexerContentId which can be used to parse the content.
-  LexerContentId AddContent(std::string content);
+  LexerContentId AddContent(std::string text);
 
-  // Returns the content that was previously added for the given filename.
-  LexerContentId GetContent(std::string_view filename);
+  // Rewinds the content to the beginning. NextToken() and NextLine() will
+  // return the first token and line respectively in the content.
+  void RewindContent(LexerContentId id);
+
+  // Returns the content that was previously added for the given filename. If
+  // there is no content, this returns zero.
+  LexerContentId GetContent(std::string_view filename) const;
 
   // Returns the filename associated with the specified content ID.
-  std::string_view GetFilename(LexerContentId id);
+  std::string_view GetFilename(LexerContentId id) const;
 
-  // Returns the token location.
-  TokenLocation GetTokenLocation(const Token& token);
+  //----------------------------------------------------------------------------
+  // Line properties
+  //----------------------------------------------------------------------------
 
-  // Returns the text of the token.
-  std::string_view GetTokenText(const Token& token);
+  // Returns the number of lines in the content, or 0 if the content ID is
+  // invalid.
+  int GetLineCount(LexerContentId id) const;
+
+  // Returns the text of the line at the specified index (excluding any newline
+  // at the end), or an empty string if the content ID is invalid or the line
+  // index is out of range.
+  std::string_view GetLineText(LexerContentId id, int line_index) const;
+
+  // Returns the line index for the specified line number in the content. If the
+  // line number is out of range, this returns a default constructed (invalid)
+  // location.
+  LexerLocation GetLineLocation(LexerContentId id, int line_index) const;
+
+  //----------------------------------------------------------------------------
+  // Line parsing
+  //----------------------------------------------------------------------------
+
+  // Returns the current line number in the content, or 0 if the content ID is
+  // invalid.
+  int GetCurrentLine(LexerContentId id) const;
+
+  // Returns the content remaining on the current line, and advances to the next
+  // line in the content. If the content is already at the end, this will return
+  // an empty string.
+  //
+  // After this call, if NextToken() is called, it will return the first token
+  // that appears after the beginning of the line.
+  std::string_view NextLine(LexerContentId id);
+
+  // Rewinds the content to the beginning of the current line. If this is
+  // currently at the beginning of a line, it will rewind to the beginning of
+  // the previous line.
+  //
+  // After this call if NextToken() is called, it will return the first token
+  // that appears after the beginning of the line.
+  void RewindLine(LexerContentId id);
+
+  //----------------------------------------------------------------------------
+  // Token properties
+  //----------------------------------------------------------------------------
+
+  // Returns the token location for the token or token index.
+  //
+  // The location is to the *start* of the token (or token index). Tokens can
+  // span multiple lines, so the line ending line number may not be the same as
+  // the line number of the token. To query the location of the end of the
+  // token, call GetTokenEndLocation() on the token.
+  LexerLocation GetTokenLocation(const Token& token) const;
+  LexerLocation GetTokenLocation(TokenIndex index) const;
+
+  // Returns the token location for the end of the token or token index.
+  //
+  // When used with an index, The returned location is to the *end* of the
+  // specific token index, not necessarily the token itself. This is different
+  // in cases where a token may span multiple lines (like a comment block or
+  // string content with embedded line breaks).
+  LexerLocation GetTokenEndLocation(const Token& token) const;
+  LexerLocation GetTokenEndLocation(TokenIndex index) const;
+
+  // Returns the text of the token or token index.
+  //
+  // Returns an empty string if the token or start token index is invalid. or if
+  // the token range is backwards (end < start) or are from different pieces of
+  // content. If the end beyond the end of the content, then this will return
+  // the text up to the end of the content.
+  std::string_view GetTokenText(const Token& token) const;
+  std::string_view GetTokenText(TokenIndex index) const;
+
+  // Returns the text of the token range (from beginning of start index to the
+  // end of the end index).
+  //
+  // Returns an empty string if the token range is backwards (end < start) or
+  // are from different pieces of content. If the end beyond the end of the
+  // content, then this will return the text up to the end of the content.
+  std::string_view GetTokenText(TokenIndex start, TokenIndex end) const;
+
+  // Returns the value string for the specified Token or index value (from
+  // Token::GetIndex()).
+  std::string_view GetString(const Token& token) const;
+  std::string_view GetString(int index) const;
+
+  //----------------------------------------------------------------------------
+  // Token parsing
+  //----------------------------------------------------------------------------
 
   // Returns the next token in the stream for the content.
   //
@@ -376,37 +208,70 @@ class Lexer final {
   // The returned token is valid for as long as the Lexer is valid.
   Token NextToken(LexerContentId id);
 
-  // Skips forward to the next line beginning in the content. If the content is
-  // already at the beginning of a line, it will skip to the beginning of the
-  // next line.
-  void NextLine(LexerContentId id);
-
   // Rewinds the token stream by one token.
   //
-  // This can only be called once after NextToken() returns a non-end/error
-  // token, or it will return false. If the token stream is rewound past the
-  // beginning, it will be clamped to the beginning and this will return also
-  // false.
+  // This can be called multiple times rewinding through previously parsed
+  // tokens. This does not "parse backward" so if lines were skipped (with
+  // NextLine), or tokens only partially parsed from a previous line, this will
+  // simply go back to the previous parsed token in the content. If the token
+  // stream is rewound past the beginning, it will be clamped to the beginning
+  // and this will return also false. NextToken() will return the token that was
+  // rewound to.
   bool RewindToken(LexerContentId id);
 
-  // Rewinds the content to the beginning of the current line. If this is
-  // currently at the beginning of a line, it will rewind to the beginning of
-  // the previous line.
-  void RewindLine(LexerContentId id);
-
-  // Rewinds the content to the beginning.
-  void RewindContent(LexerContentId id);
-
  private:
-  struct Content {
-    LexerContentId id;
-    std::string_view filename;
-    std::string content;
+  struct TokenInfo {
+    uint32_t column : 12;
+    uint32_t size : 12;
+    uint32_t type : 8;
+  };
+  static_assert(sizeof(TokenInfo) == sizeof(uint32_t));
+
+  struct Line {
+    Line(LexerContentId in_id, std::string_view in_line)
+        : id(in_id), line(in_line) {}
+    LexerContentId id = 0;
+    absl::string_view line;
+    std::vector<TokenInfo> tokens;
   };
 
+  struct Content {
+    Content(std::string_view filename, std::string content)
+        : filename(filename), text(std::move(content)) {}
+
+    int GetLineIndex() const { return start_line + line; }
+    TokenIndex GetTokenIndex() const;
+
+    std::string filename;
+    std::string text;
+    int start_line = 0;
+    int end_line = 0;
+
+    int line = 0;
+    int column = 0;
+    int token = 0;
+  };
+
+  LexerContentId GetContentId(int index) const;
+  int GetContentIndex(LexerContentId id) const;
+
+  const Content* GetContent(LexerContentId id) const;
+  Content* GetContent(LexerContentId id);
+
+  const Line* GetLine(int line) const;
+  Line* GetLine(int line);
+
+  std::tuple<const Content*, const Line*> GetContentLine(
+      LexerContentId id) const;
+  std::tuple<Content*, Line*> GetContentLine(LexerContentId id);
+
+  const LexerConfig config_;
   std::vector<std::unique_ptr<Content>> content_;
-  absl::flat_hash_map<std::string_view, LexerContentId> filename_content_;
+  absl::flat_hash_map<std::string_view, LexerContentId> filename_to_id_;
   std::vector<std::unique_ptr<std::string>> modified_text_;
+  std::vector<Line> lines_;
 };
 
 }  // namespace gb
+
+#endif  // GB_PARSE_LEXER_H_

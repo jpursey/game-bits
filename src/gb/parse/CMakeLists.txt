@@ -5,6 +5,10 @@
 
 set(gb_parse_SOURCE
   lexer.cc lexer.h
+  lexer_config.h
+  lexer_types.h
+  symbol.h
+  token.h
 )
 
 set(gb_parse_DEPS
