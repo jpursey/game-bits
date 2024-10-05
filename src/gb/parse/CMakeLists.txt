@@ -14,6 +14,7 @@ set(gb_parse_SOURCE
 set(gb_parse_DEPS
   absl::strings
   gb_base
+  re2
 )
 
 set(gb_parse_LIBS

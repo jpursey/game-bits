@@ -18,6 +18,7 @@
 #include "gb/parse/lexer_config.h"
 #include "gb/parse/lexer_types.h"
 #include "gb/parse/token.h"
+#include "re2/re2.h"
 
 namespace gb {
 
@@ -86,6 +87,16 @@ class Lexer final {
   // Currently unsupported feature in the lexer.
   static const std::string_view kErrorNotImplemented;
 
+  // Conflicting configuration between strings and characters in LexerConfig
+  static const std::string_view kErrorConflictingStringAndCharSpec;
+
+  // Invalid symbol specification in LexerConfig.
+  static const std::string_view kErrorInvalidSymbolSpec;
+
+  // Invalid token specification in LexerConfig (no symbols, keywords, or other
+  // tokens).
+  static const std::string_view kErrorNoTokenSpec;
+
   // The token referred to invalid content, or content associated with this
   // Lexer instance.
   static const std::string_view kErrorInvalidTokenContent;
@@ -98,8 +109,8 @@ class Lexer final {
   //
   // If the configuration is invalid, this will return nullptr, and if an error
   // string is provided, it will be set to the error message.
-  static std::unique_ptr<Lexer> Create(const LexerConfig& config,
-                                       std::string* error = nullptr);
+  static std::unique_ptr<Lexer> Create(const LexerConfig& lexer_config,
+                                       std::string* error_message = nullptr);
 
   Lexer(const Lexer&) = delete;
   Lexer& operator=(const Lexer&) = delete;
@@ -272,7 +283,15 @@ class Lexer final {
     int token = 0;
   };
 
-  Lexer();
+  // Runtime config dereived from LexerConfig.
+  struct Config {
+    LexerFlags flags;
+    std::string_view pattern_whitespace;
+    std::string_view pattern_presym;
+    std::string_view pattern_postsym;
+  };
+
+  explicit Lexer(const Config& config);
 
   LexerContentId GetContentId(int index) const;
   int GetContentIndex(LexerContentId id) const;
@@ -284,6 +303,11 @@ class Lexer final {
   Line* GetLine(int line);
 
   std::tuple<Content*, Line*> GetContentLine(LexerContentId id);
+
+  LexerFlags flags_;
+  RE2 re_whitespace_;
+  RE2 re_presym_;
+  RE2 re_postsym_;
 
   std::vector<std::unique_ptr<Content>> content_;
   absl::flat_hash_map<std::string_view, LexerContentId> filename_to_id_;

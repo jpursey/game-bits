@@ -49,6 +49,10 @@ class Symbol {
   constexpr Symbol(std::string_view str) noexcept;
   constexpr Symbol(const char* str) noexcept : Symbol(std::string_view(str)) {}
 
+  // Returns true if the symbol is valid (contains only ASCII characters between
+  // 33 and 127).
+  constexpr bool IsValid() const;
+
   // Returns the underlying symbol value.
   constexpr SymbolValue GetValue() const { return value_; }
 
@@ -90,6 +94,17 @@ constexpr int Symbol::GetSize() const {
 
 constexpr std::string_view Symbol::GetString() const {
   return std::string_view(reinterpret_cast<const char*>(&value_), GetSize());
+}
+
+constexpr bool Symbol::IsValid() const {
+  SymbolValue value = value_;
+  while (value > 0) {
+    if ((value & 0xFF) < 0x21 || (value & 0xFF) > 0x7E) {
+      return false;
+    }
+    value >>= 8;
+  }
+  return true;
 }
 
 }  // namespace gb

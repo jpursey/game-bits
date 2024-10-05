@@ -72,6 +72,11 @@ class TokenIndex {
  private:
   friend class Lexer;
 
+  template <typename Sink>
+  friend void AbslStringify(Sink& sink, const TokenIndex& token_index) {
+    absl::Format(&sink, "(%d:%d)", token_index.line, token_index.token);
+  }
+
   uint32_t line : lexer_internal::kTokenIndexLineBits = 0;
   uint32_t token : lexer_internal::kTokenIndexTokenBits = 0;
 };

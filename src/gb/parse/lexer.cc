@@ -6,20 +6,208 @@
 #include "gb/parse/lexer.h"
 
 #include "absl/memory/memory.h"
+#include "absl/strings/str_cat.h"
+#include "absl/strings/str_replace.h"
 #include "absl/strings/str_split.h"
 
 namespace gb {
 
 const std::string_view Lexer::kErrorNotImplemented = "Not implemented";
+const std::string_view Lexer::kErrorConflictingStringAndCharSpec =
+    "Conflicting string and character specifications";
+const std::string_view Lexer::kErrorInvalidSymbolSpec =
+    "Symbol specification has non-ASCII or whitespace characters";
+const std::string_view Lexer::kErrorNoTokenSpec =
+    "No token specification (from symbols, keywords, or flags)";
 const std::string_view Lexer::kErrorInvalidTokenContent =
     "Token does not refer to valid content";
 
-std::unique_ptr<Lexer> Lexer::Create(const LexerConfig& config,
-                                     std::string* error) {
-  return absl::WrapUnique(new Lexer);
+namespace {
+
+bool CreateNoSymPattern(std::string& pattern_nosym,
+                        const LexerConfig& lexer_config, std::string& error) {
+  const LexerFlags flags = lexer_config.flags;
+
+  if (!lexer_config.keywords.empty()) {
+    error = Lexer::kErrorNotImplemented;
+    return false;
+  }
+
+  if (LexerSupportsIntegers(flags)) {
+    if (flags.Intersects({LexerFlag::kHexIntegers, LexerFlag::kOctalIntegers,
+                          LexerFlag::kBinaryIntegers})) {
+      error = Lexer::kErrorNotImplemented;
+      return false;
+    }
+    absl::StrAppend(&pattern_nosym, "(");
+    if (flags.IsSet(LexerFlag::kDecimalIntegers)) {
+      if (flags.IsSet(LexerFlag::kNegativeIntegers)) {
+        absl::StrAppend(&pattern_nosym, "-?");
+      }
+      absl::StrAppend(&pattern_nosym, "[0-9]+");
+    }
+    absl::StrAppend(&pattern_nosym, ")|");
+  }
+
+  if (LexerSupportsFloats(flags)) {
+    if (flags.Intersects({LexerFlag::kExponentFloats})) {
+      error = Lexer::kErrorNotImplemented;
+      return false;
+    }
+    absl::StrAppend(&pattern_nosym, "(");
+    if (flags.IsSet(LexerFlag::kDecimalFloats)) {
+      if (flags.IsSet(LexerFlag::kNegativeFloats)) {
+        absl::StrAppend(&pattern_nosym, "-?");
+      }
+      absl::StrAppend(&pattern_nosym, "[0-9]+\\.[0-9]+");
+    }
+    absl::StrAppend(&pattern_nosym, ")|");
+  }
+
+  if (LexerSupportsStrings(flags)) {
+    if (flags.Intersects({LexerFlag::kQuoteQuoteEscape,
+                          LexerFlag::kEscapeCharacter, LexerFlag::kTabInQuotes,
+                          LexerFlag::kDecodeEscape})) {
+      error = Lexer::kErrorNotImplemented;
+      return false;
+    }
+    error = Lexer::kErrorNotImplemented;
+    return false;
+  }
+
+  if (LexerSupportsCharacters(flags)) {
+    if (flags.IsSet({LexerFlag::kDoubleQuoteCharacter,
+                     LexerFlag::kDoubleQuoteString}) ||
+        flags.IsSet({LexerFlag::kSingleQuoteCharacter,
+                     LexerFlag::kSingleQuoteString})) {
+      error = Lexer::kErrorConflictingStringAndCharSpec;
+      return false;
+    }
+    if (flags.Intersects({LexerFlag::kQuoteQuoteEscape,
+                          LexerFlag::kEscapeCharacter, LexerFlag::kTabInQuotes,
+                          LexerFlag::kDecodeEscape})) {
+      error = Lexer::kErrorNotImplemented;
+      return false;
+    }
+    error = Lexer::kErrorNotImplemented;
+    return false;
+  }
+
+  if (LexerSupportsIdentifiers(flags)) {
+    if (flags.Intersects(
+            {LexerFlag::kIdentForceUpper, LexerFlag::kIdentForceLower})) {
+      error = Lexer::kErrorNotImplemented;
+      return false;
+    }
+
+    absl::StrAppend(&pattern_nosym, "([");
+    if (flags.IsSet(LexerFlag::kIdentLeadingUnderscore)) {
+      absl::StrAppend(&pattern_nosym, "_");
+    }
+    if (flags.IsSet(LexerFlag::kIdentUpper)) {
+      absl::StrAppend(&pattern_nosym, "A-Z");
+    }
+    if (flags.IsSet(LexerFlag::kIdentLower)) {
+      absl::StrAppend(&pattern_nosym, "a-z");
+    }
+    absl::StrAppend(&pattern_nosym, "][");
+    if (flags.IsSet(LexerFlag::kIdentUnderscore)) {
+      absl::StrAppend(&pattern_nosym, "_");
+    }
+    if (flags.IsSet(LexerFlag::kIdentUpper)) {
+      absl::StrAppend(&pattern_nosym, "A-Z");
+    }
+    if (flags.IsSet(LexerFlag::kIdentLower)) {
+      absl::StrAppend(&pattern_nosym, "a-z");
+    }
+    if (flags.IsSet(LexerFlag::kIdentDigit)) {
+      absl::StrAppend(&pattern_nosym, "0-9");
+    }
+    absl::StrAppend(&pattern_nosym, "]+)|");
+  }
+
+  if (!pattern_nosym.empty()) {
+    pattern_nosym.pop_back();
+  }
+
+  return true;
 }
 
-Lexer::Lexer() = default;
+bool CreateSymPattern(std::string& pattern_sym, const LexerConfig& config,
+                      std::string& error) {
+  if (config.symbols.empty()) {
+    return true;
+  }
+  absl::StrAppend(&pattern_sym, "(");
+  for (const Symbol& symbol : config.symbols) {
+    if (!symbol.IsValid()) {
+      error = Lexer::kErrorInvalidSymbolSpec;
+      return false;
+    }
+    absl::StrAppend(&pattern_sym, RE2::QuoteMeta(symbol.GetString()));
+    absl::StrAppend(&pattern_sym, "|");
+  }
+  if (pattern_sym.back() == '|') {
+    pattern_sym.pop_back();
+  } else {
+    pattern_sym.clear();
+  }
+  return true;
+}
+
+}  // namespace
+
+std::unique_ptr<Lexer> Lexer::Create(const LexerConfig& lexer_config,
+                                     std::string* error_message) {
+  std::string temp_error;
+  std::string& error = (error_message != nullptr ? *error_message : temp_error);
+
+  std::string pattern_nosym;
+  if (!CreateNoSymPattern(pattern_nosym, lexer_config, error)) {
+    return nullptr;
+  }
+
+  std::string pattern_sym;
+  if (!CreateSymPattern(pattern_sym, lexer_config, error)) {
+    return nullptr;
+  }
+
+  std::string pattern_presym;
+  std::string pattern_postsym;
+  if (pattern_nosym.empty()) {
+    pattern_presym = pattern_postsym = pattern_sym;
+  } else if (pattern_sym.empty()) {
+    pattern_presym = pattern_postsym = pattern_nosym;
+  } else {
+    pattern_presym = absl::StrCat(pattern_nosym, "|", pattern_sym);
+    pattern_postsym = absl::StrCat(pattern_sym, "|", pattern_nosym);
+  }
+  if (pattern_presym.empty()) {
+    error = Lexer::kErrorNoTokenSpec;
+    return nullptr;
+  }
+
+  if (lexer_config.flags.Intersects(
+          {LexerFlag::kLineBreak, LexerFlag::kLineIndent,
+           LexerFlag::kLeadingTabs, LexerFlag::kEscapeNewline,
+           LexerFlag::kLineComments, LexerFlag::kBlockComments})) {
+    error = Lexer::kErrorNotImplemented;
+    return nullptr;
+  }
+
+  Config config;
+  config.flags = lexer_config.flags;
+  config.pattern_whitespace = "[ \t]*";
+  config.pattern_presym = pattern_presym;
+  config.pattern_postsym = pattern_postsym;
+  return absl::WrapUnique(new Lexer(config));
+}
+
+Lexer::Lexer(const Config& config)
+    : flags_(config.flags),
+      re_whitespace_(config.pattern_whitespace),
+      re_presym_(config.pattern_presym),
+      re_postsym_(config.pattern_postsym) {}
 
 inline TokenIndex Lexer::Content::GetTokenIndex() const {
   // We can't return the normal token index here, as it is would refer to the

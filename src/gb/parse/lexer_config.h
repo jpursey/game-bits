@@ -10,6 +10,7 @@
 #include <string_view>
 
 #include "absl/types/span.h"
+#include "gb/parse/symbol.h"
 
 namespace gb {
 
@@ -41,30 +42,30 @@ enum class LexerFlag {
   kTabInQuotes,           // Allows literal tab characters in strings
 
   // String and character escape settings.
-  // - Both kDoubleQuoteEscape and kEscapeCharacter may be set, in which case
+  // - Both kQuoteQuoteEscape and kEscapeCharacter may be set, in which case
   //   both forms of escaping are allowed in strings.
   // - kNewlineEscape, kTabEscape, and kHexEscape are only used if
   //   kEscapeCharacter is set.
-  kDoubleQuoteEscape,  // Allows "" or '' inside double quoted strings.
-  kEscapeCharacter,    // Escape character provides escape (set in config).
-  kNewlineEscape,      // Allows newline escape character (set in config).
-  kTabEscape,          // Allows tab escape character (set in config).
-  kHexEscape,          // Allows hex escape character (set in config).
-  kDecodeEscape,       // Decodes escape sequences for token values.
+  kQuoteQuoteEscape,  // Allows "" or '' inside similarly quoted strings.
+  kEscapeCharacter,   // Escape character provides escape (set in config).
+  kNewlineEscape,     // Allows newline escape character (set in config).
+  kTabEscape,         // Allows tab escape character (set in config).
+  kHexEscape,         // Allows hex escape character (set in config).
+  kDecodeEscape,      // Decodes escape sequences for token values.
 
   // Identifier parsing flags.
-  kIdentUpper,               // Allows uppercase ASCII letters.
-  kIdentLower,               // Allows lowercase ASCII letters.
-  kIdentDigit,               // Allows non-leading decimal digits.
-  kIdentUnderscore,          // Allows underscores in the middle of identifiers.
-  kIdentLeadingUnderscore,   // Allows leading underscores.
-  kIdentTrailingUnderscore,  // Allows trailing underscores.
-  kIdentForceUpper,          // Forces all identifiers to be uppercase.
-  kIdentForceLower,          // Forces all identifiers to be lowercase.
+  kIdentUpper,              // Allows uppercase ASCII letters.
+  kIdentLower,              // Allows lowercase ASCII letters.
+  kIdentDigit,              // Allows non-leading decimal digits.
+  kIdentUnderscore,         // Allows underscores in the middle of identifiers.
+  kIdentLeadingUnderscore,  // Allows leading underscores.
+  kIdentForceUpper,         // Forces all identifiers to be uppercase.
+  kIdentForceLower,         // Forces all identifiers to be lowercase.
 
   // Whitespace and comment parsing flags.
   kLineBreak,      // Newlines are not whitespace (enables kTokenNewline).
   kLineIndent,     // Indentation is significant (enables kTokenIndent).
+  kLeadingTabs,    // Leading tabs are allowed on lines (requires kLineIndent).
   kEscapeNewline,  // Newlines can be escaped (set in config).
   kLineComments,   // Allows line comments (set in config).
   kBlockComments,  // Allows block comments (set in config).
@@ -125,12 +126,8 @@ inline constexpr LexerFlags kLexerFlags_CCharacters = {
 
 // Support C style identifiers.
 inline constexpr LexerFlags kLexerFlags_CIdentifiers = {
-    LexerFlag::kIdentUpper,
-    LexerFlag::kIdentLower,
-    LexerFlag::kIdentDigit,
-    LexerFlag::kIdentUnderscore,
-    LexerFlag::kIdentLeadingUnderscore,
-    LexerFlag::kIdentTrailingUnderscore};
+    LexerFlag::kIdentUpper, LexerFlag::kIdentLower, LexerFlag::kIdentDigit,
+    LexerFlag::kIdentUnderscore, LexerFlag::kIdentLeadingUnderscore};
 
 // Support all C style features.
 inline constexpr LexerFlags kLexerFlags_C = {
@@ -139,6 +136,46 @@ inline constexpr LexerFlags kLexerFlags_C = {
     kLexerFlags_CStrings,          kLexerFlags_CCharacters,
     kLexerFlags_CIdentifiers,      LexerFlag::kLineComments,
     LexerFlag::kBlockComments,     LexerFlag::kEscapeNewline};
+
+//------------------------------------------------------------------------------
+// Flag queries.
+//------------------------------------------------------------------------------
+
+inline bool LexerSupportsIntegers(LexerFlags flags) {
+  return flags.Intersects({LexerFlag::kInt8, LexerFlag::kInt16,
+                           LexerFlag::kInt32, LexerFlag::kInt64}) &&
+         flags.Intersects({LexerFlag::kDecimalIntegers, LexerFlag::kHexIntegers,
+                           LexerFlag::kOctalIntegers,
+                           LexerFlag::kBinaryIntegers});
+}
+
+inline bool LexerSupportsFloats(LexerFlags flags) {
+  return flags.Intersects({LexerFlag::kFloat32, LexerFlag::kFloat64}) &&
+         flags.Intersects(
+             {LexerFlag::kDecimalFloats, LexerFlag::kExponentFloats});
+}
+
+inline bool LexerSupportsStrings(LexerFlags flags) {
+  return flags.Intersects(
+      {LexerFlag::kDoubleQuoteString, LexerFlag::kSingleQuoteString});
+}
+
+inline bool LexerSupportsCharacters(LexerFlags flags) {
+  return flags.Intersects(
+      {LexerFlag::kDoubleQuoteCharacter, LexerFlag::kSingleQuoteCharacter});
+}
+
+inline bool LexerSupportsIdentifiers(LexerFlags flags) {
+  return flags.Intersects({LexerFlag::kIdentUpper, LexerFlag::kIdentLower});
+}
+
+inline bool LexerSupportsLineComments(LexerFlags flags) {
+  return flags.IsSet(LexerFlag::kLineComments);
+}
+
+inline bool LexerSupportsBlockComments(LexerFlags flags) {
+  return flags.IsSet(LexerFlag::kBlockComments);
+}
 
 //------------------------------------------------------------------------------
 // Configuration for the lexer.
@@ -172,7 +209,7 @@ struct LexerConfig {
 
   // All valid symbols and keywords. This must include even single character
   // symbols, or they will not be allowed.
-  absl::Span<const std::string_view> symbols;
+  absl::Span<const Symbol> symbols;
   absl::Span<const std::string_view> keywords;
 };
 

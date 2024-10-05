@@ -11,6 +11,7 @@
 #include <string_view>
 
 #include "absl/log/check.h"
+#include "absl/strings/str_format.h"
 #include "gb/parse/lexer_types.h"
 #include "gb/parse/symbol.h"
 
@@ -62,6 +63,24 @@ class Token final {
   std::string_view GetString() const;  // Default: empty
   int GetIndex() const;                // Default: -1
   Symbol GetSymbol() const;            // Default: Symbol()
+
+  // Comparison operators.
+  auto operator<=>(const Token& other) const {
+    if (auto cmp = token_index_ <=> other.token_index_; cmp != 0) {
+      return cmp;
+    }
+    if (auto cmp = type_ <=> other.type_; cmp != 0) {
+      return cmp;
+    }
+    if (type_ == kTokenError) {
+      return *string_view_ <=> *other.string_view_;
+    }
+    return 1 <=> 1;
+  }
+  bool operator==(const Token& other) const {
+    return token_index_ == other.token_index_ && type_ == other.type_ &&
+           (type_ != kTokenError || *string_view_ == *other.string_view_);
+  }
 
  private:
   friend class Lexer;
@@ -162,6 +181,46 @@ class Token final {
   };
 };
 static_assert(sizeof(Token) == 16);
+
+template <typename Sink>
+void AbslStringify(Sink& sink, const Token& token) {
+  absl::Format(&sink, "{%v, type:%d, value:", token.GetTokenIndex(),
+               token.GetType());
+  switch (token.GetType()) {
+    case kTokenNone:
+    case kTokenEnd:
+    case kTokenNewline:
+      absl::Format(&sink, "kNone");
+      break;
+    case kTokenError:
+      absl::Format(&sink, "\"%s\"", token.GetString());
+      break;
+    case kTokenSymbol:
+      absl::Format(&sink, "%s", token.GetSymbol().GetString());
+      break;
+    case kTokenString:
+      absl::Format(&sink, "\"%s\"", token.GetString());
+      break;
+    case kTokenInt:
+      absl::Format(&sink, "%d", token.GetInt());
+      break;
+    case kTokenFloat:
+      absl::Format(&sink, "%f", token.GetFloat());
+      break;
+    case kTokenIdentifier:
+      absl::Format(&sink, "\"%s\"", token.GetString());
+      break;
+    case kTokenKeyword:
+      absl::Format(&sink, "{index:%d, value:\"%s\"}", token.GetIndex(),
+                   token.GetString());
+      break;
+    default:
+      // All user types are strings.
+      absl::Format(&sink, "\"%s\"", token.GetString());
+      break;
+  }
+  absl::Format(&sink, "}");
+}
 
 inline int64_t Token::GetInt() const {
   if (value_type_ != ValueType::kInt) {
