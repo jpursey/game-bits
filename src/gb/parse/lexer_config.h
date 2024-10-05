@@ -157,10 +157,10 @@ struct LexerConfig {
   std::string_view binary_suffix = "";    // Used for kBinaryIntegers.
 
   // Escape character settings
-  char escape = 0;          // Used for kCharacterEscaping or kEscapeNewLine.
-  char escape_newline = 0;  // Used for kNewlineEscape.
-  char escape_tab = 0;      // Used for kTabEscape.
-  char escape_hex = 0;      // Used for kHexEscape.
+  char escape = '\\';         // Used for kCharacterEscaping or kEscapeNewLine.
+  char escape_newline = 'n';  // Used for kNewlineEscape.
+  char escape_tab = 't';      // Used for kTabEscape.
+  char escape_hex = 'x';      // Used for kHexEscape (followed by 2 hex digits).
 
   // Comment settings.
   struct BlockComment {

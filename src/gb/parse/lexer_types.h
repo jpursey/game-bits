@@ -6,6 +6,8 @@
 #ifndef GB_PARSE_LEXER_TYPES_H_
 #define GB_PARSE_LEXER_TYPES_H_
 
+#include "absl/strings/str_format.h"
+
 namespace gb {
 
 // Forward declarations
@@ -41,7 +43,15 @@ struct LexerLocation {
   std::string_view filename;  // The filename of the content, if there is one
   int line = -1;              // The line number of the token (0 is first)
   int column = -1;            // The column number of the token (0 is first)
+
+  auto operator<=>(const LexerLocation&) const = default;
 };
+
+template <typename Sink>
+void AbslStringify(Sink& sink, const LexerLocation& location) {
+  absl::Format(&sink, "{id:%d, filename:\"%s\", line:%d, col:%d}", location.id,
+               location.filename, location.line, location.column);
+}
 
 // Represents the index of a token within the Lexer. It can be used to retrieve
 // token text and location information from the Lexer.

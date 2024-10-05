@@ -5,9 +5,21 @@
 
 #include "gb/parse/lexer.h"
 
+#include "absl/memory/memory.h"
 #include "absl/strings/str_split.h"
 
 namespace gb {
+
+const std::string_view Lexer::kErrorNotImplemented = "Not implemented";
+const std::string_view Lexer::kErrorInvalidTokenContent =
+    "Token does not refer to valid content";
+
+std::unique_ptr<Lexer> Lexer::Create(const LexerConfig& config,
+                                     std::string* error) {
+  return absl::WrapUnique(new Lexer);
+}
+
+Lexer::Lexer() = default;
 
 inline TokenIndex Lexer::Content::GetTokenIndex() const {
   // We can't return the normal token index here, as it is would refer to the
@@ -61,17 +73,11 @@ std::tuple<Lexer::Content*, Lexer::Line*> Lexer::GetContentLine(
   return {content, &lines_[content->start_line + content->line]};
 }
 
-inline std::tuple<const Lexer::Content*, const Lexer::Line*>
-Lexer::GetContentLine(LexerContentId id) const {
-  return const_cast<Lexer*>(this)->GetContentLine(id);
-}
-
-Lexer::Lexer(const LexerConfig& config) : config_(config) {}
-
 LexerContentId Lexer::AddFileContent(std::string_view filename,
                                      std::string text) {
   const LexerContentId id = GetContentId(content_.size());
-  auto content = std::make_unique<Content>(filename, std::move(text));
+  content_.emplace_back(std::make_unique<Content>(filename, std::move(text)));
+  Content* content = content_.back().get();
   if (!filename.empty()) {
     filename_to_id_[filename] = id;
   }
@@ -86,10 +92,11 @@ LexerContentId Lexer::AddFileContent(std::string_view filename,
   }
   content->start_line = lines_.size();
   content->end_line = content->start_line + lines.size();
-  lines_.reserve(content->end_line + 1);
+  lines_.reserve(content->end_line + 2);
   for (const auto& line : lines) {
     lines_.emplace_back(id, line);
   }
+  lines_.emplace_back(kNoLexerContent, "");
   return id;
 }
 
@@ -107,7 +114,7 @@ void Lexer::RewindContent(LexerContentId id) {
   content->token = 0;
 }
 
-LexerContentId Lexer::GetContent(std::string_view filename) const {
+LexerContentId Lexer::GetFileContentId(std::string_view filename) const {
   auto it = filename_to_id_.find(filename);
   if (it == filename_to_id_.end()) {
     return 0;
@@ -115,12 +122,20 @@ LexerContentId Lexer::GetContent(std::string_view filename) const {
   return it->second;
 }
 
-std::string_view Lexer::GetFilename(LexerContentId id) const {
+std::string_view Lexer::GetContentFilename(LexerContentId id) const {
   const Content* content = GetContent(id);
   if (content == nullptr) {
     return {};
   }
   return content->filename;
+}
+
+std::string_view Lexer::GetContentText(LexerContentId id) const {
+  const Content* content = GetContent(id);
+  if (content == nullptr) {
+    return {};
+  }
+  return content->text;
 }
 
 int Lexer::GetLineCount(LexerContentId id) const {
@@ -149,7 +164,7 @@ LexerLocation Lexer::GetLineLocation(LexerContentId id, int line_index) const {
     return {};
   }
   const Line* line = GetLine(content->start_line + line_index);
-  if (line == nullptr) {
+  if (line == nullptr || line->id != id) {
     return {};
   }
   return {.id = id,
@@ -161,7 +176,7 @@ LexerLocation Lexer::GetLineLocation(LexerContentId id, int line_index) const {
 int Lexer::GetCurrentLine(LexerContentId id) const {
   const Content* content = GetContent(id);
   if (content == nullptr) {
-    return 0;
+    return -1;
   }
   return content->line;
 }
@@ -178,50 +193,83 @@ std::string_view Lexer::NextLine(LexerContentId id) {
   return result;
 }
 
-void Lexer::RewindLine(LexerContentId id) {
+bool Lexer::RewindLine(LexerContentId id) {
   Content* content = GetContent(id);
   if (content == nullptr) {
-    return;
+    return false;
   }
   if (content->line <= content->start_line) {
-    return;
+    return false;
   }
   --content->line;
   content->column = 0;
   content->token = 0;
+  return true;
 }
 
 LexerLocation Lexer::GetTokenLocation(const Token& token) const {
-  const Line* line = GetLine(token.token_index_.line);
+  return GetTokenLocation(token.token_index_);
+}
+
+LexerLocation Lexer::GetTokenLocation(TokenIndex index) const {
+  const Line* line = GetLine(index.line);
   if (line == nullptr) {
     return {};
   }
-  const TokenInfo token_info = line->tokens[token.token_index_.token];
+  int column;
+  if (index.token < line->tokens.size()) {
+    column = static_cast<int>(line->tokens[index.token].column);
+  } else if (index.token == kTokenIndexEndToken) {
+    column = line->line.size();
+  } else {
+    return {};
+  }
   return {.id = line->id,
           .filename = content_[GetContentIndex(line->id)]->filename,
-          .line = static_cast<int>(token.token_index_.line),
-          .column = static_cast<int>(token_info.column)};
+          .line = static_cast<int>(index.line),
+          .column = column};
 }
 
 std::string_view Lexer::GetTokenText(const Token& token) const {
-  const TokenIndex token_index = token.token_index_;
-  DCHECK(token_index.line < lines_.size() &&
-         token_index.token < lines_[token_index.line].tokens.size());
-  const Line& line = lines_[token_index.line];
-  const TokenInfo token_info = line.tokens[token_index.token];
-  return line.line.substr(token_info.column, token_info.size);
+  return GetTokenText(token.token_index_);
+}
+
+std::string_view Lexer::GetTokenText(TokenIndex index) const {
+  const Line* line = GetLine(index.line);
+  if (line == nullptr) {
+    return {};
+  }
+  if (index.token < line->tokens.size()) {
+    const TokenInfo token_info = line->tokens[index.token];
+    return line->line.substr(token_info.column, token_info.size);
+  }
+  return {};
+}
+
+std::string_view Lexer::GetIndexedString(int index) const {
+  if (index < 0 || index >= indexed_strings_.size()) {
+    return {};
+  }
+  return indexed_strings_[index];
+}
+
+Token Lexer::ParseToken(TokenIndex index) {
+  const Line* line = GetLine(index.line);
+  if (line == nullptr) {
+    return Token::CreateError({}, &kErrorInvalidTokenContent);
+  }
+  return Token::CreateError(index, &kErrorNotImplemented);
 }
 
 Token Lexer::NextToken(LexerContentId id) {
   auto [content, line] = GetContentLine(id);
   if (content == nullptr) {
-    return Token::CreateError({});
+    return Token::CreateError({}, &kErrorInvalidTokenContent);
   }
   if (line == nullptr) {
     return Token::CreateEnd(content->GetTokenIndex());
   }
-  // TODO: Parse the next token
-  return Token::CreateEnd(content->GetTokenIndex());
+  return Token::CreateError(content->GetTokenIndex(), &kErrorNotImplemented);
 }
 
 bool Lexer::RewindToken(LexerContentId id) {

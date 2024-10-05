@@ -79,7 +79,28 @@ namespace gb {
 // This class is thread-compatible.
 class Lexer final {
  public:
-  explicit Lexer(const LexerConfig& config);
+  //----------------------------------------------------------------------------
+  // Error strings
+  //----------------------------------------------------------------------------
+
+  // Currently unsupported feature in the lexer.
+  static const std::string_view kErrorNotImplemented;
+
+  // The token referred to invalid content, or content associated with this
+  // Lexer instance.
+  static const std::string_view kErrorInvalidTokenContent;
+
+  //----------------------------------------------------------------------------
+  // Construction / Destruction
+  //----------------------------------------------------------------------------
+
+  // Creates a new Lexer with the specified configuration.
+  //
+  // If the configuration is invalid, this will return nullptr, and if an error
+  // string is provided, it will be set to the error message.
+  static std::unique_ptr<Lexer> Create(const LexerConfig& config,
+                                       std::string* error = nullptr);
+
   Lexer(const Lexer&) = delete;
   Lexer& operator=(const Lexer&) = delete;
   ~Lexer() = default;
@@ -102,10 +123,17 @@ class Lexer final {
 
   // Returns the content that was previously added for the given filename. If
   // there is no content, this returns zero.
-  LexerContentId GetContent(std::string_view filename) const;
+  LexerContentId GetFileContentId(std::string_view filename) const;
 
-  // Returns the filename associated with the specified content ID.
-  std::string_view GetFilename(LexerContentId id) const;
+  // Returns the filename associated with the specified content ID, or an empty
+  // string if the content ID is invalid or it has no filename.
+  std::string_view GetContentFilename(LexerContentId id) const;
+
+  // Returns the text associated with the specified content ID.
+  //
+  // This is the full text of the content, including any newlines. If the
+  // content ID is invalid, this returns an empty string.
+  std::string_view GetContentText(LexerContentId id) const;
 
   //----------------------------------------------------------------------------
   // Line properties
@@ -129,7 +157,7 @@ class Lexer final {
   // Line parsing
   //----------------------------------------------------------------------------
 
-  // Returns the current line number in the content, or 0 if the content ID is
+  // Returns the current line number in the content, or -1 if the content ID is
   // invalid.
   int GetCurrentLine(LexerContentId id) const;
 
@@ -141,13 +169,15 @@ class Lexer final {
   // that appears after the beginning of the line.
   std::string_view NextLine(LexerContentId id);
 
-  // Rewinds the content to the beginning of the current line. If this is
-  // currently at the beginning of a line, it will rewind to the beginning of
-  // the previous line.
+  // Rewinds the content to the beginning of the current line.
+  //
+  // If this is currently at the beginning of a line, it will rewind to the
+  // beginning of the previous line. If the content is already at the beginning
+  // of the content, this will return false, otherwise it will return true.
   //
   // After this call if NextToken() is called, it will return the first token
   // that appears after the beginning of the line.
-  void RewindLine(LexerContentId id);
+  bool RewindLine(LexerContentId id);
 
   //----------------------------------------------------------------------------
   // Token properties
@@ -162,42 +192,32 @@ class Lexer final {
   LexerLocation GetTokenLocation(const Token& token) const;
   LexerLocation GetTokenLocation(TokenIndex index) const;
 
-  // Returns the token location for the end of the token or token index.
+  // Returns the raw text of the token or token index (up to the end of the
+  // line).
   //
-  // When used with an index, The returned location is to the *end* of the
-  // specific token index, not necessarily the token itself. This is different
-  // in cases where a token may span multiple lines (like a comment block or
-  // string content with embedded line breaks).
-  LexerLocation GetTokenEndLocation(const Token& token) const;
-  LexerLocation GetTokenEndLocation(TokenIndex index) const;
-
-  // Returns the text of the token or token index.
-  //
-  // Returns an empty string if the token or start token index is invalid. or if
-  // the token range is backwards (end < start) or are from different pieces of
-  // content. If the end beyond the end of the content, then this will return
-  // the text up to the end of the content.
+  // Returns an empty string if the token or start token index is invalid. If
+  // the token spans multiple lines, this will return the text up to the end of
+  // the line that the token starts on, and *not* the full token text.
   std::string_view GetTokenText(const Token& token) const;
   std::string_view GetTokenText(TokenIndex index) const;
 
-  // Returns the text of the token range (from beginning of start index to the
-  // end of the end index).
-  //
-  // Returns an empty string if the token range is backwards (end < start) or
-  // are from different pieces of content. If the end beyond the end of the
-  // content, then this will return the text up to the end of the content.
-  std::string_view GetTokenText(TokenIndex start, TokenIndex end) const;
-
   // Returns the value string for the specified Token or index value (from
   // Token::GetIndex()).
-  std::string_view GetString(const Token& token) const;
-  std::string_view GetString(int index) const;
+  std::string_view GetIndexedString(int index) const;
 
   //----------------------------------------------------------------------------
   // Token parsing
   //----------------------------------------------------------------------------
 
-  // Returns the next token in the stream for the content.
+  // Parses the token at the specified token index.
+  //
+  // This always returns a token. If the token index is invalid, then this will
+  // return a token of type kTokenError, and it will contain the error message.
+  //
+  // The returned token is valid for as long as the Lexer is valid.
+  Token ParseToken(TokenIndex index);
+
+  // Parses the next token in the stream for the content.
   //
   // This always returns a token, even if there are no more tokens in the
   // stream. In that case, the token will have type kTokenEnd. If there was a
@@ -252,6 +272,8 @@ class Lexer final {
     int token = 0;
   };
 
+  Lexer();
+
   LexerContentId GetContentId(int index) const;
   int GetContentIndex(LexerContentId id) const;
 
@@ -261,15 +283,13 @@ class Lexer final {
   const Line* GetLine(int line) const;
   Line* GetLine(int line);
 
-  std::tuple<const Content*, const Line*> GetContentLine(
-      LexerContentId id) const;
   std::tuple<Content*, Line*> GetContentLine(LexerContentId id);
 
-  const LexerConfig config_;
   std::vector<std::unique_ptr<Content>> content_;
   absl::flat_hash_map<std::string_view, LexerContentId> filename_to_id_;
   std::vector<std::unique_ptr<std::string>> modified_text_;
   std::vector<Line> lines_;
+  std::vector<std::string> indexed_strings_;
 };
 
 }  // namespace gb
