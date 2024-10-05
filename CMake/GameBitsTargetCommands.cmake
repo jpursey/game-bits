@@ -93,6 +93,7 @@ function(gb_add_test NAME)
   add_dependencies(${NAME}_test ${NAME} gmock_main)
   target_link_libraries(${NAME}_test PRIVATE
     ${NAME}
+    gtest
     gmock_main
   )
   if(DEFINED ${NAME}_TEST_DEPS)
