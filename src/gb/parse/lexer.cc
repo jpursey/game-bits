@@ -21,6 +21,10 @@ const std::string_view Lexer::kErrorNoTokenSpec =
     "No token specification (from symbols, keywords, or flags)";
 const std::string_view Lexer::kErrorInvalidTokenContent =
     "Token does not refer to valid content";
+const std::string_view Lexer::kErrorUnexpectedCharacter =
+    "Unexpected character";
+const std::string_view Lexer::kErrorInvalidInteger = "Invalid integer";
+const std::string_view Lexer::kErrorInvalidFloat = "Invalid float";
 
 namespace {
 
@@ -64,6 +68,14 @@ bool CreateNoSymPattern(std::string& pattern_nosym,
     absl::StrAppend(&pattern_nosym, ")|");
   }
 
+  if (flags.IsSet(
+          {LexerFlag::kDoubleQuoteCharacter, LexerFlag::kDoubleQuoteString}) ||
+      flags.IsSet(
+          {LexerFlag::kSingleQuoteCharacter, LexerFlag::kSingleQuoteString})) {
+    error = Lexer::kErrorConflictingStringAndCharSpec;
+    return false;
+  }
+
   if (LexerSupportsStrings(flags)) {
     if (flags.Intersects({LexerFlag::kQuoteQuoteEscape,
                           LexerFlag::kEscapeCharacter, LexerFlag::kTabInQuotes,
@@ -76,13 +88,6 @@ bool CreateNoSymPattern(std::string& pattern_nosym,
   }
 
   if (LexerSupportsCharacters(flags)) {
-    if (flags.IsSet({LexerFlag::kDoubleQuoteCharacter,
-                     LexerFlag::kDoubleQuoteString}) ||
-        flags.IsSet({LexerFlag::kSingleQuoteCharacter,
-                     LexerFlag::kSingleQuoteString})) {
-      error = Lexer::kErrorConflictingStringAndCharSpec;
-      return false;
-    }
     if (flags.Intersects({LexerFlag::kQuoteQuoteEscape,
                           LexerFlag::kEscapeCharacter, LexerFlag::kTabInQuotes,
                           LexerFlag::kDecodeEscape})) {
@@ -139,7 +144,10 @@ bool CreateSymPattern(std::string& pattern_sym, const LexerConfig& config,
     return true;
   }
   absl::StrAppend(&pattern_sym, "(");
-  for (const Symbol& symbol : config.symbols) {
+  std::vector<Symbol> symbols(config.symbols.begin(), config.symbols.end());
+  std::sort(symbols.begin(), symbols.end(),
+            [](Symbol a, Symbol b) { return b < a; });
+  for (const Symbol& symbol : symbols) {
     if (!symbol.IsValid()) {
       error = Lexer::kErrorInvalidSymbolSpec;
       return false;
@@ -147,11 +155,7 @@ bool CreateSymPattern(std::string& pattern_sym, const LexerConfig& config,
     absl::StrAppend(&pattern_sym, RE2::QuoteMeta(symbol.GetString()));
     absl::StrAppend(&pattern_sym, "|");
   }
-  if (pattern_sym.back() == '|') {
-    pattern_sym.pop_back();
-  } else {
-    pattern_sym.clear();
-  }
+  pattern_sym.back() = ')';
   return true;
 }
 
@@ -162,27 +166,45 @@ std::unique_ptr<Lexer> Lexer::Create(const LexerConfig& lexer_config,
   std::string temp_error;
   std::string& error = (error_message != nullptr ? *error_message : temp_error);
 
+  Config config;
+  config.flags = lexer_config.flags;
+
   std::string pattern_nosym;
   if (!CreateNoSymPattern(pattern_nosym, lexer_config, error)) {
     return nullptr;
+  }
+
+  int index = 0;
+  if (LexerSupportsIntegers(lexer_config.flags)) {
+    config.int_index = index++;
+  }
+  if (LexerSupportsFloats(lexer_config.flags)) {
+    config.float_index = index++;
+  }
+  if (LexerSupportsIdentifiers(lexer_config.flags)) {
+    config.ident_index = index++;
   }
 
   std::string pattern_sym;
   if (!CreateSymPattern(pattern_sym, lexer_config, error)) {
     return nullptr;
   }
-
-  std::string pattern_presym;
-  std::string pattern_postsym;
-  if (pattern_nosym.empty()) {
-    pattern_presym = pattern_postsym = pattern_sym;
-  } else if (pattern_sym.empty()) {
-    pattern_presym = pattern_postsym = pattern_nosym;
-  } else {
-    pattern_presym = absl::StrCat(pattern_nosym, "|", pattern_sym);
-    pattern_postsym = absl::StrCat(pattern_sym, "|", pattern_nosym);
+  if (!pattern_sym.empty()) {
+    config.symbols_index = index++;
   }
-  if (pattern_presym.empty()) {
+  config.token_pattern_count = index;
+
+  std::string pattern_symfirst;
+  std::string pattern_symlast;
+  if (pattern_nosym.empty()) {
+    pattern_symfirst = pattern_symlast = pattern_sym;
+  } else if (pattern_sym.empty()) {
+    pattern_symfirst = pattern_symlast = pattern_nosym;
+  } else {
+    pattern_symlast = absl::StrCat(pattern_nosym, "|", pattern_sym);
+    pattern_symfirst = absl::StrCat(pattern_sym, "|", pattern_nosym);
+  }
+  if (pattern_symfirst.empty()) {
     error = Lexer::kErrorNoTokenSpec;
     return nullptr;
   }
@@ -195,19 +217,45 @@ std::unique_ptr<Lexer> Lexer::Create(const LexerConfig& lexer_config,
     return nullptr;
   }
 
-  Config config;
-  config.flags = lexer_config.flags;
   config.pattern_whitespace = "[ \t]*";
-  config.pattern_presym = pattern_presym;
-  config.pattern_postsym = pattern_postsym;
+  config.pattern_symfirst = pattern_symfirst;
+  config.pattern_symlast = pattern_symlast;
   return absl::WrapUnique(new Lexer(config));
 }
 
 Lexer::Lexer(const Config& config)
     : flags_(config.flags),
       re_whitespace_(config.pattern_whitespace),
-      re_presym_(config.pattern_presym),
-      re_postsym_(config.pattern_postsym) {}
+      re_token_{config.pattern_symlast, config.pattern_symfirst} {
+  re_args_.resize(config.token_pattern_count);
+  re_token_args_[kReSymFirst].resize(config.token_pattern_count);
+  re_token_args_[kReSymLast].resize(config.token_pattern_count);
+  int symfirst_offset = (config.symbols_index >= 0 ? 1 : 0);
+  if (config.int_index >= 0) {
+    const int i = config.int_index;
+    re_args_[i].type = kTokenInt;
+    re_token_args_[kReSymFirst][symfirst_offset + i] = &re_args_[i].arg;
+    re_token_args_[kReSymLast][i] = &re_args_[i].arg;
+  }
+  if (config.float_index >= 0) {
+    const int i = config.float_index;
+    re_args_[config.float_index].type = kTokenFloat;
+    re_token_args_[kReSymFirst][symfirst_offset + i] = &re_args_[i].arg;
+    re_token_args_[kReSymLast][i] = &re_args_[i].arg;
+  }
+  if (config.ident_index >= 0) {
+    const int i = config.ident_index;
+    re_args_[config.ident_index].type = kTokenIdentifier;
+    re_token_args_[kReSymFirst][symfirst_offset + i] = &re_args_[i].arg;
+    re_token_args_[kReSymLast][i] = &re_args_[i].arg;
+  }
+  if (config.symbols_index >= 0) {
+    const int i = config.symbols_index;
+    re_args_[config.symbols_index].type = kTokenSymbol;
+    re_token_args_[kReSymFirst][0] = &re_args_[i].arg;
+    re_token_args_[kReSymLast][i] = &re_args_[i].arg;
+  }
+}
 
 inline TokenIndex Lexer::Content::GetTokenIndex() const {
   // We can't return the normal token index here, as it is would refer to the
@@ -298,7 +346,6 @@ void Lexer::RewindContent(LexerContentId id) {
     return;
   }
   content->line = 0;
-  content->column = 0;
   content->token = 0;
 }
 
@@ -374,9 +421,8 @@ std::string_view Lexer::NextLine(LexerContentId id) {
   if (line == nullptr) {
     return {};
   }
-  std::string_view result = line->line.substr(content->column);
+  std::string_view result = line->remain;
   ++content->line;
-  content->column = 0;
   content->token = 0;
   return result;
 }
@@ -386,12 +432,14 @@ bool Lexer::RewindLine(LexerContentId id) {
   if (content == nullptr) {
     return false;
   }
+  if (content->token > 0) {
+    content->token = 0;
+    return true;
+  }
   if (content->line <= content->start_line) {
     return false;
   }
   --content->line;
-  content->column = 0;
-  content->token = 0;
   return true;
 }
 
@@ -457,7 +505,79 @@ Token Lexer::NextToken(LexerContentId id) {
   if (line == nullptr) {
     return Token::CreateEnd(content->GetTokenIndex());
   }
-  return Token::CreateError(content->GetTokenIndex(), &kErrorNotImplemented);
+  if (content->token < line->tokens.size()) {
+    Token token = ParseToken(content->GetTokenIndex());
+    ++content->token;
+    return token;
+  }
+  while (true) {
+    RE2::Consume(&line->remain, re_whitespace_);
+    if (!line->remain.empty()) {
+      break;
+    }
+    ++content->line;
+    content->token = 0;
+    if (content->line == content->end_line) {
+      return Token::CreateEnd(content->GetTokenIndex());
+    }
+    ++line;
+    if (content->token < line->tokens.size()) {
+      Token token = ParseToken(content->GetTokenIndex());
+      ++content->token;
+      return token;
+    }
+  }
+  if (!RE2::ConsumeN(&line->remain, re_token_[content->token_re],
+                     re_token_args_[content->token_re].data(),
+                     re_token_args_->size())) {
+    Token token = Token::CreateError(content->GetTokenIndex(),
+                                     &kErrorUnexpectedCharacter);
+    line->tokens.emplace_back(line->remain.data() - line->line.data(), 1,
+                              kTokenError);
+    line->remain.remove_prefix(1);
+    ++content->token;
+    return token;
+  }
+  TokenArg* match = nullptr;
+  for (TokenArg& arg : re_args_) {
+    if (!arg.text.empty()) {
+      match = &arg;
+      break;
+    }
+  }
+  DCHECK(match != nullptr);
+  TokenIndex token_index = content->GetTokenIndex();
+  ++content->token;
+  std::string_view match_text = match->text;
+  match->text = {};
+  line->tokens.emplace_back(match_text.data() - line->line.data(),
+                            match_text.size(), match->type);
+  switch (match->type) {
+    case kTokenInt: {
+      content->token_re = kReSymFirst;
+      int64_t value = 0;
+      if (!absl::SimpleAtoi(match_text, &value)) {
+        return Token::CreateError(token_index, &kErrorInvalidInteger);
+      }
+      return Token::CreateInt(token_index, value, sizeof(value));
+    } break;
+    case kTokenFloat: {
+      content->token_re = kReSymFirst;
+      double value = 0;
+      if (!absl::SimpleAtod(match_text, &value)) {
+        return Token::CreateError(token_index, &kErrorInvalidFloat);
+      }
+      return Token::CreateFloat(token_index, value, sizeof(value));
+    } break;
+    case kTokenIdentifier:
+      content->token_re = kReSymFirst;
+      return Token::CreateIdentifier(token_index, match_text.data(),
+                                     match_text.size());
+    case kTokenSymbol:
+      content->token_re = kReSymLast;
+      return Token::CreateSymbol(token_index, match_text);
+  }
+  return Token::CreateError(token_index, &kErrorNotImplemented);
 }
 
 bool Lexer::RewindToken(LexerContentId id) {
@@ -481,7 +601,6 @@ bool Lexer::RewindToken(LexerContentId id) {
   }
   content->token = line->tokens.size() - 1;
   const TokenInfo token_info = line->tokens[content->token];
-  content->column = token_info.column + token_info.size;
   return true;
 }
 

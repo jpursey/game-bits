@@ -101,6 +101,15 @@ class Lexer final {
   // Lexer instance.
   static const std::string_view kErrorInvalidTokenContent;
 
+  // An unexpected character was encountered when parsing tokens.
+  static const std::string_view kErrorUnexpectedCharacter;
+
+  // An invalid integer was encountered when parsing tokens.
+  static const std::string_view kErrorInvalidInteger;
+
+  // An invalid float was encountered when parsing tokens.
+  static const std::string_view kErrorInvalidFloat;
+
   //----------------------------------------------------------------------------
   // Construction / Destruction
   //----------------------------------------------------------------------------
@@ -251,6 +260,9 @@ class Lexer final {
   bool RewindToken(LexerContentId id);
 
  private:
+  static constexpr int kReSymLast = 0;
+  static constexpr int kReSymFirst = 1;
+
   struct TokenInfo {
     uint32_t column : 12;
     uint32_t size : 12;
@@ -260,9 +272,10 @@ class Lexer final {
 
   struct Line {
     Line(LexerContentId in_id, std::string_view in_line)
-        : id(in_id), line(in_line) {}
+        : id(in_id), line(in_line), remain(in_line) {}
     LexerContentId id = 0;
-    absl::string_view line;
+    std::string_view line;
+    std::string_view remain;
     std::vector<TokenInfo> tokens;
   };
 
@@ -279,16 +292,28 @@ class Lexer final {
     int end_line = 0;
 
     int line = 0;
-    int column = 0;
     int token = 0;
+    int token_re = kReSymLast;
   };
 
   // Runtime config dereived from LexerConfig.
   struct Config {
     LexerFlags flags;
+    int int_index = -1;
+    int float_index = -1;
+    int ident_index = -1;
+    int symbols_index = -1;
+    int token_pattern_count = 0;
     std::string_view pattern_whitespace;
-    std::string_view pattern_presym;
-    std::string_view pattern_postsym;
+    std::string_view pattern_symfirst;
+    std::string_view pattern_symlast;
+  };
+
+  struct TokenArg {
+    TokenArg() :  arg(&text) {}
+    TokenType type = kTokenNone;
+    std::string_view text;
+    RE2::Arg arg;
   };
 
   explicit Lexer(const Config& config);
@@ -306,8 +331,9 @@ class Lexer final {
 
   LexerFlags flags_;
   RE2 re_whitespace_;
-  RE2 re_presym_;
-  RE2 re_postsym_;
+  RE2 re_token_[2];
+  std::vector<TokenArg> re_args_;
+  std::vector<RE2::Arg*> re_token_args_[2];
 
   std::vector<std::unique_ptr<Content>> content_;
   absl::flat_hash_map<std::string_view, LexerContentId> filename_to_id_;

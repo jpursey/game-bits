@@ -9,6 +9,8 @@
 #include <cstdint>
 #include <string_view>
 
+#include "absl/strings/ascii.h"
+
 namespace gb {
 
 // Storage for underlying symbol value.
@@ -48,6 +50,7 @@ class Symbol {
   constexpr Symbol(char ch) noexcept : value_(ch) {}
   constexpr Symbol(std::string_view str) noexcept;
   constexpr Symbol(const char* str) noexcept : Symbol(std::string_view(str)) {}
+  Symbol(const std::string& str) noexcept : Symbol(std::string_view(str)) {}
 
   // Returns true if the symbol is valid (contains only ASCII characters between
   // 33 and 127).
@@ -66,10 +69,15 @@ class Symbol {
   constexpr auto operator<=>(const Symbol&) const = default;
 
  private:
+  static constexpr SymbolValue kEndianTest = 1;
   static constexpr SymbolValue ToValue(const char* str, size_t size) {
+    // TODO: This is not endian safe (it assumes little endian). We need to
+    // detect the endianness of the system at compile time and reverse the bytes
+    // if necessary (so it can be constexpr). Sadly, this is non trivial.
     SymbolValue value = 0;
+    str += size - 1;
     while (size > 0) {
-      value = (value << 8) | *str++;
+      value = (value << 8) | *str--;
       --size;
     }
     return value;
@@ -78,6 +86,11 @@ class Symbol {
   SymbolValue value_ = 0;
 };
 static_assert(sizeof(Symbol) == kMaxSymbolSize);
+
+template <typename Sink>
+inline void AbslStringify(Sink& sink, const Symbol& symbol) {
+  absl::Format(&sink, "\"%s\"", symbol.GetString());
+}
 
 constexpr Symbol::Symbol(std::string_view str) noexcept
     : value_(ToValue(str.data(), str.size())) {}
@@ -98,8 +111,11 @@ constexpr std::string_view Symbol::GetString() const {
 
 constexpr bool Symbol::IsValid() const {
   SymbolValue value = value_;
+  if (value == 0) {
+    return false;
+  }
   while (value > 0) {
-    if ((value & 0xFF) < 0x21 || (value & 0xFF) > 0x7E) {
+    if (!absl::ascii_isgraph(value & 0xFF)) {
       return false;
     }
     value >>= 8;

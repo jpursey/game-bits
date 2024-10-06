@@ -5,6 +5,7 @@
 
 #include "gb/parse/lexer.h"
 
+#include "absl/strings/ascii.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
@@ -18,6 +19,57 @@ LexerConfig WholeNumbers() {
       LexerFlag::kDecimalIntegers,
   };
   return config;
+}
+
+const LexerFlags kUnimplementedFlags[] = {
+    {LexerFlag::kInt64, LexerFlag::kHexIntegers},
+    {LexerFlag::kInt64, LexerFlag::kOctalIntegers},
+    {LexerFlag::kInt64, LexerFlag::kBinaryIntegers},
+    {LexerFlag::kFloat64, LexerFlag::kExponentFloats},
+    {LexerFlag::kDoubleQuoteString},
+    {LexerFlag::kSingleQuoteString},
+    {LexerFlag::kDoubleQuoteCharacter},
+    {LexerFlag::kSingleQuoteCharacter},
+    {LexerFlag::kDoubleQuoteString, LexerFlag::kTabInQuotes},
+    {LexerFlag::kDoubleQuoteString, LexerFlag::kQuoteQuoteEscape},
+    {LexerFlag::kDoubleQuoteString, LexerFlag::kEscapeCharacter},
+    {LexerFlag::kDoubleQuoteString, LexerFlag::kDecodeEscape},
+    {LexerFlag::kSingleQuoteCharacter, LexerFlag::kTabInQuotes},
+    {LexerFlag::kSingleQuoteCharacter, LexerFlag::kQuoteQuoteEscape},
+    {LexerFlag::kSingleQuoteCharacter, LexerFlag::kEscapeCharacter},
+    {LexerFlag::kSingleQuoteCharacter, LexerFlag::kDecodeEscape},
+    {LexerFlag::kIdentLower, LexerFlag::kIdentForceUpper},
+    {LexerFlag::kIdentLower, LexerFlag::kIdentForceLower},
+    {LexerFlag::kIdentLower, LexerFlag::kLineBreak},
+    {LexerFlag::kIdentLower, LexerFlag::kLineIndent},
+    {LexerFlag::kIdentLower, LexerFlag::kLeadingTabs},
+    {LexerFlag::kIdentLower, LexerFlag::kEscapeNewline},
+    {LexerFlag::kIdentLower, LexerFlag::kLineComments},
+    {LexerFlag::kIdentLower, LexerFlag::kBlockComments},
+};
+
+using UnimplementedFlags = testing::TestWithParam<LexerFlags>;
+INSTANTIATE_TEST_SUITE_P(LexerTest, UnimplementedFlags,
+                         testing::ValuesIn(kUnimplementedFlags));
+
+TEST_P(UnimplementedFlags, Test) {
+  LexerConfig config;
+  config.flags = GetParam();
+  std::string error;
+  auto lexer = Lexer::Create(config, &error);
+  EXPECT_EQ(lexer, nullptr);
+  EXPECT_EQ(error, Lexer::kErrorNotImplemented);
+}
+
+TEST(LexerTest, KeywordsUnimplemented) {
+  LexerConfig config;
+  config.keywords = {
+      "if", "else", "while", "for", "return",
+  };
+  std::string error;
+  auto lexer = Lexer::Create(config, &error);
+  EXPECT_EQ(lexer, nullptr);
+  EXPECT_EQ(error, Lexer::kErrorNotImplemented);
 }
 
 TEST(LexerTest, DefaultConfigIsInvalid) {
@@ -306,9 +358,65 @@ TEST(LexerTest, NextTokenForEmptyContent) {
   LexerContentId content = lexer->AddContent("");
   Token token = lexer->NextToken(content);
   EXPECT_EQ(lexer->GetTokenLocation(token),
-            (LexerLocation{.id = kNoLexerContent}));
-  EXPECT_EQ(token.GetType(), kTokenError);
-  EXPECT_EQ(token.GetString(), Lexer::kErrorNotImplemented);
+            (LexerLocation{.id = content, .line = 0, .column = 0}));
+  EXPECT_EQ(token.GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, InvalidSymbolCharacters) {
+  int prefix_count = 0;
+  for (int ch = 0; ch < 256; ++ch, prefix_count = (prefix_count + 1) % 8) {
+    if (absl::ascii_isgraph(ch)) {
+      continue;
+    }
+    std::string context = absl::StrCat("Context: ch = ", ch);
+    std::string symbol(prefix_count, '+');
+    symbol.push_back(ch);
+    std::string error;
+    auto lexer = Lexer::Create({.symbols = {symbol}}, &error);
+    EXPECT_EQ(lexer, nullptr) << context;
+    EXPECT_EQ(error, Lexer::kErrorInvalidSymbolSpec) << context;
+  }
+}
+
+TEST(LexerTest, ParseSymbols) {
+  auto lexer =
+      Lexer::Create({.symbols = {"+", "-", "*", "/", "++", "--"}}, nullptr);
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("++ * -- / + -");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenSymbol);
+  EXPECT_EQ(token.GetSymbol(), "++");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenSymbol);
+  EXPECT_EQ(token.GetSymbol(), '*');
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenSymbol);
+  EXPECT_EQ(token.GetSymbol(), "--");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenSymbol);
+  EXPECT_EQ(token.GetSymbol(), '/');
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenSymbol);
+  EXPECT_EQ(token.GetSymbol(), '+');
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenSymbol);
+  EXPECT_EQ(token.GetSymbol(), '-');
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ConflictingStringAndCharSpecs) {
+  std::string error;
+  auto lexer = Lexer::Create({.flags = {LexerFlag::kDoubleQuoteString,
+                                        LexerFlag::kDoubleQuoteCharacter}},
+                             &error);
+  EXPECT_EQ(lexer, nullptr);
+  EXPECT_EQ(error, Lexer::kErrorConflictingStringAndCharSpec);
+
+  lexer = Lexer::Create({.flags = {LexerFlag::kSingleQuoteString,
+                                   LexerFlag::kSingleQuoteCharacter}},
+                        &error);
+  EXPECT_EQ(lexer, nullptr);
+  EXPECT_EQ(error, Lexer::kErrorConflictingStringAndCharSpec);
 }
 
 }  // namespace
