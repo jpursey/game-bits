@@ -260,8 +260,7 @@ class Lexer final {
   bool RewindToken(LexerContentId id);
 
  private:
-  static constexpr int kReSymLast = 0;
-  static constexpr int kReSymFirst = 1;
+  enum class ReOrder { kSymLast, kSymFirst };
 
   struct TokenInfo {
     uint32_t column : 12;
@@ -293,24 +292,23 @@ class Lexer final {
 
     int line = 0;
     int token = 0;
-    int token_re = kReSymLast;
+    ReOrder re_order = ReOrder::kSymLast;
   };
 
-  // Runtime config dereived from LexerConfig.
+  // Runtime config derived from LexerConfig.
   struct Config {
     LexerFlags flags;
     int int_index = -1;
     int float_index = -1;
     int ident_index = -1;
-    int symbols_index = -1;
-    int token_pattern_count = 0;
-    std::string_view pattern_whitespace;
-    std::string_view pattern_symfirst;
-    std::string_view pattern_symlast;
+    int nosym_pattern_count = 0;
+    std::string_view whitespace_pattern;
+    std::string_view symbol_pattern;
+    std::string_view nosym_pattern;
   };
 
   struct TokenArg {
-    TokenArg() :  arg(&text) {}
+    TokenArg() : arg(&text) {}
     TokenType type = kTokenNone;
     std::string_view text;
     RE2::Arg arg;
@@ -329,11 +327,15 @@ class Lexer final {
 
   std::tuple<Content*, Line*> GetContentLine(LexerContentId id);
 
+  Token ParseNextSymbol(Content* content, Line* line);
+  Token ParseNextNoSym(Content* content, Line* line);
+
   LexerFlags flags_;
   RE2 re_whitespace_;
-  RE2 re_token_[2];
+  RE2 re_symbol_;
+  RE2 re_nosym_;
   std::vector<TokenArg> re_args_;
-  std::vector<RE2::Arg*> re_token_args_[2];
+  std::vector<RE2::Arg*> re_nosym_args_;
 
   std::vector<std::unique_ptr<Content>> content_;
   absl::flat_hash_map<std::string_view, LexerContentId> filename_to_id_;
