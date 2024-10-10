@@ -28,7 +28,7 @@ const std::string_view Lexer::kErrorInvalidFloat = "Invalid float";
 
 namespace {
 
-bool CreateNoSymPattern(std::string& nosym_pattern,
+bool CreateNoSymPattern(std::string& token_pattern,
                         const LexerConfig& lexer_config, std::string& error) {
   const LexerFlags flags = lexer_config.flags;
 
@@ -43,14 +43,14 @@ bool CreateNoSymPattern(std::string& nosym_pattern,
       error = Lexer::kErrorNotImplemented;
       return false;
     }
-    absl::StrAppend(&nosym_pattern, "(");
+    absl::StrAppend(&token_pattern, "(");
     if (flags.IsSet(LexerFlag::kDecimalIntegers)) {
       if (flags.IsSet(LexerFlag::kNegativeIntegers)) {
-        absl::StrAppend(&nosym_pattern, "-?");
+        absl::StrAppend(&token_pattern, "-?");
       }
-      absl::StrAppend(&nosym_pattern, "[0-9]+");
+      absl::StrAppend(&token_pattern, "[0-9]+");
     }
-    absl::StrAppend(&nosym_pattern, ")|");
+    absl::StrAppend(&token_pattern, ")|");
   }
 
   if (LexerSupportsFloats(flags)) {
@@ -58,14 +58,14 @@ bool CreateNoSymPattern(std::string& nosym_pattern,
       error = Lexer::kErrorNotImplemented;
       return false;
     }
-    absl::StrAppend(&nosym_pattern, "(");
+    absl::StrAppend(&token_pattern, "(");
     if (flags.IsSet(LexerFlag::kDecimalFloats)) {
       if (flags.IsSet(LexerFlag::kNegativeFloats)) {
-        absl::StrAppend(&nosym_pattern, "-?");
+        absl::StrAppend(&token_pattern, "-?");
       }
-      absl::StrAppend(&nosym_pattern, "[0-9]+\\.[0-9]+");
+      absl::StrAppend(&token_pattern, "[0-9]+\\.[0-9]+");
     }
-    absl::StrAppend(&nosym_pattern, ")|");
+    absl::StrAppend(&token_pattern, ")|");
   }
 
   if (flags.IsSet(
@@ -105,34 +105,34 @@ bool CreateNoSymPattern(std::string& nosym_pattern,
       return false;
     }
 
-    absl::StrAppend(&nosym_pattern, "([");
+    absl::StrAppend(&token_pattern, "([");
     if (flags.IsSet(LexerFlag::kIdentLeadingUnderscore)) {
-      absl::StrAppend(&nosym_pattern, "_");
+      absl::StrAppend(&token_pattern, "_");
     }
     if (flags.IsSet(LexerFlag::kIdentUpper)) {
-      absl::StrAppend(&nosym_pattern, "A-Z");
+      absl::StrAppend(&token_pattern, "A-Z");
     }
     if (flags.IsSet(LexerFlag::kIdentLower)) {
-      absl::StrAppend(&nosym_pattern, "a-z");
+      absl::StrAppend(&token_pattern, "a-z");
     }
-    absl::StrAppend(&nosym_pattern, "][");
+    absl::StrAppend(&token_pattern, "][");
     if (flags.IsSet(LexerFlag::kIdentUnderscore)) {
-      absl::StrAppend(&nosym_pattern, "_");
+      absl::StrAppend(&token_pattern, "_");
     }
     if (flags.IsSet(LexerFlag::kIdentUpper)) {
-      absl::StrAppend(&nosym_pattern, "A-Z");
+      absl::StrAppend(&token_pattern, "A-Z");
     }
     if (flags.IsSet(LexerFlag::kIdentLower)) {
-      absl::StrAppend(&nosym_pattern, "a-z");
+      absl::StrAppend(&token_pattern, "a-z");
     }
     if (flags.IsSet(LexerFlag::kIdentDigit)) {
-      absl::StrAppend(&nosym_pattern, "0-9");
+      absl::StrAppend(&token_pattern, "0-9");
     }
-    absl::StrAppend(&nosym_pattern, "]+)|");
+    absl::StrAppend(&token_pattern, "]+)|");
   }
 
-  if (!nosym_pattern.empty()) {
-    nosym_pattern.pop_back();
+  if (!token_pattern.empty()) {
+    token_pattern.pop_back();
   }
 
   return true;
@@ -167,8 +167,8 @@ std::unique_ptr<Lexer> Lexer::Create(const LexerConfig& lexer_config,
   Config config;
   config.flags = lexer_config.flags;
 
-  std::string nosym_pattern;
-  if (!CreateNoSymPattern(nosym_pattern, lexer_config, error)) {
+  std::string token_pattern;
+  if (!CreateNoSymPattern(token_pattern, lexer_config, error)) {
     return nullptr;
   }
 
@@ -182,14 +182,14 @@ std::unique_ptr<Lexer> Lexer::Create(const LexerConfig& lexer_config,
   if (LexerSupportsIdentifiers(lexer_config.flags)) {
     config.ident_index = index++;
   }
-  config.nosym_pattern_count = index;
+  config.token_pattern_count = index;
 
   std::string symbol_pattern;
   if (!CreateSymPattern(symbol_pattern, lexer_config, error)) {
     return nullptr;
   }
 
-  if (nosym_pattern.empty() && symbol_pattern.empty()) {
+  if (token_pattern.empty() && symbol_pattern.empty()) {
     error = Lexer::kErrorNoTokenSpec;
     return nullptr;
   }
@@ -204,7 +204,7 @@ std::unique_ptr<Lexer> Lexer::Create(const LexerConfig& lexer_config,
 
   config.whitespace_pattern = "[ \t]*";
   config.symbol_pattern = symbol_pattern;
-  config.nosym_pattern = nosym_pattern;
+  config.token_pattern = token_pattern;
   return absl::WrapUnique(new Lexer(config));
 }
 
@@ -221,23 +221,23 @@ Lexer::Lexer(const Config& config)
     : flags_(config.flags),
       re_whitespace_(config.whitespace_pattern),
       re_symbol_(config.symbol_pattern, GetRe2Options()),
-      re_nosym_(config.nosym_pattern, GetRe2Options()) {
-  re_args_.resize(config.nosym_pattern_count);
-  re_nosym_args_.resize(config.nosym_pattern_count);
+      re_token_(config.token_pattern, GetRe2Options()) {
+  re_args_.resize(config.token_pattern_count);
+  re_token_args_.resize(config.token_pattern_count);
   if (config.int_index >= 0) {
     const int i = config.int_index;
     re_args_[i].type = kTokenInt;
-    re_nosym_args_[i] = &re_args_[i].arg;
+    re_token_args_[i] = &re_args_[i].arg;
   }
   if (config.float_index >= 0) {
     const int i = config.float_index;
     re_args_[config.float_index].type = kTokenFloat;
-    re_nosym_args_[i] = &re_args_[i].arg;
+    re_token_args_[i] = &re_args_[i].arg;
   }
   if (config.ident_index >= 0) {
     const int i = config.ident_index;
     re_args_[config.ident_index].type = kTokenIdentifier;
-    re_nosym_args_[i] = &re_args_[i].arg;
+    re_token_args_[i] = &re_args_[i].arg;
   }
 }
 
@@ -495,11 +495,11 @@ Token Lexer::ParseNextSymbol(Content* content, Line* line) {
 }
 
 Token Lexer::ParseNextNoSym(Content* content, Line* line) {
-  if (re_nosym_args_.empty()) {
+  if (re_token_args_.empty()) {
     return {};
   }
-  if (!RE2::ConsumeN(&line->remain, re_nosym_, re_nosym_args_.data(),
-                     re_nosym_args_.size())) {
+  if (!RE2::ConsumeN(&line->remain, re_token_, re_token_args_.data(),
+                     re_token_args_.size())) {
     return {};
   }
   TokenArg* match = nullptr;

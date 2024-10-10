@@ -301,10 +301,10 @@ class Lexer final {
     int int_index = -1;
     int float_index = -1;
     int ident_index = -1;
-    int nosym_pattern_count = 0;
+    int token_pattern_count = 0;
     std::string_view whitespace_pattern;
     std::string_view symbol_pattern;
-    std::string_view nosym_pattern;
+    std::string_view token_pattern;
   };
 
   struct TokenArg {
@@ -333,9 +333,9 @@ class Lexer final {
   LexerFlags flags_;
   RE2 re_whitespace_;
   RE2 re_symbol_;
-  RE2 re_nosym_;
+  RE2 re_token_;
   std::vector<TokenArg> re_args_;
-  std::vector<RE2::Arg*> re_nosym_args_;
+  std::vector<RE2::Arg*> re_token_args_;
 
   std::vector<std::unique_ptr<Content>> content_;
   absl::flat_hash_map<std::string_view, LexerContentId> filename_to_id_;
