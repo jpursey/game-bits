@@ -28,7 +28,7 @@ const std::string_view Lexer::kErrorInvalidFloat = "Invalid float";
 
 namespace {
 
-bool CreateNoSymPattern(std::string& token_pattern,
+bool CreateTokenPattern(std::string& token_pattern,
                         const LexerConfig& lexer_config, std::string& error) {
   const LexerFlags flags = lexer_config.flags;
 
@@ -138,8 +138,8 @@ bool CreateNoSymPattern(std::string& token_pattern,
   return true;
 }
 
-bool CreateSymPattern(std::string& pattern_sym, const LexerConfig& config,
-                      std::string& error) {
+bool CreateSymbolPattern(std::string& pattern_sym, const LexerConfig& config,
+                         std::string& error) {
   if (config.symbols.empty()) {
     return true;
   }
@@ -168,7 +168,7 @@ std::unique_ptr<Lexer> Lexer::Create(const LexerConfig& lexer_config,
   config.flags = lexer_config.flags;
 
   std::string token_pattern;
-  if (!CreateNoSymPattern(token_pattern, lexer_config, error)) {
+  if (!CreateTokenPattern(token_pattern, lexer_config, error)) {
     return nullptr;
   }
 
@@ -185,7 +185,7 @@ std::unique_ptr<Lexer> Lexer::Create(const LexerConfig& lexer_config,
   config.token_pattern_count = index;
 
   std::string symbol_pattern;
-  if (!CreateSymPattern(symbol_pattern, lexer_config, error)) {
+  if (!CreateSymbolPattern(symbol_pattern, lexer_config, error)) {
     return nullptr;
   }
 
@@ -494,11 +494,9 @@ Token Lexer::ParseNextSymbol(Content* content, Line* line) {
   return Token::CreateSymbol(token_index, symbol_text);
 }
 
-Token Lexer::ParseNextNoSym(Content* content, Line* line) {
-  if (re_token_args_.empty()) {
-    return {};
-  }
-  if (!RE2::ConsumeN(&line->remain, re_token_, re_token_args_.data(),
+Token Lexer::ParseNextToken(Content* content, Line* line) {
+  if (re_token_args_.empty() ||
+      !RE2::ConsumeN(&line->remain, re_token_, re_token_args_.data(),
                      re_token_args_.size())) {
     return {};
   }
@@ -576,10 +574,10 @@ Token Lexer::NextToken(LexerContentId id) {
   if (content->re_order == ReOrder::kSymFirst) {
     token = ParseNextSymbol(content, line);
     if (token.GetType() == kTokenNone) {
-      token = ParseNextNoSym(content, line);
+      token = ParseNextToken(content, line);
     }
   } else {
-    token = ParseNextNoSym(content, line);
+    token = ParseNextToken(content, line);
     if (token.GetType() == kTokenNone) {
       token = ParseNextSymbol(content, line);
     }

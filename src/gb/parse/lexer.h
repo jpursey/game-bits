@@ -328,7 +328,7 @@ class Lexer final {
   std::tuple<Content*, Line*> GetContentLine(LexerContentId id);
 
   Token ParseNextSymbol(Content* content, Line* line);
-  Token ParseNextNoSym(Content* content, Line* line);
+  Token ParseNextToken(Content* content, Line* line);
 
   LexerFlags flags_;
   RE2 re_whitespace_;
