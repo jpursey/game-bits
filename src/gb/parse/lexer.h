@@ -29,6 +29,28 @@ namespace gb {
 // file-less text blocks identified as separate "lexer content", with each
 // identified by a LexerContentId.
 //
+// The Lexer assumes several base syntax rules that are common to most
+// languages and cannot be configured:
+//   - Whitespace is any sequence of space or tab characters.
+//   - Newlines are optionally whitespace or their own token. Tokenization does
+//     not cross line boundaries with out explicit configuration of a line end
+//     escape character.
+//   - Normal tokens must be separated by whitespace or symbols.
+//   - Symbols must be explicitly defined, and may be any sequence of up to 7
+//     characters that are not whitespace (best practice is they do not match
+//     any other token, but this is not a hard requirement).
+//   - Symbols are matched before tokens after a token is parsed, and other
+//     tokens are matched before a symbols after a symbol is parsed (or at the
+//     beginning of content). This disambiguates between the common issue of
+//     symbols (like '-') which match the beginning of tokens (like '-2'), so
+//     "a-2" becomes {"a", "-", " 2"} not {"a", "-2"}.
+//   - Characters that do not match any symbol or token are considered error
+//     tokens. These separate tokens like whitespace, but generally parsing
+//     should stop if an error is encountered.
+//   - All decimal numbers must start with a digit (or '-' if negative).
+//     Specifically, floating point numbers cannot start with a '.'. Non-decimal
+//     numbers can have a defined prefix or suffix.
+//
 // The Lexer maintains ownership of all source added to it, and provides access
 // via Tokens (as defined by LexerConfig), and Lines which are views into the
 // data (zero copy). It is stateful, tracking the current line and token
@@ -302,9 +324,11 @@ class Lexer final {
     int float_index = -1;
     int ident_index = -1;
     int token_pattern_count = 0;
-    std::string_view whitespace_pattern;
-    std::string_view symbol_pattern;
-    std::string_view token_pattern;
+    std::string whitespace_pattern;
+    std::string symbol_pattern;
+    std::string token_end_pattern;
+    std::string not_token_end_pattern;
+    std::string token_pattern;
   };
 
   struct TokenArg {
@@ -333,6 +357,8 @@ class Lexer final {
   LexerFlags flags_;
   RE2 re_whitespace_;
   RE2 re_symbol_;
+  RE2 re_token_end_;
+  RE2 re_not_token_end_;
   RE2 re_token_;
   std::vector<TokenArg> re_args_;
   std::vector<RE2::Arg*> re_token_args_;

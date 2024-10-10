@@ -138,22 +138,28 @@ bool CreateTokenPattern(std::string& token_pattern,
   return true;
 }
 
-bool CreateSymbolPattern(std::string& pattern_sym, const LexerConfig& config,
-                         std::string& error) {
+bool CreateSymbolPattern(std::string& pattern_sym, std::string& symbol_chars,
+                         const LexerConfig& config, std::string& error) {
   if (config.symbols.empty()) {
     return true;
   }
-  absl::StrAppend(&pattern_sym, "(");
   std::vector<Symbol> symbols(config.symbols.begin(), config.symbols.end());
   for (const Symbol& symbol : symbols) {
     if (!symbol.IsValid()) {
       error = Lexer::kErrorInvalidSymbolSpec;
       return false;
     }
+    const char first_char = symbol.GetString()[0];
+    if (symbol_chars.find(first_char) == std::string::npos) {
+      symbol_chars.push_back(first_char);
+    }
     absl::StrAppend(&pattern_sym, RE2::QuoteMeta(symbol.GetString()));
     absl::StrAppend(&pattern_sym, "|");
   }
-  pattern_sym.back() = ')';
+  pattern_sym.pop_back();
+  if (!symbol_chars.empty()) {
+    symbol_chars = RE2::QuoteMeta(symbol_chars);
+  }
   return true;
 }
 
@@ -185,7 +191,8 @@ std::unique_ptr<Lexer> Lexer::Create(const LexerConfig& lexer_config,
   config.token_pattern_count = index;
 
   std::string symbol_pattern;
-  if (!CreateSymbolPattern(symbol_pattern, lexer_config, error)) {
+  std::string symbol_chars;
+  if (!CreateSymbolPattern(symbol_pattern, symbol_chars, lexer_config, error)) {
     return nullptr;
   }
 
@@ -203,13 +210,20 @@ std::unique_ptr<Lexer> Lexer::Create(const LexerConfig& lexer_config,
   }
 
   config.whitespace_pattern = "[ \t]*";
-  config.symbol_pattern = symbol_pattern;
+  if (!symbol_pattern.empty()) {
+    config.symbol_pattern = absl::StrCat("(", symbol_pattern, ")");
+    config.token_end_pattern = absl::StrCat("[ \t]|", symbol_pattern);
+    config.not_token_end_pattern = absl::StrCat("[^ \t", symbol_chars, "]*");
+  } else {
+    config.token_end_pattern = "[ \t]";
+    config.not_token_end_pattern = "[^ \t]*";
+  }
   config.token_pattern = token_pattern;
   return absl::WrapUnique(new Lexer(config));
 }
 
 namespace {
-const RE2::Options GetRe2Options() {
+const RE2::Options Re2MatchLongest() {
   static absl::once_flag once;
   static RE2::Options options;
   absl::call_once(once, [] { options.set_longest_match(true); });
@@ -220,8 +234,10 @@ const RE2::Options GetRe2Options() {
 Lexer::Lexer(const Config& config)
     : flags_(config.flags),
       re_whitespace_(config.whitespace_pattern),
-      re_symbol_(config.symbol_pattern, GetRe2Options()),
-      re_token_(config.token_pattern, GetRe2Options()) {
+      re_symbol_(config.symbol_pattern, Re2MatchLongest()),
+      re_token_end_(config.token_end_pattern),
+      re_not_token_end_(config.not_token_end_pattern),
+      re_token_(config.token_pattern, Re2MatchLongest()) {
   re_args_.resize(config.token_pattern_count);
   re_token_args_.resize(config.token_pattern_count);
   if (config.int_index >= 0) {
@@ -516,6 +532,19 @@ Token Lexer::ParseNextToken(Content* content, Line* line) {
   ++content->token;
   std::string_view match_text = match->text;
   match->text = {};
+
+  // See what the next text is. If it is not whitespace or a symol, then this is
+  // a badly formed token and is an error. This can happen with things like
+  // "0123xyx456" which should not result three tokens (int, identifier, int).
+  std::string_view remain = line->remain;
+  if (!remain.empty() && !RE2::Consume(&remain, re_token_end_)) {
+    RE2::Consume(&line->remain, re_not_token_end_);
+    line->tokens.emplace_back(match_text.data() - line->line.data(),
+                              line->remain.data() - match_text.data(),
+                              match->type);
+    return Token::CreateError(token_index, &kErrorUnexpectedCharacter);
+  }
+
   line->tokens.emplace_back(match_text.data() - line->line.data(),
                             match_text.size(), match->type);
   switch (match->type) {
