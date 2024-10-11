@@ -22,7 +22,6 @@ LexerConfig WholeNumbers() {
 }
 
 const LexerFlags kUnimplementedFlags[] = {
-    {LexerFlag::kInt64, LexerFlag::kHexIntegers},
     {LexerFlag::kInt64, LexerFlag::kOctalIntegers},
     {LexerFlag::kInt64, LexerFlag::kBinaryIntegers},
     {LexerFlag::kFloat64, LexerFlag::kExponentFloats},
@@ -510,6 +509,30 @@ TEST(LexerTest, ParseHexIntegerWithoutHexSupport) {
   token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenInt);
   EXPECT_EQ(token.GetInt(), 42);
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseHexIntegerWithHexSupport) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt64, LexerFlag::kHexUpperIntegers,
+                LexerFlag::kHexLowerIntegers},
+      .hex_prefix = "",
+      .hex_suffix = "",
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("123abc FD0e 42");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0x123ABC);
+  EXPECT_EQ(lexer->GetTokenText(token.GetTokenIndex()), "123abc");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0xFD0E);
+  EXPECT_EQ(lexer->GetTokenText(token.GetTokenIndex()), "FD0e");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0x42);
+  EXPECT_EQ(lexer->GetTokenText(token.GetTokenIndex()), "42");
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 

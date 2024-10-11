@@ -320,6 +320,7 @@ class Lexer final {
   struct Config {
     LexerFlags flags;
     int int_index = -1;
+    int hex_index = -1;
     int float_index = -1;
     int ident_index = -1;
     int token_pattern_count = 0;
@@ -330,9 +331,17 @@ class Lexer final {
     std::string token_pattern;
   };
 
+  enum class ParseType {
+    kDefault,
+    kHex,
+    kOctal,
+    kBinary,
+  };
+
   struct TokenArg {
     TokenArg() : arg(&text) {}
     TokenType type = kTokenNone;
+    ParseType parse_type = ParseType::kDefault;
     std::string_view text;
     RE2::Arg arg;
   };
@@ -350,6 +359,7 @@ class Lexer final {
 
   std::tuple<Content*, Line*> GetContentLine(LexerContentId id);
 
+  bool ParseInt(std::string_view text, ParseType parse_type, int64_t& value);
   Token ParseNextSymbol(Content* content, Line* line);
   Token ParseNextToken(Content* content, Line* line);
 

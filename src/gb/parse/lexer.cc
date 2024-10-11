@@ -5,6 +5,7 @@
 
 #include "gb/parse/lexer.h"
 
+#include "absl/log/log.h"
 #include "absl/memory/memory.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_replace.h"
@@ -38,19 +39,40 @@ bool CreateTokenPattern(std::string& token_pattern,
   }
 
   if (LexerSupportsIntegers(flags)) {
-    if (flags.Intersects({LexerFlag::kHexIntegers, LexerFlag::kOctalIntegers,
-                          LexerFlag::kBinaryIntegers})) {
+    if (flags.Intersects(
+            {LexerFlag::kOctalIntegers, LexerFlag::kBinaryIntegers})) {
       error = Lexer::kErrorNotImplemented;
       return false;
     }
-    absl::StrAppend(&token_pattern, "(");
+    bool first = true;
     if (flags.IsSet(LexerFlag::kDecimalIntegers)) {
+      if (!first) {
+        absl::StrAppend(&token_pattern, "|");
+      }
+      first = false;
+      absl::StrAppend(&token_pattern, "(");
       if (flags.IsSet(LexerFlag::kNegativeIntegers)) {
         absl::StrAppend(&token_pattern, "-?");
       }
-      absl::StrAppend(&token_pattern, "[0-9]+");
+      absl::StrAppend(&token_pattern, "[0-9]+)");
     }
-    absl::StrAppend(&token_pattern, ")|");
+    if (flags.Intersects(
+            {LexerFlag::kHexUpperIntegers, LexerFlag::kHexLowerIntegers})) {
+      if (!first) {
+        absl::StrAppend(&token_pattern, "|");
+      }
+      absl::StrAppend(&token_pattern, "(");
+      absl::StrAppend(&token_pattern, lexer_config.hex_prefix);
+      absl::StrAppend(&token_pattern, "[0-9");
+      if (flags.IsSet(LexerFlag::kHexUpperIntegers)) {
+        absl::StrAppend(&token_pattern, "A-F");
+      }
+      if (flags.IsSet(LexerFlag::kHexLowerIntegers)) {
+        absl::StrAppend(&token_pattern, "a-f");
+      }
+      absl::StrAppend(&token_pattern, "]+)");
+    }
+    absl::StrAppend(&token_pattern, "|");
   }
 
   if (LexerSupportsFloats(flags)) {
@@ -180,7 +202,13 @@ std::unique_ptr<Lexer> Lexer::Create(const LexerConfig& lexer_config,
 
   int index = 0;
   if (LexerSupportsIntegers(lexer_config.flags)) {
-    config.int_index = index++;
+    if (lexer_config.flags.IsSet(LexerFlag::kDecimalIntegers)) {
+      config.int_index = index++;
+    }
+    if (lexer_config.flags.Intersects(
+            {LexerFlag::kHexUpperIntegers, LexerFlag::kHexLowerIntegers})) {
+      config.hex_index = index++;
+    }
   }
   if (LexerSupportsFloats(lexer_config.flags)) {
     config.float_index = index++;
@@ -209,14 +237,14 @@ std::unique_ptr<Lexer> Lexer::Create(const LexerConfig& lexer_config,
     return nullptr;
   }
 
-  config.whitespace_pattern = "[ \t]*";
+  config.whitespace_pattern = "[ \\t]*";
   if (!symbol_pattern.empty()) {
     config.symbol_pattern = absl::StrCat("(", symbol_pattern, ")");
-    config.token_end_pattern = absl::StrCat("[ \t]|", symbol_pattern);
-    config.not_token_end_pattern = absl::StrCat("[^ \t", symbol_chars, "]*");
+    config.token_end_pattern = absl::StrCat("[ \\t]|", symbol_pattern);
+    config.not_token_end_pattern = absl::StrCat("[^ \\t", symbol_chars, "]*");
   } else {
-    config.token_end_pattern = "[ \t]";
-    config.not_token_end_pattern = "[^ \t]*";
+    config.token_end_pattern = "[ \\t]";
+    config.not_token_end_pattern = "[^ \\t]*";
   }
   config.token_pattern = token_pattern;
   return absl::WrapUnique(new Lexer(config));
@@ -243,6 +271,12 @@ Lexer::Lexer(const Config& config)
   if (config.int_index >= 0) {
     const int i = config.int_index;
     re_args_[i].type = kTokenInt;
+    re_token_args_[i] = &re_args_[i].arg;
+  }
+  if (config.hex_index >= 0) {
+    const int i = config.hex_index;
+    re_args_[i].type = kTokenInt;
+    re_args_[i].parse_type = ParseType::kHex;
     re_token_args_[i] = &re_args_[i].arg;
   }
   if (config.float_index >= 0) {
@@ -510,6 +544,35 @@ Token Lexer::ParseNextSymbol(Content* content, Line* line) {
   return Token::CreateSymbol(token_index, symbol_text);
 }
 
+bool Lexer::ParseInt(std::string_view text, ParseType parse_type,
+                     int64_t& value) {
+  switch (parse_type) {
+    case ParseType::kDefault:
+      return absl::SimpleAtoi(text, &value);
+    case ParseType::kHex: {
+      uint64_t last_hex_value = 0;
+      uint64_t hex_value = 0;
+      for (char ch : text) {
+        hex_value <<= 4;
+        if (hex_value < last_hex_value) {
+          return false;
+        }
+        if (ch >= '0' && ch <= '9') {
+          hex_value |= ch - '0';
+        } else if (ch >= 'A' && ch <= 'F') {
+          hex_value |= ch - 'A' + 10;
+        } else if (ch >= 'a' && ch <= 'f') {
+          hex_value |= ch - 'a' + 10;
+        }
+      }
+      value = hex_value;
+      return true;
+    } break;
+  }
+  LOG(FATAL) << "Unhandled integer parse type";
+  return false;
+}
+
 Token Lexer::ParseNextToken(Content* content, Line* line) {
   if (re_token_args_.empty() ||
       !RE2::ConsumeN(&line->remain, re_token_, re_token_args_.data(),
@@ -533,8 +596,8 @@ Token Lexer::ParseNextToken(Content* content, Line* line) {
   std::string_view match_text = match->text;
   match->text = {};
 
-  // See what the next text is. If it is not whitespace or a symol, then this is
-  // a badly formed token and is an error. This can happen with things like
+  // See what the next text is. If it is not whitespace or a symol, then this
+  // is a badly formed token and is an error. This can happen with things like
   // "0123xyx456" which should not result three tokens (int, identifier, int).
   std::string_view remain = line->remain;
   if (!remain.empty() && !RE2::Consume(&remain, re_token_end_)) {
@@ -550,7 +613,7 @@ Token Lexer::ParseNextToken(Content* content, Line* line) {
   switch (match->type) {
     case kTokenInt: {
       int64_t value = 0;
-      if (!absl::SimpleAtoi(match_text, &value)) {
+      if (!ParseInt(match_text, match->parse_type, value)) {
         return Token::CreateError(token_index, &kErrorInvalidInteger);
       }
       return Token::CreateInt(token_index, value, sizeof(value));

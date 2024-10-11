@@ -23,7 +23,8 @@ enum class LexerFlag {
   kInt64,             // Allow and detect 64-bit integers.
   kNegativeIntegers,  // Allow negative integers.
   kDecimalIntegers,   // Allow decimal format integers.
-  kHexIntegers,       // Allow hexadecimal format integers.
+  kHexUpperIntegers,  // Allow hexadecimal format integers with upper case.
+  kHexLowerIntegers,  // Allow hexadecimal format integers with lower case.
   kOctalIntegers,     // Allow octal format integers.
   kBinaryIntegers,    // Allow binary format integers.
 
@@ -98,8 +99,9 @@ inline constexpr LexerFlags kLexerFlags_AllIntegers = {
 
 // Support all integer formats (decimal, hex, octal, and binary).
 inline constexpr LexerFlags kLexerFlags_AllIntegerFormats = {
-    LexerFlag::kDecimalIntegers, LexerFlag::kHexIntegers,
-    LexerFlag::kOctalIntegers, LexerFlag::kBinaryIntegers};
+    LexerFlag::kDecimalIntegers, LexerFlag::kHexUpperIntegers,
+    LexerFlag::kHexLowerIntegers, LexerFlag::kOctalIntegers,
+    LexerFlag::kBinaryIntegers};
 
 // Support all positive float types and determine bit depth.
 inline constexpr LexerFlags kLexerFlags_PositiveFloats = {
@@ -144,9 +146,10 @@ inline constexpr LexerFlags kLexerFlags_C = {
 inline bool LexerSupportsIntegers(LexerFlags flags) {
   return flags.Intersects({LexerFlag::kInt8, LexerFlag::kInt16,
                            LexerFlag::kInt32, LexerFlag::kInt64}) &&
-         flags.Intersects({LexerFlag::kDecimalIntegers, LexerFlag::kHexIntegers,
-                           LexerFlag::kOctalIntegers,
-                           LexerFlag::kBinaryIntegers});
+         flags.Intersects(
+             {LexerFlag::kDecimalIntegers, LexerFlag::kHexUpperIntegers,
+              LexerFlag::kHexLowerIntegers, LexerFlag::kOctalIntegers,
+              LexerFlag::kBinaryIntegers});
 }
 
 inline bool LexerSupportsFloats(LexerFlags flags) {
