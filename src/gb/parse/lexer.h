@@ -47,9 +47,8 @@ namespace gb {
 //   - Characters that do not match any symbol or token are considered error
 //     tokens. These separate tokens like whitespace, but generally parsing
 //     should stop if an error is encountered.
-//   - All decimal numbers must start with a digit (or '-' if negative).
-//     Specifically, floating point numbers cannot start with a '.'. Non-decimal
-//     numbers can have a defined prefix or suffix.
+//   - Floating point numbers cannot start or end with a '.' (unlike C/C++)
+//     There must be digits on both sides of a period.
 //
 // The Lexer maintains ownership of all source added to it, and provides access
 // via Tokens (as defined by LexerConfig), and Lines which are views into the

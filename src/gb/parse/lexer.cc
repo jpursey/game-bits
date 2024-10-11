@@ -63,7 +63,7 @@ bool CreateTokenPattern(std::string& token_pattern,
       if (flags.IsSet(LexerFlag::kNegativeFloats)) {
         absl::StrAppend(&token_pattern, "-?");
       }
-      absl::StrAppend(&token_pattern, "[0-9]+\\.[0-9]+");
+      absl::StrAppend(&token_pattern, "[0-9]+(?:\\.[0-9]+)?");
     }
     absl::StrAppend(&token_pattern, ")|");
   }
