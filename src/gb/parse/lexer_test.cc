@@ -1142,6 +1142,35 @@ TEST(LexerTest, MatchOrderAllIntegerFormats) {
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
+TEST(LexerTest, IntegerSpecialCharacterPrefixAndSuffix) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers,
+                LexerFlag::kHexUpperIntegers, LexerFlag::kOctalIntegers,
+                LexerFlag::kBinaryIntegers},
+      .hex_prefix = "(",
+      .hex_suffix = ")",
+      .octal_prefix = "[",
+      .octal_suffix = "]",
+      .binary_prefix = ".",
+      .binary_suffix = "$",
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent(".101$ [170] (1F0)");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0b101);
+  EXPECT_EQ(lexer->GetTokenText(token), ".101$");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0170);
+  EXPECT_EQ(lexer->GetTokenText(token), "[170]");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0x1F0);
+  EXPECT_EQ(lexer->GetTokenText(token), "(1F0)");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
 TEST(LexerTest, ParsePositiveFloat) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kFloat64, LexerFlag::kDecimalFloats},
