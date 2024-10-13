@@ -22,11 +22,11 @@ enum class LexerFlag {
   kInt32,             // Allow and detect 32-bit integers.
   kInt64,             // Allow and detect 64-bit integers.
   kNegativeIntegers,  // Allow negative integers.
+  kBinaryIntegers,    // Allow binary format integers.
+  kOctalIntegers,     // Allow octal format integers.
   kDecimalIntegers,   // Allow decimal format integers.
   kHexUpperIntegers,  // Allow hexadecimal format integers with upper case.
   kHexLowerIntegers,  // Allow hexadecimal format integers with lower case.
-  kOctalIntegers,     // Allow octal format integers.
-  kBinaryIntegers,    // Allow binary format integers.
 
   // Float parsing flags.
   kFloat32,         // Allow and detect 32-bit floating point numbers.
@@ -189,12 +189,14 @@ struct LexerConfig {
   LexerFlags flags;
 
   // Integer prefixes and suffixes.
-  std::string_view hex_prefix = "0x";     // Used for kHexIntegers.
-  std::string_view hex_suffix = "";       // Used for kHexIntegers.
-  std::string_view octal_prefix = "0";    // Used for kOctalIntegers.
-  std::string_view octal_suffix = "";     // Used for kOctalIntegers.
   std::string_view binary_prefix = "0b";  // Used for kBinaryIntegers.
   std::string_view binary_suffix = "";    // Used for kBinaryIntegers.
+  std::string_view octal_prefix = "0";    // Used for kOctalIntegers.
+  std::string_view octal_suffix = "";     // Used for kOctalIntegers.
+  std::string_view decimal_prefix = "";   // Used for kDecimalIntegers.
+  std::string_view decimal_suffix = "";   // Used for kDecimalIntegers.
+  std::string_view hex_prefix = "0x";     // Used for kHexIntegers.
+  std::string_view hex_suffix = "";       // Used for kHexIntegers.
 
   // Escape character settings
   char escape = '\\';         // Used for kCharacterEscaping or kEscapeNewLine.

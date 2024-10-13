@@ -407,7 +407,7 @@ TEST(LexerTest, ParseSymbols) {
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
-TEST(LexerTest, ParsePositiveIntegers) {
+TEST(LexerTest, ParseDecimalIntegerPositive) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers},
   });
@@ -428,7 +428,7 @@ TEST(LexerTest, ParsePositiveIntegers) {
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
-TEST(LexerTest, ParsePositiveIntegersWithNegative) {
+TEST(LexerTest, ParseDecimalIntegerNegativeWithoutSupport) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers},
   });
@@ -447,7 +447,7 @@ TEST(LexerTest, ParsePositiveIntegersWithNegative) {
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
-TEST(LexerTest, ParseNegativeIntegersWithNegative) {
+TEST(LexerTest, ParseDecimalIntegerNegativeWithSupport) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers,
                 LexerFlag::kNegativeIntegers},
@@ -465,7 +465,7 @@ TEST(LexerTest, ParseNegativeIntegersWithNegative) {
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
-TEST(LexerTest, ParseMaxSizeInteger64bit) {
+TEST(LexerTest, ParseDecimalIntegerMaxSize64bit) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers,
                 LexerFlag::kNegativeIntegers},
@@ -492,6 +492,67 @@ TEST(LexerTest, ParseMaxSizeInteger64bit) {
   token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenInt);
   EXPECT_EQ(token.GetInt(), 42);
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseDecimalIntegerWithPrefix) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers},
+      .decimal_prefix = "0d",
+      .decimal_suffix = "",
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("0d123 123");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 123);
+  EXPECT_EQ(lexer->GetTokenText(token), "0d123");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorUnexpectedCharacter);
+  EXPECT_EQ(lexer->GetTokenText(token), "123");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseDecimalIntegerWithSuffix) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers},
+      .decimal_prefix = "",
+      .decimal_suffix = "d",
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("123d 123");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 123);
+  EXPECT_EQ(lexer->GetTokenText(token), "123d");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorUnexpectedCharacter);
+  EXPECT_EQ(lexer->GetTokenText(token), "123");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseDecimalIntegerWithPrefixAndSuffix) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers},
+      .decimal_prefix = "0d",
+      .decimal_suffix = "d",
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("0d123d 0d123 123d");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 123);
+  EXPECT_EQ(lexer->GetTokenText(token), "0d123d");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorUnexpectedCharacter);
+  EXPECT_EQ(lexer->GetTokenText(token), "0d123");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorUnexpectedCharacter);
+  EXPECT_EQ(lexer->GetTokenText(token), "123d");
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
@@ -1114,12 +1175,12 @@ TEST(LexerTest, MatchOrderAllIntegerFormats) {
       .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers,
                 LexerFlag::kHexUpperIntegers, LexerFlag::kOctalIntegers,
                 LexerFlag::kBinaryIntegers},
-      .hex_prefix = "",
-      .hex_suffix = "",
-      .octal_prefix = "",
-      .octal_suffix = "",
       .binary_prefix = "",
       .binary_suffix = "",
+      .octal_prefix = "",
+      .octal_suffix = "",
+      .hex_prefix = "",
+      .hex_suffix = "",
   });
   ASSERT_NE(lexer, nullptr);
   const LexerContentId content = lexer->AddContent("101 170 190 1F0");
@@ -1147,12 +1208,12 @@ TEST(LexerTest, IntegerSpecialCharacterPrefixAndSuffix) {
       .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers,
                 LexerFlag::kHexUpperIntegers, LexerFlag::kOctalIntegers,
                 LexerFlag::kBinaryIntegers},
-      .hex_prefix = "(",
-      .hex_suffix = ")",
-      .octal_prefix = "[",
-      .octal_suffix = "]",
       .binary_prefix = ".",
       .binary_suffix = "$",
+      .octal_prefix = "[",
+      .octal_suffix = "]",
+      .hex_prefix = "(",
+      .hex_suffix = ")",
   });
   ASSERT_NE(lexer, nullptr);
   const LexerContentId content = lexer->AddContent(".101$ [170] (1F0)");

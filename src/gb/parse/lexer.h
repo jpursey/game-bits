@@ -337,7 +337,7 @@ class Lexer final {
     LexerFlags flags;
     int binary_index = -1;
     int octal_index = -1;
-    int int_index = -1;
+    int decimal_index = -1;
     int hex_index = -1;
     int float_index = -1;
     int ident_index = -1;
@@ -347,9 +347,10 @@ class Lexer final {
     std::string token_end_pattern;
     std::string not_token_end_pattern;
     std::string token_pattern;
-    IntConfig hex;
-    IntConfig octal;
     IntConfig binary;
+    IntConfig octal;
+    IntConfig decimal;
+    IntConfig hex;
   };
 
   enum class ParseType {
@@ -392,9 +393,10 @@ class Lexer final {
   RE2 re_token_;
   std::vector<TokenArg> re_args_;
   std::vector<RE2::Arg*> re_token_args_;
-  IntConfig hex_;
-  IntConfig octal_;
   IntConfig binary_;
+  IntConfig octal_;
+  IntConfig decimal_;
+  IntConfig hex_;
 
   std::vector<std::unique_ptr<Content>> content_;
   absl::flat_hash_map<std::string_view, LexerContentId> filename_to_id_;
