@@ -44,11 +44,22 @@ namespace gb {
 //     beginning of content). This disambiguates between the common issue of
 //     symbols (like '-') which match the beginning of tokens (like '-2'), so
 //     "a-2" becomes {"a", "-", " 2"} not {"a", "-2"}.
-//   - Characters that do not match any symbol or token are considered error
-//     tokens. These separate tokens like whitespace, but generally parsing
-//     should stop if an error is encountered.
+//   - Characters encountered that do not match any symbol or whitespace, and
+//     are illegal within a normal token result in an error token. The error
+//     token extends up to the next encountered whitespace or symbol start
+//     character). The results in more natural error token results in general,
+//     allowing token skipping and better error reporting using the token text
+//     as context.
 //   - Floating point numbers cannot start or end with a '.' (unlike C/C++)
 //     There must be digits on both sides of a period.
+//   - Non-decimal integer formats (hexadecimal, octal, binary) do not support
+//     explicit negation (although if large enough, they will be negative when
+//     converted to 2's compliment).
+//   - Token types are determined by the longest match, and in the case of a
+//     tie in the following order: binary integer, octal integer, decimal
+//     integer, hexadecimal integer, floating point number, character, string,
+//     reserved word, and identifier. As described above, symbols are matched
+//     either first or last depending on the previous token.
 //
 // The Lexer maintains ownership of all source added to it, and provides access
 // via Tokens (as defined by LexerConfig), and Lines which are views into the

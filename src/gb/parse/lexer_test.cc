@@ -385,27 +385,27 @@ TEST(LexerTest, ParseSymbols) {
   Token token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenSymbol);
   EXPECT_EQ(token.GetSymbol(), "++");
-  EXPECT_EQ(lexer->GetTokenText(token.GetTokenIndex()), "++");
+  EXPECT_EQ(lexer->GetTokenText(token), "++");
   token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenSymbol);
   EXPECT_EQ(token.GetSymbol(), '*');
-  EXPECT_EQ(lexer->GetTokenText(token.GetTokenIndex()), "*");
+  EXPECT_EQ(lexer->GetTokenText(token), "*");
   token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenSymbol);
   EXPECT_EQ(token.GetSymbol(), "--");
-  EXPECT_EQ(lexer->GetTokenText(token.GetTokenIndex()), "--");
+  EXPECT_EQ(lexer->GetTokenText(token), "--");
   token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenSymbol);
   EXPECT_EQ(token.GetSymbol(), '/');
-  EXPECT_EQ(lexer->GetTokenText(token.GetTokenIndex()), "/");
+  EXPECT_EQ(lexer->GetTokenText(token), "/");
   token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenSymbol);
   EXPECT_EQ(token.GetSymbol(), '+');
-  EXPECT_EQ(lexer->GetTokenText(token.GetTokenIndex()), "+");
+  EXPECT_EQ(lexer->GetTokenText(token), "+");
   token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenSymbol);
   EXPECT_EQ(token.GetSymbol(), '-');
-  EXPECT_EQ(lexer->GetTokenText(token.GetTokenIndex()), "-");
+  EXPECT_EQ(lexer->GetTokenText(token), "-");
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
@@ -418,15 +418,15 @@ TEST(LexerTest, ParsePositiveIntegers) {
   Token token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenInt);
   EXPECT_EQ(token.GetInt(), 123);
-  EXPECT_EQ(lexer->GetTokenText(token.GetTokenIndex()), "123");
+  EXPECT_EQ(lexer->GetTokenText(token), "123");
   token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenInt);
   EXPECT_EQ(token.GetInt(), 456);
-  EXPECT_EQ(lexer->GetTokenText(token.GetTokenIndex()), "456");
+  EXPECT_EQ(lexer->GetTokenText(token), "456");
   token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenInt);
   EXPECT_EQ(token.GetInt(), 789);
-  EXPECT_EQ(lexer->GetTokenText(token.GetTokenIndex()), "789");
+  EXPECT_EQ(lexer->GetTokenText(token), "789");
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
@@ -435,17 +435,17 @@ TEST(LexerTest, ParsePositiveIntegersWithNegative) {
       .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers},
   });
   ASSERT_NE(lexer, nullptr);
-  const LexerContentId content = lexer->AddContent("123 -456");
+  const LexerContentId content = lexer->AddContent("123 -456 42");
   Token token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenInt);
   EXPECT_EQ(token.GetInt(), 123);
   token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenError);
   EXPECT_EQ(token.GetString(), Lexer::kErrorUnexpectedCharacter);
-  EXPECT_EQ(lexer->GetTokenText(token.GetTokenIndex()), "-");
+  EXPECT_EQ(lexer->GetTokenText(token), "-456");
   token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenInt);
-  EXPECT_EQ(token.GetInt(), 456);
+  EXPECT_EQ(token.GetInt(), 42);
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
@@ -459,11 +459,11 @@ TEST(LexerTest, ParseNegativeIntegersWithNegative) {
   Token token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenInt);
   EXPECT_EQ(token.GetInt(), 123);
-  EXPECT_EQ(lexer->GetTokenText(token.GetTokenIndex()), "123");
+  EXPECT_EQ(lexer->GetTokenText(token), "123");
   token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenInt);
   EXPECT_EQ(token.GetInt(), -456);
-  EXPECT_EQ(lexer->GetTokenText(token.GetTokenIndex()), "-456");
+  EXPECT_EQ(lexer->GetTokenText(token), "-456");
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
@@ -486,9 +486,11 @@ TEST(LexerTest, ParseMaxSizeInteger64bit) {
   token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenError);
   EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidInteger);
+  EXPECT_EQ(lexer->GetTokenText(token), "9223372036854775808");
   token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenError);
   EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidInteger);
+  EXPECT_EQ(lexer->GetTokenText(token), "-9223372036854775809");
   token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenInt);
   EXPECT_EQ(token.GetInt(), 42);
@@ -505,7 +507,7 @@ TEST(LexerTest, ParseHexIntegerWithoutHexSupport) {
   Token token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenError);
   EXPECT_EQ(token.GetString(), Lexer::kErrorUnexpectedCharacter);
-  EXPECT_EQ(lexer->GetTokenText(token.GetTokenIndex()), "0x123");
+  EXPECT_EQ(lexer->GetTokenText(token), "0x123");
   token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenInt);
   EXPECT_EQ(token.GetInt(), 42);
@@ -524,15 +526,131 @@ TEST(LexerTest, ParseHexIntegerWithHexSupport) {
   Token token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenInt);
   EXPECT_EQ(token.GetInt(), 0x123ABC);
-  EXPECT_EQ(lexer->GetTokenText(token.GetTokenIndex()), "123abc");
+  EXPECT_EQ(lexer->GetTokenText(token), "123abc");
   token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenInt);
   EXPECT_EQ(token.GetInt(), 0xFD0E);
-  EXPECT_EQ(lexer->GetTokenText(token.GetTokenIndex()), "FD0e");
+  EXPECT_EQ(lexer->GetTokenText(token), "FD0e");
   token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenInt);
   EXPECT_EQ(token.GetInt(), 0x42);
-  EXPECT_EQ(lexer->GetTokenText(token.GetTokenIndex()), "42");
+  EXPECT_EQ(lexer->GetTokenText(token), "42");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseMaxSizeHexInteger64bit) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt64, LexerFlag::kHexUpperIntegers,
+                LexerFlag::kHexLowerIntegers},
+      .hex_prefix = "",
+      .hex_suffix = "",
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent(
+      "7fffffffffffffff 8000000000000000 10000000000000000 42");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), std::numeric_limits<int64_t>::max());
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), std::numeric_limits<int64_t>::min());
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidInteger);
+  EXPECT_EQ(lexer->GetTokenText(token), "10000000000000000");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0x42);
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseUpperHexOnly) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt64, LexerFlag::kHexUpperIntegers},
+      .hex_prefix = "",
+      .hex_suffix = "",
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("123abc FD0E 42");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorUnexpectedCharacter);
+  EXPECT_EQ(lexer->GetTokenText(token), "123abc");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0xFD0E);
+  EXPECT_EQ(lexer->GetTokenText(token), "FD0E");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0x42);
+  EXPECT_EQ(lexer->GetTokenText(token), "42");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseLowerHexOnly) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt64, LexerFlag::kHexLowerIntegers},
+      .hex_prefix = "",
+      .hex_suffix = "",
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("123abc FD0E 42");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0x123ABC);
+  EXPECT_EQ(lexer->GetTokenText(token), "123abc");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorUnexpectedCharacter);
+  EXPECT_EQ(lexer->GetTokenText(token), "FD0E");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0x42);
+  EXPECT_EQ(lexer->GetTokenText(token), "42");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseHexNegativeNotSupported) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt64, LexerFlag::kHexUpperIntegers,
+                LexerFlag::kNegativeIntegers},
+      .hex_prefix = "",
+      .hex_suffix = "",
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("123ABC -FD0E 42");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0x123ABC);
+  EXPECT_EQ(lexer->GetTokenText(token), "123ABC");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorUnexpectedCharacter);
+  EXPECT_EQ(lexer->GetTokenText(token), "-FD0E");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0x42);
+  EXPECT_EQ(lexer->GetTokenText(token), "42");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseIntDecimalMatchedBeforeHex) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers,
+                LexerFlag::kHexUpperIntegers},
+      .hex_prefix = "",
+      .hex_suffix = "",
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("123A 42");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0x123A);
+  EXPECT_EQ(lexer->GetTokenText(token), "123A");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 42);
+  EXPECT_EQ(lexer->GetTokenText(token), "42");
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
@@ -546,7 +664,7 @@ TEST(LexerTest, ParseOctalIntegerWithoutOctalSupport) {
   Token token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenInt);
   EXPECT_EQ(token.GetInt(), 123);
-  EXPECT_EQ(lexer->GetTokenText(token.GetTokenIndex()), "0123");
+  EXPECT_EQ(lexer->GetTokenText(token), "0123");
   token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenInt);
   EXPECT_EQ(token.GetInt(), 42);
@@ -563,7 +681,7 @@ TEST(LexerTest, ParseBinaryIntegerWithoutBinarySupport) {
   Token token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenError);
   EXPECT_EQ(token.GetString(), Lexer::kErrorUnexpectedCharacter);
-  EXPECT_EQ(lexer->GetTokenText(token.GetTokenIndex()), "0b1010");
+  EXPECT_EQ(lexer->GetTokenText(token), "0b1010");
   token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenInt);
   EXPECT_EQ(token.GetInt(), 42);
@@ -579,16 +697,16 @@ TEST(LexerTest, ParsePositiveFloat) {
   Token token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenFloat);
   EXPECT_EQ(token.GetFloat(), 1.25);
-  EXPECT_EQ(lexer->GetTokenText(token.GetTokenIndex()), "1.25");
+  EXPECT_EQ(lexer->GetTokenText(token), "1.25");
   token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenFloat);
   EXPECT_EQ(token.GetFloat(), 42.125);
-  EXPECT_EQ(lexer->GetTokenText(token.GetTokenIndex()), "42.125");
+  EXPECT_EQ(lexer->GetTokenText(token), "42.125");
   token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenFloat);
   EXPECT_EQ(token.GetFloat(), 7);
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
-  EXPECT_EQ(lexer->GetTokenText(token.GetTokenIndex()), "7");
+  EXPECT_EQ(lexer->GetTokenText(token), "7");
 }
 
 TEST(LexerTest, ParsePositiveFloatWithLeadingPeriod) {
@@ -600,15 +718,11 @@ TEST(LexerTest, ParsePositiveFloatWithLeadingPeriod) {
   Token token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenError);
   EXPECT_EQ(token.GetString(), Lexer::kErrorUnexpectedCharacter);
-  EXPECT_EQ(lexer->GetTokenText(token.GetTokenIndex()), ".");
-  token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenFloat);
-  EXPECT_EQ(token.GetFloat(), 25);
-  EXPECT_EQ(lexer->GetTokenText(token.GetTokenIndex()), "25");
+  EXPECT_EQ(lexer->GetTokenText(token), ".25");
   token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenFloat);
   EXPECT_EQ(token.GetFloat(), 4.125);
-  EXPECT_EQ(lexer->GetTokenText(token.GetTokenIndex()), "4.125");
+  EXPECT_EQ(lexer->GetTokenText(token), "4.125");
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
@@ -621,11 +735,11 @@ TEST(LexerTest, ParsePositiveFloatWithTrailingPeriod) {
   Token token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenError);
   EXPECT_EQ(token.GetString(), Lexer::kErrorUnexpectedCharacter);
-  EXPECT_EQ(lexer->GetTokenText(token.GetTokenIndex()), "1.");
+  EXPECT_EQ(lexer->GetTokenText(token), "1.");
   token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenFloat);
   EXPECT_EQ(token.GetFloat(), 4.125);
-  EXPECT_EQ(lexer->GetTokenText(token.GetTokenIndex()), "4.125");
+  EXPECT_EQ(lexer->GetTokenText(token), "4.125");
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
@@ -634,17 +748,17 @@ TEST(LexerTest, ParsePositiveFloatsWithNegative) {
       .flags = {LexerFlag::kFloat64, LexerFlag::kDecimalFloats},
   });
   ASSERT_NE(lexer, nullptr);
-  const LexerContentId content = lexer->AddContent("1.25 -4.125");
+  const LexerContentId content = lexer->AddContent("1.25 -4.125 42");
   Token token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenFloat);
   EXPECT_EQ(token.GetFloat(), 1.25);
   token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenError);
   EXPECT_EQ(token.GetString(), Lexer::kErrorUnexpectedCharacter);
-  EXPECT_EQ(lexer->GetTokenText(token.GetTokenIndex()), "-");
+  EXPECT_EQ(lexer->GetTokenText(token), "-4.125");
   token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenFloat);
-  EXPECT_EQ(token.GetFloat(), 4.125);
+  EXPECT_EQ(token.GetFloat(), 42);
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
@@ -673,11 +787,11 @@ TEST(LexerTest, ParseExponentFloatWithoutExponentSupport) {
   Token token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenError);
   EXPECT_EQ(token.GetString(), Lexer::kErrorUnexpectedCharacter);
-  EXPECT_EQ(lexer->GetTokenText(token.GetTokenIndex()), "1.25e2");
+  EXPECT_EQ(lexer->GetTokenText(token), "1.25e2");
   token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenFloat);
   EXPECT_EQ(token.GetFloat(), 42.125);
-  EXPECT_EQ(lexer->GetTokenText(token.GetTokenIndex()), "42.125");
+  EXPECT_EQ(lexer->GetTokenText(token), "42.125");
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 

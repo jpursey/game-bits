@@ -550,13 +550,12 @@ bool Lexer::ParseInt(std::string_view text, ParseType parse_type,
     case ParseType::kDefault:
       return absl::SimpleAtoi(text, &value);
     case ParseType::kHex: {
-      uint64_t last_hex_value = 0;
       uint64_t hex_value = 0;
       for (char ch : text) {
-        hex_value <<= 4;
-        if (hex_value < last_hex_value) {
+        if (hex_value >> 60 != 0) {
           return false;
         }
+        hex_value <<= 4;
         if (ch >= '0' && ch <= '9') {
           hex_value |= ch - '0';
         } else if (ch >= 'A' && ch <= 'F') {
@@ -565,6 +564,7 @@ bool Lexer::ParseInt(std::string_view text, ParseType parse_type,
           hex_value |= ch - 'a' + 10;
         }
       }
+      // This is now defined behavior to 2's compliment starting in C++20.
       value = hex_value;
       return true;
     } break;
@@ -574,8 +574,9 @@ bool Lexer::ParseInt(std::string_view text, ParseType parse_type,
 }
 
 Token Lexer::ParseNextToken(Content* content, Line* line) {
+  std::string_view remain = line->remain;
   if (re_token_args_.empty() ||
-      !RE2::ConsumeN(&line->remain, re_token_, re_token_args_.data(),
+      !RE2::ConsumeN(&remain, re_token_, re_token_args_.data(),
                      re_token_args_.size())) {
     return {};
   }
@@ -590,24 +591,20 @@ Token Lexer::ParseNextToken(Content* content, Line* line) {
     // This should never happen in practice, as matches must be non-empty.
     return Token::CreateError(content->GetTokenIndex(), &kErrorNotImplemented);
   }
-  content->re_order = ReOrder::kSymFirst;
+
+  // See what the next text is. If it is not whitespace or a symol, then this
+  // is not actually a match (it is either an error or a symbol, depending on
+  // the ReOrder).
+  if (!remain.empty() && !RE2::Consume(&remain, re_token_end_)) {
+    return {};
+  }
+
+  line->remain = remain;
   TokenIndex token_index = content->GetTokenIndex();
+  content->re_order = ReOrder::kSymFirst;
   ++content->token;
   std::string_view match_text = match->text;
   match->text = {};
-
-  // See what the next text is. If it is not whitespace or a symol, then this
-  // is a badly formed token and is an error. This can happen with things like
-  // "0123xyx456" which should not result three tokens (int, identifier, int).
-  std::string_view remain = line->remain;
-  if (!remain.empty() && !RE2::Consume(&remain, re_token_end_)) {
-    RE2::Consume(&line->remain, re_not_token_end_);
-    line->tokens.emplace_back(match_text.data() - line->line.data(),
-                              line->remain.data() - match_text.data(),
-                              match->type);
-    return Token::CreateError(token_index, &kErrorUnexpectedCharacter);
-  }
-
   line->tokens.emplace_back(match_text.data() - line->line.data(),
                             match_text.size(), match->type);
   switch (match->type) {
@@ -675,13 +672,13 @@ Token Lexer::NextToken(LexerContentId id) {
     }
   }
   if (token.GetType() == kTokenNone) {
-    Token token = Token::CreateError(content->GetTokenIndex(),
-                                     &kErrorUnexpectedCharacter);
-    line->tokens.emplace_back(line->remain.data() - line->line.data(), 1,
-                              kTokenError);
-    line->remain.remove_prefix(1);
+    const TokenIndex token_index = content->GetTokenIndex();
     ++content->token;
-    return token;
+    const char* token_start = line->remain.data();
+    RE2::Consume(&line->remain, re_not_token_end_);
+    line->tokens.emplace_back(token_start - line->line.data(),
+                              line->remain.data() - token_start, kTokenError);
+    return Token::CreateError(token_index, &kErrorUnexpectedCharacter);
   }
   return token;
 }

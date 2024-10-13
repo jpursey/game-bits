@@ -60,8 +60,8 @@ enum class LexerFlag {
   kIdentDigit,              // Allows non-leading decimal digits.
   kIdentUnderscore,         // Allows underscores in the middle of identifiers.
   kIdentLeadingUnderscore,  // Allows leading underscores.
-  kIdentForceUpper,         // Forces all identifiers to be uppercase.
-  kIdentForceLower,         // Forces all identifiers to be lowercase.
+  kIdentForceUpper,         // Forces identifiers and keywords to be uppercase.
+  kIdentForceLower,         // Forces identifiers and keywords to be lowercase.
 
   // Whitespace and comment parsing flags.
   kLineBreak,      // Newlines are not whitespace (enables kTokenNewline).
@@ -213,6 +213,9 @@ struct LexerConfig {
   // All valid symbols and keywords. This must include even single character
   // symbols, or they will not be allowed.
   absl::Span<const Symbol> symbols;
+
+  // All special keywords. These can be anything, but are typically are
+  // identifiers which have unique meaning.
   absl::Span<const std::string_view> keywords;
 };
 
