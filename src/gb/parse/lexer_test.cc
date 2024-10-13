@@ -1212,11 +1212,13 @@ TEST(LexerTest, IntegerSpecialCharacterPrefixAndSuffix) {
       .binary_suffix = "$",
       .octal_prefix = "[",
       .octal_suffix = "]",
+      .decimal_prefix = "\\",
+      .decimal_suffix = "^",
       .hex_prefix = "(",
       .hex_suffix = ")",
   });
   ASSERT_NE(lexer, nullptr);
-  const LexerContentId content = lexer->AddContent(".101$ [170] (1F0)");
+  const LexerContentId content = lexer->AddContent(".101$ [170] \\190^ (1F0)");
   Token token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenInt);
   EXPECT_EQ(token.GetInt(), 0b101);
@@ -1225,6 +1227,10 @@ TEST(LexerTest, IntegerSpecialCharacterPrefixAndSuffix) {
   EXPECT_EQ(token.GetType(), kTokenInt);
   EXPECT_EQ(token.GetInt(), 0170);
   EXPECT_EQ(lexer->GetTokenText(token), "[170]");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 190);
+  EXPECT_EQ(lexer->GetTokenText(token), "\\190^");
   token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenInt);
   EXPECT_EQ(token.GetInt(), 0x1F0);
