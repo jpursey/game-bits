@@ -22,7 +22,6 @@ LexerConfig WholeNumbers() {
 }
 
 const LexerFlags kUnimplementedFlags[] = {
-    {LexerFlag::kInt64, LexerFlag::kBinaryIntegers},
     {LexerFlag::kFloat64, LexerFlag::kExponentFloats},
     {LexerFlag::kDoubleQuoteString},
     {LexerFlag::kSingleQuoteString},
@@ -934,6 +933,212 @@ TEST(LexerTest, ParseBinaryIntegerWithoutBinarySupport) {
   token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenInt);
   EXPECT_EQ(token.GetInt(), 42);
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseBinaryIntegerWithBinarySupport) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt64, LexerFlag::kBinaryIntegers},
+      .binary_prefix = "",
+      .binary_suffix = "",
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("1010 1101 42");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0b1010);
+  EXPECT_EQ(lexer->GetTokenText(token), "1010");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0b1101);
+  EXPECT_EQ(lexer->GetTokenText(token), "1101");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorUnexpectedCharacter);
+  EXPECT_EQ(lexer->GetTokenText(token), "42");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseBinaryIntegerMaxSize64Bit) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt64, LexerFlag::kBinaryIntegers},
+      .binary_prefix = "",
+      .binary_suffix = "",
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent(
+      "111111111111111111111111111111111111111111111111111111111111111 "
+      "1000000000000000000000000000000000000000000000000000000000000000 "
+      "10000000000000000000000000000000000000000000000000000000000000000");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), std::numeric_limits<int64_t>::max());
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), std::numeric_limits<int64_t>::min());
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidInteger);
+  EXPECT_EQ(
+      lexer->GetTokenText(token),
+      "10000000000000000000000000000000000000000000000000000000000000000");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseBinaryIntegerNegativeNotSupported) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt64, LexerFlag::kBinaryIntegers,
+                LexerFlag::kNegativeIntegers},
+      .binary_prefix = "",
+      .binary_suffix = "",
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("1010 -1101 11");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0b1010);
+  EXPECT_EQ(lexer->GetTokenText(token), "1010");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorUnexpectedCharacter);
+  EXPECT_EQ(lexer->GetTokenText(token), "-1101");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0b11);
+  EXPECT_EQ(lexer->GetTokenText(token), "11");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseBinaryIntegerMatchedBeforeDecimal) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers,
+                LexerFlag::kBinaryIntegers},
+      .binary_prefix = "",
+      .binary_suffix = "",
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("1010 1101 12");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0b1010);
+  EXPECT_EQ(lexer->GetTokenText(token), "1010");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0b1101);
+  EXPECT_EQ(lexer->GetTokenText(token), "1101");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 12);
+  EXPECT_EQ(lexer->GetTokenText(token), "12");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseBinaryIntegerWithPrefix) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers,
+                LexerFlag::kBinaryIntegers},
+      .binary_prefix = "0b",
+      .binary_suffix = "",
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("0b1010 1010 12");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0b1010);
+  EXPECT_EQ(lexer->GetTokenText(token), "0b1010");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 1010);
+  EXPECT_EQ(lexer->GetTokenText(token), "1010");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 12);
+  EXPECT_EQ(lexer->GetTokenText(token), "12");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseBinaryIntegerWithSuffix) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers,
+                LexerFlag::kBinaryIntegers},
+      .binary_prefix = "",
+      .binary_suffix = "b",
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("1010b 1010 12");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0b1010);
+  EXPECT_EQ(lexer->GetTokenText(token), "1010b");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 1010);
+  EXPECT_EQ(lexer->GetTokenText(token), "1010");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 12);
+  EXPECT_EQ(lexer->GetTokenText(token), "12");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseBinaryIntegerWithPrefixAndSuffix) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers,
+                LexerFlag::kBinaryIntegers},
+      .binary_prefix = "0b",
+      .binary_suffix = "b",
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("0b1010b 0b1010 1010b 12");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0b1010);
+  EXPECT_EQ(lexer->GetTokenText(token), "0b1010b");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorUnexpectedCharacter);
+  EXPECT_EQ(lexer->GetTokenText(token), "0b1010");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorUnexpectedCharacter);
+  EXPECT_EQ(lexer->GetTokenText(token), "1010b");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 12);
+  EXPECT_EQ(lexer->GetTokenText(token), "12");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, MatchOrderAllIntegerFormats) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers,
+                LexerFlag::kHexUpperIntegers, LexerFlag::kOctalIntegers,
+                LexerFlag::kBinaryIntegers},
+      .hex_prefix = "",
+      .hex_suffix = "",
+      .octal_prefix = "",
+      .octal_suffix = "",
+      .binary_prefix = "",
+      .binary_suffix = "",
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("101 170 190 1F0");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0b101);
+  EXPECT_EQ(lexer->GetTokenText(token), "101");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0170);
+  EXPECT_EQ(lexer->GetTokenText(token), "170");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 190);
+  EXPECT_EQ(lexer->GetTokenText(token), "190");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0x1F0);
+  EXPECT_EQ(lexer->GetTokenText(token), "1F0");
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 

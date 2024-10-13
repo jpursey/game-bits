@@ -335,6 +335,7 @@ class Lexer final {
   // Runtime config derived from LexerConfig.
   struct Config {
     LexerFlags flags;
+    int binary_index = -1;
     int octal_index = -1;
     int int_index = -1;
     int hex_index = -1;

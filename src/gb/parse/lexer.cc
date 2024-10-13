@@ -39,11 +39,20 @@ bool CreateTokenPattern(std::string& token_pattern,
   }
 
   if (LexerSupportsIntegers(flags)) {
-    if (flags.Intersects({LexerFlag::kBinaryIntegers})) {
-      error = Lexer::kErrorNotImplemented;
-      return false;
-    }
     bool first = true;
+    if (flags.IsSet(LexerFlag::kBinaryIntegers)) {
+      if (!first) {
+        absl::StrAppend(&token_pattern, "|");
+      }
+      first = false;
+      absl::StrAppend(&token_pattern, "(");
+      absl::StrAppend(&token_pattern,
+                      RE2::QuoteMeta(lexer_config.binary_prefix));
+      absl::StrAppend(&token_pattern, "[01]+");
+      absl::StrAppend(&token_pattern,
+                      RE2::QuoteMeta(lexer_config.binary_suffix));
+      absl::StrAppend(&token_pattern, ")");
+    }
     if (flags.IsSet(LexerFlag::kOctalIntegers)) {
       if (!first) {
         absl::StrAppend(&token_pattern, "|");
@@ -216,6 +225,9 @@ std::unique_ptr<Lexer> Lexer::Create(const LexerConfig& lexer_config,
 
   int index = 0;
   if (LexerSupportsIntegers(lexer_config.flags)) {
+    if (lexer_config.flags.IsSet(LexerFlag::kBinaryIntegers)) {
+      config.binary_index = index++;
+    }
     if (lexer_config.flags.IsSet(LexerFlag::kOctalIntegers)) {
       config.octal_index = index++;
     }
@@ -296,6 +308,12 @@ Lexer::Lexer(const Config& config)
       binary_(config.binary) {
   re_args_.resize(config.token_pattern_count);
   re_token_args_.resize(config.token_pattern_count);
+  if (config.binary_index >= 0) {
+    const int i = config.binary_index;
+    re_args_[i].type = kTokenInt;
+    re_args_[i].parse_type = ParseType::kBinary;
+    re_token_args_[i] = &re_args_[i].arg;
+  }
   if (config.octal_index >= 0) {
     const int i = config.octal_index;
     re_args_[i].type = kTokenInt;
@@ -619,6 +637,23 @@ bool Lexer::ParseInt(std::string_view text, ParseType parse_type,
       }
       // This is now defined behavior to 2's compliment starting in C++20.
       value = octal_value;
+      return true;
+    } break;
+    case ParseType::kBinary: {
+      uint64_t binary_value = 0;
+      std::string_view digits =
+          text.substr(binary_.prefix, text.size() - binary_.size_offset);
+      for (char ch : digits) {
+        if (binary_value >> 63 != 0) {
+          return false;
+        }
+        binary_value <<= 1;
+        if (ch == '1') {
+          binary_value |= 1;
+        }
+      }
+      // This is now defined behavior to 2's compliment starting in C++20.
+      value = binary_value;
       return true;
     } break;
   }
