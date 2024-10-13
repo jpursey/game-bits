@@ -62,7 +62,7 @@ bool CreateTokenPattern(std::string& token_pattern,
         absl::StrAppend(&token_pattern, "|");
       }
       absl::StrAppend(&token_pattern, "(");
-      absl::StrAppend(&token_pattern, lexer_config.hex_prefix);
+      absl::StrAppend(&token_pattern, RE2::QuoteMeta(lexer_config.hex_prefix));
       absl::StrAppend(&token_pattern, "[0-9");
       if (flags.IsSet(LexerFlag::kHexUpperIntegers)) {
         absl::StrAppend(&token_pattern, "A-F");
@@ -70,7 +70,9 @@ bool CreateTokenPattern(std::string& token_pattern,
       if (flags.IsSet(LexerFlag::kHexLowerIntegers)) {
         absl::StrAppend(&token_pattern, "a-f");
       }
-      absl::StrAppend(&token_pattern, "]+)");
+      absl::StrAppend(&token_pattern, "]+");
+      absl::StrAppend(&token_pattern, RE2::QuoteMeta(lexer_config.hex_suffix));
+      absl::StrAppend(&token_pattern, ")");
     }
     absl::StrAppend(&token_pattern, "|");
   }
@@ -247,6 +249,14 @@ std::unique_ptr<Lexer> Lexer::Create(const LexerConfig& lexer_config,
     config.not_token_end_pattern = "[^ \\t]*";
   }
   config.token_pattern = token_pattern;
+  config.hex.prefix = lexer_config.hex_prefix.size();
+  config.hex.size_offset = config.hex.prefix + lexer_config.hex_suffix.size();
+  config.octal.prefix = lexer_config.octal_prefix.size();
+  config.octal.size_offset =
+      config.octal.prefix + lexer_config.octal_suffix.size();
+  config.binary.prefix = lexer_config.binary_prefix.size();
+  config.binary.size_offset =
+      config.binary.prefix + lexer_config.binary_suffix.size();
   return absl::WrapUnique(new Lexer(config));
 }
 
@@ -265,7 +275,10 @@ Lexer::Lexer(const Config& config)
       re_symbol_(config.symbol_pattern, Re2MatchLongest()),
       re_token_end_(config.token_end_pattern),
       re_not_token_end_(config.not_token_end_pattern),
-      re_token_(config.token_pattern, Re2MatchLongest()) {
+      re_token_(config.token_pattern, Re2MatchLongest()),
+      hex_(config.hex),
+      octal_(config.octal),
+      binary_(config.binary) {
   re_args_.resize(config.token_pattern_count);
   re_token_args_.resize(config.token_pattern_count);
   if (config.int_index >= 0) {
@@ -551,7 +564,9 @@ bool Lexer::ParseInt(std::string_view text, ParseType parse_type,
       return absl::SimpleAtoi(text, &value);
     case ParseType::kHex: {
       uint64_t hex_value = 0;
-      for (char ch : text) {
+      std::string_view digits =
+          text.substr(hex_.prefix, text.size() - hex_.size_offset);
+      for (char ch : digits) {
         if (hex_value >> 60 != 0) {
           return false;
         }

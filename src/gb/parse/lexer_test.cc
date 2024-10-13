@@ -654,6 +654,82 @@ TEST(LexerTest, ParseIntDecimalMatchedBeforeHex) {
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
+TEST(LexerTest, ParseIntHexPrefix) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers,
+                LexerFlag::kHexUpperIntegers},
+      .hex_prefix = "0x",
+      .hex_suffix = "",
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("0x123 123A 42");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0x123);
+  EXPECT_EQ(lexer->GetTokenText(token), "0x123");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorUnexpectedCharacter);
+  EXPECT_EQ(lexer->GetTokenText(token), "123A");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 42);
+  EXPECT_EQ(lexer->GetTokenText(token), "42");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseIntHexSuffix) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers,
+                LexerFlag::kHexUpperIntegers},
+      .hex_prefix = "",
+      .hex_suffix = "h",
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("123h 123A 42");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0x123);
+  EXPECT_EQ(lexer->GetTokenText(token), "123h");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorUnexpectedCharacter);
+  EXPECT_EQ(lexer->GetTokenText(token), "123A");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 42);
+  EXPECT_EQ(lexer->GetTokenText(token), "42");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseIntHexPrefixAndSuffix) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers,
+                LexerFlag::kHexUpperIntegers},
+      .hex_prefix = "0x",
+      .hex_suffix = "h",
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("0x123h 0x123 123h 42");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0x123);
+  EXPECT_EQ(lexer->GetTokenText(token), "0x123h");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorUnexpectedCharacter);
+  EXPECT_EQ(lexer->GetTokenText(token), "0x123");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorUnexpectedCharacter);
+  EXPECT_EQ(lexer->GetTokenText(token), "123h");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 42);
+  EXPECT_EQ(lexer->GetTokenText(token), "42");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
 TEST(LexerTest, ParseOctalIntegerWithoutOctalSupport) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers},
