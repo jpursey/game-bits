@@ -75,9 +75,8 @@ class Symbol {
     // detect the endianness of the system at compile time and reverse the bytes
     // if necessary (so it can be constexpr). Sadly, this is non trivial.
     SymbolValue value = 0;
-    str += size - 1;
     while (size > 0) {
-      value = (value << 8) | *str--;
+      value = (value << 8) | str[size-1];
       --size;
     }
     return value;

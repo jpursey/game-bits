@@ -188,21 +188,25 @@ struct LexerConfig {
   // Overall flags that control lexer behavior.
   LexerFlags flags;
 
-  // Integer prefixes and suffixes.
-  std::string_view binary_prefix = "0b";  // Used for kBinaryIntegers.
-  std::string_view binary_suffix = "";    // Used for kBinaryIntegers.
-  std::string_view octal_prefix = "0";    // Used for kOctalIntegers.
-  std::string_view octal_suffix = "";     // Used for kOctalIntegers.
-  std::string_view decimal_prefix = "";   // Used for kDecimalIntegers.
-  std::string_view decimal_suffix = "";   // Used for kDecimalIntegers.
-  std::string_view hex_prefix = "0x";     // Used for kHexIntegers.
-  std::string_view hex_suffix = "";       // Used for kHexIntegers.
+  // Prefixes and suffixes.
+  std::string_view binary_prefix = "";   // Used for kBinaryIntegers.
+  std::string_view binary_suffix = "";   // Used for kBinaryIntegers.
+  std::string_view octal_prefix = "";    // Used for kOctalIntegers.
+  std::string_view octal_suffix = "";    // Used for kOctalIntegers.
+  std::string_view decimal_prefix = "";  // Used for kDecimalIntegers.
+  std::string_view decimal_suffix = "";  // Used for kDecimalIntegers.
+  std::string_view hex_prefix = "";      // Used for kHexIntegers.
+  std::string_view hex_suffix = "";      // Used for kHexIntegers.
+  std::string_view float_prefix = "";    // Used for floating point numbers.
+  std::string_view float_suffix = "";    // Used for floating point numbers.
+  std::string_view ident_prefix = "";    // Used for identifiers.
+  std::string_view ident_suffix = "";    // Used for identifiers.
 
-  // Escape character settings
-  char escape = '\\';         // Used for kCharacterEscaping or kEscapeNewLine.
-  char escape_newline = 'n';  // Used for kNewlineEscape.
-  char escape_tab = 't';      // Used for kTabEscape.
-  char escape_hex = 'x';      // Used for kHexEscape (followed by 2 hex digits).
+  // Escape character settings.
+  char escape = 0;          // Used for kCharacterEscaping or kEscapeNewLine.
+  char escape_newline = 0;  // Used for kNewlineEscape.
+  char escape_tab = 0;      // Used for kTabEscape.
+  char escape_hex = 0;      // Used for kHexEscape (followed by 2 hex digits).
 
   // Comment settings.
   struct BlockComment {
@@ -219,6 +223,64 @@ struct LexerConfig {
   // All special keywords. These can be anything, but are typically are
   // identifiers which have unique meaning.
   absl::Span<const std::string_view> keywords;
+};
+
+inline constexpr std::string_view kCStyleLineComments[] = {"//"};
+inline constexpr LexerConfig::BlockComment kCStyleBlockComments[] = {
+    {"/*", "*/"}};
+
+inline constexpr Symbol kCStyleArithmeticSymbols[] = {'+', '-', '*', '/', '%'};
+inline constexpr Symbol kCStyleBitwiseSymbols[] = {'~', '&',  '|',
+                                                   '^', "<<", ">>"};
+inline constexpr Symbol kCStyleBooleanSymbols[] = {'!', "&&", "||"};
+inline constexpr Symbol kCStyleComparisonSymbols[] = {
+    '<', '>', "<=", ">=", "==", "!="};
+inline constexpr Symbol kCStyleAssignmentSymbols[] = {"="};
+inline constexpr Symbol kCStyleArithmaticAssignmentSymbols[] = {
+    "+=", "-=", "*=", "/=", "%="};
+inline constexpr Symbol kCStyleBitwiseAssignmentSymbols[] = {
+    "&=", "|=", "^=", "<<=", ">>="};
+inline constexpr Symbol kCStyleIncDecSymbols[] = {"++", "--"};
+inline constexpr Symbol kCStyleDerefSymbols[] = {'.', "->"};
+inline constexpr Symbol kCStyleSeparatorSymbols[] = {',', ';', ':', '?'};
+inline constexpr Symbol kCStyleGroupingSymbols[] = {'(', ')', '[',
+                                                    ']', '{', '}'};
+
+// All single character symbols except backtick, backslash, and quotes.
+inline constexpr Symbol kCharSymbols[] = {
+    '+', '-', '*', '/', '%', '~', '&', '|', '^', '!', '<', '>', '=', '.',
+    ',', ';', ':', '?', '$', '#', '@', '(', ')', '[', ']', '{', '}'};
+
+// Extension of kCharSymbols with C-style expression symbols.
+inline constexpr Symbol kCharSymbolsWithCStyleExpressions[] = {
+    '+', '-',  '*',  '/',  '%',  '~',  '&',  '|',  '^',  '!',  '<',  '>', '=',
+    '.', ',',  ';',  ':',  '?',  '$',  '#',  '@',  '(',  ')',  '[',  ']', '{',
+    '}', "<=", ">=", "==", "!=", "<<", ">>", "&&", "||", "++", "--", "->"};
+
+// Extension of kCharSymbolsWithCStyleExpressions with combo assignment symbols.
+inline constexpr Symbol kCharSymbolsWithCStyleExpressionsAndAssignment[] = {
+    '+',  '-',  '*',  '/',  '%',  '~',  '&',  '|',  '^',  '!',  '<',   '>',
+    '=',  '.',  ',',  ';',  ':',  '?',  '$',  '#',  '@',  '(',  ')',   '[',
+    ']',  '{',  '}',  "<=", ">=", "==", "!=", "<<", ">>", "&&", "||",  "++",
+    "--", "->", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>="};
+
+// Only C-style symbols (no # or @ or $).
+inline constexpr Symbol kCStyleSymbols[] = {
+    '+',  '-',  '*',  '/',  '%',  '~',  '&',  '|',   '^',  '!',  '<',  '>',
+    '=',  '.',  ',',  ';',  ':',  '?',  '(',  ')',   '[',  ']',  '{',  '}',
+    "<=", ">=", "==", "!=", "<<", ">>", "&&", "||",  "++", "--", "->", "+=",
+    "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>="};
+
+inline constexpr LexerConfig kCStyleLexerConfig = {
+    .flags = kLexerFlags_C,
+    .binary_prefix = "0b",
+    .octal_prefix = "0",
+    .hex_prefix = "0x",
+    .float_prefix = "",
+    .ident_prefix = "",
+    .line_comments = kCStyleLineComments,
+    .block_comments = kCStyleBlockComments,
+    .symbols = kCStyleSymbols,
 };
 
 }  // namespace gb
