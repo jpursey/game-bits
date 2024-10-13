@@ -327,7 +327,7 @@ class Lexer final {
     ReOrder re_order = ReOrder::kSymLast;
   };
 
-  struct IntConfig {
+  struct TokenConfig {
     int prefix = 0;
     int size_offset = 0;
   };
@@ -347,10 +347,12 @@ class Lexer final {
     std::string token_end_pattern;
     std::string not_token_end_pattern;
     std::string token_pattern;
-    IntConfig binary;
-    IntConfig octal;
-    IntConfig decimal;
-    IntConfig hex;
+    TokenConfig binary_config;
+    TokenConfig octal_config;
+    TokenConfig decimal_config;
+    TokenConfig hex_config;
+    TokenConfig float_config;
+    TokenConfig ident_config;
   };
 
   enum class ParseType {
@@ -393,10 +395,12 @@ class Lexer final {
   RE2 re_token_;
   std::vector<TokenArg> re_args_;
   std::vector<RE2::Arg*> re_token_args_;
-  IntConfig binary_;
-  IntConfig octal_;
-  IntConfig decimal_;
-  IntConfig hex_;
+  TokenConfig binary_config_;
+  TokenConfig octal_config_;
+  TokenConfig decimal_config_;
+  TokenConfig hex_config_;
+  TokenConfig float_config_;
+  TokenConfig ident_config_;
 
   std::vector<std::unique_ptr<Content>> content_;
   absl::flat_hash_map<std::string_view, LexerContentId> filename_to_id_;

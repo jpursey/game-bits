@@ -499,7 +499,6 @@ TEST(LexerTest, ParseDecimalIntegerWithPrefix) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers},
       .decimal_prefix = "0d",
-      .decimal_suffix = "",
   });
   ASSERT_NE(lexer, nullptr);
   const LexerContentId content = lexer->AddContent("0d123 123");
@@ -517,7 +516,6 @@ TEST(LexerTest, ParseDecimalIntegerWithPrefix) {
 TEST(LexerTest, ParseDecimalIntegerWithSuffix) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers},
-      .decimal_prefix = "",
       .decimal_suffix = "d",
   });
   ASSERT_NE(lexer, nullptr);
@@ -577,8 +575,6 @@ TEST(LexerTest, ParseHexIntegerWithHexSupport) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kInt64, LexerFlag::kHexUpperIntegers,
                 LexerFlag::kHexLowerIntegers},
-      .hex_prefix = "",
-      .hex_suffix = "",
   });
   ASSERT_NE(lexer, nullptr);
   const LexerContentId content = lexer->AddContent("123abc FD0e 42");
@@ -601,8 +597,6 @@ TEST(LexerTest, ParseHexIntegerMaxSize64bit) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kInt64, LexerFlag::kHexUpperIntegers,
                 LexerFlag::kHexLowerIntegers},
-      .hex_prefix = "",
-      .hex_suffix = "",
   });
   ASSERT_NE(lexer, nullptr);
   const LexerContentId content = lexer->AddContent(
@@ -626,8 +620,6 @@ TEST(LexerTest, ParseHexIntegerMaxSize64bit) {
 TEST(LexerTest, ParseHexIntegerUpperOnly) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kInt64, LexerFlag::kHexUpperIntegers},
-      .hex_prefix = "",
-      .hex_suffix = "",
   });
   ASSERT_NE(lexer, nullptr);
   const LexerContentId content = lexer->AddContent("123abc FD0E 42");
@@ -649,8 +641,6 @@ TEST(LexerTest, ParseHexIntegerUpperOnly) {
 TEST(LexerTest, ParseHexIntegerLowerOnly) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kInt64, LexerFlag::kHexLowerIntegers},
-      .hex_prefix = "",
-      .hex_suffix = "",
   });
   ASSERT_NE(lexer, nullptr);
   const LexerContentId content = lexer->AddContent("123abc FD0E 42");
@@ -673,8 +663,6 @@ TEST(LexerTest, ParseHexIntegerNegativeNotSupported) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kInt64, LexerFlag::kHexUpperIntegers,
                 LexerFlag::kNegativeIntegers},
-      .hex_prefix = "",
-      .hex_suffix = "",
   });
   ASSERT_NE(lexer, nullptr);
   const LexerContentId content = lexer->AddContent("123ABC -FD0E 42");
@@ -697,8 +685,6 @@ TEST(LexerTest, ParseHexIntegerMatchedAfterDecimal) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers,
                 LexerFlag::kHexUpperIntegers},
-      .hex_prefix = "",
-      .hex_suffix = "",
   });
   ASSERT_NE(lexer, nullptr);
   const LexerContentId content = lexer->AddContent("123A 42");
@@ -718,7 +704,6 @@ TEST(LexerTest, ParseHexIntegerWithPrefix) {
       .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers,
                 LexerFlag::kHexUpperIntegers},
       .hex_prefix = "0x",
-      .hex_suffix = "",
   });
   ASSERT_NE(lexer, nullptr);
   const LexerContentId content = lexer->AddContent("0x123 123A 42");
@@ -741,7 +726,6 @@ TEST(LexerTest, ParseHexIntegerWithSuffix) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers,
                 LexerFlag::kHexUpperIntegers},
-      .hex_prefix = "",
       .hex_suffix = "h",
   });
   ASSERT_NE(lexer, nullptr);
@@ -809,8 +793,6 @@ TEST(LexerTest, ParseOctalIntegerWithoutOctalSupport) {
 TEST(LexerTest, ParseOctalIntegerWithOctalSupport) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kInt64, LexerFlag::kOctalIntegers},
-      .octal_prefix = "",
-      .octal_suffix = "",
   });
   ASSERT_NE(lexer, nullptr);
   const LexerContentId content = lexer->AddContent("123 0456 77");
@@ -832,8 +814,6 @@ TEST(LexerTest, ParseOctalIntegerWithOctalSupport) {
 TEST(LexerTest, ParseOctalIntegerMaxSize64Bit) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kInt64, LexerFlag::kOctalIntegers},
-      .octal_prefix = "",
-      .octal_suffix = "",
   });
   ASSERT_NE(lexer, nullptr);
   const LexerContentId content = lexer->AddContent(
@@ -860,8 +840,6 @@ TEST(LexerTest, ParseOctalIntegerNegativeNotSupported) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kInt64, LexerFlag::kOctalIntegers,
                 LexerFlag::kNegativeIntegers},
-      .octal_prefix = "",
-      .octal_suffix = "",
   });
   ASSERT_NE(lexer, nullptr);
   const LexerContentId content = lexer->AddContent("123 -456 42");
@@ -884,8 +862,6 @@ TEST(LexerTest, ParseOctalIntegerMatchedBeforeDecimal) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers,
                 LexerFlag::kOctalIntegers},
-      .octal_prefix = "",
-      .octal_suffix = "",
   });
   ASSERT_NE(lexer, nullptr);
   const LexerContentId content = lexer->AddContent("0123 42 81");
@@ -909,7 +885,6 @@ TEST(LexerTest, ParseOctalIntegerWithPrefix) {
       .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers,
                 LexerFlag::kOctalIntegers},
       .octal_prefix = "0",
-      .octal_suffix = "",
   });
   ASSERT_NE(lexer, nullptr);
   const LexerContentId content = lexer->AddContent("0123 0456 42");
@@ -932,7 +907,6 @@ TEST(LexerTest, ParseOctalIntegerWithSuffix) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers,
                 LexerFlag::kOctalIntegers},
-      .octal_prefix = "",
       .octal_suffix = "o",
   });
   ASSERT_NE(lexer, nullptr);
@@ -1000,8 +974,6 @@ TEST(LexerTest, ParseBinaryIntegerWithoutBinarySupport) {
 TEST(LexerTest, ParseBinaryIntegerWithBinarySupport) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kInt64, LexerFlag::kBinaryIntegers},
-      .binary_prefix = "",
-      .binary_suffix = "",
   });
   ASSERT_NE(lexer, nullptr);
   const LexerContentId content = lexer->AddContent("1010 1101 42");
@@ -1023,8 +995,6 @@ TEST(LexerTest, ParseBinaryIntegerWithBinarySupport) {
 TEST(LexerTest, ParseBinaryIntegerMaxSize64Bit) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kInt64, LexerFlag::kBinaryIntegers},
-      .binary_prefix = "",
-      .binary_suffix = "",
   });
   ASSERT_NE(lexer, nullptr);
   const LexerContentId content = lexer->AddContent(
@@ -1050,8 +1020,6 @@ TEST(LexerTest, ParseBinaryIntegerNegativeNotSupported) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kInt64, LexerFlag::kBinaryIntegers,
                 LexerFlag::kNegativeIntegers},
-      .binary_prefix = "",
-      .binary_suffix = "",
   });
   ASSERT_NE(lexer, nullptr);
   const LexerContentId content = lexer->AddContent("1010 -1101 11");
@@ -1074,8 +1042,6 @@ TEST(LexerTest, ParseBinaryIntegerMatchedBeforeDecimal) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers,
                 LexerFlag::kBinaryIntegers},
-      .binary_prefix = "",
-      .binary_suffix = "",
   });
   ASSERT_NE(lexer, nullptr);
   const LexerContentId content = lexer->AddContent("1010 1101 12");
@@ -1099,7 +1065,6 @@ TEST(LexerTest, ParseBinaryIntegerWithPrefix) {
       .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers,
                 LexerFlag::kBinaryIntegers},
       .binary_prefix = "0b",
-      .binary_suffix = "",
   });
   ASSERT_NE(lexer, nullptr);
   const LexerContentId content = lexer->AddContent("0b1010 1010 12");
@@ -1122,7 +1087,6 @@ TEST(LexerTest, ParseBinaryIntegerWithSuffix) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers,
                 LexerFlag::kBinaryIntegers},
-      .binary_prefix = "",
       .binary_suffix = "b",
   });
   ASSERT_NE(lexer, nullptr);
@@ -1175,12 +1139,6 @@ TEST(LexerTest, MatchOrderAllIntegerFormats) {
       .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers,
                 LexerFlag::kHexUpperIntegers, LexerFlag::kOctalIntegers,
                 LexerFlag::kBinaryIntegers},
-      .binary_prefix = "",
-      .binary_suffix = "",
-      .octal_prefix = "",
-      .octal_suffix = "",
-      .hex_prefix = "",
-      .hex_suffix = "",
   });
   ASSERT_NE(lexer, nullptr);
   const LexerContentId content = lexer->AddContent("101 170 190 1F0");
@@ -1238,7 +1196,7 @@ TEST(LexerTest, IntegerSpecialCharacterPrefixAndSuffix) {
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
-TEST(LexerTest, ParsePositiveFloat) {
+TEST(LexerTest, ParseFloatPositive) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kFloat64, LexerFlag::kDecimalFloats},
   });
@@ -1259,7 +1217,7 @@ TEST(LexerTest, ParsePositiveFloat) {
   EXPECT_EQ(lexer->GetTokenText(token), "7");
 }
 
-TEST(LexerTest, ParsePositiveFloatWithLeadingPeriod) {
+TEST(LexerTest, ParseFloatPositiveWithLeadingPeriod) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kFloat64, LexerFlag::kDecimalFloats},
   });
@@ -1276,7 +1234,7 @@ TEST(LexerTest, ParsePositiveFloatWithLeadingPeriod) {
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
-TEST(LexerTest, ParsePositiveFloatWithTrailingPeriod) {
+TEST(LexerTest, ParseFloatPositiveWithTrailingPeriod) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kFloat64, LexerFlag::kDecimalFloats},
   });
@@ -1293,7 +1251,7 @@ TEST(LexerTest, ParsePositiveFloatWithTrailingPeriod) {
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
-TEST(LexerTest, ParsePositiveFloatsWithNegative) {
+TEST(LexerTest, ParseFloatNegativeWithoutSupport) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kFloat64, LexerFlag::kDecimalFloats},
   });
@@ -1312,7 +1270,7 @@ TEST(LexerTest, ParsePositiveFloatsWithNegative) {
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
-TEST(LexerTest, ParseNegativeFloatsWithNegative) {
+TEST(LexerTest, ParseFloatNegativeWithSupport) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kFloat64, LexerFlag::kDecimalFloats,
                 LexerFlag::kNegativeFloats},
@@ -1328,7 +1286,77 @@ TEST(LexerTest, ParseNegativeFloatsWithNegative) {
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
-TEST(LexerTest, ParseExponentFloatWithoutExponentSupport) {
+TEST(LexerTest, ParseFloatWithPrefix) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kFloat64, LexerFlag::kDecimalFloats,
+                LexerFlag::kNegativeFloats},
+      .float_prefix = "$",
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("$1.25 $-4.125 42");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenFloat);
+  EXPECT_EQ(token.GetFloat(), 1.25);
+  EXPECT_EQ(lexer->GetTokenText(token), "$1.25");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenFloat);
+  EXPECT_EQ(token.GetFloat(), -4.125);
+  EXPECT_EQ(lexer->GetTokenText(token), "$-4.125");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorUnexpectedCharacter);
+  EXPECT_EQ(lexer->GetTokenText(token), "42");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseFloatWithSuffix) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kFloat64, LexerFlag::kDecimalFloats,
+                LexerFlag::kNegativeFloats},
+      .float_suffix = "$",
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("1.25$ -4.125$ 42");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenFloat);
+  EXPECT_EQ(token.GetFloat(), 1.25);
+  EXPECT_EQ(lexer->GetTokenText(token), "1.25$");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenFloat);
+  EXPECT_EQ(token.GetFloat(), -4.125);
+  EXPECT_EQ(lexer->GetTokenText(token), "-4.125$");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorUnexpectedCharacter);
+  EXPECT_EQ(lexer->GetTokenText(token), "42");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseFloatWithPrefixAndSuffix) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kFloat64, LexerFlag::kDecimalFloats,
+                LexerFlag::kNegativeFloats},
+      .float_prefix = "$",
+      .float_suffix = "f",
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("$1.25f $-4.125 42f");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenFloat);
+  EXPECT_EQ(token.GetFloat(), 1.25);
+  EXPECT_EQ(lexer->GetTokenText(token), "$1.25f");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorUnexpectedCharacter);
+  EXPECT_EQ(lexer->GetTokenText(token), "$-4.125");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorUnexpectedCharacter);
+  EXPECT_EQ(lexer->GetTokenText(token), "42f");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseFloatExponentWithoutSupport) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kFloat64, LexerFlag::kDecimalFloats},
   });
