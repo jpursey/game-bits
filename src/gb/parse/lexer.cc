@@ -39,12 +39,24 @@ bool CreateTokenPattern(std::string& token_pattern,
   }
 
   if (LexerSupportsIntegers(flags)) {
-    if (flags.Intersects(
-            {LexerFlag::kOctalIntegers, LexerFlag::kBinaryIntegers})) {
+    if (flags.Intersects({LexerFlag::kBinaryIntegers})) {
       error = Lexer::kErrorNotImplemented;
       return false;
     }
     bool first = true;
+    if (flags.IsSet(LexerFlag::kOctalIntegers)) {
+      if (!first) {
+        absl::StrAppend(&token_pattern, "|");
+      }
+      first = false;
+      absl::StrAppend(&token_pattern, "(");
+      absl::StrAppend(&token_pattern,
+                      RE2::QuoteMeta(lexer_config.octal_prefix));
+      absl::StrAppend(&token_pattern, "[0-7]+");
+      absl::StrAppend(&token_pattern,
+                      RE2::QuoteMeta(lexer_config.octal_suffix));
+      absl::StrAppend(&token_pattern, ")");
+    }
     if (flags.IsSet(LexerFlag::kDecimalIntegers)) {
       if (!first) {
         absl::StrAppend(&token_pattern, "|");
@@ -204,6 +216,9 @@ std::unique_ptr<Lexer> Lexer::Create(const LexerConfig& lexer_config,
 
   int index = 0;
   if (LexerSupportsIntegers(lexer_config.flags)) {
+    if (lexer_config.flags.IsSet(LexerFlag::kOctalIntegers)) {
+      config.octal_index = index++;
+    }
     if (lexer_config.flags.IsSet(LexerFlag::kDecimalIntegers)) {
       config.int_index = index++;
     }
@@ -281,6 +296,12 @@ Lexer::Lexer(const Config& config)
       binary_(config.binary) {
   re_args_.resize(config.token_pattern_count);
   re_token_args_.resize(config.token_pattern_count);
+  if (config.octal_index >= 0) {
+    const int i = config.octal_index;
+    re_args_[i].type = kTokenInt;
+    re_args_[i].parse_type = ParseType::kOctal;
+    re_token_args_[i] = &re_args_[i].arg;
+  }
   if (config.int_index >= 0) {
     const int i = config.int_index;
     re_args_[i].type = kTokenInt;
@@ -581,6 +602,23 @@ bool Lexer::ParseInt(std::string_view text, ParseType parse_type,
       }
       // This is now defined behavior to 2's compliment starting in C++20.
       value = hex_value;
+      return true;
+    } break;
+    case ParseType::kOctal: {
+      uint64_t octal_value = 0;
+      std::string_view digits =
+          text.substr(octal_.prefix, text.size() - octal_.size_offset);
+      for (char ch : digits) {
+        if (octal_value >> 61 != 0) {
+          return false;
+        }
+        octal_value <<= 3;
+        if (ch >= '0' && ch <= '7') {
+          octal_value |= ch - '0';
+        }
+      }
+      // This is now defined behavior to 2's compliment starting in C++20.
+      value = octal_value;
       return true;
     } break;
   }
