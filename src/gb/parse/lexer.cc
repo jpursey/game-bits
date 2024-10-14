@@ -103,17 +103,17 @@ bool CreateTokenPattern(std::string& token_pattern,
   }
 
   if (LexerSupportsFloats(flags)) {
-    if (flags.Intersects({LexerFlag::kExponentFloats})) {
-      error = Lexer::kErrorNotImplemented;
-      return false;
-    }
     absl::StrAppend(&token_pattern, "(");
     absl::StrAppend(&token_pattern, RE2::QuoteMeta(lexer_config.float_prefix));
-    if (flags.IsSet(LexerFlag::kDecimalFloats)) {
-      if (flags.IsSet(LexerFlag::kNegativeFloats)) {
-        absl::StrAppend(&token_pattern, "-?");
+    if (flags.IsSet(LexerFlag::kNegativeFloats)) {
+      absl::StrAppend(&token_pattern, "-?");
+    }
+    absl::StrAppend(&token_pattern, "[0-9]+(?:\\.[0-9]+)?");
+    if (flags.IsSet(LexerFlag::kExponentFloats)) {
+      absl::StrAppend(&token_pattern, "(?:[eE][-+]?[0-9]+)");
+      if (flags.IsSet(LexerFlag::kDecimalFloats)) {
+        absl::StrAppend(&token_pattern, "?");
       }
-      absl::StrAppend(&token_pattern, "[0-9]+(?:\\.[0-9]+)?");
     }
     absl::StrAppend(&token_pattern, RE2::QuoteMeta(lexer_config.float_suffix));
     absl::StrAppend(&token_pattern, ")|");
@@ -729,7 +729,7 @@ Token Lexer::ParseNextToken(Content* content, Line* line) {
       double value = 0;
       std::string_view digits = match_text.substr(
           float_config_.prefix, match_text.size() - float_config_.size_offset);
-      if (!absl::SimpleAtod(digits, &value)) {
+      if (!absl::SimpleAtod(digits, &value) || !std::isnormal(value)) {
         return Token::CreateError(token_index, &kErrorInvalidFloat);
       }
       return Token::CreateFloat(token_index, value, sizeof(value));
