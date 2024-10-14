@@ -106,8 +106,8 @@ namespace gb {
 //   }
 //
 // This outputs:
-//    7(list) 3(:) 3({) 7(one) 3(:) 5(1) 3(,) 7(two) 3(:) 5(2) 3(})
-//    7(range) 3(:) 5(-100) 3(..) 5(100)
+//    9(list) 3(:) 3({) 9(one) 3(:) 4(1) 3(,) 9(two) 3(:) 4(2) 3(})
+//    9(range) 3(:) 4(-100) 3(..) 4(100)
 //
 // This class is thread-compatible.
 class Lexer final {
