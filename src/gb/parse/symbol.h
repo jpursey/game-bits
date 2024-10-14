@@ -17,7 +17,7 @@ namespace gb {
 using SymbolValue = uint64_t;
 
 // Maximum size of a symbol in characters.
-inline constexpr int kMaxSymbolSize = sizeof(SymbolValue);
+inline constexpr int kMaxSymbolSize = sizeof(SymbolValue) - 1;
 
 // Symbols are used to represent token values that are intended to separate
 // other types of tokens.
@@ -32,10 +32,11 @@ inline constexpr int kMaxSymbolSize = sizeof(SymbolValue);
 //   of a negative number).
 //
 // Examples:
-//   constexpr Symbol kShiftLeft = "<<";
-//   if (symbol == '+') {  // No need to create a symbol for simple characters.
+//   // Comparisons against characters and constant strings are both valid (and
+//   // are reduced down to a simple integer comparison in optimized builds).
+//   if (symbol == '+') {
 //     // Handle addition.
-//   } else if (symbol == kShiftLeft) {
+//   } else if (symbol == "<<") {
 //     // Handle left shift.
 //   }
 class Symbol {
@@ -46,8 +47,8 @@ class Symbol {
   constexpr ~Symbol() = default;
 
   // Implicit constructors from a character or string literal.
-  constexpr Symbol(SymbolValue value) noexcept : value_(value) {}
-  constexpr Symbol(char ch) noexcept : value_(ch) {}
+  Symbol(SymbolValue value) noexcept;
+  constexpr Symbol(char ch) noexcept : value_{ch} {}
   constexpr Symbol(std::string_view str) noexcept;
   constexpr Symbol(const char* str) noexcept : Symbol(std::string_view(str)) {}
   Symbol(const std::string& str) noexcept : Symbol(std::string_view(str)) {}
@@ -57,7 +58,7 @@ class Symbol {
   constexpr bool IsValid() const;
 
   // Returns the underlying symbol value.
-  constexpr SymbolValue GetValue() const { return value_; }
+  SymbolValue GetValue() const;
 
   // Returns the size of the symbol in characters.
   constexpr int GetSize() const;
@@ -66,60 +67,67 @@ class Symbol {
   constexpr std::string_view GetString() const;
 
   // Full comparison operators are supported.
-  constexpr auto operator<=>(const Symbol&) const = default;
-
- private:
-  static constexpr SymbolValue kEndianTest = 1;
-  static constexpr SymbolValue ToValue(const char* str, size_t size) {
-    // TODO: This is not endian safe (it assumes little endian). We need to
-    // detect the endianness of the system at compile time and reverse the bytes
-    // if necessary (so it can be constexpr). Sadly, this is non trivial.
-    SymbolValue value = 0;
-    while (size > 0) {
-      value = (value << 8) | str[size-1];
-      --size;
-    }
-    return value;
+  //
+  // Note: This is not defaulted because it is much faster in optimized builds.
+  auto operator<=>(const Symbol& other) const {
+    return GetValue() <=> other.GetValue();
+  }
+  bool operator==(const Symbol& other) const {
+    return GetValue() == other.GetValue();
   }
 
-  SymbolValue value_ = 0;
+ private:
+  char value_[kMaxSymbolSize + 1] = {};
 };
-static_assert(sizeof(Symbol) == kMaxSymbolSize);
+static_assert(sizeof(Symbol) == kMaxSymbolSize + 1);
 
 template <typename Sink>
 inline void AbslStringify(Sink& sink, const Symbol& symbol) {
   absl::Format(&sink, "\"%s\"", symbol.GetString());
 }
 
-constexpr Symbol::Symbol(std::string_view str) noexcept
-    : value_(ToValue(str.data(), str.size())) {}
+inline Symbol::Symbol(SymbolValue value) noexcept {
+  // This cannot be made constexpr because of the memcpy, but this is much
+  // faster in optimized builds.
+  std::memcpy(value_, &value, sizeof(value));
+  value_[kMaxSymbolSize] = 0;
+}
+
+constexpr Symbol::Symbol(std::string_view str) noexcept {
+  for (int i = 0; i < std::min<int>(str.size(), kMaxSymbolSize); ++i) {
+    value_[i] = str[i];
+  }
+}
+
+inline SymbolValue Symbol::GetValue() const {
+  // This cannot be made constexpr because of the memcpy, but this is much
+  // faster in optimized builds.
+  SymbolValue value;
+  std::memcpy(&value, value_, sizeof(value));
+  return value;
+}
 
 constexpr int Symbol::GetSize() const {
-  SymbolValue value = value_;
-  int size = 0;
-  while (value > 0) {
-    value >>= 8;
-    ++size;
-  }
-  return size;
+  return std::string_view(value_).size();
 }
 
 constexpr std::string_view Symbol::GetString() const {
-  return std::string_view(reinterpret_cast<const char*>(&value_), GetSize());
+  return std::string_view(value_);
 }
 
 constexpr bool Symbol::IsValid() const {
-  SymbolValue value = value_;
-  if (value == 0) {
+  if (value_[0] == 0) {
     return false;
   }
-  while (value > 0) {
-    if (!absl::ascii_isgraph(value & 0xFF)) {
+  for (char ch : value_) {
+    if (ch == 0) {
+      return true;
+    }
+    if (!absl::ascii_isgraph(ch)) {
       return false;
     }
-    value >>= 8;
   }
-  return true;
+  return false;
 }
 
 }  // namespace gb

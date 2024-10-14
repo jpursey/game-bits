@@ -361,7 +361,8 @@ TEST(LexerTest, NextTokenForEmptyContent) {
 
 TEST(LexerTest, InvalidSymbolCharacters) {
   int prefix_count = 0;
-  for (int ch = 0; ch < 256; ++ch, prefix_count = (prefix_count + 1) % 8) {
+  for (int ch = 0; ch < 256;
+       ++ch, prefix_count = (prefix_count + 1) % kMaxSymbolSize) {
     if (absl::ascii_isgraph(ch)) {
       continue;
     }

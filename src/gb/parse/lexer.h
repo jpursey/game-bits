@@ -129,7 +129,7 @@ class Lexer final {
   // tokens).
   static const std::string_view kErrorNoTokenSpec;
 
-  // The token referred to invalid content, or content associated with this
+  // The token referred to invalid content, or content not associated with this
   // Lexer instance.
   static const std::string_view kErrorInvalidTokenContent;
 
