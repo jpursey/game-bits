@@ -754,7 +754,7 @@ Token Lexer::ParseNextToken(Content* content, Line* line) {
       if (!ParseInt(match_text, match->parse_type, value)) {
         return Token::CreateError(token_index, &kErrorInvalidInteger);
       }
-      return Token::CreateInt(token_index, value, sizeof(value));
+      return Token::CreateInt(token_index, value);
     } break;
     case kTokenFloat: {
       std::string_view digits = match_text.substr(
@@ -764,13 +764,13 @@ Token Lexer::ParseNextToken(Content* content, Line* line) {
         if (!absl::SimpleAtod(digits, &value) || !std::isnormal(value)) {
           return Token::CreateError(token_index, &kErrorInvalidFloat);
         }
-        return Token::CreateFloat(token_index, value, sizeof(value));
+        return Token::CreateFloat(token_index, value);
       } else {
         float value = 0;
         if (!absl::SimpleAtof(digits, &value) || !std::isnormal(value)) {
           return Token::CreateError(token_index, &kErrorInvalidFloat);
         }
-        return Token::CreateFloat(token_index, value, sizeof(value));
+        return Token::CreateFloat(token_index, value);
       }
     } break;
     case kTokenIdentifier:

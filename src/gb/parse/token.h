@@ -122,16 +122,13 @@ class Token final {
     token.symbol_ = symbol.GetValue();
     return token;
   }
-  static Token CreateInt(TokenIndex token_index, int64_t value, uint16_t size) {
+  static Token CreateInt(TokenIndex token_index, int64_t value) {
     Token token(token_index, kTokenInt, ValueType::kInt);
-    token.sizeof_ = size;
     token.int_ = value;
     return token;
   }
-  static Token CreateFloat(TokenIndex token_index, double value,
-                           uint16_t size) {
+  static Token CreateFloat(TokenIndex token_index, double value) {
     Token token(token_index, kTokenFloat, ValueType::kFloat);
-    token.sizeof_ = size;
     token.float_ = value;
     return token;
   }
@@ -187,7 +184,6 @@ class Token final {
   TokenType type_ = kTokenNone;
   ValueType value_type_ = ValueType::kNone;
   union {
-    uint16_t sizeof_ = 0;  // For types int and float.
     uint16_t strlen_;      // For type string.
     uint16_t index_;       // For type index.
   };
