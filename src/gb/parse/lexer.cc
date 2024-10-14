@@ -360,6 +360,25 @@ Lexer::Lexer(const Config& config)
     re_args_[config.ident_index].type = kTokenIdentifier;
     re_token_args_[i] = &re_args_[i].arg;
   }
+  if (LexerSupportsIntegers(flags_)) {
+    if (flags_.IsSet(LexerFlag::kInt64)) {
+      max_int_ = std::numeric_limits<int64_t>::max();
+      min_int_ = std::numeric_limits<int64_t>::min();
+      int_sign_extend_ = 0;
+    } else if (flags_.IsSet(LexerFlag::kInt32)) {
+      max_int_ = std::numeric_limits<int32_t>::max();
+      min_int_ = std::numeric_limits<int32_t>::min();
+      int_sign_extend_ = 0xFFFFFFFF00000000;
+    } else if (flags_.IsSet(LexerFlag::kInt16)) {
+      max_int_ = std::numeric_limits<int16_t>::max();
+      min_int_ = std::numeric_limits<int16_t>::min();
+      int_sign_extend_ = 0xFFFFFFFFFFFF0000;
+    } else if (flags_.IsSet(LexerFlag::kInt8)) {
+      max_int_ = std::numeric_limits<int8_t>::max();
+      min_int_ = std::numeric_limits<int8_t>::min();
+      int_sign_extend_ = 0xFFFFFFFFFFFFFF00;
+    }
+  }
 }
 
 inline TokenIndex Lexer::Content::GetTokenIndex() const {
@@ -621,7 +640,10 @@ bool Lexer::ParseInt(std::string_view text, ParseType parse_type,
     case ParseType::kDefault: {
       std::string_view digits = text.substr(
           decimal_config_.prefix, text.size() - decimal_config_.size_offset);
-      return absl::SimpleAtoi(digits, &value);
+      if (!absl::SimpleAtoi(digits, &value)) {
+        return false;
+      }
+      return value >= min_int_ && value <= max_int_;
     } break;
     case ParseType::kHex: {
       uint64_t hex_value = 0;
@@ -641,8 +663,11 @@ bool Lexer::ParseInt(std::string_view text, ParseType parse_type,
         }
       }
       // This is now defined behavior to 2's compliment starting in C++20.
+      if (hex_value > static_cast<uint64_t>(max_int_)) {
+        hex_value |= int_sign_extend_;
+      }
       value = hex_value;
-      return true;
+      return value >= min_int_ && value <= max_int_;
     } break;
     case ParseType::kOctal: {
       uint64_t octal_value = 0;
@@ -658,8 +683,11 @@ bool Lexer::ParseInt(std::string_view text, ParseType parse_type,
         }
       }
       // This is now defined behavior to 2's compliment starting in C++20.
+      if (octal_value > static_cast<uint64_t>(max_int_)) {
+        octal_value |= int_sign_extend_;
+      }
       value = octal_value;
-      return true;
+      return value >= min_int_ && value <= max_int_;
     } break;
     case ParseType::kBinary: {
       uint64_t binary_value = 0;
@@ -675,8 +703,11 @@ bool Lexer::ParseInt(std::string_view text, ParseType parse_type,
         }
       }
       // This is now defined behavior to 2's compliment starting in C++20.
+      if (binary_value > static_cast<uint64_t>(max_int_)) {
+        binary_value |= int_sign_extend_;
+      }
       value = binary_value;
-      return true;
+      return value >= min_int_ && value <= max_int_;
     } break;
   }
   LOG(FATAL) << "Unhandled integer parse type";
@@ -726,13 +757,21 @@ Token Lexer::ParseNextToken(Content* content, Line* line) {
       return Token::CreateInt(token_index, value, sizeof(value));
     } break;
     case kTokenFloat: {
-      double value = 0;
       std::string_view digits = match_text.substr(
           float_config_.prefix, match_text.size() - float_config_.size_offset);
-      if (!absl::SimpleAtod(digits, &value) || !std::isnormal(value)) {
-        return Token::CreateError(token_index, &kErrorInvalidFloat);
+      if (flags_.IsSet(LexerFlag::kFloat64)) {
+        double value = 0;
+        if (!absl::SimpleAtod(digits, &value) || !std::isnormal(value)) {
+          return Token::CreateError(token_index, &kErrorInvalidFloat);
+        }
+        return Token::CreateFloat(token_index, value, sizeof(value));
+      } else {
+        float value = 0;
+        if (!absl::SimpleAtof(digits, &value) || !std::isnormal(value)) {
+          return Token::CreateError(token_index, &kErrorInvalidFloat);
+        }
+        return Token::CreateFloat(token_index, value, sizeof(value));
       }
-      return Token::CreateFloat(token_index, value, sizeof(value));
     } break;
     case kTokenIdentifier:
       return Token::CreateIdentifier(token_index, match_text.data(),

@@ -60,7 +60,18 @@ class Token final {
   // specific token types above for details on the valid value types for each
   // predefined token type.
   int64_t GetInt() const;              // Default: 0
+  int64_t GetInt64() const;            // Default: 0
+  int32_t GetInt32() const;            // Default: 0
+  int16_t GetInt16() const;            // Default: 0
+  int8_t GetInt8() const;              // Default: 0
+  uint64_t GetUInt() const;            // Default: 0
+  uint64_t GetUInt64() const;          // Default: 0
+  uint32_t GetUInt32() const;          // Default: 0
+  uint16_t GetUInt16() const;          // Default: 0
+  uint8_t GetUInt8() const;            // Default: 0
   double GetFloat() const;             // Default: 0.0
+  double GetFloat64() const;           // Default: 0.0
+  float GetFloat32() const;            // Default: 0.0f
   std::string_view GetString() const;  // Default: empty
   int GetIndex() const;                // Default: -1
   Symbol GetSymbol() const;            // Default: Symbol()
@@ -236,12 +247,41 @@ inline int64_t Token::GetInt() const {
   }
   return int_;
 }
+inline int64_t Token::GetInt64() const { return GetInt(); }
+inline int32_t Token::GetInt32() const {
+  return static_cast<int32_t>(GetInt());
+}
+inline int16_t Token::GetInt16() const {
+  return static_cast<int16_t>(GetInt());
+}
+inline int8_t Token::GetInt8() const { return static_cast<int8_t>(GetInt()); }
+inline uint64_t Token::GetUInt() const {
+  return static_cast<uint64_t>(GetInt());
+}
+inline uint64_t Token::GetUInt64() const {
+  return static_cast<uint64_t>(GetInt());
+}
+inline uint32_t Token::GetUInt32() const {
+  return static_cast<uint32_t>(GetInt());
+}
+inline uint16_t Token::GetUInt16() const {
+  return static_cast<uint16_t>(GetInt());
+}
+inline uint8_t Token::GetUInt8() const {
+  return static_cast<uint8_t>(GetInt());
+}
 
 inline double Token::GetFloat() const {
   if (value_type_ != ValueType::kFloat) {
     return 0;
   }
   return float_;
+}
+inline double Token::GetFloat64() const {
+  return GetFloat();
+}
+inline float Token::GetFloat32() const {
+  return static_cast<float>(GetFloat64());
 }
 
 inline std::string_view Token::GetString() const {

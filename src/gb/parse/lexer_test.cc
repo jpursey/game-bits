@@ -495,6 +495,96 @@ TEST(LexerTest, ParseDecimalIntegerMaxSize64bit) {
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
+TEST(LexerTest, ParseDecimalIntegerMaxSize32bit) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt32, LexerFlag::kDecimalIntegers,
+                LexerFlag::kNegativeIntegers},
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent(
+      "2147483647 -2147483648 "
+      "2147483648 -2147483649 "
+      "42");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), std::numeric_limits<int32_t>::max());
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), std::numeric_limits<int32_t>::min());
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidInteger);
+  EXPECT_EQ(lexer->GetTokenText(token), "2147483648");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidInteger);
+  EXPECT_EQ(lexer->GetTokenText(token), "-2147483649");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 42);
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseDecimalIntegerMaxSize16bit) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt16, LexerFlag::kDecimalIntegers,
+                LexerFlag::kNegativeIntegers},
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent(
+      "32767 -32768 "
+      "32768 -32769 "
+      "42");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), std::numeric_limits<int16_t>::max());
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), std::numeric_limits<int16_t>::min());
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidInteger);
+  EXPECT_EQ(lexer->GetTokenText(token), "32768");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidInteger);
+  EXPECT_EQ(lexer->GetTokenText(token), "-32769");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 42);
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseDecimalIntegerMaxSize8bit) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt8, LexerFlag::kDecimalIntegers,
+                LexerFlag::kNegativeIntegers},
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent(
+      "127 -128 "
+      "128 -129 "
+      "42");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), std::numeric_limits<int8_t>::max());
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), std::numeric_limits<int8_t>::min());
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidInteger);
+  EXPECT_EQ(lexer->GetTokenText(token), "128");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidInteger);
+  EXPECT_EQ(lexer->GetTokenText(token), "-129");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 42);
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
 TEST(LexerTest, ParseDecimalIntegerWithPrefix) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers},
@@ -611,6 +701,78 @@ TEST(LexerTest, ParseHexIntegerMaxSize64bit) {
   EXPECT_EQ(token.GetType(), kTokenError);
   EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidInteger);
   EXPECT_EQ(lexer->GetTokenText(token), "10000000000000000");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0x42);
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseHexIntegerMaxSize32bit) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt32, LexerFlag::kHexUpperIntegers,
+                LexerFlag::kHexLowerIntegers},
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent(
+      "7fffffff 80000000 100000000 42");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), std::numeric_limits<int32_t>::max());
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), std::numeric_limits<int32_t>::min());
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidInteger);
+  EXPECT_EQ(lexer->GetTokenText(token), "100000000");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0x42);
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseHexIntegerMaxSize16bit) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt16, LexerFlag::kHexUpperIntegers,
+                LexerFlag::kHexLowerIntegers},
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent(
+      "7fff 8000 10000 42");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), std::numeric_limits<int16_t>::max());
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), std::numeric_limits<int16_t>::min());
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidInteger);
+  EXPECT_EQ(lexer->GetTokenText(token), "10000");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0x42);
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseHexIntegerMaxSize8bit) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt8, LexerFlag::kHexUpperIntegers,
+                LexerFlag::kHexLowerIntegers},
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent(
+      "7f 80 100 42");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), std::numeric_limits<int8_t>::max());
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), std::numeric_limits<int8_t>::min());
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidInteger);
+  EXPECT_EQ(lexer->GetTokenText(token), "100");
   token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenInt);
   EXPECT_EQ(token.GetInt(), 0x42);
@@ -836,6 +998,81 @@ TEST(LexerTest, ParseOctalIntegerMaxSize64Bit) {
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
+TEST(LexerTest, ParseOctalIntegerMaxSize32Bit) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt32, LexerFlag::kOctalIntegers},
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent(
+      "17777777777 20000000000 "
+      "40000000000 42");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), std::numeric_limits<int32_t>::max());
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), std::numeric_limits<int32_t>::min());
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidInteger);
+  EXPECT_EQ(lexer->GetTokenText(token), "40000000000");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 042);
+  EXPECT_EQ(lexer->GetTokenText(token), "42");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseOctalIntegerMaxSize16Bit) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt16, LexerFlag::kOctalIntegers},
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent(
+      "77777 100000 "
+      "200000 42");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), std::numeric_limits<int16_t>::max());
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), std::numeric_limits<int16_t>::min());
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidInteger);
+  EXPECT_EQ(lexer->GetTokenText(token), "200000");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 042);
+  EXPECT_EQ(lexer->GetTokenText(token), "42");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseOctalIntegerMaxSize8Bit) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt8, LexerFlag::kOctalIntegers},
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent(
+      "177 200 "
+      "400 42");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), std::numeric_limits<int8_t>::max());
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), std::numeric_limits<int8_t>::min());
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidInteger);
+  EXPECT_EQ(lexer->GetTokenText(token), "400");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 042);
+  EXPECT_EQ(lexer->GetTokenText(token), "42");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
 TEST(LexerTest, ParseOctalIntegerNegativeNotSupported) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kInt64, LexerFlag::kOctalIntegers,
@@ -1013,6 +1250,78 @@ TEST(LexerTest, ParseBinaryIntegerMaxSize64Bit) {
   EXPECT_EQ(
       lexer->GetTokenText(token),
       "10000000000000000000000000000000000000000000000000000000000000000");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseBinaryIntegerMaxSize32Bit) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt32, LexerFlag::kBinaryIntegers},
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent(
+      "1111111111111111111111111111111 "
+      "10000000000000000000000000000000 "
+      "100000000000000000000000000000000");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), std::numeric_limits<int32_t>::max());
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), std::numeric_limits<int32_t>::min());
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidInteger);
+  EXPECT_EQ(
+      lexer->GetTokenText(token),
+      "100000000000000000000000000000000");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseBinaryIntegerMaxSize16Bit) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt16, LexerFlag::kBinaryIntegers},
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent(
+      "111111111111111 "
+      "1000000000000000 "
+      "10000000000000000");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), std::numeric_limits<int16_t>::max());
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), std::numeric_limits<int16_t>::min());
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidInteger);
+  EXPECT_EQ(
+      lexer->GetTokenText(token),
+      "10000000000000000");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseBinaryIntegerMaxSize8Bit) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt8, LexerFlag::kBinaryIntegers},
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent(
+      "1111111 "
+      "10000000 "
+      "100000000");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), std::numeric_limits<int8_t>::max());
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), std::numeric_limits<int8_t>::min());
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidInteger);
+  EXPECT_EQ(
+      lexer->GetTokenText(token),
+      "100000000");
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
@@ -1496,6 +1805,40 @@ TEST(LexerTest, ParseFloatMaxSize64Bit) {
   EXPECT_EQ(token.GetType(), kTokenError);
   EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidFloat);
   EXPECT_EQ(lexer->GetTokenText(token), "-1e309");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseFloatMaxSize32Bit) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kFloat32, LexerFlag::kDecimalFloats,
+                LexerFlag::kExponentFloats, LexerFlag::kNegativeFloats},
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent(
+      "3.40282347e+38 1e39 "
+      "1.17549435e-38 1e-39 "
+      "-3.40282347e+38 -1e39");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenFloat);
+  EXPECT_EQ(token.GetFloat(), std::numeric_limits<float>::max());
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidFloat);
+  EXPECT_EQ(lexer->GetTokenText(token), "1e39");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenFloat);
+  EXPECT_EQ(token.GetFloat(), std::numeric_limits<float>::min());
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidFloat);
+  EXPECT_EQ(lexer->GetTokenText(token), "1e-39");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenFloat);
+  EXPECT_EQ(token.GetFloat(), std::numeric_limits<float>::lowest());
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidFloat);
+  EXPECT_EQ(lexer->GetTokenText(token), "-1e39");
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 

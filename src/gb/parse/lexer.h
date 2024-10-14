@@ -7,6 +7,7 @@
 #define GB_PARSE_LEXER_H_
 
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -401,6 +402,9 @@ class Lexer final {
   TokenConfig hex_config_;
   TokenConfig float_config_;
   TokenConfig ident_config_;
+  int64_t max_int_ = std::numeric_limits<int64_t>::max();
+  int64_t min_int_ = std::numeric_limits<int64_t>::min();
+  uint64_t int_sign_extend_ = 0;
 
   std::vector<std::unique_ptr<Content>> content_;
   absl::flat_hash_map<std::string_view, LexerContentId> filename_to_id_;
