@@ -22,8 +22,7 @@ const std::string_view Lexer::kErrorNoTokenSpec =
     "No token specification (from symbols, keywords, or flags)";
 const std::string_view Lexer::kErrorInvalidTokenContent =
     "Token does not refer to valid content";
-const std::string_view Lexer::kErrorUnexpectedCharacter =
-    "Unexpected character";
+const std::string_view Lexer::kErrorInvalidToken = "Invalid token";
 const std::string_view Lexer::kErrorInvalidInteger = "Invalid integer";
 const std::string_view Lexer::kErrorInvalidFloat = "Invalid float";
 
@@ -791,7 +790,7 @@ Token Lexer::NextToken(LexerContentId id) {
     RE2::Consume(&line->remain, re_not_token_end_);
     line->tokens.emplace_back(token_start - line->line.data(),
                               line->remain.data() - token_start, kTokenError);
-    return Token::CreateError(token_index, &kErrorUnexpectedCharacter);
+    return Token::CreateError(token_index, &kErrorInvalidToken);
   }
   return token;
 }

@@ -133,8 +133,8 @@ class Lexer final {
   // Lexer instance.
   static const std::string_view kErrorInvalidTokenContent;
 
-  // An unexpected character was encountered when parsing tokens.
-  static const std::string_view kErrorUnexpectedCharacter;
+  // An invalid token was encountered when parsing tokens.
+  static const std::string_view kErrorInvalidToken;
 
   // An invalid integer was encountered when parsing tokens.
   static const std::string_view kErrorInvalidInteger;
