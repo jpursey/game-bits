@@ -40,11 +40,11 @@ namespace gb {
 //   - Symbols must be explicitly defined, and may be any sequence of up to 7
 //     characters that are not whitespace (best practice is they do not match
 //     any other token, but this is not a hard requirement).
-//   - Symbols are matched before tokens after a token is parsed, and other
-//     tokens are matched before a symbols after a symbol is parsed (or at the
-//     beginning of content). This disambiguates between the common issue of
-//     symbols (like '-') which match the beginning of tokens (like '-2'), so
-//     "a-2" becomes {"a", "-", " 2"} not {"a", "-2"}.
+//   - Symbols are matched before other tokens after a non-symbol token is
+//     parsed, and other tokens are matched before symbols after a symbol is
+//     parsed (or at the beginning of content). This disambiguates between the
+//     common issue of symbols (like '-') which match the beginning of tokens
+//     (like '-2'), so "a-2" becomes {"a", "-", " 2"} not {"a", "-2"}.
 //   - Characters encountered that do not match any symbol or whitespace, and
 //     are illegal within a normal token result in an error token. The error
 //     token extends up to the next encountered whitespace or symbol start
@@ -71,17 +71,13 @@ namespace gb {
 // decoding escaping on string constants or normalizing identifiers (for
 // case-insensitive tokenization).
 //
-// Uniqueness may also be tracked as well for tokens that are represented as an
-// index into an internally maintained value table. This allows for fast
-// comparison of token index values instead of strings. The built-in token types
-// kTokenIdentifier and kTokenKeyword are examples of this.
-//
 // Tokens are parsed on demand, allowing for mixed-mode parsing where lines can
 // be parsed individually, or tokens can be parsed from the current line. Random
 // access is also supported at the line level, and supports reseting to a
 // specific line number in the content.
 //
-// Example usage:
+// Example:
+//
 //   LexerConfig config;
 //   config.flags = {
 //     // Specific flags for custom control over number parsing.
