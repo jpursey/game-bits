@@ -340,6 +340,7 @@ class Lexer final {
     int decimal_index = -1;
     int hex_index = -1;
     int float_index = -1;
+    int char_index = -1;
     int ident_index = -1;
     int token_pattern_count = 0;
     std::string whitespace_pattern;

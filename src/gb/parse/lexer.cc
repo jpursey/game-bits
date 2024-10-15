@@ -116,20 +116,21 @@ bool CreateTokenPattern(std::string& token_pattern,
     return false;
   }
 
-  if (LexerSupportsStrings(flags)) {
+  if (LexerSupportsCharacters(flags)) {
     if (flags.Intersects({LexerFlag::kQuoteQuoteEscape,
-                          LexerFlag::kEscapeCharacter, LexerFlag::kTabInQuotes,
+                          LexerFlag::kEscapeCharacter,
                           LexerFlag::kDecodeEscape})) {
       error = Lexer::kErrorNotImplemented;
       return false;
     }
-    error = Lexer::kErrorNotImplemented;
-    return false;
+    std::string_view quote =
+        flags.IsSet(LexerFlag::kSingleQuoteCharacter) ? "'" : "\"";
+    absl::StrAppend(&token_pattern, "(", quote, "[^", quote, "]", quote, ")|");
   }
 
-  if (LexerSupportsCharacters(flags)) {
+  if (LexerSupportsStrings(flags)) {
     if (flags.Intersects({LexerFlag::kQuoteQuoteEscape,
-                          LexerFlag::kEscapeCharacter, LexerFlag::kTabInQuotes,
+                          LexerFlag::kEscapeCharacter,
                           LexerFlag::kDecodeEscape})) {
       error = Lexer::kErrorNotImplemented;
       return false;
@@ -249,6 +250,9 @@ std::unique_ptr<Lexer> Lexer::Create(const LexerConfig& lexer_config,
   if (LexerSupportsFloats(lexer_config.flags)) {
     config.float_index = index++;
   }
+  if (LexerSupportsCharacters(lexer_config.flags)) {
+    config.char_index = index++;
+  }
   if (LexerSupportsIdentifiers(lexer_config.flags)) {
     config.ident_index = index++;
   }
@@ -354,6 +358,11 @@ Lexer::Lexer(const Config& config)
   if (config.float_index >= 0) {
     const int i = config.float_index;
     re_args_[config.float_index].type = kTokenFloat;
+    re_token_args_[i] = &re_args_[i].arg;
+  }
+  if (config.char_index >= 0) {
+    const int i = config.char_index;
+    re_args_[config.char_index].type = kTokenChar;
     re_token_args_[i] = &re_args_[i].arg;
   }
   if (config.ident_index >= 0) {
@@ -773,6 +782,10 @@ Token Lexer::ParseNextToken(Content* content, Line* line) {
         }
         return Token::CreateFloat(token_index, value);
       }
+    } break;
+    case kTokenChar: {
+      return Token::CreateChar(token_index, match_text.data() + 1,
+                               match_text.size() - 2);
     } break;
     case kTokenIdentifier:
       if (flags_.IsSet(LexerFlag::kIdentForceLower)) {

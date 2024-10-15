@@ -51,7 +51,6 @@ enum class LexerFlag {
   kSingleQuoteString,     // 'abc' (incompatible with kSingleQuoteCharacter)
   kDoubleQuoteCharacter,  // "a" (incompatible with kDoubleQuoteString)
   kSingleQuoteCharacter,  // 'a' (incompatible with kSingleQuoteString)
-  kTabInQuotes,           // Allows literal tab characters in strings
 
   // String and character escape settings.
   // - Both kQuoteQuoteEscape and kEscapeCharacter may be set, in which case
