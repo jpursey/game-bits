@@ -16,6 +16,8 @@ namespace gb {
 const std::string_view Lexer::kErrorNotImplemented = "Not implemented";
 const std::string_view Lexer::kErrorConflictingStringAndCharSpec =
     "Conflicting string and character specifications";
+const std::string_view Lexer::kErrorConflictingIdentifierSpec =
+    "Conflicting identifier specifications";
 const std::string_view Lexer::kErrorInvalidSymbolSpec =
     "Symbol specification has non-ASCII or whitespace characters";
 const std::string_view Lexer::kErrorNoTokenSpec =
@@ -44,67 +46,54 @@ bool CreateTokenPattern(std::string& token_pattern,
         absl::StrAppend(&token_pattern, "|");
       }
       first = false;
-      absl::StrAppend(&token_pattern, "(");
-      absl::StrAppend(&token_pattern,
-                      RE2::QuoteMeta(lexer_config.binary_prefix));
-      absl::StrAppend(&token_pattern, "[01]+");
-      absl::StrAppend(&token_pattern,
-                      RE2::QuoteMeta(lexer_config.binary_suffix));
-      absl::StrAppend(&token_pattern, ")");
+      absl::StrAppend(&token_pattern, "(",
+                      RE2::QuoteMeta(lexer_config.binary_prefix), "[01]+",
+                      RE2::QuoteMeta(lexer_config.binary_suffix), ")");
     }
     if (flags.IsSet(LexerFlag::kOctalIntegers)) {
       if (!first) {
         absl::StrAppend(&token_pattern, "|");
       }
       first = false;
-      absl::StrAppend(&token_pattern, "(");
-      absl::StrAppend(&token_pattern,
-                      RE2::QuoteMeta(lexer_config.octal_prefix));
-      absl::StrAppend(&token_pattern, "[0-7]+");
-      absl::StrAppend(&token_pattern,
-                      RE2::QuoteMeta(lexer_config.octal_suffix));
-      absl::StrAppend(&token_pattern, ")");
+      absl::StrAppend(&token_pattern, "(",
+                      RE2::QuoteMeta(lexer_config.octal_prefix), "[0-7]+",
+                      RE2::QuoteMeta(lexer_config.octal_suffix), ")");
     }
     if (flags.IsSet(LexerFlag::kDecimalIntegers)) {
       if (!first) {
         absl::StrAppend(&token_pattern, "|");
       }
       first = false;
-      absl::StrAppend(&token_pattern, "(");
-      absl::StrAppend(&token_pattern,
+      absl::StrAppend(&token_pattern, "(",
                       RE2::QuoteMeta(lexer_config.decimal_prefix));
       if (flags.IsSet(LexerFlag::kNegativeIntegers)) {
         absl::StrAppend(&token_pattern, "-?");
       }
-      absl::StrAppend(&token_pattern, "[0-9]+");
-      absl::StrAppend(&token_pattern,
-                      RE2::QuoteMeta(lexer_config.decimal_suffix));
-      absl::StrAppend(&token_pattern, ")");
+      absl::StrAppend(&token_pattern, "[0-9]+",
+                      RE2::QuoteMeta(lexer_config.decimal_suffix), ")");
     }
     if (flags.Intersects(
             {LexerFlag::kHexUpperIntegers, LexerFlag::kHexLowerIntegers})) {
       if (!first) {
         absl::StrAppend(&token_pattern, "|");
       }
-      absl::StrAppend(&token_pattern, "(");
-      absl::StrAppend(&token_pattern, RE2::QuoteMeta(lexer_config.hex_prefix));
-      absl::StrAppend(&token_pattern, "[0-9");
+      absl::StrAppend(&token_pattern, "(",
+                      RE2::QuoteMeta(lexer_config.hex_prefix), "[0-9");
       if (flags.IsSet(LexerFlag::kHexUpperIntegers)) {
         absl::StrAppend(&token_pattern, "A-F");
       }
       if (flags.IsSet(LexerFlag::kHexLowerIntegers)) {
         absl::StrAppend(&token_pattern, "a-f");
       }
-      absl::StrAppend(&token_pattern, "]+");
-      absl::StrAppend(&token_pattern, RE2::QuoteMeta(lexer_config.hex_suffix));
-      absl::StrAppend(&token_pattern, ")");
+      absl::StrAppend(&token_pattern, "]+",
+                      RE2::QuoteMeta(lexer_config.hex_suffix), ")");
     }
     absl::StrAppend(&token_pattern, "|");
   }
 
   if (LexerSupportsFloats(flags)) {
-    absl::StrAppend(&token_pattern, "(");
-    absl::StrAppend(&token_pattern, RE2::QuoteMeta(lexer_config.float_prefix));
+    absl::StrAppend(&token_pattern, "(",
+                    RE2::QuoteMeta(lexer_config.float_prefix));
     if (flags.IsSet(LexerFlag::kNegativeFloats)) {
       absl::StrAppend(&token_pattern, "-?");
     }
@@ -115,8 +104,8 @@ bool CreateTokenPattern(std::string& token_pattern,
         absl::StrAppend(&token_pattern, "?");
       }
     }
-    absl::StrAppend(&token_pattern, RE2::QuoteMeta(lexer_config.float_suffix));
-    absl::StrAppend(&token_pattern, ")|");
+    absl::StrAppend(&token_pattern, RE2::QuoteMeta(lexer_config.float_suffix),
+                    ")|");
   }
 
   if (flags.IsSet(
@@ -150,15 +139,26 @@ bool CreateTokenPattern(std::string& token_pattern,
   }
 
   if (LexerSupportsIdentifiers(flags)) {
+    if (flags.IsSet(
+            {LexerFlag::kIdentForceUpper, LexerFlag::kIdentForceLower})) {
+      error = Lexer::kErrorConflictingIdentifierSpec;
+      return false;
+    }
     if (flags.Intersects(
             {LexerFlag::kIdentForceUpper, LexerFlag::kIdentForceLower})) {
       error = Lexer::kErrorNotImplemented;
       return false;
     }
 
-    absl::StrAppend(&token_pattern, "([");
-    if (flags.IsSet(LexerFlag::kIdentLeadingUnderscore)) {
+    absl::StrAppend(&token_pattern, "(",
+                    RE2::QuoteMeta(lexer_config.ident_prefix), "[");
+    if (flags.IsSet(LexerFlag::kIdentUnderscore) &&
+        !flags.IsSet(LexerFlag::kIdentNonLeadUnderscore)) {
       absl::StrAppend(&token_pattern, "_");
+    }
+    if (flags.IsSet(LexerFlag::kIdentDigit) &&
+        !flags.IsSet(LexerFlag::kIdentNonLeadDigit)) {
+      absl::StrAppend(&token_pattern, "0-9");
     }
     if (flags.IsSet(LexerFlag::kIdentUpper)) {
       absl::StrAppend(&token_pattern, "A-Z");
@@ -167,8 +167,13 @@ bool CreateTokenPattern(std::string& token_pattern,
       absl::StrAppend(&token_pattern, "a-z");
     }
     absl::StrAppend(&token_pattern, "][");
-    if (flags.IsSet(LexerFlag::kIdentUnderscore)) {
+    if (flags.Intersects({LexerFlag::kIdentUnderscore,
+                          LexerFlag::kIdentNonLeadUnderscore})) {
       absl::StrAppend(&token_pattern, "_");
+    }
+    if (flags.Intersects(
+            {LexerFlag::kIdentDigit, LexerFlag::kIdentNonLeadDigit})) {
+      absl::StrAppend(&token_pattern, "0-9");
     }
     if (flags.IsSet(LexerFlag::kIdentUpper)) {
       absl::StrAppend(&token_pattern, "A-Z");
@@ -176,10 +181,8 @@ bool CreateTokenPattern(std::string& token_pattern,
     if (flags.IsSet(LexerFlag::kIdentLower)) {
       absl::StrAppend(&token_pattern, "a-z");
     }
-    if (flags.IsSet(LexerFlag::kIdentDigit)) {
-      absl::StrAppend(&token_pattern, "0-9");
-    }
-    absl::StrAppend(&token_pattern, "]+)|");
+    absl::StrAppend(&token_pattern, "]+",
+                    RE2::QuoteMeta(lexer_config.ident_suffix), ")|");
   }
 
   if (!token_pattern.empty()) {

@@ -116,11 +116,14 @@ class Lexer final {
   // Currently unsupported feature in the lexer.
   static const std::string_view kErrorNotImplemented;
 
+  // Invalid symbol specification in LexerConfig.
+  static const std::string_view kErrorInvalidSymbolSpec;
+
   // Conflicting configuration between strings and characters in LexerConfig
   static const std::string_view kErrorConflictingStringAndCharSpec;
 
-  // Invalid symbol specification in LexerConfig.
-  static const std::string_view kErrorInvalidSymbolSpec;
+  // Conflicting identifier configuration in LexerConfig.
+  static const std::string_view kErrorConflictingIdentifierSpec;
 
   // Invalid token specification in LexerConfig (no symbols, keywords, or other
   // tokens).

@@ -66,11 +66,18 @@ enum class LexerFlag {
   kDecodeEscape,      // Decodes escape sequences for token values.
 
   // Identifier parsing flags.
+  // - Upper and/or lower case letters must be allowed (case sensitive) or
+  //   forced (case insensitive). Identifiers cannot be only numbers and
+  //   symbols. Both upper and lower may be set for case sensitivity, but not
+  //   for forcing a specific case.
+  // - Digits and underscores can be optionally allowed in identifiers, either
+  //   generally or limited to non-leading characters.
   kIdentUpper,              // Allows uppercase ASCII letters.
   kIdentLower,              // Allows lowercase ASCII letters.
-  kIdentDigit,              // Allows non-leading decimal digits.
-  kIdentUnderscore,         // Allows underscores in the middle of identifiers.
-  kIdentLeadingUnderscore,  // Allows leading underscores.
+  kIdentDigit,              // Allows decimal digits.
+  kIdentNonLeadDigit,       // Allows non-leading decimal digits.
+  kIdentUnderscore,         // Allows underscores.
+  kIdentNonLeadUnderscore,  // Allows non-leading underscores.
   kIdentForceUpper,         // Forces identifiers and keywords to be uppercase.
   kIdentForceLower,         // Forces identifiers and keywords to be lowercase.
 
@@ -139,8 +146,8 @@ inline constexpr LexerFlags kLexerFlags_CCharacters = {
 
 // Support C style identifiers.
 inline constexpr LexerFlags kLexerFlags_CIdentifiers = {
-    LexerFlag::kIdentUpper, LexerFlag::kIdentLower, LexerFlag::kIdentDigit,
-    LexerFlag::kIdentUnderscore, LexerFlag::kIdentLeadingUnderscore};
+    LexerFlag::kIdentUpper, LexerFlag::kIdentLower, LexerFlag::kIdentUnderscore,
+    LexerFlag::kIdentNonLeadDigit};
 
 // Support all C style features.
 inline constexpr LexerFlags kLexerFlags_C = {
@@ -180,7 +187,9 @@ inline bool LexerSupportsCharacters(LexerFlags flags) {
 }
 
 inline bool LexerSupportsIdentifiers(LexerFlags flags) {
-  return flags.Intersects({LexerFlag::kIdentUpper, LexerFlag::kIdentLower});
+  return flags.Intersects({LexerFlag::kIdentUpper, LexerFlag::kIdentLower,
+                           LexerFlag::kIdentForceLower,
+                           LexerFlag::kIdentForceUpper});
 }
 
 inline bool LexerSupportsLineComments(LexerFlags flags) {

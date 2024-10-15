@@ -184,7 +184,7 @@ class Token final {
   TokenType type_ = kTokenNone;
   ValueType value_type_ = ValueType::kNone;
   union {
-    uint16_t strlen_;      // For type string.
+    uint16_t strlen_ = 0;  // For type string.
     uint16_t index_;       // For type index.
   };
   union {
@@ -273,9 +273,7 @@ inline double Token::GetFloat() const {
   }
   return float_;
 }
-inline double Token::GetFloat64() const {
-  return GetFloat();
-}
+inline double Token::GetFloat64() const { return GetFloat(); }
 inline float Token::GetFloat32() const {
   return static_cast<float>(GetFloat64());
 }
