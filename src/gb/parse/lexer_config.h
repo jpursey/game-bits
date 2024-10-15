@@ -17,6 +17,12 @@ namespace gb {
 // Configuration flags for the lexer.
 enum class LexerFlag {
   // Integer parsing flags.
+  // - Both a bit depth (8, 16, 32, or 64) and a format (decimal, binary, octal,
+  //   and/or hex) must be set for integers to be parsed. Decimal values are
+  //   always signed (but default to positive values only), while binary, octal,
+  //   and hex values are always unsigned.
+  // - The bit depth determines the largest and smallest values that are allowed
+  //   as a value. If multiple bit depths are set, the highest depth is used.
   kInt8,              // Allow and detect 8-bit integers.
   kInt16,             // Allow and detect 16-bit integers.
   kInt32,             // Allow and detect 32-bit integers.
@@ -29,6 +35,11 @@ enum class LexerFlag {
   kHexLowerIntegers,  // Allow hexadecimal format integers with lower case.
 
   // Float parsing flags.
+  // - Both a bit depth (32 or 64) and a format (decimal and/or exponent) must
+  //   be set for floats to be parsed. Float values are always signed (but
+  //   default to positive values only).
+  // - The bit depth determines the largest and smallest values that are allowed
+  //   as a value. If multiple bit depths are set, the highest depth is used.
   kFloat32,         // Allow and detect 32-bit floating point numbers.
   kFloat64,         // Allow and detect 64-bit floating point numbers.
   kNegativeFloats,  // Allow negative floating point numbers.
