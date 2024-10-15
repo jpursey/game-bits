@@ -34,8 +34,6 @@ const LexerFlags kUnimplementedFlags[] = {
     {LexerFlag::kSingleQuoteCharacter, LexerFlag::kQuoteQuoteEscape},
     {LexerFlag::kSingleQuoteCharacter, LexerFlag::kEscapeCharacter},
     {LexerFlag::kSingleQuoteCharacter, LexerFlag::kDecodeEscape},
-    {LexerFlag::kIdentForceUpper},
-    {LexerFlag::kIdentForceLower},
     {LexerFlag::kIdentLower, LexerFlag::kLineBreak},
     {LexerFlag::kIdentLower, LexerFlag::kLineIndent},
     {LexerFlag::kIdentLower, LexerFlag::kLeadingTabs},
@@ -2053,8 +2051,7 @@ TEST(LexerTest, ParseIdentWithPrefixAndSuffix) {
       .ident_suffix = "*",
   });
   ASSERT_NE(lexer, nullptr);
-  const LexerContentId content =
-      lexer->AddContent("$abc* $DEF gHi*");
+  const LexerContentId content = lexer->AddContent("$abc* $DEF gHi*");
   Token token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenIdentifier);
   EXPECT_EQ(token.GetString(), "$abc*");
@@ -2067,6 +2064,48 @@ TEST(LexerTest, ParseIdentWithPrefixAndSuffix) {
   EXPECT_EQ(token.GetType(), kTokenError);
   EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
   EXPECT_EQ(lexer->GetTokenText(token), "gHi*");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseIdentForceUpper) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kIdentForceUpper},
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("abc DEF gHi");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "ABC");
+  EXPECT_EQ(lexer->GetTokenText(token), "abc");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "DEF");
+  EXPECT_EQ(lexer->GetTokenText(token), "DEF");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "GHI");
+  EXPECT_EQ(lexer->GetTokenText(token), "gHi");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseIdentForceLower) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kIdentForceLower},
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("abc DEF gHi");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "abc");
+  EXPECT_EQ(lexer->GetTokenText(token), "abc");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "def");
+  EXPECT_EQ(lexer->GetTokenText(token), "DEF");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "ghi");
+  EXPECT_EQ(lexer->GetTokenText(token), "gHi");
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 

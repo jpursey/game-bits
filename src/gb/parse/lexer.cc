@@ -144,12 +144,6 @@ bool CreateTokenPattern(std::string& token_pattern,
       error = Lexer::kErrorConflictingIdentifierSpec;
       return false;
     }
-    if (flags.Intersects(
-            {LexerFlag::kIdentForceUpper, LexerFlag::kIdentForceLower})) {
-      error = Lexer::kErrorNotImplemented;
-      return false;
-    }
-
     absl::StrAppend(&token_pattern, "(",
                     RE2::QuoteMeta(lexer_config.ident_prefix), "[");
     if (flags.IsSet(LexerFlag::kIdentUnderscore) &&
@@ -160,10 +154,12 @@ bool CreateTokenPattern(std::string& token_pattern,
         !flags.IsSet(LexerFlag::kIdentNonLeadDigit)) {
       absl::StrAppend(&token_pattern, "0-9");
     }
-    if (flags.IsSet(LexerFlag::kIdentUpper)) {
+    if (flags.Intersects({LexerFlag::kIdentUpper, LexerFlag::kIdentForceLower,
+                          LexerFlag::kIdentForceUpper})) {
       absl::StrAppend(&token_pattern, "A-Z");
     }
-    if (flags.IsSet(LexerFlag::kIdentLower)) {
+    if (flags.Intersects({LexerFlag::kIdentLower, LexerFlag::kIdentForceLower,
+                          LexerFlag::kIdentForceUpper})) {
       absl::StrAppend(&token_pattern, "a-z");
     }
     absl::StrAppend(&token_pattern, "][");
@@ -175,10 +171,12 @@ bool CreateTokenPattern(std::string& token_pattern,
             {LexerFlag::kIdentDigit, LexerFlag::kIdentNonLeadDigit})) {
       absl::StrAppend(&token_pattern, "0-9");
     }
-    if (flags.IsSet(LexerFlag::kIdentUpper)) {
+    if (flags.Intersects({LexerFlag::kIdentUpper, LexerFlag::kIdentForceLower,
+                          LexerFlag::kIdentForceUpper})) {
       absl::StrAppend(&token_pattern, "A-Z");
     }
-    if (flags.IsSet(LexerFlag::kIdentLower)) {
+    if (flags.Intersects({LexerFlag::kIdentLower, LexerFlag::kIdentForceLower,
+                          LexerFlag::kIdentForceUpper})) {
       absl::StrAppend(&token_pattern, "a-z");
     }
     absl::StrAppend(&token_pattern, "]+",
@@ -777,6 +775,15 @@ Token Lexer::ParseNextToken(Content* content, Line* line) {
       }
     } break;
     case kTokenIdentifier:
+      if (flags_.IsSet(LexerFlag::kIdentForceLower)) {
+        modified_text_.push_back(
+            std::make_unique<std::string>(absl::AsciiStrToLower(match_text)));
+        match_text = *modified_text_.back();
+      } else if (flags_.IsSet(LexerFlag::kIdentForceUpper)) {
+        modified_text_.push_back(
+            std::make_unique<std::string>(absl::AsciiStrToUpper(match_text)));
+        match_text = *modified_text_.back();
+      }
       return Token::CreateIdentifier(token_index, match_text.data(),
                                      match_text.size());
   }

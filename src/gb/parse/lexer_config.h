@@ -78,8 +78,9 @@ enum class LexerFlag {
   kIdentNonLeadDigit,       // Allows non-leading decimal digits.
   kIdentUnderscore,         // Allows underscores.
   kIdentNonLeadUnderscore,  // Allows non-leading underscores.
-  kIdentForceUpper,         // Forces identifiers and keywords to be uppercase.
-  kIdentForceLower,         // Forces identifiers and keywords to be lowercase.
+  kIdentForceUpper,         // Forces identifiers to be uppercase.
+  kIdentForceLower,         // Forces identifiers to be lowercase.
+  kKeywordCaseInsensitive,  // Keywords are case insensitive.
 
   // Whitespace and comment parsing flags.
   kLineBreak,      // Newlines are not whitespace (enables kTokenNewline).
