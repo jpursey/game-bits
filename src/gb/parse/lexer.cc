@@ -116,18 +116,26 @@ bool CreateTokenPattern(std::string& token_pattern,
     return false;
   }
 
+  std::string escape_char;
+  if (flags.IsSet(LexerFlag::kEscapeCharacter) && lexer_config.escape != 0) {
+    escape_char = RE2::QuoteMeta(std::string_view(&lexer_config.escape, 1));
+  }
+
   if (LexerSupportsCharacters(flags)) {
-    if (flags.Intersects(
-            {LexerFlag::kEscapeCharacter, LexerFlag::kDecodeEscape})) {
+    if (flags.Intersects({LexerFlag::kDecodeEscape})) {
       error = Lexer::kErrorNotImplemented;
       return false;
     }
     absl::StrAppend(&token_pattern, "(");
     auto quote_re = [&](std::string_view quote) {
       absl::StrAppend(&token_pattern, "(?:", quote, "(?:");
-      absl::StrAppend(&token_pattern, "[^", quote, "]");
+      absl::StrAppend(&token_pattern, "[^", quote, escape_char, "]");
       if (flags.IsSet(LexerFlag::kQuoteQuoteEscape)) {
         absl::StrAppend(&token_pattern, "|", quote, quote);
+      }
+      if (flags.IsSet(LexerFlag::kEscapeCharacter) &&
+          lexer_config.escape != 0) {
+        absl::StrAppend(&token_pattern, "|", escape_char, ".");
       }
       absl::StrAppend(&token_pattern, ")", quote, ")");
     };
