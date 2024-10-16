@@ -388,8 +388,11 @@ class Lexer final {
 
   std::tuple<Content*, Line*> GetContentLine(LexerContentId id);
 
-  bool ParseInt(std::string_view text, ParseType parse_type, int64_t& value);
-  Token ParseChar(TokenIndex token_index, char quote, std::string_view text);
+  Token ParseInt(TokenIndex token_index, std::string_view text,
+                 ParseType parse_type);
+  Token ParseFloat(TokenIndex token_index, std::string_view text);
+  Token ParseChar(TokenIndex token_index, std::string_view text);
+  Token ParseIdent(TokenIndex token_index, std::string_view text);
   Token ParseNextSymbol(Content* content, Line* line);
   Token ParseNextToken(Content* content, Line* line);
 

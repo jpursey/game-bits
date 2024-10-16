@@ -681,16 +681,16 @@ Token Lexer::ParseNextSymbol(Content* content, Line* line) {
   return Token::CreateSymbol(token_index, symbol_text);
 }
 
-bool Lexer::ParseInt(std::string_view text, ParseType parse_type,
-                     int64_t& value) {
+Token Lexer::ParseInt(TokenIndex token_index, std::string_view text,
+                      ParseType parse_type) {
+  int64_t value = 0;
   switch (parse_type) {
     case ParseType::kDefault: {
       std::string_view digits = text.substr(
           decimal_config_.prefix, text.size() - decimal_config_.size_offset);
       if (!absl::SimpleAtoi(digits, &value)) {
-        return false;
+        return Token::CreateError(token_index, &kErrorInvalidInteger);
       }
-      return value >= min_int_ && value <= max_int_;
     } break;
     case ParseType::kHex: {
       uint64_t hex_value = 0;
@@ -698,7 +698,7 @@ bool Lexer::ParseInt(std::string_view text, ParseType parse_type,
           hex_config_.prefix, text.size() - hex_config_.size_offset);
       for (char ch : digits) {
         if (hex_value >> 60 != 0) {
-          return false;
+          return Token::CreateError(token_index, &kErrorInvalidInteger);
         }
         hex_value <<= 4;
         if (ch >= '0' && ch <= '9') {
@@ -714,7 +714,6 @@ bool Lexer::ParseInt(std::string_view text, ParseType parse_type,
         hex_value |= int_sign_extend_;
       }
       value = hex_value;
-      return value >= min_int_ && value <= max_int_;
     } break;
     case ParseType::kOctal: {
       uint64_t octal_value = 0;
@@ -722,7 +721,7 @@ bool Lexer::ParseInt(std::string_view text, ParseType parse_type,
           octal_config_.prefix, text.size() - octal_config_.size_offset);
       for (char ch : digits) {
         if (octal_value >> 61 != 0) {
-          return false;
+          return Token::CreateError(token_index, &kErrorInvalidInteger);
         }
         octal_value <<= 3;
         if (ch >= '0' && ch <= '7') {
@@ -734,7 +733,6 @@ bool Lexer::ParseInt(std::string_view text, ParseType parse_type,
         octal_value |= int_sign_extend_;
       }
       value = octal_value;
-      return value >= min_int_ && value <= max_int_;
     } break;
     case ParseType::kBinary: {
       uint64_t binary_value = 0;
@@ -742,7 +740,7 @@ bool Lexer::ParseInt(std::string_view text, ParseType parse_type,
           binary_config_.prefix, text.size() - binary_config_.size_offset);
       for (char ch : digits) {
         if (binary_value >> 63 != 0) {
-          return false;
+          return Token::CreateError(token_index, &kErrorInvalidInteger);
         }
         binary_value <<= 1;
         if (ch == '1') {
@@ -754,11 +752,30 @@ bool Lexer::ParseInt(std::string_view text, ParseType parse_type,
         binary_value |= int_sign_extend_;
       }
       value = binary_value;
-      return value >= min_int_ && value <= max_int_;
     } break;
   }
-  LOG(FATAL) << "Unhandled integer parse type";
-  return false;
+  if (value < min_int_ || value > max_int_) {
+    return Token::CreateError(token_index, &kErrorInvalidInteger);
+  }
+  return Token::CreateInt(token_index, value);
+}
+
+Token Lexer::ParseFloat(TokenIndex token_index, std::string_view text) {
+  std::string_view digits = text.substr(
+      float_config_.prefix, text.size() - float_config_.size_offset);
+  if (flags_.IsSet(LexerFlag::kFloat64)) {
+    double value = 0;
+    if (!absl::SimpleAtod(digits, &value) || !std::isnormal(value)) {
+      return Token::CreateError(token_index, &kErrorInvalidFloat);
+    }
+    return Token::CreateFloat(token_index, value);
+  } else {
+    float value = 0;
+    if (!absl::SimpleAtof(digits, &value) || !std::isnormal(value)) {
+      return Token::CreateError(token_index, &kErrorInvalidFloat);
+    }
+    return Token::CreateFloat(token_index, value);
+  }
 }
 
 namespace {
@@ -776,29 +793,45 @@ unsigned char ToHex(char ch) {
 }
 }  // namespace
 
-Token Lexer::ParseChar(TokenIndex token_index, char quote,
-                       std::string_view text) {
-  if (text.size() == 1 || !flags_.IsSet(LexerFlag::kDecodeEscape)) {
-    return Token::CreateChar(token_index, text.data(), text.size());
+Token Lexer::ParseChar(TokenIndex token_index, std::string_view text) {
+  DCHECK(text.size() >= 3);
+  const char quote = text[0];
+  const std::string_view char_text = text.substr(1, text.size() - 2);
+  if (char_text.size() == 1 || !flags_.IsSet(LexerFlag::kDecodeEscape)) {
+    return Token::CreateChar(token_index, char_text.data(), char_text.size());
   }
-  DCHECK(text.size() >= 2 && (text[0] == escape_ || text[0] == quote));
-  if (escape_newline_ != 0 && text[1] == escape_newline_) {
-    DCHECK(text.size() == 2);
+  DCHECK(char_text.size() >= 2 &&
+         (char_text[0] == escape_ || char_text[0] == quote));
+  if (escape_newline_ != 0 && char_text[1] == escape_newline_) {
+    DCHECK(char_text.size() == 2);
     return Token::CreateChar(token_index, "\n", 1);
   }
-  if (escape_tab_ != 0 && text[1] == escape_tab_) {
-    DCHECK(text.size() == 2);
+  if (escape_tab_ != 0 && char_text[1] == escape_tab_) {
+    DCHECK(char_text.size() == 2);
     return Token::CreateChar(token_index, "\t", 1);
   }
-  if (escape_hex_ != 0 && text[1] == escape_hex_) {
-    DCHECK(text.size() == 4);
-    unsigned char hex = ToHex(text[2]) << 4 | ToHex(text[3]);
+  if (escape_hex_ != 0 && char_text[1] == escape_hex_) {
+    DCHECK(char_text.size() == 4);
+    unsigned char hex = ToHex(char_text[2]) << 4 | ToHex(char_text[3]);
     std::string& str =
         *modified_text_.emplace_back(std::make_unique<std::string>(1, hex));
     return Token::CreateChar(token_index, str.data(), str.size());
   }
-  DCHECK(text.size() == 2);
-  return Token::CreateChar(token_index, text.data() + 1, 1);
+  DCHECK(char_text.size() == 2);
+  return Token::CreateChar(token_index, char_text.data() + 1, 1);
+}
+
+Token Lexer::ParseIdent(TokenIndex token_index, std::string_view text) {
+  if (flags_.IsSet(LexerFlag::kIdentForceLower)) {
+    modified_text_.push_back(
+        std::make_unique<std::string>(absl::AsciiStrToLower(text)));
+    text = *modified_text_.back();
+  } else if (flags_.IsSet(LexerFlag::kIdentForceUpper)) {
+    modified_text_.push_back(
+        std::make_unique<std::string>(absl::AsciiStrToUpper(text)));
+    text = *modified_text_.back();
+  }
+  return Token::CreateIdentifier(token_index, text.data(), text.size());
 }
 
 Token Lexer::ParseNextToken(Content* content, Line* line) {
@@ -836,46 +869,14 @@ Token Lexer::ParseNextToken(Content* content, Line* line) {
   line->tokens.emplace_back(match_text.data() - line->line.data(),
                             match_text.size(), match->type);
   switch (match->type) {
-    case kTokenInt: {
-      int64_t value = 0;
-      if (!ParseInt(match_text, match->parse_type, value)) {
-        return Token::CreateError(token_index, &kErrorInvalidInteger);
-      }
-      return Token::CreateInt(token_index, value);
-    } break;
-    case kTokenFloat: {
-      std::string_view digits = match_text.substr(
-          float_config_.prefix, match_text.size() - float_config_.size_offset);
-      if (flags_.IsSet(LexerFlag::kFloat64)) {
-        double value = 0;
-        if (!absl::SimpleAtod(digits, &value) || !std::isnormal(value)) {
-          return Token::CreateError(token_index, &kErrorInvalidFloat);
-        }
-        return Token::CreateFloat(token_index, value);
-      } else {
-        float value = 0;
-        if (!absl::SimpleAtof(digits, &value) || !std::isnormal(value)) {
-          return Token::CreateError(token_index, &kErrorInvalidFloat);
-        }
-        return Token::CreateFloat(token_index, value);
-      }
-    } break;
-    case kTokenChar: {
-      return ParseChar(token_index, match_text[0],
-                       match_text.substr(1, match_text.size() - 2));
-    } break;
+    case kTokenInt:
+      return ParseInt(token_index, match_text, match->parse_type);
+    case kTokenFloat:
+      return ParseFloat(token_index, match_text);
+    case kTokenChar:
+      return ParseChar(token_index, match_text);
     case kTokenIdentifier:
-      if (flags_.IsSet(LexerFlag::kIdentForceLower)) {
-        modified_text_.push_back(
-            std::make_unique<std::string>(absl::AsciiStrToLower(match_text)));
-        match_text = *modified_text_.back();
-      } else if (flags_.IsSet(LexerFlag::kIdentForceUpper)) {
-        modified_text_.push_back(
-            std::make_unique<std::string>(absl::AsciiStrToUpper(match_text)));
-        match_text = *modified_text_.back();
-      }
-      return Token::CreateIdentifier(token_index, match_text.data(),
-                                     match_text.size());
+      return ParseIdent(token_index, match_text);
   }
   return Token::CreateError(token_index, &kErrorNotImplemented);
 }
