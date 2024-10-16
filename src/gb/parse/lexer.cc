@@ -117,15 +117,30 @@ bool CreateTokenPattern(std::string& token_pattern,
   }
 
   if (LexerSupportsCharacters(flags)) {
-    if (flags.Intersects({LexerFlag::kQuoteQuoteEscape,
-                          LexerFlag::kEscapeCharacter,
-                          LexerFlag::kDecodeEscape})) {
+    if (flags.Intersects(
+            {LexerFlag::kEscapeCharacter, LexerFlag::kDecodeEscape})) {
       error = Lexer::kErrorNotImplemented;
       return false;
     }
-    std::string_view quote =
-        flags.IsSet(LexerFlag::kSingleQuoteCharacter) ? "'" : "\"";
-    absl::StrAppend(&token_pattern, "(", quote, "[^", quote, "]", quote, ")|");
+    absl::StrAppend(&token_pattern, "(");
+    auto quote_re = [&](std::string_view quote) {
+      absl::StrAppend(&token_pattern, "(?:", quote, "(?:");
+      absl::StrAppend(&token_pattern, "[^", quote, "]");
+      if (flags.IsSet(LexerFlag::kQuoteQuoteEscape)) {
+        absl::StrAppend(&token_pattern, "|", quote, quote);
+      }
+      absl::StrAppend(&token_pattern, ")", quote, ")");
+    };
+    if (flags.IsSet(LexerFlag::kDoubleQuoteCharacter)) {
+      quote_re("\"");
+    }
+    if (flags.IsSet(LexerFlag::kSingleQuoteCharacter)) {
+      if (flags.IsSet(LexerFlag::kDoubleQuoteCharacter)) {
+        absl::StrAppend(&token_pattern, "|");
+      }
+      quote_re("'");
+    }
+    absl::StrAppend(&token_pattern, ")|");
   }
 
   if (LexerSupportsStrings(flags)) {

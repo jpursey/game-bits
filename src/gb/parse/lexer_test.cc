@@ -22,7 +22,6 @@ LexerConfig WholeNumbers() {
 }
 
 const LexerFlags kUnimplementedFlags[] = {
-    {LexerFlag::kSingleQuoteCharacter, LexerFlag::kQuoteQuoteEscape},
     {LexerFlag::kSingleQuoteCharacter, LexerFlag::kEscapeCharacter},
     {LexerFlag::kSingleQuoteCharacter, LexerFlag::kDecodeEscape},
     {LexerFlag::kDoubleQuoteString},
@@ -2120,7 +2119,7 @@ TEST(LexerTest, ConflictingStringAndCharSpecs) {
   EXPECT_EQ(error, Lexer::kErrorConflictingStringAndCharSpec);
 }
 
-TEST(LexerTest, ParseSingleQuoteCharacter) {
+TEST(LexerTest, ParseCharSingleQuote) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kSingleQuoteCharacter},
   });
@@ -2179,7 +2178,7 @@ TEST(LexerTest, ParseSingleQuoteCharacter) {
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
-TEST(LexerTest, ParseDoubleQuoteCharacter) {
+TEST(LexerTest, ParseCharDoubleQuote) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kDoubleQuoteCharacter},
   });
@@ -2235,6 +2234,42 @@ TEST(LexerTest, ParseDoubleQuoteCharacter) {
   EXPECT_EQ(token.GetType(), kTokenError);
   EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
   EXPECT_EQ(lexer->GetTokenText(token), "x\"");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseCharBothQuoteTypes) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kSingleQuoteCharacter,
+                LexerFlag::kDoubleQuoteCharacter},
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("'\"' \"'\"");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenChar);
+  EXPECT_EQ(token.GetString(), "\"");
+  EXPECT_EQ(lexer->GetTokenText(token), "'\"'");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenChar);
+  EXPECT_EQ(token.GetString(), "'");
+  EXPECT_EQ(lexer->GetTokenText(token), "\"'\"");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseCharQuoteQuoteEscape) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kSingleQuoteCharacter,
+                LexerFlag::kDoubleQuoteCharacter, LexerFlag::kQuoteQuoteEscape},
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent(R"('''' """")");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenChar);
+  EXPECT_EQ(token.GetString(), "''");
+  EXPECT_EQ(lexer->GetTokenText(token), "''''");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenChar);
+  EXPECT_EQ(token.GetString(), "\"\"");
+  EXPECT_EQ(lexer->GetTokenText(token), "\"\"\"\"");
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
