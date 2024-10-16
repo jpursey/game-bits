@@ -117,15 +117,18 @@ bool CreateTokenPattern(std::string& token_pattern,
   }
 
   std::string escape_char;
+  std::string escape_hex;
   if (flags.IsSet(LexerFlag::kEscapeCharacter) && lexer_config.escape != 0) {
     escape_char = RE2::QuoteMeta(std::string_view(&lexer_config.escape, 1));
+    if (lexer_config.escape_hex != 0) {
+      escape_hex = absl::StrCat(
+          escape_char,
+          RE2::QuoteMeta(std::string_view(&lexer_config.escape_hex, 1)),
+          "[0-9a-fA-F]{2}");
+    }
   }
 
   if (LexerSupportsCharacters(flags)) {
-    if (flags.Intersects({LexerFlag::kDecodeEscape})) {
-      error = Lexer::kErrorNotImplemented;
-      return false;
-    }
     absl::StrAppend(&token_pattern, "(");
     auto quote_re = [&](std::string_view quote) {
       absl::StrAppend(&token_pattern, "(?:", quote, "(?:");
@@ -135,6 +138,9 @@ bool CreateTokenPattern(std::string& token_pattern,
       }
       if (flags.IsSet(LexerFlag::kEscapeCharacter) &&
           lexer_config.escape != 0) {
+        if (lexer_config.escape_hex) {
+          absl::StrAppend(&token_pattern, "|", escape_hex);
+        }
         absl::StrAppend(&token_pattern, "|", escape_char, ".");
       }
       absl::StrAppend(&token_pattern, ")", quote, ")");
@@ -328,6 +334,10 @@ std::unique_ptr<Lexer> Lexer::Create(const LexerConfig& lexer_config,
   config.ident_config.prefix = lexer_config.ident_prefix.size();
   config.ident_config.size_offset =
       config.ident_config.prefix + lexer_config.ident_suffix.size();
+  config.escape = lexer_config.escape;
+  config.escape_newline = lexer_config.escape_newline;
+  config.escape_tab = lexer_config.escape_tab;
+  config.escape_hex = lexer_config.escape_hex;
   return absl::WrapUnique(new Lexer(config));
 }
 
@@ -352,7 +362,11 @@ Lexer::Lexer(const Config& config)
       decimal_config_(config.decimal_config),
       hex_config_(config.hex_config),
       float_config_(config.float_config),
-      ident_config_(config.ident_config) {
+      ident_config_(config.ident_config),
+      escape_(config.escape),
+      escape_newline_(config.escape_newline),
+      escape_tab_(config.escape_tab),
+      escape_hex_(config.escape_hex) {
   re_args_.resize(config.token_pattern_count);
   re_token_args_.resize(config.token_pattern_count);
   if (config.binary_index >= 0) {
@@ -747,6 +761,46 @@ bool Lexer::ParseInt(std::string_view text, ParseType parse_type,
   return false;
 }
 
+namespace {
+unsigned char ToHex(char ch) {
+  if (absl::ascii_isdigit(ch)) {
+    return ch - '0';
+  }
+  if (ch >= 'A' && ch <= 'F') {
+    return ch - 'A' + 10;
+  }
+  if (ch >= 'a' && ch <= 'f') {
+    return ch - 'a' + 10;
+  }
+  return 0;
+}
+}  // namespace
+
+Token Lexer::ParseChar(TokenIndex token_index, char quote,
+                       std::string_view text) {
+  if (text.size() == 1 || !flags_.IsSet(LexerFlag::kDecodeEscape)) {
+    return Token::CreateChar(token_index, text.data(), text.size());
+  }
+  DCHECK(text.size() >= 2 && (text[0] == escape_ || text[0] == quote));
+  if (escape_newline_ != 0 && text[1] == escape_newline_) {
+    DCHECK(text.size() == 2);
+    return Token::CreateChar(token_index, "\n", 1);
+  }
+  if (escape_tab_ != 0 && text[1] == escape_tab_) {
+    DCHECK(text.size() == 2);
+    return Token::CreateChar(token_index, "\t", 1);
+  }
+  if (escape_hex_ != 0 && text[1] == escape_hex_) {
+    DCHECK(text.size() == 4);
+    unsigned char hex = ToHex(text[2]) << 4 | ToHex(text[3]);
+    std::string& str =
+        *modified_text_.emplace_back(std::make_unique<std::string>(1, hex));
+    return Token::CreateChar(token_index, str.data(), str.size());
+  }
+  DCHECK(text.size() == 2);
+  return Token::CreateChar(token_index, text.data() + 1, 1);
+}
+
 Token Lexer::ParseNextToken(Content* content, Line* line) {
   std::string_view remain = line->remain;
   if (re_token_args_.empty() ||
@@ -807,8 +861,8 @@ Token Lexer::ParseNextToken(Content* content, Line* line) {
       }
     } break;
     case kTokenChar: {
-      return Token::CreateChar(token_index, match_text.data() + 1,
-                               match_text.size() - 2);
+      return ParseChar(token_index, match_text[0],
+                       match_text.substr(1, match_text.size() - 2));
     } break;
     case kTokenIdentifier:
       if (flags_.IsSet(LexerFlag::kIdentForceLower)) {

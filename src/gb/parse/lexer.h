@@ -354,6 +354,10 @@ class Lexer final {
     TokenConfig hex_config;
     TokenConfig float_config;
     TokenConfig ident_config;
+    char escape = 0;
+    char escape_newline = 0;
+    char escape_tab = 0;
+    char escape_hex = 0;
   };
 
   enum class ParseType {
@@ -385,6 +389,7 @@ class Lexer final {
   std::tuple<Content*, Line*> GetContentLine(LexerContentId id);
 
   bool ParseInt(std::string_view text, ParseType parse_type, int64_t& value);
+  Token ParseChar(TokenIndex token_index, char quote, std::string_view text);
   Token ParseNextSymbol(Content* content, Line* line);
   Token ParseNextToken(Content* content, Line* line);
 
@@ -405,6 +410,10 @@ class Lexer final {
   int64_t max_int_ = std::numeric_limits<int64_t>::max();
   int64_t min_int_ = std::numeric_limits<int64_t>::min();
   uint64_t int_sign_extend_ = 0;
+  char escape_ = 0;
+  char escape_newline_ = 0;
+  char escape_tab_ = 0;
+  char escape_hex_ = 0;
 
   std::vector<std::unique_ptr<Content>> content_;
   absl::flat_hash_map<std::string_view, LexerContentId> filename_to_id_;
