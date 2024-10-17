@@ -129,6 +129,10 @@ sub-libraries (organized as subdirectories).
       bottom-up message handling for stack based endpoints (as in a UI system or
       hierarchical state machine). Only in-process messages are currently
       supported.
+   *  [`gb_parse`](src/gb/parse): This library defines general purpose text
+      parsing code for use with custom asset file syntax, game scripting languages,
+      or similar use cases. It supports a general-purpose-but-opinionated
+      lexer and source file / error reporting helpers.
    *  [`gb_resource`](src/gb/resource): This library defines a generic resource
       system for referencing, retrieving, sharing, and managing the lifecycle
       and dependencies of typed resources. This also supports optional reading
