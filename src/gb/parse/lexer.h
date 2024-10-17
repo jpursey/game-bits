@@ -355,6 +355,7 @@ class Lexer final {
     int hex_index = -1;
     int float_index = -1;
     int char_index = -1;
+    int string_index = -1;
     int ident_index = -1;
     int token_pattern_count = 0;
     std::string whitespace_pattern;
@@ -406,6 +407,7 @@ class Lexer final {
                  ParseType parse_type);
   Token ParseFloat(TokenIndex token_index, std::string_view text);
   Token ParseChar(TokenIndex token_index, std::string_view text);
+  Token ParseString(TokenIndex token_index, std::string_view text);
   Token ParseIdent(TokenIndex token_index, std::string_view text);
   Token ParseNextSymbol(Content* content, Line* line);
   Token ParseNextToken(Content* content, Line* line);

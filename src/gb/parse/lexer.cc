@@ -158,14 +158,32 @@ bool CreateTokenPattern(std::string& token_pattern,
   }
 
   if (LexerSupportsStrings(flags)) {
-    if (flags.Intersects({LexerFlag::kQuoteQuoteEscape,
-                          LexerFlag::kEscapeCharacter,
-                          LexerFlag::kDecodeEscape})) {
-      error = Lexer::kErrorNotImplemented;
-      return false;
+    absl::StrAppend(&token_pattern, "(");
+    auto quote_re = [&](std::string_view quote) {
+      absl::StrAppend(&token_pattern, "(?:", quote, "(?:");
+      absl::StrAppend(&token_pattern, "[^", quote, escape_char, "]");
+      if (flags.IsSet(LexerFlag::kQuoteQuoteEscape)) {
+        absl::StrAppend(&token_pattern, "|", quote, quote);
+      }
+      if (flags.IsSet(LexerFlag::kEscapeCharacter) &&
+          lexer_config.escape != 0) {
+        if (lexer_config.escape_hex) {
+          absl::StrAppend(&token_pattern, "|", escape_hex);
+        }
+        absl::StrAppend(&token_pattern, "|", escape_char, ".");
+      }
+      absl::StrAppend(&token_pattern, ")*", quote, ")");
+    };
+    if (flags.IsSet(LexerFlag::kDoubleQuoteString)) {
+      quote_re("\"");
     }
-    error = Lexer::kErrorNotImplemented;
-    return false;
+    if (flags.IsSet(LexerFlag::kSingleQuoteString)) {
+      if (flags.IsSet(LexerFlag::kDoubleQuoteString)) {
+        absl::StrAppend(&token_pattern, "|");
+      }
+      quote_re("'");
+    }
+    absl::StrAppend(&token_pattern, ")|");
   }
 
   if (LexerSupportsIdentifiers(flags)) {
@@ -281,6 +299,9 @@ std::unique_ptr<Lexer> Lexer::Create(const LexerConfig& lexer_config,
   }
   if (LexerSupportsCharacters(lexer_config.flags)) {
     config.char_index = index++;
+  }
+  if (LexerSupportsStrings(lexer_config.flags)) {
+    config.string_index = index++;
   }
   if (LexerSupportsIdentifiers(lexer_config.flags)) {
     config.ident_index = index++;
@@ -400,6 +421,11 @@ Lexer::Lexer(const Config& config)
   if (config.char_index >= 0) {
     const int i = config.char_index;
     re_args_[config.char_index].type = kTokenChar;
+    re_token_args_[i] = &re_args_[i].arg;
+  }
+  if (config.string_index >= 0) {
+    const int i = config.string_index;
+    re_args_[config.string_index].type = kTokenString;
     re_token_args_[i] = &re_args_[i].arg;
   }
   if (config.ident_index >= 0) {
@@ -812,13 +838,54 @@ Token Lexer::ParseChar(TokenIndex token_index, std::string_view text) {
   }
   if (escape_hex_ != 0 && char_text[1] == escape_hex_) {
     DCHECK(char_text.size() == 4);
-    unsigned char hex = ToHex(char_text[2]) << 4 | ToHex(char_text[3]);
+    const char hex = ToHex(char_text[2]) << 4 | ToHex(char_text[3]);
     std::string& str =
         *modified_text_.emplace_back(std::make_unique<std::string>(1, hex));
     return Token::CreateChar(token_index, str.data(), str.size());
   }
   DCHECK(char_text.size() == 2);
   return Token::CreateChar(token_index, char_text.data() + 1, 1);
+}
+
+Token Lexer::ParseString(TokenIndex token_index, std::string_view text) {
+  DCHECK(text.size() >= 2);
+  const char quote = text[0];
+  std::string_view char_text = text.substr(1, text.size() - 2);
+  if (char_text.size() <= 1 || !flags_.IsSet(LexerFlag::kDecodeEscape)) {
+    return Token::CreateString(token_index, char_text.data(), char_text.size());
+  }
+  const char escape_starts[3] = {quote, escape_, 0};
+  auto pos = char_text.find_first_of(escape_starts);
+  if (pos == std::string_view::npos) {
+    return Token::CreateString(token_index, char_text.data(), char_text.size());
+  }
+  std::string& str =
+      *modified_text_.emplace_back(std::make_unique<std::string>());
+  str.reserve(char_text.size());
+  while (pos != std::string_view::npos) {
+    absl::StrAppend(&str, char_text.substr(0, pos));
+    char_text.remove_prefix(pos);
+    DCHECK(char_text.size() >= 2);
+    if (escape_newline_ != 0 && char_text[1] == escape_newline_) {
+      absl::StrAppend(&str, "\n");
+      char_text.remove_prefix(2);
+    } else if (escape_tab_ != 0 && char_text[1] == escape_tab_) {
+      absl::StrAppend(&str, "\t");
+      char_text.remove_prefix(2);
+    } else if (escape_hex_ != 0 && char_text[1] == escape_hex_) {
+      DCHECK(char_text.size() >= 4);
+      const char hex = ToHex(char_text[2]) << 4 | ToHex(char_text[3]);
+      absl::StrAppend(&str, std::string_view(&hex, 1));
+      char_text.remove_prefix(4);
+    } else {
+      absl::StrAppend(&str, char_text.substr(1, 1));
+      char_text.remove_prefix(2);
+    }
+    pos = char_text.find_first_of(escape_starts);
+  }
+  absl::StrAppend(&str, char_text);
+  DCHECK(str.size() <= 0xFFFF);
+  return Token::CreateString(token_index, str.data(), str.size());
 }
 
 Token Lexer::ParseIdent(TokenIndex token_index, std::string_view text) {
@@ -875,6 +942,8 @@ Token Lexer::ParseNextToken(Content* content, Line* line) {
       return ParseFloat(token_index, match_text);
     case kTokenChar:
       return ParseChar(token_index, match_text);
+    case kTokenString:
+      return ParseString(token_index, match_text);
     case kTokenIdentifier:
       return ParseIdent(token_index, match_text);
   }
