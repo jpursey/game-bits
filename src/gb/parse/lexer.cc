@@ -319,10 +319,9 @@ std::unique_ptr<Lexer> Lexer::Create(const LexerConfig& lexer_config,
     return nullptr;
   }
 
-  if (lexer_config.flags.Intersects(
-          {LexerFlag::kLineBreak, LexerFlag::kLineIndent,
-           LexerFlag::kLeadingTabs, LexerFlag::kEscapeNewline,
-           LexerFlag::kLineComments, LexerFlag::kBlockComments})) {
+  if (lexer_config.flags.Intersects({LexerFlag::kLineBreak,
+                                     LexerFlag::kLineComments,
+                                     LexerFlag::kBlockComments})) {
     error = Lexer::kErrorNotImplemented;
     return nullptr;
   }

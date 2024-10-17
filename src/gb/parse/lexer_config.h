@@ -83,9 +83,6 @@ enum class LexerFlag {
 
   // Whitespace and comment parsing flags.
   kLineBreak,      // Newlines are not whitespace (enables kTokenNewline).
-  kLineIndent,     // Indentation is significant (enables kTokenIndent).
-  kLeadingTabs,    // Leading tabs are allowed on lines (requires kLineIndent).
-  kEscapeNewline,  // Newlines can be escaped (set in config).
   kLineComments,   // Allows line comments (set in config).
   kBlockComments,  // Allows block comments (set in config).
 };
@@ -155,7 +152,7 @@ inline constexpr LexerFlags kLexerFlags_C = {
     kLexerFlags_AllIntegerFormats, kLexerFlags_AllFloatFormats,
     kLexerFlags_CStrings,          kLexerFlags_CCharacters,
     kLexerFlags_CIdentifiers,      LexerFlag::kLineComments,
-    LexerFlag::kBlockComments,     LexerFlag::kEscapeNewline};
+    LexerFlag::kBlockComments};
 
 //------------------------------------------------------------------------------
 // Flag queries.
