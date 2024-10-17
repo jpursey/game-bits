@@ -34,28 +34,30 @@ namespace gb {
 // languages and cannot be configured:
 //   - Whitespace is any sequence of space or tab characters.
 //   - Newlines are optionally whitespace or their own token. Tokenization does
-//     not cross line boundaries with out explicit configuration of a line end
-//     escape character.
+//     not cross line boundaries.
 //   - Normal tokens must be separated by whitespace or symbols.
 //   - Symbols must be explicitly defined, and may be any sequence of up to 7
-//     characters that are not whitespace (best practice is they do not match
-//     any other token, but this is not a hard requirement).
+//     ASCII characters that are not whitespace or control characters (best
+//     practice is they do not match any other token, but this is not a hard
+//     requirement).
 //   - Symbols are matched before other tokens after a non-symbol token is
 //     parsed, and other tokens are matched before symbols after a symbol is
 //     parsed (or at the beginning of content). This disambiguates between the
 //     common issue of symbols (like '-') which match the beginning of tokens
-//     (like '-2'), so "a-2" becomes {"a", "-", " 2"} not {"a", "-2"}.
+//     (like '-2'), so "-3-2" becomes {"-3", "-", " 2"} not {"-3", "-2"} or
+//     {"-", "3", "-", "2"}. Numbers may also be configured to only be positive
+//     in case the latter result is what is desired.
 //   - Characters encountered that do not match any symbol or whitespace, and
 //     are illegal within a normal token result in an error token. The error
 //     token extends up to the next encountered whitespace or symbol start
-//     character). The results in more natural error token results in general,
+//     character). This results in more natural error token results in general,
 //     allowing token skipping and better error reporting using the token text
 //     as context.
 //   - Floating point numbers cannot start or end with a '.' (unlike C/C++)
 //     There must be digits on both sides of a period.
 //   - Non-decimal integer formats (hexadecimal, octal, binary) do not support
-//     explicit negation (although if large enough, they will be negative when
-//     converted to 2's compliment).
+//     explicit negation (although if large enough relative to the specified
+//     max bit depth, they will be negative when converted to 2's compliment).
 //   - Token types are determined by the longest match, and in the case of a
 //     tie in the following order: binary integer, octal integer, decimal
 //     integer, hexadecimal integer, floating point number, character, string,
@@ -110,7 +112,9 @@ namespace gb {
 class Lexer final {
  public:
   //----------------------------------------------------------------------------
-  // Error strings
+  // Lexer initialization error strings
+  //
+  // These may be returned by Lexer::Create if the configuration is invalid.
   //----------------------------------------------------------------------------
 
   // Currently unsupported feature in the lexer.
@@ -129,17 +133,31 @@ class Lexer final {
   // tokens).
   static const std::string_view kErrorNoTokenSpec;
 
+  //----------------------------------------------------------------------------
+  // Token error strings
+  //
+  // These may be returned as the message of a Token of type kTokenError.
+  //----------------------------------------------------------------------------
+
   // The token referred to invalid content, or content not associated with this
-  // Lexer instance.
+  // Lexer instance. This is only returned by ParseToken which takes a
+  // TokenIndex.
   static const std::string_view kErrorInvalidTokenContent;
 
-  // An invalid token was encountered when parsing tokens.
+  // An invalid token was encountered when parsing tokens. This is due to an
+  // unknown character or other type of malformed token.
   static const std::string_view kErrorInvalidToken;
 
-  // An invalid integer was encountered when parsing tokens.
+  // An invalid integer was encountered when parsing tokens. Generally this is
+  // due to the integer being out of range of the min/max values based on the
+  // bit-depth. Decimal integers are always signed (even if only positive), and
+  // binary, octal, and hex integers are always unsigned.
   static const std::string_view kErrorInvalidInteger;
 
-  // An invalid float was encountered when parsing tokens.
+  // An invalid float was encountered when parsing tokens. Generally this is due
+  // to the floating point value being out of range of the min/max values based
+  // on the bit-depth. It also may be returned if the floating point requires
+  // precision beyond what is supported by the bit-depth.
   static const std::string_view kErrorInvalidFloat;
 
   //----------------------------------------------------------------------------
@@ -200,7 +218,7 @@ class Lexer final {
   // index is out of range.
   std::string_view GetLineText(LexerContentId id, int line_index) const;
 
-  // Returns the line index for the specified line number in the content. If the
+  // Returns the location for the specified line number in the content. If the
   // line number is out of range, this returns a default constructed (invalid)
   // location.
   LexerLocation GetLineLocation(LexerContentId id, int line_index) const;
@@ -237,19 +255,15 @@ class Lexer final {
 
   // Returns the token location for the token or token index.
   //
-  // The location is to the *start* of the token (or token index). Tokens can
-  // span multiple lines, so the line ending line number may not be the same as
-  // the line number of the token. To query the location of the end of the
-  // token, call GetTokenEndLocation() on the token.
+  // The location is to the start of the token (or token index). If the token or
+  // token index is invalid, this returns a default constructed (invalid)
+  // location.
   LexerLocation GetTokenLocation(const Token& token) const;
   LexerLocation GetTokenLocation(TokenIndex index) const;
 
-  // Returns the raw text of the token or token index (up to the end of the
-  // line).
+  // Returns the raw text of the token or token index.
   //
-  // Returns an empty string if the token or start token index is invalid. If
-  // the token spans multiple lines, this will return the text up to the end of
-  // the line that the token starts on, and *not* the full token text.
+  // Returns an empty string if the token or start token index is invalid.
   std::string_view GetTokenText(const Token& token) const;
   std::string_view GetTokenText(TokenIndex index) const;
 
