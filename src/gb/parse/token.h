@@ -29,7 +29,7 @@ inline constexpr TokenType kTokenInt = 4;         // Value: Int
 inline constexpr TokenType kTokenFloat = 5;       // Value: Float
 inline constexpr TokenType kTokenChar = 6;        // Value: String
 inline constexpr TokenType kTokenString = 7;      // Value: String
-inline constexpr TokenType kTokenKeyword = 8;     // Value: Index and String
+inline constexpr TokenType kTokenKeyword = 8;     // Value: String
 inline constexpr TokenType kTokenIdentifier = 9;  // Value: String
 inline constexpr TokenType kTokenNewline = 10;    // Value: kNone
 
@@ -55,8 +55,7 @@ class Token final {
   TokenType GetType() const { return type_; }
 
   // Returns the typed value of the token or a default value if it isn't valid
-  // for the token type. Some types (like kTokenEnd) have no value, and other
-  // types (like kTokenKeyword) has both an index and a string value. See the
+  // for the token type. Some types (like kTokenEnd) have no value. See the
   // specific token types above for details on the valid value types for each
   // predefined token type.
   int64_t GetInt() const;              // Default: 0
@@ -73,7 +72,6 @@ class Token final {
   double GetFloat64() const;           // Default: 0.0
   float GetFloat32() const;            // Default: 0.0f
   std::string_view GetString() const;  // Default: empty
-  int GetIndex() const;                // Default: -1
   Symbol GetSymbol() const;            // Default: Symbol()
 
   // Comparison operators.
@@ -104,7 +102,6 @@ class Token final {
     kInt,         // int_ and sizeof_ are valid
     kString,      // string_ and strlen_ are valid
     kStringView,  // string_view_ is valid
-    kIndex,       // index_ and string_view_ are valid
     kSymbol,      // symbol_ is valid
   };
 
@@ -154,9 +151,7 @@ class Token final {
   }
   static Token CreateKeyword(TokenIndex token_index, int index,
                              std::string_view* indexed_string) {
-    Token token(token_index, kTokenKeyword, ValueType::kIndex);
-    token.value_type_ = ValueType::kIndex;
-    token.index_ = index;
+    Token token(token_index, kTokenKeyword, ValueType::kStringView);
     token.string_view_ = indexed_string;
     return token;
   }
@@ -183,10 +178,7 @@ class Token final {
   TokenIndex token_index_;
   TokenType type_ = kTokenNone;
   ValueType value_type_ = ValueType::kNone;
-  union {
-    uint16_t strlen_ = 0;  // For type string.
-    uint16_t index_;       // For type index.
-  };
+  uint16_t strlen_ = 0;  // For type string.
   union {
     int64_t int_ = 0;
     double float_;
@@ -226,8 +218,7 @@ void AbslStringify(Sink& sink, const Token& token) {
       absl::Format(&sink, "\"%s\"", token.GetString());
       break;
     case kTokenKeyword:
-      absl::Format(&sink, "{index:%d, value:\"%s\"}", token.GetIndex(),
-                   token.GetString());
+      absl::Format(&sink, "\"%s\"", token.GetString());
       break;
     default:
       // All user types are strings.
@@ -282,19 +273,11 @@ inline std::string_view Token::GetString() const {
   if (value_type_ == ValueType::kString) {
     return std::string_view(string_, strlen_);
   }
-  if (value_type_ == ValueType::kIndex ||
-      value_type_ == ValueType::kStringView) {
+  if (value_type_ == ValueType::kStringView) {
     DCHECK(string_view_ != nullptr);
     return *string_view_;
   }
   return {};
-}
-
-inline int Token::GetIndex() const {
-  if (value_type_ != ValueType::kIndex) {
-    return -1;
-  }
-  return index_;
 }
 
 inline Symbol Token::GetSymbol() const {

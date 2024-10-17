@@ -275,7 +275,6 @@ TEST(LexerTest, DefaultToken) {
   EXPECT_EQ(token.GetInt(), 0);
   EXPECT_EQ(token.GetFloat(), 0);
   EXPECT_EQ(token.GetString(), "");
-  EXPECT_EQ(token.GetIndex(), -1);
   EXPECT_EQ(token.GetSymbol(), Symbol());
 }
 

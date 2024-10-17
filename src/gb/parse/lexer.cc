@@ -678,13 +678,6 @@ std::string_view Lexer::GetTokenText(TokenIndex index) const {
   return {};
 }
 
-std::string_view Lexer::GetIndexedString(int index) const {
-  if (index < 0 || index >= indexed_strings_.size()) {
-    return {};
-  }
-  return indexed_strings_[index];
-}
-
 Token Lexer::ParseToken(TokenIndex index) {
   const Line* line = GetLine(index.line);
   if (line == nullptr) {

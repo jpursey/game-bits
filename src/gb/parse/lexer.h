@@ -267,10 +267,6 @@ class Lexer final {
   std::string_view GetTokenText(const Token& token) const;
   std::string_view GetTokenText(TokenIndex index) const;
 
-  // Returns the value string for the specified Token or index value (from
-  // Token::GetIndex()).
-  std::string_view GetIndexedString(int index) const;
-
   //----------------------------------------------------------------------------
   // Token parsing
   //----------------------------------------------------------------------------
@@ -438,7 +434,6 @@ class Lexer final {
   absl::flat_hash_map<std::string_view, LexerContentId> filename_to_id_;
   std::vector<std::unique_ptr<std::string>> modified_text_;
   std::vector<Line> lines_;
-  std::vector<std::string> indexed_strings_;
 };
 
 }  // namespace gb
