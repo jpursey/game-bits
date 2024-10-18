@@ -235,7 +235,7 @@ bool CreateTokenPattern(std::string& token_pattern,
                           LexerFlag::kIdentForceUpper})) {
       absl::StrAppend(&token_pattern, "a-z");
     }
-    absl::StrAppend(&token_pattern, "]+",
+    absl::StrAppend(&token_pattern, "]*",
                     RE2::QuoteMeta(lexer_config.ident_suffix), ")|");
   }
 
@@ -246,7 +246,7 @@ bool CreateTokenPattern(std::string& token_pattern,
   return true;
 }
 
-bool CreateSymbolPattern(std::string& pattern_sym, std::string& symbol_chars,
+bool CreateSymbolPattern(std::string& symbol_pattern, std::string& symbol_chars,
                          const LexerConfig& config, std::string& error) {
   if (config.symbols.empty()) {
     return true;
@@ -261,12 +261,31 @@ bool CreateSymbolPattern(std::string& pattern_sym, std::string& symbol_chars,
     if (symbol_chars.find(first_char) == std::string::npos) {
       symbol_chars.push_back(first_char);
     }
-    absl::StrAppend(&pattern_sym, RE2::QuoteMeta(symbol.GetString()));
-    absl::StrAppend(&pattern_sym, "|");
+    absl::StrAppend(&symbol_pattern, RE2::QuoteMeta(symbol.GetString()));
+    absl::StrAppend(&symbol_pattern, "|");
   }
-  pattern_sym.pop_back();
+  symbol_pattern.pop_back();
   if (!symbol_chars.empty()) {
     symbol_chars = RE2::QuoteMeta(symbol_chars);
+  }
+  return true;
+}
+
+bool CreateWhitespacePattern(std::string& whitespace_pattern,
+                             const LexerConfig& config, std::string& error) {
+  if (!config.block_comments.empty()) {
+    error = Lexer::kErrorNotImplemented;
+    return false;
+  }
+
+  whitespace_pattern = "[ \\t]*";
+  if (!config.line_comments.empty()) {
+    absl::StrAppend(&whitespace_pattern, "(?:(?:");
+    for (const std::string_view& line_comment : config.line_comments) {
+      absl::StrAppend(&whitespace_pattern, RE2::QuoteMeta(line_comment), "|");
+    }
+    whitespace_pattern.pop_back();
+    absl::StrAppend(&whitespace_pattern, ").*)?");
   }
   return true;
 }
@@ -338,7 +357,11 @@ std::unique_ptr<Lexer> Lexer::Create(const LexerConfig& lexer_config,
     return nullptr;
   }
 
-  config.whitespace_pattern = "[ \\t]*";
+  if (!CreateWhitespacePattern(config.whitespace_pattern, lexer_config,
+                               error)) {
+    return nullptr;
+  }
+
   if (!symbol_pattern.empty()) {
     config.symbol_pattern = absl::StrCat("(", symbol_pattern, ")");
     config.token_end_pattern = absl::StrCat("[ \\t]|", symbol_pattern);
@@ -951,7 +974,8 @@ Token Lexer::ParseNextToken(Content* content, Line* line) {
   // See what the next text is. If it is not whitespace or a symol, then this
   // is not actually a match (it is either an error or a symbol, depending on
   // the ReOrder).
-  if (!remain.empty() && !RE2::Consume(&remain, re_token_end_)) {
+  std::string_view after_token = remain;
+  if (!after_token.empty() && !RE2::Consume(&after_token, re_token_end_)) {
     return {};
   }
 
