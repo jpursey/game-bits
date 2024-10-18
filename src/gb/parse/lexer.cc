@@ -34,11 +34,6 @@ bool CreateTokenPattern(std::string& token_pattern,
                         const LexerConfig& lexer_config, std::string& error) {
   const LexerFlags flags = lexer_config.flags;
 
-  if (!lexer_config.keywords.empty()) {
-    error = Lexer::kErrorNotImplemented;
-    return false;
-  }
-
   if (LexerSupportsIntegers(flags)) {
     bool first = true;
     if (flags.IsSet(LexerFlag::kBinaryIntegers)) {
@@ -186,6 +181,15 @@ bool CreateTokenPattern(std::string& token_pattern,
     absl::StrAppend(&token_pattern, ")|");
   }
 
+  if (!lexer_config.keywords.empty()) {
+    absl::StrAppend(&token_pattern, "(");
+    for (const std::string_view& keyword : lexer_config.keywords) {
+      absl::StrAppend(&token_pattern, RE2::QuoteMeta(keyword), "|");
+    }
+    token_pattern.pop_back();
+    absl::StrAppend(&token_pattern, ")|");
+  }
+
   if (LexerSupportsIdentifiers(flags)) {
     if (flags.IsSet(
             {LexerFlag::kIdentForceUpper, LexerFlag::kIdentForceLower})) {
@@ -302,6 +306,9 @@ std::unique_ptr<Lexer> Lexer::Create(const LexerConfig& lexer_config,
   }
   if (LexerSupportsStrings(lexer_config.flags)) {
     config.string_index = index++;
+  }
+  if (!lexer_config.keywords.empty()) {
+    config.keyword_index = index++;
   }
   if (LexerSupportsIdentifiers(lexer_config.flags)) {
     config.ident_index = index++;
@@ -425,6 +432,11 @@ Lexer::Lexer(const Config& config)
   if (config.string_index >= 0) {
     const int i = config.string_index;
     re_args_[config.string_index].type = kTokenString;
+    re_token_args_[i] = &re_args_[i].arg;
+  }
+  if (config.keyword_index >= 0) {
+    const int i = config.keyword_index;
+    re_args_[config.keyword_index].type = kTokenKeyword;
     re_token_args_[i] = &re_args_[i].arg;
   }
   if (config.ident_index >= 0) {
@@ -936,6 +948,9 @@ Token Lexer::ParseNextToken(Content* content, Line* line) {
       return ParseChar(token_index, match_text);
     case kTokenString:
       return ParseString(token_index, match_text);
+    case kTokenKeyword:
+      return Token::CreateKeyword(token_index, match_text.data(),
+                                  match_text.size());
     case kTokenIdentifier:
       return ParseIdent(token_index, match_text);
   }

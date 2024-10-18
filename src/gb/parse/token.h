@@ -143,16 +143,11 @@ class Token final {
     token.string_ = value;
     return token;
   }
-  static Token CreateString(TokenIndex token_index,
-                            const std::string_view* value) {
-    Token token(token_index, kTokenString, ValueType::kStringView);
-    token.string_view_ = value;
-    return token;
-  }
-  static Token CreateKeyword(TokenIndex token_index, int index,
-                             std::string_view* indexed_string) {
-    Token token(token_index, kTokenKeyword, ValueType::kStringView);
-    token.string_view_ = indexed_string;
+  static Token CreateKeyword(TokenIndex token_index, const char* value,
+                             uint16_t size) {
+    Token token(token_index, kTokenKeyword, ValueType::kString);
+    token.strlen_ = size;
+    token.string_ = value;
     return token;
   }
   static Token CreateIdentifier(TokenIndex token_index, const char* value,
@@ -160,12 +155,6 @@ class Token final {
     Token token(token_index, kTokenIdentifier, ValueType::kString);
     token.strlen_ = size;
     token.string_ = value;
-    return token;
-  }
-  static Token CreateIdentifier(TokenIndex token_index,
-                                const std::string_view* value) {
-    Token token(token_index, kTokenIdentifier, ValueType::kStringView);
-    token.string_view_ = value;
     return token;
   }
   static Token CreateNewline(TokenIndex token_index) {

@@ -40,17 +40,6 @@ TEST_P(UnimplementedFlags, Test) {
   EXPECT_EQ(error, Lexer::kErrorNotImplemented);
 }
 
-TEST(LexerTest, KeywordsUnimplemented) {
-  LexerConfig config;
-  config.keywords = {
-      "if", "else", "while", "for", "return",
-  };
-  std::string error;
-  auto lexer = Lexer::Create(config, &error);
-  EXPECT_EQ(lexer, nullptr);
-  EXPECT_EQ(error, Lexer::kErrorNotImplemented);
-}
-
 TEST(LexerTest, DefaultConfigIsInvalid) {
   LexerConfig config;
   std::string error;
@@ -1816,283 +1805,6 @@ TEST(LexerTest, ParseFloatMaxSize32Bit) {
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
-TEST(LexerTest, ConflictingForceUpperAndLower) {
-  std::string error;
-  auto lexer = Lexer::Create(
-      {.flags = {LexerFlag::kIdentForceUpper, LexerFlag::kIdentForceLower}},
-      &error);
-  EXPECT_EQ(lexer, nullptr);
-  EXPECT_EQ(error, Lexer::kErrorConflictingIdentifierSpec);
-}
-
-TEST(LexerTest, ParseIdentLower) {
-  auto lexer = Lexer::Create({
-      .flags = {LexerFlag::kIdentLower},
-  });
-  ASSERT_NE(lexer, nullptr);
-  const LexerContentId content = lexer->AddContent("abc DEF gHi");
-  Token token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenIdentifier);
-  EXPECT_EQ(token.GetString(), "abc");
-  EXPECT_EQ(lexer->GetTokenText(token), "abc");
-  token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenError);
-  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
-  EXPECT_EQ(lexer->GetTokenText(token), "DEF");
-  token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenError);
-  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
-  EXPECT_EQ(lexer->GetTokenText(token), "gHi");
-  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
-}
-
-TEST(LexerTest, ParseIdentUpper) {
-  auto lexer = Lexer::Create({
-      .flags = {LexerFlag::kIdentUpper},
-  });
-  ASSERT_NE(lexer, nullptr);
-  const LexerContentId content = lexer->AddContent("abc DEF gHi");
-  Token token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenError);
-  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
-  EXPECT_EQ(lexer->GetTokenText(token), "abc");
-  token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenIdentifier);
-  EXPECT_EQ(token.GetString(), "DEF");
-  EXPECT_EQ(lexer->GetTokenText(token), "DEF");
-  token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenError);
-  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
-  EXPECT_EQ(lexer->GetTokenText(token), "gHi");
-  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
-}
-
-TEST(LexerTest, ParseIdentDigit) {
-  auto lexer = Lexer::Create({
-      .flags = {LexerFlag::kIdentUpper, LexerFlag::kIdentLower,
-                LexerFlag::kIdentDigit},
-  });
-  ASSERT_NE(lexer, nullptr);
-  const LexerContentId content = lexer->AddContent("abc123 D45E 6HIj");
-  Token token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenIdentifier);
-  EXPECT_EQ(token.GetString(), "abc123");
-  EXPECT_EQ(lexer->GetTokenText(token), "abc123");
-  token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenIdentifier);
-  EXPECT_EQ(token.GetString(), "D45E");
-  EXPECT_EQ(lexer->GetTokenText(token), "D45E");
-  token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenIdentifier);
-  EXPECT_EQ(token.GetString(), "6HIj");
-  EXPECT_EQ(lexer->GetTokenText(token), "6HIj");
-  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
-}
-
-TEST(LexerTest, ParseIdentNonLeadDigit) {
-  auto lexer = Lexer::Create({
-      .flags = {LexerFlag::kIdentUpper, LexerFlag::kIdentLower,
-                LexerFlag::kIdentNonLeadDigit},
-  });
-  ASSERT_NE(lexer, nullptr);
-  const LexerContentId content = lexer->AddContent("abc123 D45E 6HIj");
-  Token token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenIdentifier);
-  EXPECT_EQ(token.GetString(), "abc123");
-  EXPECT_EQ(lexer->GetTokenText(token), "abc123");
-  token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenIdentifier);
-  EXPECT_EQ(token.GetString(), "D45E");
-  EXPECT_EQ(lexer->GetTokenText(token), "D45E");
-  token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenError);
-  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
-  EXPECT_EQ(lexer->GetTokenText(token), "6HIj");
-  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
-}
-
-TEST(LexerTest, ParseIdentNonLeadDigitTakesPrecedence) {
-  auto lexer = Lexer::Create({
-      .flags = {LexerFlag::kIdentUpper, LexerFlag::kIdentLower,
-                LexerFlag::kIdentNonLeadDigit, LexerFlag::kIdentDigit},
-  });
-  ASSERT_NE(lexer, nullptr);
-  const LexerContentId content = lexer->AddContent("6HIj");
-  Token token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenError);
-  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
-  EXPECT_EQ(lexer->GetTokenText(token), "6HIj");
-  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
-}
-
-TEST(LexerTest, ParseIdentUnderscore) {
-  auto lexer = Lexer::Create({
-      .flags = {LexerFlag::kIdentUpper, LexerFlag::kIdentLower,
-                LexerFlag::kIdentUnderscore},
-  });
-  ASSERT_NE(lexer, nullptr);
-  const LexerContentId content = lexer->AddContent("abc_ D__E _HIj");
-  Token token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenIdentifier);
-  EXPECT_EQ(token.GetString(), "abc_");
-  EXPECT_EQ(lexer->GetTokenText(token), "abc_");
-  token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenIdentifier);
-  EXPECT_EQ(token.GetString(), "D__E");
-  EXPECT_EQ(lexer->GetTokenText(token), "D__E");
-  token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenIdentifier);
-  EXPECT_EQ(token.GetString(), "_HIj");
-  EXPECT_EQ(lexer->GetTokenText(token), "_HIj");
-  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
-}
-
-TEST(LexerTest, ParseIdentNonLeadUnderscore) {
-  auto lexer = Lexer::Create({
-      .flags = {LexerFlag::kIdentUpper, LexerFlag::kIdentLower,
-                LexerFlag::kIdentNonLeadUnderscore},
-  });
-  ASSERT_NE(lexer, nullptr);
-  const LexerContentId content = lexer->AddContent("abc_ D__E _HIj");
-  Token token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenIdentifier);
-  EXPECT_EQ(token.GetString(), "abc_");
-  EXPECT_EQ(lexer->GetTokenText(token), "abc_");
-  token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenIdentifier);
-  EXPECT_EQ(token.GetString(), "D__E");
-  EXPECT_EQ(lexer->GetTokenText(token), "D__E");
-  token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenError);
-  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
-  EXPECT_EQ(lexer->GetTokenText(token), "_HIj");
-  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
-}
-
-TEST(LexerTest, ParseIdentNonLeadUnderscoreTakesPrecedence) {
-  auto lexer = Lexer::Create({
-      .flags = {LexerFlag::kIdentUpper, LexerFlag::kIdentLower,
-                LexerFlag::kIdentNonLeadUnderscore,
-                LexerFlag::kIdentUnderscore},
-  });
-  ASSERT_NE(lexer, nullptr);
-  const LexerContentId content = lexer->AddContent("_HIj");
-  Token token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenError);
-  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
-  EXPECT_EQ(lexer->GetTokenText(token), "_HIj");
-  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
-}
-
-TEST(LexerTest, ParseIdentWithPrefix) {
-  auto lexer = Lexer::Create({
-      .flags = {LexerFlag::kIdentUpper, LexerFlag::kIdentLower},
-      .ident_prefix = "id_",
-  });
-  ASSERT_NE(lexer, nullptr);
-  const LexerContentId content = lexer->AddContent("id_abc id_DEF Id_gHi");
-  Token token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenIdentifier);
-  EXPECT_EQ(token.GetString(), "id_abc");
-  EXPECT_EQ(lexer->GetTokenText(token), "id_abc");
-  token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenIdentifier);
-  EXPECT_EQ(token.GetString(), "id_DEF");
-  EXPECT_EQ(lexer->GetTokenText(token), "id_DEF");
-  token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenError);
-  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
-  EXPECT_EQ(lexer->GetTokenText(token), "Id_gHi");
-  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
-}
-
-TEST(LexerTest, ParseIdentWithSuffix) {
-  auto lexer = Lexer::Create({
-      .flags = {LexerFlag::kIdentUpper, LexerFlag::kIdentLower},
-      .ident_suffix = "_id",
-  });
-  ASSERT_NE(lexer, nullptr);
-  const LexerContentId content = lexer->AddContent("abc_id DEF_id gHi_ID");
-  Token token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenIdentifier);
-  EXPECT_EQ(token.GetString(), "abc_id");
-  EXPECT_EQ(lexer->GetTokenText(token), "abc_id");
-  token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenIdentifier);
-  EXPECT_EQ(token.GetString(), "DEF_id");
-  EXPECT_EQ(lexer->GetTokenText(token), "DEF_id");
-  token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenError);
-  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
-  EXPECT_EQ(lexer->GetTokenText(token), "gHi_ID");
-  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
-}
-
-TEST(LexerTest, ParseIdentWithPrefixAndSuffix) {
-  auto lexer = Lexer::Create({
-      .flags = {LexerFlag::kIdentUpper, LexerFlag::kIdentLower},
-      .ident_prefix = "$",
-      .ident_suffix = "*",
-  });
-  ASSERT_NE(lexer, nullptr);
-  const LexerContentId content = lexer->AddContent("$abc* $DEF gHi*");
-  Token token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenIdentifier);
-  EXPECT_EQ(token.GetString(), "$abc*");
-  EXPECT_EQ(lexer->GetTokenText(token), "$abc*");
-  token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenError);
-  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
-  EXPECT_EQ(lexer->GetTokenText(token), "$DEF");
-  token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenError);
-  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
-  EXPECT_EQ(lexer->GetTokenText(token), "gHi*");
-  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
-}
-
-TEST(LexerTest, ParseIdentForceUpper) {
-  auto lexer = Lexer::Create({
-      .flags = {LexerFlag::kIdentForceUpper},
-  });
-  ASSERT_NE(lexer, nullptr);
-  const LexerContentId content = lexer->AddContent("abc DEF gHi");
-  Token token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenIdentifier);
-  EXPECT_EQ(token.GetString(), "ABC");
-  EXPECT_EQ(lexer->GetTokenText(token), "abc");
-  token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenIdentifier);
-  EXPECT_EQ(token.GetString(), "DEF");
-  EXPECT_EQ(lexer->GetTokenText(token), "DEF");
-  token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenIdentifier);
-  EXPECT_EQ(token.GetString(), "GHI");
-  EXPECT_EQ(lexer->GetTokenText(token), "gHi");
-  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
-}
-
-TEST(LexerTest, ParseIdentForceLower) {
-  auto lexer = Lexer::Create({
-      .flags = {LexerFlag::kIdentForceLower},
-  });
-  ASSERT_NE(lexer, nullptr);
-  const LexerContentId content = lexer->AddContent("abc DEF gHi");
-  Token token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenIdentifier);
-  EXPECT_EQ(token.GetString(), "abc");
-  EXPECT_EQ(lexer->GetTokenText(token), "abc");
-  token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenIdentifier);
-  EXPECT_EQ(token.GetString(), "def");
-  EXPECT_EQ(lexer->GetTokenText(token), "DEF");
-  token = lexer->NextToken(content);
-  EXPECT_EQ(token.GetType(), kTokenIdentifier);
-  EXPECT_EQ(token.GetString(), "ghi");
-  EXPECT_EQ(lexer->GetTokenText(token), "gHi");
-  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
-}
-
 TEST(LexerTest, ConflictingStringAndCharSpecs) {
   std::string error;
   auto lexer = Lexer::Create({.flags = {LexerFlag::kDoubleQuoteString,
@@ -2641,6 +2353,363 @@ TEST(LexerTest, ParseStringWithDecodeAndSpecialCodes) {
   EXPECT_EQ(token.GetType(), kTokenString);
   EXPECT_EQ(token.GetString(), "start\nmid\tend");
   EXPECT_EQ(lexer->GetTokenText(token), "'start$nmid$tend'");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseKeyword) {
+  auto lexer = Lexer::Create({
+      .keywords = {"if", "else", "while"},
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("else while if whiles");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenKeyword);
+  EXPECT_EQ(token.GetString(), "else");
+  EXPECT_EQ(lexer->GetTokenText(token), "else");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenKeyword);
+  EXPECT_EQ(token.GetString(), "while");
+  EXPECT_EQ(lexer->GetTokenText(token), "while");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenKeyword);
+  EXPECT_EQ(token.GetString(), "if");
+  EXPECT_EQ(lexer->GetTokenText(token), "if");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
+  EXPECT_EQ(lexer->GetTokenText(token), "whiles");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseKeywordWithSpecialCharacters) {
+  auto lexer = Lexer::Create({
+      .keywords = {"$if", "else\\", "wh|ile"},
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("else\\ wh|ile $if while");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenKeyword);
+  EXPECT_EQ(token.GetString(), "else\\");
+  EXPECT_EQ(lexer->GetTokenText(token), "else\\");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenKeyword);
+  EXPECT_EQ(token.GetString(), "wh|ile");
+  EXPECT_EQ(lexer->GetTokenText(token), "wh|ile");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenKeyword);
+  EXPECT_EQ(token.GetString(), "$if");
+  EXPECT_EQ(lexer->GetTokenText(token), "$if");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
+  EXPECT_EQ(lexer->GetTokenText(token), "while");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ConflictingForceUpperAndLower) {
+  std::string error;
+  auto lexer = Lexer::Create(
+      {.flags = {LexerFlag::kIdentForceUpper, LexerFlag::kIdentForceLower}},
+      &error);
+  EXPECT_EQ(lexer, nullptr);
+  EXPECT_EQ(error, Lexer::kErrorConflictingIdentifierSpec);
+}
+
+TEST(LexerTest, ParseIdentLower) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kIdentLower},
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("abc DEF gHi");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "abc");
+  EXPECT_EQ(lexer->GetTokenText(token), "abc");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
+  EXPECT_EQ(lexer->GetTokenText(token), "DEF");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
+  EXPECT_EQ(lexer->GetTokenText(token), "gHi");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseIdentUpper) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kIdentUpper},
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("abc DEF gHi");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
+  EXPECT_EQ(lexer->GetTokenText(token), "abc");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "DEF");
+  EXPECT_EQ(lexer->GetTokenText(token), "DEF");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
+  EXPECT_EQ(lexer->GetTokenText(token), "gHi");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseIdentDigit) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kIdentUpper, LexerFlag::kIdentLower,
+                LexerFlag::kIdentDigit},
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("abc123 D45E 6HIj");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "abc123");
+  EXPECT_EQ(lexer->GetTokenText(token), "abc123");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "D45E");
+  EXPECT_EQ(lexer->GetTokenText(token), "D45E");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "6HIj");
+  EXPECT_EQ(lexer->GetTokenText(token), "6HIj");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseIdentNonLeadDigit) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kIdentUpper, LexerFlag::kIdentLower,
+                LexerFlag::kIdentNonLeadDigit},
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("abc123 D45E 6HIj");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "abc123");
+  EXPECT_EQ(lexer->GetTokenText(token), "abc123");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "D45E");
+  EXPECT_EQ(lexer->GetTokenText(token), "D45E");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
+  EXPECT_EQ(lexer->GetTokenText(token), "6HIj");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseIdentNonLeadDigitTakesPrecedence) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kIdentUpper, LexerFlag::kIdentLower,
+                LexerFlag::kIdentNonLeadDigit, LexerFlag::kIdentDigit},
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("6HIj");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
+  EXPECT_EQ(lexer->GetTokenText(token), "6HIj");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseIdentUnderscore) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kIdentUpper, LexerFlag::kIdentLower,
+                LexerFlag::kIdentUnderscore},
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("abc_ D__E _HIj");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "abc_");
+  EXPECT_EQ(lexer->GetTokenText(token), "abc_");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "D__E");
+  EXPECT_EQ(lexer->GetTokenText(token), "D__E");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "_HIj");
+  EXPECT_EQ(lexer->GetTokenText(token), "_HIj");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseIdentNonLeadUnderscore) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kIdentUpper, LexerFlag::kIdentLower,
+                LexerFlag::kIdentNonLeadUnderscore},
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("abc_ D__E _HIj");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "abc_");
+  EXPECT_EQ(lexer->GetTokenText(token), "abc_");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "D__E");
+  EXPECT_EQ(lexer->GetTokenText(token), "D__E");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
+  EXPECT_EQ(lexer->GetTokenText(token), "_HIj");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseIdentNonLeadUnderscoreTakesPrecedence) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kIdentUpper, LexerFlag::kIdentLower,
+                LexerFlag::kIdentNonLeadUnderscore,
+                LexerFlag::kIdentUnderscore},
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("_HIj");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
+  EXPECT_EQ(lexer->GetTokenText(token), "_HIj");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseIdentWithPrefix) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kIdentUpper, LexerFlag::kIdentLower},
+      .ident_prefix = "id_",
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("id_abc id_DEF Id_gHi");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "id_abc");
+  EXPECT_EQ(lexer->GetTokenText(token), "id_abc");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "id_DEF");
+  EXPECT_EQ(lexer->GetTokenText(token), "id_DEF");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
+  EXPECT_EQ(lexer->GetTokenText(token), "Id_gHi");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseIdentWithSuffix) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kIdentUpper, LexerFlag::kIdentLower},
+      .ident_suffix = "_id",
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("abc_id DEF_id gHi_ID");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "abc_id");
+  EXPECT_EQ(lexer->GetTokenText(token), "abc_id");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "DEF_id");
+  EXPECT_EQ(lexer->GetTokenText(token), "DEF_id");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
+  EXPECT_EQ(lexer->GetTokenText(token), "gHi_ID");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseIdentWithPrefixAndSuffix) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kIdentUpper, LexerFlag::kIdentLower},
+      .ident_prefix = "$",
+      .ident_suffix = "*",
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("$abc* $DEF gHi*");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "$abc*");
+  EXPECT_EQ(lexer->GetTokenText(token), "$abc*");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
+  EXPECT_EQ(lexer->GetTokenText(token), "$DEF");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
+  EXPECT_EQ(lexer->GetTokenText(token), "gHi*");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseIdentForceUpper) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kIdentForceUpper},
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("abc DEF gHi");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "ABC");
+  EXPECT_EQ(lexer->GetTokenText(token), "abc");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "DEF");
+  EXPECT_EQ(lexer->GetTokenText(token), "DEF");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "GHI");
+  EXPECT_EQ(lexer->GetTokenText(token), "gHi");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseIdentForceLower) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kIdentForceLower},
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("abc DEF gHi");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "abc");
+  EXPECT_EQ(lexer->GetTokenText(token), "abc");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "def");
+  EXPECT_EQ(lexer->GetTokenText(token), "DEF");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "ghi");
+  EXPECT_EQ(lexer->GetTokenText(token), "gHi");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseIdentMatchesAfterKeyword) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kIdentLower},
+      .keywords = {"if", "else", "while"},
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("ifs if els else while");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "ifs");
+  EXPECT_EQ(lexer->GetTokenText(token), "ifs");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenKeyword);
+  EXPECT_EQ(token.GetString(), "if");
+  EXPECT_EQ(lexer->GetTokenText(token), "if");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "els");
+  EXPECT_EQ(lexer->GetTokenText(token), "els");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenKeyword);
+  EXPECT_EQ(token.GetString(), "else");
+  EXPECT_EQ(lexer->GetTokenText(token), "else");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenKeyword);
+  EXPECT_EQ(token.GetString(), "while");
+  EXPECT_EQ(lexer->GetTokenText(token), "while");
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
