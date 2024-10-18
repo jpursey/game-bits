@@ -183,6 +183,9 @@ bool CreateTokenPattern(std::string& token_pattern,
 
   if (!lexer_config.keywords.empty()) {
     absl::StrAppend(&token_pattern, "(");
+    if (flags.IsSet(LexerFlag::kKeywordCaseInsensitive)) {
+      absl::StrAppend(&token_pattern, "(?i)");
+    }
     for (const std::string_view& keyword : lexer_config.keywords) {
       absl::StrAppend(&token_pattern, RE2::QuoteMeta(keyword), "|");
     }
@@ -309,6 +312,9 @@ std::unique_ptr<Lexer> Lexer::Create(const LexerConfig& lexer_config,
   }
   if (!lexer_config.keywords.empty()) {
     config.keyword_index = index++;
+    if (lexer_config.flags.IsSet(LexerFlag::kKeywordCaseInsensitive)) {
+      config.keywords = lexer_config.keywords;
+    }
   }
   if (LexerSupportsIdentifiers(lexer_config.flags)) {
     config.ident_index = index++;
@@ -461,6 +467,12 @@ Lexer::Lexer(const Config& config)
       max_int_ = std::numeric_limits<int8_t>::max();
       min_int_ = std::numeric_limits<int8_t>::min();
       int_sign_extend_ = 0xFFFFFFFFFFFFFF00;
+    }
+  }
+  if (!config.keywords.empty()) {
+    DCHECK(flags_.IsSet(LexerFlag::kKeywordCaseInsensitive));
+    for (const std::string_view& keyword : config.keywords) {
+      keywords_[absl::AsciiStrToLower(keyword)] = keyword;
     }
   }
 }
@@ -892,6 +904,19 @@ Token Lexer::ParseString(TokenIndex token_index, std::string_view text) {
   return Token::CreateString(token_index, str.data(), str.size());
 }
 
+Token Lexer::ParseKeyword(TokenIndex token_index, std::string_view text) {
+  if (!flags_.IsSet(LexerFlag::kKeywordCaseInsensitive)) {
+    return Token::CreateKeyword(token_index, text.data(), text.size());
+  }
+  auto it = keywords_.find(absl::AsciiStrToLower(text));
+  if (it == keywords_.end()) {
+    LOG(DFATAL) << "Keyword should not be found in case-insensitive map";
+    return Token::CreateError(token_index, &kErrorNotImplemented);
+  }
+  return Token::CreateKeyword(token_index, it->second.data(),
+                              it->second.size());
+}
+
 Token Lexer::ParseIdent(TokenIndex token_index, std::string_view text) {
   if (flags_.IsSet(LexerFlag::kIdentForceLower)) {
     modified_text_.push_back(
@@ -949,8 +974,7 @@ Token Lexer::ParseNextToken(Content* content, Line* line) {
     case kTokenString:
       return ParseString(token_index, match_text);
     case kTokenKeyword:
-      return Token::CreateKeyword(token_index, match_text.data(),
-                                  match_text.size());
+      return ParseKeyword(token_index, match_text);
     case kTokenIdentifier:
       return ParseIdent(token_index, match_text);
   }

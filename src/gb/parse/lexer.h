@@ -370,6 +370,7 @@ class Lexer final {
     char escape_newline = 0;
     char escape_tab = 0;
     char escape_hex = 0;
+    absl::Span<const std::string_view> keywords;
   };
 
   enum class ParseType {
@@ -405,6 +406,7 @@ class Lexer final {
   Token ParseFloat(TokenIndex token_index, std::string_view text);
   Token ParseChar(TokenIndex token_index, std::string_view text);
   Token ParseString(TokenIndex token_index, std::string_view text);
+  Token ParseKeyword(TokenIndex token_index, std::string_view text);
   Token ParseIdent(TokenIndex token_index, std::string_view text);
   Token ParseNextSymbol(Content* content, Line* line);
   Token ParseNextToken(Content* content, Line* line);
@@ -434,6 +436,7 @@ class Lexer final {
   std::vector<std::unique_ptr<Content>> content_;
   absl::flat_hash_map<std::string_view, LexerContentId> filename_to_id_;
   std::vector<std::unique_ptr<std::string>> modified_text_;
+  absl::flat_hash_map<std::string, std::string> keywords_;
   std::vector<Line> lines_;
 };
 

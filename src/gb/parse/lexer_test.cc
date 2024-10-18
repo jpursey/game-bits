@@ -2406,6 +2406,32 @@ TEST(LexerTest, ParseKeywordWithSpecialCharacters) {
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
+TEST(LexerTest, ParseKeywordCaseInsensitive) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kKeywordCaseInsensitive},
+      .keywords = {"if", "Else", "wHiLe"},
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("ELSE WhIlE iF WhIlEs");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenKeyword);
+  EXPECT_EQ(token.GetString(), "Else");
+  EXPECT_EQ(lexer->GetTokenText(token), "ELSE");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenKeyword);
+  EXPECT_EQ(token.GetString(), "wHiLe");
+  EXPECT_EQ(lexer->GetTokenText(token), "WhIlE");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenKeyword);
+  EXPECT_EQ(token.GetString(), "if");
+  EXPECT_EQ(lexer->GetTokenText(token), "iF");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
+  EXPECT_EQ(lexer->GetTokenText(token), "WhIlEs");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
 TEST(LexerTest, ConflictingForceUpperAndLower) {
   std::string error;
   auto lexer = Lexer::Create(
@@ -2706,6 +2732,37 @@ TEST(LexerTest, ParseIdentMatchesAfterKeyword) {
   EXPECT_EQ(token.GetType(), kTokenKeyword);
   EXPECT_EQ(token.GetString(), "else");
   EXPECT_EQ(lexer->GetTokenText(token), "else");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenKeyword);
+  EXPECT_EQ(token.GetString(), "while");
+  EXPECT_EQ(lexer->GetTokenText(token), "while");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseIdentMatchesAfterKeywordCaseInsensitive) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kIdentForceUpper,
+                LexerFlag::kKeywordCaseInsensitive},
+      .keywords = {"if", "else", "while"},
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("ifs IF els Else while");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "IFS");
+  EXPECT_EQ(lexer->GetTokenText(token), "ifs");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenKeyword);
+  EXPECT_EQ(token.GetString(), "if");
+  EXPECT_EQ(lexer->GetTokenText(token), "IF");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "ELS");
+  EXPECT_EQ(lexer->GetTokenText(token), "els");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenKeyword);
+  EXPECT_EQ(token.GetString(), "else");
+  EXPECT_EQ(lexer->GetTokenText(token), "Else");
   token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenKeyword);
   EXPECT_EQ(token.GetString(), "while");
