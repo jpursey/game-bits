@@ -22,6 +22,7 @@ const std::string_view Lexer::kErrorInvalidSymbolSpec =
     "Symbol specification has non-ASCII or whitespace characters";
 const std::string_view Lexer::kErrorNoTokenSpec =
     "No token specification (from symbols, keywords, or flags)";
+const std::string_view Lexer::kErrorInternal = "Internal error";
 const std::string_view Lexer::kErrorInvalidTokenContent =
     "Token does not refer to valid content";
 const std::string_view Lexer::kErrorInvalidToken = "Invalid token";
@@ -332,9 +333,7 @@ std::unique_ptr<Lexer> Lexer::Create(const LexerConfig& lexer_config,
     return nullptr;
   }
 
-  if (lexer_config.flags.Intersects({LexerFlag::kLineBreak,
-                                     LexerFlag::kLineComments,
-                                     LexerFlag::kBlockComments})) {
+  if (lexer_config.flags.Intersects({LexerFlag::kLineBreak})) {
     error = Lexer::kErrorNotImplemented;
     return nullptr;
   }
@@ -911,7 +910,7 @@ Token Lexer::ParseKeyword(TokenIndex token_index, std::string_view text) {
   auto it = keywords_.find(absl::AsciiStrToLower(text));
   if (it == keywords_.end()) {
     LOG(DFATAL) << "Keyword should not be found in case-insensitive map";
-    return Token::CreateError(token_index, &kErrorNotImplemented);
+    return Token::CreateError(token_index, &kErrorInternal);
   }
   return Token::CreateKeyword(token_index, it->second.data(),
                               it->second.size());
@@ -946,7 +945,7 @@ Token Lexer::ParseNextToken(Content* content, Line* line) {
   }
   if (match == nullptr) {
     // This should never happen in practice, as matches must be non-empty.
-    return Token::CreateError(content->GetTokenIndex(), &kErrorNotImplemented);
+    return Token::CreateError(content->GetTokenIndex(), &kErrorInternal);
   }
 
   // See what the next text is. If it is not whitespace or a symol, then this
@@ -978,7 +977,7 @@ Token Lexer::ParseNextToken(Content* content, Line* line) {
     case kTokenIdentifier:
       return ParseIdent(token_index, match_text);
   }
-  return Token::CreateError(token_index, &kErrorNotImplemented);
+  return Token::CreateError(token_index, &kErrorInternal);
 }
 
 Token Lexer::NextToken(LexerContentId id) {

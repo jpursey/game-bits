@@ -83,8 +83,6 @@ enum class LexerFlag {
 
   // Whitespace and comment parsing flags.
   kLineBreak,      // Newlines are not whitespace (enables kTokenNewline).
-  kLineComments,   // Allows line comments (set in config).
-  kBlockComments,  // Allows block comments (set in config).
 };
 using LexerFlags = Flags<LexerFlag>;
 
@@ -151,8 +149,7 @@ inline constexpr LexerFlags kLexerFlags_C = {
     kLexerFlags_AllIntegers,       kLexerFlags_AllFloats,
     kLexerFlags_AllIntegerFormats, kLexerFlags_AllFloatFormats,
     kLexerFlags_CStrings,          kLexerFlags_CCharacters,
-    kLexerFlags_CIdentifiers,      LexerFlag::kLineComments,
-    LexerFlag::kBlockComments};
+    kLexerFlags_CIdentifiers};
 
 //------------------------------------------------------------------------------
 // Flag queries.
@@ -187,14 +184,6 @@ inline bool LexerSupportsIdentifiers(LexerFlags flags) {
   return flags.Intersects({LexerFlag::kIdentUpper, LexerFlag::kIdentLower,
                            LexerFlag::kIdentForceLower,
                            LexerFlag::kIdentForceUpper});
-}
-
-inline bool LexerSupportsLineComments(LexerFlags flags) {
-  return flags.IsSet(LexerFlag::kLineComments);
-}
-
-inline bool LexerSupportsBlockComments(LexerFlags flags) {
-  return flags.IsSet(LexerFlag::kBlockComments);
 }
 
 //------------------------------------------------------------------------------

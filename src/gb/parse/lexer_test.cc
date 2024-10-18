@@ -23,8 +23,6 @@ LexerConfig WholeNumbers() {
 
 const LexerFlags kUnimplementedFlags[] = {
     {LexerFlag::kIdentLower, LexerFlag::kLineBreak},
-    {LexerFlag::kIdentLower, LexerFlag::kLineComments},
-    {LexerFlag::kIdentLower, LexerFlag::kBlockComments},
 };
 
 using UnimplementedFlags = testing::TestWithParam<LexerFlags>;
