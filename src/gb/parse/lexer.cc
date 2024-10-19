@@ -412,11 +412,6 @@ std::unique_ptr<Lexer> Lexer::Create(const LexerConfig& lexer_config,
     return nullptr;
   }
 
-  if (lexer_config.flags.Intersects({LexerFlag::kLineBreak})) {
-    error = Lexer::kErrorNotImplemented;
-    return nullptr;
-  }
-
   if (!CreateWhitespacePattern(config.whitespace_pattern, token_end_chars,
                                lexer_config, error)) {
     return nullptr;
@@ -1107,6 +1102,18 @@ Token Lexer::NextToken(LexerContentId id) {
   while (true) {
     RE2::Consume(&line->remain, re_whitespace_);
     if (line->remain.empty()) {
+      if (GetToken()) {
+        return token;
+      }
+      if (flags_.IsSet(LexerFlag::kLineBreak) &&
+          (line->tokens.empty() ||
+           line->tokens.back().type != kTokenLineBreak)) {
+        content->re_order = ReOrder::kSymLast;
+        TokenIndex token_index = content->GetTokenIndex();
+        ++content->token;
+        line->tokens.emplace_back(line->line.size(), 0, kTokenLineBreak);
+        return Token::CreateLineBreak(content->GetTokenIndex());
+      }
       if (NextLineOrEnd() || GetToken()) {
         return token;
       }

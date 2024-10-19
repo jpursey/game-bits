@@ -31,7 +31,7 @@ inline constexpr TokenType kTokenChar = 6;        // Value: String
 inline constexpr TokenType kTokenString = 7;      // Value: String
 inline constexpr TokenType kTokenKeyword = 8;     // Value: String
 inline constexpr TokenType kTokenIdentifier = 9;  // Value: String
-inline constexpr TokenType kTokenNewline = 10;    // Value: kNone
+inline constexpr TokenType kTokenLineBreak = 10;  // Value: kNone
 
 // A token represents a single parsed token from a lexer.
 //
@@ -157,8 +157,8 @@ class Token final {
     token.string_ = value;
     return token;
   }
-  static Token CreateNewline(TokenIndex token_index) {
-    return Token(token_index, kTokenNewline, ValueType::kNone);
+  static Token CreateLineBreak(TokenIndex token_index) {
+    return Token(token_index, kTokenLineBreak, ValueType::kNone);
   }
 
   Token(TokenIndex token_index, TokenType type, ValueType value_type)
@@ -185,7 +185,7 @@ void AbslStringify(Sink& sink, const Token& token) {
   switch (token.GetType()) {
     case kTokenNone:
     case kTokenEnd:
-    case kTokenNewline:
+    case kTokenLineBreak:
       absl::Format(&sink, "kNone");
       break;
     case kTokenError:

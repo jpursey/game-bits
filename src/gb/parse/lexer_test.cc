@@ -12,30 +12,13 @@
 namespace gb {
 namespace {
 
-LexerConfig WholeNumbers() {
+LexerConfig ValidConfigForTest() {
   LexerConfig config;
   config.flags = {
       LexerFlag::kInt64,
       LexerFlag::kDecimalIntegers,
   };
   return config;
-}
-
-const LexerFlags kUnimplementedFlags[] = {
-    {LexerFlag::kIdentLower, LexerFlag::kLineBreak},
-};
-
-using UnimplementedFlags = testing::TestWithParam<LexerFlags>;
-INSTANTIATE_TEST_SUITE_P(LexerTest, UnimplementedFlags,
-                         testing::ValuesIn(kUnimplementedFlags));
-
-TEST_P(UnimplementedFlags, Test) {
-  LexerConfig config;
-  config.flags = GetParam();
-  std::string error;
-  auto lexer = Lexer::Create(config, &error);
-  EXPECT_EQ(lexer, nullptr);
-  EXPECT_EQ(error, Lexer::kErrorNotImplemented);
 }
 
 TEST(LexerTest, DefaultConfigIsInvalid) {
@@ -48,13 +31,13 @@ TEST(LexerTest, DefaultConfigIsInvalid) {
 
 TEST(LexerTest, SuccessfulCreateClearsError) {
   std::string error = "test error";
-  auto lexer = Lexer::Create(WholeNumbers(), &error);
+  auto lexer = Lexer::Create(ValidConfigForTest(), &error);
   EXPECT_NE(lexer, nullptr);
   EXPECT_EQ(error, "");
 }
 
 TEST(LexerTest, AddContent) {
-  auto lexer = Lexer::Create(WholeNumbers());
+  auto lexer = Lexer::Create(ValidConfigForTest());
   ASSERT_NE(lexer, nullptr);
   LexerContentId content = lexer->AddContent("test content");
   EXPECT_NE(content, kNoLexerContent);
@@ -65,7 +48,7 @@ TEST(LexerTest, AddContent) {
 }
 
 TEST(LexerTest, AddFileContent) {
-  auto lexer = Lexer::Create(WholeNumbers());
+  auto lexer = Lexer::Create(ValidConfigForTest());
   ASSERT_NE(lexer, nullptr);
   LexerContentId content = lexer->AddFileContent("test.txt", "test content");
   EXPECT_NE(content, kNoLexerContent);
@@ -76,7 +59,7 @@ TEST(LexerTest, AddFileContent) {
 }
 
 TEST(LexerTest, GetInvalidContent) {
-  auto lexer = Lexer::Create(WholeNumbers());
+  auto lexer = Lexer::Create(ValidConfigForTest());
   ASSERT_NE(lexer, nullptr);
   LexerContentId content = lexer->AddContent("test content");
   EXPECT_EQ(lexer->GetContentFilename(kNoLexerContent), "");
@@ -90,7 +73,7 @@ TEST(LexerTest, GetInvalidContent) {
 }
 
 TEST(LexerTest, GetInvalidLine) {
-  auto lexer = Lexer::Create(WholeNumbers());
+  auto lexer = Lexer::Create(ValidConfigForTest());
   ASSERT_NE(lexer, nullptr);
   LexerContentId content = lexer->AddContent("test content");
   EXPECT_EQ(lexer->GetLineText(content, -1), "");
@@ -98,7 +81,7 @@ TEST(LexerTest, GetInvalidLine) {
 }
 
 TEST(LexerTest, EmptyContentHasOneLine) {
-  auto lexer = Lexer::Create(WholeNumbers());
+  auto lexer = Lexer::Create(ValidConfigForTest());
   ASSERT_NE(lexer, nullptr);
   LexerContentId content = lexer->AddContent("");
   EXPECT_EQ(lexer->GetLineCount(content), 1);
@@ -106,7 +89,7 @@ TEST(LexerTest, EmptyContentHasOneLine) {
 }
 
 TEST(LexerTest, ContentWithNoTrailingNewlineHasOneLine) {
-  auto lexer = Lexer::Create(WholeNumbers());
+  auto lexer = Lexer::Create(ValidConfigForTest());
   ASSERT_NE(lexer, nullptr);
   LexerContentId content = lexer->AddContent("line 1\nline 2");
   EXPECT_EQ(lexer->GetLineCount(content), 2);
@@ -115,7 +98,7 @@ TEST(LexerTest, ContentWithNoTrailingNewlineHasOneLine) {
 }
 
 TEST(LexerTest, ContentWithTrailingNewlineHasOneLine) {
-  auto lexer = Lexer::Create(WholeNumbers());
+  auto lexer = Lexer::Create(ValidConfigForTest());
   ASSERT_NE(lexer, nullptr);
   LexerContentId content = lexer->AddContent("line 1\nline 2\n");
   EXPECT_EQ(lexer->GetLineCount(content), 2);
@@ -124,7 +107,7 @@ TEST(LexerTest, ContentWithTrailingNewlineHasOneLine) {
 }
 
 TEST(LexerTest, ContentWithEmptyLines) {
-  auto lexer = Lexer::Create(WholeNumbers());
+  auto lexer = Lexer::Create(ValidConfigForTest());
   ASSERT_NE(lexer, nullptr);
   LexerContentId content =
       lexer->AddContent("\nline 1\n\nline 2\n\n\nline 3\n\n");
@@ -140,7 +123,7 @@ TEST(LexerTest, ContentWithEmptyLines) {
 }
 
 TEST(LexerTest, GetLineLocation) {
-  auto lexer = Lexer::Create(WholeNumbers());
+  auto lexer = Lexer::Create(ValidConfigForTest());
   ASSERT_NE(lexer, nullptr);
   LexerContentId content = lexer->AddContent("line 1\nline 2\nline 3\n");
   EXPECT_EQ(lexer->GetLineLocation(content, 0),
@@ -152,7 +135,7 @@ TEST(LexerTest, GetLineLocation) {
 }
 
 TEST(LexerTest, GetLineLocationWithFilename) {
-  auto lexer = Lexer::Create(WholeNumbers());
+  auto lexer = Lexer::Create(ValidConfigForTest());
   ASSERT_NE(lexer, nullptr);
   LexerContentId content =
       lexer->AddFileContent("test.txt", "line 1\nline 2\nline 3\n");
@@ -171,7 +154,7 @@ TEST(LexerTest, GetLineLocationWithFilename) {
 }
 
 TEST(LexerTest, GetLineLocationForInvalidLine) {
-  auto lexer = Lexer::Create(WholeNumbers());
+  auto lexer = Lexer::Create(ValidConfigForTest());
   ASSERT_NE(lexer, nullptr);
   LexerContentId content = lexer->AddContent("line 1\nline 2\nline 3\n");
   EXPECT_EQ(lexer->GetLineLocation(content, -2),
@@ -181,7 +164,7 @@ TEST(LexerTest, GetLineLocationForInvalidLine) {
 }
 
 TEST(LexerTest, GetLineLocationForInvalidContent) {
-  auto lexer = Lexer::Create(WholeNumbers());
+  auto lexer = Lexer::Create(ValidConfigForTest());
   ASSERT_NE(lexer, nullptr);
   LexerContentId content = lexer->AddContent("line 1\nline 2\nline 3\n");
   EXPECT_EQ(lexer->GetLineLocation(kNoLexerContent, 0),
@@ -191,7 +174,7 @@ TEST(LexerTest, GetLineLocationForInvalidContent) {
 }
 
 TEST(LexerTest, NextLine) {
-  auto lexer = Lexer::Create(WholeNumbers());
+  auto lexer = Lexer::Create(ValidConfigForTest());
   ASSERT_NE(lexer, nullptr);
   LexerContentId content = lexer->AddContent("line 1\nline 2\nline 3\n");
   EXPECT_EQ(lexer->GetCurrentLine(content), 0);
@@ -207,7 +190,7 @@ TEST(LexerTest, NextLine) {
 }
 
 TEST(LexerTest, NextLineForInvalidContent) {
-  auto lexer = Lexer::Create(WholeNumbers());
+  auto lexer = Lexer::Create(ValidConfigForTest());
   ASSERT_NE(lexer, nullptr);
   LexerContentId content = lexer->AddContent("line 1\nline 2\nline 3\n");
   EXPECT_EQ(lexer->GetCurrentLine(kNoLexerContent), -1);
@@ -217,7 +200,7 @@ TEST(LexerTest, NextLineForInvalidContent) {
 }
 
 TEST(LexerTest, RewindLine) {
-  auto lexer = Lexer::Create(WholeNumbers());
+  auto lexer = Lexer::Create(ValidConfigForTest());
   ASSERT_NE(lexer, nullptr);
   LexerContentId content = lexer->AddContent("line 1\nline 2\n");
   EXPECT_EQ(lexer->NextLine(content), "line 1");
@@ -234,7 +217,7 @@ TEST(LexerTest, RewindLine) {
 }
 
 TEST(LexerTest, RewindLineForInvalidContent) {
-  auto lexer = Lexer::Create(WholeNumbers());
+  auto lexer = Lexer::Create(ValidConfigForTest());
   ASSERT_NE(lexer, nullptr);
   LexerContentId content = lexer->AddContent("line 1\nline 2\n");
   EXPECT_FALSE(lexer->RewindLine(kNoLexerContent));
@@ -242,7 +225,7 @@ TEST(LexerTest, RewindLineForInvalidContent) {
 }
 
 TEST(LexerTest, RewindContent) {
-  auto lexer = Lexer::Create(WholeNumbers());
+  auto lexer = Lexer::Create(ValidConfigForTest());
   ASSERT_NE(lexer, nullptr);
   LexerContentId content = lexer->AddContent("line 1\nline 2\n");
   EXPECT_EQ(lexer->NextLine(content), "line 1");
@@ -255,7 +238,7 @@ TEST(LexerTest, RewindContent) {
 }
 
 TEST(LexerTest, RewindContentForInvalidContent) {
-  auto lexer = Lexer::Create(WholeNumbers());
+  auto lexer = Lexer::Create(ValidConfigForTest());
   ASSERT_NE(lexer, nullptr);
   LexerContentId content = lexer->AddContent("line 1\nline 2\n");
   lexer->RewindContent(kNoLexerContent);
@@ -273,7 +256,7 @@ TEST(LexerTest, DefaultToken) {
 }
 
 TEST(LexerTest, GetTokenLocationForDefaultToken) {
-  auto lexer = Lexer::Create(WholeNumbers());
+  auto lexer = Lexer::Create(ValidConfigForTest());
   ASSERT_NE(lexer, nullptr);
   Token token;
   EXPECT_EQ(lexer->GetTokenLocation(token),
@@ -281,7 +264,7 @@ TEST(LexerTest, GetTokenLocationForDefaultToken) {
 }
 
 TEST(LexerTest, GetTokenLocationForDefaultTokenIndex) {
-  auto lexer = Lexer::Create(WholeNumbers());
+  auto lexer = Lexer::Create(ValidConfigForTest());
   ASSERT_NE(lexer, nullptr);
   Token token;
   EXPECT_EQ(lexer->GetTokenLocation(token.GetTokenIndex()),
@@ -289,14 +272,14 @@ TEST(LexerTest, GetTokenLocationForDefaultTokenIndex) {
 }
 
 TEST(LexerTest, GetTokenTextForDefaultToken) {
-  auto lexer = Lexer::Create(WholeNumbers());
+  auto lexer = Lexer::Create(ValidConfigForTest());
   ASSERT_NE(lexer, nullptr);
   Token token;
   EXPECT_EQ(lexer->GetTokenText(token), "");
 }
 
 TEST(LexerTest, ParseDefaultTokenIndex) {
-  auto lexer = Lexer::Create(WholeNumbers());
+  auto lexer = Lexer::Create(ValidConfigForTest());
   ASSERT_NE(lexer, nullptr);
   Token default_token;
   Token parsed_token = lexer->ParseToken(default_token.GetTokenIndex());
@@ -307,7 +290,7 @@ TEST(LexerTest, ParseDefaultTokenIndex) {
 }
 
 TEST(LexerTest, NextTokenForInvalidContent) {
-  auto lexer = Lexer::Create(WholeNumbers());
+  auto lexer = Lexer::Create(ValidConfigForTest());
   ASSERT_NE(lexer, nullptr);
   LexerContentId content = lexer->AddContent("");
   Token token = lexer->NextToken(content + 1);
@@ -318,14 +301,14 @@ TEST(LexerTest, NextTokenForInvalidContent) {
 }
 
 TEST(LexerTest, RewindTokenForInvalidContent) {
-  auto lexer = Lexer::Create(WholeNumbers());
+  auto lexer = Lexer::Create(ValidConfigForTest());
   ASSERT_NE(lexer, nullptr);
   LexerContentId content = lexer->AddContent("");
   EXPECT_FALSE(lexer->RewindToken(content + 1));
 }
 
 TEST(LexerTest, NextTokenForEmptyContent) {
-  auto lexer = Lexer::Create(WholeNumbers());
+  auto lexer = Lexer::Create(ValidConfigForTest());
   ASSERT_NE(lexer, nullptr);
   LexerContentId content = lexer->AddContent("");
   Token token = lexer->NextToken(content);
@@ -2830,6 +2813,43 @@ TEST(LexerTest, ParseIdentMatchesAfterKeywordCaseInsensitive) {
   EXPECT_EQ(token.GetType(), kTokenKeyword);
   EXPECT_EQ(token.GetString(), "while");
   EXPECT_EQ(lexer->GetTokenText(token), "while");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, ParseLineBreak) {
+  auto lexer = Lexer::Create({
+      .flags = {kLexerFlags_CIdentifiers, LexerFlag::kLineBreak},
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("abc\n def \n\n ghi");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "abc");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenLineBreak);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "def");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenLineBreak);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenLineBreak);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "ghi");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenLineBreak);
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, EmptyContentHasLineBreak) {
+  auto lexer = Lexer::Create({
+      .flags = {kLexerFlags_CIdentifiers, LexerFlag::kLineBreak},
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenLineBreak);
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
