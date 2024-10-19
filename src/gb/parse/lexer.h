@@ -80,33 +80,40 @@ namespace gb {
 //
 // Example:
 //
+//   // Set up a configuration for a lexer.
 //   LexerConfig config;
 //   config.flags = {
-//     // Specific flags for custom control over number parsing.
-//     LexerFlag::kInt32, LexerFlag::kNegativeIntegers,
-//     LexerFlag::kDecimalIntegers,
+//       // Specific flags for custom control over number parsing.
+//       LexerFlag::kInt32, LexerFlag::kNegativeIntegers,
+//       LexerFlag::kDecimalIntegers,
 //
-//     // Bundled options to follow C style identifiers
-//     kLexerFlags_CIdentifiers
-//   };
-//   config.symbols = {'{', '}', ':', ',', ".."};
+//       // Bundled options to follow C style identifiers
+//       kLexerFlags_CIdentifiers};
+//   const Symbol kSymbols[] = {'{', '}', ':', ',', ".."};
+//   config.symbols = kSymbols;
 //
 //   // Create the lexer with the configuration.
-//   Lexer lexer(config);
-//   LexerContentId content_id = lexer.AddFileContent("filename.txt",
-//      "list: {one: 1, two: 2}\n"
-//      "range: -100..100\n");
+//   auto lexer = Lexer::Create(config);
+//   LexerContentId content_id = lexer->AddFileContent(
+//       "filename.txt",
+//       "list: {one: 1, two: 2}\n"
+//       "range: -100..100\n");
 //
+//   // Parse the tokens!
 //   int line = 0;
-//   for (Token token = lexer.NextToken(content_id); token.type != kTokenEnd;
-//        token = lexer.NextToken(content_id)) {
-//     if (lexer.GetCurrentLine() > line) { std::cout << std::endl; ++line; }
-//     std::cout << token.type << "(" << lexer.GetTokenText(token) << ") ";
+//   for (Token token = lexer->NextToken(content_id); token.GetType() != kTokenEnd;
+//        token = lexer->NextToken(content_id)) {
+//     if (lexer->GetCurrentLine(content_id) > line) {
+//       std::cout << std::endl;
+//       ++line;
+//     }
+//     std::cout << static_cast<int>(token.GetType()) << "("
+//               << lexer->GetTokenText(token) << ") ";
 //   }
 //
 // This outputs:
-//    9(list) 3(:) 3({) 9(one) 3(:) 4(1) 3(,) 9(two) 3(:) 4(2) 3(})
-//    9(range) 3(:) 4(-100) 3(..) 4(100)
+//   9(list) 3(:) 3({) 9(one) 3(:) 4(1) 3(,) 9(two) 3(:) 4(2) 3(})
+//   9(range) 3(:) 4(-100) 3(..) 4(100)
 //
 // This class is thread-compatible.
 class Lexer final {
