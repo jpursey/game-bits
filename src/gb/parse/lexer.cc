@@ -251,6 +251,7 @@ bool CreateSymbolPattern(std::string& symbol_pattern, std::string& symbol_chars,
   if (config.symbols.empty()) {
     return true;
   }
+  absl::StrAppend(&symbol_pattern, "(");
   std::vector<Symbol> symbols(config.symbols.begin(), config.symbols.end());
   for (const Symbol& symbol : symbols) {
     if (!symbol.IsValid()) {
@@ -264,24 +265,32 @@ bool CreateSymbolPattern(std::string& symbol_pattern, std::string& symbol_chars,
     absl::StrAppend(&symbol_pattern, RE2::QuoteMeta(symbol.GetString()));
     absl::StrAppend(&symbol_pattern, "|");
   }
-  symbol_pattern.pop_back();
-  if (!symbol_chars.empty()) {
-    symbol_chars = RE2::QuoteMeta(symbol_chars);
-  }
+  symbol_pattern.back() = ')';
   return true;
 }
 
 bool CreateWhitespacePattern(std::string& whitespace_pattern,
+                             std::string& whitespace_chars,
                              const LexerConfig& config, std::string& error) {
   if (!config.block_comments.empty()) {
     error = Lexer::kErrorNotImplemented;
     return false;
   }
 
+  if (whitespace_chars.find(' ') == std::string::npos) {
+    whitespace_chars.push_back(' ');
+  }
+  if (whitespace_chars.find('\t') == std::string::npos) {
+    whitespace_chars.push_back('\t');
+  }
   whitespace_pattern = "[ \\t]*";
   if (!config.line_comments.empty()) {
     absl::StrAppend(&whitespace_pattern, "(?:(?:");
     for (const std::string_view& line_comment : config.line_comments) {
+      const char first_char = line_comment[0];
+      if (whitespace_chars.find(first_char) == std::string::npos) {
+        whitespace_chars.push_back(first_char);
+      }
       absl::StrAppend(&whitespace_pattern, RE2::QuoteMeta(line_comment), "|");
     }
     whitespace_pattern.pop_back();
@@ -300,8 +309,7 @@ std::unique_ptr<Lexer> Lexer::Create(const LexerConfig& lexer_config,
   Config config;
   config.flags = lexer_config.flags;
 
-  std::string token_pattern;
-  if (!CreateTokenPattern(token_pattern, lexer_config, error)) {
+  if (!CreateTokenPattern(config.token_pattern, lexer_config, error)) {
     return nullptr;
   }
 
@@ -341,13 +349,13 @@ std::unique_ptr<Lexer> Lexer::Create(const LexerConfig& lexer_config,
   }
   config.token_pattern_count = index;
 
-  std::string symbol_pattern;
-  std::string symbol_chars;
-  if (!CreateSymbolPattern(symbol_pattern, symbol_chars, lexer_config, error)) {
+  std::string token_end_chars;
+  if (!CreateSymbolPattern(config.symbol_pattern, token_end_chars, lexer_config,
+                           error)) {
     return nullptr;
   }
 
-  if (token_pattern.empty() && symbol_pattern.empty()) {
+  if (config.token_pattern.empty() && config.symbol_pattern.empty()) {
     error = Lexer::kErrorNoTokenSpec;
     return nullptr;
   }
@@ -357,20 +365,15 @@ std::unique_ptr<Lexer> Lexer::Create(const LexerConfig& lexer_config,
     return nullptr;
   }
 
-  if (!CreateWhitespacePattern(config.whitespace_pattern, lexer_config,
-                               error)) {
+  if (!CreateWhitespacePattern(config.whitespace_pattern, token_end_chars,
+                               lexer_config, error)) {
     return nullptr;
   }
 
-  if (!symbol_pattern.empty()) {
-    config.symbol_pattern = absl::StrCat("(", symbol_pattern, ")");
-    config.token_end_pattern = absl::StrCat("[ \\t]|", symbol_pattern);
-    config.not_token_end_pattern = absl::StrCat("[^ \\t", symbol_chars, "]*");
-  } else {
-    config.token_end_pattern = "[ \\t]";
-    config.not_token_end_pattern = "[^ \\t]*";
-  }
-  config.token_pattern = token_pattern;
+  token_end_chars = RE2::QuoteMeta(token_end_chars);
+  config.token_end_pattern = absl::StrCat("[", token_end_chars, "]+");
+  config.not_token_end_pattern = absl::StrCat("[^", token_end_chars, "]*");
+
   config.binary_config.prefix = lexer_config.binary_prefix.size();
   config.binary_config.size_offset =
       config.binary_config.prefix + lexer_config.binary_suffix.size();

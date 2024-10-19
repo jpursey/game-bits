@@ -2806,7 +2806,8 @@ TEST(LexerTest, ParseIdentMatchesAfterKeywordCaseInsensitive) {
 
 TEST(LexerTest, ParseLineComments) {
   auto lexer = Lexer::Create({
-      .flags = {kLexerFlags_AllIntegers, kLexerFlags_CIdentifiers},
+      .flags = {kLexerFlags_AllIntegers, kLexerFlags_CStrings,
+                kLexerFlags_CIdentifiers},
       .line_comments = {"//", "$"},
       .symbols = kCStyleSymbols,
       .keywords = {"int", "return"},
@@ -2814,10 +2815,12 @@ TEST(LexerTest, ParseLineComments) {
   ASSERT_NE(lexer, nullptr);
   const LexerContentId content = lexer->AddContent(R"---(
 // Comment at the beginning of a line
-int Add(x, y) {
-  $ Multiple comments $ later ones don't metter
-  $ of different $types$ after whitespace
-  return x + y; // Comment at the end of a line
+int Add(x, y) {// Comment after a symbol
+  $ Multiple comments $ later ones don't matter
+  // of different $types$ after whitespace
+  z = "// comment $ inside a string";
+  return x$Comment after an identifier
+         + y; // Comment at the end of a line
 }
 )---");
   Token token = lexer->NextToken(content);
@@ -2844,6 +2847,18 @@ int Add(x, y) {
   token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenSymbol);
   EXPECT_EQ(token.GetSymbol(), "{");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "z");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenSymbol);
+  EXPECT_EQ(token.GetSymbol(), "=");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenString);
+  EXPECT_EQ(token.GetString(), "// comment $ inside a string");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenSymbol);
+  EXPECT_EQ(token.GetSymbol(), ";");
   token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenKeyword);
   EXPECT_EQ(token.GetString(), "return");
