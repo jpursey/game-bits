@@ -3120,5 +3120,422 @@ TEST(LexerTest, MixedLineAndBlockComments) {
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
+TEST(LexerTest, RewindTokenOnSameLine) {
+  auto lexer = Lexer::Create(kCStyleLexerConfig);
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent(
+      "(++--) "
+      "0b1011 0777 42 0xBEAF "
+      "0.5 1.25e+2 "
+      "'A' '\\n' '\\x4B' "
+      "\"Hello, world!\" \"\\t\\x48\\n\" \"\" "
+      "if else "
+      "x _fOO_Bar01");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenSymbol);
+  EXPECT_EQ(token.GetSymbol(), "(");
+  lexer->RewindToken(content);
+  lexer->RewindToken(content);  // Rewind past beginning.
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenSymbol);
+  EXPECT_EQ(token.GetSymbol(), "(");
+  lexer->NextToken(content);
+  lexer->NextToken(content);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenSymbol);
+  EXPECT_EQ(token.GetSymbol(), ")");
+  lexer->RewindToken(content);
+  lexer->RewindToken(content);
+  lexer->RewindToken(content);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenSymbol);
+  EXPECT_EQ(token.GetSymbol(), "++");
+  lexer->NextToken(content);
+  lexer->NextToken(content);
+
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0b1011);
+  lexer->RewindToken(content);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0b1011);
+  lexer->NextToken(content);
+  lexer->NextToken(content);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0xBEAF);
+  lexer->RewindToken(content);
+  lexer->RewindToken(content);
+  lexer->RewindToken(content);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0777);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 42);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0xBEAF);
+
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenFloat);
+  EXPECT_EQ(token.GetFloat(), 0.5);
+  lexer->RewindToken(content);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenFloat);
+  EXPECT_EQ(token.GetFloat(), 0.5);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenFloat);
+  EXPECT_EQ(token.GetFloat(), 1.25e+2);
+  lexer->RewindToken(content);
+  lexer->RewindToken(content);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenFloat);
+  EXPECT_EQ(token.GetFloat(), 0.5);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenFloat);
+  EXPECT_EQ(token.GetFloat(), 1.25e+2);
+
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenChar);
+  EXPECT_EQ(token.GetString(), "A");
+  lexer->RewindToken(content);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenChar);
+  EXPECT_EQ(token.GetString(), "A");
+  lexer->NextToken(content);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenChar);
+  EXPECT_EQ(token.GetString(), "\\x4B");
+  lexer->RewindToken(content);
+  lexer->RewindToken(content);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenChar);
+  EXPECT_EQ(token.GetString(), "\\n");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenChar);
+  EXPECT_EQ(token.GetString(), "\\x4B");
+
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenString);
+  EXPECT_EQ(token.GetString(), "Hello, world!");
+  lexer->RewindToken(content);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenString);
+  EXPECT_EQ(token.GetString(), "Hello, world!");
+  lexer->NextToken(content);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenString);
+  EXPECT_EQ(token.GetString(), "");
+  lexer->RewindToken(content);
+  lexer->RewindToken(content);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenString);
+  EXPECT_EQ(token.GetString(), "\\t\\x48\\n");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenString);
+  EXPECT_EQ(token.GetString(), "");
+
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenKeyword);
+  EXPECT_EQ(token.GetString(), "if");
+  lexer->RewindToken(content);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenKeyword);
+  EXPECT_EQ(token.GetString(), "if");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenKeyword);
+  EXPECT_EQ(token.GetString(), "else");
+  lexer->RewindToken(content);
+  lexer->RewindToken(content);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenKeyword);
+  EXPECT_EQ(token.GetString(), "if");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenKeyword);
+  EXPECT_EQ(token.GetString(), "else");
+
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "x");
+  lexer->RewindToken(content);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "x");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "_fOO_Bar01");
+  lexer->RewindToken(content);
+  lexer->RewindToken(content);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "x");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "_fOO_Bar01");
+
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+
+  lexer->RewindToken(content);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "_fOO_Bar01");
+
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, RewindAcrossLines) {
+  auto lexer = Lexer::Create(kCStyleLexerConfig);
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent(
+      "int x = 42;\n\n"
+      "int y = /* random\n"
+      "        comment. */0x2A;\n"
+      "int z = 0b101010;\n");
+  Token token;
+  do {
+    token = lexer->NextToken(content);
+    EXPECT_NE(token.GetType(), kTokenError) << lexer->GetTokenText(token);
+  } while (token.GetType() != kTokenEnd);
+  lexer->RewindToken(content);
+  lexer->RewindToken(content);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0b101010);
+  lexer->RewindToken(content);
+  lexer->RewindToken(content);
+  lexer->RewindToken(content);
+  lexer->RewindToken(content);
+  lexer->RewindToken(content);
+  lexer->RewindToken(content);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0x2A);
+  lexer->RewindToken(content);
+  lexer->RewindToken(content);
+  lexer->RewindToken(content);
+  lexer->RewindToken(content);
+  lexer->RewindToken(content);
+  lexer->RewindToken(content);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 42);
+  lexer->NextToken(content);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenKeyword);
+  EXPECT_EQ(token.GetString(), "int");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "y");
+}
+
+TEST(LexerTest, RewindThroughLineBreakToken) {
+  auto lexer = Lexer::Create(
+      {.flags = {kLexerFlags_AllPositiveIntegers, LexerFlag::kLineBreak}});
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("1\n\n2 3\n4");
+  Token token;
+  do {
+    token = lexer->NextToken(content);
+    EXPECT_NE(token.GetType(), kTokenError) << lexer->GetTokenText(token);
+  } while (token.GetType() != kTokenEnd);
+  lexer->RewindToken(content);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenLineBreak);
+  EXPECT_EQ(lexer->GetTokenLocation(token).line, 3);
+  lexer->RewindToken(content);
+  lexer->RewindToken(content);
+  lexer->RewindToken(content);
+  lexer->RewindToken(content);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 3);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenLineBreak);
+  EXPECT_EQ(lexer->GetTokenLocation(token).line, 2);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 4);
+  lexer->RewindToken(content);
+  lexer->RewindToken(content);
+  lexer->RewindToken(content);
+  lexer->RewindToken(content);
+  lexer->RewindToken(content);
+  lexer->RewindToken(content);
+  lexer->RewindToken(content);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 1);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenLineBreak);
+  EXPECT_EQ(lexer->GetTokenLocation(token).line, 0);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenLineBreak);
+  EXPECT_EQ(lexer->GetTokenLocation(token).line, 1);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 2);
+}
+
+TEST(LexerTest, RewindTokenThroughLineSkip) {
+  auto lexer = Lexer::Create({.flags = {kLexerFlags_AllPositiveIntegers}});
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("1 2 3\n4 5 6\n");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 1);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 2);
+  std::string_view line = lexer->NextLine(content);
+  EXPECT_EQ(line, " 3");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 4);
+  lexer->RewindToken(content);
+  lexer->RewindToken(content);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 2);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 3);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 4);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 5);
+}
+
+TEST(LexerTest, RewindLineResetsNextToken) {
+  auto lexer = Lexer::Create({.flags = {kLexerFlags_AllPositiveIntegers}});
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("1 2 3\n4 5 6\n");
+  std::string_view line = lexer->NextLine(content);
+  EXPECT_EQ(line, "1 2 3");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 4);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 5);
+  lexer->RewindLine(content);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 4);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 5);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 6);
+  lexer->RewindLine(content);
+  lexer->RewindToken(content);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 1);
+}
+
+TEST(LexerTest, NextLineAtEndReturnsEmpty) {
+  auto lexer = Lexer::Create({.flags = {kLexerFlags_AllPositiveIntegers}});
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("1\n4 5\n6 7\n");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 1);
+  std::string_view line = lexer->NextLine(content);
+  EXPECT_EQ(line, "");
+  line = lexer->NextLine(content);
+  EXPECT_EQ(line, "4 5");
+}
+
+TEST(LexerTest, RewindTokenThroughMultipleLines) {
+  auto lexer = Lexer::Create({.flags = {kLexerFlags_AllPositiveIntegers}});
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("1\n4 5\n6 7\n");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 1);
+  lexer->NextLine(content);
+  lexer->NextLine(content);
+  EXPECT_EQ(lexer->NextLine(content), "6 7");
+  lexer->RewindToken(content);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 1);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 4);
+}
+
+TEST(LexerTest, SkippedBlockCommentResetsTokensOnNextLine) {
+  auto lexer = Lexer::Create(kCStyleLexerConfig);
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent(
+      "x = /* random\n"
+      "       comment */ 0x2A;\n"
+      "y = 0b101010;\n");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "x");
+  EXPECT_EQ(lexer->NextLine(content), " = /* random");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "comment");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenSymbol);
+  EXPECT_EQ(token.GetSymbol(), "*");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenSymbol);
+  EXPECT_EQ(token.GetSymbol(), "/");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0x2A);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenSymbol);
+  EXPECT_EQ(token.GetSymbol(), ";");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "y");
+
+  lexer->RewindLine(content);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "y");
+
+  lexer->RewindLine(content);
+  lexer->RewindLine(content);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "comment");
+
+  lexer->RewindLine(content);
+  lexer->RewindLine(content);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "x");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenSymbol);
+  EXPECT_EQ(token.GetSymbol(), "=");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0x2A);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenSymbol);
+  EXPECT_EQ(token.GetSymbol(), ";");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "y");
+
+  lexer->RewindLine(content);
+  lexer->RewindLine(content);
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0x2A);
+}
+
 }  // namespace
 }  // namespace gb

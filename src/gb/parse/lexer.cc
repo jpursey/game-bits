@@ -14,7 +14,6 @@
 
 namespace gb {
 
-const std::string_view Lexer::kErrorNotImplemented = "Not implemented";
 const std::string_view Lexer::kErrorDuplicateSymbolSpec =
     "Duplicate symbol specification";
 const std::string_view Lexer::kErrorInvalidSymbolSpec =
@@ -780,10 +779,49 @@ std::string_view Lexer::GetTokenText(TokenIndex index) const {
 
 Token Lexer::ParseToken(TokenIndex index) {
   const Line* line = GetLine(index.line);
-  if (line == nullptr) {
+  if (line == nullptr || index.token > line->tokens.size()) {
     return Token::CreateError({}, &kErrorInvalidTokenContent);
   }
-  return Token::CreateError(index, &kErrorNotImplemented);
+  const TokenInfo& token_info = line->tokens[index.token];
+  std::string_view text = line->line.substr(token_info.column, token_info.size);
+  switch (token_info.type) {
+    case kTokenError:
+      // The only kind of tokens stored as error are invalid tokens.
+      return Token::CreateError(index, &kErrorInvalidToken);
+    case kTokenSymbol:
+      return Token::CreateSymbol(index, text);
+    case kTokenInt: {
+      DCHECK(!re_token_args_.empty());
+      if (!RE2::ConsumeN(&text, re_token_, re_token_args_.data(),
+                         re_token_args_.size())) {
+        return Token::CreateError(index, &kErrorInternal);
+      }
+      TokenArg* match = nullptr;
+      for (TokenArg& arg : re_args_) {
+        if (!arg.text.empty()) {
+          match = &arg;
+          break;
+        }
+      }
+      if (match == nullptr) {
+        return Token::CreateError(index, &kErrorInternal);
+      }
+      return ParseInt(index, match->text, match->int_parse_type);
+    } break;
+    case kTokenFloat:
+      return ParseFloat(index, text);
+    case kTokenChar:
+      return ParseChar(index, text);
+    case kTokenString:
+      return ParseString(index, text);
+    case kTokenKeyword:
+      return ParseKeyword(index, text);
+    case kTokenIdentifier:
+      return ParseIdent(index, text);
+    case kTokenLineBreak:
+      return Token::CreateLineBreak(index);
+  }
+  return Token::CreateError(index, &kErrorInternal);
 }
 
 Token Lexer::ParseNextSymbol(Content* content, Line* line) {
@@ -1021,7 +1059,6 @@ Token Lexer::ParseNextToken(Content* content, Line* line) {
     }
   }
   if (match == nullptr) {
-    // This should never happen in practice, as matches must be non-empty.
     return Token::CreateError(content->GetTokenIndex(), &kErrorInternal);
   }
 
@@ -1208,10 +1245,9 @@ bool Lexer::RewindToken(LexerContentId id) {
     if (line->tokens.empty()) {
       continue;
     }
+    content->token = line->tokens.size() - 1;
     break;
   }
-  content->token = line->tokens.size() - 1;
-  const TokenInfo token_info = line->tokens[content->token];
   return true;
 }
 

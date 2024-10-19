@@ -117,9 +117,6 @@ class Lexer final {
   // These may be returned by Lexer::Create if the configuration is invalid.
   //----------------------------------------------------------------------------
 
-  // Currently unsupported feature in the lexer.
-  static const std::string_view kErrorNotImplemented;
-
   // Duplicate symbol specification in LexerConfig.
   static const std::string_view kErrorDuplicateSymbolSpec;
 
@@ -249,9 +246,9 @@ class Lexer final {
   // invalid.
   int GetCurrentLine(LexerContentId id) const;
 
-  // Returns the content remaining on the current line, and advances to the next
-  // line in the content. If the content is already at the end, this will return
-  // an empty string.
+  // Returns the content remaining on the current line (not including newline),
+  // and advances to the next line in the content. If the content is already at
+  // the end, this will return an empty string.
   //
   // After this call, if NextToken() is called, it will return the first token
   // that appears after the beginning of the line.

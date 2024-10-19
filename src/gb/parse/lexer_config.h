@@ -82,7 +82,7 @@ enum class LexerFlag {
   kKeywordCaseInsensitive,  // Keywords are case insensitive.
 
   // Whitespace and comment parsing flags.
-  kLineBreak,      // Newlines are not whitespace (enables kTokenNewline).
+  kLineBreak,  // Newlines are not whitespace (enables kTokenNewline).
 };
 using LexerFlags = Flags<LexerFlag>;
 
@@ -277,6 +277,54 @@ inline constexpr Symbol kCStyleSymbols[] = {
     "<=", ">=", "==", "!=", "<<", ">>", "&&", "||",  "++", "--", "->", "+=",
     "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>="};
 
+// Keywords for the C language
+inline constexpr std::string_view kCKeywords[] = {
+    "alignas",      "alignof",  "auto",          "bool",      "break",
+    "case",         "char",     "const",         "constexpr", "continue",
+    "default",      "do",       "double",        "else",      "enum",
+    "extern",       "false",    "float",         "for",       "goto",
+    "if",           "inline",   "int",           "long",      "nullptr",
+    "register",     "restrict", "return",        "short",     "signed",
+    "sizeof",       "static",   "static_assert", "struct",    "switch",
+    "thread_local", "true",     "typedef",       "typeof",    "typeof_unqual",
+    "union",        "unsigned", "void",          "volatile",  "while",
+};
+
+// Keywords for the C++ language
+inline constexpr std::string_view kCppKeywords[] = {
+    "alignas",       "alignof",     "and",
+    "and_eq",        "asm",         "auto",
+    "bitand",        "bitor",       "bool",
+    "break",         "case",        "catch",
+    "char",          "char8_t",     "char16_t",
+    "char32_t",      "class",       "compl",
+    "concept",       "const",       "consteval",
+    "constexpr",     "constinit",   "const_cast",
+    "continue",      "co_await",    "co_return",
+    "co_yield",      "decltype",    "default",
+    "delete",        "do",          "double",
+    "dynamic_cast",  "else",        "enum",
+    "explicit",      "export",      "extern",
+    "false",         "float",       "for",
+    "friend",        "goto",        "if",
+    "inline",        "int",         "long",
+    "mutable",       "namespace",   "new",
+    "noexcept",      "not",         "not_eq",
+    "nullptr",       "operator",    "or",
+    "or_eq",         "private",     "protected",
+    "public",        "register",    "reinterpret_cast",
+    "requires",      "return",      "short",
+    "signed",        "sizeof",      "static",
+    "static_assert", "static_cast", "struct",
+    "switch",        "template",    "this",
+    "thread_local",  "throw",       "true",
+    "try",           "typedef",     "typeid",
+    "typename",      "union",       "unsigned",
+    "using",         "virtual",     "void",
+    "volatile",      "wchar_t",     "while",
+    "xor",           "xor_eq",
+};
+
 inline constexpr LexerConfig kCStyleLexerConfig = {
     .flags = kLexerFlags_C,
     .binary_prefix = "0b",
@@ -284,9 +332,31 @@ inline constexpr LexerConfig kCStyleLexerConfig = {
     .hex_prefix = "0x",
     .float_prefix = "",
     .ident_prefix = "",
+    .escape = '\\',
+    .escape_newline = 'n',
+    .escape_tab = 't',
+    .escape_hex = 'x',
     .line_comments = kCStyleLineComments,
     .block_comments = kCStyleBlockComments,
     .symbols = kCStyleSymbols,
+    .keywords = kCKeywords,
+};
+
+inline constexpr LexerConfig kCppStyleLexerConfig = {
+    .flags = kLexerFlags_C,
+    .binary_prefix = "0b",
+    .octal_prefix = "0",
+    .hex_prefix = "0x",
+    .float_prefix = "",
+    .ident_prefix = "",
+    .escape = '\\',
+    .escape_newline = 'n',
+    .escape_tab = 't',
+    .escape_hex = 'x',
+    .line_comments = kCStyleLineComments,
+    .block_comments = kCStyleBlockComments,
+    .symbols = kCStyleSymbols,
+    .keywords = kCppKeywords,
 };
 
 }  // namespace gb
