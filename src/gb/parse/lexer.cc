@@ -1032,6 +1032,8 @@ Token Lexer::ParseKeyword(TokenIndex token_index, std::string_view text) {
 }
 
 Token Lexer::ParseIdent(TokenIndex token_index, std::string_view text) {
+  text = text.substr(ident_config_.prefix,
+                     text.size() - ident_config_.size_offset);
   if (flags_.IsSet(LexerFlag::kIdentForceLower)) {
     modified_text_.push_back(
         std::make_unique<std::string>(absl::AsciiStrToLower(text)));
