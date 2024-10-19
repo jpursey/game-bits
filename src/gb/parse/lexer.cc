@@ -49,9 +49,7 @@ bool CreateTokenPattern(std::string& token_pattern,
   if (LexerSupportsIntegers(flags)) {
     bool first = true;
     if (flags.IsSet(LexerFlag::kBinaryIntegers)) {
-      if (!first) {
-        absl::StrAppend(&token_pattern, "|");
-      }
+      DCHECK(first);
       first = false;
       absl::StrAppend(&token_pattern, "(",
                       RE2::QuoteMeta(lexer_config.binary_prefix), "[01]+",
@@ -621,6 +619,17 @@ LexerContentId Lexer::AddFileContent(std::string_view filename,
   if (lines.empty()) {
     lines.emplace_back();
   }
+
+  // Enforce limits so that we don't overflow the token index.
+  if (lines_.size() + lines.size() + 1 > kMaxLexerLines) {
+    return kNoLexerContent;
+  }
+  for (const auto& line : lines) {
+    if (line.size() >= kMaxTokensPerLine) {
+      return kNoLexerContent;
+    }
+  }
+
   content->start_line = lines_.size();
   content->end_line = content->start_line + lines.size();
   lines_.reserve(content->end_line + 2);
@@ -794,6 +803,7 @@ Token Lexer::ParseToken(TokenIndex index) {
       DCHECK(!re_token_args_.empty());
       if (!RE2::ConsumeN(&text, re_token_, re_token_args_.data(),
                          re_token_args_.size())) {
+        LOG(DFATAL) << "Integer failed to be re-parsed";
         return Token::CreateError(index, &kErrorInternal);
       }
       TokenArg* match = nullptr;
@@ -804,6 +814,7 @@ Token Lexer::ParseToken(TokenIndex index) {
         }
       }
       if (match == nullptr) {
+        LOG(DFATAL) << "Integer failed to be re-parsed";
         return Token::CreateError(index, &kErrorInternal);
       }
       return ParseInt(index, match->text, match->int_parse_type);
@@ -821,6 +832,7 @@ Token Lexer::ParseToken(TokenIndex index) {
     case kTokenLineBreak:
       return Token::CreateLineBreak(index);
   }
+  LOG(DFATAL) << "Unhandled token type when reparsing";
   return Token::CreateError(index, &kErrorInternal);
 }
 
@@ -1061,6 +1073,7 @@ Token Lexer::ParseNextToken(Content* content, Line* line) {
     }
   }
   if (match == nullptr) {
+    LOG(DFATAL) << "Token found without a token type match";
     return Token::CreateError(content->GetTokenIndex(), &kErrorInternal);
   }
 
@@ -1094,6 +1107,7 @@ Token Lexer::ParseNextToken(Content* content, Line* line) {
     case kTokenIdentifier:
       return ParseIdent(token_index, match_text);
   }
+  LOG(DFATAL) << "Unhandled token type while parsing";
   return Token::CreateError(token_index, &kErrorInternal);
 }
 
@@ -1141,9 +1155,7 @@ Token Lexer::NextToken(LexerContentId id) {
   while (true) {
     RE2::Consume(&line->remain, re_whitespace_);
     if (line->remain.empty()) {
-      if (GetToken()) {
-        return token;
-      }
+      DCHECK(content->token >= line->tokens.size());
       if (flags_.IsSet(LexerFlag::kLineBreak) &&
           (line->tokens.empty() ||
            line->tokens.back().type != kTokenLineBreak)) {
@@ -1190,9 +1202,6 @@ Token Lexer::NextToken(LexerContentId id) {
           }
         } else {
           line->remain.remove_prefix(end_pos + end.size());
-          if (GetToken()) {
-            return token;
-          }
           break;
         }
       }

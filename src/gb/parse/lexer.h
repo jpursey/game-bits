@@ -196,10 +196,20 @@ class Lexer final {
 
   // Adds a file to the lexer, returning the LexerContentId which can be used to
   // parse the file.
+  //
+  // If the text exceeds the capacity of the Lexer, this will return
+  // kNoLexerContent. Lexer content cannot exceed kMaxLexerLines - content_count
+  // lines across *all* content loaded in the lexer. Each line is further
+  // limited to kMaxTokensPerLine characters long (including newline).
   LexerContentId AddFileContent(std::string_view filename, std::string text);
 
   // Adds text content without a specific filename to the lexer. Returns the
   // LexerContentId which can be used to parse the content.
+  //
+  // If the text exceeds the capacity of the Lexer, this will return
+  // kNoLexerContent. Lexer content cannot exceed kMaxLexerLines - content_count
+  // lines across *all* content loaded in the lexer. Each line is further
+  // limited to kMaxTokensPerLine characters long (including newline).
   LexerContentId AddContent(std::string text);
 
   // Rewinds the content to the beginning. NextToken() and NextLine() will

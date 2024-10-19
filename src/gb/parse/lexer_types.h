@@ -26,7 +26,8 @@ static_assert(kTokenIndexLineBits + kTokenIndexTokenBits == 32);
 }  // namespace lexer_internal
 
 // Maximum number of lines and tokens per line in the lexer.
-inline constexpr int kMaxLines = (1 << lexer_internal::kTokenIndexLineBits) - 1;
+inline constexpr int kMaxLexerLines =
+    (1 << lexer_internal::kTokenIndexLineBits) - 1;
 inline constexpr int kMaxTokensPerLine =
     (1 << lexer_internal::kTokenIndexTokenBits) - 2;  // -1 is kTokenEnd.
 inline constexpr int kTokenIndexEndToken = kMaxTokensPerLine + 1;
