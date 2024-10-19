@@ -129,6 +129,15 @@ class Lexer final {
   // Conflicting identifier configuration in LexerConfig.
   static const std::string_view kErrorConflictingIdentifierSpec;
 
+  // Conflicting line and block comment configuration in LexerConfig.
+  static const std::string_view kErrorConflictingCommentSpec;
+
+  // Empty string in comment specifications in LexerConfig.
+  static const std::string_view kErrorEmptyCommentSpec;
+
+  // Empty string in keyword specifications in LexerConfig.
+  static const std::string_view kErrorEmptyKeywordSpec;
+
   // Invalid token specification in LexerConfig (no symbols, keywords, or other
   // tokens).
   static const std::string_view kErrorNoTokenSpec;

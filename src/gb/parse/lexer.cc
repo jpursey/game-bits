@@ -14,14 +14,21 @@
 namespace gb {
 
 const std::string_view Lexer::kErrorNotImplemented = "Not implemented";
-const std::string_view Lexer::kErrorConflictingStringAndCharSpec =
-    "Conflicting string and character specifications";
-const std::string_view Lexer::kErrorConflictingIdentifierSpec =
-    "Conflicting identifier specifications";
 const std::string_view Lexer::kErrorInvalidSymbolSpec =
     "Symbol specification has non-ASCII or whitespace characters";
+const std::string_view Lexer::kErrorConflictingStringAndCharSpec =
+    "Character and String specifications share the same quote type";
+const std::string_view Lexer::kErrorConflictingIdentifierSpec =
+    "Identifiers cannot be set to force both lower and upper case";
+const std::string_view Lexer::kErrorConflictingCommentSpec =
+    "Multiple line and/or block comment starts share a common prefix";
+const std::string_view Lexer::kErrorEmptyCommentSpec =
+    "Empty string used in line or block comment specification";
+const std::string_view Lexer::kErrorEmptyKeywordSpec =
+    "Empty string used in keyword specification";
 const std::string_view Lexer::kErrorNoTokenSpec =
     "No token specification (from symbols, keywords, or flags)";
+
 const std::string_view Lexer::kErrorInternal = "Internal error";
 const std::string_view Lexer::kErrorInvalidTokenContent =
     "Token does not refer to valid content";
@@ -188,6 +195,10 @@ bool CreateTokenPattern(std::string& token_pattern,
       absl::StrAppend(&token_pattern, "(?i)");
     }
     for (const std::string_view& keyword : lexer_config.keywords) {
+      if (keyword.empty()) {
+        error = Lexer::kErrorEmptyKeywordSpec;
+        return false;
+      }
       absl::StrAppend(&token_pattern, RE2::QuoteMeta(keyword), "|");
     }
     token_pattern.pop_back();
@@ -272,21 +283,38 @@ bool CreateSymbolPattern(std::string& symbol_pattern, std::string& symbol_chars,
 bool CreateWhitespacePattern(std::string& whitespace_pattern,
                              std::string& whitespace_chars,
                              const LexerConfig& config, std::string& error) {
-  if (!config.block_comments.empty()) {
-    error = Lexer::kErrorNotImplemented;
-    return false;
-  }
-
   if (whitespace_chars.find(' ') == std::string::npos) {
     whitespace_chars.push_back(' ');
   }
   if (whitespace_chars.find('\t') == std::string::npos) {
     whitespace_chars.push_back('\t');
   }
-  whitespace_pattern = "[ \\t]*";
+  if (config.block_comments.empty()) {
+    whitespace_pattern = "[ \\t]*";
+  } else {
+    absl::StrAppend(&whitespace_pattern, "(?:[ \t]|");
+    for (const auto& [start, end] : config.block_comments) {
+      if (start.empty() || end.empty()) {
+        error = Lexer::kErrorEmptyCommentSpec;
+        return false;
+      }
+      const char first_char = start[0];
+      if (whitespace_chars.find(first_char) == std::string::npos) {
+        whitespace_chars.push_back(first_char);
+      }
+      absl::StrAppend(&whitespace_pattern, RE2::QuoteMeta(start), ".*?",
+                      RE2::QuoteMeta(end), "|");
+    }
+    whitespace_pattern.pop_back();
+    absl::StrAppend(&whitespace_pattern, ")*");
+  }
   if (!config.line_comments.empty()) {
     absl::StrAppend(&whitespace_pattern, "(?:(?:");
     for (const std::string_view& line_comment : config.line_comments) {
+      if (line_comment.empty()) {
+        error = Lexer::kErrorEmptyCommentSpec;
+        return false;
+      }
       const char first_char = line_comment[0];
       if (whitespace_chars.find(first_char) == std::string::npos) {
         whitespace_chars.push_back(first_char);
