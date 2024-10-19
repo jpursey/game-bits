@@ -166,16 +166,16 @@ class Lexer final {
   // unknown character or other type of malformed token.
   static const std::string_view kErrorInvalidToken;
 
-  // An invalid integer was encountered when parsing tokens. Generally this is
-  // due to the integer being out of range of the min/max values based on the
-  // bit-depth. Decimal integers are always signed (even if only positive), and
-  // binary, octal, and hex integers are always unsigned.
+  // An invalid integer was encountered when parsing tokens. This is due to the
+  // integer being out of range of the min/max values based on the bit-depth.
+  // Decimal integers are always signed (even if only positive), and binary,
+  // octal, and hex integers are always unsigned.
   static const std::string_view kErrorInvalidInteger;
 
-  // An invalid float was encountered when parsing tokens. Generally this is due
-  // to the floating point value being out of range of the min/max values based
-  // on the bit-depth. It also may be returned if the floating point requires
-  // precision beyond what is supported by the bit-depth.
+  // An invalid float was encountered when parsing tokens. This is due to the
+  // floating point value being out of range of the min/max values based on the
+  // bit-depth. It also may be returned if the floating point requires precision
+  // beyond what is supported by the bit-depth.
   static const std::string_view kErrorInvalidFloat;
 
   //----------------------------------------------------------------------------
@@ -389,9 +389,10 @@ class Lexer final {
     char escape_tab = 0;
     char escape_hex = 0;
     absl::Span<const std::string_view> keywords;
+    absl::Span<const LexerConfig::BlockComment> block_comments;
   };
 
-  enum class ParseType {
+  enum class IntParseType {
     kDefault,
     kHex,
     kOctal,
@@ -401,9 +402,14 @@ class Lexer final {
   struct TokenArg {
     TokenArg() : arg(&text) {}
     TokenType type = kTokenNone;
-    ParseType parse_type = ParseType::kDefault;
+    IntParseType int_parse_type = IntParseType::kDefault;
     std::string_view text;
     RE2::Arg arg;
+  };
+
+  struct BlockComment {
+    std::string start;
+    std::string end;
   };
 
   explicit Lexer(const Config& config);
@@ -420,7 +426,7 @@ class Lexer final {
   std::tuple<Content*, Line*> GetContentLine(LexerContentId id);
 
   Token ParseInt(TokenIndex token_index, std::string_view text,
-                 ParseType parse_type);
+                 IntParseType int_parse_type);
   Token ParseFloat(TokenIndex token_index, std::string_view text);
   Token ParseChar(TokenIndex token_index, std::string_view text);
   Token ParseString(TokenIndex token_index, std::string_view text);
@@ -450,6 +456,7 @@ class Lexer final {
   char escape_newline_ = 0;
   char escape_tab_ = 0;
   char escape_hex_ = 0;
+  std::vector<BlockComment> block_comments_;
 
   std::vector<std::unique_ptr<Content>> content_;
   absl::flat_hash_map<std::string_view, LexerContentId> filename_to_id_;

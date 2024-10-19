@@ -2961,7 +2961,11 @@ TEST(LexerTest, ParseBlockComments) {
 /* Comment at the beginning of a line */
 int Add(x, y) {/* Comment after a symbol */
   $ Multiple comments later ones don't matter $
-  /* of different $types$ after whitespace */ z = "/*inside a string*/";
+  /* of different $types
+
+     Blank space!
+
+     $ after whitespace */ z = "/*inside a string*/";
   return x$Comment after an identifier$+ y; /* Comment at the end of a line */
 }
 )---");
@@ -3019,6 +3023,80 @@ int Add(x, y) {/* Comment after a symbol */
   token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenSymbol);
   EXPECT_EQ(token.GetSymbol(), "}");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, BlockCommentDoesNotNest) {
+  auto lexer = Lexer::Create({
+      .flags = {kLexerFlags_AllIntegers, kLexerFlags_CStrings,
+                kLexerFlags_CIdentifiers},
+      .block_comments = {{"/*", "*/"}},
+      .symbols = kCStyleSymbols,
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent(R"---(
+      /* Comment /* inside */ block comment */
+      /* Comment /* inside
+      another */ multiline comment */
+  )---");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "block");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "comment");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenSymbol);
+  EXPECT_EQ(token.GetSymbol(), "*");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenSymbol);
+  EXPECT_EQ(token.GetSymbol(), "/");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "multiline");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "comment");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenSymbol);
+  EXPECT_EQ(token.GetSymbol(), "*");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenSymbol);
+  EXPECT_EQ(token.GetSymbol(), "/");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, MixedLineAndBlockComments) {
+  auto lexer = Lexer::Create({
+      .flags = {kLexerFlags_AllIntegers, kLexerFlags_CStrings,
+                kLexerFlags_CIdentifiers},
+      .line_comments = {"//"},
+      .block_comments = {{"/*", "*/"}},
+      .symbols = kCStyleSymbols,
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent(R"---(
+     one // Comment with /* block comment */ inside
+     two /* Comment with // line 
+         // comment inside */ three
+     four // Comment with /* partial block comment inside
+     five
+  )---");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "one");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "two");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "three");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "four");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "five");
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 

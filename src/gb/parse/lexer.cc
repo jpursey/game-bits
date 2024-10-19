@@ -448,6 +448,7 @@ std::unique_ptr<Lexer> Lexer::Create(const LexerConfig& lexer_config,
   config.escape_newline = lexer_config.escape_newline;
   config.escape_tab = lexer_config.escape_tab;
   config.escape_hex = lexer_config.escape_hex;
+  config.block_comments = lexer_config.block_comments;
   return absl::WrapUnique(new Lexer(config));
 }
 
@@ -482,13 +483,13 @@ Lexer::Lexer(const Config& config)
   if (config.binary_index >= 0) {
     const int i = config.binary_index;
     re_args_[i].type = kTokenInt;
-    re_args_[i].parse_type = ParseType::kBinary;
+    re_args_[i].int_parse_type = IntParseType::kBinary;
     re_token_args_[i] = &re_args_[i].arg;
   }
   if (config.octal_index >= 0) {
     const int i = config.octal_index;
     re_args_[i].type = kTokenInt;
-    re_args_[i].parse_type = ParseType::kOctal;
+    re_args_[i].int_parse_type = IntParseType::kOctal;
     re_token_args_[i] = &re_args_[i].arg;
   }
   if (config.decimal_index >= 0) {
@@ -499,7 +500,7 @@ Lexer::Lexer(const Config& config)
   if (config.hex_index >= 0) {
     const int i = config.hex_index;
     re_args_[i].type = kTokenInt;
-    re_args_[i].parse_type = ParseType::kHex;
+    re_args_[i].int_parse_type = IntParseType::kHex;
     re_token_args_[i] = &re_args_[i].arg;
   }
   if (config.float_index >= 0) {
@@ -551,6 +552,9 @@ Lexer::Lexer(const Config& config)
     for (const std::string_view& keyword : config.keywords) {
       keywords_[absl::AsciiStrToLower(keyword)] = keyword;
     }
+  }
+  for (const auto& [start, end] : config.block_comments) {
+    block_comments_.emplace_back(std::string(start), std::string(end));
   }
 }
 
@@ -801,17 +805,17 @@ Token Lexer::ParseNextSymbol(Content* content, Line* line) {
 }
 
 Token Lexer::ParseInt(TokenIndex token_index, std::string_view text,
-                      ParseType parse_type) {
+                      IntParseType int_parse_type) {
   int64_t value = 0;
-  switch (parse_type) {
-    case ParseType::kDefault: {
+  switch (int_parse_type) {
+    case IntParseType::kDefault: {
       std::string_view digits = text.substr(
           decimal_config_.prefix, text.size() - decimal_config_.size_offset);
       if (!absl::SimpleAtoi(digits, &value)) {
         return Token::CreateError(token_index, &kErrorInvalidInteger);
       }
     } break;
-    case ParseType::kHex: {
+    case IntParseType::kHex: {
       uint64_t hex_value = 0;
       std::string_view digits = text.substr(
           hex_config_.prefix, text.size() - hex_config_.size_offset);
@@ -834,7 +838,7 @@ Token Lexer::ParseInt(TokenIndex token_index, std::string_view text,
       }
       value = hex_value;
     } break;
-    case ParseType::kOctal: {
+    case IntParseType::kOctal: {
       uint64_t octal_value = 0;
       std::string_view digits = text.substr(
           octal_config_.prefix, text.size() - octal_config_.size_offset);
@@ -853,7 +857,7 @@ Token Lexer::ParseInt(TokenIndex token_index, std::string_view text,
       }
       value = octal_value;
     } break;
-    case ParseType::kBinary: {
+    case IntParseType::kBinary: {
       uint64_t binary_value = 0;
       std::string_view digits = text.substr(
           binary_config_.prefix, text.size() - binary_config_.size_offset);
@@ -1044,7 +1048,7 @@ Token Lexer::ParseNextToken(Content* content, Line* line) {
                             match_text.size(), match->type);
   switch (match->type) {
     case kTokenInt:
-      return ParseInt(token_index, match_text, match->parse_type);
+      return ParseInt(token_index, match_text, match->int_parse_type);
     case kTokenFloat:
       return ParseFloat(token_index, match_text);
     case kTokenChar:
@@ -1067,29 +1071,93 @@ Token Lexer::NextToken(LexerContentId id) {
   if (line == nullptr) {
     return Token::CreateEnd(content->GetTokenIndex());
   }
-  if (content->token < line->tokens.size()) {
-    Token token = ParseToken(content->GetTokenIndex());
-    ++content->token;
-    return token;
-  }
-  while (true) {
-    RE2::Consume(&line->remain, re_whitespace_);
-    if (!line->remain.empty()) {
-      break;
+
+  Token token;
+
+  // Returns true if there already is a parsed token.
+  auto GetToken = [&]() {
+    if (content->token < line->tokens.size()) {
+      token = ParseToken(content->GetTokenIndex());
+      ++content->token;
+      return true;
     }
+    return false;
+  };
+
+  // Advances to the next line and returns true if the end of the content was
+  // reached.
+  auto NextLineOrEnd = [&]() {
     ++content->line;
     content->token = 0;
     if (content->line == content->end_line) {
-      return Token::CreateEnd(content->GetTokenIndex());
+      token = token.CreateEnd(content->GetTokenIndex());
+      return true;
     }
     ++line;
-    if (content->token < line->tokens.size()) {
-      Token token = ParseToken(content->GetTokenIndex());
-      ++content->token;
-      return token;
+    return false;
+  };
+
+  // If we have a token, then we just return it.
+  if (GetToken()) {
+    return token;
+  }
+
+  // Skip whitespace and comments
+  bool parsed_block_comment = false;
+  while (true) {
+    RE2::Consume(&line->remain, re_whitespace_);
+    if (line->remain.empty()) {
+      if (NextLineOrEnd() || GetToken()) {
+        return token;
+      }
+      continue;
+    }
+
+    // Handle block comment which may span multiple lines.
+    parsed_block_comment = false;
+    for (const auto& [start, end] : block_comments_) {
+      if (!line->remain.starts_with(start)) {
+        continue;
+      }
+      parsed_block_comment = true;
+      // At this point, we know the block comment extends to the next line,
+      // or it would have been matched as part of regular whitespace.
+      line->remain.remove_prefix(line->remain.size());
+      if (NextLineOrEnd()) {
+        return token;
+      }
+      while (true) {
+        DCHECK(content->token == 0);
+
+        //  This line must start over, even if there were previously tokens
+        //  parsed on it, as we are in a comment block. We reset, just in case
+        //  it was previously parsed via mixed-mode parsing (tokens and
+        //  lines). This should be rare.
+        line->tokens.clear();
+        line->remain = line->line;
+
+        auto end_pos = line->remain.find(end);
+        if (end_pos == std::string_view::npos) {
+          line->remain.remove_prefix(line->remain.size());
+          if (NextLineOrEnd()) {
+            return token;
+          }
+        } else {
+          line->remain.remove_prefix(end_pos + end.size());
+          if (GetToken()) {
+            return token;
+          }
+          break;
+        }
+      }
+      break;
+    }
+    if (!parsed_block_comment) {
+      break;
     }
   }
-  Token token;
+
+  // Parse the next token.
   if (content->re_order == ReOrder::kSymFirst) {
     token = ParseNextSymbol(content, line);
     if (token.GetType() == kTokenNone) {
@@ -1101,6 +1169,8 @@ Token Lexer::NextToken(LexerContentId id) {
       token = ParseNextSymbol(content, line);
     }
   }
+
+  // If we still don't have a token, then we have an error.
   if (token.GetType() == kTokenNone) {
     const TokenIndex token_index = content->GetTokenIndex();
     ++content->token;
@@ -1110,6 +1180,7 @@ Token Lexer::NextToken(LexerContentId id) {
                               line->remain.data() - token_start, kTokenError);
     return Token::CreateError(token_index, &kErrorInvalidToken);
   }
+
   return token;
 }
 
