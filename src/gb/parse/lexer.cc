@@ -5,6 +5,7 @@
 
 #include "gb/parse/lexer.h"
 
+#include "absl/container/flat_hash_set.h"
 #include "absl/log/log.h"
 #include "absl/memory/memory.h"
 #include "absl/strings/str_cat.h"
@@ -14,6 +15,8 @@
 namespace gb {
 
 const std::string_view Lexer::kErrorNotImplemented = "Not implemented";
+const std::string_view Lexer::kErrorDuplicateSymbolSpec =
+    "Duplicate symbol specification";
 const std::string_view Lexer::kErrorInvalidSymbolSpec =
     "Symbol specification has non-ASCII or whitespace characters";
 const std::string_view Lexer::kErrorConflictingStringAndCharSpec =
@@ -24,6 +27,8 @@ const std::string_view Lexer::kErrorConflictingCommentSpec =
     "Multiple line and/or block comment starts share a common prefix";
 const std::string_view Lexer::kErrorEmptyCommentSpec =
     "Empty string used in line or block comment specification";
+const std::string_view Lexer::kErrorDuplicateKeywordSpec =
+    "Duplicate keyword specification";
 const std::string_view Lexer::kErrorEmptyKeywordSpec =
     "Empty string used in keyword specification";
 const std::string_view Lexer::kErrorNoTokenSpec =
@@ -190,6 +195,7 @@ bool CreateTokenPattern(std::string& token_pattern,
   }
 
   if (!lexer_config.keywords.empty()) {
+    absl::flat_hash_set<std::string_view> keywords;
     absl::StrAppend(&token_pattern, "(");
     if (flags.IsSet(LexerFlag::kKeywordCaseInsensitive)) {
       absl::StrAppend(&token_pattern, "(?i)");
@@ -197,6 +203,10 @@ bool CreateTokenPattern(std::string& token_pattern,
     for (const std::string_view& keyword : lexer_config.keywords) {
       if (keyword.empty()) {
         error = Lexer::kErrorEmptyKeywordSpec;
+        return false;
+      }
+      if (!keywords.insert(keyword).second) {
+        error = Lexer::kErrorDuplicateKeywordSpec;
         return false;
       }
       absl::StrAppend(&token_pattern, RE2::QuoteMeta(keyword), "|");
@@ -262,11 +272,15 @@ bool CreateSymbolPattern(std::string& symbol_pattern, std::string& symbol_chars,
   if (config.symbols.empty()) {
     return true;
   }
+  absl::flat_hash_set<Symbol> symbols;
   absl::StrAppend(&symbol_pattern, "(");
-  std::vector<Symbol> symbols(config.symbols.begin(), config.symbols.end());
-  for (const Symbol& symbol : symbols) {
+  for (const Symbol& symbol : config.symbols) {
     if (!symbol.IsValid()) {
       error = Lexer::kErrorInvalidSymbolSpec;
+      return false;
+    }
+    if (!symbols.insert(symbol).second) {
+      error = Lexer::kErrorDuplicateSymbolSpec;
       return false;
     }
     const char first_char = symbol.GetString()[0];
@@ -283,6 +297,7 @@ bool CreateSymbolPattern(std::string& symbol_pattern, std::string& symbol_chars,
 bool CreateWhitespacePattern(std::string& whitespace_pattern,
                              std::string& whitespace_chars,
                              const LexerConfig& config, std::string& error) {
+  absl::flat_hash_set<std::string_view> comment_starts;
   if (whitespace_chars.find(' ') == std::string::npos) {
     whitespace_chars.push_back(' ');
   }
@@ -296,6 +311,10 @@ bool CreateWhitespacePattern(std::string& whitespace_pattern,
     for (const auto& [start, end] : config.block_comments) {
       if (start.empty() || end.empty()) {
         error = Lexer::kErrorEmptyCommentSpec;
+        return false;
+      }
+      if (!comment_starts.insert(start).second) {
+        error = Lexer::kErrorConflictingCommentSpec;
         return false;
       }
       const char first_char = start[0];
@@ -313,6 +332,10 @@ bool CreateWhitespacePattern(std::string& whitespace_pattern,
     for (const std::string_view& line_comment : config.line_comments) {
       if (line_comment.empty()) {
         error = Lexer::kErrorEmptyCommentSpec;
+        return false;
+      }
+      if (!comment_starts.insert(line_comment).second) {
+        error = Lexer::kErrorConflictingCommentSpec;
         return false;
       }
       const char first_char = line_comment[0];
@@ -333,6 +356,7 @@ std::unique_ptr<Lexer> Lexer::Create(const LexerConfig& lexer_config,
                                      std::string* error_message) {
   std::string temp_error;
   std::string& error = (error_message != nullptr ? *error_message : temp_error);
+  error.clear();
 
   Config config;
   config.flags = lexer_config.flags;

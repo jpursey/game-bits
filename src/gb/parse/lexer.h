@@ -120,6 +120,9 @@ class Lexer final {
   // Currently unsupported feature in the lexer.
   static const std::string_view kErrorNotImplemented;
 
+  // Duplicate symbol specification in LexerConfig.
+  static const std::string_view kErrorDuplicateSymbolSpec;
+
   // Invalid symbol specification in LexerConfig.
   static const std::string_view kErrorInvalidSymbolSpec;
 
@@ -134,6 +137,9 @@ class Lexer final {
 
   // Empty string in comment specifications in LexerConfig.
   static const std::string_view kErrorEmptyCommentSpec;
+
+  // Duplicate string in keyword specifications in LexerConfig.
+  static const std::string_view kErrorDuplicateKeywordSpec;
 
   // Empty string in keyword specifications in LexerConfig.
   static const std::string_view kErrorEmptyKeywordSpec;

@@ -86,6 +86,11 @@ inline void AbslStringify(Sink& sink, const Symbol& symbol) {
   absl::Format(&sink, "\"%s\"", symbol.GetString());
 }
 
+template <typename H>
+H AbslHashValue(H h, const Symbol& symbol) {
+  return H::combine(std::move(h), symbol.GetValue());
+}
+
 inline Symbol::Symbol(SymbolValue value) noexcept {
   // This cannot be made constexpr because of the memcpy, but this is much
   // faster in optimized builds.
