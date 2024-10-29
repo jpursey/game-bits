@@ -33,6 +33,35 @@ inline constexpr TokenType kTokenKeyword = 8;     // Value: String
 inline constexpr TokenType kTokenIdentifier = 9;  // Value: String
 inline constexpr TokenType kTokenLineBreak = 10;  // Value: kNone
 
+inline std::string GetTokenTypeString(TokenType type) {
+  switch (type) {
+    case kTokenNone:
+      return "kTokenNone";
+    case kTokenEnd:
+      return "kTokenEnd";
+    case kTokenError:
+      return "kTokenError";
+    case kTokenSymbol:
+      return "kTokenSymbol";
+    case kTokenInt:
+      return "kTokenInt";
+    case kTokenFloat:
+      return "kTokenFloat";
+    case kTokenChar:
+      return "kTokenChar";
+    case kTokenString:
+      return "kTokenString";
+    case kTokenKeyword:
+      return "kTokenKeyword";
+    case kTokenIdentifier:
+      return "kTokenIdentifier";
+    case kTokenLineBreak:
+      return "kTokenLineBreak";
+    default:
+      return absl::StrFormat("User(%d)", type);
+  }
+}
+
 // A token represents a single parsed token from a lexer.
 //
 // Tokens are lightweight and can be freely copied and deleted. They are only
@@ -78,7 +107,10 @@ class Token final {
   std::string_view GetString() const;  // Default: empty
   Symbol GetSymbol() const;            // Default: Symbol()
 
-  // Token value comparison.
+  // Token type comparison.
+  bool IsNone() const { return GetType() == kTokenNone; }
+  bool IsEnd() const { return GetType() == kTokenEnd; }
+  bool IsError() const { return GetType() == kTokenError; }
   bool IsInt(int64_t value) const {
     return GetType() == kTokenInt && GetInt() == value;
   }
@@ -211,13 +243,13 @@ static_assert(sizeof(Token) == 16);
 
 template <typename Sink>
 void AbslStringify(Sink& sink, const Token& token) {
-  absl::Format(&sink, "{%v, type:%d, value:", token.GetTokenIndex(),
-               token.GetType());
+  absl::Format(&sink, "{%v, type:%s, value:", token.GetTokenIndex(),
+               GetTokenTypeString(token.GetType()));
   switch (token.GetType()) {
     case kTokenNone:
     case kTokenEnd:
     case kTokenLineBreak:
-      absl::Format(&sink, "kNone");
+      absl::Format(&sink, "none");
       break;
     case kTokenError:
       absl::Format(&sink, "\"%s\"", token.GetString());
@@ -241,8 +273,7 @@ void AbslStringify(Sink& sink, const Token& token) {
       absl::Format(&sink, "\"%s\"", token.GetString());
       break;
     default:
-      // All user types are strings.
-      absl::Format(&sink, "\"%s\"", token.GetString());
+      absl::Format(&sink, "\"%s\"", token.ToString());
       break;
   }
   absl::Format(&sink, "}");

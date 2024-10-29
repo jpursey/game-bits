@@ -82,10 +82,10 @@ class ParseResult {
   ParseResult& operator=(ParseResult&&) = default;
   ~ParseResult() = default;
 
+  operator bool() const { return item_.has_value(); }
   bool IsOk() const { return item_.has_value(); }
+
   const ParseError& GetError() const { return *error_; }
-  const ParsedItem& GetItem() const& { return *item_; }
-  ParsedItem GetItem() && { return *std::move(item_); }
 
   const ParsedItem& operator*() const& { return *item_; }
   const ParsedItem* operator->() const& { return &*item_; }
@@ -98,9 +98,17 @@ class ParseResult {
 
 class ParseMatch {
  public:
+  static ParseMatch Abort(std::string message) {
+    return ParseMatch(ParseError(std::move(message)), true);
+  }
+  static ParseMatch Abort(ParseError error) {
+    return ParseMatch(std::move(error), true);
+  }
+
   ParseMatch(Callback<ParseError()> error_callback)
       : error_callback_(std::move(error_callback)) {}
-  ParseMatch(ParseError error) : error_callback_([error] { return error; }) {}
+  ParseMatch(ParseError error, bool abort)
+      : abort_(abort), error_callback_([error] { return error; }) {}
   ParseMatch(ParsedItem item) : item_(std::move(item)) {}
   ParseMatch(const ParseMatch&) = delete;
   ParseMatch& operator=(const ParseMatch&) = delete;
@@ -111,12 +119,14 @@ class ParseMatch {
   operator bool() const { return item_.has_value(); }
 
   ParseError GetError() const { return error_callback_(); }
+  bool IsAbort() const { return abort_; }
 
   const ParsedItem& operator*() const& { return *item_; }
   const ParsedItem* operator->() const& { return &*item_; }
   ParsedItem operator*() && { return *std::move(item_); }
 
  private:
+  bool abort_ = false;
   Callback<ParseError()> error_callback_;
   std::optional<ParsedItem> item_;
 };
@@ -128,22 +138,43 @@ enum class ParserRepeat {
 };
 using ParserRepeatFlags = Flags<ParserRepeat>;
 
-class ParserItem {
+constexpr ParserRepeatFlags kParserOptional = {};
+constexpr ParserRepeatFlags kParserSingle = {ParserRepeat::kRequireOne};
+constexpr ParserRepeatFlags kParserZeroOrMore = {ParserRepeat::kAllowMany};
+constexpr ParserRepeatFlags kParserOneOrMore = {ParserRepeat::kRequireOne,
+                                                ParserRepeat::kAllowMany};
+constexpr ParserRepeatFlags kParserZeroOrMoreWithComma = {
+    ParserRepeat::kAllowMany, ParserRepeat::kWithComma};
+constexpr ParserRepeatFlags kParserOneOrMoreWithComma = {
+    ParserRepeat::kRequireOne, ParserRepeat::kAllowMany,
+    ParserRepeat::kWithComma};
+
+class ParserToken;
+class ParserRule;
+class ParserRuleName;
+
+class ParserRuleItem {
  public:
-  ParserItem(const ParserItem&) = delete;
-  ParserItem& operator=(const ParserItem&) = delete;
-  virtual ~ParserItem() = default;
+  ParserRuleItem(const ParserRuleItem&) = delete;
+  ParserRuleItem& operator=(const ParserRuleItem&) = delete;
+  virtual ~ParserRuleItem() = default;
+
+  static std::unique_ptr<ParserToken> CreateToken(TokenType token_type,
+                                                  std::string_view value = {});
+  static std::unique_ptr<ParserRuleName> CreateRule(std::string rule_name);
+  static std::unique_ptr<ParserRule> CreateSequence();
+  static std::unique_ptr<ParserRule> CreateAlternatives();
 
   virtual ParseMatch Match(ParserInternal, Parser& parser) const = 0;
 
  protected:
-  ParserItem() = default;
+  ParserRuleItem() = default;
 };
 
-class ParserTokenItem final : public ParserItem {
+class ParserToken final : public ParserRuleItem {
  public:
-  ParserTokenItem(TokenType token_type, std::string value)
-      : token_type_(token_type), value_(std::move(value)) {}
+  ParserToken(TokenType token_type, std::string_view value = {})
+      : token_type_(token_type), value_(value) {}
 
   TokenType GetTokenType() const { return token_type_; }
   std::string_view GetValue() const { return value_; }
@@ -155,42 +186,9 @@ class ParserTokenItem final : public ParserItem {
   const std::string value_;
 };
 
-class ParserGroupItem final : public ParserItem {
+class ParserRuleName final : public ParserRuleItem {
  public:
-  enum class GroupType {
-    kSequence,
-    kAlternatives,
-  };
-
-  struct SubItem {
-    SubItem(std::string_view name, std::unique_ptr<ParserItem> item,
-            ParserRepeatFlags repeat)
-        : name(name), item(std::move(item)), repeat(repeat) {}
-    std::string name;
-    std::unique_ptr<const ParserItem> item;
-    ParserRepeatFlags repeat;
-  };
-
-  ParserGroupItem(GroupType group_type) : group_type_(group_type) {}
-
-  void AddSubItem(std::string_view name, std::unique_ptr<ParserItem> item,
-                  ParserRepeatFlags repeat) {
-    sub_items_.emplace_back(name, std::move(item), repeat);
-  }
-
-  GroupType GetGroupType() const { return group_type_; }
-  absl::Span<const SubItem> GetSubItems() const { return sub_items_; }
-
-  ParseMatch Match(ParserInternal, Parser& parser) const override;
-
- private:
-  const GroupType group_type_;
-  std::vector<SubItem> sub_items_;
-};
-
-class ParserRuleItem final : public ParserItem {
- public:
-  ParserRuleItem(std::string name, std::string rule_name, ParserRepeat repeat)
+  explicit ParserRuleName(std::string rule_name)
       : rule_name_(std::move(rule_name)) {}
 
   std::string_view GetRuleName() const { return rule_name_; }
@@ -199,6 +197,43 @@ class ParserRuleItem final : public ParserItem {
 
  private:
   const std::string rule_name_;
+};
+
+class ParserRule final : public ParserRuleItem {
+ public:
+  enum class Type {
+    kSequence,
+    kAlternatives,
+  };
+
+  struct SubItem {
+    SubItem(std::string_view name, std::unique_ptr<ParserRuleItem> item,
+            ParserRepeatFlags repeat)
+        : name(name), item(std::move(item)), repeat(repeat) {}
+    std::string name;
+    std::unique_ptr<const ParserRuleItem> item;
+    ParserRepeatFlags repeat;
+  };
+
+  ParserRule(Type type) : type_(type) {}
+
+  void AddSubItem(std::string_view name, std::unique_ptr<ParserRuleItem> item,
+                  ParserRepeatFlags repeat = kParserSingle) {
+    sub_items_.emplace_back(name, std::move(item), repeat);
+  }
+  void AddSubItem(std::unique_ptr<ParserRuleItem> item,
+                  ParserRepeatFlags repeat = kParserSingle) {
+    AddSubItem("", std::move(item), repeat);
+  }
+
+  Type GetType() const { return type_; }
+  absl::Span<const SubItem> GetSubItems() const { return sub_items_; }
+
+  ParseMatch Match(ParserInternal, Parser& parser) const override;
+
+ private:
+  const Type type_;
+  std::vector<SubItem> sub_items_;
 };
 
 class ParserRules final {
@@ -211,18 +246,19 @@ class ParserRules final {
   ~ParserRules() = default;
 
   ParserRules& AddRule(std::string_view name,
-                       std::unique_ptr<ParserGroupItem> item) {
+                       std::unique_ptr<ParserRule> item) {
     rules_.emplace(std::string(name), std::move(item));
     return *this;
   }
 
-  const ParserItem* GetRule(std::string_view name) const {
+  const ParserRuleItem* GetRule(std::string_view name) const {
     auto it = rules_.find(std::string(name));
     return it != rules_.end() ? it->second.get() : nullptr;
   }
 
  private:
-  absl::flat_hash_map<std::string, std::unique_ptr<const ParserItem>> rules_;
+  absl::flat_hash_map<std::string, std::unique_ptr<const ParserRuleItem>>
+      rules_;
 };
 
 class Parser final {
@@ -231,17 +267,14 @@ class Parser final {
       : lexer_(lexer), rules_(std::move(rules)) {}
   Parser(const Parser&) = delete;
   Parser& operator=(const Parser&) = delete;
-  ~Parser();
+  ~Parser() = default;
 
   ParseResult Parse(LexerContentId content, std::string_view rule);
 
-  ParseMatch MatchTokenItem(ParserInternal internal,
-                            const ParserTokenItem& item);
-  ParseMatch MatchSequence(ParserInternal internal,
-                           const ParserGroupItem& item);
-  ParseMatch MatchAlternatives(ParserInternal internal,
-                               const ParserGroupItem& item);
-  ParseMatch MatchRuleItem(ParserInternal internal, const ParserRuleItem& item);
+  ParseMatch MatchTokenItem(ParserInternal internal, const ParserToken& item);
+  ParseMatch MatchSequence(ParserInternal internal, const ParserRule& item);
+  ParseMatch MatchAlternatives(ParserInternal internal, const ParserRule& item);
+  ParseMatch MatchRuleItem(ParserInternal internal, const ParserRuleName& item);
 
  private:
   ParseError Error(gb::Token token, std::string_view message);
@@ -251,18 +284,31 @@ class Parser final {
                                             std::string_view expected_value);
 
   Token NextToken() { return lexer_.NextToken(content_); }
-  void RewindToken() { lexer_.RewindToken(content_); }
-  Token PeekToken() {
-    Token token = NextToken();
-    RewindToken();
-    return token;
-  }
+  Token PeekToken() { return lexer_.NextToken(content_, false); }
   void SetNextToken(Token token) { lexer_.SetNextToken(token); }
 
   Lexer& lexer_;
   const ParserRules rules_;
   LexerContentId content_ = kNoLexerContent;
 };
+
+inline std::unique_ptr<ParserToken> ParserRuleItem::CreateToken(
+    TokenType token_type, std::string_view value) {
+  return std::make_unique<ParserToken>(token_type, value);
+}
+
+inline std::unique_ptr<ParserRuleName> ParserRuleItem::CreateRule(
+    std::string rule_name) {
+  return std::make_unique<ParserRuleName>(std::move(rule_name));
+}
+
+inline std::unique_ptr<ParserRule> ParserRuleItem::CreateSequence() {
+  return std::make_unique<ParserRule>(ParserRule::Type::kSequence);
+}
+
+inline std::unique_ptr<ParserRule> ParserRuleItem::CreateAlternatives() {
+  return std::make_unique<ParserRule>(ParserRule::Type::kAlternatives);
+}
 
 }  // namespace gb
 
