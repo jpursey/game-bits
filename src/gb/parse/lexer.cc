@@ -786,19 +786,44 @@ std::string_view Lexer::GetTokenText(TokenIndex index) const {
   return {};
 }
 
+bool Lexer::SetNextToken(Token token) {
+  const TokenIndex index = token.GetTokenIndex();
+  const Line* line = GetLine(index.line);
+  if (line == nullptr || (index.token > line->tokens.size() &&
+                          index.token != kTokenIndexEndToken)) {
+    return false;
+  }
+  Content* content = GetContent(line->id);
+  DCHECK(content != nullptr);
+  content->line = index.line - content->start_line;
+  content->token = index.token;
+  last_token_ = token;
+  return true;
+}
+
 Token Lexer::ParseToken(TokenIndex index) {
   const Line* line = GetLine(index.line);
   if (line == nullptr || index.token > line->tokens.size()) {
+    if (index.token == kTokenIndexEndToken) {
+      return Token::CreateEnd(index);
+    }
     return Token::CreateError({}, &kErrorInvalidTokenContent);
+  }
+  if (index == last_token_.GetTokenIndex()) {
+    return last_token_;
   }
   const TokenInfo& token_info = line->tokens[index.token];
   std::string_view text = line->line.substr(token_info.column, token_info.size);
+  auto ReturnToken = [this](const Token& token) {
+    last_token_ = token;
+    return token;
+  };
   switch (token_info.type) {
     case kTokenError:
       // The only kind of tokens stored as error are invalid tokens.
-      return Token::CreateError(index, &kErrorInvalidToken);
+      return ReturnToken(Token::CreateError(index, &kErrorInvalidToken));
     case kTokenSymbol:
-      return Token::CreateSymbol(index, text);
+      return ReturnToken(Token::CreateSymbol(index, text));
     case kTokenInt: {
       DCHECK(!re_token_args_.empty());
       if (!RE2::ConsumeN(&text, re_token_, re_token_args_.data(),
@@ -815,35 +840,37 @@ Token Lexer::ParseToken(TokenIndex index) {
       }
       if (match == nullptr) {
         LOG(DFATAL) << "Integer failed to be re-parsed";
-        return Token::CreateError(index, &kErrorInternal);
+        return ReturnToken(Token::CreateError(index, &kErrorInternal));
       }
-      return ParseInt(index, match->text, match->int_parse_type);
+      return ReturnToken(ParseInt(index, match->text, match->int_parse_type));
     } break;
     case kTokenFloat:
-      return ParseFloat(index, text);
+      return ReturnToken(ParseFloat(index, text));
     case kTokenChar:
-      return ParseChar(index, text);
+      return ReturnToken(ParseChar(index, text));
     case kTokenString:
-      return ParseString(index, text);
+      return ReturnToken(ParseString(index, text));
     case kTokenKeyword:
-      return ParseKeyword(index, text);
+      return ReturnToken(ParseKeyword(index, text));
     case kTokenIdentifier:
-      return ParseIdent(index, text);
+      return ReturnToken(ParseIdent(index, text));
     case kTokenLineBreak:
-      return Token::CreateLineBreak(index);
+      return ReturnToken(Token::CreateLineBreak(index));
   }
   LOG(DFATAL) << "Unhandled token type when reparsing";
   return Token::CreateError(index, &kErrorInternal);
 }
 
-Token Lexer::ParseNextSymbol(Content* content, Line* line) {
+Token Lexer::ParseNextSymbol(Content* content, Line* line, bool advance) {
   std::string_view symbol_text;
   if (!RE2::Consume(&line->remain, re_symbol_, &symbol_text)) {
     return {};
   }
   content->re_order = ReOrder::kSymLast;
   TokenIndex token_index = content->GetTokenIndex();
-  ++content->token;
+  if (advance) {
+    ++content->token;
+  }
   line->tokens.emplace_back(symbol_text.data() - line->line.data(),
                             symbol_text.size(), kTokenSymbol);
   return Token::CreateSymbol(token_index, symbol_text);
@@ -1058,7 +1085,7 @@ Token Lexer::ParseIdent(TokenIndex token_index, std::string_view text) {
   return Token::CreateIdentifier(token_index, text.data(), text.size());
 }
 
-Token Lexer::ParseNextToken(Content* content, Line* line) {
+Token Lexer::ParseNextToken(Content* content, Line* line, bool advance) {
   std::string_view remain = line->remain;
   if (re_token_args_.empty() ||
       !RE2::ConsumeN(&remain, re_token_, re_token_args_.data(),
@@ -1088,7 +1115,9 @@ Token Lexer::ParseNextToken(Content* content, Line* line) {
   line->remain = remain;
   TokenIndex token_index = content->GetTokenIndex();
   content->re_order = ReOrder::kSymFirst;
-  ++content->token;
+  if (advance) {
+    ++content->token;
+  }
   std::string_view match_text = match->text;
   match->text = {};
   line->tokens.emplace_back(match_text.data() - line->line.data(),
@@ -1111,7 +1140,7 @@ Token Lexer::ParseNextToken(Content* content, Line* line) {
   return Token::CreateError(token_index, &kErrorInternal);
 }
 
-Token Lexer::NextToken(LexerContentId id) {
+Token Lexer::NextToken(LexerContentId id, bool advance) {
   auto [content, line] = GetContentLine(id);
   if (content == nullptr) {
     return Token::CreateError({}, &kErrorInvalidTokenContent);
@@ -1126,7 +1155,13 @@ Token Lexer::NextToken(LexerContentId id) {
   auto GetToken = [&]() {
     if (content->token < line->tokens.size()) {
       token = ParseToken(content->GetTokenIndex());
-      ++content->token;
+      if (advance) {
+        content->re_order = (token.GetType() == kTokenSymbol ||
+                                     token.GetType() == kTokenLineBreak
+                                 ? ReOrder::kSymLast
+                                 : ReOrder::kSymFirst);
+        ++content->token;
+      }
       return true;
     }
     return false;
@@ -1161,9 +1196,12 @@ Token Lexer::NextToken(LexerContentId id) {
            line->tokens.back().type != kTokenLineBreak)) {
         content->re_order = ReOrder::kSymLast;
         TokenIndex token_index = content->GetTokenIndex();
-        ++content->token;
+        if (advance) {
+          ++content->token;
+        }
         line->tokens.emplace_back(line->line.size(), 0, kTokenLineBreak);
-        return Token::CreateLineBreak(content->GetTokenIndex());
+        last_token_ = Token::CreateLineBreak(token_index);
+        return last_token_;
       }
       if (NextLineOrEnd() || GetToken()) {
         return token;
@@ -1214,28 +1252,31 @@ Token Lexer::NextToken(LexerContentId id) {
 
   // Parse the next token.
   if (content->re_order == ReOrder::kSymFirst) {
-    token = ParseNextSymbol(content, line);
+    token = ParseNextSymbol(content, line, advance);
     if (token.GetType() == kTokenNone) {
-      token = ParseNextToken(content, line);
+      token = ParseNextToken(content, line, advance);
     }
   } else {
-    token = ParseNextToken(content, line);
+    token = ParseNextToken(content, line, advance);
     if (token.GetType() == kTokenNone) {
-      token = ParseNextSymbol(content, line);
+      token = ParseNextSymbol(content, line, advance);
     }
   }
 
   // If we still don't have a token, then we have an error.
   if (token.GetType() == kTokenNone) {
     const TokenIndex token_index = content->GetTokenIndex();
-    ++content->token;
+    if (advance) {
+      ++content->token;
+    }
     const char* token_start = line->remain.data();
     RE2::Consume(&line->remain, re_not_token_end_);
     line->tokens.emplace_back(token_start - line->line.data(),
                               line->remain.data() - token_start, kTokenError);
-    return Token::CreateError(token_index, &kErrorInvalidToken);
+    token = Token::CreateError(token_index, &kErrorInvalidToken);
   }
 
+  last_token_ = token;
   return token;
 }
 

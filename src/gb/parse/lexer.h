@@ -17,7 +17,7 @@
 #include "absl/log/check.h"
 #include "gb/base/flags.h"
 #include "gb/parse/lexer_config.h"
-#include "gb/parse/lexer_types.h"
+#include "gb/parse/parse_types.h"
 #include "gb/parse/token.h"
 #include "re2/re2.h"
 
@@ -101,7 +101,8 @@ namespace gb {
 //
 //   // Parse the tokens!
 //   int line = 0;
-//   for (Token token = lexer->NextToken(content_id); token.GetType() != kTokenEnd;
+//   for (Token token = lexer->NextToken(content_id); token.GetType() !=
+//   kTokenEnd;
 //        token = lexer->NextToken(content_id)) {
 //     if (lexer->GetCurrentLine(content_id) > line) {
 //       std::cout << std::endl;
@@ -196,6 +197,12 @@ class Lexer final {
   Lexer(const Lexer&) = delete;
   Lexer& operator=(const Lexer&) = delete;
   ~Lexer() = default;
+
+  //----------------------------------------------------------------------------
+  // Lexer configuration
+  //----------------------------------------------------------------------------
+
+  LexerFlags GetFlags() const { return flags_; }
 
   //----------------------------------------------------------------------------
   // Content management
@@ -303,6 +310,12 @@ class Lexer final {
   // Token parsing
   //----------------------------------------------------------------------------
 
+  // Sets the next token to be parsed to the specified token index.
+  //
+  // If the token is the end token, error token, or it was not a token
+  // previously parsed by this Lexer, then this will fail and return false.
+  bool SetNextToken(Token token);
+
   // Parses the token at the specified token index.
   //
   // This always returns a token. If the token index is invalid, then this will
@@ -320,7 +333,7 @@ class Lexer final {
   // settings.
   //
   // The returned token is valid for as long as the Lexer is valid.
-  Token NextToken(LexerContentId id);
+  Token NextToken(LexerContentId id, bool advance = true);
 
   // Rewinds the token stream by one token.
   //
@@ -446,8 +459,8 @@ class Lexer final {
   Token ParseString(TokenIndex token_index, std::string_view text);
   Token ParseKeyword(TokenIndex token_index, std::string_view text);
   Token ParseIdent(TokenIndex token_index, std::string_view text);
-  Token ParseNextSymbol(Content* content, Line* line);
-  Token ParseNextToken(Content* content, Line* line);
+  Token ParseNextSymbol(Content* content, Line* line, bool advance);
+  Token ParseNextToken(Content* content, Line* line, bool advance);
 
   LexerFlags flags_;
   RE2 re_whitespace_;
@@ -477,6 +490,7 @@ class Lexer final {
   std::vector<std::unique_ptr<std::string>> modified_text_;
   absl::flat_hash_map<std::string, std::string> keywords_;
   std::vector<Line> lines_;
+  Token last_token_;
 };
 
 }  // namespace gb

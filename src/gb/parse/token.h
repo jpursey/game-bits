@@ -12,7 +12,7 @@
 
 #include "absl/log/check.h"
 #include "absl/strings/str_format.h"
-#include "gb/parse/lexer_types.h"
+#include "gb/parse/parse_types.h"
 #include "gb/parse/symbol.h"
 
 namespace gb {
@@ -54,6 +54,10 @@ class Token final {
   // Returns the type of the token.
   TokenType GetType() const { return type_; }
 
+  // Returns the value of the token as a string, regardless of the underlying
+  // type. This returns an empty string for errors or tokens that have no value.
+  std::string ToString() const;
+
   // Returns the typed value of the token or a default value if it isn't valid
   // for the token type. Some types (like kTokenEnd) have no value. See the
   // specific token types above for details on the valid value types for each
@@ -73,6 +77,33 @@ class Token final {
   float GetFloat32() const;            // Default: 0.0f
   std::string_view GetString() const;  // Default: empty
   Symbol GetSymbol() const;            // Default: Symbol()
+
+  // Token value comparison.
+  bool IsInt(int64_t value) const {
+    return GetType() == kTokenInt && GetInt() == value;
+  }
+  bool IsUint(uint64_t value) const {
+    return GetType() == kTokenInt && GetUInt() == value;
+  }
+  bool IsFloat(double value) const {
+    return GetType() == kTokenFloat && GetFloat() == value;
+  }
+  bool IsChar(char value) const {
+    return GetType() == kTokenChar &&
+           GetString() == std::string_view(&value, 1);
+  }
+  bool IsString(std::string_view value) const {
+    return GetType() == kTokenString && GetString() == value;
+  }
+  bool IsSymbol(Symbol symbol) const {
+    return GetType() == kTokenSymbol && GetSymbol() == symbol;
+  }
+  bool IsIdent(std::string_view value) const {
+    return GetType() == kTokenIdentifier && GetString() == value;
+  }
+  bool IsKeyword(std::string_view value) const {
+    return GetType() == kTokenKeyword && GetString() == value;
+  }
 
   // Comparison operators.
   auto operator<=>(const Token& other) const {

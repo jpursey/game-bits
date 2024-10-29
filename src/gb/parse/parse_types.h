@@ -3,10 +3,11 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef GB_PARSE_LEXER_TYPES_H_
-#define GB_PARSE_LEXER_TYPES_H_
+#ifndef GB_PARSE_PARSE_TYPES_H_
+#define GB_PARSE_PARSE_TYPES_H_
 
 #include "absl/strings/str_format.h"
+#include "gb/base/access_token.h"
 
 namespace gb {
 
@@ -83,6 +84,10 @@ class TokenIndex {
 };
 static_assert(sizeof(TokenIndex) == sizeof(uint32_t));
 
+GB_BEGIN_ACCESS_TOKEN(ParserInternal)
+friend class Parser;
+GB_END_ACCESS_TOKEN()
+
 }  // namespace gb
 
-#endif  // GB_PARSE_LEXER_TYPES_H_
+#endif  // GB_PARSE_PARSE_TYPES_H_
