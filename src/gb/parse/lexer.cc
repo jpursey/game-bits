@@ -789,12 +789,19 @@ std::string_view Lexer::GetTokenText(TokenIndex index) const {
 bool Lexer::SetNextToken(Token token) {
   const TokenIndex index = token.GetTokenIndex();
   const Line* line = GetLine(index.line);
-  if (line == nullptr || (index.token > line->tokens.size() &&
+  if (line == nullptr || (index.token >= line->tokens.size() &&
                           index.token != kTokenIndexEndToken)) {
     return false;
   }
   Content* content = GetContent(line->id);
   DCHECK(content != nullptr);
+  if (index.token == kTokenIndexEndToken) {
+    DCHECK(index.line == content->end_line - 1);
+    content->line = content->end_line;
+    content->token = 0;
+    last_token_ = token;
+    return true;
+  }
   content->line = index.line - content->start_line;
   content->token = index.token;
   last_token_ = token;

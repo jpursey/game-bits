@@ -4000,5 +4000,19 @@ TEST(LexerTest, SetNextToken) {
   EXPECT_EQ(lexer->NextToken(content), end);
 }
 
+TEST(LexerTest, RewindAfterSetNextTokenToEnd) {
+  auto lexer = Lexer::Create({.flags = {kLexerFlags_CIdentifiers}});
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("last");
+  const Token last = lexer->NextToken(content);
+  const Token end = lexer->NextToken(content);
+
+  EXPECT_TRUE(lexer->RewindToken(content));
+  EXPECT_EQ(lexer->NextToken(content, false), last);
+  EXPECT_TRUE(lexer->SetNextToken(end));
+  EXPECT_TRUE(lexer->RewindToken(content));
+  EXPECT_EQ(lexer->NextToken(content, false), last);
+}
+
 }  // namespace
 }  // namespace gb
