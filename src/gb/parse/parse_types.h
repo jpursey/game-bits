@@ -13,6 +13,7 @@ namespace gb {
 
 // Forward declarations
 class Lexer;
+class Parser;
 
 // Unique ID of the LexerContent.
 using LexerContentId = uint32_t;

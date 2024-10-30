@@ -9,13 +9,6 @@
 
 namespace gb {
 
-std::string ParseError::FormatMessage() const {
-  if (location_.line < 0) {
-    return message_;
-  }
-  return absl::StrCat(location_.filename, "(", location_.line, "): ", message_);
-}
-
 ParseError Parser::Error(Token token, std::string_view message) {
   LexerLocation location = lexer_.GetTokenLocation(token);
   if (token.GetType() == kTokenError) {
@@ -93,9 +86,6 @@ Callback<ParseError()> Parser::TokenErrorCallback(
   };
 }
 
-ParseMatch ParserToken::Match(ParserInternal internal, Parser& parser) const {
-  return parser.MatchTokenItem(internal, *this);
-}
 ParseMatch Parser::MatchTokenItem(ParserInternal,
                                   const ParserToken& parser_token) {
   Token token = NextToken();
@@ -116,10 +106,6 @@ ParseMatch Parser::MatchTokenItem(ParserInternal,
   return std::move(parsed);
 }
 
-ParseMatch ParserRuleName::Match(ParserInternal internal,
-                                 Parser& parser) const {
-  return parser.MatchRuleItem(internal, *this);
-}
 ParseMatch Parser::MatchRuleItem(ParserInternal,
                                  const ParserRuleName& parser_rule_name) {
   const ParserRuleItem* rule = rules_.GetRule(parser_rule_name.GetRuleName());
@@ -130,15 +116,6 @@ ParseMatch Parser::MatchRuleItem(ParserInternal,
   return rule->Match({}, *this);
 }
 
-ParseMatch ParserGroup::Match(ParserInternal internal, Parser& parser) const {
-  switch (GetType()) {
-    case Type::kSequence:
-      return parser.MatchSequence(internal, *this);
-    case Type::kAlternatives:
-      return parser.MatchAlternatives(internal, *this);
-  }
-  return ParseMatch::Abort(ParseError("Unimplemented group type"));
-}
 ParseMatch Parser::MatchSequence(ParserInternal, const ParserGroup& group) {
   Token group_token = PeekToken();
   if (group_token.IsError()) {
