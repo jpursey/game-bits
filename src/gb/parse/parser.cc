@@ -96,14 +96,15 @@ Callback<ParseError()> Parser::TokenErrorCallback(
 ParseMatch ParserToken::Match(ParserInternal internal, Parser& parser) const {
   return parser.MatchTokenItem(internal, *this);
 }
-ParseMatch Parser::MatchTokenItem(ParserInternal, const ParserToken& item) {
+ParseMatch Parser::MatchTokenItem(ParserInternal,
+                                  const ParserToken& parser_token) {
   Token token = NextToken();
   if (token.GetType() == kTokenError) {
     return ParseMatch::Abort(Error(token, token.GetString()));
   }
 
-  TokenType expected_type = item.GetTokenType();
-  std::string_view expected_value = item.GetValue();
+  TokenType expected_type = parser_token.GetTokenType();
+  std::string_view expected_value = parser_token.GetValue();
   if (token.GetType() != expected_type ||
       (!expected_value.empty() && token.ToString() != expected_value)) {
     SetNextToken(token);
@@ -119,16 +120,17 @@ ParseMatch ParserRuleName::Match(ParserInternal internal,
                                  Parser& parser) const {
   return parser.MatchRuleItem(internal, *this);
 }
-ParseMatch Parser::MatchRuleItem(ParserInternal, const ParserRuleName& item) {
-  const ParserRuleItem* rule = rules_.GetRule(item.GetRuleName());
+ParseMatch Parser::MatchRuleItem(ParserInternal,
+                                 const ParserRuleName& parser_rule_name) {
+  const ParserRuleItem* rule = rules_.GetRule(parser_rule_name.GetRuleName());
   if (rule == nullptr) {
-    return ParseMatch::Abort(
-        absl::StrCat("Parser rule \"", item.GetRuleName(), "\" not found"));
+    return ParseMatch::Abort(absl::StrCat(
+        "Parser rule \"", parser_rule_name.GetRuleName(), "\" not found"));
   }
   return rule->Match({}, *this);
 }
 
-ParseMatch ParserRule::Match(ParserInternal internal, Parser& parser) const {
+ParseMatch ParserGroup::Match(ParserInternal internal, Parser& parser) const {
   switch (GetType()) {
     case Type::kSequence:
       return parser.MatchSequence(internal, *this);
@@ -137,14 +139,14 @@ ParseMatch ParserRule::Match(ParserInternal internal, Parser& parser) const {
   }
   return ParseMatch::Abort(ParseError("Unimplemented group type"));
 }
-ParseMatch Parser::MatchSequence(ParserInternal, const ParserRule& item) {
+ParseMatch Parser::MatchSequence(ParserInternal, const ParserGroup& group) {
   Token group_token = PeekToken();
   if (group_token.IsError()) {
     return ParseMatch::Abort(Error(group_token, group_token.GetString()));
   }
   ParsedItem result;
   Token token = group_token;
-  for (const auto& sub_item : item.GetSubItems()) {
+  for (const auto& sub_item : group.GetSubItems()) {
     auto match = sub_item.item->Match({}, *this);
     if (!match) {
       if (match.IsAbort() || sub_item.repeat.IsSet(ParserRepeat::kRequireOne)) {
@@ -194,7 +196,7 @@ ParseMatch Parser::MatchSequence(ParserInternal, const ParserRule& item) {
   }
   return std::move(result);
 }
-ParseMatch Parser::MatchAlternatives(ParserInternal, const ParserRule& item) {
+ParseMatch Parser::MatchAlternatives(ParserInternal, const ParserGroup& group) {
   Token group_token = PeekToken();
   if (group_token.IsError()) {
     return ParseMatch::Abort(Error(group_token, group_token.GetString()));
@@ -203,7 +205,7 @@ ParseMatch Parser::MatchAlternatives(ParserInternal, const ParserRule& item) {
   Token token = group_token;
   bool is_success = false;
   std::optional<ParseMatch> first_error;
-  for (const auto& sub_item : item.GetSubItems()) {
+  for (const auto& sub_item : group.GetSubItems()) {
     auto match = sub_item.item->Match({}, *this);
     if (!match) {
       if (match.IsAbort()) {

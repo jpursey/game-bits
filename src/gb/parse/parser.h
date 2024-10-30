@@ -150,7 +150,7 @@ constexpr ParserRepeatFlags kParserOneOrMoreWithComma = {
     ParserRepeat::kWithComma};
 
 class ParserToken;
-class ParserRule;
+class ParserGroup;
 class ParserRuleName;
 
 class ParserRuleItem {
@@ -162,8 +162,8 @@ class ParserRuleItem {
   static std::unique_ptr<ParserToken> CreateToken(TokenType token_type,
                                                   std::string_view value = {});
   static std::unique_ptr<ParserRuleName> CreateRule(std::string rule_name);
-  static std::unique_ptr<ParserRule> CreateSequence();
-  static std::unique_ptr<ParserRule> CreateAlternatives();
+  static std::unique_ptr<ParserGroup> CreateSequence();
+  static std::unique_ptr<ParserGroup> CreateAlternatives();
 
   virtual ParseMatch Match(ParserInternal, Parser& parser) const = 0;
 
@@ -199,7 +199,7 @@ class ParserRuleName final : public ParserRuleItem {
   const std::string rule_name_;
 };
 
-class ParserRule final : public ParserRuleItem {
+class ParserGroup final : public ParserRuleItem {
  public:
   enum class Type {
     kSequence,
@@ -215,7 +215,7 @@ class ParserRule final : public ParserRuleItem {
     ParserRepeatFlags repeat;
   };
 
-  ParserRule(Type type) : type_(type) {}
+  ParserGroup(Type type) : type_(type) {}
 
   void AddSubItem(std::string_view name, std::unique_ptr<ParserRuleItem> item,
                   ParserRepeatFlags repeat = kParserSingle) {
@@ -246,7 +246,7 @@ class ParserRules final {
   ~ParserRules() = default;
 
   ParserRules& AddRule(std::string_view name,
-                       std::unique_ptr<ParserRule> item) {
+                       std::unique_ptr<ParserGroup> item) {
     rules_.emplace(std::string(name), std::move(item));
     return *this;
   }
@@ -272,8 +272,8 @@ class Parser final {
   ParseResult Parse(LexerContentId content, std::string_view rule);
 
   ParseMatch MatchTokenItem(ParserInternal internal, const ParserToken& item);
-  ParseMatch MatchSequence(ParserInternal internal, const ParserRule& item);
-  ParseMatch MatchAlternatives(ParserInternal internal, const ParserRule& item);
+  ParseMatch MatchSequence(ParserInternal internal, const ParserGroup& item);
+  ParseMatch MatchAlternatives(ParserInternal internal, const ParserGroup& item);
   ParseMatch MatchRuleItem(ParserInternal internal, const ParserRuleName& item);
 
  private:
@@ -302,12 +302,12 @@ inline std::unique_ptr<ParserRuleName> ParserRuleItem::CreateRule(
   return std::make_unique<ParserRuleName>(std::move(rule_name));
 }
 
-inline std::unique_ptr<ParserRule> ParserRuleItem::CreateSequence() {
-  return std::make_unique<ParserRule>(ParserRule::Type::kSequence);
+inline std::unique_ptr<ParserGroup> ParserRuleItem::CreateSequence() {
+  return std::make_unique<ParserGroup>(ParserGroup::Type::kSequence);
 }
 
-inline std::unique_ptr<ParserRule> ParserRuleItem::CreateAlternatives() {
-  return std::make_unique<ParserRule>(ParserRule::Type::kAlternatives);
+inline std::unique_ptr<ParserGroup> ParserRuleItem::CreateAlternatives() {
+  return std::make_unique<ParserGroup>(ParserGroup::Type::kAlternatives);
 }
 
 }  // namespace gb
