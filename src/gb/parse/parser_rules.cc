@@ -152,14 +152,7 @@ bool ParserGroup::Validate(const ParserRules& rules, const Lexer& lexer,
 }
 
 ParseMatch ParserGroup::Match(ParserInternal internal, Parser& parser) const {
-  switch (GetType()) {
-    case Type::kSequence:
-      return parser.MatchSequence(internal, *this);
-    case Type::kAlternatives:
-      return parser.MatchAlternatives(internal, *this);
-  }
-  LOG(DFATAL) << "Unimplemented group type";
-  return ParseMatch::Abort(ParseError("Unimplemented group type"));
+  return parser.MatchGroup(internal, *this);
 }
 
 bool ParserRules::Validate(Lexer& lexer, std::string* error_message) const {

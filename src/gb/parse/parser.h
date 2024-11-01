@@ -39,9 +39,7 @@ class Parser final {
   ParseResult Parse(LexerContentId content, std::string_view rule);
 
   ParseMatch MatchTokenItem(ParserInternal internal, const ParserToken& item);
-  ParseMatch MatchSequence(ParserInternal internal, const ParserGroup& item);
-  ParseMatch MatchAlternatives(ParserInternal internal,
-                               const ParserGroup& item);
+  ParseMatch MatchGroup(ParserInternal internal, const ParserGroup& item);
   ParseMatch MatchRuleItem(ParserInternal internal, const ParserRuleName& item);
 
  private:

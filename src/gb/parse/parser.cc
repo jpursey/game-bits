@@ -150,24 +150,34 @@ ParseMatch Parser::MatchRuleItem(ParserInternal,
   return rule->Match({}, *this);
 }
 
-ParseMatch Parser::MatchSequence(ParserInternal, const ParserGroup& group) {
+ParseMatch Parser::MatchGroup(ParserInternal, const ParserGroup& group) {
   Token group_token = PeekToken();
   if (group_token.IsError()) {
     return ParseMatch::Abort(Error(group_token, group_token.GetString()));
   }
+  const bool is_sequence = (group.GetType() == ParserGroup::Type::kSequence);
+  const bool is_alternatives =
+      (group.GetType() == ParserGroup::Type::kAlternatives);
   ParsedItem result;
   Token token = group_token;
+  std::optional<ParseMatch> error;
   for (const auto& sub_item : group.GetSubItems()) {
     auto match = sub_item.item->Match({}, *this);
     if (!match) {
-      if (match.IsAbort() || sub_item.repeat.IsSet(ParserRepeat::kRequireOne)) {
+      if (match.IsAbort() ||
+          (is_sequence &&
+           sub_item.repeat.IsSet(ParserRepeat::kRequireOne))) {
         SetNextToken(group_token);
         return match;
       }
+      if (is_alternatives && !error.has_value()) {
+        error = std::move(match);
+      }
       continue;
     }
     Token after_match_token = PeekToken();
     if (after_match_token == token) {
+      DCHECK(is_sequence);  // Should not happen for alternatives.
       continue;
     }
     result.SetToken(group_token);
@@ -176,6 +186,9 @@ ParseMatch Parser::MatchSequence(ParserInternal, const ParserGroup& group) {
       result.AddItem(sub_item.name, *std::move(match));
     }
     if (!sub_item.repeat.IsSet(ParserRepeat::kAllowMany)) {
+      if (is_alternatives) {
+        return std::move(result);
+      }
       continue;
     }
     const bool with_comma = sub_item.repeat.IsSet(ParserRepeat::kWithComma);
@@ -183,6 +196,8 @@ ParseMatch Parser::MatchSequence(ParserInternal, const ParserGroup& group) {
       if (with_comma) {
         if (token.IsSymbol(',')) {
           token = NextToken();
+        } else if (is_alternatives) {
+          return std::move(result);
         } else {
           break;
         }
@@ -197,6 +212,7 @@ ParseMatch Parser::MatchSequence(ParserInternal, const ParserGroup& group) {
       }
       after_match_token = PeekToken();
       if (after_match_token == token) {
+        DCHECK(is_sequence);  // Should not happen for alternatives.
         break;
       }
       token = after_match_token;
@@ -204,77 +220,12 @@ ParseMatch Parser::MatchSequence(ParserInternal, const ParserGroup& group) {
         result.AddItem(sub_item.name, *std::move(match));
       }
     }
+  }
+  if (error.has_value()) {
+    DCHECK(is_alternatives);
+    return *std::move(error);
   }
   return std::move(result);
-}
-ParseMatch Parser::MatchAlternatives(ParserInternal, const ParserGroup& group) {
-  Token group_token = PeekToken();
-  if (group_token.IsError()) {
-    return ParseMatch::Abort(Error(group_token, group_token.GetString()));
-  }
-  ParsedItem result;
-  Token token = group_token;
-  bool is_success = false;
-  std::optional<ParseMatch> first_error;
-  for (const auto& sub_item : group.GetSubItems()) {
-    auto match = sub_item.item->Match({}, *this);
-    if (!match) {
-      if (match.IsAbort()) {
-        return match;
-      }
-      if (sub_item.repeat.IsSet(ParserRepeat::kRequireOne) &&
-          !first_error.has_value()) {
-        first_error = std::move(match);
-      }
-      continue;
-    }
-    is_success = true;
-    Token after_match_token = PeekToken();
-    if (after_match_token == token) {
-      continue;
-    }
-    result.SetToken(group_token);
-    token = after_match_token;
-
-    if (!sub_item.name.empty()) {
-      result.AddItem(sub_item.name, *std::move(match));
-    }
-    if (!sub_item.repeat.IsSet(ParserRepeat::kAllowMany)) {
-      return std::move(result);
-    }
-    const bool with_comma = sub_item.repeat.IsSet(ParserRepeat::kWithComma);
-    while (true) {
-      if (with_comma) {
-        if (token.IsSymbol(',')) {
-          token = NextToken();
-        } else {
-          is_success = true;
-          break;
-        }
-      }
-      match = sub_item.item->Match({}, *this);
-      if (!match) {
-        if (match.IsAbort() || with_comma) {
-          SetNextToken(group_token);
-          return ParseMatch::Abort(match.GetError());
-        }
-        break;
-      }
-      after_match_token = PeekToken();
-      if (after_match_token == token) {
-        break;
-      }
-      token = after_match_token;
-      if (!sub_item.name.empty()) {
-        result.AddItem(sub_item.name, *std::move(match));
-      }
-    }
-    return std::move(result);
-  }
-  if (is_success || !first_error.has_value()) {
-    return std::move(result);
-  }
-  return *std::move(first_error);
 }
 
 }  // namespace gb
