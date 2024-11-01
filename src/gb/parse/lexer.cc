@@ -852,7 +852,7 @@ Token Lexer::ParseToken(TokenIndex index) {
     if (index.token == kTokenIndexEndToken) {
       return Token::CreateEnd(index);
     }
-    return Token::CreateError({}, &kErrorInvalidTokenContent);
+    return Token::CreateError(kInvalidTokenIndex, &kErrorInvalidTokenContent);
   }
   if (index == last_token_.GetTokenIndex()) {
     return last_token_;
@@ -1189,7 +1189,7 @@ Token Lexer::ParseNextToken(Content* content, Line* line, bool advance) {
 Token Lexer::NextToken(LexerContentId id, bool advance) {
   auto [content, line] = GetContentLine(id);
   if (content == nullptr) {
-    return Token::CreateError({}, &kErrorInvalidTokenContent);
+    return Token::CreateError(kInvalidTokenIndex, &kErrorInvalidTokenContent);
   }
   if (line == nullptr) {
     return Token::CreateEnd(content->GetTokenIndex());

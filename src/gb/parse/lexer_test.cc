@@ -299,7 +299,7 @@ TEST(LexerTest, RewindContentForInvalidContent) {
 
 TEST(LexerTest, DefaultToken) {
   Token token;
-  EXPECT_EQ(token.GetTokenIndex(), TokenIndex());
+  EXPECT_EQ(token.GetTokenIndex(), kInvalidTokenIndex);
   EXPECT_EQ(token.GetType(), kTokenNone);
   EXPECT_EQ(token.GetInt(), 0);
   EXPECT_EQ(token.GetFloat(), 0);
@@ -336,7 +336,7 @@ TEST(LexerTest, ParseDefaultTokenIndex) {
   Token default_token;
   Token parsed_token = lexer->ParseToken(default_token.GetTokenIndex());
   EXPECT_NE(parsed_token, default_token);
-  EXPECT_EQ(parsed_token.GetTokenIndex(), default_token.GetTokenIndex());
+  EXPECT_EQ(parsed_token.GetTokenIndex(), kInvalidTokenIndex);
   EXPECT_EQ(parsed_token.GetType(), kTokenError);
   EXPECT_EQ(parsed_token.GetString(), Lexer::kErrorInvalidTokenContent);
 }
