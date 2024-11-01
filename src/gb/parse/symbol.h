@@ -54,7 +54,7 @@ class Symbol {
   Symbol(const std::string& str) noexcept : Symbol(std::string_view(str)) {}
 
   // Returns true if the symbol is valid (contains only ASCII characters between
-  // 33 and 127).
+  // 33 and 127). The default symbol is invalid as it is empty.
   constexpr bool IsValid() const;
 
   // Returns the underlying symbol value.

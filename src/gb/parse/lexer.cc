@@ -786,6 +786,44 @@ std::string_view Lexer::GetTokenText(TokenIndex index) const {
   return {};
 }
 
+Token Lexer::ParseTokenText(std::string_view token_text) const {
+  if (RE2::FullMatch(token_text, re_symbol_)) {
+    return Token::CreateSymbol(kInvalidTokenIndex, token_text);
+  }
+  if (re_token_args_.empty() ||
+      !RE2::FullMatchN(token_text, re_token_, re_token_args_.data(),
+                       re_token_args_.size())) {
+    return Token::CreateError(kInvalidTokenIndex, &kErrorInvalidToken);
+  }
+  const TokenArg* match = nullptr;
+  for (const TokenArg& arg : re_args_) {
+    if (!arg.text.empty()) {
+      match = &arg;
+    }
+  }
+  if (match == nullptr) {
+    LOG(DFATAL) << "Token found without a token type match";
+    return Token::CreateError(kInvalidTokenIndex, &kErrorInternal);
+  }
+  Token token;
+  switch (match->type) {
+    case kTokenInt:
+      return ParseInt(kInvalidTokenIndex, match->text, match->int_parse_type);
+    case kTokenFloat:
+      return ParseFloat(kInvalidTokenIndex, match->text);
+    case kTokenChar:
+      return ParseChar(kInvalidTokenIndex, match->text);
+    case kTokenString:
+      return ParseString(kInvalidTokenIndex, match->text);
+    case kTokenKeyword:
+      return ParseKeyword(kInvalidTokenIndex, match->text);
+    case kTokenIdentifier:
+      return ParseIdent(kInvalidTokenIndex, match->text);
+  }
+  LOG(DFATAL) << "Unhandled token type when parsing token text";
+  return Token::CreateError(kInvalidTokenIndex, &kErrorInternal);
+}
+
 bool Lexer::SetNextToken(Token token) {
   const TokenIndex index = token.GetTokenIndex();
   const Line* line = GetLine(index.line);
@@ -880,11 +918,12 @@ Token Lexer::ParseNextSymbol(Content* content, Line* line, bool advance) {
   }
   line->tokens.emplace_back(symbol_text.data() - line->line.data(),
                             symbol_text.size(), kTokenSymbol);
-  return Token::CreateSymbol(token_index, symbol_text);
+  last_token_ = Token::CreateSymbol(token_index, symbol_text);
+  return last_token_;
 }
 
 Token Lexer::ParseInt(TokenIndex token_index, std::string_view text,
-                      IntParseType int_parse_type) {
+                      IntParseType int_parse_type) const {
   int64_t value = 0;
   switch (int_parse_type) {
     case IntParseType::kDefault: {
@@ -962,7 +1001,7 @@ Token Lexer::ParseInt(TokenIndex token_index, std::string_view text,
   return Token::CreateInt(token_index, value);
 }
 
-Token Lexer::ParseFloat(TokenIndex token_index, std::string_view text) {
+Token Lexer::ParseFloat(TokenIndex token_index, std::string_view text) const {
   std::string_view digits = text.substr(
       float_config_.prefix, text.size() - float_config_.size_offset);
   if (flags_.IsSet(LexerFlag::kFloat64)) {
@@ -995,7 +1034,7 @@ unsigned char ToHex(char ch) {
 }
 }  // namespace
 
-Token Lexer::ParseChar(TokenIndex token_index, std::string_view text) {
+Token Lexer::ParseChar(TokenIndex token_index, std::string_view text) const {
   DCHECK(text.size() >= 3);
   const char quote = text[0];
   const std::string_view char_text = text.substr(1, text.size() - 2);
@@ -1023,7 +1062,7 @@ Token Lexer::ParseChar(TokenIndex token_index, std::string_view text) {
   return Token::CreateChar(token_index, char_text.data() + 1, 1);
 }
 
-Token Lexer::ParseString(TokenIndex token_index, std::string_view text) {
+Token Lexer::ParseString(TokenIndex token_index, std::string_view text) const {
   DCHECK(text.size() >= 2);
   const char quote = text[0];
   std::string_view char_text = text.substr(1, text.size() - 2);
@@ -1064,7 +1103,7 @@ Token Lexer::ParseString(TokenIndex token_index, std::string_view text) {
   return Token::CreateString(token_index, str.data(), str.size());
 }
 
-Token Lexer::ParseKeyword(TokenIndex token_index, std::string_view text) {
+Token Lexer::ParseKeyword(TokenIndex token_index, std::string_view text) const {
   if (!flags_.IsSet(LexerFlag::kKeywordCaseInsensitive)) {
     return Token::CreateKeyword(token_index, text.data(), text.size());
   }
@@ -1077,7 +1116,7 @@ Token Lexer::ParseKeyword(TokenIndex token_index, std::string_view text) {
                               it->second.size());
 }
 
-Token Lexer::ParseIdent(TokenIndex token_index, std::string_view text) {
+Token Lexer::ParseIdent(TokenIndex token_index, std::string_view text) const {
   text = text.substr(ident_config_.prefix,
                      text.size() - ident_config_.size_offset);
   if (flags_.IsSet(LexerFlag::kIdentForceLower)) {

@@ -11,6 +11,23 @@
 
 namespace gb {
 
+TokenValue Token::GetValue() const {
+  switch (value_type_) {
+    case ValueType::kNone:
+      return TokenValue();
+    case ValueType::kFloat:
+      return GetFloat();
+    case ValueType::kInt:
+      return GetInt();
+    case ValueType::kString:
+    case ValueType::kStringView:
+      return std::string(GetString());
+    case ValueType::kSymbol:
+      return GetSymbol();
+  }
+  return TokenValue();
+}
+
 std::string Token::ToString() const {
   switch (value_type_) {
     case ValueType::kNone:

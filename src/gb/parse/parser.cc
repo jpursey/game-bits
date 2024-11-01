@@ -9,6 +9,40 @@
 
 namespace gb {
 
+std::unique_ptr<Parser> Parser::Create(LexerConfig config, ParserRules rules,
+                                       std::string* error_message) {
+  auto lexer = Lexer::Create(config, error_message);
+  if (lexer == nullptr) {
+    return nullptr;
+  }
+  return Create(std::move(lexer), std::move(rules), error_message);
+}
+
+std::unique_ptr<Parser> Parser::Create(std::unique_ptr<Lexer> lexer,
+                                       ParserRules rules,
+                                       std::string* error_message) {
+  if (lexer == nullptr) {
+    if (error_message != nullptr) {
+      *error_message = "Lexer is null";
+    }
+    return nullptr;
+  }
+  if (!rules.Validate(*lexer, error_message)) {
+    return nullptr;
+  }
+  auto parser = absl::WrapUnique(new Parser(*lexer, std::move(rules)));
+  parser->owned_lexer_ = std::move(lexer);
+  return parser;
+}
+
+std::unique_ptr<Parser> Parser::Create(Lexer& lexer, ParserRules rules,
+                                       std::string* error_message) {
+  if (!rules.Validate(lexer, error_message)) {
+    return nullptr;
+  }
+  return absl::WrapUnique(new Parser(lexer, std::move(rules)));
+}
+
 ParseError Parser::Error(Token token, std::string_view message) {
   LexerLocation location = lexer_.GetTokenLocation(token);
   if (token.GetType() == kTokenError) {
@@ -35,48 +69,47 @@ ParseResult Parser::Parse(LexerContentId content, std::string_view rule) {
   return *std::move(match);
 }
 
-Callback<ParseError()> Parser::TokenErrorCallback(
-    gb::Token token, TokenType expected_type, std::string_view expected_value) {
+Callback<ParseError()> Parser::TokenErrorCallback(gb::Token token,
+                                                  TokenType expected_type,
+                                                  TokenValue expected_value) {
   return [this, token, expected_type, expected_value] {
     std::string expected;
+    const bool has_value =
+        !std::holds_alternative<NoTokenValue>(expected_value);
     switch (expected_type) {
       case kTokenSymbol:
-        expected = expected_value.empty()
-                       ? "symbol"
-                       : absl::StrCat("'", expected_value, "'");
+        expected =
+            !has_value ? "symbol" : absl::StrCat("'", expected_value, "'");
         break;
       case kTokenInt:
-        expected = expected_value.empty()
-                       ? "integer value"
-                       : absl::StrCat("number ", expected_value);
+        expected = !has_value ? "integer value"
+                              : absl::StrCat("number ", expected_value);
         break;
       case kTokenFloat:
-        expected = expected_value.empty()
-                       ? "floating-point value"
-                       : absl::StrCat("number ", expected_value);
+        expected = !has_value ? "floating-point value"
+                              : absl::StrCat("number ", expected_value);
         break;
       case kTokenChar: {
         std::string_view quote =
             lexer_.GetFlags().IsSet(LexerFlag::kSingleQuoteCharacter) ? "'"
                                                                       : "\"";
-        expected = expected_value.empty() ? "character value"
-                                          : absl::StrCat("character ", quote,
-                                                         expected_value, quote);
+        expected = !has_value ? "character value"
+                              : absl::StrCat("character ", quote,
+                                             expected_value, quote);
       } break;
       case kTokenString: {
         std::string_view quote =
             lexer_.GetFlags().IsSet(LexerFlag::kDoubleQuoteString) ? "\"" : "'";
-        expected = expected_value.empty()
+        expected = !has_value
                        ? "string value"
                        : absl::StrCat("string ", quote, expected_value, quote);
       } break;
       case kTokenKeyword:
-        expected = expected_value.empty() ? "keyword" : expected_value;
+        expected = !has_value ? "keyword" : absl::StrCat(expected_value);
         break;
       case kTokenIdentifier:
-        expected = expected_value.empty()
-                       ? "identifier"
-                       : absl::StrCat("identifier ", expected_value);
+        expected = !has_value ? "identifier"
+                              : absl::StrCat("identifier ", expected_value);
         break;
       case kTokenLineBreak:
         expected = "end of line";
@@ -94,9 +127,10 @@ ParseMatch Parser::MatchTokenItem(ParserInternal,
   }
 
   TokenType expected_type = parser_token.GetTokenType();
-  std::string_view expected_value = parser_token.GetValue();
+  const TokenValue& expected_value = parser_token.GetValue();
   if (token.GetType() != expected_type ||
-      (!expected_value.empty() && token.ToString() != expected_value)) {
+      (!std::holds_alternative<NoTokenValue>(expected_value) &&
+       token.GetValue() != expected_value)) {
     SetNextToken(token);
     return TokenErrorCallback(token, expected_type, expected_value);
   }

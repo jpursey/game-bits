@@ -346,6 +346,15 @@ class Lexer final {
   // rewound to.
   bool RewindToken(LexerContentId id);
 
+  //----------------------------------------------------------------------------
+  // Standalone token parsing
+  //----------------------------------------------------------------------------
+
+  // Parses the specified token text. The resulting token is not part of any
+  // content, has s defaulted token index, and so is invalid to use with
+  // SetNextToken.
+  Token ParseTokenText(std::string_view token_text) const;
+
  private:
   enum class ReOrder { kSymLast, kSymFirst };
 
@@ -453,15 +462,16 @@ class Lexer final {
   std::tuple<Content*, Line*> GetContentLine(LexerContentId id);
 
   Token ParseInt(TokenIndex token_index, std::string_view text,
-                 IntParseType int_parse_type);
-  Token ParseFloat(TokenIndex token_index, std::string_view text);
-  Token ParseChar(TokenIndex token_index, std::string_view text);
-  Token ParseString(TokenIndex token_index, std::string_view text);
-  Token ParseKeyword(TokenIndex token_index, std::string_view text);
-  Token ParseIdent(TokenIndex token_index, std::string_view text);
+                 IntParseType int_parse_type) const;
+  Token ParseFloat(TokenIndex token_index, std::string_view text) const;
+  Token ParseChar(TokenIndex token_index, std::string_view text) const;
+  Token ParseString(TokenIndex token_index, std::string_view text) const;
+  Token ParseKeyword(TokenIndex token_index, std::string_view text) const;
+  Token ParseIdent(TokenIndex token_index, std::string_view text) const;
   Token ParseNextSymbol(Content* content, Line* line, bool advance);
   Token ParseNextToken(Content* content, Line* line, bool advance);
 
+  // Set at initialization.
   LexerFlags flags_;
   RE2 re_whitespace_;
   RE2 re_symbol_;
@@ -485,12 +495,16 @@ class Lexer final {
   char escape_hex_ = 0;
   std::vector<BlockComment> block_comments_;
 
+  // Working state for parsing.
   std::vector<std::unique_ptr<Content>> content_;
   absl::flat_hash_map<std::string_view, LexerContentId> filename_to_id_;
-  std::vector<std::unique_ptr<std::string>> modified_text_;
   absl::flat_hash_map<std::string, std::string> keywords_;
   std::vector<Line> lines_;
   Token last_token_;
+
+  // Cache state for token content that differs from the original content
+  // (forced case, escaping, etc).
+  mutable std::vector<std::unique_ptr<std::string>> modified_text_;
 };
 
 }  // namespace gb

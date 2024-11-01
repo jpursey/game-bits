@@ -14,6 +14,7 @@ namespace gb {
 // Forward declarations
 class Lexer;
 class Parser;
+class ParserRules;
 
 // Unique ID of the LexerContent.
 using LexerContentId = uint32_t;
@@ -64,13 +65,14 @@ void AbslStringify(Sink& sink, const LexerLocation& location) {
 // content. They are not valid to compare across different Lexers.
 class TokenIndex {
  public:
-  TokenIndex() = default;
-  TokenIndex(uint32_t line, uint32_t token) : line(line), token(token) {}
-  TokenIndex(const TokenIndex&) = default;
-  TokenIndex& operator=(const TokenIndex&) = default;
+  constexpr TokenIndex() = default;
+  constexpr TokenIndex(uint32_t line, uint32_t token)
+      : line(line), token(token) {}
+  constexpr TokenIndex(const TokenIndex&) noexcept = default;
+  constexpr TokenIndex& operator=(const TokenIndex&) noexcept = default;
   ~TokenIndex() = default;
 
-  auto operator<=>(const TokenIndex&) const = default;
+  auto constexpr operator<=>(const TokenIndex&) const = default;
 
  private:
   friend class Lexer;
@@ -84,6 +86,11 @@ class TokenIndex {
   uint32_t token : lexer_internal::kTokenIndexTokenBits = 0;
 };
 static_assert(sizeof(TokenIndex) == sizeof(uint32_t));
+
+// Explicit invalid token index. This is used to indicate an invalid token index
+// and is never valid for use in a lexer.
+inline constexpr TokenIndex kInvalidTokenIndex =
+    TokenIndex(kMaxLexerLines, kMaxTokensPerLine);
 
 GB_BEGIN_ACCESS_TOKEN(ParserInternal)
 friend class Parser;

@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <optional>
 #include <string_view>
+#include <variant>
 
 #include "absl/log/check.h"
 #include "absl/strings/str_format.h"
@@ -36,31 +37,41 @@ inline constexpr TokenType kTokenLineBreak = 10;  // Value: kNone
 inline std::string GetTokenTypeString(TokenType type) {
   switch (type) {
     case kTokenNone:
-      return "kTokenNone";
+      return "none";
     case kTokenEnd:
-      return "kTokenEnd";
+      return "end";
     case kTokenError:
-      return "kTokenError";
+      return "error";
     case kTokenSymbol:
-      return "kTokenSymbol";
+      return "symbol";
     case kTokenInt:
-      return "kTokenInt";
+      return "integer value";
     case kTokenFloat:
-      return "kTokenFloat";
+      return "floating-point value";
     case kTokenChar:
-      return "kTokenChar";
+      return "character value";
     case kTokenString:
-      return "kTokenString";
+      return "string value";
     case kTokenKeyword:
-      return "kTokenKeyword";
+      return "keyword";
     case kTokenIdentifier:
-      return "kTokenIdentifier";
+      return "identifier";
     case kTokenLineBreak:
-      return "kTokenLineBreak";
+      return "line break";
     default:
-      return absl::StrFormat("User(%d)", type);
+      return absl::StrFormat("user type(%d)", type);
   }
 }
+
+// The value of a token for token types that do not have a value.
+struct NoTokenValue {
+  int dummy = 0;
+  auto operator<=>(const NoTokenValue&) const = default;
+};
+
+// The parsed value of a token.
+using TokenValue =
+    std::variant<NoTokenValue, Symbol, int64_t, double, std::string>;
 
 // A token represents a single parsed token from a lexer.
 //
@@ -82,6 +93,9 @@ class Token final {
 
   // Returns the type of the token.
   TokenType GetType() const { return type_; }
+
+  // Returns the parsed value of the token.
+  TokenValue GetValue() const;
 
   // Returns the value of the token as a string, regardless of the underlying
   // type. This returns an empty string for errors or tokens that have no value.
@@ -227,7 +241,7 @@ class Token final {
   Token(TokenIndex token_index, TokenType type, ValueType value_type)
       : token_index_(token_index), type_(type), value_type_(value_type) {}
 
-  TokenIndex token_index_;
+  TokenIndex token_index_ = kInvalidTokenIndex;
   TokenType type_ = kTokenNone;
   ValueType value_type_ = ValueType::kNone;
   uint16_t strlen_ = 0;  // For type string.
@@ -240,6 +254,17 @@ class Token final {
   };
 };
 static_assert(sizeof(Token) == 16);
+
+template <typename Sink>
+void AbslStringify(Sink& sink, const NoTokenValue&) {
+  absl::Format(&sink, "none");
+}
+
+template <typename Sink>
+void AbslStringify(Sink& sink, const TokenValue& token_value) {
+  std::visit([&sink](const auto& value) { absl::Format(&sink, "%v", value); },
+             token_value);
+}
 
 template <typename Sink>
 void AbslStringify(Sink& sink, const Token& token) {
