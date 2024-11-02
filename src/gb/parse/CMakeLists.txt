@@ -10,6 +10,7 @@ set(gb_parse_SOURCE
   parse_result.cc parse_result.h
   parse_types.h
   parser.cc parser.h
+  parser_program.cc parser_program.h
   parser_rules.cc parser_rules.h
   symbol.h
   token.cc token.h
