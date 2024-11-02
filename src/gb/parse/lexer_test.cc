@@ -12,6 +12,10 @@
 namespace gb {
 namespace {
 
+MATCHER_P2(IsToken, type, value, "") {
+  return arg.GetType() == type && arg.GetValue() == TokenValue(value);
+}
+
 LexerConfig ValidConfigForTest() {
   LexerConfig config;
   config.flags = {
@@ -4012,6 +4016,42 @@ TEST(LexerTest, RewindAfterSetNextTokenToEnd) {
   EXPECT_TRUE(lexer->SetNextToken(end));
   EXPECT_TRUE(lexer->RewindToken(content));
   EXPECT_EQ(lexer->NextToken(content, false), last);
+}
+
+TEST(LexerTest, ParseTokenText) {
+  auto lexer = Lexer::Create(kCStyleLexerConfig);
+  ASSERT_NE(lexer, nullptr);
+  Token token = lexer->ParseTokenText("42");
+  EXPECT_THAT(token, IsToken(kTokenInt, int64_t(42)));
+  EXPECT_EQ(token.GetTokenIndex(), kInvalidTokenIndex);
+  token = lexer->ParseTokenText("0x2A");
+  EXPECT_THAT(token, IsToken(kTokenInt, int64_t(42)));
+  EXPECT_EQ(token.GetTokenIndex(), kInvalidTokenIndex);
+  token = lexer->ParseTokenText("0b101010");
+  EXPECT_THAT(token, IsToken(kTokenInt, int64_t(42)));
+  EXPECT_EQ(token.GetTokenIndex(), kInvalidTokenIndex);
+  token = lexer->ParseTokenText("0.5");
+  EXPECT_THAT(token, IsToken(kTokenFloat, double(0.5)));
+  EXPECT_EQ(token.GetTokenIndex(), kInvalidTokenIndex);
+  token = lexer->ParseTokenText("1.25e+2");
+  EXPECT_THAT(token, IsToken(kTokenFloat, double(1.25e+2)));
+  EXPECT_EQ(token.GetTokenIndex(), kInvalidTokenIndex);
+  token = lexer->ParseTokenText("'A'");
+  EXPECT_THAT(token, IsToken(kTokenChar, std::string("A")));
+  EXPECT_EQ(token.GetTokenIndex(), kInvalidTokenIndex);
+  token = lexer->ParseTokenText("\"Hello, world!\"");
+  EXPECT_THAT(token, IsToken(kTokenString, std::string("Hello, world!")));
+  EXPECT_EQ(token.GetTokenIndex(), kInvalidTokenIndex);
+  token = lexer->ParseTokenText("if");
+  EXPECT_THAT(token, IsToken(kTokenKeyword, std::string("if")));
+  EXPECT_EQ(token.GetTokenIndex(), kInvalidTokenIndex);
+  token = lexer->ParseTokenText("x");
+  EXPECT_THAT(token, IsToken(kTokenIdentifier, std::string("x")));
+  EXPECT_EQ(token.GetTokenIndex(), kInvalidTokenIndex);
+  token = lexer->ParseTokenText("0invalid0");
+  EXPECT_THAT(token,
+              IsToken(kTokenError, std::string(Lexer::kErrorInvalidToken)));
+  EXPECT_EQ(token.GetTokenIndex(), kInvalidTokenIndex);
 }
 
 }  // namespace
