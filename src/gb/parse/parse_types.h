@@ -7,7 +7,6 @@
 #define GB_PARSE_PARSE_TYPES_H_
 
 #include "absl/strings/str_format.h"
-#include "gb/base/access_token.h"
 
 namespace gb {
 

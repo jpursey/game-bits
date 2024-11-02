@@ -163,7 +163,7 @@ TEST(ParserRulesTest, RuleNameItemEmpty) {
   ASSERT_NE(lexer, nullptr);
   ParserRules rules;
   auto rule = ParserRuleItem::CreateSequence();
-  rule->AddSubItem(ParserRuleItem::CreateRule(""));
+  rule->AddSubItem(ParserRuleItem::CreateRuleName(""));
   rules.AddRule("rule", std::move(rule));
   std::string error;
   EXPECT_FALSE(rules.Validate(*lexer, &error));
@@ -175,7 +175,7 @@ TEST(ParserRulesTest, RuleNameItemNotFound) {
   ASSERT_NE(lexer, nullptr);
   ParserRules rules;
   auto rule = ParserRuleItem::CreateSequence();
-  rule->AddSubItem(ParserRuleItem::CreateRule("other_rule"));
+  rule->AddSubItem(ParserRuleItem::CreateRuleName("other_rule"));
   rules.AddRule("rule", std::move(rule));
   std::string error;
   EXPECT_FALSE(rules.Validate(*lexer, &error));
@@ -187,7 +187,7 @@ TEST(ParserRulesTest, RuleNameValid) {
   ASSERT_NE(lexer, nullptr);
   ParserRules rules;
   auto rule = ParserRuleItem::CreateSequence();
-  rule->AddSubItem(ParserRuleItem::CreateRule("other_rule"));
+  rule->AddSubItem(ParserRuleItem::CreateRuleName("other_rule"));
   rules.AddRule("rule", std::move(rule));
   rules.AddRule("other_rule", NewValidRule());
   std::string error;
@@ -489,10 +489,10 @@ TEST(ParserRulesTest, LeftRecursiveSequence) {
   ASSERT_NE(lexer, nullptr);
   ParserRules rules;
   auto rule1 = ParserRuleItem::CreateSequence();
-  rule1->AddSubItem(ParserRuleItem::CreateRule("rule2"));
+  rule1->AddSubItem(ParserRuleItem::CreateRuleName("rule2"));
   rules.AddRule("rule1", std::move(rule1));
   auto rule2 = ParserRuleItem::CreateSequence();
-  rule2->AddSubItem(ParserRuleItem::CreateRule("rule1"));
+  rule2->AddSubItem(ParserRuleItem::CreateRuleName("rule1"));
   rules.AddRule("rule2", std::move(rule2));
   std::string error;
   EXPECT_FALSE(rules.Validate(*lexer, &error));
@@ -504,11 +504,11 @@ TEST(ParserRulesTest, RightRecursiveSequence) {
   ASSERT_NE(lexer, nullptr);
   ParserRules rules;
   auto rule1 = ParserRuleItem::CreateSequence();
-  rule1->AddSubItem(ParserRuleItem::CreateRule("rule2"));
+  rule1->AddSubItem(ParserRuleItem::CreateRuleName("rule2"));
   rules.AddRule("rule1", std::move(rule1));
   auto rule2 = ParserRuleItem::CreateSequence();
   rule2->AddSubItem(ParserRuleItem::CreateToken(kTokenInt));
-  rule2->AddSubItem(ParserRuleItem::CreateRule("rule1"));
+  rule2->AddSubItem(ParserRuleItem::CreateRuleName("rule1"));
   rules.AddRule("rule2", std::move(rule2));
   std::string error;
   EXPECT_TRUE(rules.Validate(*lexer, &error)) << "Error: " << error;
@@ -525,10 +525,10 @@ TEST(ParserRulesTest, LeftRecursiveSequenceWithLeadingOptional) {
                     kParserZeroOrMore);
   rule1->AddSubItem(ParserRuleItem::CreateToken(kTokenString),
                     kParserZeroOrMoreWithComma);
-  rule1->AddSubItem(ParserRuleItem::CreateRule("rule2"));
+  rule1->AddSubItem(ParserRuleItem::CreateRuleName("rule2"));
   rules.AddRule("rule1", std::move(rule1));
   auto rule2 = ParserRuleItem::CreateSequence();
-  rule2->AddSubItem(ParserRuleItem::CreateRule("rule1"));
+  rule2->AddSubItem(ParserRuleItem::CreateRuleName("rule1"));
   rules.AddRule("rule2", std::move(rule2));
   std::string error;
   EXPECT_FALSE(rules.Validate(*lexer, &error));
@@ -541,12 +541,12 @@ TEST(ParserRulesTest, RecursiveAlternates) {
   ParserRules rules;
   auto rule1 = ParserRuleItem::CreateAlternatives();
   rule1->AddSubItem(ParserRuleItem::CreateToken(kTokenInt));
-  rule1->AddSubItem(ParserRuleItem::CreateRule("rule2"));
+  rule1->AddSubItem(ParserRuleItem::CreateRuleName("rule2"));
   rules.AddRule("rule1", std::move(rule1));
   auto rule2 = ParserRuleItem::CreateAlternatives();
   rule2->AddSubItem(ParserRuleItem::CreateToken(kTokenString),
                     kParserOneOrMore);
-  rule2->AddSubItem(ParserRuleItem::CreateRule("rule1"));
+  rule2->AddSubItem(ParserRuleItem::CreateRuleName("rule1"));
   rules.AddRule("rule2", std::move(rule2));
   std::string error;
   EXPECT_FALSE(rules.Validate(*lexer, &error));

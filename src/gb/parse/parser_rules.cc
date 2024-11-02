@@ -41,7 +41,7 @@ bool ParserToken::Validate(ValidateContext& context) const {
   return true;
 }
 
-ParseMatch ParserToken::Match(Parser& parser) const {
+parser_internal::ParseMatch ParserToken::Match(Parser& parser) const {
   return parser.MatchTokenItem(*this);
 }
 
@@ -69,7 +69,7 @@ bool ParserRuleName::Validate(ValidateContext& context) const {
   return true;
 }
 
-ParseMatch ParserRuleName::Match(Parser& parser) const {
+parser_internal::ParseMatch ParserRuleName::Match(Parser& parser) const {
   return parser.MatchRuleItem(*this);
 }
 
@@ -112,7 +112,7 @@ bool ParserGroup::Validate(ValidateContext& context) const {
   return true;
 }
 
-ParseMatch ParserGroup::Match(Parser& parser) const {
+parser_internal::ParseMatch ParserGroup::Match(Parser& parser) const {
   return parser.MatchGroup(*this);
 }
 

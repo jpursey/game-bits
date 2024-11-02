@@ -119,7 +119,8 @@ Callback<ParseError()> Parser::TokenErrorCallback(gb::Token token,
   };
 }
 
-ParseMatch Parser::MatchTokenItem(const ParserToken& parser_token) {
+parser_internal::ParseMatch Parser::MatchTokenItem(
+    const ParserToken& parser_token) {
   Token token = PeekToken();
   if (token.GetType() == kTokenError) {
     return ParseMatch::Abort(Error(token, token.GetString()));
@@ -139,13 +140,14 @@ ParseMatch Parser::MatchTokenItem(const ParserToken& parser_token) {
   return std::move(parsed);
 }
 
-ParseMatch Parser::MatchRuleItem(const ParserRuleName& parser_rule_name) {
+parser_internal::ParseMatch Parser::MatchRuleItem(
+    const ParserRuleName& parser_rule_name) {
   const ParserRuleItem* rule = rules_.GetRule(parser_rule_name.GetRuleName());
   DCHECK(rule != nullptr);  // Handled during rule validation.
   return rule->Match(*this);
 }
 
-ParseMatch Parser::MatchGroup(const ParserGroup& group) {
+parser_internal::ParseMatch Parser::MatchGroup(const ParserGroup& group) {
   Token group_token = PeekToken();
   if (group_token.IsError()) {
     return ParseMatch::Abort(Error(group_token, group_token.GetString()));

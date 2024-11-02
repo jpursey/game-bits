@@ -17,6 +17,10 @@
 
 namespace gb {
 
+//==============================================================================
+// Parser
+//==============================================================================
+
 // This class is used to parse a sequence of tokens into a parse tree based on a
 // set of rules.
 //
@@ -37,7 +41,7 @@ namespace gb {
 // makes binary expression recursion always right-associative by default).
 // However, if this is required for a language, each precendence level can
 // instead be represented as a repeating group, leaving left/right association
-// to the caller after parsing.
+// decisions to the caller after parsing.
 //
 // This class is thread-compatible.
 class Parser final {
@@ -73,6 +77,8 @@ class Parser final {
   friend class ParserToken;
   friend class ParserRuleName;
   friend class ParserGroup;
+
+  using ParseMatch = parser_internal::ParseMatch;
 
   Parser(Lexer& lexer, ParserRules rules)
       : lexer_(lexer), rules_(std::move(rules)) {}

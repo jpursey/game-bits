@@ -544,9 +544,9 @@ TEST(ParserTest, MatchRuleNameSuccess) {
   rules.AddRule("ident", std::move(rule));
   rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, "("));
-  rule->AddSubItem("first", ParserRuleItem::CreateRule("ident"));
+  rule->AddSubItem("first", ParserRuleItem::CreateRuleName("ident"));
   rule->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, ","));
-  rule->AddSubItem("second", ParserRuleItem::CreateRule("ident"));
+  rule->AddSubItem("second", ParserRuleItem::CreateRuleName("ident"));
   rule->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, ")"));
   rules.AddRule("pair", std::move(rule));
   std::string error;
