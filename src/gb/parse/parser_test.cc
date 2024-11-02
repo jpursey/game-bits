@@ -14,6 +14,7 @@ namespace {
 
 using ::testing::ElementsAre;
 using ::testing::HasSubstr;
+using ::testing::IsEmpty;
 
 MATCHER_P3(IsLocation, content, line, column, "") {
   return arg.id == content && arg.line == line && arg.column == column;
@@ -23,11 +24,44 @@ MATCHER_P2(IsToken, type, value, "") {
   return token.GetType() == type && token.ToString() == value;
 }
 
+ParserRules ValidParserRules() {
+  ParserRules rules;
+  auto rule = ParserRuleItem::CreateSequence();
+  rule->AddSubItem(ParserRuleItem::CreateToken(kTokenIdentifier));
+  rules.AddRule("rule", std::move(rule));
+  return rules;
+}
+
+TEST(ParserTest, InvalidLexerConfig) {
+  std::string error;
+  auto parser = Parser::Create(LexerConfig(), ValidParserRules(), &error);
+  ASSERT_EQ(parser, nullptr);
+  EXPECT_THAT(error, HasSubstr(Lexer::kErrorNoTokenSpec));
+}
+
+TEST(ParserTest, NullLexer) {
+  std::string error;
+  auto parser = Parser::Create(nullptr, ValidParserRules(), &error);
+  ASSERT_EQ(parser, nullptr);
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("lexer is null"));
+}
+
 TEST(ParserTest, NoRules) {
   std::string error;
   auto parser = Parser::Create(kCStyleLexerConfig, ParserRules(), &error);
   ASSERT_EQ(parser, nullptr);
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("no rules"));
+}
+
+TEST(ParserTest, InvalidRulesWithSharedLexer) {
+  ParserRules rules;
+  rules.AddRule("rule", ParserRuleItem::CreateSequence());
+  std::string error;
+  auto lexer = Lexer::Create(kCStyleLexerConfig, &error);
+  ASSERT_NE(lexer, nullptr) << "Error: " << error;
+  auto parser = Parser::Create(*lexer, std::move(rules), &error);
+  ASSERT_EQ(parser, nullptr);
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("at least one"));
 }
 
 TEST(ParserTest, NoContent) {
@@ -60,13 +94,30 @@ TEST(ParserTest, EmptySequenceInvalid) {
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("at least one"));
 }
 
-TEST(ParserTest, MatchSequenceSingleIdent) {
+TEST(ParserTest, UndefinedInitialRule) {
   ParserRules rules;
   auto rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem(ParserRuleItem::CreateToken(kTokenIdentifier));
   rules.AddRule("rule", std::move(rule));
   std::string error;
   auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
+  ASSERT_NE(parser, nullptr) << "Error: " << error;
+  LexerContentId content = parser->GetLexer().AddContent("some text");
+
+  ParseResult result = parser->Parse(content, "undefined");
+  ASSERT_FALSE(result.IsOk());
+  EXPECT_THAT(result.GetError().GetMessage(), HasSubstr("\"undefined\""));
+}
+
+TEST(ParserTest, MatchSequenceSingleIdent) {
+  ParserRules rules;
+  auto rule = ParserRuleItem::CreateSequence();
+  rule->AddSubItem(ParserRuleItem::CreateToken(kTokenIdentifier));
+  rules.AddRule("rule", std::move(rule));
+  std::string error;
+  auto lexer = Lexer::Create(kCStyleLexerConfig, &error);
+  ASSERT_NE(lexer, nullptr) << "Error: " << error;
+  auto parser = Parser::Create(*lexer, std::move(rules), &error);
   ASSERT_NE(parser, nullptr) << "Error: " << error;
   LexerContentId content = parser->GetLexer().AddContent("some text");
 
@@ -468,6 +519,24 @@ TEST(ParserTest, MatchTokenTypeAndValueFail) {
   EXPECT_THAT(result.GetError().GetLocation(), IsLocation(content, 0, 29));
 }
 
+TEST(ParserTest, MatchErrorTokenAsInt) {
+  ParserRules rules;
+  auto rule = ParserRuleItem::CreateSequence();
+  rule->AddSubItem("token", ParserRuleItem::CreateToken(kTokenIdentifier));
+  rule->AddSubItem("token", ParserRuleItem::CreateToken(kTokenInt));
+  rules.AddRule("rule", std::move(rule));
+  std::string error;
+  auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
+  ASSERT_NE(parser, nullptr) << "Error: " << error;
+  LexerContentId content = parser->GetLexer().AddContent("name 4rty2");
+
+  ParseResult result = parser->Parse(content, "rule");
+  ASSERT_FALSE(result.IsOk());
+  EXPECT_THAT(result.GetError().GetMessage(),
+              HasSubstr(Lexer::kErrorInvalidToken));
+  EXPECT_THAT(result.GetError().GetLocation(), IsLocation(content, 0, 5));
+}
+
 TEST(ParserTest, MatchRuleNameSuccess) {
   ParserRules rules;
   auto rule = ParserRuleItem::CreateSequence();
@@ -492,6 +561,87 @@ TEST(ParserTest, MatchRuleNameSuccess) {
   EXPECT_THAT(result->GetItem("second"),
               ElementsAre(IsToken(kTokenIdentifier, "text")));
   EXPECT_TRUE(parser->GetLexer().NextToken(content, false).IsEnd())
+      << result->GetToken();
+}
+
+TEST(ParserTest, MatchSequenceFirstItemOptional) {
+  ParserRules rules;
+  auto rule = ParserRuleItem::CreateSequence();
+  rule->AddSubItem("ident", ParserRuleItem::CreateToken(kTokenIdentifier),
+                   kParserOptional);
+  rule->AddSubItem(ParserRuleItem::CreateToken(kTokenInt));
+  rules.AddRule("rule", std::move(rule));
+  std::string error;
+  auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
+  ASSERT_NE(parser, nullptr) << "Error: " << error;
+  LexerContentId content = parser->GetLexer().AddContent("42");
+
+  ParseResult result = parser->Parse(content, "rule");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_TRUE(result->GetToken().IsInt(42)) << result->GetToken();
+  EXPECT_TRUE(parser->GetLexer().NextToken(content, false).IsEnd())
+      << result->GetToken();
+}
+
+TEST(ParserTest, MatchAlternatesFirstItemInvalid) {
+  ParserRules rules;
+  auto rule = ParserRuleItem::CreateAlternatives();
+  rule->AddSubItem("ident", ParserRuleItem::CreateToken(kTokenIdentifier));
+  rule->AddSubItem("int", ParserRuleItem::CreateToken(kTokenInt));
+  rules.AddRule("rule", std::move(rule));
+  std::string error;
+  auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
+  ASSERT_NE(parser, nullptr) << "Error: " << error;
+  LexerContentId content = parser->GetLexer().AddContent("42");
+
+  ParseResult result = parser->Parse(content, "rule");
+  ASSERT_TRUE(result.IsOk());
+  EXPECT_TRUE(result->GetToken().IsInt(42)) << result->GetToken();
+  EXPECT_TRUE(parser->GetLexer().NextToken(content, false).IsEnd())
+      << result->GetToken();
+}
+
+TEST(ParserTest, MatchAlternatesAllItemsInvalid) {
+  ParserRules rules;
+  auto rule = ParserRuleItem::CreateAlternatives();
+  rule->AddSubItem("ident", ParserRuleItem::CreateToken(kTokenIdentifier));
+  rule->AddSubItem("int", ParserRuleItem::CreateToken(kTokenInt));
+  rules.AddRule("rule", std::move(rule));
+  std::string error;
+  auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
+  ASSERT_NE(parser, nullptr) << "Error: " << error;
+  LexerContentId content = parser->GetLexer().AddContent("while");
+
+  ParseResult result = parser->Parse(content, "rule");
+  ASSERT_FALSE(result.IsOk());
+  EXPECT_THAT(absl::AsciiStrToLower(result.GetError().GetMessage()),
+              HasSubstr("expected identifier"));
+  EXPECT_THAT(result.GetError().GetLocation(), IsLocation(content, 0, 0));
+}
+
+TEST(ParserTest, MatchAlternativesCommaList) {
+  ParserRules rules;
+  auto rule = ParserRuleItem::CreateAlternatives();
+  rule->AddSubItem("ident", ParserRuleItem::CreateToken(kTokenIdentifier));
+  rule->AddSubItem("list", ParserRuleItem::CreateToken(kTokenInt),
+                   kParserOneOrMoreWithComma);
+  rules.AddRule("rule", std::move(rule));
+  std::string error;
+  auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
+  ASSERT_NE(parser, nullptr) << "Error: " << error;
+  LexerContentId content = parser->GetLexer().AddContent("fun 42, 3, 25 hello");
+
+  ParseResult result = parser->Parse(content, "rule");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_THAT(result->GetItem("list"), IsEmpty());
+  EXPECT_THAT(result->GetItem("ident"),
+              ElementsAre(IsToken(kTokenIdentifier, "fun")));
+  result = parser->Parse(content, "rule");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_THAT(result->GetItem("list"),
+              ElementsAre(IsToken(kTokenInt, "42"), IsToken(kTokenInt, "3"),
+                          IsToken(kTokenInt, "25")));
+  EXPECT_TRUE(parser->GetLexer().NextToken(content, false).IsIdent("hello"))
       << result->GetToken();
 }
 

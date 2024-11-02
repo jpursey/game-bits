@@ -13,7 +13,6 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
-#include "absl/container/flat_hash_set.h"
 #include "absl/types/span.h"
 #include "gb/base/callback.h"
 #include "gb/base/flags.h"
@@ -99,7 +98,6 @@ class ParserRuleItem {
   struct ValidateContext {
     const ParserRules& rules;
     const Lexer& lexer;
-    absl::flat_hash_set<std::string_view> rule_names;
     std::string error;
   };
 

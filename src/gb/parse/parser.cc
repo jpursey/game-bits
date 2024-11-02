@@ -143,10 +143,7 @@ ParseMatch Parser::MatchTokenItem(ParserInternal,
 ParseMatch Parser::MatchRuleItem(ParserInternal,
                                  const ParserRuleName& parser_rule_name) {
   const ParserRuleItem* rule = rules_.GetRule(parser_rule_name.GetRuleName());
-  if (rule == nullptr) {
-    return ParseMatch::Abort(absl::StrCat(
-        "Parser rule \"", parser_rule_name.GetRuleName(), "\" not found"));
-  }
+  DCHECK(rule != nullptr);  // Handled during rule validation.
   return rule->Match({}, *this);
 }
 
@@ -165,8 +162,7 @@ ParseMatch Parser::MatchGroup(ParserInternal, const ParserGroup& group) {
     auto match = sub_item.item->Match({}, *this);
     if (!match) {
       if (match.IsAbort() ||
-          (is_sequence &&
-           sub_item.repeat.IsSet(ParserRepeat::kRequireOne))) {
+          (is_sequence && sub_item.repeat.IsSet(ParserRepeat::kRequireOne))) {
         SetNextToken(group_token);
         return match;
       }
@@ -175,13 +171,7 @@ ParseMatch Parser::MatchGroup(ParserInternal, const ParserGroup& group) {
       }
       continue;
     }
-    Token after_match_token = PeekToken();
-    if (after_match_token == token) {
-      DCHECK(is_sequence);  // Should not happen for alternatives.
-      continue;
-    }
     result.SetToken(group_token);
-    token = after_match_token;
     if (!sub_item.name.empty()) {
       result.AddItem(sub_item.name, *std::move(match));
     }
@@ -193,6 +183,7 @@ ParseMatch Parser::MatchGroup(ParserInternal, const ParserGroup& group) {
     }
     const bool with_comma = sub_item.repeat.IsSet(ParserRepeat::kWithComma);
     while (true) {
+      token = PeekToken();
       if (with_comma) {
         if (token.IsSymbol(',')) {
           token = NextToken();
@@ -210,12 +201,6 @@ ParseMatch Parser::MatchGroup(ParserInternal, const ParserGroup& group) {
         }
         break;
       }
-      after_match_token = PeekToken();
-      if (after_match_token == token) {
-        DCHECK(is_sequence);  // Should not happen for alternatives.
-        break;
-      }
-      token = after_match_token;
       if (!sub_item.name.empty()) {
         result.AddItem(sub_item.name, *std::move(match));
       }
