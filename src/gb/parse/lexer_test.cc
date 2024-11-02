@@ -3112,6 +3112,46 @@ TEST(LexerTest, ParseIdentMatchesAfterKeywordCaseInsensitive) {
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
+TEST(LexerTest, ParseUserTokens) {
+  const LexerConfig::UserToken user_tokens[] = {
+      {.type = kTokenUser + 0, .regex = "([a-z](?:[a-z\\-]*[a-z])?)"},
+      {.type = kTokenUser + 1, .regex = "\\$([a-z]+)"},
+      {.type = kTokenUser + 2, .regex = "([a-zA-Z]+)\\@"},
+  };
+  std::string error;
+  auto lexer = Lexer::Create({
+      .user_tokens = user_tokens,
+  });
+  ASSERT_NE(lexer, nullptr) << "Error: " << error;
+  const LexerContentId content =
+      lexer->AddContent("abc $def gHi@ x-y-z error- -error");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenUser + 0);
+  EXPECT_EQ(token.GetString(), "abc");
+  EXPECT_EQ(lexer->GetTokenText(token), "abc");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenUser + 1);
+  EXPECT_EQ(token.GetString(), "def");
+  EXPECT_EQ(lexer->GetTokenText(token), "$def");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenUser + 2);
+  EXPECT_EQ(token.GetString(), "gHi");
+  EXPECT_EQ(lexer->GetTokenText(token), "gHi@");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenUser + 0);
+  EXPECT_EQ(token.GetString(), "x-y-z");
+  EXPECT_EQ(lexer->GetTokenText(token), "x-y-z");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
+  EXPECT_EQ(lexer->GetTokenText(token), "error-");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
+  EXPECT_EQ(lexer->GetTokenText(token), "-error");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
 TEST(LexerTest, ParseLineBreak) {
   auto lexer = Lexer::Create({
       .flags = {kLexerFlags_CIdentifiers, LexerFlag::kLineBreak},

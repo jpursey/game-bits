@@ -153,6 +153,13 @@ class Lexer final {
   // tokens).
   static const std::string_view kErrorNoTokenSpec;
 
+  // Invalid user token type in LexerConfig. It must be >= kTokenUser.
+  static const std::string_view kErrorInvalidUserTokenType;
+
+  // Invalid user token regex in LexerConfig. It must be a valid RE2 regex, and
+  // it must have a single capture group.
+  static const std::string_view kErrorInvalidUserTokenRegex;
+
   //----------------------------------------------------------------------------
   // Token error strings
   //
@@ -426,6 +433,7 @@ class Lexer final {
     char escape_hex = 0;
     absl::Span<const std::string_view> keywords;
     absl::Span<const LexerConfig::BlockComment> block_comments;
+    absl::Span<const TokenType> user_token_types;
   };
 
   enum class IntParseType {
@@ -468,6 +476,9 @@ class Lexer final {
   Token ParseString(TokenIndex token_index, std::string_view text) const;
   Token ParseKeyword(TokenIndex token_index, std::string_view text) const;
   Token ParseIdent(TokenIndex token_index, std::string_view text) const;
+  Token ParseUserToken(TokenIndex token_index, TokenType token_type,
+                       std::string_view text) const;
+
   Token ParseNextSymbol(Content* content, Line* line, bool advance);
   Token ParseNextToken(Content* content, Line* line, bool advance);
 

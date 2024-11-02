@@ -11,6 +11,7 @@
 
 #include "absl/types/span.h"
 #include "gb/parse/symbol.h"
+#include "gb/parse/token.h"
 
 namespace gb {
 
@@ -229,6 +230,16 @@ struct LexerConfig {
   // All special keywords. These can be anything, but are typically are
   // identifiers which have unique meaning.
   absl::Span<const std::string_view> keywords;
+
+  // Additional user tokens specified with their own regex.
+  struct UserToken {
+    // The type of token. Must be >= to kTokenUser.
+    TokenType type;
+
+    // The regex must be RE2 syntax, and must have exactly one capturing group.
+    std::string_view regex;
+  };
+  absl::Span<const UserToken> user_tokens;
 };
 
 inline constexpr std::string_view kCStyleLineComments[] = {"//"};

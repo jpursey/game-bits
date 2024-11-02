@@ -32,6 +32,10 @@ const std::string_view Lexer::kErrorEmptyKeywordSpec =
     "Empty string used in keyword specification";
 const std::string_view Lexer::kErrorNoTokenSpec =
     "No token specification (from symbols, keywords, or flags)";
+const std::string_view Lexer::kErrorInvalidUserTokenType =
+    "Invalid user token type (it must be >= kTokenUser)";
+const std::string_view Lexer::kErrorInvalidUserTokenRegex =
+    "Invalid user token regex";
 
 const std::string_view Lexer::kErrorInternal = "Internal error";
 const std::string_view Lexer::kErrorInvalidTokenContent =
@@ -257,6 +261,19 @@ bool CreateTokenPattern(std::string& token_pattern,
                     RE2::QuoteMeta(lexer_config.ident_suffix), ")|");
   }
 
+  for (const auto& user_token : lexer_config.user_tokens) {
+    if (user_token.type < kTokenUser) {
+      error = Lexer::kErrorInvalidUserTokenType;
+      return false;
+    }
+    if (RE2 re(user_token.regex);
+        re.error_code() != RE2::NoError || re.NumberOfCapturingGroups() != 1) {
+      error = Lexer::kErrorInvalidUserTokenRegex;
+      return false;
+    }
+    absl::StrAppend(&token_pattern, "(?:", user_token.regex, ")|");
+  }
+
   if (!token_pattern.empty()) {
     token_pattern.pop_back();
   }
@@ -398,6 +415,12 @@ std::unique_ptr<Lexer> Lexer::Create(const LexerConfig& lexer_config,
   }
   config.token_pattern_count = index;
 
+  std::vector<TokenType> user_token_types;
+  for (const auto& user_token : lexer_config.user_tokens) {
+    user_token_types.push_back(user_token.type);
+  }
+  config.user_token_types = absl::MakeConstSpan(user_token_types);
+
   std::string token_end_chars;
   if (!CreateSymbolPattern(config.symbol_pattern, token_end_chars, lexer_config,
                            error)) {
@@ -470,8 +493,10 @@ Lexer::Lexer(const Config& config)
       escape_newline_(config.escape_newline),
       escape_tab_(config.escape_tab),
       escape_hex_(config.escape_hex) {
-  re_args_.resize(config.token_pattern_count);
-  re_token_args_.resize(config.token_pattern_count);
+  const int total_pattern_count =
+      config.token_pattern_count + config.user_token_types.size();
+  re_args_.resize(total_pattern_count);
+  re_token_args_.resize(total_pattern_count);
   if (config.binary_index >= 0) {
     const int i = config.binary_index;
     re_args_[i].type = kTokenInt;
@@ -518,6 +543,11 @@ Lexer::Lexer(const Config& config)
   if (config.ident_index >= 0) {
     const int i = config.ident_index;
     re_args_[config.ident_index].type = kTokenIdentifier;
+    re_token_args_[i] = &re_args_[i].arg;
+  }
+  for (int j = 0; j < config.user_token_types.size(); ++j) {
+    const int i = config.token_pattern_count + j;
+    re_args_[i].type = config.user_token_types[j];
     re_token_args_[i] = &re_args_[i].arg;
   }
   if (LexerSupportsIntegers(flags_)) {
@@ -819,6 +849,11 @@ Token Lexer::ParseTokenText(std::string_view token_text) const {
       return ParseKeyword(kInvalidTokenIndex, match->text);
     case kTokenIdentifier:
       return ParseIdent(kInvalidTokenIndex, match->text);
+    default:
+      if (match->type >= kTokenUser) {
+        return ParseUserToken(kInvalidTokenIndex, match->type, match->text);
+      }
+      break;
   }
   LOG(DFATAL) << "Unhandled token type when parsing token text";
   return Token::CreateError(kInvalidTokenIndex, &kErrorInternal);
@@ -901,6 +936,11 @@ Token Lexer::ParseToken(TokenIndex index) {
       return ReturnToken(ParseIdent(index, text));
     case kTokenLineBreak:
       return ReturnToken(Token::CreateLineBreak(index));
+    default:
+      if (token_info.type >= kTokenUser) {
+        return ReturnToken(ParseUserToken(index, token_info.type, text));
+      }
+      break;
   }
   LOG(DFATAL) << "Unhandled token type when reparsing";
   return Token::CreateError(index, &kErrorInternal);
@@ -1131,8 +1171,14 @@ Token Lexer::ParseIdent(TokenIndex token_index, std::string_view text) const {
   return Token::CreateIdentifier(token_index, text.data(), text.size());
 }
 
+Token Lexer::ParseUserToken(TokenIndex token_index, TokenType token_type,
+                            std::string_view text) const {
+  return Token::CreateUser(token_index, token_type, text.data(), text.size());
+}
+
 Token Lexer::ParseNextToken(Content* content, Line* line, bool advance) {
   std::string_view remain = line->remain;
+  std::string_view token_start = remain;
   if (re_token_args_.empty() ||
       !RE2::ConsumeN(&remain, re_token_, re_token_args_.data(),
                      re_token_args_.size())) {
@@ -1166,8 +1212,8 @@ Token Lexer::ParseNextToken(Content* content, Line* line, bool advance) {
   }
   std::string_view match_text = match->text;
   match->text = {};
-  line->tokens.emplace_back(match_text.data() - line->line.data(),
-                            match_text.size(), match->type);
+  line->tokens.emplace_back(token_start.data() - line->line.data(),
+                            remain.data() - token_start.data(), match->type);
   switch (match->type) {
     case kTokenInt:
       return ParseInt(token_index, match_text, match->int_parse_type);
@@ -1181,6 +1227,11 @@ Token Lexer::ParseNextToken(Content* content, Line* line, bool advance) {
       return ParseKeyword(token_index, match_text);
     case kTokenIdentifier:
       return ParseIdent(token_index, match_text);
+    default:
+      if (match->type >= kTokenUser) {
+        return ParseUserToken(token_index, match->type, match_text);
+      }
+      break;
   }
   LOG(DFATAL) << "Unhandled token type while parsing";
   return Token::CreateError(token_index, &kErrorInternal);

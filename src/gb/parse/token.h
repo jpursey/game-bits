@@ -34,6 +34,10 @@ inline constexpr TokenType kTokenKeyword = 8;     // Value: String
 inline constexpr TokenType kTokenIdentifier = 9;  // Value: String
 inline constexpr TokenType kTokenLineBreak = 10;  // Value: kNone
 
+// Start of user-defined token types. User-defined tokens are always string
+// values.
+inline constexpr TokenType kTokenUser = 128;
+
 inline std::string GetTokenTypeString(TokenType type) {
   switch (type) {
     case kTokenNone:
@@ -59,7 +63,10 @@ inline std::string GetTokenTypeString(TokenType type) {
     case kTokenLineBreak:
       return "line break";
     default:
-      return absl::StrFormat("user type(%d)", type);
+      if (type >= kTokenUser) {
+        return absl::StrFormat("user type(%d)", type - kTokenUser);
+      }
+      return absl::StrFormat("undefined(%d)", type);
   }
 }
 
@@ -236,6 +243,14 @@ class Token final {
   }
   static Token CreateLineBreak(TokenIndex token_index) {
     return Token(token_index, kTokenLineBreak, ValueType::kNone);
+  }
+  static Token CreateUser(TokenIndex token_index, TokenType user_type,
+                          const char* value, uint16_t size) {
+    DCHECK(user_type >= kTokenUser);
+    Token token(token_index, user_type, ValueType::kString);
+    token.strlen_ = size;
+    token.string_ = value;
+    return token;
   }
 
   Token(TokenIndex token_index, TokenType type, ValueType value_type)
