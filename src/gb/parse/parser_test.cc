@@ -5,6 +5,7 @@
 
 #include "gb/parse/parser.h"
 
+#include "absl/strings/ascii.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
@@ -25,11 +26,8 @@ MATCHER_P2(IsToken, type, value, "") {
 TEST(ParserTest, NoRules) {
   std::string error;
   auto parser = Parser::Create(kCStyleLexerConfig, ParserRules(), &error);
-  ASSERT_NE(parser, nullptr) << "Error: " << error;
-  LexerContentId content = parser->GetLexer().AddContent("some text");
-  ParseResult result = parser->Parse(content, "rule");
-  ASSERT_FALSE(result.IsOk());
-  EXPECT_THAT(result.GetError().GetMessage(), HasSubstr("\"rule\""));
+  ASSERT_EQ(parser, nullptr);
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("no rules"));
 }
 
 TEST(ParserTest, NoContent) {
@@ -59,7 +57,7 @@ TEST(ParserTest, EmptySequenceInvalid) {
   std::string error;
   auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
   ASSERT_EQ(parser, nullptr);
-  EXPECT_THAT(error, HasSubstr("at least one"));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("at least one"));
 }
 
 TEST(ParserTest, MatchSequenceSingleIdent) {
@@ -166,7 +164,8 @@ TEST(ParserTest, MatchSequenceOneOrMoreWithCommaFails) {
 
   ParseResult result = parser->Parse(content, "rule");
   ASSERT_FALSE(result.IsOk());
-  EXPECT_THAT(result.GetError().GetMessage(), HasSubstr("Expected identifier"));
+  EXPECT_THAT(absl::AsciiStrToLower(result.GetError().GetMessage()),
+              HasSubstr("expected identifier"));
   EXPECT_THAT(result.GetError().GetLocation(), IsLocation(content, 0, 6));
   EXPECT_TRUE(parser->GetLexer().NextToken(content, false).IsIdent("some"))
       << result->GetToken();
@@ -205,7 +204,8 @@ TEST(ParserTest, MatchSequenceZeroOrMoreWithCommaFails) {
 
   ParseResult result = parser->Parse(content, "rule");
   ASSERT_FALSE(result.IsOk());
-  EXPECT_THAT(result.GetError().GetMessage(), HasSubstr("Expected identifier"));
+  EXPECT_THAT(absl::AsciiStrToLower(result.GetError().GetMessage()),
+              HasSubstr("expected identifier"));
   EXPECT_THAT(result.GetError().GetLocation(), IsLocation(content, 0, 6));
   EXPECT_TRUE(parser->GetLexer().NextToken(content, false).IsIdent("some"))
       << result->GetToken();
@@ -232,15 +232,13 @@ TEST(ParserTest, MatchTokenTypeSuccess) {
   rule->AddSubItem("tokens", ParserRuleItem::CreateToken(kTokenChar));
   rule->AddSubItem("tokens", ParserRuleItem::CreateToken(kTokenString));
   rule->AddSubItem("tokens", ParserRuleItem::CreateToken(kTokenLineBreak));
-  rule->AddSubItem("tokens", ParserRuleItem::CreateToken(kTokenKeyword));
   rule->AddSubItem("tokens", ParserRuleItem::CreateToken(kTokenIdentifier));
-  rule->AddSubItem("tokens", ParserRuleItem::CreateToken(kTokenSymbol));
   rules.AddRule("rule", std::move(rule));
   std::string error;
   auto parser = Parser::Create(config, std::move(rules), &error);
   ASSERT_NE(parser, nullptr) << "Error: " << error;
   LexerContentId content =
-      parser->GetLexer().AddContent("42 3.14 'c' \"hello\"\nelse name;");
+      parser->GetLexer().AddContent("42 3.14 'c' \"hello\"\nname");
 
   ParseResult result = parser->Parse(content, "rule");
   ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
@@ -249,9 +247,8 @@ TEST(ParserTest, MatchTokenTypeSuccess) {
       result->GetItem("tokens"),
       ElementsAre(IsToken(kTokenInt, "42"), IsToken(kTokenFloat, "3.14"),
                   IsToken(kTokenChar, "c"), IsToken(kTokenString, "hello"),
-                  IsToken(kTokenLineBreak, ""), IsToken(kTokenKeyword, "else"),
-                  IsToken(kTokenIdentifier, "name"),
-                  IsToken(kTokenSymbol, ";")));
+                  IsToken(kTokenLineBreak, ""),
+                  IsToken(kTokenIdentifier, "name")));
 }
 
 TEST(ParserTest, MatchTokenTypeFail) {
@@ -276,20 +273,14 @@ TEST(ParserTest, MatchTokenTypeFail) {
   rule->AddSubItem("token", ParserRuleItem::CreateToken(kTokenLineBreak));
   rules.AddRule("line_break", std::move(rule));
   rule = ParserRuleItem::CreateSequence();
-  rule->AddSubItem("token", ParserRuleItem::CreateToken(kTokenKeyword));
-  rules.AddRule("keyword", std::move(rule));
-  rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem("token", ParserRuleItem::CreateToken(kTokenIdentifier));
   rules.AddRule("identifier", std::move(rule));
-  rule = ParserRuleItem::CreateSequence();
-  rule->AddSubItem("token", ParserRuleItem::CreateToken(kTokenSymbol));
-  rules.AddRule("symbol", std::move(rule));
   std::string error;
   auto parser = Parser::Create(config, std::move(rules), &error);
   ASSERT_NE(parser, nullptr) << "Error: " << error;
 
   LexerContentId content =
-      parser->GetLexer().AddContent("42 3.14 'c' \"hello\"\nelse name;");
+      parser->GetLexer().AddContent("42 3.14 'c' \"hello\"\nname");
   const Token int_token = parser->GetLexer().NextToken(content);
   EXPECT_EQ(int_token.GetType(), kTokenInt);
   const Token float_token = parser->GetLexer().NextToken(content);
@@ -300,62 +291,49 @@ TEST(ParserTest, MatchTokenTypeFail) {
   EXPECT_EQ(string_token.GetType(), kTokenString);
   const Token line_break_token = parser->GetLexer().NextToken(content);
   EXPECT_EQ(line_break_token.GetType(), kTokenLineBreak);
-  const Token keyword_token = parser->GetLexer().NextToken(content);
-  EXPECT_EQ(keyword_token.GetType(), kTokenKeyword);
   const Token identifier_token = parser->GetLexer().NextToken(content);
   EXPECT_EQ(identifier_token.GetType(), kTokenIdentifier);
-  const Token symbol_token = parser->GetLexer().NextToken(content);
-  EXPECT_EQ(symbol_token.GetType(), kTokenSymbol);
 
   parser->GetLexer().SetNextToken(float_token);
   ParseResult result = parser->Parse(content, "int");
   ASSERT_FALSE(result.IsOk());
-  EXPECT_THAT(result.GetError().GetMessage(), HasSubstr("Expected integer"));
+  EXPECT_THAT(absl::AsciiStrToLower(result.GetError().GetMessage()),
+              HasSubstr("expected integer"));
   EXPECT_THAT(result.GetError().GetLocation(), IsLocation(content, 0, 3));
 
   parser->GetLexer().SetNextToken(char_token);
   result = parser->Parse(content, "float");
   ASSERT_FALSE(result.IsOk());
-  EXPECT_THAT(result.GetError().GetMessage(),
-              HasSubstr("Expected floating-point"));
+  EXPECT_THAT(absl::AsciiStrToLower(result.GetError().GetMessage()),
+              HasSubstr("expected floating-point"));
   EXPECT_THAT(result.GetError().GetLocation(), IsLocation(content, 0, 8));
 
   parser->GetLexer().SetNextToken(string_token);
   result = parser->Parse(content, "char");
   ASSERT_FALSE(result.IsOk());
-  EXPECT_THAT(result.GetError().GetMessage(), HasSubstr("Expected character"));
+  EXPECT_THAT(absl::AsciiStrToLower(result.GetError().GetMessage()),
+              HasSubstr("expected character"));
   EXPECT_THAT(result.GetError().GetLocation(), IsLocation(content, 0, 12));
 
   parser->GetLexer().SetNextToken(line_break_token);
   result = parser->Parse(content, "string");
   ASSERT_FALSE(result.IsOk());
-  EXPECT_THAT(result.GetError().GetMessage(),
-              HasSubstr("Expected string value"));
+  EXPECT_THAT(absl::AsciiStrToLower(result.GetError().GetMessage()),
+              HasSubstr("expected string value"));
   EXPECT_THAT(result.GetError().GetLocation(), IsLocation(content, 0, 19));
 
-  parser->GetLexer().SetNextToken(keyword_token);
+  parser->GetLexer().SetNextToken(identifier_token);
   result = parser->Parse(content, "line_break");
   ASSERT_FALSE(result.IsOk());
-  EXPECT_THAT(result.GetError().GetMessage(),
-              HasSubstr("Expected end of line"));
+  EXPECT_THAT(absl::AsciiStrToLower(result.GetError().GetMessage()),
+              HasSubstr("expected end of line"));
   EXPECT_THAT(result.GetError().GetLocation(), IsLocation(content, 1, 0));
 
-  parser->GetLexer().SetNextToken(identifier_token);
-  result = parser->Parse(content, "keyword");
-  ASSERT_FALSE(result.IsOk());
-  EXPECT_THAT(result.GetError().GetMessage(), HasSubstr("Expected keyword"));
-  EXPECT_THAT(result.GetError().GetLocation(), IsLocation(content, 1, 5));
-
-  parser->GetLexer().SetNextToken(symbol_token);
+  parser->GetLexer().SetNextToken(int_token);
   result = parser->Parse(content, "identifier");
   ASSERT_FALSE(result.IsOk());
-  EXPECT_THAT(result.GetError().GetMessage(), HasSubstr("Expected identifier"));
-  EXPECT_THAT(result.GetError().GetLocation(), IsLocation(content, 1, 9));
-
-  parser->GetLexer().SetNextToken(int_token);
-  result = parser->Parse(content, "symbol");
-  ASSERT_FALSE(result.IsOk());
-  EXPECT_THAT(result.GetError().GetMessage(), HasSubstr("Expected symbol"));
+  EXPECT_THAT(absl::AsciiStrToLower(result.GetError().GetMessage()),
+              HasSubstr("expected identifier"));
   EXPECT_THAT(result.GetError().GetLocation(), IsLocation(content, 0, 0));
 }
 
@@ -366,17 +344,16 @@ TEST(ParserTest, MatchTokenTypeAndValueSuccess) {
   config.keywords = keywords;
   ParserRules rules;
   auto rule = ParserRuleItem::CreateSequence();
-  rule->AddSubItem("tokens", ParserRuleItem::CreateToken(kTokenInt, 42));
-  rule->AddSubItem("tokens", ParserRuleItem::CreateToken(kTokenFloat, 3.14));
-  rule->AddSubItem("tokens", ParserRuleItem::CreateToken(kTokenChar, "c"));
+  rule->AddSubItem("tokens", ParserRuleItem::CreateToken(kTokenInt, "42"));
+  rule->AddSubItem("tokens", ParserRuleItem::CreateToken(kTokenFloat, "3.14"));
+  rule->AddSubItem("tokens", ParserRuleItem::CreateToken(kTokenChar, "'c'"));
   rule->AddSubItem("tokens",
-                   ParserRuleItem::CreateToken(kTokenString, "hello"));
+                   ParserRuleItem::CreateToken(kTokenString, "\"hello\""));
   rule->AddSubItem("tokens",
                    ParserRuleItem::CreateToken(kTokenKeyword, "else"));
   rule->AddSubItem("tokens",
                    ParserRuleItem::CreateToken(kTokenIdentifier, "name"));
-  rule->AddSubItem("tokens",
-                   ParserRuleItem::CreateToken(kTokenSymbol, Symbol(";")));
+  rule->AddSubItem("tokens", ParserRuleItem::CreateToken(kTokenSymbol, ";"));
   rules.AddRule("rule", std::move(rule));
   std::string error;
   auto parser = Parser::Create(config, std::move(rules), &error);
@@ -409,10 +386,11 @@ TEST(ParserTest, MatchTokenTypeAndValueFail) {
   rule->AddSubItem("token", ParserRuleItem::CreateToken(kTokenFloat, "3.15"));
   rules.AddRule("float", std::move(rule));
   rule = ParserRuleItem::CreateSequence();
-  rule->AddSubItem("token", ParserRuleItem::CreateToken(kTokenChar, "d"));
+  rule->AddSubItem("token", ParserRuleItem::CreateToken(kTokenChar, "'d'"));
   rules.AddRule("char", std::move(rule));
   rule = ParserRuleItem::CreateSequence();
-  rule->AddSubItem("token", ParserRuleItem::CreateToken(kTokenString, "world"));
+  rule->AddSubItem("token",
+                   ParserRuleItem::CreateToken(kTokenString, "\"world\""));
   rules.AddRule("string", std::move(rule));
   rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem("token",
@@ -461,7 +439,8 @@ TEST(ParserTest, MatchTokenTypeAndValueFail) {
   parser->GetLexer().SetNextToken(char_token);
   result = parser->Parse(content, "char");
   ASSERT_FALSE(result.IsOk());
-  EXPECT_THAT(result.GetError().GetMessage(), HasSubstr("'d'"));
+  EXPECT_THAT(absl::AsciiStrToLower(result.GetError().GetMessage()),
+              HasSubstr("'d'"));
   EXPECT_THAT(result.GetError().GetLocation(), IsLocation(content, 0, 8));
 
   parser->GetLexer().SetNextToken(string_token);
@@ -495,11 +474,11 @@ TEST(ParserTest, MatchRuleNameSuccess) {
   rule->AddSubItem("ident", ParserRuleItem::CreateToken(kTokenIdentifier));
   rules.AddRule("ident", std::move(rule));
   rule = ParserRuleItem::CreateSequence();
-  rule->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, Symbol("(")));
+  rule->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, "("));
   rule->AddSubItem("first", ParserRuleItem::CreateRule("ident"));
-  rule->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, Symbol(",")));
+  rule->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, ","));
   rule->AddSubItem("second", ParserRuleItem::CreateRule("ident"));
-  rule->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, Symbol(")")));
+  rule->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, ")"));
   rules.AddRule("pair", std::move(rule));
   std::string error;
   auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
@@ -513,31 +492,6 @@ TEST(ParserTest, MatchRuleNameSuccess) {
   EXPECT_THAT(result->GetItem("second"),
               ElementsAre(IsToken(kTokenIdentifier, "text")));
   EXPECT_TRUE(parser->GetLexer().NextToken(content, false).IsEnd())
-      << result->GetToken();
-}
-
-TEST(ParserTest, MatchRuleNameFail) {
-  ParserRules rules;
-  auto rule = ParserRuleItem::CreateSequence();
-  rule->AddSubItem("ident", ParserRuleItem::CreateToken(kTokenIdentifier));
-  rules.AddRule("ident", std::move(rule));
-  rule = ParserRuleItem::CreateSequence();
-  rule->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, Symbol("(")));
-  rule->AddSubItem("first", ParserRuleItem::CreateRule("ident"));
-  rule->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, Symbol(",")));
-  rule->AddSubItem("second", ParserRuleItem::CreateRule("invalid"));
-  rule->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, Symbol(")")));
-  rules.AddRule("pair", std::move(rule));
-  std::string error;
-  auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
-  ASSERT_NE(parser, nullptr) << "Error: " << error;
-  LexerContentId content = parser->GetLexer().AddContent("(some, text)");
-
-  ParseResult result = parser->Parse(content, "pair");
-  ASSERT_FALSE(result.IsOk());
-  EXPECT_THAT(result.GetError().GetMessage(), HasSubstr("\"invalid\""));
-  EXPECT_EQ(result.GetError().GetLocation(), LexerLocation());
-  EXPECT_TRUE(parser->GetLexer().NextToken(content, false).IsSymbol('('))
       << result->GetToken();
 }
 

@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/container/flat_hash_set.h"
 #include "absl/types/span.h"
 #include "gb/base/callback.h"
 #include "gb/base/flags.h"
@@ -84,39 +85,46 @@ class ParserRuleItem {
   ParserRuleItem& operator=(const ParserRuleItem&) = delete;
   virtual ~ParserRuleItem() = default;
 
-  static std::unique_ptr<ParserToken> CreateToken(TokenType token_type,
-                                                  TokenValue value = {});
-  static std::unique_ptr<ParserToken> CreateToken(TokenType token_type,
-                                                  const char* value) {
-    return CreateToken(token_type, TokenValue(std::string(value)));
-  }
+  static std::unique_ptr<ParserToken> CreateToken(
+      TokenType token_type, std::string_view token_text = {});
   static std::unique_ptr<ParserRuleName> CreateRule(std::string rule_name);
   static std::unique_ptr<ParserGroup> CreateSequence();
   static std::unique_ptr<ParserGroup> CreateAlternatives();
 
-  virtual bool Validate(const ParserRules& rules, const Lexer& lexer,
-                        std::string* error_message) const = 0;
-  virtual ParseMatch Match(ParserInternal, Parser& parser) const = 0;
-
  protected:
+  friend class Parser;
+  friend class ParserRules;
+  friend class ParserGroup;
+
+  struct ValidateContext {
+    const ParserRules& rules;
+    const Lexer& lexer;
+    absl::flat_hash_set<std::string_view> rule_names;
+    std::string error;
+  };
+
   ParserRuleItem() = default;
+
+  virtual bool Validate(ValidateContext& context) const = 0;
+  virtual ParseMatch Match(ParserInternal, Parser& parser) const = 0;
 };
 
 class ParserToken final : public ParserRuleItem {
  public:
-  ParserToken(TokenType token_type, TokenValue value = {})
-      : token_type_(token_type), value_(value) {}
+  ParserToken(TokenType token_type, std::string_view token_text)
+      : token_type_(token_type), token_text_(token_text) {}
 
   TokenType GetTokenType() const { return token_type_; }
   const TokenValue& GetValue() const { return value_; }
 
-  bool Validate(const ParserRules& rules, const Lexer& lexer,
-                std::string* error_message) const override;
+ protected:
+  bool Validate(ValidateContext& context) const override;
   ParseMatch Match(ParserInternal, Parser& parser) const override;
 
  private:
   const TokenType token_type_;
-  const TokenValue value_;
+  const std::string token_text_;
+  mutable TokenValue value_;
 };
 
 class ParserRuleName final : public ParserRuleItem {
@@ -126,8 +134,8 @@ class ParserRuleName final : public ParserRuleItem {
 
   std::string_view GetRuleName() const { return rule_name_; }
 
-  bool Validate(const ParserRules& rules, const Lexer& lexer,
-                std::string* error_message) const override;
+ protected:
+  bool Validate(ValidateContext& context) const override;
   ParseMatch Match(ParserInternal, Parser& parser) const override;
 
  private:
@@ -164,8 +172,8 @@ class ParserGroup final : public ParserRuleItem {
   Type GetType() const { return type_; }
   absl::Span<const SubItem> GetSubItems() const { return sub_items_; }
 
-  bool Validate(const ParserRules& rules, const Lexer& lexer,
-                std::string* error_message) const override;
+ protected:
+  bool Validate(ValidateContext& context) const override;
   ParseMatch Match(ParserInternal, Parser& parser) const override;
 
  private:
@@ -201,8 +209,8 @@ class ParserRules final {
 };
 
 inline std::unique_ptr<ParserToken> ParserRuleItem::CreateToken(
-    TokenType token_type, TokenValue value) {
-  return std::make_unique<ParserToken>(token_type, value);
+    TokenType token_type, std::string_view token_text) {
+  return std::make_unique<ParserToken>(token_type, token_text);
 }
 
 inline std::unique_ptr<ParserRuleName> ParserRuleItem::CreateRule(

@@ -83,7 +83,7 @@ static_assert(sizeof(Symbol) == kMaxSymbolSize + 1);
 
 template <typename Sink>
 inline void AbslStringify(Sink& sink, const Symbol& symbol) {
-  absl::Format(&sink, "\"%s\"", symbol.GetString());
+  absl::Format(&sink, "%s", symbol.GetString());
 }
 
 template <typename H>

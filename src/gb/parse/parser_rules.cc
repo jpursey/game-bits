@@ -11,81 +11,33 @@
 
 namespace gb {
 
-bool ParserToken::Validate(const ParserRules& rules, const Lexer& lexer,
-                           std::string* error_message) const {
+bool ParserToken::Validate(ValidateContext& context) const {
   if (token_type_ == kTokenNone || token_type_ == kTokenEnd ||
       token_type_ == kTokenError) {
-    if (error_message != nullptr) {
-      *error_message =
-          absl::StrCat("Invalid token type: ", GetTokenTypeString(token_type_));
-    }
+    context.error =
+        absl::StrCat("Invalid token type: ", GetTokenTypeString(token_type_));
     return false;
   }
-  if (std::holds_alternative<NoTokenValue>(value_)) {
+  if (token_text_.empty()) {
+    DCHECK(std::holds_alternative<NoTokenValue>(value_));
+    if (token_type_ == kTokenSymbol || token_type_ == kTokenKeyword) {
+      context.error = absl::StrCat("Token ", GetTokenTypeString(token_type_),
+                                   " must have a value specified.");
+      return false;
+    }
     return true;
   }
-  switch (token_type_) {
-    case kTokenInt:
-      if (!std::holds_alternative<int64_t>(value_)) {
-        if (error_message != nullptr) {
-          *error_message = absl::StrCat(
-              "Invalid token value for integer token: \"", value_, "\"");
-        }
-        return false;
-      }
-      break;
-    case kTokenFloat:
-      if (!std::holds_alternative<double>(value_)) {
-        if (error_message != nullptr) {
-          *error_message = absl::StrCat(
-              "Invalid token value for floating-point token: \"", value_, "\"");
-        }
-        return false;
-      }
-      break;
-    case kTokenString:
-      if (!std::holds_alternative<std::string>(value_)) {
-        if (error_message != nullptr) {
-          *error_message = absl::StrCat(
-              "Invalid token value for string token: \"", value_, "\"");
-        }
-        return false;
-      }
-      break;
-    case kTokenChar:
-      if (!std::holds_alternative<std::string>(value_) ||
-          std::get<std::string>(value_).size() != 1) {
-        if (error_message != nullptr) {
-          *error_message = absl::StrCat(
-              "Invalid token value for character token: \"", value_, "\"");
-        }
-        return false;
-      }
-      break;
-    case kTokenSymbol:
-      if (!std::holds_alternative<Symbol>(value_) ||
-          !std::get<Symbol>(value_).IsValid() ||
-          lexer.ParseTokenText(absl::StrCat(value_)).GetType() !=
-              kTokenSymbol) {
-        if (error_message != nullptr) {
-          *error_message = absl::StrCat(
-              "Invalid token value for symbol token: \"", value_, "\"");
-        }
-        return false;
-      }
-      break;
-    default:
-      if (!std::holds_alternative<std::string>(value_) ||
-          lexer.ParseTokenText(absl::StrCat(value_)).GetType() != token_type_) {
-        if (error_message != nullptr) {
-          *error_message = absl::StrCat("Invalid token value for ",
-                                        GetTokenTypeString(token_type_),
-                                        " token: \"", value_, "\"");
-        }
-        return false;
-      }
-      break;
+  if (!std::holds_alternative<NoTokenValue>(value_)) {
+    return true;
   }
+  Token token = context.lexer.ParseTokenText(token_text_);
+  if (token.GetType() != token_type_) {
+    context.error = absl::StrCat("Token text \"", token_text_,
+                                 "\" is invalid token for ",
+                                 GetTokenTypeString(token_type_));
+    return false;
+  }
+  value_ = token.GetValue();
   return true;
 }
 
@@ -93,18 +45,13 @@ ParseMatch ParserToken::Match(ParserInternal internal, Parser& parser) const {
   return parser.MatchTokenItem(internal, *this);
 }
 
-bool ParserRuleName::Validate(const ParserRules& rules, const Lexer& lexer,
-                              std::string* error_message) const {
+bool ParserRuleName::Validate(ValidateContext& context) const {
   if (rule_name_.empty()) {
-    if (error_message != nullptr) {
-      *error_message = "Rule name cannot be empty";
-    }
+    context.error = "Rule name cannot be empty";
     return false;
   }
-  if (rules.GetRule(rule_name_) == nullptr) {
-    if (error_message != nullptr) {
-      *error_message = absl::StrCat("Rule \"", rule_name_, "\" not defined");
-    }
+  if (context.rules.GetRule(rule_name_) == nullptr) {
+    context.error = absl::StrCat("Rule \"", rule_name_, "\" not defined");
     return false;
   }
   return true;
@@ -115,27 +62,23 @@ ParseMatch ParserRuleName::Match(ParserInternal internal,
   return parser.MatchRuleItem(internal, *this);
 }
 
-bool ParserGroup::Validate(const ParserRules& rules, const Lexer& lexer,
-                           std::string* error_message) const {
+bool ParserGroup::Validate(ValidateContext& context) const {
   bool allow_optional = (type_ == Type::kSequence);
   bool requires_one = false;
   if (sub_items_.empty()) {
-    if (error_message != nullptr) {
-      *error_message = "Group must contain at least one item";
-    }
+    context.error = "Group must contain at least one item";
     return false;
   }
   for (const auto& [name, item, repeat] : sub_items_) {
     if (item == nullptr) {
-      if (error_message != nullptr) {
-        *error_message = "Sub-item cannot be null";
-      }
+      context.error = "Sub-item cannot be null";
       return false;
     }
     if (!allow_optional && !repeat.IsSet(ParserRepeat::kRequireOne)) {
-      if (error_message != nullptr) {
-        *error_message = "Alternative cannot be optional";
-      }
+      context.error = "Alternative cannot be optional";
+      return false;
+    }
+    if (!item->Validate(context)) {
       return false;
     }
     if (repeat.IsSet(ParserRepeat::kRequireOne)) {
@@ -143,9 +86,7 @@ bool ParserGroup::Validate(const ParserRules& rules, const Lexer& lexer,
     }
   }
   if (!requires_one) {
-    if (error_message != nullptr) {
-      *error_message = "Group must contain at least one required item";
-    }
+    context.error = "Group must contain at least one required item";
     return false;
   }
   return true;
@@ -156,26 +97,26 @@ ParseMatch ParserGroup::Match(ParserInternal internal, Parser& parser) const {
 }
 
 bool ParserRules::Validate(Lexer& lexer, std::string* error_message) const {
+  if (rules_.empty()) {
+    if (error_message != nullptr) {
+      *error_message = "No rules defined";
+    }
+    return false;
+  }
+  ParserRuleItem::ValidateContext context = {*this, lexer};
   for (const auto& [name, rule] : rules_) {
-    if (name.empty() || !absl::ascii_isalpha(name[0])) {
-      if (error_message != nullptr) {
-        *error_message = absl::StrCat("Invalid rule name: \"", name, "\"");
-      }
-      return false;
+    if (name.empty()) {
+      context.error = absl::StrCat("Invalid rule name: \"", name, "\"");
+      break;
     }
-    for (const char ch : name) {
-      if (!isalnum(ch) && ch != '_') {
-        if (error_message != nullptr) {
-          *error_message = absl::StrCat("Invalid rule name: \"", name, "\"");
-        }
-        return false;
-      }
-    }
-    if (!rule->Validate(*this, lexer, error_message)) {
-      return false;
+    if (!rule->Validate(context)) {
+      break;
     }
   }
-  return true;
+  if (error_message != nullptr) {
+    *error_message = context.error;
+  }
+  return context.error.empty();
 }
 
 }  // namespace gb
