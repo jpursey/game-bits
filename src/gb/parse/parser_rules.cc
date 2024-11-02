@@ -41,8 +41,8 @@ bool ParserToken::Validate(ValidateContext& context) const {
   return true;
 }
 
-ParseMatch ParserToken::Match(ParserInternal internal, Parser& parser) const {
-  return parser.MatchTokenItem(internal, *this);
+ParseMatch ParserToken::Match(Parser& parser) const {
+  return parser.MatchTokenItem(*this);
 }
 
 bool ParserRuleName::Validate(ValidateContext& context) const {
@@ -69,9 +69,8 @@ bool ParserRuleName::Validate(ValidateContext& context) const {
   return true;
 }
 
-ParseMatch ParserRuleName::Match(ParserInternal internal,
-                                 Parser& parser) const {
-  return parser.MatchRuleItem(internal, *this);
+ParseMatch ParserRuleName::Match(Parser& parser) const {
+  return parser.MatchRuleItem(*this);
 }
 
 bool ParserGroup::Validate(ValidateContext& context) const {
@@ -113,8 +112,8 @@ bool ParserGroup::Validate(ValidateContext& context) const {
   return true;
 }
 
-ParseMatch ParserGroup::Match(ParserInternal internal, Parser& parser) const {
-  return parser.MatchGroup(internal, *this);
+ParseMatch ParserGroup::Match(Parser& parser) const {
+  return parser.MatchGroup(*this);
 }
 
 bool ParserRules::Validate(Lexer& lexer, std::string* error_message) const {

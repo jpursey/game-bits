@@ -108,7 +108,7 @@ class ParserRuleItem {
   ParserRuleItem() = default;
 
   virtual bool Validate(ValidateContext& context) const = 0;
-  virtual ParseMatch Match(ParserInternal, Parser& parser) const = 0;
+  virtual ParseMatch Match(Parser& parser) const = 0;
 };
 
 class ParserToken final : public ParserRuleItem {
@@ -121,7 +121,7 @@ class ParserToken final : public ParserRuleItem {
 
  protected:
   bool Validate(ValidateContext& context) const override;
-  ParseMatch Match(ParserInternal, Parser& parser) const override;
+  ParseMatch Match(Parser& parser) const override;
 
  private:
   const TokenType token_type_;
@@ -138,7 +138,7 @@ class ParserRuleName final : public ParserRuleItem {
 
  protected:
   bool Validate(ValidateContext& context) const override;
-  ParseMatch Match(ParserInternal, Parser& parser) const override;
+  ParseMatch Match(Parser& parser) const override;
 
  private:
   const std::string rule_name_;
@@ -176,7 +176,7 @@ class ParserGroup final : public ParserRuleItem {
 
  protected:
   bool Validate(ValidateContext& context) const override;
-  ParseMatch Match(ParserInternal, Parser& parser) const override;
+  ParseMatch Match(Parser& parser) const override;
 
  private:
   const Type type_;

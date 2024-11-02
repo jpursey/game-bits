@@ -15,6 +15,10 @@ namespace gb {
 class Lexer;
 class Parser;
 class ParserRules;
+class ParserRuleItem;
+class ParserToken;
+class ParserRuleName;
+class ParserGroup;
 
 // Unique ID of the LexerContent.
 using LexerContentId = uint32_t;
@@ -91,10 +95,6 @@ static_assert(sizeof(TokenIndex) == sizeof(uint32_t));
 // and is never valid for use in a lexer.
 inline constexpr TokenIndex kInvalidTokenIndex =
     TokenIndex(kMaxLexerLines, kMaxTokensPerLine);
-
-GB_BEGIN_ACCESS_TOKEN(ParserInternal)
-friend class Parser;
-GB_END_ACCESS_TOKEN()
 
 }  // namespace gb
 

@@ -62,7 +62,7 @@ ParseResult Parser::Parse(LexerContentId content, std::string_view rule) {
     return ParseError(absl::StrCat("Parser rule \"", rule, "\" not found"));
   }
   content_ = content;
-  auto match = root->Match({}, *this);
+  auto match = root->Match(*this);
   if (!match) {
     return match.GetError();
   }
@@ -119,8 +119,7 @@ Callback<ParseError()> Parser::TokenErrorCallback(gb::Token token,
   };
 }
 
-ParseMatch Parser::MatchTokenItem(ParserInternal,
-                                  const ParserToken& parser_token) {
+ParseMatch Parser::MatchTokenItem(const ParserToken& parser_token) {
   Token token = PeekToken();
   if (token.GetType() == kTokenError) {
     return ParseMatch::Abort(Error(token, token.GetString()));
@@ -140,14 +139,13 @@ ParseMatch Parser::MatchTokenItem(ParserInternal,
   return std::move(parsed);
 }
 
-ParseMatch Parser::MatchRuleItem(ParserInternal,
-                                 const ParserRuleName& parser_rule_name) {
+ParseMatch Parser::MatchRuleItem(const ParserRuleName& parser_rule_name) {
   const ParserRuleItem* rule = rules_.GetRule(parser_rule_name.GetRuleName());
   DCHECK(rule != nullptr);  // Handled during rule validation.
-  return rule->Match({}, *this);
+  return rule->Match(*this);
 }
 
-ParseMatch Parser::MatchGroup(ParserInternal, const ParserGroup& group) {
+ParseMatch Parser::MatchGroup(const ParserGroup& group) {
   Token group_token = PeekToken();
   if (group_token.IsError()) {
     return ParseMatch::Abort(Error(group_token, group_token.GetString()));
@@ -159,7 +157,7 @@ ParseMatch Parser::MatchGroup(ParserInternal, const ParserGroup& group) {
   Token token = group_token;
   std::optional<ParseMatch> error;
   for (const auto& sub_item : group.GetSubItems()) {
-    auto match = sub_item.item->Match({}, *this);
+    auto match = sub_item.item->Match(*this);
     if (!match) {
       if (match.IsAbort() ||
           (is_sequence && sub_item.repeat.IsSet(ParserRepeat::kRequireOne))) {
@@ -193,7 +191,7 @@ ParseMatch Parser::MatchGroup(ParserInternal, const ParserGroup& group) {
           break;
         }
       }
-      match = sub_item.item->Match({}, *this);
+      match = sub_item.item->Match(*this);
       if (!match) {
         if (match.IsAbort() || with_comma) {
           SetNextToken(group_token);
