@@ -233,6 +233,10 @@ struct LexerConfig {
 
   // Additional user tokens specified with their own regex.
   struct UserToken {
+    // The name of the token. If not empty, this is used in error messages that
+    // involve this token.
+    std::string_view name;
+
     // The type of token. Must be >= to kTokenUser.
     TokenType type;
 

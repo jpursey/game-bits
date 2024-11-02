@@ -87,7 +87,7 @@ class Parser final {
 
   Callback<ParseError()> TokenErrorCallback(gb::Token token,
                                             TokenType expected_type,
-                                            TokenValue expected_value);
+                                            std::string_view expected_value);
 
   ParseMatch MatchTokenItem(const ParserToken& item);
   ParseMatch MatchGroup(const ParserGroup& item);

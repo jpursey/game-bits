@@ -13,6 +13,7 @@
 namespace gb {
 namespace {
 
+using ::testing::AllOf;
 using ::testing::HasSubstr;
 
 std::unique_ptr<ParserGroup> NewValidRule() {
@@ -207,7 +208,7 @@ TEST(ParserRulesTest, TokenNoneInvalid) {
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("invalid token"));
 }
 
-TEST(ParserRulesTest, TokenEndInvalid) {
+TEST(ParserRulesTest, TokenEnd) {
   auto lexer = Lexer::Create(kCStyleLexerConfig);
   ASSERT_NE(lexer, nullptr);
   ParserRules rules;
@@ -215,8 +216,8 @@ TEST(ParserRulesTest, TokenEndInvalid) {
   rule->AddSubItem(ParserRuleItem::CreateToken(kTokenEnd));
   rules.AddRule("rule", std::move(rule));
   std::string error;
-  EXPECT_FALSE(rules.Validate(*lexer, &error));
-  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("invalid token"));
+  EXPECT_TRUE(rules.Validate(*lexer, &error)) << "Error: " << error;
+  EXPECT_EQ(error, "");
 }
 
 TEST(ParserRulesTest, TokenErrorInvalid) {
@@ -482,6 +483,67 @@ TEST(ParserRulesTest, TokenIdentifierWithValue) {
   std::string error;
   EXPECT_TRUE(rules.Validate(*lexer, &error)) << "Error: " << error;
   EXPECT_EQ(error, "");
+}
+
+TEST(ParserRulesTest, TokenUserUndefined) {
+  auto lexer = Lexer::Create(kCStyleLexerConfig);
+  ASSERT_NE(lexer, nullptr);
+  ParserRules rules;
+  auto rule = ParserRuleItem::CreateSequence();
+  rule->AddSubItem(ParserRuleItem::CreateToken(kTokenUser));
+  rules.AddRule("rule", std::move(rule));
+  std::string error;
+  EXPECT_FALSE(rules.Validate(*lexer, &error));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("invalid token"));
+}
+
+TEST(ParserRulesTest, TokenUserNoValue) {
+  const LexerConfig::UserToken user_tokens[] = {
+      {.name = "user-token", .type = kTokenUser, .regex = "\\$([a-z]+)"}};
+  LexerConfig config = kCStyleLexerConfig;
+  config.user_tokens = user_tokens;
+  auto lexer = Lexer::Create(config);
+  ASSERT_NE(lexer, nullptr);
+  ParserRules rules;
+  auto rule = ParserRuleItem::CreateSequence();
+  rule->AddSubItem(ParserRuleItem::CreateToken(kTokenUser));
+  rules.AddRule("rule", std::move(rule));
+  std::string error;
+  EXPECT_TRUE(rules.Validate(*lexer, &error)) << "Error: " << error;
+  EXPECT_EQ(error, "");
+}
+
+TEST(ParserRulesTest, TokenUserWithValue) {
+  const LexerConfig::UserToken user_tokens[] = {
+      {.name = "user-token", .type = kTokenUser, .regex = "\\$([a-z]+)"}};
+  LexerConfig config = kCStyleLexerConfig;
+  config.user_tokens = user_tokens;
+  auto lexer = Lexer::Create(config);
+  ASSERT_NE(lexer, nullptr);
+  ParserRules rules;
+  auto rule = ParserRuleItem::CreateSequence();
+  rule->AddSubItem(ParserRuleItem::CreateToken(kTokenUser, "$abc"));
+  rules.AddRule("rule", std::move(rule));
+  std::string error;
+  EXPECT_TRUE(rules.Validate(*lexer, &error)) << "Error: " << error;
+  EXPECT_EQ(error, "");
+}
+
+TEST(ParserRulesTest, TokenUserWithInvalidValue) {
+  const LexerConfig::UserToken user_tokens[] = {
+      {.name = "hamburger", .type = kTokenUser, .regex = "\\$([a-z]+)"}};
+  LexerConfig config = kCStyleLexerConfig;
+  config.user_tokens = user_tokens;
+  auto lexer = Lexer::Create(config);
+  ASSERT_NE(lexer, nullptr);
+  ParserRules rules;
+  auto rule = ParserRuleItem::CreateSequence();
+  rule->AddSubItem(ParserRuleItem::CreateToken(kTokenUser, "$123"));
+  rules.AddRule("rule", std::move(rule));
+  std::string error;
+  EXPECT_FALSE(rules.Validate(*lexer, &error));
+  EXPECT_THAT(absl::AsciiStrToLower(error),
+              AllOf(HasSubstr("invalid token"), HasSubstr("hamburger")));
 }
 
 TEST(ParserRulesTest, LeftRecursiveSequence) {

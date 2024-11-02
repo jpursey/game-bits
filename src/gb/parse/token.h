@@ -11,6 +11,7 @@
 #include <string_view>
 #include <variant>
 
+#include "absl/container/flat_hash_map.h"
 #include "absl/log/check.h"
 #include "absl/strings/str_format.h"
 #include "gb/parse/parse_types.h"
@@ -38,7 +39,16 @@ inline constexpr TokenType kTokenLineBreak = 10;  // Value: kNone
 // values.
 inline constexpr TokenType kTokenUser = 128;
 
-inline std::string GetTokenTypeString(TokenType type) {
+// Map from token type to token type name.
+using TokenTypeNames = absl::flat_hash_map<TokenType, std::string>;
+
+inline std::string GetTokenTypeString(TokenType type,
+                                      const TokenTypeNames* names = nullptr) {
+  if (names != nullptr) {
+    if (auto it = names->find(type); it != names->end()) {
+      return it->second;
+    }
+  }
   switch (type) {
     case kTokenNone:
       return "none";

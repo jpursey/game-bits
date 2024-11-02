@@ -12,17 +12,18 @@
 namespace gb {
 
 bool ParserToken::Validate(ValidateContext& context) const {
-  if (token_type_ == kTokenNone || token_type_ == kTokenEnd ||
-      token_type_ == kTokenError) {
-    context.error =
-        absl::StrCat("Invalid token type: ", GetTokenTypeString(token_type_));
+  const TokenTypeNames& token_names = context.lexer.GetUserTokenNames();
+  if (!context.lexer.IsValidTokenType(token_type_)) {
+    context.error = absl::StrCat("Invalid token type: ",
+                                 GetTokenTypeString(token_type_, &token_names));
     return false;
   }
   if (token_text_.empty()) {
     DCHECK(std::holds_alternative<NoTokenValue>(value_));
     if (token_type_ == kTokenSymbol || token_type_ == kTokenKeyword) {
-      context.error = absl::StrCat("Token ", GetTokenTypeString(token_type_),
-                                   " must have a value specified.");
+      context.error =
+          absl::StrCat("Token ", GetTokenTypeString(token_type_, &token_names),
+                       " must have a value specified.");
       return false;
     }
     return true;
@@ -34,7 +35,7 @@ bool ParserToken::Validate(ValidateContext& context) const {
   if (token.GetType() != token_type_) {
     context.error =
         absl::StrCat("Token text \"", token_text_, "\" is invalid token for ",
-                     GetTokenTypeString(token_type_));
+                     GetTokenTypeString(token_type_, &token_names));
     return false;
   }
   value_ = token.GetValue();

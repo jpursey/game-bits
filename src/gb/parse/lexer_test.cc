@@ -12,6 +12,9 @@
 namespace gb {
 namespace {
 
+using ::testing::Pair;
+using ::testing::UnorderedElementsAre;
+
 MATCHER_P2(IsToken, type, value, "") {
   return arg.GetType() == type && arg.GetValue() == TokenValue(value);
 }
@@ -3114,9 +3117,11 @@ TEST(LexerTest, ParseIdentMatchesAfterKeywordCaseInsensitive) {
 
 TEST(LexerTest, ParseUserTokens) {
   const LexerConfig::UserToken user_tokens[] = {
-      {.type = kTokenUser + 0, .regex = "([a-z](?:[a-z\\-]*[a-z])?)"},
+      {.name = "name",
+       .type = kTokenUser + 0,
+       .regex = "([a-z](?:[a-z\\-]*[a-z])?)"},
       {.type = kTokenUser + 1, .regex = "\\$([a-z]+)"},
-      {.type = kTokenUser + 2, .regex = "([a-zA-Z]+)\\@"},
+      {.name = "label", .type = kTokenUser + 2, .regex = "([a-zA-Z]+)\\@"},
   };
   std::string error;
   auto lexer = Lexer::Create({
@@ -3125,6 +3130,9 @@ TEST(LexerTest, ParseUserTokens) {
   ASSERT_NE(lexer, nullptr) << "Error: " << error;
   const LexerContentId content =
       lexer->AddContent("abc $def gHi@ x-y-z error- -error");
+  EXPECT_THAT(lexer->GetUserTokenNames(),
+              UnorderedElementsAre(Pair(kTokenUser + 0, "name"),
+                                   Pair(kTokenUser + 2, "label")));
   Token token = lexer->NextToken(content);
   EXPECT_EQ(token.GetType(), kTokenUser + 0);
   EXPECT_EQ(token.GetString(), "abc");

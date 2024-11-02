@@ -129,6 +129,7 @@ class ParserToken final : public ParserRuleItem {
       : token_type_(token_type), token_text_(token_text) {}
 
   TokenType GetTokenType() const { return token_type_; }
+  std::string_view GetTokenText() const { return token_text_; }
   const TokenValue& GetValue() const { return value_; }
 
  protected:

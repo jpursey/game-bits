@@ -209,7 +209,15 @@ class Lexer final {
   // Lexer configuration
   //----------------------------------------------------------------------------
 
+  // Returns the flags used to configure the lexer.
   LexerFlags GetFlags() const { return flags_; }
+
+  // Returns any defined names of user tokens.
+  const TokenTypeNames& GetUserTokenNames() const { return user_token_names_; }
+
+  // Returns true if the specified token type is a valid token type for this
+  // lexer.
+  bool IsValidTokenType(TokenType token_type) const;
 
   //----------------------------------------------------------------------------
   // Content management
@@ -433,7 +441,7 @@ class Lexer final {
     char escape_hex = 0;
     absl::Span<const std::string_view> keywords;
     absl::Span<const LexerConfig::BlockComment> block_comments;
-    absl::Span<const TokenType> user_token_types;
+    absl::Span<const LexerConfig::UserToken> user_tokens;
   };
 
   enum class IntParseType {
@@ -505,6 +513,7 @@ class Lexer final {
   char escape_tab_ = 0;
   char escape_hex_ = 0;
   std::vector<BlockComment> block_comments_;
+  TokenTypeNames user_token_names_;
 
   // Working state for parsing.
   std::vector<std::unique_ptr<Content>> content_;

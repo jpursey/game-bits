@@ -415,11 +415,7 @@ std::unique_ptr<Lexer> Lexer::Create(const LexerConfig& lexer_config,
   }
   config.token_pattern_count = index;
 
-  std::vector<TokenType> user_token_types;
-  for (const auto& user_token : lexer_config.user_tokens) {
-    user_token_types.push_back(user_token.type);
-  }
-  config.user_token_types = absl::MakeConstSpan(user_token_types);
+  config.user_tokens = lexer_config.user_tokens;
 
   std::string token_end_chars;
   if (!CreateSymbolPattern(config.symbol_pattern, token_end_chars, lexer_config,
@@ -494,7 +490,7 @@ Lexer::Lexer(const Config& config)
       escape_tab_(config.escape_tab),
       escape_hex_(config.escape_hex) {
   const int total_pattern_count =
-      config.token_pattern_count + config.user_token_types.size();
+      config.token_pattern_count + config.user_tokens.size();
   re_args_.resize(total_pattern_count);
   re_token_args_.resize(total_pattern_count);
   if (config.binary_index >= 0) {
@@ -545,9 +541,13 @@ Lexer::Lexer(const Config& config)
     re_args_[config.ident_index].type = kTokenIdentifier;
     re_token_args_[i] = &re_args_[i].arg;
   }
-  for (int j = 0; j < config.user_token_types.size(); ++j) {
+  for (int j = 0; j < config.user_tokens.size(); ++j) {
     const int i = config.token_pattern_count + j;
-    re_args_[i].type = config.user_token_types[j];
+    const LexerConfig::UserToken& user_token = config.user_tokens[j];
+    if (!user_token.name.empty()) {
+      user_token_names_[user_token.type] = user_token.name;
+    }
+    re_args_[i].type = user_token.type;
     re_token_args_[i] = &re_args_[i].arg;
   }
   if (LexerSupportsIntegers(flags_)) {
@@ -578,6 +578,24 @@ Lexer::Lexer(const Config& config)
   for (const auto& [start, end] : config.block_comments) {
     block_comments_.emplace_back(std::string(start), std::string(end));
   }
+}
+
+bool Lexer::IsValidTokenType(TokenType token_type) const {
+  if (token_type == kTokenEnd) {
+    return true;
+  }
+  if (token_type == kTokenLineBreak && flags_.IsSet(LexerFlag::kLineBreak)) {
+    return true;
+  }
+  if (token_type == kTokenSymbol) {
+    return re_symbol_.NumberOfCapturingGroups() != 0;
+  }
+  for (auto& token_arg : re_args_) {
+    if (token_arg.type == token_type) {
+      return true;
+    }
+  }
+  return false;
 }
 
 inline TokenIndex Lexer::Content::GetTokenIndex() const {
