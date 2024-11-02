@@ -121,7 +121,7 @@ Callback<ParseError()> Parser::TokenErrorCallback(gb::Token token,
 
 ParseMatch Parser::MatchTokenItem(ParserInternal,
                                   const ParserToken& parser_token) {
-  Token token = NextToken();
+  Token token = PeekToken();
   if (token.GetType() == kTokenError) {
     return ParseMatch::Abort(Error(token, token.GetString()));
   }
@@ -131,10 +131,10 @@ ParseMatch Parser::MatchTokenItem(ParserInternal,
   if (token.GetType() != expected_type ||
       (!std::holds_alternative<NoTokenValue>(expected_value) &&
        token.GetValue() != expected_value)) {
-    SetNextToken(token);
     return TokenErrorCallback(token, expected_type, expected_value);
   }
 
+  NextToken();
   ParsedItem parsed;
   parsed.SetToken(token);
   return std::move(parsed);
