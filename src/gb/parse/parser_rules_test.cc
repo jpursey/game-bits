@@ -484,5 +484,74 @@ TEST(ParserRulesTest, TokenIdentifierWithValue) {
   EXPECT_EQ(error, "");
 }
 
+TEST(ParserRulesTest, LeftRecursiveSequence) {
+  auto lexer = Lexer::Create(kCStyleLexerConfig);
+  ASSERT_NE(lexer, nullptr);
+  ParserRules rules;
+  auto rule1 = ParserRuleItem::CreateSequence();
+  rule1->AddSubItem(ParserRuleItem::CreateRule("rule2"));
+  rules.AddRule("rule1", std::move(rule1));
+  auto rule2 = ParserRuleItem::CreateSequence();
+  rule2->AddSubItem(ParserRuleItem::CreateRule("rule1"));
+  rules.AddRule("rule2", std::move(rule2));
+  std::string error;
+  EXPECT_FALSE(rules.Validate(*lexer, &error));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("left-recursive"));
+}
+
+TEST(ParserRulesTest, RightRecursiveSequence) {
+  auto lexer = Lexer::Create(kCStyleLexerConfig);
+  ASSERT_NE(lexer, nullptr);
+  ParserRules rules;
+  auto rule1 = ParserRuleItem::CreateSequence();
+  rule1->AddSubItem(ParserRuleItem::CreateRule("rule2"));
+  rules.AddRule("rule1", std::move(rule1));
+  auto rule2 = ParserRuleItem::CreateSequence();
+  rule2->AddSubItem(ParserRuleItem::CreateToken(kTokenInt));
+  rule2->AddSubItem(ParserRuleItem::CreateRule("rule1"));
+  rules.AddRule("rule2", std::move(rule2));
+  std::string error;
+  EXPECT_TRUE(rules.Validate(*lexer, &error)) << "Error: " << error;
+  EXPECT_EQ(error, "");
+}
+
+TEST(ParserRulesTest, LeftRecursiveSequenceWithLeadingOptional) {
+  auto lexer = Lexer::Create(kCStyleLexerConfig);
+  ASSERT_NE(lexer, nullptr);
+  ParserRules rules;
+  auto rule1 = ParserRuleItem::CreateSequence();
+  rule1->AddSubItem(ParserRuleItem::CreateToken(kTokenInt), kParserOptional);
+  rule1->AddSubItem(ParserRuleItem::CreateToken(kTokenFloat),
+                    kParserZeroOrMore);
+  rule1->AddSubItem(ParserRuleItem::CreateToken(kTokenString),
+                    kParserZeroOrMoreWithComma);
+  rule1->AddSubItem(ParserRuleItem::CreateRule("rule2"));
+  rules.AddRule("rule1", std::move(rule1));
+  auto rule2 = ParserRuleItem::CreateSequence();
+  rule2->AddSubItem(ParserRuleItem::CreateRule("rule1"));
+  rules.AddRule("rule2", std::move(rule2));
+  std::string error;
+  EXPECT_FALSE(rules.Validate(*lexer, &error));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("left-recursive"));
+}
+
+TEST(ParserRulesTest, RecursiveAlternates) {
+  auto lexer = Lexer::Create(kCStyleLexerConfig);
+  ASSERT_NE(lexer, nullptr);
+  ParserRules rules;
+  auto rule1 = ParserRuleItem::CreateAlternatives();
+  rule1->AddSubItem(ParserRuleItem::CreateToken(kTokenInt));
+  rule1->AddSubItem(ParserRuleItem::CreateRule("rule2"));
+  rules.AddRule("rule1", std::move(rule1));
+  auto rule2 = ParserRuleItem::CreateAlternatives();
+  rule2->AddSubItem(ParserRuleItem::CreateToken(kTokenString),
+                    kParserOneOrMore);
+  rule2->AddSubItem(ParserRuleItem::CreateRule("rule1"));
+  rules.AddRule("rule2", std::move(rule2));
+  std::string error;
+  EXPECT_FALSE(rules.Validate(*lexer, &error));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("left-recursive"));
+}
+
 }  // namespace
 }  // namespace gb

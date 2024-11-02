@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/container/flat_hash_set.h"
 #include "absl/types/span.h"
 #include "gb/base/callback.h"
 #include "gb/base/flags.h"
@@ -94,11 +95,14 @@ class ParserRuleItem {
   friend class Parser;
   friend class ParserRules;
   friend class ParserGroup;
+  friend class ParserRuleName;
 
   struct ValidateContext {
     const ParserRules& rules;
     const Lexer& lexer;
     std::string error;
+    absl::flat_hash_set<std::string_view> validated_rules;
+    absl::flat_hash_set<std::string_view> left_recursive_rules;
   };
 
   ParserRuleItem() = default;
