@@ -5,6 +5,7 @@
 
 #include "gb/parse/parser_program.h"
 
+#include "absl/log/log.h"
 #include "absl/memory/memory.h"
 #include "absl/strings/str_cat.h"
 #include "gb/parse/parser.h"
@@ -48,7 +49,7 @@ ParserRules CreateProgramRules() {
   // token %match_name = 1;
 
   // rule program {
-  //   ($tokens=token_def | $rules=rule_def)*;
+  //   ($tokens=token_def | $rules=rule_def)* %end;
   // }
   auto program = ParserRuleItem::CreateSequence();
   auto program_alternatives = ParserRuleItem::CreateAlternatives();
@@ -56,7 +57,8 @@ ParserRules CreateProgramRules() {
                                    ParserRuleItem::CreateRuleName("token_def"));
   program_alternatives->AddSubItem("rules",
                                    ParserRuleItem::CreateRuleName("rule_def"));
-  program->AddSubItem(std::move(program_alternatives), kParserZeroOrMore);
+  program->AddSubItem(std::move(program_alternatives), kParserOneOrMore);
+  program->AddSubItem(ParserRuleItem::CreateToken(kTokenEnd));
   rules.AddRule("program", std::move(program));
 
   // rule token_def {
@@ -291,10 +293,17 @@ std::optional<ParserRules> ParseProgram(Lexer& lexer, std::string program_text,
   ParseContext context = {
       .lexer = lexer,
       .error = (error_message != nullptr ? *error_message : error_storage)};
+  context.token_types["end"] = kTokenEnd;
+  context.token_types["int"] = kTokenInt;
+  context.token_types["float"] = kTokenFloat;
+  context.token_types["string"] = kTokenString;
+  context.token_types["char"] = kTokenChar;
+  context.token_types["ident"] = kTokenIdentifier;
 
   auto program_parser =
-      Parser::Create(kProgramLexerConfig, CreateProgramRules(), error_message);
+      Parser::Create(kProgramLexerConfig, CreateProgramRules(), &context.error);
   if (program_parser == nullptr) {
+    LOG(DFATAL) << "Internal error: " << context.error;
     return std::nullopt;
   }
   auto parsed = program_parser->Parse(
@@ -332,7 +341,7 @@ std::optional<ParserRules> ParseProgram(Lexer& lexer, std::string program_text,
     std::string_view rule_name = parsed_rule.GetString("name");
     auto parsed_options = parsed_rule.GetItems("options");
     if (parsed_options.size() == 1) {
-      auto group = ParseSequence(context, parsed_options[0]);
+      auto group = ParseAlternative(context, parsed_options[0]);
       if (group == nullptr) {
         return std::nullopt;
       }
@@ -386,6 +395,12 @@ std::unique_ptr<ParserProgram> ParserProgram::Create(
 
 std::unique_ptr<ParserProgram> ParserProgram::Create(
     Lexer* lexer, std::string program_text, std::string* error_message) {
+  if (lexer == nullptr) {
+    if (error_message != nullptr) {
+      *error_message = "Lexer is null";
+    }
+    return nullptr;
+  }
   auto rules = ParseProgram(*lexer, std::move(program_text), error_message);
   if (!rules.has_value()) {
     return nullptr;

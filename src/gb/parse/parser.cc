@@ -179,7 +179,9 @@ parser_internal::ParseMatch Parser::MatchGroup(const ParserGroup& group) {
       }
       continue;
     }
-    result.token_ = group_token;
+    if (result.token_.IsNone()) {
+      result.token_ = group_token;
+    }
     if (!sub_item.name.empty()) {
       (*items_)[sub_item.name].push_back(*std::move(match));
     }

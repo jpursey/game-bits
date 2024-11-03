@@ -29,6 +29,7 @@ set(gb_parse_LIBS
 
 set(gb_parse_TEST_SOURCE
   lexer_test.cc
+  parser_program_test.cc
   parser_rules_test.cc
   parser_test.cc
 )
