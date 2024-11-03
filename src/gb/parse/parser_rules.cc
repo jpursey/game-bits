@@ -11,20 +11,59 @@
 
 namespace gb {
 
+bool ParserRuleItem::ValidateError(ValidateContext& context,
+                                   std::string_view message) const {
+  context.error = absl::StrCat("{ ", ToString(), " }: ", message);
+  return false;
+}
+
+std::string ParserToken::ToString() const {
+  if (!token_text_.empty()) {
+    std::string_view quote =
+        (token_text_.find('"') != std::string::npos ? "'" : "\"");
+    return absl::StrCat(quote, token_text_, quote);
+  }
+  switch (token_type_) {
+    case kTokenNone:
+      return "%none";
+    case kTokenEnd:
+      return "%end";
+    case kTokenError:
+      return "%error";
+    case kTokenSymbol:
+      return "%symbol";
+    case kTokenInt:
+      return "%int";
+    case kTokenFloat:
+      return "%float";
+    case kTokenChar:
+      return "%char";
+    case kTokenString:
+      return "%string";
+    case kTokenKeyword:
+      return "%keyword";
+    case kTokenIdentifier:
+      return "%ident";
+    case kTokenLineBreak:
+      return "%linebreak";
+  }
+  return absl::StrCat("%", static_cast<int>(token_type_) - kTokenUser);
+}
+
 bool ParserToken::Validate(ValidateContext& context) const {
   const TokenTypeNames& token_names = context.lexer.GetUserTokenNames();
   if (!context.lexer.IsValidTokenType(token_type_)) {
-    context.error = absl::StrCat("Invalid token type: ",
-                                 GetTokenTypeString(token_type_, &token_names));
-    return false;
+    return ValidateError(
+        context, absl::StrCat("Invalid token type: ",
+                              GetTokenTypeString(token_type_, &token_names)));
   }
   if (token_text_.empty()) {
     DCHECK(std::holds_alternative<NoTokenValue>(value_));
     if (token_type_ == kTokenSymbol || token_type_ == kTokenKeyword) {
-      context.error =
+      return ValidateError(
+          context,
           absl::StrCat("Token ", GetTokenTypeString(token_type_, &token_names),
-                       " must have a value specified.");
-      return false;
+                       " must have a value specified."));
     }
     return true;
   }
@@ -33,10 +72,10 @@ bool ParserToken::Validate(ValidateContext& context) const {
   }
   Token token = context.lexer.ParseTokenText(token_text_);
   if (token.GetType() != token_type_) {
-    context.error =
+    return ValidateError(
+        context,
         absl::StrCat("Token text \"", token_text_, "\" is invalid token for ",
-                     GetTokenTypeString(token_type_, &token_names));
-    return false;
+                     GetTokenTypeString(token_type_, &token_names)));
   }
   value_ = token.GetValue();
   return true;
@@ -46,19 +85,20 @@ parser_internal::ParseMatch ParserToken::Match(Parser& parser) const {
   return parser.MatchTokenItem(*this);
 }
 
+std::string ParserRuleName::ToString() const { return rule_name_; }
+
 bool ParserRuleName::Validate(ValidateContext& context) const {
   if (rule_name_.empty()) {
-    context.error = "Rule name cannot be empty";
-    return false;
+    return ValidateError(context, "Rule name cannot be empty");
   }
   const ParserRuleItem* rule = context.rules.GetRule(rule_name_);
   if (rule == nullptr) {
-    context.error = absl::StrCat("Rule \"", rule_name_, "\" not defined");
-    return false;
+    return ValidateError(context,
+                         absl::StrCat("Rule \"", rule_name_, "\" not defined"));
   }
   if (context.left_recursive_rules.contains(rule_name_)) {
-    context.error = absl::StrCat("Rule \"", rule_name_, "\" is left-recursive");
-    return false;
+    return ValidateError(
+        context, absl::StrCat("Rule \"", rule_name_, "\" is left-recursive"));
   }
   if (context.validated_rules.insert(rule_name_).second) {
     context.left_recursive_rules.insert(rule_name_);
@@ -74,23 +114,61 @@ parser_internal::ParseMatch ParserRuleName::Match(Parser& parser) const {
   return parser.MatchRuleItem(*this);
 }
 
+std::string ParserGroup::ToString() const {
+  std::string result;
+  for (const auto& [name, item, repeat] : sub_items_) {
+    if (!result.empty()) {
+      absl::StrAppend(&result, " ");
+      if (type_ == Type::kAlternatives) {
+        absl::StrAppend(&result, "| ");
+      }
+    }
+    if (item == nullptr) {
+      absl::StrAppend(&result, "<null>");
+      continue;
+    }
+    if (!name.empty()) {
+      absl::StrAppend(&result, "$", name, "=");
+    }
+    if (repeat == kParserOptional) {
+      absl::StrAppend(&result, "[");
+    } else if (item->IsGroup()) {
+      absl::StrAppend(&result, "(");
+    }
+    absl::StrAppend(&result, item->ToString());
+    if (repeat == kParserOptional) {
+      absl::StrAppend(&result, "]");
+    } else if (item->IsGroup()) {
+      absl::StrAppend(&result, ")");
+    }
+    if (repeat.IsSet(ParserRepeat::kWithComma)) {
+      absl::StrAppend(&result, ",");
+    }
+    if (repeat.IsSet(ParserRepeat::kAllowMany)) {
+      if (repeat.IsSet(ParserRepeat::kRequireOne)) {
+        absl::StrAppend(&result, "+");
+      } else {
+        absl::StrAppend(&result, "*");
+      }
+    }
+  }
+  return result;
+}
+
 bool ParserGroup::Validate(ValidateContext& context) const {
   bool allow_optional = (type_ == Type::kSequence);
   bool requires_one = false;
   if (sub_items_.empty()) {
-    context.error = "Group must contain at least one item";
-    return false;
+    return ValidateError(context, "Group must contain at least one item");
   }
   bool is_first_token = true;
   absl::flat_hash_set<std::string_view> left_recursive_rules;
   for (const auto& [name, item, repeat] : sub_items_) {
     if (item == nullptr) {
-      context.error = "Sub-item cannot be null";
-      return false;
+      return ValidateError(context, "Sub-item cannot be null");
     }
     if (!allow_optional && !repeat.IsSet(ParserRepeat::kRequireOne)) {
-      context.error = "Alternative cannot be optional";
-      return false;
+      return ValidateError(context, "Alternative cannot be optional");
     }
     if (!item->Validate(context)) {
       return false;
@@ -104,8 +182,8 @@ bool ParserGroup::Validate(ValidateContext& context) const {
     }
   }
   if (!requires_one) {
-    context.error = "Group must contain at least one required item";
-    return false;
+    return ValidateError(context,
+                         "Group must contain at least one required item");
   }
   if (!is_first_token) {
     context.left_recursive_rules.swap(left_recursive_rules);

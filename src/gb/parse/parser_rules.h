@@ -14,6 +14,8 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
+#include "absl/strings/str_format.h"
+#include "absl/strings/str_join.h"
 #include "absl/types/span.h"
 #include "gb/base/callback.h"
 #include "gb/base/flags.h"
@@ -96,6 +98,10 @@ class ParserRuleItem {
   static std::unique_ptr<ParserGroup> CreateSequence();
   static std::unique_ptr<ParserGroup> CreateAlternatives();
 
+  // Converts to a string for debugging and testing purposes. The string is
+  // in the style of the ParserProgram text format.
+  virtual std::string ToString() const = 0;
+
  protected:
   friend class Parser;
   friend class ParserRules;
@@ -114,6 +120,9 @@ class ParserRuleItem {
 
   ParserRuleItem() = default;
 
+  bool ValidateError(ValidateContext& context, std::string_view message) const;
+
+  virtual bool IsGroup() const { return false; }
   virtual bool Validate(ValidateContext& context) const = 0;
   virtual ParseMatch Match(Parser& parser) const = 0;
 };
@@ -133,11 +142,18 @@ class ParserToken final : public ParserRuleItem {
   std::string_view GetTokenText() const { return token_text_; }
   const TokenValue& GetValue() const { return value_; }
 
+  std::string ToString() const override;
+
  protected:
   bool Validate(ValidateContext& context) const override;
   ParseMatch Match(Parser& parser) const override;
 
  private:
+  template <typename Sink>
+  friend void AbslStringify(Sink& sink, const ParserToken& token) {
+    absl::StrFormat(sink, "%s", token.ToString());
+  }
+
   const TokenType token_type_;
   const std::string token_text_;
   mutable TokenValue value_;
@@ -154,6 +170,8 @@ class ParserRuleName final : public ParserRuleItem {
   explicit ParserRuleName(std::string_view rule_name) : rule_name_(rule_name) {}
 
   std::string_view GetRuleName() const { return rule_name_; }
+
+  std::string ToString() const override;
 
  protected:
   bool Validate(ValidateContext& context) const override;
@@ -198,7 +216,9 @@ class ParserGroup final : public ParserRuleItem {
   // Creates a new group rule item of the specified type.
   explicit ParserGroup(Type type) : type_(type) {}
 
-  void AddSubItem(SubItem sub_item) { sub_items_.push_back(std::move(sub_item)); }
+  void AddSubItem(SubItem sub_item) {
+    sub_items_.push_back(std::move(sub_item));
+  }
   void AddSubItem(std::string_view name, std::unique_ptr<ParserRuleItem> item,
                   ParserRepeatFlags repeat = kParserSingle) {
     sub_items_.emplace_back(name, std::move(item), repeat);
@@ -211,7 +231,10 @@ class ParserGroup final : public ParserRuleItem {
   Type GetType() const { return type_; }
   absl::Span<const SubItem> GetSubItems() const { return sub_items_; }
 
+  std::string ToString() const override;
+
  protected:
+  bool IsGroup() const override { return true; }
   bool Validate(ValidateContext& context) const override;
   ParseMatch Match(Parser& parser) const override;
 
@@ -255,8 +278,20 @@ class ParserRules final {
   bool Validate(Lexer& lexer, std::string* error_message = nullptr) const;
 
  private:
-  absl::flat_hash_map<std::string, std::unique_ptr<const ParserRuleItem>>
-      rules_;
+  using Rules =
+      absl::flat_hash_map<std::string, std::unique_ptr<const ParserRuleItem>>;
+
+  template <typename Sink>
+  friend void AbslStringify(Sink& sink, const ParserRules& token) {
+    absl::StrFormat(
+        sink, "PaerserRules{%s}",
+        absl::StrJoin(rules_, ",",
+                      [](std::string* out, const Rules::value_type& value) {
+                        absl::StrAppend(out, value.first);
+                      }));
+  }
+
+  Rules rules_;
 };
 
 //==============================================================================
