@@ -7,7 +7,7 @@
 
 namespace gb {
 
-absl::Span<const ParsedItem> ParsedItem::GetItem(std::string_view name) const {
+absl::Span<const ParsedItem> ParsedItem::GetItems(std::string_view name) const {
   absl::Span<const ParsedItem> result;
   if (auto it = items_.find(name); it != items_.end()) {
     result = absl::MakeConstSpan(it->second);

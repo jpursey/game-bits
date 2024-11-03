@@ -298,7 +298,7 @@ TEST(ParserTest, MatchTokenTypeSuccess) {
   ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
   EXPECT_TRUE(result->GetToken().IsInt(42)) << result->GetToken();
   EXPECT_THAT(
-      result->GetItem("tokens"),
+      result->GetItems("tokens"),
       ElementsAre(IsToken(kTokenInt, "42"), IsToken(kTokenFloat, "3.14"),
                   IsToken(kTokenChar, "c"), IsToken(kTokenString, "hello"),
                   IsToken(kTokenLineBreak, ""),
@@ -438,7 +438,7 @@ TEST(ParserTest, MatchTokenTypeAndValueSuccess) {
   ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
   EXPECT_TRUE(result->GetToken().IsInt(42)) << result->GetToken();
   EXPECT_THAT(
-      result->GetItem("tokens"),
+      result->GetItems("tokens"),
       ElementsAre(IsToken(kTokenInt, "42"), IsToken(kTokenFloat, "3.14"),
                   IsToken(kTokenChar, "c"), IsToken(kTokenString, "hello"),
                   IsToken(kTokenKeyword, "else"),
@@ -591,9 +591,9 @@ TEST(ParserTest, MatchRuleNameSuccess) {
 
   ParseResult result = parser->Parse(content, "pair");
   ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
-  EXPECT_THAT(result->GetItem("first"),
+  EXPECT_THAT(result->GetItems("first"),
               ElementsAre(IsToken(kTokenIdentifier, "some")));
-  EXPECT_THAT(result->GetItem("second"),
+  EXPECT_THAT(result->GetItems("second"),
               ElementsAre(IsToken(kTokenIdentifier, "text")));
   EXPECT_TRUE(parser->GetLexer().NextToken(content, false).IsEnd())
       << result->GetToken();
@@ -668,12 +668,12 @@ TEST(ParserTest, MatchAlternativesCommaList) {
 
   ParseResult result = parser->Parse(content, "rule");
   ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
-  EXPECT_THAT(result->GetItem("list"), IsEmpty());
-  EXPECT_THAT(result->GetItem("ident"),
+  EXPECT_THAT(result->GetItems("list"), IsEmpty());
+  EXPECT_THAT(result->GetItems("ident"),
               ElementsAre(IsToken(kTokenIdentifier, "fun")));
   result = parser->Parse(content, "rule");
   ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
-  EXPECT_THAT(result->GetItem("list"),
+  EXPECT_THAT(result->GetItems("list"),
               ElementsAre(IsToken(kTokenInt, "42"), IsToken(kTokenInt, "3"),
                           IsToken(kTokenInt, "25")));
   EXPECT_TRUE(parser->GetLexer().NextToken(content, false).IsIdent("hello"))

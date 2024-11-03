@@ -40,7 +40,59 @@ class ParsedItem final {
 
   // Gets all the named sub-items from this item. This will be empty if this
   // item is not a group match.
-  absl::Span<const ParsedItem> GetItem(std::string_view name) const;
+  absl::Span<const ParsedItem> GetItems(std::string_view name) const;
+
+  // Gets the name of the sub-items iff there is exactly one name matched. This
+  // will be an empty string if there are no matched sub-items, or there
+  // ar ematched sub-items with different names.
+  std::string_view GetMatchName() const {
+    if (items_.size() != 1) {
+      return {};
+    }
+    return items_.begin()->first;
+  }
+
+  // Gets the first named sub-item from this item. This will be nullptr if this
+  // item is not a group match.
+  const ParsedItem* GetItem(std::string_view name) const {
+    auto items = GetItems(name);
+    return items.empty() ? nullptr : &items[0];
+  }
+
+  // Gets the token from the first named sub-item from this item. This will be
+  // an empty token if this item is not a group match.
+  Token GetToken(std::string_view name) const {
+    auto item = GetItem(name);
+    return item != nullptr ? item->GetToken() : Token();
+  }
+
+  // Gets the symbol from the first named sub-item from this item. This will be
+  // an empty (invalid) symbol if this item is not a group match.
+  Symbol GetSymbol(std::string_view name) const {
+    auto item = GetItem(name);
+    return item != nullptr ? item->GetToken().GetSymbol() : Symbol();
+  }
+
+  // Gets the integer from the first named sub-item from this item. This will be
+  // 0 if this item is not a group match.
+  int64_t GetInt(std::string_view name) const {
+    auto item = GetItem(name);
+    return item != nullptr ? item->GetToken().GetInt() : 0;
+  }
+
+  // Gets the float from the first named sub-item from this item. This will be
+  // 0.0 if this item is not a group match.
+  double GetFloat(std::string_view name) const {
+    auto item = GetItem(name);
+    return item != nullptr ? item->GetToken().GetFloat() : 0.0;
+  }
+
+  // Gets the string from the first named sub-item from this item. This will be
+  // an empty string if this item is not a group match.
+  std::string_view GetString(std::string_view name) const {
+    auto item = GetItem(name);
+    return item != nullptr ? item->GetToken().GetString() : std::string_view();
+  }
 
  private:
   friend class Parser;

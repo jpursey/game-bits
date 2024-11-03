@@ -23,11 +23,15 @@ namespace gb {
 // a set of rules that define the grammar of the language being parsed.
 //
 // Parser rules are defined as a text with the following syntax:
-//   rule <name> {
+//   <name> {
 //     <rule-item>... ;
 //     ...
 //     <rule-item>... ;
 //   }
+// 
+// User token types can be defined in the lexer specification, and can be
+// referenced in the parser rules as %<type> onceddefined:
+//   %<name> = <int> ;
 //
 // Each <rule-item> can be a token type, a token literal, a rule name, or a
 // group of rule-items enclosed in parenthesis (required) or square brackets
@@ -43,10 +47,9 @@ namespace gb {
 // Each <rule-item> can be further annotated with a name, which is used to
 // identify the matched item in the parse result, and a repeat specifier, which
 // can be '*' (zero or more), ',*' (zero or more separated by commas),
-// '+' (one or more), ',+' (one or more separated by commas), or '?' (zero or
-// one). For example:
+// '+' (one or more), or ',+' (one or more separated by commas. For example:
 //   $name=%ident      Assigns the matched identifier to the name "name".
-//   rule_name?        Matches the rule named "rule_name" zero or one times.
+//   [rule_name]       Matches the rule named "rule_name" zero or one times.
 //   (statement ";")*  Matches zero or more statements separated by semicolons.
 //   %int,+            Matches one or more integers separated by commas.
 //
