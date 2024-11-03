@@ -101,6 +101,7 @@ class Parser final {
   Lexer& lexer_;
   const ParserRules rules_;
   LexerContentId content_ = kNoLexerContent;
+  ParsedItems* items_ = nullptr;
 };
 
 }  // namespace gb

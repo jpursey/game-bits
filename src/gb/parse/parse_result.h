@@ -21,6 +21,9 @@ namespace gb {
 // ParsedItem
 //==============================================================================
 
+class ParsedItem;
+using ParsedItems = absl::flat_hash_map<std::string, std::vector<ParsedItem>>;
+
 // This class represents a single parsed item in a parse tree.
 //
 // A parsed item contains the first token that was part of the match. If
@@ -97,13 +100,8 @@ class ParsedItem final {
  private:
   friend class Parser;
 
-  void SetToken(Token token) { token_ = token; }
-  void AddItem(std::string_view name, ParsedItem result) {
-    items_[name].emplace_back(std::move(result));
-  }
-
   Token token_;
-  absl::flat_hash_map<std::string, std::vector<ParsedItem>> items_;
+  ParsedItems items_;
 };
 
 //==============================================================================

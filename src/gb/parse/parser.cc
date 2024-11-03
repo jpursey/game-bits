@@ -5,6 +5,7 @@
 
 #include "gb/parse/parser.h"
 
+#include "absl/cleanup/cleanup.h"
 #include "absl/strings/str_cat.h"
 
 namespace gb {
@@ -130,7 +131,7 @@ parser_internal::ParseMatch Parser::MatchTokenItem(
 
   NextToken();
   ParsedItem parsed;
-  parsed.SetToken(token);
+  parsed.token_ = token;
   return std::move(parsed);
 }
 
@@ -138,7 +139,10 @@ parser_internal::ParseMatch Parser::MatchRuleItem(
     const ParserRuleName& parser_rule_name) {
   const ParserRuleItem* rule = rules_.GetRule(parser_rule_name.GetRuleName());
   DCHECK(rule != nullptr);  // Handled during rule validation.
-  return rule->Match(*this);
+  ParsedItems* old_items = std::exchange(items_, nullptr);
+  ParseMatch match = rule->Match(*this);
+  items_ = old_items;
+  return match;
 }
 
 parser_internal::ParseMatch Parser::MatchGroup(const ParserGroup& group) {
@@ -150,10 +154,20 @@ parser_internal::ParseMatch Parser::MatchGroup(const ParserGroup& group) {
   const bool is_alternatives =
       (group.GetType() == ParserGroup::Type::kAlternatives);
   ParsedItem result;
+  ParsedItems* old_items = items_;
+  if (items_ == nullptr) {
+    items_ = &result.items_;
+  }
+  absl::Cleanup cleanup = [this, old_items] { items_ = old_items; };
   Token token = group_token;
   std::optional<ParseMatch> error;
   for (const auto& sub_item : group.GetSubItems()) {
+    ParsedItems* current_items = items_;
+    if (!sub_item.name.empty()) {
+      items_ = nullptr;
+    }
     auto match = sub_item.item->Match(*this);
+    items_ = current_items;
     if (!match) {
       if (match.IsAbort() ||
           (is_sequence && sub_item.repeat.IsSet(ParserRepeat::kRequireOne))) {
@@ -165,13 +179,14 @@ parser_internal::ParseMatch Parser::MatchGroup(const ParserGroup& group) {
       }
       continue;
     }
-    result.SetToken(group_token);
+    result.token_ = group_token;
     if (!sub_item.name.empty()) {
-      result.AddItem(sub_item.name, *std::move(match));
+      (*items_)[sub_item.name].push_back(*std::move(match));
     }
     if (!sub_item.repeat.IsSet(ParserRepeat::kAllowMany)) {
       if (is_alternatives) {
-        return std::move(result);
+        error = std::nullopt;
+        break;
       }
       continue;
     }
@@ -181,8 +196,6 @@ parser_internal::ParseMatch Parser::MatchGroup(const ParserGroup& group) {
       if (with_comma) {
         if (token.IsSymbol(',')) {
           token = NextToken();
-        } else if (is_alternatives) {
-          return std::move(result);
         } else {
           break;
         }
@@ -196,8 +209,12 @@ parser_internal::ParseMatch Parser::MatchGroup(const ParserGroup& group) {
         break;
       }
       if (!sub_item.name.empty()) {
-        result.AddItem(sub_item.name, *std::move(match));
+        (*items_)[sub_item.name].push_back(*std::move(match));
       }
+    }
+    if (is_alternatives) {
+      error = std::nullopt;
+      break;
     }
   }
   if (error.has_value()) {

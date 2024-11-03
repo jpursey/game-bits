@@ -680,5 +680,59 @@ TEST(ParserTest, MatchAlternativesCommaList) {
       << result->GetToken();
 }
 
+TEST(ParserTest, InlineGroupsMergeNamedSubItems) {
+  auto numbers = ParserRuleItem::CreateAlternatives();
+  numbers->AddSubItem("value", ParserRuleItem::CreateToken(kTokenInt));
+  numbers->AddSubItem("value", ParserRuleItem::CreateToken(kTokenFloat));
+
+  auto int_assign = ParserRuleItem::CreateSequence();
+  int_assign->AddSubItem("name", ParserRuleItem::CreateToken(kTokenIdentifier));
+  int_assign->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, "="));
+  int_assign->AddSubItem(std::move(numbers));
+
+  auto function_call = ParserRuleItem::CreateSequence();
+  function_call->AddSubItem("function",
+                            ParserRuleItem::CreateToken(kTokenIdentifier));
+  function_call->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, "("));
+  function_call->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, ")"));
+
+  auto statement_select = ParserRuleItem::CreateAlternatives();
+  statement_select->AddSubItem(std::move(int_assign));
+  statement_select->AddSubItem(std::move(function_call));
+
+  auto statement = ParserRuleItem::CreateSequence();
+  statement->AddSubItem("statements", std::move(statement_select));
+  statement->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, ";"));
+
+  auto rule = ParserRuleItem::CreateSequence();
+  rule->AddSubItem(std::move(statement), kParserOneOrMore);
+
+  ParserRules rules;
+  rules.AddRule("rule", std::move(rule));
+
+  std::string error;
+  auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
+  ASSERT_NE(parser, nullptr) << "Error: " << error;
+  LexerContentId content = parser->GetLexer().AddContent(
+      "a = 42;\n"
+      "fun();\n"
+      "b = 3.14;\n");
+
+  ParseResult result = parser->Parse(content, "rule");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_TRUE(parser->GetLexer().NextToken(content, false).IsEnd());
+  auto parsed_statements = result->GetItems("statements");
+  ASSERT_THAT(
+      parsed_statements,
+      ElementsAre(IsToken(kTokenIdentifier, "a"),
+                  IsToken(kTokenIdentifier, "fun"),
+                  IsToken(kTokenIdentifier, "b")));
+  EXPECT_EQ(parsed_statements[0].GetString("name"), "a");
+  EXPECT_EQ(parsed_statements[0].GetInt("value"), 42);
+  EXPECT_EQ(parsed_statements[1].GetString("function"), "fun");
+  EXPECT_EQ(parsed_statements[2].GetString("name"), "b");
+  EXPECT_EQ(parsed_statements[2].GetFloat("value"), 3.14);
+}
+
 }  // namespace
 }  // namespace gb
