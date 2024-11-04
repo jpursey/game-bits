@@ -185,6 +185,25 @@ TEST(ParserProgramTest, UndefinedTokenType) {
               AllOf(HasSubstr("%alpha"), HasSubstr("unknown")));
 }
 
+TEST(ParserProgramTest, ValidTokenLiterals) {
+  std::string error;
+  std::string program_text = R"(
+    program {
+      "15" "0xdeadbeef" "0777" "0b10101" "3.125" "2e3"
+      '"some string"' "'c'" "var_name" "while";
+    }
+  )";
+  auto program = ParserProgram::Create(kCStyleLexerConfig,
+                                       std::move(program_text), &error);
+  ASSERT_NE(program, nullptr) << "Error: " << error;
+  const auto& rules = program->GetRules();
+  EXPECT_EQ(rules.GetRule("program")->ToString(),
+            "\"15\" \"0xdeadbeef\" \"0777\" "
+            "\"0b10101\" \"3.125\" \"2e3\" "
+            "'\"some string\"' \"'c'\" "
+            "\"var_name\" \"while\"");
+}
+
 TEST(ParserProgramTest, InvalidTokenLiteral) {
   std::string error;
   std::string program_text = R"(
