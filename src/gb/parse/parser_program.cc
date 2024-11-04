@@ -26,8 +26,8 @@ constexpr LexerConfig::UserToken kProgramUserTokens[] = {
 };
 
 inline constexpr Symbol kProgramSymbols[] = {
-    '+', '-', '*', '/', '%', '~', '&', '|', '^', '!', '<', '>', '=',  '.', ',',
-    ';', ':', '?', '$', '#', '@', '(', ')', '[', ']', '{', '}', ",*", ",+"};
+    '+', '-', '*', '/', '~', '&', '|', '^', '!', '<', '>', '=',  '.', ',',
+    ';', ':', '?', '#', '@', '(', ')', '[', ']', '{', '}', ",*", ",+"};
 
 constexpr LexerConfig kProgramLexerConfig = {
     .flags = {kLexerFlags_CIdentifiers, LexerFlag::kInt8,
@@ -57,7 +57,7 @@ ParserRules CreateProgramRules() {
                                    ParserRuleItem::CreateRuleName("token_def"));
   program_alternatives->AddSubItem("rules",
                                    ParserRuleItem::CreateRuleName("rule_def"));
-  program->AddSubItem(std::move(program_alternatives), kParserOneOrMore);
+  program->AddSubItem(std::move(program_alternatives), kParserZeroOrMore);
   program->AddSubItem(ParserRuleItem::CreateToken(kTokenEnd));
   rules.AddRule("program", std::move(program));
 
@@ -246,7 +246,7 @@ std::unique_ptr<ParserGroup::SubItem> ParseGroupItem(
     std::string_view type_name = parsed_inner->GetString("token");
     auto it = context.token_types.find(type_name);
     if (it == context.token_types.end()) {
-      context.error = absl::StrCat("Unknown token type: ", type_name);
+      context.error = absl::StrCat("Unknown token type: %", type_name);
       return nullptr;
     }
     return std::make_unique<ParserGroup::SubItem>(
@@ -299,6 +299,7 @@ std::optional<ParserRules> ParseProgram(Lexer& lexer, std::string program_text,
   context.token_types["string"] = kTokenString;
   context.token_types["char"] = kTokenChar;
   context.token_types["ident"] = kTokenIdentifier;
+  context.token_types["linebreak"] = kTokenLineBreak;
 
   auto program_parser =
       Parser::Create(kProgramLexerConfig, CreateProgramRules(), &context.error);
@@ -319,13 +320,13 @@ std::optional<ParserRules> ParseProgram(Lexer& lexer, std::string program_text,
     TokenType token_type = kTokenUser + parsed_token.GetInt("value");
     std::string_view token_name = parsed_token.GetString("name");
     if (!context.token_types.insert({token_name, token_type}).second) {
-      context.error = absl::StrCat("Duplicate token type: ", token_name);
+      context.error = absl::StrCat("Duplicate token type: %", token_name);
       return std::nullopt;
     }
     if (!lexer.IsValidTokenType(token_type)) {
       context.error = absl::StrCat("Undefined token type value ",
                                    static_cast<int>(token_type),
-                                   " for token name ", token_name);
+                                   " for token name %", token_name);
       return std::nullopt;
     }
   }

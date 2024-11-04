@@ -102,6 +102,9 @@ Callback<ParseError()> Parser::TokenErrorCallback(
       case kTokenLineBreak:
         expected = "end of line";
         break;
+      case kTokenEnd:
+        expected = "end of file";
+        break;
       default: {
         const std::string type_name =
             GetTokenTypeString(expected_type, &lexer_.GetUserTokenNames());
