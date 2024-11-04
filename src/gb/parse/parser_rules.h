@@ -303,16 +303,16 @@ namespace parser_internal {
 class ParseMatch {
  public:
   static ParseMatch Abort(std::string message) {
-    return ParseMatch(ParseError(std::move(message)), true);
+    return ParseMatch(ParseError(std::move(message)));
   }
   static ParseMatch Abort(ParseError error) {
-    return ParseMatch(std::move(error), true);
+    return ParseMatch(std::move(error));
   }
 
-  ParseMatch(Callback<ParseError()> error_callback)
-      : error_callback_(std::move(error_callback)) {}
-  ParseMatch(ParseError error, bool abort)
-      : abort_(abort), error_callback_([error] { return error; }) {}
+  ParseMatch(Token error_token, Callback<ParseError()> error_callback)
+      : error_token_(error_token), error_callback_(std::move(error_callback)) {}
+  explicit ParseMatch(ParseError error)
+      : abort_(true), error_callback_([error] { return error; }) {}
   ParseMatch(ParsedItem item) : item_(std::move(item)) {}
   ParseMatch(const ParseMatch&) = delete;
   ParseMatch& operator=(const ParseMatch&) = delete;
@@ -323,6 +323,7 @@ class ParseMatch {
   operator bool() const { return item_.has_value(); }
 
   ParseError GetError() const { return error_callback_(); }
+  const Token& GetErrorToken() const { return error_token_; }
   bool IsAbort() const { return abort_; }
 
   const ParsedItem& operator*() const& { return *item_; }
@@ -331,6 +332,7 @@ class ParseMatch {
 
  private:
   bool abort_ = false;
+  Token error_token_;
   Callback<ParseError()> error_callback_;
   std::optional<ParsedItem> item_;
 };

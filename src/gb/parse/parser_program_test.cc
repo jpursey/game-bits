@@ -39,18 +39,18 @@ TEST(ParserProgramTest, InvalidRules) {
   auto program =
       ParserProgram::Create(kCStyleLexerConfig, "program { %int }", &error);
   EXPECT_EQ(program, nullptr);
-  //EXPECT_THAT(error, HasSubstr("';'"));
+  EXPECT_THAT(error, HasSubstr("';'"));
 
   auto lexer = Lexer::Create(kCStyleLexerConfig, &error);
   ASSERT_NE(lexer, nullptr) << "Error: " << error;
 
   program = ParserProgram::Create(lexer.get(), "program { %int }", &error);
   EXPECT_EQ(program, nullptr);
-  //EXPECT_THAT(error, HasSubstr("';'"));
+  EXPECT_THAT(error, HasSubstr("';'"));
 
   program = ParserProgram::Create(std::move(lexer), "program { %int }", &error);
   EXPECT_EQ(program, nullptr);
-  //EXPECT_THAT(error, HasSubstr("';'"));
+  EXPECT_THAT(error, HasSubstr("';'"));
 }
 
 TEST(ParserProgramTest, ValidRules) {

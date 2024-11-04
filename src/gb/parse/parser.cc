@@ -125,8 +125,8 @@ parser_internal::ParseMatch Parser::MatchTokenItem(
   if (token.GetType() != expected_type ||
       (!std::holds_alternative<NoTokenValue>(expected_value) &&
        token.GetValue() != expected_value)) {
-    return TokenErrorCallback(token, expected_type,
-                              parser_token.GetTokenText());
+    return ParseMatch(token, TokenErrorCallback(token, expected_type,
+                                                parser_token.GetTokenText()));
   }
 
   NextToken();
@@ -169,13 +169,15 @@ parser_internal::ParseMatch Parser::MatchGroup(const ParserGroup& group) {
     auto match = sub_item.item->Match(*this);
     items_ = current_items;
     if (!match) {
-      if (match.IsAbort() ||
+      const bool is_abort = match.IsAbort();
+      if (!error.has_value() ||
+          match.GetErrorToken() > error->GetErrorToken()) {
+        error = std::move(match);
+      }
+      if (is_abort ||
           (is_sequence && sub_item.repeat.IsSet(ParserRepeat::kRequireOne))) {
         SetNextToken(group_token);
-        return match;
-      }
-      if (is_alternatives && !error.has_value()) {
-        error = std::move(match);
+        return *std::move(error);
       }
       continue;
     }
@@ -204,9 +206,14 @@ parser_internal::ParseMatch Parser::MatchGroup(const ParserGroup& group) {
       }
       match = sub_item.item->Match(*this);
       if (!match) {
-        if (match.IsAbort() || with_comma) {
+        const bool is_abort = match.IsAbort();
+        if (!error.has_value() ||
+            match.GetErrorToken() > error->GetErrorToken()) {
+          error = std::move(match);
+        }
+        if (is_abort || with_comma) {
           SetNextToken(group_token);
-          return ParseMatch::Abort(match.GetError());
+          return ParseMatch::Abort(error->GetError());
         }
         break;
       }
@@ -219,8 +226,7 @@ parser_internal::ParseMatch Parser::MatchGroup(const ParserGroup& group) {
       break;
     }
   }
-  if (error.has_value()) {
-    DCHECK(is_alternatives);
+  if (is_alternatives && error.has_value()) {
     return *std::move(error);
   }
   return std::move(result);
