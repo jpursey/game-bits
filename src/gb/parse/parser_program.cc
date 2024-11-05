@@ -45,10 +45,10 @@ constexpr LexerConfig kProgramLexerConfig = {
 ParserRules CreateProgramRules() {
   ParserRules rules;
 
-  // token %token_type = 0;
-  // token %match_name = 1;
+  // %token_type = 0;
+  // %match_name = 1;
 
-  // rule program {
+  // program {
   //   ($tokens=token_def | $rules=rule_def)* %end;
   // }
   auto program = ParserRuleItem::CreateSequence();
@@ -61,8 +61,8 @@ ParserRules CreateProgramRules() {
   program->AddSubItem(ParserRuleItem::CreateToken(kTokenEnd));
   rules.AddRule("program", std::move(program));
 
-  // rule token_def {
-  //   $name=%token_type "=" value=%int ";";
+  // token_def {
+  //   $name=%token_type "=" $value=%int ";";
   // }
   auto token_def = ParserRuleItem::CreateSequence();
   token_def->AddSubItem("name", ParserRuleItem::CreateToken(kTokenTokenType));
@@ -71,7 +71,7 @@ ParserRules CreateProgramRules() {
   token_def->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, ";"));
   rules.AddRule("token_def", std::move(token_def));
 
-  // rule rule_def {
+  // rule_def {
   //   $name=%ident "{" ($options=group_alternative ";")+ "}";
   // }
   auto rule_def = ParserRuleItem::CreateSequence();
@@ -85,7 +85,7 @@ ParserRules CreateProgramRules() {
   rule_def->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, "}"));
   rules.AddRule("rule_def", std::move(rule_def));
 
-  // rule group_alternative {
+  // group_alternative {
   //   $items=group_sequence ("|" $items=group_sequence)*;
   // }
   auto group_alternative = ParserRuleItem::CreateSequence();
@@ -100,7 +100,7 @@ ParserRules CreateProgramRules() {
                                 kParserZeroOrMore);
   rules.AddRule("group_alternative", std::move(group_alternative));
 
-  // rule group_sequence {
+  // group_sequence {
   //   $items=group_item+;
   // }
   auto group_sequence = ParserRuleItem::CreateSequence();
@@ -108,7 +108,7 @@ ParserRules CreateProgramRules() {
       "items", ParserRuleItem::CreateRuleName("group_item"), kParserOneOrMore);
   rules.AddRule("group_sequence", std::move(group_sequence));
 
-  // rule group_item {
+  // group_item {
   //   [$match_name=%match_name "="]
   //   $item=group_item_inner
   //   $repeat=["+" | "*" | ",+" | ",*"];
@@ -132,7 +132,7 @@ ParserRules CreateProgramRules() {
                          kParserOptional);
   rules.AddRule("group_item", std::move(group_item));
 
-  // rule group_item_inner {
+  // group_item_inner {
   //   $token=%token_type;
   //   $literal=%string;
   //   $rule=%ident;
@@ -221,6 +221,24 @@ std::unique_ptr<ParserGroup> ParseAlternative(
   return alternative;
 }
 
+std::unique_ptr<ParserGroup::SubItem> ParseAlternativeAsSubItem(
+    ParseContext& context, const ParsedItem& parsed_alternative) {
+  auto parsed_items = parsed_alternative.GetItems("items");
+  if (parsed_items.size() == 1) {
+    return ParseSequenceAsSubItem(context, parsed_items[0]);
+  }
+  auto alternative = ParserGroup::CreateAlternatives();
+  for (const ParsedItem& parsed_item : parsed_items) {
+    auto sub_item = ParseSequenceAsSubItem(context, parsed_item);
+    if (sub_item == nullptr) {
+      return nullptr;
+    }
+    alternative->AddSubItem(std::move(*sub_item));
+  }
+  return std::make_unique<ParserGroup::SubItem>("", std::move(alternative),
+                                                kParserSingle);
+}
+
 std::unique_ptr<ParserGroup::SubItem> ParseGroupItem(
     ParseContext& context, const ParsedItem& parsed_item) {
   std::string_view match_name = parsed_item.GetString("match_name");
@@ -267,7 +285,10 @@ std::unique_ptr<ParserGroup::SubItem> ParseGroupItem(
         ParserRuleItem::CreateRuleName(parsed_inner->GetString("rule")),
         repeat);
   } else if (parsed_type == "optional") {
-    auto optional_item = ParseAlternative(context, *parsed_inner);
+    const ParsedItem* sub_item = parsed_inner->GetItem("optional");
+    DCHECK(sub_item != nullptr);
+    auto optional_item =
+        ParseAlternative(context, *sub_item);
     if (optional_item == nullptr) {
       return nullptr;
     }
@@ -275,7 +296,9 @@ std::unique_ptr<ParserGroup::SubItem> ParseGroupItem(
     return std::make_unique<ParserGroup::SubItem>(
         match_name, std::move(optional_item), repeat);
   } else if (parsed_type == "group") {
-    auto group_item = ParseAlternative(context, *parsed_inner);
+    const ParsedItem* sub_item = parsed_inner->GetItem("group");
+    DCHECK(sub_item != nullptr);
+    auto group_item = ParseAlternative(context, *sub_item);
     if (group_item == nullptr) {
       return nullptr;
     }
@@ -350,11 +373,11 @@ std::optional<ParserRules> ParseProgram(Lexer& lexer, std::string program_text,
     } else {
       auto rule = ParserGroup::CreateAlternatives();
       for (const ParsedItem& parsed_option : parsed_options) {
-        auto option = ParseAlternative(context, parsed_option);
+        auto option = ParseAlternativeAsSubItem(context, parsed_option);
         if (option == nullptr) {
           return std::nullopt;
         }
-        rule->AddSubItem(std::move(option));
+        rule->AddSubItem(std::move(*option));
       }
       rules.AddRule(std::string(rule_name), std::move(rule));
     }
