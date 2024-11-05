@@ -63,64 +63,87 @@ ParseResult Parser::Parse(LexerContentId content, std::string_view rule) {
     return ParseError(absl::StrCat("Parser rule \"", rule, "\" not found"));
   }
   content_ = content;
+  last_error_.reset();
+  items_ = nullptr;
   auto match = root->Match(*this);
-  if (!match) {
-    return match.GetError();
+  if (match.IsError()) {
+    DCHECK(last_error_.has_value() && last_error_->error_callback != nullptr);
+    return last_error_->error_callback();
   }
   return *std::move(match);
 }
 
-Callback<ParseError()> Parser::TokenErrorCallback(
+parser_internal::ParseMatch Parser::MatchAbort(ParseError error) {
+  last_error_ = ParseMatchError{error};
+  return ParseMatch::Abort();
+}
+
+parser_internal::ParseMatch Parser::MatchAbort(std::string_view message) {
+  last_error_ = ParseMatchError{ParseError(message)};
+  return ParseMatch::Abort();
+}
+
+parser_internal::ParseMatch Parser::MatchError(
     gb::Token token, TokenType expected_type, std::string_view expected_value) {
-  return [this, token, expected_type, expected_value] {
-    std::string expected;
-    const bool has_value = !expected_value.empty();
-    switch (expected_type) {
-      case kTokenSymbol:
-        expected =
-            !has_value ? "symbol" : absl::StrCat("'", expected_value, "'");
-        break;
-      case kTokenInt:
-        expected = !has_value ? "integer value" : expected_value;
-        break;
-      case kTokenFloat:
-        expected = !has_value ? "floating-point value" : expected_value;
-        break;
-      case kTokenChar:
-        expected = !has_value ? "character value" : expected_value;
-        break;
-      case kTokenString:
-        expected = !has_value ? "string value" : expected_value;
-        break;
-      case kTokenKeyword:
-        expected = !has_value ? "keyword" : expected_value;
-        break;
-      case kTokenIdentifier:
-        expected = !has_value ? "identifier"
-                              : absl::StrCat("identifier ", expected_value);
-        break;
-      case kTokenLineBreak:
-        expected = "end of line";
-        break;
-      case kTokenEnd:
-        expected = "end of file";
-        break;
-      default: {
-        const std::string type_name =
-            GetTokenTypeString(expected_type, &lexer_.GetUserTokenNames());
-        expected = !has_value ? type_name
-                              : absl::StrCat(type_name, " ", expected_value);
-      } break;
-    }
-    return Error(token, absl::StrCat("Expected ", expected));
-  };
+  if (last_error_.has_value() && last_error_->token > token) {
+    return ParseMatch::Error();
+  }
+  last_error_ =
+      ParseMatchError(token, [this, token, expected_type, expected_value] {
+        std::string expected;
+        const bool has_value = !expected_value.empty();
+        switch (expected_type) {
+          case kTokenSymbol:
+            expected =
+                !has_value ? "symbol" : absl::StrCat("'", expected_value, "'");
+            break;
+          case kTokenInt:
+            expected = !has_value ? "integer value" : expected_value;
+            break;
+          case kTokenFloat:
+            expected = !has_value ? "floating-point value" : expected_value;
+            break;
+          case kTokenChar:
+            expected = !has_value ? "character value" : expected_value;
+            break;
+          case kTokenString:
+            expected = !has_value ? "string value" : expected_value;
+            break;
+          case kTokenKeyword:
+            expected = !has_value ? "keyword" : expected_value;
+            break;
+          case kTokenIdentifier:
+            expected = !has_value ? "identifier"
+                                  : absl::StrCat("identifier ", expected_value);
+            break;
+          case kTokenLineBreak:
+            expected = "end of line";
+            break;
+          case kTokenEnd:
+            expected = "end of file";
+            break;
+          default: {
+            const std::string type_name =
+                GetTokenTypeString(expected_type, &lexer_.GetUserTokenNames());
+            expected = !has_value
+                           ? type_name
+                           : absl::StrCat(type_name, " ", expected_value);
+          } break;
+        }
+        return Error(token, absl::StrCat("Expected ", expected));
+      });
+  return ParseMatch::Error();
+}
+
+parser_internal::ParseMatch Parser::Match(ParsedItem item) {
+  return ParseMatch::Item(std::move(item));
 }
 
 parser_internal::ParseMatch Parser::MatchTokenItem(
     const ParserToken& parser_token) {
   Token token = PeekToken();
   if (token.GetType() == kTokenError) {
-    return ParseMatch::Abort(Error(token, token.GetString()));
+    return MatchAbort(Error(token, token.GetString()));
   }
 
   TokenType expected_type = parser_token.GetTokenType();
@@ -128,14 +151,13 @@ parser_internal::ParseMatch Parser::MatchTokenItem(
   if (token.GetType() != expected_type ||
       (!std::holds_alternative<NoTokenValue>(expected_value) &&
        token.GetValue() != expected_value)) {
-    return ParseMatch(token, TokenErrorCallback(token, expected_type,
-                                                parser_token.GetTokenText()));
+    return MatchError(token, expected_type, parser_token.GetTokenText());
   }
 
   NextToken();
   ParsedItem parsed;
   parsed.token_ = token;
-  return std::move(parsed);
+  return Match(std::move(parsed));
 }
 
 parser_internal::ParseMatch Parser::MatchRuleItem(
@@ -151,7 +173,7 @@ parser_internal::ParseMatch Parser::MatchRuleItem(
 parser_internal::ParseMatch Parser::MatchGroup(const ParserGroup& group) {
   Token group_token = PeekToken();
   if (group_token.IsError()) {
-    return ParseMatch::Abort(Error(group_token, group_token.GetString()));
+    return MatchAbort(Error(group_token, group_token.GetString()));
   }
   const bool is_sequence = (group.GetType() == ParserGroup::Type::kSequence);
   const bool is_alternatives =
@@ -162,8 +184,7 @@ parser_internal::ParseMatch Parser::MatchGroup(const ParserGroup& group) {
     items_ = &result.items_;
   }
   absl::Cleanup cleanup = [this, old_items] { items_ = old_items; };
-  Token token = group_token;
-  std::optional<ParseMatch> error;
+  bool has_match = false;
   for (const auto& sub_item : group.GetSubItems()) {
     ParsedItems* current_items = items_;
     if (!sub_item.name.empty()) {
@@ -171,19 +192,15 @@ parser_internal::ParseMatch Parser::MatchGroup(const ParserGroup& group) {
     }
     auto match = sub_item.item->Match(*this);
     items_ = current_items;
-    if (!match) {
-      const bool is_abort = match.IsAbort();
-      if (!error.has_value() ||
-          match.GetErrorToken() > error->GetErrorToken()) {
-        error = std::move(match);
-      }
-      if (is_abort ||
+    if (match.IsError()) {
+      if (match.IsAbort() ||
           (is_sequence && sub_item.repeat.IsSet(ParserRepeat::kRequireOne))) {
         SetNextToken(group_token);
-        return *std::move(error);
+        return match;
       }
       continue;
     }
+    has_match = true;
     if (result.token_.IsNone()) {
       result.token_ = group_token;
     }
@@ -192,31 +209,27 @@ parser_internal::ParseMatch Parser::MatchGroup(const ParserGroup& group) {
     }
     if (!sub_item.repeat.IsSet(ParserRepeat::kAllowMany)) {
       if (is_alternatives) {
-        error = std::nullopt;
         break;
       }
       continue;
     }
     const bool with_comma = sub_item.repeat.IsSet(ParserRepeat::kWithComma);
     while (true) {
-      token = PeekToken();
       if (with_comma) {
-        if (token.IsSymbol(',')) {
-          token = NextToken();
+        if (PeekToken().IsSymbol(',')) {
+          NextToken();
         } else {
           break;
         }
       }
       match = sub_item.item->Match(*this);
-      if (!match) {
-        const bool is_abort = match.IsAbort();
-        if (!error.has_value() ||
-            match.GetErrorToken() > error->GetErrorToken()) {
-          error = std::move(match);
-        }
-        if (is_abort || with_comma) {
+      if (match.IsError()) {
+        if (match.IsAbort()) {
           SetNextToken(group_token);
-          return ParseMatch::Abort(error->GetError());
+          return match;
+        }
+        if (with_comma) {
+          RewindToken();
         }
         break;
       }
@@ -225,14 +238,13 @@ parser_internal::ParseMatch Parser::MatchGroup(const ParserGroup& group) {
       }
     }
     if (is_alternatives) {
-      error = std::nullopt;
       break;
     }
   }
-  if (is_alternatives && error.has_value()) {
-    return *std::move(error);
+  if (is_alternatives && !has_match) {
+    return ParseMatch::Error();
   }
-  return std::move(result);
+  return Match(std::move(result));
 }
 
 }  // namespace gb

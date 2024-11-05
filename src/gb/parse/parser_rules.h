@@ -302,38 +302,34 @@ namespace parser_internal {
 // The ParseMatch class is an internal class used during parsing.
 class ParseMatch {
  public:
-  static ParseMatch Abort(std::string message) {
-    return ParseMatch(ParseError(std::move(message)));
-  }
-  static ParseMatch Abort(ParseError error) {
-    return ParseMatch(std::move(error));
+  enum class Type { kAbort, kError, kMatch };
+
+  static ParseMatch Error() { return ParseMatch(Type::kError); }
+  static ParseMatch Abort() { return ParseMatch(Type::kAbort); }
+  static ParseMatch Item(ParsedItem item) {
+    return ParseMatch(Type::kMatch, std::move(item));
   }
 
-  ParseMatch(Token error_token, Callback<ParseError()> error_callback)
-      : error_token_(error_token), error_callback_(std::move(error_callback)) {}
-  explicit ParseMatch(ParseError error)
-      : abort_(true), error_callback_([error] { return error; }) {}
-  ParseMatch(ParsedItem item) : item_(std::move(item)) {}
   ParseMatch(const ParseMatch&) = delete;
   ParseMatch& operator=(const ParseMatch&) = delete;
   ParseMatch(ParseMatch&&) = default;
   ParseMatch& operator=(ParseMatch&&) = default;
   ~ParseMatch() = default;
 
-  operator bool() const { return item_.has_value(); }
-
-  ParseError GetError() const { return error_callback_(); }
-  const Token& GetErrorToken() const { return error_token_; }
-  bool IsAbort() const { return abort_; }
+  bool IsMatch() const { return type_ == Type::kMatch; }
+  bool IsError() const { return type_ != Type::kMatch; }
+  bool IsAbort() const { return type_ == Type::kAbort; }
 
   const ParsedItem& operator*() const& { return *item_; }
   const ParsedItem* operator->() const& { return &*item_; }
   ParsedItem operator*() && { return *std::move(item_); }
 
  private:
-  bool abort_ = false;
-  Token error_token_;
-  Callback<ParseError()> error_callback_;
+  ParseMatch(Type type) : type_(type) {}
+  ParseMatch(Type type, ParsedItem item)
+      : type_(type), item_(std::move(item)) {}
+
+  Type type_ = Type::kAbort;
   std::optional<ParsedItem> item_;
 };
 }  // namespace parser_internal

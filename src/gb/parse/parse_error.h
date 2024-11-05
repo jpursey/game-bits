@@ -15,9 +15,9 @@ namespace gb {
 
 class ParseError final {
  public:
-  explicit ParseError(std::string message) : message_(std::move(message)) {}
-  ParseError(LexerLocation location, std::string message)
-      : location_(location), message_(std::move(message)) {}
+  explicit ParseError(std::string_view message) : message_(message) {}
+  ParseError(LexerLocation location, std::string_view message)
+      : location_(location), message_(message) {}
   ParseError(const ParseError&) = default;
   ParseError& operator=(const ParseError&) = default;
   ParseError(ParseError&&) = default;

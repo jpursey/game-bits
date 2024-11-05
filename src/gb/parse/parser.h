@@ -80,27 +80,41 @@ class Parser final {
 
   using ParseMatch = parser_internal::ParseMatch;
 
+  struct ParseMatchError {
+    ParseMatchError(Token in_token, Callback<ParseError()> in_error_callback)
+        : token(in_token), error_callback(std::move(in_error_callback)) {}
+    ParseMatchError(ParseError error)
+        : error_callback([error] { return error; }) {}
+
+    Token token;
+    Callback<ParseError()> error_callback;
+  };
+
   Parser(Lexer& lexer, ParserRules rules)
       : lexer_(lexer), rules_(std::move(rules)) {}
 
   ParseError Error(gb::Token token, std::string_view message);
 
-  Callback<ParseError()> TokenErrorCallback(gb::Token token,
-                                            TokenType expected_type,
-                                            std::string_view expected_value);
-
   ParseMatch MatchTokenItem(const ParserToken& item);
   ParseMatch MatchGroup(const ParserGroup& item);
   ParseMatch MatchRuleItem(const ParserRuleName& item);
 
+  void RewindToken() { lexer_.RewindToken(content_); }
   Token NextToken() { return lexer_.NextToken(content_); }
   Token PeekToken() { return lexer_.NextToken(content_, false); }
   void SetNextToken(Token token) { lexer_.SetNextToken(token); }
+
+  ParseMatch MatchAbort(ParseError error);
+  ParseMatch MatchAbort(std::string_view message);
+  ParseMatch MatchError(gb::Token token, TokenType expected_type,
+                        std::string_view expected_value);
+  ParseMatch Match(ParsedItem item);
 
   std::unique_ptr<Lexer> owned_lexer_;
   Lexer& lexer_;
   const ParserRules rules_;
   LexerContentId content_ = kNoLexerContent;
+  std::optional<ParseMatchError> last_error_;
   ParsedItems* items_ = nullptr;
 };
 

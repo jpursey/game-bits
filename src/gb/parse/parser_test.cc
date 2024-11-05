@@ -207,6 +207,7 @@ TEST(ParserTest, MatchSequenceOneOrMoreWithCommaFails) {
   auto rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem(ParserRuleItem::CreateToken(kTokenIdentifier),
                    kParserOneOrMoreWithComma);
+  rule->AddSubItem(ParserRuleItem::CreateToken(kTokenEnd));
   rules.AddRule("rule", std::move(rule));
   std::string error;
   auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
@@ -650,7 +651,7 @@ TEST(ParserTest, MatchAlternatesAllItemsInvalid) {
   ParseResult result = parser->Parse(content, "rule");
   ASSERT_FALSE(result.IsOk());
   EXPECT_THAT(absl::AsciiStrToLower(result.GetError().GetMessage()),
-              HasSubstr("expected identifier"));
+              HasSubstr("expected integer"));
   EXPECT_THAT(result.GetError().GetLocation(), IsLocation(content, 0, 0));
 }
 
