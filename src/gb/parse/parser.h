@@ -51,10 +51,8 @@ class Parser final {
   // rules. If an error string is provided, it will be set to the error message.
   static std::unique_ptr<Parser> Create(LexerConfig config, ParserRules rules,
                                         std::string* error_message = nullptr);
-  static std::unique_ptr<Parser> Create(std::unique_ptr<Lexer> lexer,
+  static std::unique_ptr<Parser> Create(std::shared_ptr<Lexer> lexer,
                                         ParserRules rules,
-                                        std::string* error_message = nullptr);
-  static std::unique_ptr<Parser> Create(Lexer& lexer, ParserRules rules,
                                         std::string* error_message = nullptr);
 
   // Creates a parser with the precompiled and validated ParserProgram. If the
@@ -66,8 +64,8 @@ class Parser final {
   ~Parser() = default;
 
   // Returns the lexer used by this parser.
-  const Lexer& GetLexer() const { return lexer_; }
-  Lexer& GetLexer() { return lexer_; }
+  const Lexer& GetLexer() const { return *lexer_; }
+  Lexer& GetLexer() { return *lexer_; }
 
   // Parses the specified rule from the current lexer content, starting at the
   // current token within the content.
@@ -95,8 +93,8 @@ class Parser final {
     Callback<ParseError()> error_callback;
   };
 
-  Parser(Lexer& lexer, ParserRules rules)
-      : lexer_(lexer), rules_(std::move(rules)) {}
+  Parser(std::shared_ptr<Lexer> lexer, ParserRules rules)
+      : lexer_(std::move(lexer)), rules_(std::move(rules)) {}
 
   ParseError Error(gb::Token token, std::string_view message);
 
@@ -104,10 +102,10 @@ class Parser final {
   ParseMatch MatchGroup(const ParserGroup& item);
   ParseMatch MatchRuleItem(const ParserRuleName& item);
 
-  void RewindToken() { lexer_.RewindToken(content_); }
-  Token NextToken() { return lexer_.NextToken(content_); }
-  Token PeekToken() { return lexer_.NextToken(content_, false); }
-  void SetNextToken(Token token) { lexer_.SetNextToken(token); }
+  void RewindToken() { lexer_->RewindToken(content_); }
+  Token NextToken() { return lexer_->NextToken(content_); }
+  Token PeekToken() { return lexer_->NextToken(content_, false); }
+  void SetNextToken(Token token) { lexer_->SetNextToken(token); }
 
   ParseMatch MatchAbort(ParseError error);
   ParseMatch MatchAbort(std::string_view message);
@@ -115,8 +113,7 @@ class Parser final {
                         std::string_view expected_value);
   ParseMatch Match(ParsedItem item);
 
-  std::unique_ptr<Lexer> owned_lexer_;
-  Lexer& lexer_;
+  std::shared_ptr<Lexer> lexer_;
   const ParserRules rules_;
   LexerContentId content_ = kNoLexerContent;
   std::optional<ParseMatchError> last_error_;

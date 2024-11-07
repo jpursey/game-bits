@@ -57,9 +57,9 @@ TEST(ParserTest, InvalidRulesWithSharedLexer) {
   ParserRules rules;
   rules.AddRule("rule", ParserRuleItem::CreateSequence());
   std::string error;
-  auto lexer = Lexer::Create(kCStyleLexerConfig, &error);
+  std::shared_ptr<Lexer> lexer = Lexer::Create(kCStyleLexerConfig, &error);
   ASSERT_NE(lexer, nullptr) << "Error: " << error;
-  auto parser = Parser::Create(*lexer, std::move(rules), &error);
+  auto parser = Parser::Create(lexer, std::move(rules), &error);
   ASSERT_EQ(parser, nullptr);
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("at least one"));
 }
@@ -115,9 +115,9 @@ TEST(ParserTest, MatchSequenceSingleIdent) {
   rule->AddSubItem(ParserRuleItem::CreateToken(kTokenIdentifier));
   rules.AddRule("rule", std::move(rule));
   std::string error;
-  auto lexer = Lexer::Create(kCStyleLexerConfig, &error);
+  std::shared_ptr<Lexer> lexer = Lexer::Create(kCStyleLexerConfig, &error);
   ASSERT_NE(lexer, nullptr) << "Error: " << error;
-  auto parser = Parser::Create(*lexer, std::move(rules), &error);
+  auto parser = Parser::Create(lexer, std::move(rules), &error);
   ASSERT_NE(parser, nullptr) << "Error: " << error;
   LexerContentId content = parser->GetLexer().AddContent("some text");
 

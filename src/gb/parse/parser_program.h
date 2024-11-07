@@ -66,10 +66,7 @@ class ParserProgram {
   static std::unique_ptr<ParserProgram> Create(LexerConfig config,
                                                std::string_view program_text,
                                                std::string* error_message);
-  static std::unique_ptr<ParserProgram> Create(std::unique_ptr<Lexer> lexer,
-                                               std::string_view program_text,
-                                               std::string* error_message);
-  static std::unique_ptr<ParserProgram> Create(Lexer* lexer,
+  static std::unique_ptr<ParserProgram> Create(std::shared_ptr<Lexer> lexer,
                                                std::string_view program_text,
                                                std::string* error_message);
 
@@ -77,21 +74,17 @@ class ParserProgram {
   ParserProgram& operator=(const ParserProgram&) = delete;
   ~ParserProgram() = default;
 
-  const Lexer* GetLexer() const { return lexer_; }
+  const Lexer& GetLexer() const { return *lexer_; }
   const ParserRules& GetRules() const { return rules_; }
 
  private:
   friend class Parser;
 
-  ParserProgram(std::unique_ptr<Lexer> owned_lexer, ParserRules rules)
-      : owned_lexer_(std::move(owned_lexer)), rules_(std::move(rules)) {
-    lexer_ = owned_lexer_.get();
+  ParserProgram(std::shared_ptr<Lexer> lexer, ParserRules rules)
+      : lexer_(std::move(lexer)), rules_(std::move(rules)) {
   }
-  ParserProgram(Lexer* lexer, ParserRules rules)
-      : lexer_(lexer), rules_(std::move(rules)) {}
 
-  std::unique_ptr<Lexer> owned_lexer_;
-  Lexer* lexer_ = nullptr;
+  std::shared_ptr<Lexer> lexer_;
   ParserRules rules_;
 };
 

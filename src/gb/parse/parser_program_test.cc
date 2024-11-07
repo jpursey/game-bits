@@ -45,10 +45,6 @@ TEST(ParserProgramTest, InvalidRules) {
   auto lexer = Lexer::Create(kCStyleLexerConfig, &error);
   ASSERT_NE(lexer, nullptr) << "Error: " << error;
 
-  program = ParserProgram::Create(lexer.get(), "program { %int }", &error);
-  EXPECT_EQ(program, nullptr);
-  EXPECT_THAT(error, HasSubstr("';'"));
-
   program = ParserProgram::Create(std::move(lexer), "program { %int }", &error);
   EXPECT_EQ(program, nullptr);
   EXPECT_THAT(error, HasSubstr("';'"));
@@ -66,13 +62,8 @@ TEST(ParserProgramTest, ValidRules) {
   ASSERT_NE(lexer, nullptr) << "Error: " << error;
 
   auto program2 =
-      ParserProgram::Create(lexer.get(), "program { %float; }", &error);
-  const auto& rules2 = program2->GetRules();
-  EXPECT_EQ(rules2.GetRule("program")->ToString(), "%float");
-
-  auto program3 =
       ParserProgram::Create(std::move(lexer), "program { %string; }", &error);
-  const auto& rules3 = program3->GetRules();
+  const auto& rules3 = program2->GetRules();
   EXPECT_EQ(rules3.GetRule("program")->ToString(), "%string");
 }
 

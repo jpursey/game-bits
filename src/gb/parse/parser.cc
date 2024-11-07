@@ -19,7 +19,7 @@ std::unique_ptr<Parser> Parser::Create(LexerConfig config, ParserRules rules,
   return Create(std::move(lexer), std::move(rules), error_message);
 }
 
-std::unique_ptr<Parser> Parser::Create(std::unique_ptr<Lexer> lexer,
+std::unique_ptr<Parser> Parser::Create(std::shared_ptr<Lexer> lexer,
                                        ParserRules rules,
                                        std::string* error_message) {
   if (lexer == nullptr) {
@@ -31,31 +31,19 @@ std::unique_ptr<Parser> Parser::Create(std::unique_ptr<Lexer> lexer,
   if (!rules.Validate(*lexer, error_message)) {
     return nullptr;
   }
-  auto parser = absl::WrapUnique(new Parser(*lexer, std::move(rules)));
-  parser->owned_lexer_ = std::move(lexer);
-  return parser;
-}
-
-std::unique_ptr<Parser> Parser::Create(Lexer& lexer, ParserRules rules,
-                                       std::string* error_message) {
-  if (!rules.Validate(lexer, error_message)) {
-    return nullptr;
-  }
-  return absl::WrapUnique(new Parser(lexer, std::move(rules)));
+  return absl::WrapUnique(new Parser(std::move(lexer), std::move(rules)));
 }
 
 std::unique_ptr<Parser> Parser::Create(std::unique_ptr<ParserProgram> program) {
   if (program == nullptr) {
     return nullptr;
   }
-  auto parser = absl::WrapUnique(
-      new Parser(*program->lexer_, std::move(program->rules_)));
-  parser->owned_lexer_ = std::move(program->owned_lexer_);
-  return parser;
+  return absl::WrapUnique(
+      new Parser(std::move(program->lexer_), std::move(program->rules_)));
 }
 
 ParseError Parser::Error(Token token, std::string_view message) {
-  LexerLocation location = lexer_.GetTokenLocation(token);
+  LexerLocation location = lexer_->GetTokenLocation(token);
   if (token.GetType() == kTokenError) {
     message = token.GetString();
     if (location.line < 0) {
@@ -63,7 +51,7 @@ ParseError Parser::Error(Token token, std::string_view message) {
     }
   }
   return ParseError(
-      location, absl::StrCat("Parse error at \"", lexer_.GetTokenText(token),
+      location, absl::StrCat("Parse error at \"", lexer_->GetTokenText(token),
                              "\": ", message));
 }
 
@@ -134,7 +122,7 @@ parser_internal::ParseMatch Parser::MatchError(
             break;
           default: {
             const std::string type_name =
-                GetTokenTypeString(expected_type, &lexer_.GetUserTokenNames());
+                GetTokenTypeString(expected_type, &lexer_->GetUserTokenNames());
             expected = !has_value
                            ? type_name
                            : absl::StrCat(type_name, " ", expected_value);

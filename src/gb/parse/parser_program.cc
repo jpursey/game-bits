@@ -402,7 +402,7 @@ std::unique_ptr<ParserProgram> ParserProgram::Create(
 }
 
 std::unique_ptr<ParserProgram> ParserProgram::Create(
-    std::unique_ptr<Lexer> lexer, std::string_view program_text,
+    std::shared_ptr<Lexer> lexer, std::string_view program_text,
     std::string* error_message) {
   if (lexer == nullptr) {
     if (error_message != nullptr) {
@@ -416,21 +416,6 @@ std::unique_ptr<ParserProgram> ParserProgram::Create(
   }
   return absl::WrapUnique(
       new ParserProgram(std::move(lexer), *std::move(rules)));
-}
-
-std::unique_ptr<ParserProgram> ParserProgram::Create(
-    Lexer* lexer, std::string_view program_text, std::string* error_message) {
-  if (lexer == nullptr) {
-    if (error_message != nullptr) {
-      *error_message = "Lexer is null";
-    }
-    return nullptr;
-  }
-  auto rules = ParseProgram(*lexer, program_text, error_message);
-  if (!rules.has_value()) {
-    return nullptr;
-  }
-  return absl::WrapUnique(new ParserProgram(lexer, *std::move(rules)));
 }
 
 }  // namespace gb
