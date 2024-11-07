@@ -12,6 +12,7 @@
 #include "gb/parse/lexer.h"
 #include "gb/parse/parse_result.h"
 #include "gb/parse/parse_types.h"
+#include "gb/parse/parser_program.h"
 #include "gb/parse/parser_rules.h"
 #include "gb/parse/token.h"
 
@@ -55,6 +56,10 @@ class Parser final {
                                         std::string* error_message = nullptr);
   static std::unique_ptr<Parser> Create(Lexer& lexer, ParserRules rules,
                                         std::string* error_message = nullptr);
+
+  // Creates a parser with the precompiled and validated ParserProgram. If the
+  // program is null, then this will also return null.
+  static std::unique_ptr<Parser> Create(std::unique_ptr<ParserProgram> program);
 
   Parser(const Parser&) = delete;
   Parser& operator=(const Parser&) = delete;

@@ -44,6 +44,16 @@ std::unique_ptr<Parser> Parser::Create(Lexer& lexer, ParserRules rules,
   return absl::WrapUnique(new Parser(lexer, std::move(rules)));
 }
 
+std::unique_ptr<Parser> Parser::Create(std::unique_ptr<ParserProgram> program) {
+  if (program == nullptr) {
+    return nullptr;
+  }
+  auto parser = absl::WrapUnique(
+      new Parser(*program->lexer_, std::move(program->rules_)));
+  parser->owned_lexer_ = std::move(program->owned_lexer_);
+  return parser;
+}
+
 ParseError Parser::Error(Token token, std::string_view message) {
   LexerLocation location = lexer_.GetTokenLocation(token);
   if (token.GetType() == kTokenError) {

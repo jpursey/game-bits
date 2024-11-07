@@ -723,16 +723,181 @@ TEST(ParserTest, InlineGroupsMergeNamedSubItems) {
   ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
   EXPECT_TRUE(parser->GetLexer().NextToken(content, false).IsEnd());
   auto parsed_statements = result->GetItems("statements");
-  ASSERT_THAT(
-      parsed_statements,
-      ElementsAre(IsToken(kTokenIdentifier, "a"),
-                  IsToken(kTokenIdentifier, "fun"),
-                  IsToken(kTokenIdentifier, "b")));
+  ASSERT_THAT(parsed_statements, ElementsAre(IsToken(kTokenIdentifier, "a"),
+                                             IsToken(kTokenIdentifier, "fun"),
+                                             IsToken(kTokenIdentifier, "b")));
   EXPECT_EQ(parsed_statements[0].GetString("name"), "a");
   EXPECT_EQ(parsed_statements[0].GetInt("value"), 42);
   EXPECT_EQ(parsed_statements[1].GetString("function"), "fun");
   EXPECT_EQ(parsed_statements[2].GetString("name"), "b");
   EXPECT_EQ(parsed_statements[2].GetFloat("value"), 3.14);
+}
+
+TEST(ParserTest, ParserProgram) {
+  const std::string_view kProgram = R"---(
+    Program {
+      $statements=Statement+ %end;
+    }
+    Statement {
+      $if=("if" "(" $condition=Expression ")" $then=Statement
+          ["else" $else=Statement]);
+      $while=("while" "(" $condition=Expression ")" $body=Statement);
+      $assign=($lvalue=%ident "=" $rvalue=Expression ";");
+      $call=($function=%ident "(" $arguments=Expression,* ")" ";");
+      "{" $statements=Statement* "}";
+      ";";
+    }
+    Expression {
+      $expr=Expression2
+      [$op=("==" | "!=" | "<" | "<=" | ">" | ">=") $expr=Expression2]+;
+    }
+    Expression2 {
+      $expr=Expression3 
+      [$op=("+" | "-") $expr=Expression3]+;
+    }
+    Expression3 {
+      $expr=Term
+      [$op=("*" | "/" | "%") $expr=Term]+;
+    }
+    Term {
+      $var=%ident;
+      $value=(%int | %float | %string | %char);
+      "(" $expr=Expression ")";
+    }
+  )---";
+  std::string error;
+  auto parser = Parser::Create(
+      ParserProgram::Create(kCStyleLexerConfig, kProgram, &error));
+  ASSERT_NE(parser, nullptr) << "Error: " << error;
+  LexerContentId content = parser->GetLexer().AddContent(R"---(
+    i = 0;
+    while (i < 10) {
+      if (i % 2 == 0) print(i);
+      else if (b * c + e * f / g - h == 42) print("woah");
+      else print("odd");
+      i = i + 1;
+    }
+  )---");
+
+  ParseResult result = parser->Parse(content, "Program");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_TRUE(parser->GetLexer().NextToken(content, false).IsEnd());
+  auto statements = result->GetItems("statements");
+  ASSERT_EQ(statements.size(), 2);
+  auto statement = statements[0].GetItem("assign");
+  ASSERT_NE(statement, nullptr);
+  EXPECT_EQ(statement->GetString("lvalue"), "i");
+  EXPECT_EQ(statement->GetInt("rvalue"), 0);
+
+  statement = statements[1].GetItem("while");
+  ASSERT_NE(statement, nullptr);
+
+  auto condition = statement->GetItem("condition");
+  ASSERT_NE(condition, nullptr);
+  auto expr2 = condition->GetItems("expr");  // ((i)) < ((10))
+  ASSERT_EQ(expr2.size(), 2);
+  auto expr3 = expr2[0].GetItems("expr");  // (i)
+  ASSERT_EQ(expr3.size(), 1);
+  auto term = expr3[0].GetItems("expr");  // i
+  ASSERT_EQ(term.size(), 1);
+  EXPECT_EQ(term[0].GetString("var"), "i");
+  expr3 = expr2[1].GetItems("expr");  // (10)
+  ASSERT_EQ(expr3.size(), 1);
+  term = expr3[0].GetItems("expr");  // 10
+  ASSERT_EQ(term.size(), 1);
+  EXPECT_EQ(term[0].GetInt("value"), 10);
+  auto op = condition->GetItems("op");  // <
+  ASSERT_EQ(op.size(), 1);
+  EXPECT_TRUE(op[0].GetToken().IsSymbol("<"));
+
+  auto body = statement->GetItem("body");
+  ASSERT_NE(body, nullptr);
+  auto body_statements = body->GetItems("statements");
+  ASSERT_EQ(body_statements.size(), 2);
+
+  auto if_statement = body_statements[0].GetItem("if");
+  ASSERT_NE(if_statement, nullptr);
+  condition = if_statement->GetItem("condition");
+  ASSERT_NE(condition, nullptr);
+  expr2 = condition->GetItems("expr");  // ((i % 2)) == ((0))
+  ASSERT_EQ(expr2.size(), 2);
+  expr3 = expr2[0].GetItems("expr");  // (i % 2) == (0)
+  ASSERT_EQ(expr3.size(), 1);
+  term = expr3[0].GetItems("expr");  // i % 2
+  ASSERT_EQ(term.size(), 2);
+  EXPECT_EQ(term[0].GetString("var"), "i");
+  EXPECT_EQ(term[1].GetInt("value"), 2);
+  op = expr3[0].GetItems("op");  // %
+  ASSERT_EQ(op.size(), 1);
+  EXPECT_TRUE(op[0].GetToken().IsSymbol("%"));
+  expr3 = expr2[1].GetItems("expr");  // (0)
+  ASSERT_EQ(expr3.size(), 1);
+  term = expr3[0].GetItems("expr");  // 0
+  ASSERT_EQ(term.size(), 1);
+  EXPECT_EQ(term[0].GetInt("value"), 0);
+  op = condition->GetItems("op");
+  ASSERT_EQ(op.size(), 1);
+  EXPECT_TRUE(op[0].GetToken().IsSymbol("=="));
+
+  statement = if_statement->GetItem("then");
+  ASSERT_NE(statement, nullptr);
+  auto call = statement->GetItem("call");
+  ASSERT_NE(call, nullptr);
+  EXPECT_EQ(call->GetString("function"), "print");
+  auto arguments = call->GetItems("arguments");
+  ASSERT_EQ(arguments.size(), 1);
+
+  statement = if_statement->GetItem("else");
+  ASSERT_NE(statement, nullptr);
+  if_statement = statement->GetItem("if");
+  ASSERT_NE(if_statement, nullptr);
+  condition = if_statement->GetItem("condition");
+  ASSERT_NE(condition, nullptr);
+  expr2 =
+      condition->GetItems("expr");  // ((b * c) + (e * f / g) - (h)) == ((42))
+  ASSERT_EQ(expr2.size(), 2);
+  expr3 = expr2[0].GetItems("expr");  // (b * c) + (e * f / g) - (h)
+  ASSERT_EQ(expr3.size(), 3);
+  term = expr3[0].GetItems("expr");  // b * c
+  ASSERT_EQ(term.size(), 2);
+  EXPECT_EQ(term[0].GetString("var"), "b");
+  EXPECT_EQ(term[1].GetString("var"), "c");
+  op = expr3[0].GetItems("op");  // *
+  ASSERT_EQ(op.size(), 1);
+  EXPECT_TRUE(op[0].GetToken().IsSymbol("*"));
+  term = expr3[1].GetItems("expr");  // e * f / g
+  ASSERT_EQ(term.size(), 3);
+  EXPECT_EQ(term[0].GetString("var"), "e");
+  EXPECT_EQ(term[1].GetString("var"), "f");
+  EXPECT_EQ(term[2].GetString("var"), "g");
+  op = expr3[1].GetItems("op");  // * /
+  ASSERT_EQ(op.size(), 2);
+  EXPECT_TRUE(op[0].GetToken().IsSymbol("*"));
+  EXPECT_TRUE(op[1].GetToken().IsSymbol("/"));
+  term = expr3[2].GetItems("expr");  // h
+  ASSERT_EQ(term.size(), 1);
+  EXPECT_EQ(term[0].GetString("var"), "h");
+  expr3 = expr2[1].GetItems("expr");  // (42)
+  ASSERT_EQ(expr3.size(), 1);
+  term = expr3[0].GetItems("expr");  // 42
+  ASSERT_EQ(term.size(), 1);
+  EXPECT_EQ(term[0].GetInt("value"), 42);
+  op = condition->GetItems("op");
+  ASSERT_EQ(op.size(), 1);
+  EXPECT_TRUE(op[0].GetToken().IsSymbol("=="));
+
+  statement = if_statement->GetItem("then");
+  ASSERT_NE(statement, nullptr);
+  call = statement->GetItem("call");
+  ASSERT_NE(call, nullptr);
+
+  statement = if_statement->GetItem("else");
+  ASSERT_NE(statement, nullptr);
+  call = statement->GetItem("call");
+  ASSERT_NE(call, nullptr);
+
+  statement = body_statements[1].GetItem("assign");
+  ASSERT_NE(statement, nullptr);
 }
 
 }  // namespace

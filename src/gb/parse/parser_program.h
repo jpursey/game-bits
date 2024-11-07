@@ -64,13 +64,13 @@ class ParserProgram {
   // specification). If an error string is provided, it will be set to the error
   // message on failure.
   static std::unique_ptr<ParserProgram> Create(LexerConfig config,
-                                               std::string program_text,
+                                               std::string_view program_text,
                                                std::string* error_message);
   static std::unique_ptr<ParserProgram> Create(std::unique_ptr<Lexer> lexer,
-                                               std::string program_text,
+                                               std::string_view program_text,
                                                std::string* error_message);
   static std::unique_ptr<ParserProgram> Create(Lexer* lexer,
-                                               std::string program_text,
+                                               std::string_view program_text,
                                                std::string* error_message);
 
   ParserProgram(const ParserProgram&) = delete;

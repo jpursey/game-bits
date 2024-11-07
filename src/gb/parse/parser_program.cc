@@ -287,8 +287,7 @@ std::unique_ptr<ParserGroup::SubItem> ParseGroupItem(
   } else if (parsed_type == "optional") {
     const ParsedItem* sub_item = parsed_inner->GetItem("optional");
     DCHECK(sub_item != nullptr);
-    auto optional_item =
-        ParseAlternative(context, *sub_item);
+    auto optional_item = ParseAlternative(context, *sub_item);
     if (optional_item == nullptr) {
       return nullptr;
     }
@@ -310,7 +309,8 @@ std::unique_ptr<ParserGroup::SubItem> ParseGroupItem(
   return nullptr;
 }
 
-std::optional<ParserRules> ParseProgram(Lexer& lexer, std::string program_text,
+std::optional<ParserRules> ParseProgram(Lexer& lexer,
+                                        std::string_view program_text,
                                         std::string* error_message) {
   std::string error_storage;
   ParseContext context = {
@@ -331,7 +331,7 @@ std::optional<ParserRules> ParseProgram(Lexer& lexer, std::string program_text,
     return std::nullopt;
   }
   auto parsed = program_parser->Parse(
-      program_parser->GetLexer().AddContent(std::move(program_text)),
+      program_parser->GetLexer().AddContent(std::string(program_text)),
       "program");
   if (!parsed.IsOk()) {
     context.error = parsed.GetError().FormatMessage();
@@ -392,16 +392,17 @@ std::optional<ParserRules> ParseProgram(Lexer& lexer, std::string program_text,
 }  // namespace
 
 std::unique_ptr<ParserProgram> ParserProgram::Create(
-    LexerConfig config, std::string program_text, std::string* error_message) {
+    LexerConfig config, std::string_view program_text,
+    std::string* error_message) {
   auto lexer = Lexer::Create(config, error_message);
   if (lexer == nullptr) {
     return nullptr;
   }
-  return Create(std::move(lexer), std::move(program_text), error_message);
+  return Create(std::move(lexer), program_text, error_message);
 }
 
 std::unique_ptr<ParserProgram> ParserProgram::Create(
-    std::unique_ptr<Lexer> lexer, std::string program_text,
+    std::unique_ptr<Lexer> lexer, std::string_view program_text,
     std::string* error_message) {
   if (lexer == nullptr) {
     if (error_message != nullptr) {
@@ -409,7 +410,7 @@ std::unique_ptr<ParserProgram> ParserProgram::Create(
     }
     return nullptr;
   }
-  auto rules = ParseProgram(*lexer, std::move(program_text), error_message);
+  auto rules = ParseProgram(*lexer, program_text, error_message);
   if (!rules.has_value()) {
     return nullptr;
   }
@@ -418,14 +419,14 @@ std::unique_ptr<ParserProgram> ParserProgram::Create(
 }
 
 std::unique_ptr<ParserProgram> ParserProgram::Create(
-    Lexer* lexer, std::string program_text, std::string* error_message) {
+    Lexer* lexer, std::string_view program_text, std::string* error_message) {
   if (lexer == nullptr) {
     if (error_message != nullptr) {
       *error_message = "Lexer is null";
     }
     return nullptr;
   }
-  auto rules = ParseProgram(*lexer, std::move(program_text), error_message);
+  auto rules = ParseProgram(*lexer, program_text, error_message);
   if (!rules.has_value()) {
     return nullptr;
   }
