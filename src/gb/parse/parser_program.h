@@ -28,7 +28,7 @@ namespace gb {
 //     ...
 //     <rule-item>... ;
 //   }
-// 
+//
 // User token types can be defined in the lexer specification, and can be
 // referenced in the parser rules as %<type> onceddefined:
 //   %<name> = <int> ;
@@ -63,12 +63,12 @@ class ParserProgram {
   // text. This returns null if the ParserProgram was invalid (lexer or program
   // specification). If an error string is provided, it will be set to the error
   // message on failure.
-  static std::unique_ptr<ParserProgram> Create(LexerConfig config,
-                                               std::string_view program_text,
-                                               std::string* error_message);
-  static std::unique_ptr<ParserProgram> Create(std::shared_ptr<Lexer> lexer,
-                                               std::string_view program_text,
-                                               std::string* error_message);
+  static std::unique_ptr<ParserProgram> Create(
+      LexerConfig config, std::string_view program_text,
+      std::string* error_message = nullptr);
+  static std::unique_ptr<ParserProgram> Create(
+      std::shared_ptr<Lexer> lexer, std::string_view program_text,
+      std::string* error_message = nullptr);
 
   ParserProgram(const ParserProgram&) = delete;
   ParserProgram& operator=(const ParserProgram&) = delete;
@@ -81,8 +81,7 @@ class ParserProgram {
   friend class Parser;
 
   ParserProgram(std::shared_ptr<Lexer> lexer, ParserRules rules)
-      : lexer_(std::move(lexer)), rules_(std::move(rules)) {
-  }
+      : lexer_(std::move(lexer)), rules_(std::move(rules)) {}
 
   std::shared_ptr<Lexer> lexer_;
   ParserRules rules_;
