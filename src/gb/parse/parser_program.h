@@ -75,16 +75,17 @@ class ParserProgram {
   ~ParserProgram() = default;
 
   const Lexer& GetLexer() const { return *lexer_; }
-  const ParserRules& GetRules() const { return rules_; }
+  const ParserRules& GetRules() const { return *rules_; }
 
  private:
   friend class Parser;
 
-  ParserProgram(std::shared_ptr<Lexer> lexer, ParserRules rules)
+  ParserProgram(std::shared_ptr<Lexer> lexer,
+                std::shared_ptr<const ParserRules> rules)
       : lexer_(std::move(lexer)), rules_(std::move(rules)) {}
 
   std::shared_ptr<Lexer> lexer_;
-  ParserRules rules_;
+  std::shared_ptr<const ParserRules> rules_;
 };
 
 }  // namespace gb

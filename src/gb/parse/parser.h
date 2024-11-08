@@ -49,11 +49,12 @@ class Parser final {
  public:
   // Creates a parser with the specified lexer, lexer configuration and parser
   // rules. If an error string is provided, it will be set to the error message.
-  static std::unique_ptr<Parser> Create(LexerConfig config, ParserRules rules,
-                                        std::string* error_message = nullptr);
-  static std::unique_ptr<Parser> Create(std::shared_ptr<Lexer> lexer,
-                                        ParserRules rules,
-                                        std::string* error_message = nullptr);
+  static std::unique_ptr<Parser> Create(
+      LexerConfig config, std::shared_ptr<const ParserRules> rules,
+      std::string* error_message = nullptr);
+  static std::unique_ptr<Parser> Create(
+      std::shared_ptr<Lexer> lexer, std::shared_ptr<const ParserRules> rules,
+      std::string* error_message = nullptr);
 
   // Creates a parser with the precompiled and validated ParserProgram. If the
   // program is null, then this will also return null.
@@ -93,7 +94,7 @@ class Parser final {
     Callback<ParseError()> error_callback;
   };
 
-  Parser(std::shared_ptr<Lexer> lexer, ParserRules rules)
+  Parser(std::shared_ptr<Lexer> lexer, std::shared_ptr<const ParserRules> rules)
       : lexer_(std::move(lexer)), rules_(std::move(rules)) {}
 
   ParseError Error(gb::Token token, std::string_view message);
@@ -114,7 +115,7 @@ class Parser final {
   ParseMatch Match(ParsedItem item);
 
   std::shared_ptr<Lexer> lexer_;
-  const ParserRules rules_;
+  std::shared_ptr<const ParserRules> rules_;
   LexerContentId content_ = kNoLexerContent;
   std::optional<ParseMatchError> last_error_;
   ParsedItems* items_ = nullptr;

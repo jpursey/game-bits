@@ -10,7 +10,8 @@
 
 namespace gb {
 
-std::unique_ptr<Parser> Parser::Create(LexerConfig config, ParserRules rules,
+std::unique_ptr<Parser> Parser::Create(LexerConfig config,
+                                       std::shared_ptr<const ParserRules> rules,
                                        std::string* error_message) {
   auto lexer = Lexer::Create(config, error_message);
   if (lexer == nullptr) {
@@ -20,7 +21,7 @@ std::unique_ptr<Parser> Parser::Create(LexerConfig config, ParserRules rules,
 }
 
 std::unique_ptr<Parser> Parser::Create(std::shared_ptr<Lexer> lexer,
-                                       ParserRules rules,
+                                       std::shared_ptr<const ParserRules> rules,
                                        std::string* error_message) {
   if (lexer == nullptr) {
     if (error_message != nullptr) {
@@ -28,7 +29,13 @@ std::unique_ptr<Parser> Parser::Create(std::shared_ptr<Lexer> lexer,
     }
     return nullptr;
   }
-  if (!rules.Validate(*lexer, error_message)) {
+  if (rules == nullptr) {
+    if (error_message != nullptr) {
+      *error_message = "Rules are null";
+    }
+    return nullptr;
+  }
+  if (!rules->Validate(*lexer, error_message)) {
     return nullptr;
   }
   return absl::WrapUnique(new Parser(std::move(lexer), std::move(rules)));
@@ -56,7 +63,7 @@ ParseError Parser::Error(Token token, std::string_view message) {
 }
 
 ParseResult Parser::Parse(LexerContentId content, std::string_view rule) {
-  const ParserRuleItem* root = rules_.GetRule(rule);
+  const ParserRuleItem* root = rules_->GetRule(rule);
   if (root == nullptr) {
     return ParseError(absl::StrCat("Parser rule \"", rule, "\" not found"));
   }
@@ -160,7 +167,7 @@ parser_internal::ParseMatch Parser::MatchTokenItem(
 
 parser_internal::ParseMatch Parser::MatchRuleItem(
     const ParserRuleName& parser_rule_name) {
-  const ParserRuleItem* rule = rules_.GetRule(parser_rule_name.GetRuleName());
+  const ParserRuleItem* rule = rules_->GetRule(parser_rule_name.GetRuleName());
   DCHECK(rule != nullptr);  // Handled during rule validation.
   ParsedItems* old_items = std::exchange(items_, nullptr);
   ParseMatch match = rule->Match(*this);

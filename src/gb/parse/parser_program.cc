@@ -5,6 +5,9 @@
 
 #include "gb/parse/parser_program.h"
 
+#include <memory>
+
+#include "absl/base/no_destructor.h"
 #include "absl/log/log.h"
 #include "absl/memory/memory.h"
 #include "absl/strings/str_cat.h"
@@ -42,8 +45,8 @@ constexpr LexerConfig kProgramLexerConfig = {
     .user_tokens = kProgramUserTokens,
 };
 
-ParserRules CreateProgramRules() {
-  ParserRules rules;
+std::shared_ptr<const ParserRules> CreateProgramRules() {
+  auto rules = std::make_shared<ParserRules>();
 
   // %token_type = 0;
   // %match_name = 1;
@@ -59,7 +62,7 @@ ParserRules CreateProgramRules() {
                                    ParserRuleItem::CreateRuleName("rule_def"));
   program->AddSubItem(std::move(program_alternatives), kParserZeroOrMore);
   program->AddSubItem(ParserRuleItem::CreateToken(kTokenEnd));
-  rules.AddRule("program", std::move(program));
+  rules->AddRule("program", std::move(program));
 
   // token_def {
   //   $name=%token_type "=" $value=%int ";";
@@ -69,7 +72,7 @@ ParserRules CreateProgramRules() {
   token_def->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, "="));
   token_def->AddSubItem("value", ParserRuleItem::CreateToken(kTokenInt));
   token_def->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, ";"));
-  rules.AddRule("token_def", std::move(token_def));
+  rules->AddRule("token_def", std::move(token_def));
 
   // rule_def {
   //   $name=%ident "{" ($options=group_alternative ";")+ "}";
@@ -83,7 +86,7 @@ ParserRules CreateProgramRules() {
   rule_def_sequence->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, ";"));
   rule_def->AddSubItem(std::move(rule_def_sequence), kParserOneOrMore);
   rule_def->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, "}"));
-  rules.AddRule("rule_def", std::move(rule_def));
+  rules->AddRule("rule_def", std::move(rule_def));
 
   // group_alternative {
   //   $items=group_sequence ("|" $items=group_sequence)*;
@@ -98,7 +101,7 @@ ParserRules CreateProgramRules() {
       "items", ParserRuleItem::CreateRuleName("group_sequence"));
   group_alternative->AddSubItem(std::move(group_alternative_sequence),
                                 kParserZeroOrMore);
-  rules.AddRule("group_alternative", std::move(group_alternative));
+  rules->AddRule("group_alternative", std::move(group_alternative));
 
   // group_sequence {
   //   $items=group_item+;
@@ -106,7 +109,7 @@ ParserRules CreateProgramRules() {
   auto group_sequence = ParserRuleItem::CreateSequence();
   group_sequence->AddSubItem(
       "items", ParserRuleItem::CreateRuleName("group_item"), kParserOneOrMore);
-  rules.AddRule("group_sequence", std::move(group_sequence));
+  rules->AddRule("group_sequence", std::move(group_sequence));
 
   // group_item {
   //   [$match_name=%match_name "="]
@@ -130,7 +133,7 @@ ParserRules CreateProgramRules() {
       ParserRuleItem::CreateToken(kTokenSymbol, ",*"));
   group_item->AddSubItem("repeat", std::move(group_item_repeat),
                          kParserOptional);
-  rules.AddRule("group_item", std::move(group_item));
+  rules->AddRule("group_item", std::move(group_item));
 
   // group_item_inner {
   //   $token=%token_type;
@@ -162,9 +165,9 @@ ParserRules CreateProgramRules() {
   group_item_inner_group->AddSubItem(
       ParserRuleItem::CreateToken(kTokenSymbol, ")"));
   group_item_inner->AddSubItem(std::move(group_item_inner_group));
-  rules.AddRule("group_item_inner", std::move(group_item_inner));
+  rules->AddRule("group_item_inner", std::move(group_item_inner));
 
-  return rules;
+  return std::move(rules);
 }
 
 struct ParseContext {
@@ -309,9 +312,9 @@ std::unique_ptr<ParserGroup::SubItem> ParseGroupItem(
   return nullptr;
 }
 
-std::optional<ParserRules> ParseProgram(Lexer& lexer,
-                                        std::string_view program_text,
-                                        std::string* error_message) {
+std::unique_ptr<const ParserRules> ParseProgram(Lexer& lexer,
+                                                std::string_view program_text,
+                                                std::string* error_message) {
   std::string error_storage;
   ParseContext context = {
       .lexer = lexer,
@@ -324,18 +327,20 @@ std::optional<ParserRules> ParseProgram(Lexer& lexer,
   context.token_types["ident"] = kTokenIdentifier;
   context.token_types["linebreak"] = kTokenLineBreak;
 
+  static absl::NoDestructor<std::shared_ptr<const ParserRules>> program_rules(
+      CreateProgramRules());
   auto program_parser =
-      Parser::Create(kProgramLexerConfig, CreateProgramRules(), &context.error);
+      Parser::Create(kProgramLexerConfig, *program_rules, &context.error);
   if (program_parser == nullptr) {
     LOG(DFATAL) << "Internal error: " << context.error;
-    return std::nullopt;
+    return nullptr;
   }
   auto parsed = program_parser->Parse(
       program_parser->GetLexer().AddContent(std::string(program_text)),
       "program");
   if (!parsed.IsOk()) {
     context.error = parsed.GetError().FormatMessage();
-    return std::nullopt;
+    return nullptr;
   }
 
   auto parsed_tokens = parsed->GetItems("tokens");
@@ -344,47 +349,47 @@ std::optional<ParserRules> ParseProgram(Lexer& lexer,
     std::string_view token_name = parsed_token.GetString("name");
     if (!context.token_types.insert({token_name, token_type}).second) {
       context.error = absl::StrCat("Duplicate token type: %", token_name);
-      return std::nullopt;
+      return nullptr;
     }
     if (!lexer.IsValidTokenType(token_type)) {
       context.error = absl::StrCat("Undefined token type value ",
                                    static_cast<int>(token_type),
                                    " for token name %", token_name);
-      return std::nullopt;
+      return nullptr;
     }
   }
 
   auto parsed_rules = parsed->GetItems("rules");
   if (parsed_rules.empty()) {
     context.error = "No rules found in program";
-    return std::nullopt;
+    return nullptr;
   }
 
-  ParserRules rules;
+  auto rules = std::make_unique<ParserRules>();
   for (const ParsedItem& parsed_rule : parsed_rules) {
     std::string_view rule_name = parsed_rule.GetString("name");
     auto parsed_options = parsed_rule.GetItems("options");
     if (parsed_options.size() == 1) {
       auto group = ParseAlternative(context, parsed_options[0]);
       if (group == nullptr) {
-        return std::nullopt;
+        return nullptr;
       }
-      rules.AddRule(std::string(rule_name), std::move(group));
+      rules->AddRule(std::string(rule_name), std::move(group));
     } else {
       auto rule = ParserGroup::CreateAlternatives();
       for (const ParsedItem& parsed_option : parsed_options) {
         auto option = ParseAlternativeAsSubItem(context, parsed_option);
         if (option == nullptr) {
-          return std::nullopt;
+          return nullptr;
         }
         rule->AddSubItem(std::move(*option));
       }
-      rules.AddRule(std::string(rule_name), std::move(rule));
+      rules->AddRule(std::string(rule_name), std::move(rule));
     }
   }
 
-  if (!rules.Validate(lexer, &context.error)) {
-    return std::nullopt;
+  if (!rules->Validate(lexer, &context.error)) {
+    return nullptr;
   }
   return rules;
 }
@@ -411,11 +416,11 @@ std::unique_ptr<ParserProgram> ParserProgram::Create(
     return nullptr;
   }
   auto rules = ParseProgram(*lexer, program_text, error_message);
-  if (!rules.has_value()) {
+  if (rules == nullptr) {
     return nullptr;
   }
   return absl::WrapUnique(
-      new ParserProgram(std::move(lexer), *std::move(rules)));
+      new ParserProgram(std::move(lexer), std::move(rules)));
 }
 
 }  // namespace gb

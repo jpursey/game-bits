@@ -24,12 +24,12 @@ MATCHER_P2(IsToken, type, value, "") {
   return token.GetType() == type && token.ToString() == value;
 }
 
-ParserRules ValidParserRules() {
-  ParserRules rules;
+std::shared_ptr<const ParserRules> ValidParserRules() {
+  auto rules = std::make_shared<ParserRules>();
   auto rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem(ParserRuleItem::CreateToken(kTokenIdentifier));
-  rules.AddRule("rule", std::move(rule));
-  return rules;
+  rules->AddRule("rule", std::move(rule));
+  return std::move(rules);
 }
 
 TEST(ParserTest, InvalidLexerConfig) {
@@ -48,14 +48,15 @@ TEST(ParserTest, NullLexer) {
 
 TEST(ParserTest, NoRules) {
   std::string error;
-  auto parser = Parser::Create(kCStyleLexerConfig, ParserRules(), &error);
+  auto parser = Parser::Create(kCStyleLexerConfig,
+                               std::make_shared<ParserRules>(), &error);
   ASSERT_EQ(parser, nullptr);
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("no rules"));
 }
 
 TEST(ParserTest, InvalidRulesWithSharedLexer) {
-  ParserRules rules;
-  rules.AddRule("rule", ParserRuleItem::CreateSequence());
+  auto rules = std::make_shared<ParserRules>();
+  rules->AddRule("rule", ParserRuleItem::CreateSequence());
   std::string error;
   std::shared_ptr<Lexer> lexer = Lexer::Create(kCStyleLexerConfig, &error);
   ASSERT_NE(lexer, nullptr) << "Error: " << error;
@@ -65,10 +66,10 @@ TEST(ParserTest, InvalidRulesWithSharedLexer) {
 }
 
 TEST(ParserTest, NoContent) {
-  ParserRules rules;
+  auto rules = std::make_shared<ParserRules>();
   auto rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem(ParserRuleItem::CreateToken(kTokenIdentifier));
-  rules.AddRule("rule", std::move(rule));
+  rules->AddRule("rule", std::move(rule));
   std::string error;
   auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
   ASSERT_NE(parser, nullptr) << "Error: " << error;
@@ -86,8 +87,8 @@ TEST(ParserTest, NoContent) {
 }
 
 TEST(ParserTest, EmptySequenceInvalid) {
-  ParserRules rules;
-  rules.AddRule("rule", ParserRuleItem::CreateSequence());
+  auto rules = std::make_shared<ParserRules>();
+  rules->AddRule("rule", ParserRuleItem::CreateSequence());
   std::string error;
   auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
   ASSERT_EQ(parser, nullptr);
@@ -95,10 +96,10 @@ TEST(ParserTest, EmptySequenceInvalid) {
 }
 
 TEST(ParserTest, UndefinedInitialRule) {
-  ParserRules rules;
+  auto rules = std::make_shared<ParserRules>();
   auto rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem(ParserRuleItem::CreateToken(kTokenIdentifier));
-  rules.AddRule("rule", std::move(rule));
+  rules->AddRule("rule", std::move(rule));
   std::string error;
   auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
   ASSERT_NE(parser, nullptr) << "Error: " << error;
@@ -110,10 +111,10 @@ TEST(ParserTest, UndefinedInitialRule) {
 }
 
 TEST(ParserTest, MatchSequenceSingleIdent) {
-  ParserRules rules;
+  auto rules = std::make_shared<ParserRules>();
   auto rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem(ParserRuleItem::CreateToken(kTokenIdentifier));
-  rules.AddRule("rule", std::move(rule));
+  rules->AddRule("rule", std::move(rule));
   std::string error;
   std::shared_ptr<Lexer> lexer = Lexer::Create(kCStyleLexerConfig, &error);
   ASSERT_NE(lexer, nullptr) << "Error: " << error;
@@ -129,12 +130,12 @@ TEST(ParserTest, MatchSequenceSingleIdent) {
 }
 
 TEST(ParserTest, MatchSequenceOptionalIdent) {
-  ParserRules rules;
+  auto rules = std::make_shared<ParserRules>();
   auto rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem(ParserRuleItem::CreateToken(kTokenIdentifier),
                    kParserOptional);
   rule->AddSubItem(ParserRuleItem::CreateToken(kTokenInt));
-  rules.AddRule("rule", std::move(rule));
+  rules->AddRule("rule", std::move(rule));
   std::string error;
   auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
   ASSERT_NE(parser, nullptr) << "Error: " << error;
@@ -148,11 +149,11 @@ TEST(ParserTest, MatchSequenceOptionalIdent) {
 }
 
 TEST(ParserTest, MatchSequenceOneOrMore) {
-  ParserRules rules;
+  auto rules = std::make_shared<ParserRules>();
   auto rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem(ParserRuleItem::CreateToken(kTokenIdentifier),
                    kParserOneOrMore);
-  rules.AddRule("rule", std::move(rule));
+  rules->AddRule("rule", std::move(rule));
   std::string error;
   auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
   ASSERT_NE(parser, nullptr) << "Error: " << error;
@@ -166,12 +167,12 @@ TEST(ParserTest, MatchSequenceOneOrMore) {
 }
 
 TEST(ParserTest, MatchSequenceZeroOrMore) {
-  ParserRules rules;
+  auto rules = std::make_shared<ParserRules>();
   auto rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem(ParserRuleItem::CreateToken(kTokenIdentifier),
                    kParserZeroOrMore);
   rule->AddSubItem(ParserRuleItem::CreateToken(kTokenInt));
-  rules.AddRule("rule", std::move(rule));
+  rules->AddRule("rule", std::move(rule));
   std::string error;
   auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
   ASSERT_NE(parser, nullptr) << "Error: " << error;
@@ -185,11 +186,11 @@ TEST(ParserTest, MatchSequenceZeroOrMore) {
 }
 
 TEST(ParserTest, MatchSequenceOneOrMoreWithComma) {
-  ParserRules rules;
+  auto rules = std::make_shared<ParserRules>();
   auto rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem(ParserRuleItem::CreateToken(kTokenIdentifier),
                    kParserOneOrMoreWithComma);
-  rules.AddRule("rule", std::move(rule));
+  rules->AddRule("rule", std::move(rule));
   std::string error;
   auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
   ASSERT_NE(parser, nullptr) << "Error: " << error;
@@ -203,12 +204,12 @@ TEST(ParserTest, MatchSequenceOneOrMoreWithComma) {
 }
 
 TEST(ParserTest, MatchSequenceOneOrMoreWithCommaFails) {
-  ParserRules rules;
+  auto rules = std::make_shared<ParserRules>();
   auto rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem(ParserRuleItem::CreateToken(kTokenIdentifier),
                    kParserOneOrMoreWithComma);
   rule->AddSubItem(ParserRuleItem::CreateToken(kTokenEnd));
-  rules.AddRule("rule", std::move(rule));
+  rules->AddRule("rule", std::move(rule));
   std::string error;
   auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
   ASSERT_NE(parser, nullptr) << "Error: " << error;
@@ -224,12 +225,12 @@ TEST(ParserTest, MatchSequenceOneOrMoreWithCommaFails) {
 }
 
 TEST(ParserTest, MatchSequenceZeroOrMoreWithComma) {
-  ParserRules rules;
+  auto rules = std::make_shared<ParserRules>();
   auto rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem(ParserRuleItem::CreateToken(kTokenIdentifier),
                    kParserZeroOrMoreWithComma);
   rule->AddSubItem(ParserRuleItem::CreateToken(kTokenInt));
-  rules.AddRule("rule", std::move(rule));
+  rules->AddRule("rule", std::move(rule));
   std::string error;
   auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
   ASSERT_NE(parser, nullptr) << "Error: " << error;
@@ -243,12 +244,12 @@ TEST(ParserTest, MatchSequenceZeroOrMoreWithComma) {
 }
 
 TEST(ParserTest, MatchSequenceZeroOrMoreWithCommaFails) {
-  ParserRules rules;
+  auto rules = std::make_shared<ParserRules>();
   auto rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem(ParserRuleItem::CreateToken(kTokenIdentifier),
                    kParserZeroOrMoreWithComma);
   rule->AddSubItem(ParserRuleItem::CreateToken(kTokenInt));
-  rules.AddRule("rule", std::move(rule));
+  rules->AddRule("rule", std::move(rule));
   std::string error;
   auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
   ASSERT_NE(parser, nullptr) << "Error: " << error;
@@ -264,8 +265,8 @@ TEST(ParserTest, MatchSequenceZeroOrMoreWithCommaFails) {
 }
 
 TEST(ParserTest, EmptyAlternativesMatches) {
-  ParserRules rules;
-  rules.AddRule("rule", ParserRuleItem::CreateAlternatives());
+  auto rules = std::make_shared<ParserRules>();
+  rules->AddRule("rule", ParserRuleItem::CreateAlternatives());
   std::string error;
   auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
   ASSERT_EQ(parser, nullptr);
@@ -279,7 +280,7 @@ TEST(ParserTest, MatchTokenTypeSuccess) {
   LexerConfig config = kCStyleLexerConfig;
   config.flags.Set(LexerFlag::kLineBreak);
   config.user_tokens = user_tokens;
-  ParserRules rules;
+  auto rules = std::make_shared<ParserRules>();
   auto rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem("tokens", ParserRuleItem::CreateToken(kTokenInt));
   rule->AddSubItem("tokens", ParserRuleItem::CreateToken(kTokenFloat));
@@ -288,7 +289,7 @@ TEST(ParserTest, MatchTokenTypeSuccess) {
   rule->AddSubItem("tokens", ParserRuleItem::CreateToken(kTokenLineBreak));
   rule->AddSubItem("tokens", ParserRuleItem::CreateToken(kTokenIdentifier));
   rule->AddSubItem("tokens", ParserRuleItem::CreateToken(kTokenUser + 42));
-  rules.AddRule("rule", std::move(rule));
+  rules->AddRule("rule", std::move(rule));
   std::string error;
   auto parser = Parser::Create(config, std::move(rules), &error);
   ASSERT_NE(parser, nullptr) << "Error: " << error;
@@ -314,28 +315,28 @@ TEST(ParserTest, MatchTokenTypeFail) {
   LexerConfig config = kCStyleLexerConfig;
   config.flags.Set(LexerFlag::kLineBreak);
   config.user_tokens = user_tokens;
-  ParserRules rules;
+  auto rules = std::make_shared<ParserRules>();
   auto rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem("token", ParserRuleItem::CreateToken(kTokenInt));
-  rules.AddRule("int", std::move(rule));
+  rules->AddRule("int", std::move(rule));
   rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem("token", ParserRuleItem::CreateToken(kTokenFloat));
-  rules.AddRule("float", std::move(rule));
+  rules->AddRule("float", std::move(rule));
   rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem("token", ParserRuleItem::CreateToken(kTokenChar));
-  rules.AddRule("char", std::move(rule));
+  rules->AddRule("char", std::move(rule));
   rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem("token", ParserRuleItem::CreateToken(kTokenString));
-  rules.AddRule("string", std::move(rule));
+  rules->AddRule("string", std::move(rule));
   rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem("token", ParserRuleItem::CreateToken(kTokenLineBreak));
-  rules.AddRule("line_break", std::move(rule));
+  rules->AddRule("line_break", std::move(rule));
   rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem("token", ParserRuleItem::CreateToken(kTokenIdentifier));
-  rules.AddRule("identifier", std::move(rule));
+  rules->AddRule("identifier", std::move(rule));
   rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem("token", ParserRuleItem::CreateToken(kTokenUser + 42));
-  rules.AddRule("user", std::move(rule));
+  rules->AddRule("user", std::move(rule));
   std::string error;
   auto parser = Parser::Create(config, std::move(rules), &error);
   ASSERT_NE(parser, nullptr) << "Error: " << error;
@@ -414,7 +415,7 @@ TEST(ParserTest, MatchTokenTypeAndValueSuccess) {
   LexerConfig config = kCStyleLexerConfig;
   config.flags.Set(LexerFlag::kLineBreak);
   config.user_tokens = user_tokens;
-  ParserRules rules;
+  auto rules = std::make_shared<ParserRules>();
   auto rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem("tokens", ParserRuleItem::CreateToken(kTokenInt, "42"));
   rule->AddSubItem("tokens", ParserRuleItem::CreateToken(kTokenFloat, "3.14"));
@@ -428,7 +429,7 @@ TEST(ParserTest, MatchTokenTypeAndValueSuccess) {
   rule->AddSubItem("tokens",
                    ParserRuleItem::CreateToken(kTokenUser + 42, "$42"));
   rule->AddSubItem("tokens", ParserRuleItem::CreateToken(kTokenSymbol, ";"));
-  rules.AddRule("rule", std::move(rule));
+  rules->AddRule("rule", std::move(rule));
   std::string error;
   auto parser = Parser::Create(config, std::move(rules), &error);
   ASSERT_NE(parser, nullptr) << "Error: " << error;
@@ -454,34 +455,34 @@ TEST(ParserTest, MatchTokenTypeAndValueFail) {
   LexerConfig config = kCStyleLexerConfig;
   config.flags.Set(LexerFlag::kLineBreak);
   config.user_tokens = user_tokens;
-  ParserRules rules;
+  auto rules = std::make_shared<ParserRules>();
   auto rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem("token", ParserRuleItem::CreateToken(kTokenInt, "43"));
-  rules.AddRule("int", std::move(rule));
+  rules->AddRule("int", std::move(rule));
   rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem("token", ParserRuleItem::CreateToken(kTokenFloat, "3.15"));
-  rules.AddRule("float", std::move(rule));
+  rules->AddRule("float", std::move(rule));
   rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem("token", ParserRuleItem::CreateToken(kTokenChar, "'d'"));
-  rules.AddRule("char", std::move(rule));
+  rules->AddRule("char", std::move(rule));
   rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem("token",
                    ParserRuleItem::CreateToken(kTokenString, "\"world\""));
-  rules.AddRule("string", std::move(rule));
+  rules->AddRule("string", std::move(rule));
   rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem("token",
                    ParserRuleItem::CreateToken(kTokenKeyword, "while"));
-  rules.AddRule("keyword", std::move(rule));
+  rules->AddRule("keyword", std::move(rule));
   rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem("token",
                    ParserRuleItem::CreateToken(kTokenIdentifier, "grape"));
-  rules.AddRule("identifier", std::move(rule));
+  rules->AddRule("identifier", std::move(rule));
   rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem("token", ParserRuleItem::CreateToken(kTokenUser, "$42"));
-  rules.AddRule("user", std::move(rule));
+  rules->AddRule("user", std::move(rule));
   rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem("token", ParserRuleItem::CreateToken(kTokenSymbol, "+"));
-  rules.AddRule("symbol", std::move(rule));
+  rules->AddRule("symbol", std::move(rule));
   std::string error;
   auto parser = Parser::Create(config, std::move(rules), &error);
   ASSERT_NE(parser, nullptr) << "Error: " << error;
@@ -556,11 +557,11 @@ TEST(ParserTest, MatchTokenTypeAndValueFail) {
 }
 
 TEST(ParserTest, MatchErrorTokenAsInt) {
-  ParserRules rules;
+  auto rules = std::make_shared<ParserRules>();
   auto rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem("token", ParserRuleItem::CreateToken(kTokenIdentifier));
   rule->AddSubItem("token", ParserRuleItem::CreateToken(kTokenInt));
-  rules.AddRule("rule", std::move(rule));
+  rules->AddRule("rule", std::move(rule));
   std::string error;
   auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
   ASSERT_NE(parser, nullptr) << "Error: " << error;
@@ -574,17 +575,17 @@ TEST(ParserTest, MatchErrorTokenAsInt) {
 }
 
 TEST(ParserTest, MatchRuleNameSuccess) {
-  ParserRules rules;
+  auto rules = std::make_shared<ParserRules>();
   auto rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem("ident", ParserRuleItem::CreateToken(kTokenIdentifier));
-  rules.AddRule("ident", std::move(rule));
+  rules->AddRule("ident", std::move(rule));
   rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, "("));
   rule->AddSubItem("first", ParserRuleItem::CreateRuleName("ident"));
   rule->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, ","));
   rule->AddSubItem("second", ParserRuleItem::CreateRuleName("ident"));
   rule->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, ")"));
-  rules.AddRule("pair", std::move(rule));
+  rules->AddRule("pair", std::move(rule));
   std::string error;
   auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
   ASSERT_NE(parser, nullptr) << "Error: " << error;
@@ -601,12 +602,12 @@ TEST(ParserTest, MatchRuleNameSuccess) {
 }
 
 TEST(ParserTest, MatchSequenceFirstItemOptional) {
-  ParserRules rules;
+  auto rules = std::make_shared<ParserRules>();
   auto rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem("ident", ParserRuleItem::CreateToken(kTokenIdentifier),
                    kParserOptional);
   rule->AddSubItem(ParserRuleItem::CreateToken(kTokenInt));
-  rules.AddRule("rule", std::move(rule));
+  rules->AddRule("rule", std::move(rule));
   std::string error;
   auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
   ASSERT_NE(parser, nullptr) << "Error: " << error;
@@ -620,11 +621,11 @@ TEST(ParserTest, MatchSequenceFirstItemOptional) {
 }
 
 TEST(ParserTest, MatchAlternatesFirstItemInvalid) {
-  ParserRules rules;
+  auto rules = std::make_shared<ParserRules>();
   auto rule = ParserRuleItem::CreateAlternatives();
   rule->AddSubItem("ident", ParserRuleItem::CreateToken(kTokenIdentifier));
   rule->AddSubItem("int", ParserRuleItem::CreateToken(kTokenInt));
-  rules.AddRule("rule", std::move(rule));
+  rules->AddRule("rule", std::move(rule));
   std::string error;
   auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
   ASSERT_NE(parser, nullptr) << "Error: " << error;
@@ -638,11 +639,11 @@ TEST(ParserTest, MatchAlternatesFirstItemInvalid) {
 }
 
 TEST(ParserTest, MatchAlternatesAllItemsInvalid) {
-  ParserRules rules;
+  auto rules = std::make_shared<ParserRules>();
   auto rule = ParserRuleItem::CreateAlternatives();
   rule->AddSubItem("ident", ParserRuleItem::CreateToken(kTokenIdentifier));
   rule->AddSubItem("int", ParserRuleItem::CreateToken(kTokenInt));
-  rules.AddRule("rule", std::move(rule));
+  rules->AddRule("rule", std::move(rule));
   std::string error;
   auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
   ASSERT_NE(parser, nullptr) << "Error: " << error;
@@ -656,12 +657,12 @@ TEST(ParserTest, MatchAlternatesAllItemsInvalid) {
 }
 
 TEST(ParserTest, MatchAlternativesCommaList) {
-  ParserRules rules;
+  auto rules = std::make_shared<ParserRules>();
   auto rule = ParserRuleItem::CreateAlternatives();
   rule->AddSubItem("ident", ParserRuleItem::CreateToken(kTokenIdentifier));
   rule->AddSubItem("list", ParserRuleItem::CreateToken(kTokenInt),
                    kParserOneOrMoreWithComma);
-  rules.AddRule("rule", std::move(rule));
+  rules->AddRule("rule", std::move(rule));
   std::string error;
   auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
   ASSERT_NE(parser, nullptr) << "Error: " << error;
@@ -708,8 +709,8 @@ TEST(ParserTest, InlineGroupsMergeNamedSubItems) {
   auto rule = ParserRuleItem::CreateSequence();
   rule->AddSubItem(std::move(statement), kParserOneOrMore);
 
-  ParserRules rules;
-  rules.AddRule("rule", std::move(rule));
+  auto rules = std::make_shared<ParserRules>();
+  rules->AddRule("rule", std::move(rule));
 
   std::string error;
   auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
