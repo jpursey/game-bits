@@ -20,7 +20,7 @@ TEST(ParserProgramTest, InvalidLexerConfig) {
   auto program =
       ParserProgram::Create(LexerConfig{}, "program { %int; }", &error);
   EXPECT_EQ(program, nullptr);
-  EXPECT_THAT(error, HasSubstr(Lexer::kErrorNoTokenSpec));
+  EXPECT_THAT(error, HasSubstr(LexerProgram::kErrorNoTokenSpec));
 }
 
 TEST(ParserProgramTest, NullLexer) {

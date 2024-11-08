@@ -28,14 +28,6 @@ LexerConfig ValidConfigForTest() {
   return config;
 }
 
-TEST(LexerTest, DefaultConfigIsInvalid) {
-  LexerConfig config;
-  std::string error;
-  auto lexer = Lexer::Create(config, &error);
-  EXPECT_EQ(lexer, nullptr);
-  EXPECT_EQ(error, Lexer::kErrorNoTokenSpec);
-}
-
 TEST(LexerTest, SuccessfulCreateClearsError) {
   std::string error = "test error";
   auto lexer = Lexer::Create(ValidConfigForTest(), &error);
@@ -374,30 +366,6 @@ TEST(LexerTest, NextTokenForEmptyContent) {
   EXPECT_EQ(lexer->GetTokenLocation(token),
             (LexerLocation{.id = content, .line = 0, .column = 0}));
   EXPECT_EQ(token.GetType(), kTokenEnd);
-}
-
-TEST(LexerTest, InvalidSymbolCharacters) {
-  int prefix_count = 0;
-  for (int ch = 0; ch < 256;
-       ++ch, prefix_count = (prefix_count + 1) % kMaxSymbolSize) {
-    if (absl::ascii_isgraph(ch)) {
-      continue;
-    }
-    std::string context = absl::StrCat("Context: ch = ", ch);
-    std::string symbol(prefix_count, '+');
-    symbol.push_back(ch);
-    std::string error;
-    auto lexer = Lexer::Create({.symbols = {symbol}}, &error);
-    EXPECT_EQ(lexer, nullptr) << context;
-    EXPECT_EQ(error, Lexer::kErrorInvalidSymbolSpec) << context;
-  }
-}
-
-TEST(LexerTest, DuplicateSymbols) {
-  std::string error;
-  auto lexer = Lexer::Create({.symbols = {"*", "++", "++", "-"}}, &error);
-  EXPECT_EQ(lexer, nullptr);
-  EXPECT_EQ(error, Lexer::kErrorDuplicateSymbolSpec);
 }
 
 TEST(LexerTest, ParseSymbols) {
@@ -1983,21 +1951,6 @@ TEST(LexerTest, ParseFloatMaxSize32Bit) {
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
-TEST(LexerTest, ConflictingStringAndCharSpecs) {
-  std::string error;
-  auto lexer = Lexer::Create({.flags = {LexerFlag::kDoubleQuoteString,
-                                        LexerFlag::kDoubleQuoteCharacter}},
-                             &error);
-  EXPECT_EQ(lexer, nullptr);
-  EXPECT_EQ(error, Lexer::kErrorConflictingStringAndCharSpec);
-
-  lexer = Lexer::Create({.flags = {LexerFlag::kSingleQuoteString,
-                                   LexerFlag::kSingleQuoteCharacter}},
-                        &error);
-  EXPECT_EQ(lexer, nullptr);
-  EXPECT_EQ(error, Lexer::kErrorConflictingStringAndCharSpec);
-}
-
 TEST(LexerTest, ParseCharSingleQuote) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kSingleQuoteCharacter},
@@ -2602,21 +2555,6 @@ TEST(LexerTest, ParseStringWithDecodeAndSpecialCodes) {
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
-TEST(LexerTest, EmptyStringKeywordSpecifications) {
-  std::string error;
-  auto lexer = Lexer::Create({.keywords = {"if", "", "while"}}, &error);
-  EXPECT_EQ(lexer, nullptr);
-  EXPECT_EQ(error, Lexer::kErrorEmptyKeywordSpec);
-}
-
-TEST(LexerTest, DuplicateKeywordSpecifications) {
-  std::string error;
-  auto lexer =
-      Lexer::Create({.keywords = {"if", "else", "else", "while"}}, &error);
-  EXPECT_EQ(lexer, nullptr);
-  EXPECT_EQ(error, Lexer::kErrorDuplicateKeywordSpec);
-}
-
 TEST(LexerTest, ParseKeyword) {
   auto lexer = Lexer::Create({
       .keywords = {"if", "else", "while"},
@@ -2715,15 +2653,6 @@ TEST(LexerTest, ParseKeywordCaseInsensitive) {
   EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
   EXPECT_EQ(lexer->GetTokenText(token), "WhIlEs");
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
-}
-
-TEST(LexerTest, ConflictingForceUpperAndLower) {
-  std::string error;
-  auto lexer = Lexer::Create(
-      {.flags = {LexerFlag::kIdentForceUpper, LexerFlag::kIdentForceLower}},
-      &error);
-  EXPECT_EQ(lexer, nullptr);
-  EXPECT_EQ(error, Lexer::kErrorConflictingIdentifierSpec);
 }
 
 TEST(LexerTest, ParseIdentLower) {
@@ -3248,45 +3177,6 @@ TEST(LexerTest, ParseInvalidTokenNoAdvance) {
   EXPECT_EQ(token.GetType(), kTokenError);
   EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
   EXPECT_EQ(lexer->GetTokenText(token), "gHi*");
-}
-
-TEST(LexerTest, ConflictingCommentSpecifications) {
-  std::string error;
-
-  auto lexer = Lexer::Create(
-      {.flags = kLexerFlags_CIdentifiers, .line_comments = {"//", "#", "//"}},
-      &error);
-  EXPECT_EQ(lexer, nullptr);
-  EXPECT_EQ(error, Lexer::kErrorConflictingCommentSpec);
-
-  lexer = Lexer::Create(
-      {.flags = kLexerFlags_CIdentifiers,
-       .block_comments = {{"/*", "*/"}, {"$", "$"}, {"/*", "*/"}}},
-      &error);
-  EXPECT_EQ(lexer, nullptr);
-  EXPECT_EQ(error, Lexer::kErrorConflictingCommentSpec);
-
-  lexer = Lexer::Create({.flags = kLexerFlags_CIdentifiers,
-                         .line_comments = {"#"},
-                         .block_comments = {{"/*", "*/"}, {"#", "#"}}},
-                        &error);
-  EXPECT_EQ(lexer, nullptr);
-  EXPECT_EQ(error, Lexer::kErrorConflictingCommentSpec);
-}
-
-TEST(LexerTest, EmptyStringCommentSpecifications) {
-  std::string error;
-
-  auto lexer = Lexer::Create(
-      {.flags = kLexerFlags_CIdentifiers, .line_comments = {"//", ""}}, &error);
-  ASSERT_EQ(lexer, nullptr);
-  EXPECT_EQ(error, Lexer::kErrorEmptyCommentSpec);
-
-  lexer = Lexer::Create({.flags = kLexerFlags_CIdentifiers,
-                         .block_comments = {{"/*", "*/"}, {""}}},
-                        &error);
-  ASSERT_EQ(lexer, nullptr);
-  EXPECT_EQ(error, Lexer::kErrorEmptyCommentSpec);
 }
 
 TEST(LexerTest, ParseLineComments) {

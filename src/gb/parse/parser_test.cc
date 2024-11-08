@@ -36,7 +36,7 @@ TEST(ParserTest, InvalidLexerConfig) {
   std::string error;
   auto parser = Parser::Create(LexerConfig(), ValidParserRules(), &error);
   ASSERT_EQ(parser, nullptr);
-  EXPECT_THAT(error, HasSubstr(Lexer::kErrorNoTokenSpec));
+  EXPECT_THAT(error, HasSubstr(LexerProgram::kErrorNoTokenSpec));
 }
 
 TEST(ParserTest, NullLexer) {

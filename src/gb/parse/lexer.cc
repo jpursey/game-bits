@@ -14,29 +14,6 @@
 
 namespace gb {
 
-const std::string_view Lexer::kErrorDuplicateSymbolSpec =
-    "Duplicate symbol specification";
-const std::string_view Lexer::kErrorInvalidSymbolSpec =
-    "Symbol specification has non-ASCII or whitespace characters";
-const std::string_view Lexer::kErrorConflictingStringAndCharSpec =
-    "Character and String specifications share the same quote type";
-const std::string_view Lexer::kErrorConflictingIdentifierSpec =
-    "Identifiers cannot be set to force both lower and upper case";
-const std::string_view Lexer::kErrorConflictingCommentSpec =
-    "Multiple line and/or block comment starts share a common prefix";
-const std::string_view Lexer::kErrorEmptyCommentSpec =
-    "Empty string used in line or block comment specification";
-const std::string_view Lexer::kErrorDuplicateKeywordSpec =
-    "Duplicate keyword specification";
-const std::string_view Lexer::kErrorEmptyKeywordSpec =
-    "Empty string used in keyword specification";
-const std::string_view Lexer::kErrorNoTokenSpec =
-    "No token specification (from symbols, keywords, or flags)";
-const std::string_view Lexer::kErrorInvalidUserTokenType =
-    "Invalid user token type (it must be >= kTokenUser)";
-const std::string_view Lexer::kErrorInvalidUserTokenRegex =
-    "Invalid user token regex";
-
 const std::string_view Lexer::kErrorInternal = "Internal error";
 const std::string_view Lexer::kErrorInvalidTokenContent =
     "Token does not refer to valid content";

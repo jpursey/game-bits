@@ -121,47 +121,6 @@ namespace gb {
 class Lexer final {
  public:
   //----------------------------------------------------------------------------
-  // Lexer initialization error strings
-  //
-  // These may be returned by Lexer::Create if the configuration is invalid.
-  //----------------------------------------------------------------------------
-
-  // Duplicate symbol specification in LexerConfig.
-  static const std::string_view kErrorDuplicateSymbolSpec;
-
-  // Invalid symbol specification in LexerConfig.
-  static const std::string_view kErrorInvalidSymbolSpec;
-
-  // Conflicting configuration between strings and characters in LexerConfig
-  static const std::string_view kErrorConflictingStringAndCharSpec;
-
-  // Conflicting identifier configuration in LexerConfig.
-  static const std::string_view kErrorConflictingIdentifierSpec;
-
-  // Conflicting line and block comment configuration in LexerConfig.
-  static const std::string_view kErrorConflictingCommentSpec;
-
-  // Empty string in comment specifications in LexerConfig.
-  static const std::string_view kErrorEmptyCommentSpec;
-
-  // Duplicate string in keyword specifications in LexerConfig.
-  static const std::string_view kErrorDuplicateKeywordSpec;
-
-  // Empty string in keyword specifications in LexerConfig.
-  static const std::string_view kErrorEmptyKeywordSpec;
-
-  // Invalid token specification in LexerConfig (no symbols, keywords, or other
-  // tokens).
-  static const std::string_view kErrorNoTokenSpec;
-
-  // Invalid user token type in LexerConfig. It must be >= kTokenUser.
-  static const std::string_view kErrorInvalidUserTokenType;
-
-  // Invalid user token regex in LexerConfig. It must be a valid RE2 regex, and
-  // it must have a single capture group.
-  static const std::string_view kErrorInvalidUserTokenRegex;
-
-  //----------------------------------------------------------------------------
   // Token error strings
   //
   // These may be returned as the message of a Token of type kTokenError.
