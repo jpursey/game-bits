@@ -17,6 +17,7 @@
 #include "absl/log/check.h"
 #include "gb/base/flags.h"
 #include "gb/parse/lexer_config.h"
+#include "gb/parse/lexer_program.h"
 #include "gb/parse/parse_types.h"
 #include "gb/parse/token.h"
 #include "re2/re2.h"
@@ -210,10 +211,12 @@ class Lexer final {
   //----------------------------------------------------------------------------
 
   // Returns the flags used to configure the lexer.
-  LexerFlags GetFlags() const { return flags_; }
+  LexerFlags GetFlags() const { return state_.flags; }
 
   // Returns any defined names of user tokens.
-  const TokenTypeNames& GetUserTokenNames() const { return user_token_names_; }
+  const TokenTypeNames& GetUserTokenNames() const {
+    return state_.user_token_names;
+  }
 
   // Returns true if the specified token type is a valid token type for this
   // lexer.
@@ -406,50 +409,7 @@ class Lexer final {
     ReOrder re_order = ReOrder::kSymLast;
   };
 
-  struct TokenConfig {
-    int prefix = 0;
-    int size_offset = 0;
-  };
-
-  // Runtime config derived from LexerConfig.
-  struct Config {
-    LexerFlags flags;
-    int binary_index = -1;
-    int octal_index = -1;
-    int decimal_index = -1;
-    int hex_index = -1;
-    int float_index = -1;
-    int char_index = -1;
-    int string_index = -1;
-    int keyword_index = -1;
-    int ident_index = -1;
-    int token_pattern_count = 0;
-    std::string whitespace_pattern;
-    std::string symbol_pattern;
-    std::string token_end_pattern;
-    std::string not_token_end_pattern;
-    std::string token_pattern;
-    TokenConfig binary_config;
-    TokenConfig octal_config;
-    TokenConfig decimal_config;
-    TokenConfig hex_config;
-    TokenConfig float_config;
-    TokenConfig ident_config;
-    char escape = 0;
-    char escape_newline = 0;
-    char escape_tab = 0;
-    char escape_hex = 0;
-    absl::Span<const std::string_view> keywords;
-    absl::Span<const LexerConfig::BlockComment> block_comments;
-    absl::Span<const LexerConfig::UserToken> user_tokens;
-  };
-
-  enum class IntParseType {
-    kDefault,
-    kHex,
-    kOctal,
-    kBinary,
-  };
+  using IntParseType = LexerProgram::IntParseType;
 
   struct TokenArg {
     TokenArg() : arg(&text) {}
@@ -459,12 +419,7 @@ class Lexer final {
     RE2::Arg arg;
   };
 
-  struct BlockComment {
-    std::string start;
-    std::string end;
-  };
-
-  explicit Lexer(const Config& config);
+  explicit Lexer(std::shared_ptr<const LexerProgram> program);
 
   LexerContentId GetContentId(int index) const;
   int GetContentIndex(LexerContentId id) const;
@@ -491,34 +446,14 @@ class Lexer final {
   Token ParseNextToken(Content* content, Line* line, bool advance);
 
   // Set at initialization.
-  LexerFlags flags_;
-  RE2 re_whitespace_;
-  RE2 re_symbol_;
-  RE2 re_token_end_;
-  RE2 re_not_token_end_;
-  RE2 re_token_;
-  std::vector<TokenArg> re_args_;
-  std::vector<RE2::Arg*> re_token_args_;
-  TokenConfig binary_config_;
-  TokenConfig octal_config_;
-  TokenConfig decimal_config_;
-  TokenConfig hex_config_;
-  TokenConfig float_config_;
-  TokenConfig ident_config_;
-  int64_t max_int_ = std::numeric_limits<int64_t>::max();
-  int64_t min_int_ = std::numeric_limits<int64_t>::min();
-  uint64_t int_sign_extend_ = 0;
-  char escape_ = 0;
-  char escape_newline_ = 0;
-  char escape_tab_ = 0;
-  char escape_hex_ = 0;
-  std::vector<BlockComment> block_comments_;
-  TokenTypeNames user_token_names_;
+  std::shared_ptr<const LexerProgram> program_;
+  const LexerProgram::State& state_;
 
   // Working state for parsing.
+  std::vector<TokenArg> re_args_;
+  std::vector<RE2::Arg*> re_token_args_;
   std::vector<std::unique_ptr<Content>> content_;
   absl::flat_hash_map<std::string_view, LexerContentId> filename_to_id_;
-  absl::flat_hash_map<std::string, std::string> keywords_;
   std::vector<Line> lines_;
   Token last_token_;
 

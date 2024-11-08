@@ -10,6 +10,7 @@
 #include <string_view>
 
 #include "absl/types/span.h"
+#include "gb/base/flags.h"
 #include "gb/parse/symbol.h"
 #include "gb/parse/token.h"
 

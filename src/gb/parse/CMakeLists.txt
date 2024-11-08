@@ -6,6 +6,7 @@
 set(gb_parse_SOURCE
   lexer.cc lexer.h
   lexer_config.h
+  lexer_program.cc lexer_program.h
   parse_error.cc parse_error.h
   parse_result.cc parse_result.h
   parse_types.h
