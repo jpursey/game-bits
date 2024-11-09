@@ -399,28 +399,30 @@ std::unique_ptr<const ParserRules> ParseProgram(Lexer& lexer,
 std::unique_ptr<ParserProgram> ParserProgram::Create(
     LexerConfig config, std::string_view program_text,
     std::string* error_message) {
-  auto lexer = Lexer::Create(config, error_message);
-  if (lexer == nullptr) {
+  auto lexer_program = LexerProgram::Create(config, error_message);
+  if (lexer_program == nullptr) {
     return nullptr;
   }
-  return Create(std::move(lexer), program_text, error_message);
+  return Create(std::move(lexer_program), program_text, error_message);
 }
 
 std::unique_ptr<ParserProgram> ParserProgram::Create(
-    std::shared_ptr<Lexer> lexer, std::string_view program_text,
-    std::string* error_message) {
-  if (lexer == nullptr) {
+    std::shared_ptr<const LexerProgram> lexer_program,
+    std::string_view program_text, std::string* error_message) {
+  if (lexer_program == nullptr) {
     if (error_message != nullptr) {
       *error_message = "Lexer is null";
     }
     return nullptr;
   }
+  auto lexer = Lexer::Create(lexer_program);
+  DCHECK(lexer != nullptr);
   auto rules = ParseProgram(*lexer, program_text, error_message);
   if (rules == nullptr) {
     return nullptr;
   }
   return absl::WrapUnique(
-      new ParserProgram(std::move(lexer), std::move(rules)));
+      new ParserProgram(std::move(lexer_program), std::move(rules)));
 }
 
 }  // namespace gb

@@ -23,8 +23,11 @@ const std::string_view Lexer::kErrorInvalidFloat = "Invalid float";
 
 std::unique_ptr<Lexer> Lexer::Create(const LexerConfig& lexer_config,
                                      std::string* error_message) {
-  std::shared_ptr<const LexerProgram> program =
-      LexerProgram::Create(lexer_config, error_message);
+  return Create(LexerProgram::Create(lexer_config, error_message));
+}
+
+std::unique_ptr<Lexer> Lexer::Create(
+    std::shared_ptr<const LexerProgram> program) {
   if (program == nullptr) {
     return nullptr;
   }

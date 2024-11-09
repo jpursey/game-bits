@@ -9,7 +9,7 @@
 #include <memory>
 #include <string>
 
-#include "gb/parse/lexer.h"
+#include "gb/parse/lexer_program.h"
 #include "gb/parse/parse_types.h"
 #include "gb/parse/parser_rules.h"
 
@@ -67,24 +67,24 @@ class ParserProgram {
       LexerConfig config, std::string_view program_text,
       std::string* error_message = nullptr);
   static std::unique_ptr<ParserProgram> Create(
-      std::shared_ptr<Lexer> lexer, std::string_view program_text,
-      std::string* error_message = nullptr);
+      std::shared_ptr<const LexerProgram> lexer_program,
+      std::string_view program_text, std::string* error_message = nullptr);
 
   ParserProgram(const ParserProgram&) = delete;
   ParserProgram& operator=(const ParserProgram&) = delete;
   ~ParserProgram() = default;
 
-  const Lexer& GetLexer() const { return *lexer_; }
+  const LexerProgram& GetLexerProgram() const { return *lexer_program_; }
   const ParserRules& GetRules() const { return *rules_; }
 
  private:
   friend class Parser;
 
-  ParserProgram(std::shared_ptr<Lexer> lexer,
+  ParserProgram(std::shared_ptr<const LexerProgram> lexer_program,
                 std::shared_ptr<const ParserRules> rules)
-      : lexer_(std::move(lexer)), rules_(std::move(rules)) {}
+      : lexer_program_(std::move(lexer_program)), rules_(std::move(rules)) {}
 
-  std::shared_ptr<Lexer> lexer_;
+  std::shared_ptr<const LexerProgram> lexer_program_;
   std::shared_ptr<const ParserRules> rules_;
 };
 

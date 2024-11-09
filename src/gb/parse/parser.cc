@@ -41,12 +41,22 @@ std::unique_ptr<Parser> Parser::Create(std::shared_ptr<Lexer> lexer,
   return absl::WrapUnique(new Parser(std::move(lexer), std::move(rules)));
 }
 
-std::unique_ptr<Parser> Parser::Create(std::unique_ptr<ParserProgram> program) {
+std::unique_ptr<Parser> Parser::Create(
+    std::shared_ptr<const ParserProgram> program) {
   if (program == nullptr) {
     return nullptr;
   }
-  return absl::WrapUnique(
-      new Parser(std::move(program->lexer_), std::move(program->rules_)));
+  auto lexer = Lexer::Create(program->lexer_program_);
+  return absl::WrapUnique(new Parser(std::move(lexer), program->rules_));
+}
+
+std::unique_ptr<Parser> Parser::Create(
+    std::shared_ptr<Lexer> lexer,
+    std::shared_ptr<const ParserProgram> program) {
+  if (lexer == nullptr || program == nullptr) {
+    return nullptr;
+  }
+  return absl::WrapUnique(new Parser(std::move(lexer), program->rules_));
 }
 
 ParseError Parser::Error(Token token, std::string_view message) {

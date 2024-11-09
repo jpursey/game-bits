@@ -57,8 +57,12 @@ class Parser final {
       std::string* error_message = nullptr);
 
   // Creates a parser with the precompiled and validated ParserProgram. If the
-  // program is null, then this will also return null.
-  static std::unique_ptr<Parser> Create(std::unique_ptr<ParserProgram> program);
+  // program (or lexer) is null, then this will also return null.
+  static std::unique_ptr<Parser> Create(
+      std::shared_ptr<const ParserProgram> program);
+  static std::unique_ptr<Parser> Create(
+      std::shared_ptr<Lexer> lexer,
+      std::shared_ptr<const ParserProgram> program);
 
   Parser(const Parser&) = delete;
   Parser& operator=(const Parser&) = delete;

@@ -161,6 +161,12 @@ class Lexer final {
   static std::unique_ptr<Lexer> Create(const LexerConfig& lexer_config,
                                        std::string* error_message = nullptr);
 
+  // Creates a new Lexer with the specified program.
+  //
+  // If the program is null, this will return nullptr.
+  static std::unique_ptr<Lexer> Create(
+      std::shared_ptr<const LexerProgram> program);
+
   Lexer(const Lexer&) = delete;
   Lexer& operator=(const Lexer&) = delete;
   ~Lexer() = default;

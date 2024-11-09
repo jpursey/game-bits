@@ -23,14 +23,14 @@ TEST(ParserProgramTest, InvalidLexerConfig) {
   EXPECT_THAT(error, HasSubstr(LexerProgram::kErrorNoTokenSpec));
 }
 
-TEST(ParserProgramTest, NullLexer) {
+TEST(ParserProgramTest, NullLexerProgram) {
   std::string error;
   auto program = ParserProgram::Create(nullptr, "program { %int; }", &error);
   EXPECT_EQ(program, nullptr);
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("lexer"));
 
-  program = ParserProgram::Create(std::unique_ptr<Lexer>(), "program { %int; }",
-                                  &error);
+  program = ParserProgram::Create(std::unique_ptr<LexerProgram>(),
+                                  "program { %int; }", &error);
   EXPECT_EQ(program, nullptr);
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("lexer"));
 }
@@ -42,10 +42,11 @@ TEST(ParserProgramTest, InvalidRules) {
   EXPECT_EQ(program, nullptr);
   EXPECT_THAT(error, HasSubstr("';'"));
 
-  auto lexer = Lexer::Create(kCStyleLexerConfig, &error);
-  ASSERT_NE(lexer, nullptr) << "Error: " << error;
+  auto lexer_program = LexerProgram::Create(kCStyleLexerConfig, &error);
+  ASSERT_NE(lexer_program, nullptr) << "Error: " << error;
 
-  program = ParserProgram::Create(std::move(lexer), "program { %int }", &error);
+  program = ParserProgram::Create(std::move(lexer_program), "program { %int }",
+                                  &error);
   EXPECT_EQ(program, nullptr);
   EXPECT_THAT(error, HasSubstr("';'"));
 }
@@ -58,11 +59,11 @@ TEST(ParserProgramTest, ValidRules) {
   const auto& rules = program->GetRules();
   EXPECT_EQ(rules.GetRule("program")->ToString(), "%int");
 
-  auto lexer = Lexer::Create(kCStyleLexerConfig, &error);
-  ASSERT_NE(lexer, nullptr) << "Error: " << error;
+  auto lexer_program = LexerProgram::Create(kCStyleLexerConfig, &error);
+  ASSERT_NE(lexer_program, nullptr) << "Error: " << error;
 
-  auto program2 =
-      ParserProgram::Create(std::move(lexer), "program { %string; }", &error);
+  auto program2 = ParserProgram::Create(std::move(lexer_program),
+                                        "program { %string; }", &error);
   const auto& rules3 = program2->GetRules();
   EXPECT_EQ(rules3.GetRule("program")->ToString(), "%string");
 }
