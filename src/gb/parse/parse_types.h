@@ -45,11 +45,11 @@ static_assert(kTokenIndexEndToken <
 // unknown token, or one not from the lexer, or the line is out of range, the
 // values will default.
 struct LexerLocation {
-  LexerContentId id =
-      kNoLexerContent;        // The id of the content within the lexer
-  std::string_view filename;  // The filename of the content, if there is one
-  int line = -1;              // The line number of the token (0 is first)
-  int column = -1;            // The column number of the token (0 is first)
+  // The id of the content within the lexer
+  LexerContentId id = kNoLexerContent;
+  std::string filename;  // The filename of the content, if there is one
+  int line = -1;         // The line number of the token (0 is first)
+  int column = -1;       // The column number of the token (0 is first)
 
   auto operator<=>(const LexerLocation&) const = default;
 };

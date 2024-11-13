@@ -8,6 +8,7 @@
 
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "gb/parse/parse_types.h"
 
@@ -15,16 +16,17 @@ namespace gb {
 
 class ParseError final {
  public:
+  ParseError() = default;
   explicit ParseError(std::string_view message) : message_(message) {}
   ParseError(LexerLocation location, std::string_view message)
-      : location_(location), message_(message) {}
+      : location_(std::move(location)), message_(message) {}
   ParseError(const ParseError&) = default;
   ParseError& operator=(const ParseError&) = default;
   ParseError(ParseError&&) = default;
   ParseError& operator=(ParseError&&) = default;
   ~ParseError() = default;
 
-  LexerLocation GetLocation() const { return location_; }
+  const LexerLocation& GetLocation() const { return location_; }
   std::string_view GetMessage() const { return message_; }
 
   std::string FormatMessage() const;
