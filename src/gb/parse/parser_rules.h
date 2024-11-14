@@ -85,7 +85,7 @@ class ParserRuleItem {
   // allows for recursive rules, or just reuse between rules. Rule names cannot
   // be used to create left-recursive rules.
   static std::unique_ptr<ParserRuleName> CreateRuleName(
-      std::string_view rule_name);
+      std::string_view rule_name, bool scope_items = true);
 
   // Creates a sequence or alternatives group rule item.
   //
@@ -167,9 +167,11 @@ class ParserToken final : public ParserRuleItem {
 class ParserRuleName final : public ParserRuleItem {
  public:
   // Creates a new rule name rule item.
-  explicit ParserRuleName(std::string_view rule_name) : rule_name_(rule_name) {}
+  explicit ParserRuleName(std::string_view rule_name, bool scope_items = true)
+      : rule_name_(rule_name), scope_items_(scope_items) {}
 
   std::string_view GetRuleName() const { return rule_name_; }
+  bool ScopeItems() const { return scope_items_; }
 
   std::string ToString() const override;
 
@@ -179,6 +181,7 @@ class ParserRuleName final : public ParserRuleItem {
 
  private:
   const std::string rule_name_;
+  const bool scope_items_;
 };
 
 // A group rule item.
@@ -340,8 +343,8 @@ inline std::unique_ptr<ParserToken> ParserRuleItem::CreateToken(
 }
 
 inline std::unique_ptr<ParserRuleName> ParserRuleItem::CreateRuleName(
-    std::string_view rule_name) {
-  return std::make_unique<ParserRuleName>(rule_name);
+    std::string_view rule_name, bool scope_items) {
+  return std::make_unique<ParserRuleName>(rule_name, scope_items);
 }
 
 inline std::unique_ptr<ParserGroup> ParserRuleItem::CreateSequence() {

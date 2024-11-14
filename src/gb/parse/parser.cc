@@ -176,10 +176,13 @@ parser_internal::ParseMatch Parser::MatchTokenItem(
 }
 
 parser_internal::ParseMatch Parser::MatchRuleItem(
-    const ParserRuleName& parser_rule_name) {
+    const ParserRuleName& parser_rule_name, bool scope_items) {
   const ParserRuleItem* rule = rules_->GetRule(parser_rule_name.GetRuleName());
   DCHECK(rule != nullptr);  // Handled during rule validation.
-  ParsedItems* old_items = std::exchange(items_, nullptr);
+  ParsedItems* old_items = items_;
+  if (scope_items) {
+    items_ = nullptr;
+  }
   ParseMatch match = rule->Match(*this);
   items_ = old_items;
   return match;

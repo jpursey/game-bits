@@ -111,7 +111,7 @@ bool ParserRuleName::Validate(ValidateContext& context) const {
 }
 
 parser_internal::ParseMatch ParserRuleName::Match(Parser& parser) const {
-  return parser.MatchRuleItem(*this);
+  return parser.MatchRuleItem(*this, scope_items_);
 }
 
 std::string ParserGroup::ToString() const {

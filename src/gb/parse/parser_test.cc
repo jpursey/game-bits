@@ -986,5 +986,41 @@ TEST(ParserTest, DefaultValueResult) {
   EXPECT_EQ(decls[2].GetFloat("value", 1.5), 1.5);
 }
 
+TEST(ParserTest, NamedRuleSubItemScoping) {
+  const std::string_view kProgram = R"---(
+    Program {
+      %ident '(' <Config>,* ')' $required=<Required> [',' Optional];
+    }
+    Config {
+      "name" '=' $name=%string;
+      "size" '=' $size=%int;
+      "value" '=' $value=%float;
+    }
+    Required {
+      "required" '=' $rvalue=%int;
+    }
+    Optional {
+      "optional" '=' $ovalue=%int;
+    }
+  )---";
+  std::string error;
+  auto parser = Parser::Create(
+      ParserProgram::Create(kCStyleLexerConfig, kProgram, &error));
+  ASSERT_NE(parser, nullptr) << "Error: " << error;
+  LexerContentId content = parser->GetLexer().AddContent(R"---(
+    foo(name="bar", size=42, value=3.25) required=24, optional=100
+  )---");
+
+  ParseResult result = parser->Parse(content, "Program");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_TRUE(parser->GetLexer().NextToken(content, false).IsEnd());
+  EXPECT_EQ(result->GetString("name"), "bar");
+  EXPECT_EQ(result->GetInt("size"), 42);
+  EXPECT_EQ(result->GetFloat("value"), 3.25);
+  EXPECT_EQ(result->GetItem("rvalue"), nullptr);
+  EXPECT_EQ(result->GetInt("required.rvalue"), 24);
+  EXPECT_EQ(result->GetItem("ovalue"), nullptr);
+}
+
 }  // namespace
 }  // namespace gb

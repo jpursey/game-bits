@@ -138,17 +138,26 @@ std::shared_ptr<const ParserRules> CreateProgramRules() {
   // group_item_inner {
   //   $token=%token_type;
   //   $literal=%string;
-  //   $rule=%ident;
-  //   "[" $optional=group_alternative "]";
-  //   "(" $group=group_alternative ")";
+  //   $scoped_rule=%ident;
+  //   '<' $unscoped_rule=%ident '>';
+  //   '[' $optional=group_alternative ']';
+  //   '(' $group=group_alternative ')';
   // }
   auto group_item_inner = ParserRuleItem::CreateAlternatives();
   group_item_inner->AddSubItem("token",
                                ParserRuleItem::CreateToken(kTokenTokenType));
   group_item_inner->AddSubItem("literal",
                                ParserRuleItem::CreateToken(kTokenString));
-  group_item_inner->AddSubItem("rule",
+  group_item_inner->AddSubItem("scoped_rule",
                                ParserRuleItem::CreateToken(kTokenIdentifier));
+  auto group_item_inner_unscoped = ParserRuleItem::CreateSequence();
+  group_item_inner_unscoped->AddSubItem(
+      ParserRuleItem::CreateToken(kTokenSymbol, "<"));
+  group_item_inner_unscoped->AddSubItem(
+      "unscoped_rule", ParserRuleItem::CreateToken(kTokenIdentifier));
+  group_item_inner_unscoped->AddSubItem(
+      ParserRuleItem::CreateToken(kTokenSymbol, ">"));
+  group_item_inner->AddSubItem(std::move(group_item_inner_unscoped));
   auto group_item_inner_optional = ParserRuleItem::CreateSequence();
   group_item_inner_optional->AddSubItem(
       ParserRuleItem::CreateToken(kTokenSymbol, "["));
@@ -282,10 +291,16 @@ std::unique_ptr<ParserGroup::SubItem> ParseGroupItem(
     return std::make_unique<ParserGroup::SubItem>(
         match_name, ParserRuleItem::CreateToken(token.GetType(), literal),
         repeat);
-  } else if (parsed_type == "rule") {
+  } else if (parsed_type == "scoped_rule") {
     return std::make_unique<ParserGroup::SubItem>(
         match_name,
-        ParserRuleItem::CreateRuleName(parsed_inner->GetString("rule")),
+        ParserRuleItem::CreateRuleName(parsed_inner->GetString("scoped_rule")),
+        repeat);
+  } else if (parsed_type == "unscoped_rule") {
+    return std::make_unique<ParserGroup::SubItem>(
+        match_name,
+        ParserRuleItem::CreateRuleName(parsed_inner->GetString("unscoped_rule"),
+                                       false),
         repeat);
   } else if (parsed_type == "optional") {
     const ParsedItem* sub_item = parsed_inner->GetItem("optional");

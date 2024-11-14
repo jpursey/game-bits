@@ -214,7 +214,7 @@ TEST(ParserProgramTest, ValidRuleName) {
   std::string error;
   std::string program_text = R"(
     program {
-      rule1 rule2;
+      rule1 <rule2>;
     }
     rule1 {
       %int %float;
@@ -434,9 +434,10 @@ TEST(ParserProgramTest, SelfParse) {
     group_item_inner {
       $token=%token_type;
       $literal=%string;
-      $rule=%ident;
-      "[" $optional=group_alternative "]";
-      "(" $group=group_alternative ")";
+      $scoped_rule=%ident;
+      '<' $unscoped_rule=%ident '>';
+      '[' $optional=group_alternative ']';
+      '(' $group=group_alternative ')';
     }
    )---";
   const LexerConfig::UserToken kProgramUserTokens[] = {
@@ -478,7 +479,8 @@ TEST(ParserProgramTest, SelfParse) {
             "[$match_name=%1 \"=\"] $item=group_item_inner "
             "$repeat=[\"+\" | \"*\" | \",+\" | \",*\"]");
   EXPECT_EQ(rules.GetRule("group_item_inner")->ToString(),
-            "$token=%0 | $literal=%string | $rule=%ident | "
+            "$token=%0 | $literal=%string | $scoped_rule=%ident | "
+            "(\"<\" $unscoped_rule=%ident \">\") | "
             "(\"[\" $optional=group_alternative \"]\") | "
             "(\"(\" $group=group_alternative \")\")");
 }

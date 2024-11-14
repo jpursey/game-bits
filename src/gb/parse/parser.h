@@ -105,7 +105,7 @@ class Parser final {
 
   ParseMatch MatchTokenItem(const ParserToken& item);
   ParseMatch MatchGroup(const ParserGroup& item);
-  ParseMatch MatchRuleItem(const ParserRuleName& item);
+  ParseMatch MatchRuleItem(const ParserRuleName& item, bool scope_items);
 
   void RewindToken() { lexer_->RewindToken(content_); }
   Token NextToken() { return lexer_->NextToken(content_); }

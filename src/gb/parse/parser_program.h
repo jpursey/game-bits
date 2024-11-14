@@ -23,17 +23,17 @@ namespace gb {
 // a set of rules that define the grammar of the language being parsed.
 //
 // Parser rules are defined as a text with the following syntax:
-//   <name> {
-//     <rule-item>... ;
+//   rule-name {
+//     rule-item... ;
 //     ...
-//     <rule-item>... ;
+//     rule-item... ;
 //   }
 //
 // User token types can be defined in the lexer specification, and can be
-// referenced in the parser rules as %<type> onceddefined:
-//   %<name> = <int> ;
+// referenced in the parser rules as %token-type once defined:
+//   %token-type = int-value ;
 //
-// Each <rule-item> can be a token type, a token literal, a rule name, or a
+// Each rule-item can be a token type, a token literal, a rule name, or a
 // group of rule-items enclosed in parenthesis (required) or square brackets
 // (optional). Token types can be one of: %int, %float, %string, %char, %ident.
 // For example:
@@ -44,7 +44,7 @@ namespace gb {
 //   (%int "," %int)      Matches two integer tokens separated by a comma.
 //   [%ident "=" %float]  Matches an optional identifier assigned with a float.
 //
-// Each <rule-item> can be further annotated with a name, which is used to
+// Each rule-item can be further annotated with a name, which is used to
 // identify the matched item in the parse result, and a repeat specifier, which
 // can be '*' (zero or more), ',*' (zero or more separated by commas),
 // '+' (one or more), or ',+' (one or more separated by commas. For example:
@@ -53,7 +53,14 @@ namespace gb {
 //   (statement ";")*  Matches zero or more statements separated by semicolons.
 //   %int,+            Matches one or more integers separated by commas.
 //
-// Finally, <rule-items> can be combined with '|' to indicate alternatives, and
+// Matching a named rule by default scopes all named sub-items of the rule
+// (requiring it to be assigned a name in the parent to access any named
+// sub-items). However, it can optionally be set to promote any named sub-items
+// to the parent scope by prefixing enclosing in angle brackets. For example:
+//   rule_name         Scopes all named sub-items of "rule_name".
+//   <rule_name>       Promotes named sub-items of "rule_name" to this rule.
+//
+// Finally, rule-items can be combined with '|' to indicate alternatives, and
 // with ' ' to indicate sequence. For example:
 //   %int | %float          Matches an integer or a float.
 //   %int %float | %string  Matches an integer followed by a float, or a string.
