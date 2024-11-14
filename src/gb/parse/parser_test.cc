@@ -901,5 +901,90 @@ TEST(ParserTest, ParserProgram) {
   ASSERT_NE(statement, nullptr);
 }
 
+TEST(ParserTest, ScopedParseResult) {
+  const std::string_view kProgram = R"---(
+    Program {
+      $statements=Statement+ %end;
+    }
+    Statement {
+      $assign=($var=%ident '=' $value=Value ';');
+      $call=($func=%ident '(' ')' ';');
+      $if=("if" "(" $condition=Condition ")" $then=Statement
+          ["else" $else=Statement]);
+    }
+    Condition {
+      $var=%ident
+      [$op=("==" | "!=" | "<" | "<=" | ">" | ">=") $value=Value]+;
+    }
+    Value {
+      %ident | %int | %float | %string | %char;
+    }
+  )---";
+  std::string error;
+  auto parser = Parser::Create(
+      ParserProgram::Create(kCStyleLexerConfig, kProgram, &error));
+  ASSERT_NE(parser, nullptr) << "Error: " << error;
+  LexerContentId content = parser->GetLexer().AddContent(R"---(
+    a = 42;
+    if (a == 42) write(); 
+    else read();
+  )---");
+
+  ParseResult result = parser->Parse(content, "Program");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_TRUE(parser->GetLexer().NextToken(content, false).IsEnd());
+  EXPECT_EQ(result->GetString("statements.assign.var"), "a");
+  EXPECT_EQ(result->GetInt("statements.assign.value"), 42);
+  auto statements = result->GetItems("statements");
+  ASSERT_EQ(statements.size(), 2);
+  EXPECT_EQ(statements[1].GetString("if.condition.var"), "a");
+  EXPECT_EQ(statements[1].GetSymbol("if.condition.op"), "==");
+  EXPECT_EQ(statements[1].GetInt("if.condition.value"), 42);
+  EXPECT_EQ(statements[1].GetString("if.then.call.func"), "write");
+  EXPECT_EQ(statements[1].GetString("if.else.call.func"), "read");
+}
+
+TEST(ParserTest, DefaultValueResult) {
+  const std::string_view kProgram = R"---(
+    Program {
+      $decls=(
+        $var=%ident 
+        ['(' $size=%int ')'] 
+        [':' $name=%string] 
+        ['=' $value=%float]
+        ';'
+      )+
+      %end;
+    }
+  )---";
+  std::string error;
+  auto parser = Parser::Create(
+      ParserProgram::Create(kCStyleLexerConfig, kProgram, &error));
+  ASSERT_NE(parser, nullptr) << "Error: " << error;
+  LexerContentId content = parser->GetLexer().AddContent(R"---(
+    a(42) : "size" = 3.25;
+    b : "name";
+    c;
+  )---");
+
+  ParseResult result = parser->Parse(content, "Program");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_TRUE(parser->GetLexer().NextToken(content, false).IsEnd());
+  auto decls = result->GetItems("decls");
+  ASSERT_EQ(decls.size(), 3);
+  EXPECT_EQ(decls[0].GetString("var"), "a");
+  EXPECT_EQ(decls[0].GetInt("size", 24), 42);
+  EXPECT_EQ(decls[0].GetString("name", "foo"), "size");
+  EXPECT_EQ(decls[0].GetFloat("value", 1.5), 3.25);
+  EXPECT_EQ(decls[1].GetString("var"), "b");
+  EXPECT_EQ(decls[1].GetInt("size", 24), 24);
+  EXPECT_EQ(decls[1].GetString("name", "foo"), "name");
+  EXPECT_EQ(decls[1].GetFloat("value", 1.5), 1.5);
+  EXPECT_EQ(decls[2].GetString("var"), "c");
+  EXPECT_EQ(decls[2].GetInt("size", 24), 24);
+  EXPECT_EQ(decls[2].GetString("name", "foo"), "foo");
+  EXPECT_EQ(decls[2].GetFloat("value", 1.5), 1.5);
+}
+
 }  // namespace
 }  // namespace gb

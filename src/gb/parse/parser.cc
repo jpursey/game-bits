@@ -237,7 +237,11 @@ parser_internal::ParseMatch Parser::MatchGroup(const ParserGroup& group) {
           break;
         }
       }
+      if (!sub_item.name.empty()) {
+        items_ = nullptr;
+      }
       match = sub_item.item->Match(*this);
+      items_ = current_items;
       if (match.IsError()) {
         if (match.IsAbort()) {
           SetNextToken(group_token);

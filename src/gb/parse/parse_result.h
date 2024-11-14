@@ -23,7 +23,8 @@ namespace gb {
 //==============================================================================
 
 class ParsedItem;
-//using ParsedItems = absl::flat_hash_map<std::string, std::vector<ParsedItem>>;
+// using ParsedItems = absl::flat_hash_map<std::string,
+// std::vector<ParsedItem>>;
 using ParsedItems = std::map<std::string, std::vector<ParsedItem>>;
 
 // This class represents a single parsed item in a parse tree.
@@ -44,7 +45,9 @@ class ParsedItem final {
   Token GetToken() const { return token_; }
 
   // Gets all the named sub-items from this item. This will be empty if this
-  // item is not a group match.
+  // item is not a group match. If "name"is scoped (separated by '.'), then
+  // GetItems() is called recusively on the the first sub item (if there is
+  // one).
   absl::Span<const ParsedItem> GetItems(std::string_view name) const;
 
   // Gets the name of the sub-items iff there is exactly one name matched. This
@@ -80,23 +83,24 @@ class ParsedItem final {
 
   // Gets the integer from the first named sub-item from this item. This will be
   // 0 if this item is not a group match.
-  int64_t GetInt(std::string_view name) const {
+  int64_t GetInt(std::string_view name, int default_value = 0) const {
     auto item = GetItem(name);
-    return item != nullptr ? item->GetToken().GetInt() : 0;
+    return item != nullptr ? item->GetToken().GetInt() : default_value;
   }
 
   // Gets the float from the first named sub-item from this item. This will be
   // 0.0 if this item is not a group match.
-  double GetFloat(std::string_view name) const {
+  double GetFloat(std::string_view name, double default_value = 0.0) const {
     auto item = GetItem(name);
-    return item != nullptr ? item->GetToken().GetFloat() : 0.0;
+    return item != nullptr ? item->GetToken().GetFloat() : default_value;
   }
 
   // Gets the string from the first named sub-item from this item. This will be
   // an empty string if this item is not a group match.
-  std::string_view GetString(std::string_view name) const {
+  std::string_view GetString(std::string_view name,
+                             std::string_view default_value = {}) const {
     auto item = GetItem(name);
-    return item != nullptr ? item->GetToken().GetString() : std::string_view();
+    return item != nullptr ? item->GetToken().GetString() : default_value;
   }
 
  private:
