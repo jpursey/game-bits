@@ -44,6 +44,31 @@ class ParsedItem final {
   // Returns the token that was the beginning of the matched item.
   Token GetToken() const { return token_; }
 
+  // Token helpers
+  bool IsEnd() const { return GetToken().IsEnd(); }
+  bool IsInt() const { return GetToken().IsInt(); }
+  bool IsInt(int64_t value) const { return GetToken().IsInt(value); }
+  bool IsUint() const { return GetToken().IsUint(); }
+  bool IsUint(uint64_t value) const { return GetToken().IsUint(value); }
+  bool IsFloat() const { return GetToken().IsFloat(); }
+  bool IsFloat(double value) const { return GetToken().IsFloat(value); }
+  bool IsChar() const { return GetToken().IsChar(); }
+  bool IsChar(char value) const { return GetToken().IsChar(value); }
+  bool IsString() const { return GetToken().IsString(); }
+  bool IsString(std::string_view value) const {
+    return GetToken().IsString(value);
+  }
+  bool IsSymbol(Symbol symbol) const { return GetToken().IsSymbol(symbol); }
+  bool IsIdent(std::string_view value = {}) const {
+    return GetToken().IsIdent(value);
+  }
+  bool IsKeyword(std::string_view value) const {
+    return GetToken().IsKeyword(value);
+  }
+  bool IsUser(TokenType type, std::string_view value = {}) const {
+    return GetToken().IsUser(type, value);
+  }
+
   // Gets all the named sub-items from this item. This will be empty if this
   // item is not a group match. If "name"is scoped (separated by '.'), then
   // GetItems() is called recusively on the the first sub item (if there is

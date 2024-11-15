@@ -142,30 +142,40 @@ class Token final {
   bool IsNone() const { return GetType() == kTokenNone; }
   bool IsEnd() const { return GetType() == kTokenEnd; }
   bool IsError() const { return GetType() == kTokenError; }
+  bool IsInt() const { return GetType() == kTokenInt; }
   bool IsInt(int64_t value) const {
     return GetType() == kTokenInt && GetInt() == value;
   }
+  bool IsUint() const { return GetType() == kTokenInt && GetInt() >= 0; }
   bool IsUint(uint64_t value) const {
     return GetType() == kTokenInt && GetUInt() == value;
   }
+  bool IsFloat() const { return GetType() == kTokenFloat; }
   bool IsFloat(double value) const {
     return GetType() == kTokenFloat && GetFloat() == value;
   }
+  bool IsChar() const { return GetType() == kTokenChar; }
   bool IsChar(char value) const {
     return GetType() == kTokenChar &&
            GetString() == std::string_view(&value, 1);
   }
+  bool IsString() const { return GetType() == kTokenString; }
   bool IsString(std::string_view value) const {
     return GetType() == kTokenString && GetString() == value;
   }
   bool IsSymbol(Symbol symbol) const {
     return GetType() == kTokenSymbol && GetSymbol() == symbol;
   }
-  bool IsIdent(std::string_view value) const {
-    return GetType() == kTokenIdentifier && GetString() == value;
+  bool IsIdent(std::string_view value = {}) const {
+    return GetType() == kTokenIdentifier &&
+           (value.empty() || GetString() == value);
   }
   bool IsKeyword(std::string_view value) const {
     return GetType() == kTokenKeyword && GetString() == value;
+  }
+  bool IsUser(TokenType type, std::string_view value = {}) const {
+    DCHECK(type >= kTokenUser);
+    return GetType() == type && (value.empty() || GetString() == value);
   }
 
   // Comparison operators.
