@@ -1022,5 +1022,84 @@ TEST(ParserTest, NamedRuleSubItemScoping) {
   EXPECT_EQ(result->GetItem("ovalue"), nullptr);
 }
 
+TEST(ParserTest, ExplicitError) {
+  const std::string_view kProgram = R"---(
+    Tokens {
+      %int:"Invalid integer for BasicToken"
+      %string+:"Expected a string after the integer"
+      %ident,+:"Expected one or more identifiers";
+    }
+    Groups {
+      ("{" Tokens "}"):"Expected { Tokens }"
+      Alternatives:"Expected an integer, string, or identifier"
+      ('+' | '-' | '*' | '/'): "Expected a math operator"
+      %ident;
+    }
+    Alternatives {
+      %int;
+      %string;
+      %ident;
+    }
+  )---";
+  std::string error;
+  auto parser = Parser::Create(
+      ParserProgram::Create(kCStyleLexerConfig, kProgram, &error));
+  ASSERT_NE(parser, nullptr) << "Error: " << error;
+
+  LexerContentId content = parser->GetLexer().AddContent("hello");
+  ParseResult result = parser->Parse(content, "Tokens");
+  ASSERT_FALSE(result.IsOk());
+  EXPECT_THAT(result.GetError().GetMessage(),
+              HasSubstr("Invalid integer for BasicToken"));
+  EXPECT_THAT(result.GetError().GetLocation(), IsLocation(content, 0, 0));
+
+  content = parser->GetLexer().AddContent("42");
+  result = parser->Parse(content, "Tokens");
+  ASSERT_FALSE(result.IsOk());
+  EXPECT_THAT(result.GetError().GetMessage(),
+              HasSubstr("Expected a string after the integer"));
+  EXPECT_THAT(result.GetError().GetLocation(), IsLocation(content, 0, 2));
+
+  content = parser->GetLexer().AddContent("42 \"hello\" \"goodbye\"");
+  result = parser->Parse(content, "Tokens");
+  ASSERT_FALSE(result.IsOk());
+  EXPECT_THAT(result.GetError().GetMessage(),
+              HasSubstr("Expected one or more identifiers"));
+  EXPECT_THAT(result.GetError().GetLocation(), IsLocation(content, 0, 20));
+
+  content = parser->GetLexer().AddContent("42");
+  result = parser->Parse(content, "Groups");
+  ASSERT_FALSE(result.IsOk());
+  EXPECT_THAT(result.GetError().GetMessage(), HasSubstr("Expected { Tokens }"));
+  EXPECT_THAT(result.GetError().GetLocation(), IsLocation(content, 0, 0));
+
+  content = parser->GetLexer().AddContent("{ 42 }");
+  result = parser->Parse(content, "Groups");
+  ASSERT_FALSE(result.IsOk());
+  EXPECT_THAT(result.GetError().GetMessage(),
+              HasSubstr("Expected a string after the integer"));
+  EXPECT_THAT(result.GetError().GetLocation(), IsLocation(content, 0, 5));
+
+  content = parser->GetLexer().AddContent("{ 42 \"hello\" foo 24 + bar");
+  result = parser->Parse(content, "Groups");
+  ASSERT_FALSE(result.IsOk());
+  EXPECT_THAT(result.GetError().GetMessage(), HasSubstr("Expected '}'"));
+  EXPECT_THAT(result.GetError().GetLocation(), IsLocation(content, 0, 17));
+
+  content = parser->GetLexer().AddContent("{ 42 \"hello\" foo } 24.5 + bar");
+  result = parser->Parse(content, "Groups");
+  ASSERT_FALSE(result.IsOk());
+  EXPECT_THAT(result.GetError().GetMessage(),
+              HasSubstr("Expected an integer, string, or identifier"));
+  EXPECT_THAT(result.GetError().GetLocation(), IsLocation(content, 0, 19));
+
+  content = parser->GetLexer().AddContent("{ 42 \"hello\" foo } 24 bar");
+  result = parser->Parse(content, "Groups");
+  ASSERT_FALSE(result.IsOk());
+  EXPECT_THAT(result.GetError().GetMessage(),
+              HasSubstr("Expected a math operator"));
+  EXPECT_THAT(result.GetError().GetLocation(), IsLocation(content, 0, 22));
+}
+
 }  // namespace
 }  // namespace gb

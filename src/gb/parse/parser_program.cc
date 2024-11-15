@@ -114,7 +114,8 @@ std::shared_ptr<const ParserRules> CreateProgramRules() {
   // group_item {
   //   [$match_name=%match_name "="]
   //   $item=group_item_inner
-  //   $repeat=["+" | "*" | ",+" | ",*"];
+  //   $repeat=["+" | "*" | ",+" | ",*"]
+  //   [":" $error=%string];
   // }
   auto group_item = ParserRuleItem::CreateSequence();
   auto group_item_match = ParserRuleItem::CreateSequence();
@@ -133,6 +134,11 @@ std::shared_ptr<const ParserRules> CreateProgramRules() {
       ParserRuleItem::CreateToken(kTokenSymbol, ",*"));
   group_item->AddSubItem("repeat", std::move(group_item_repeat),
                          kParserOptional);
+  auto group_item_error = ParserRuleItem::CreateSequence();
+  group_item_error->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, ":"));
+  group_item_error->AddSubItem("error",
+                               ParserRuleItem::CreateToken(kTokenString));
+  group_item->AddSubItem(std::move(group_item_error), kParserOptional);
   rules->AddRule("group_item", std::move(group_item));
 
   // group_item_inner {
@@ -213,7 +219,7 @@ std::unique_ptr<ParserGroup::SubItem> ParseSequenceAsSubItem(
     return nullptr;
   }
   return std::make_unique<ParserGroup::SubItem>("", std::move(sequence),
-                                                kParserSingle);
+                                                kParserSingle, "");
 }
 
 std::unique_ptr<ParserGroup> ParseAlternative(
@@ -248,7 +254,7 @@ std::unique_ptr<ParserGroup::SubItem> ParseAlternativeAsSubItem(
     alternative->AddSubItem(std::move(*sub_item));
   }
   return std::make_unique<ParserGroup::SubItem>("", std::move(alternative),
-                                                kParserSingle);
+                                                kParserSingle, "");
 }
 
 std::unique_ptr<ParserGroup::SubItem> ParseGroupItem(
@@ -269,6 +275,8 @@ std::unique_ptr<ParserGroup::SubItem> ParseGroupItem(
     repeat = kParserSingle;
   }
 
+  std::string_view parsed_error = parsed_item.GetString("error");
+
   const ParsedItem* parsed_inner = parsed_item.GetItem("item");
   DCHECK(parsed_inner != nullptr);
   std::string_view parsed_type = parsed_inner->GetMatchName();
@@ -280,7 +288,8 @@ std::unique_ptr<ParserGroup::SubItem> ParseGroupItem(
       return nullptr;
     }
     return std::make_unique<ParserGroup::SubItem>(
-        match_name, ParserRuleItem::CreateToken(it->second), repeat);
+        match_name, ParserRuleItem::CreateToken(it->second), repeat,
+        parsed_error);
   } else if (parsed_type == "literal") {
     std::string_view literal = parsed_inner->GetString("literal");
     Token token = context.lexer.ParseTokenText(literal);
@@ -290,18 +299,18 @@ std::unique_ptr<ParserGroup::SubItem> ParseGroupItem(
     }
     return std::make_unique<ParserGroup::SubItem>(
         match_name, ParserRuleItem::CreateToken(token.GetType(), literal),
-        repeat);
+        repeat, parsed_error);
   } else if (parsed_type == "scoped_rule") {
     return std::make_unique<ParserGroup::SubItem>(
         match_name,
         ParserRuleItem::CreateRuleName(parsed_inner->GetString("scoped_rule")),
-        repeat);
+        repeat, parsed_error);
   } else if (parsed_type == "unscoped_rule") {
     return std::make_unique<ParserGroup::SubItem>(
         match_name,
         ParserRuleItem::CreateRuleName(parsed_inner->GetString("unscoped_rule"),
                                        false),
-        repeat);
+        repeat, parsed_error);
   } else if (parsed_type == "optional") {
     const ParsedItem* sub_item = parsed_inner->GetItem("optional");
     DCHECK(sub_item != nullptr);
@@ -311,7 +320,7 @@ std::unique_ptr<ParserGroup::SubItem> ParseGroupItem(
     }
     repeat.Clear(ParserRepeat::kRequireOne);
     return std::make_unique<ParserGroup::SubItem>(
-        match_name, std::move(optional_item), repeat);
+        match_name, std::move(optional_item), repeat, parsed_error);
   } else if (parsed_type == "group") {
     const ParsedItem* sub_item = parsed_inner->GetItem("group");
     DCHECK(sub_item != nullptr);
@@ -320,7 +329,7 @@ std::unique_ptr<ParserGroup::SubItem> ParseGroupItem(
       return nullptr;
     }
     return std::make_unique<ParserGroup::SubItem>(
-        match_name, std::move(group_item), repeat);
+        match_name, std::move(group_item), repeat, parsed_error);
   }
   context.error = absl::StrCat("Internal error, unhandled parse type: \"",
                                parsed_type, "\"");

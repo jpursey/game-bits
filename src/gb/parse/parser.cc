@@ -93,11 +93,6 @@ parser_internal::ParseMatch Parser::MatchAbort(ParseError error) {
   return ParseMatch::Abort();
 }
 
-parser_internal::ParseMatch Parser::MatchAbort(std::string_view message) {
-  last_error_ = ParseMatchError{ParseError(message)};
-  return ParseMatch::Abort();
-}
-
 parser_internal::ParseMatch Parser::MatchError(
     gb::Token token, TokenType expected_type, std::string_view expected_value) {
   if (last_error_.has_value() && last_error_->token > token) {
@@ -148,6 +143,15 @@ parser_internal::ParseMatch Parser::MatchError(
         return Error(token, absl::StrCat("Expected ", expected));
       });
   return ParseMatch::Error();
+}
+
+void Parser::SetError(gb::Token token, std::string_view error_message) {
+  if (last_error_.has_value() && last_error_->token > token) {
+    return;
+  }
+  last_error_ = ParseMatchError(token, [this, token, error_message] {
+    return Error(token, error_message);
+  });
 }
 
 parser_internal::ParseMatch Parser::Match(ParsedItem item) {
@@ -208,9 +212,13 @@ parser_internal::ParseMatch Parser::MatchGroup(const ParserGroup& group) {
     if (!sub_item.name.empty()) {
       items_ = nullptr;
     }
+    Token item_token = PeekToken();
     auto match = sub_item.item->Match(*this);
     items_ = current_items;
     if (match.IsError()) {
+      if (!match.IsAbort() && !sub_item.error.empty()) {
+        SetError(item_token, sub_item.error);
+      }
       if (match.IsAbort() ||
           (is_sequence && sub_item.repeat.IsSet(ParserRepeat::kRequireOne))) {
         SetNextToken(group_token);
@@ -243,12 +251,19 @@ parser_internal::ParseMatch Parser::MatchGroup(const ParserGroup& group) {
       if (!sub_item.name.empty()) {
         items_ = nullptr;
       }
+      item_token = PeekToken();
       match = sub_item.item->Match(*this);
       items_ = current_items;
       if (match.IsError()) {
+        if (!match.IsAbort() && !sub_item.error.empty()) {
+          SetError(item_token, sub_item.error);
+        }
         if (match.IsAbort()) {
           SetNextToken(group_token);
           return match;
+        }
+        if (!match.IsAbort() && !sub_item.error.empty()) {
+          SetError(item_token, sub_item.error);
         }
         if (with_comma) {
           RewindToken();

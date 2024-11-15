@@ -227,7 +227,7 @@ TEST(ParserProgramTest, ValidRuleName) {
                                        std::move(program_text), &error);
   ASSERT_NE(program, nullptr) << "Error: " << error;
   const auto& rules = program->GetRules();
-  EXPECT_EQ(rules.GetRule("program")->ToString(), "rule1 rule2");
+  EXPECT_EQ(rules.GetRule("program")->ToString(), "rule1 <rule2>");
   EXPECT_EQ(rules.GetRule("rule1")->ToString(), "%int %float");
   EXPECT_EQ(rules.GetRule("rule2")->ToString(), "%ident \"=\" %string");
 }
@@ -483,6 +483,34 @@ TEST(ParserProgramTest, SelfParse) {
             "(\"<\" $unscoped_rule=%ident \">\") | "
             "(\"[\" $optional=group_alternative \"]\") | "
             "(\"(\" $group=group_alternative \")\")");
+}
+
+TEST(ParserProgramTest, ExplicitMatchError) {
+  std::string error;
+  std::string program_text = R"(
+    program {
+      %int:"Invalid int"
+      [%float]:"Invalid optional float"
+      %char,+:"Invalid char"
+      (%string %string %string):"Invalid group"
+      other_rule:"Invalid other rule"
+      <other_rule>:"Invalid other rule 2";
+    }
+    other_rule {
+      %ident;
+    }
+  )";
+  auto program = ParserProgram::Create(kCStyleLexerConfig,
+                                       std::move(program_text), &error);
+  ASSERT_NE(program, nullptr) << "Error: " << error;
+  const auto& rules = program->GetRules();
+  EXPECT_EQ(rules.GetRule("program")->ToString(),
+            "%int:\"Invalid int\" "
+            "[%float]:\"Invalid optional float\" "
+            "%char,+:\"Invalid char\" "
+            "(%string %string %string):\"Invalid group\" "
+            "other_rule:\"Invalid other rule\" "
+            "<other_rule>:\"Invalid other rule 2\"");
 }
 
 }  // namespace

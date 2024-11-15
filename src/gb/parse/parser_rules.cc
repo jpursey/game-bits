@@ -85,7 +85,12 @@ parser_internal::ParseMatch ParserToken::Match(Parser& parser) const {
   return parser.MatchTokenItem(*this);
 }
 
-std::string ParserRuleName::ToString() const { return rule_name_; }
+std::string ParserRuleName::ToString() const { 
+  if (!scope_items_) {
+    return absl::StrCat("<", rule_name_, ">");
+  }
+  return rule_name_; 
+}
 
 bool ParserRuleName::Validate(ValidateContext& context) const {
   if (rule_name_.empty()) {
@@ -116,7 +121,7 @@ parser_internal::ParseMatch ParserRuleName::Match(Parser& parser) const {
 
 std::string ParserGroup::ToString() const {
   std::string result;
-  for (const auto& [name, item, repeat] : sub_items_) {
+  for (const auto& [name, item, repeat, error] : sub_items_) {
     if (!result.empty()) {
       absl::StrAppend(&result, " ");
       if (type_ == Type::kAlternatives) {
@@ -151,6 +156,9 @@ std::string ParserGroup::ToString() const {
         absl::StrAppend(&result, "*");
       }
     }
+    if (!error.empty()) {
+      absl::StrAppend(&result, ":\"", error, "\"");
+    }
   }
   return result;
 }
@@ -163,7 +171,7 @@ bool ParserGroup::Validate(ValidateContext& context) const {
   }
   bool is_first_token = true;
   absl::flat_hash_set<std::string_view> left_recursive_rules;
-  for (const auto& [name, item, repeat] : sub_items_) {
+  for (const auto& [name, item, repeat, error] : sub_items_) {
     if (item == nullptr) {
       return ValidateError(context, "Sub-item cannot be null");
     }

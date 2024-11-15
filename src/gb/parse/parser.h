@@ -113,9 +113,9 @@ class Parser final {
   void SetNextToken(Token token) { lexer_->SetNextToken(token); }
 
   ParseMatch MatchAbort(ParseError error);
-  ParseMatch MatchAbort(std::string_view message);
   ParseMatch MatchError(gb::Token token, TokenType expected_type,
                         std::string_view expected_value);
+  void SetError(gb::Token token, std::string_view error_message);
   ParseMatch Match(ParsedItem item);
 
   std::shared_ptr<Lexer> lexer_;

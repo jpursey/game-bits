@@ -69,7 +69,7 @@ inline TokenIndex Lexer::Content::GetTokenIndex() const {
   // first token in the next content, which we need to distinguish from. We do
   // this by returning a token index that is one past the end of the last token
   // possible in this content.
-  if (line >= end_line) {
+  if (line >= end_line - start_line) {
     return {static_cast<uint32_t>(end_line - 1),
             static_cast<uint32_t>(kTokenIndexEndToken)};
   }
@@ -110,7 +110,7 @@ std::tuple<Lexer::Content*, Lexer::Line*> Lexer::GetContentLine(
   if (content == nullptr) {
     return {nullptr, nullptr};
   }
-  if (content->line >= content->end_line) {
+  if (content->line >= content->end_line - content->start_line) {
     return {content, nullptr};
   }
   return {content, &lines_[content->start_line + content->line]};
@@ -220,10 +220,8 @@ LexerLocation Lexer::GetLineLocation(LexerContentId id, int line_index) const {
   if (line == nullptr || line->id != id) {
     return {};
   }
-  return {.id = id,
-          .filename = content->filename,
-          .line = content->start_line + line_index,
-          .column = 0};
+  return {
+      .id = id, .filename = content->filename, .line = line_index, .column = 0};
 }
 
 int Lexer::GetCurrentLine(LexerContentId id) const {
@@ -278,9 +276,11 @@ LexerLocation Lexer::GetTokenLocation(TokenIndex index) const {
   } else {
     return {};
   }
+  const Content* content = GetContent(line->id);
+  DCHECK(content != nullptr);
   return {.id = line->id,
-          .filename = content_[GetContentIndex(line->id)]->filename,
-          .line = static_cast<int>(index.line),
+          .filename = content->filename,
+          .line = static_cast<int>(index.line) - content->start_line,
           .column = column};
 }
 
@@ -354,7 +354,7 @@ bool Lexer::SetNextToken(Token token) {
   DCHECK(content != nullptr);
   if (index.token == kTokenIndexEndToken) {
     DCHECK(index.line == content->end_line - 1);
-    content->line = content->end_line;
+    content->line = content->end_line - content->start_line;
     content->token = 0;
     last_token_ = token;
     return true;
@@ -759,7 +759,7 @@ Token Lexer::NextToken(LexerContentId id, bool advance) {
   auto NextLineOrEnd = [&]() {
     ++content->line;
     content->token = 0;
-    if (content->line == content->end_line) {
+    if (content->line == content->end_line - content->start_line) {
       token = token.CreateEnd(content->GetTokenIndex());
       return true;
     }

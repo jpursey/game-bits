@@ -199,9 +199,12 @@ class ParserGroup final : public ParserRuleItem {
 
   // A sub-item within a group.
   struct SubItem {
-    SubItem(std::string_view name, std::unique_ptr<ParserRuleItem> item,
-            ParserRepeatFlags repeat)
-        : name(name), item(std::move(item)), repeat(repeat) {}
+    SubItem(std::string_view in_name, std::unique_ptr<ParserRuleItem> in_item,
+            ParserRepeatFlags in_repeat, std::string_view in_error)
+        : name(in_name),
+          item(std::move(in_item)),
+          repeat(in_repeat),
+          error(in_error) {}
 
     // The name of the sub-item, if any. If this is specified, then the value of
     // the sub item will be stored in ParsedItem with this name. Multiple
@@ -214,6 +217,9 @@ class ParserGroup final : public ParserRuleItem {
 
     // The repeat flags for this sub-item.
     ParserRepeatFlags repeat;
+
+    // Any explicit error message for a failed match of this sub-item.
+    std::string error;
   };
 
   // Creates a new group rule item of the specified type.
@@ -223,12 +229,20 @@ class ParserGroup final : public ParserRuleItem {
     sub_items_.push_back(std::move(sub_item));
   }
   void AddSubItem(std::string_view name, std::unique_ptr<ParserRuleItem> item,
-                  ParserRepeatFlags repeat = kParserSingle) {
-    sub_items_.emplace_back(name, std::move(item), repeat);
+                  ParserRepeatFlags repeat, std::string_view error = "") {
+    sub_items_.emplace_back(name, std::move(item), repeat, error);
   }
   void AddSubItem(std::unique_ptr<ParserRuleItem> item,
-                  ParserRepeatFlags repeat = kParserSingle) {
-    AddSubItem("", std::move(item), repeat);
+                  ParserRepeatFlags repeat, std::string_view error = "") {
+    sub_items_.emplace_back("", std::move(item), repeat, error);
+  }
+  void AddSubItem(std::string_view name, std::unique_ptr<ParserRuleItem> item,
+                  std::string_view error = "") {
+    sub_items_.emplace_back(name, std::move(item), kParserSingle, error);
+  }
+  void AddSubItem(std::unique_ptr<ParserRuleItem> item,
+                  std::string_view error = "") {
+    sub_items_.emplace_back("", std::move(item), kParserSingle, error);
   }
 
   Type GetType() const { return type_; }
