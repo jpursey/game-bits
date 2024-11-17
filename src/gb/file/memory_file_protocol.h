@@ -23,7 +23,8 @@ namespace gb {
 // This class is thread-safe.
 class MemoryFileProtocol : public FileProtocol {
  public:
-  explicit MemoryFileProtocol(FileProtocolFlags flags = kAllFileProtocolFlags);
+  explicit MemoryFileProtocol(
+      FileProtocolFlags flags = kReadWriteFileProtocolFlags);
   ~MemoryFileProtocol() override;
 
   // Public overrides for FileProtocol.

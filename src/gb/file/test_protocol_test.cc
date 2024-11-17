@@ -33,7 +33,7 @@ std::unique_ptr<FileProtocol> TestProtocolFactory(
 
 std::unique_ptr<FileProtocol> TestProtocolFactory_All(
     const CommonProtocolTestInit& init) {
-  return TestProtocolFactory(kAllFileProtocolFlags, init);
+  return TestProtocolFactory(kReadWriteFileProtocolFlags, init);
 }
 
 std::unique_ptr<FileProtocol> TestProtocolFactory_Info(

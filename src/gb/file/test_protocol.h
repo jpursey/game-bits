@@ -107,7 +107,7 @@ class TestProtocol : public FileProtocol {
 
     TestProtocol* protocol = nullptr;  // Non-null when part of a protocol.
 
-    FileProtocolFlags flags = kAllFileProtocolFlags;
+    FileProtocolFlags flags = kReadWriteFileProtocolFlags;
     std::string name;  // Name expected when matching calls. Empty accepts any.
     std::vector<std::string>
         default_names;  // Default names, for auto-registration.

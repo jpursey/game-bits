@@ -115,24 +115,42 @@ std::unique_ptr<LocalFileProtocol> LocalFileProtocol::Create(
   // Used throughout to avoid exceptions.
   std::error_code error;
 
+  // Get the current path if we can
+  std::string current_path;
+  if (auto current_path_fs = fs::current_path(error); !error) {
+    current_path = ToString(current_path_fs);
+  }
+
   // Change relative paths to be relative to the current working directory for
   // this process.
   std::string root = context.GetValue<std::string>(kKeyRoot);
   if (!IsPathAbsolute(root)) {
-    auto current_path = fs::current_path(error);
-    if (error) {
+    if (current_path.empty()) {
       LOG(ERROR) << "Cannot access current directory when resolving requested "
                     "relative root path \""
                  << root << "\". Error: " << error.message();
       return nullptr;
     }
-    root = NormalizePath(JoinPath(ToString(current_path), root));
+    root = NormalizePath(JoinPath(current_path, root));
     if (root.empty()) {
       LOG(ERROR) << "Requested root path \""
                  << context.GetValue<std::string>(kKeyRoot)
                  << "\" could not be resolved against current directory \""
                  << current_path << "\"";
       return nullptr;
+    }
+  } else {
+    // On Windows, drive letters (aka protocols) are a thing. If a protocol
+    // was specified we need to honor it, and if it wasn't specified but the
+    // current_path
+    std::string_view root_protocol_name;
+    RemoveProtocol(root, &root_protocol_name);
+    if (root_protocol_name.empty()) {
+      std::string_view current_protocol_name;
+      RemoveProtocol(current_path, &current_protocol_name);
+      if (!current_protocol_name.empty()) {
+        root = absl::StrCat(current_protocol_name, ":", root);
+      }
     }
   }
 
@@ -478,6 +496,29 @@ std::unique_ptr<RawFile> LocalFileProtocol::DoOpenFile(
     return nullptr;
   }
   return std::make_unique<LocalFile>(std::move(file));
+}
+
+std::string LocalFileProtocol::DoGetCurrentPath(
+    std::string_view protocol_name) {
+  std::error_code error;
+  auto fs_current_path = fs::current_path(error);
+  if (error) {
+    return {};
+  }
+  std::string current_path = ToString(fs_current_path);
+  if (!absl::StartsWith(current_path, root_)) {
+    return {};
+  }
+  current_path.erase(0, root_.size() - (IsRootPath(root_) ? 1 : 0));
+  return current_path;
+}
+
+bool LocalFileProtocol::DoSetCurrentPath(std::string_view protocol_name,
+                                         std::string_view path) {
+  fs::path full_path = ToPath(JoinPath(root_, path));
+  std::error_code error;
+  fs::current_path(full_path, error);
+  return !error;
 }
 
 }  // namespace gb

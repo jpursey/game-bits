@@ -125,6 +125,18 @@ class FileProtocol {
   std::unique_ptr<RawFile> OpenFile(std::string_view protocol_name,
                                     std::string_view path, FileFlags flags);
 
+  // Returns the current path for the protocol.
+  //
+  // Derived classes must override DoGetCurrentPath to implement this if
+  // FileProtocolFlag::kCurrentPath is supported.
+  std::string GetCurrentPath(std::string_view protocol_name);
+
+  // Sets the current path for the protocol.
+  //
+  // Derived classes must override DoSetCurrentPath to implement this if
+  // FileProtocolFlag::kCurrentPath is supported.
+  bool SetCurrentPath(std::string_view protocol_name, std::string_view path);
+
   // Describes the nature of the operation taking place for the purpose of
   // derived classes that can support atomic operations and thread-safety.
   //
@@ -277,6 +289,21 @@ class FileProtocol {
   virtual std::unique_ptr<RawFile> DoOpenFile(std::string_view protocol_name,
                                               std::string_view path,
                                               FileFlags flags);
+
+  // Returns the current path associated with the protocol.
+  //
+  // A protocol must override this if FileProtocolFlag::kCurrentPath is
+  // supported.
+  //
+  // On error, this should return an empty string.
+  virtual std::string DoGetCurrentPath(std::string_view protocol_name);
+
+  // Sets the current path associated with the protocol.
+  //
+  // A protocol must override this if FileProtocolFlag::kCurrentPath is
+  // supported.
+  virtual bool DoSetCurrentPath(std::string_view protocol_name,
+                                std::string_view path);
 
   // File protocols may optionally override BasicList instead of List when
   // both FileProtocolFlag::kList and FileProtocolFlag::kInfo are supported.

@@ -28,11 +28,13 @@ namespace gb {
 // This class is thread-safe.
 class LocalFileProtocol : public FileProtocol {
  public:
+  static constexpr FileProtocolFlags kDefaultFlags = {
+      kReadWriteFileProtocolFlags, FileProtocolFlag::kCurrentPath};
+
   // Flags can be set to limit what operations are allowed when this protocol is
   // added to a FileSystem. By default, all operations are supported.
   static GB_CONTEXT_CONSTRAINT_DEFAULT(kConstraintFlags, kInOptional,
-                                       FileProtocolFlags,
-                                       kAllFileProtocolFlags);
+                                       FileProtocolFlags, kDefaultFlags);
 
   // This defines the root path on the local filesystem that will be the root
   // folder for this protocol. This should be a normalized path (see path.h for
@@ -109,6 +111,9 @@ class LocalFileProtocol : public FileProtocol {
   std::unique_ptr<RawFile> DoOpenFile(std::string_view protocol_name,
                                       std::string_view path,
                                       FileFlags flags) override;
+  std::string DoGetCurrentPath(std::string_view protocol_name) override;
+  bool DoSetCurrentPath(std::string_view protocol_name,
+                        std::string_view path) override;
 
  private:
   explicit LocalFileProtocol(std::string_view root,

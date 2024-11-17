@@ -28,7 +28,7 @@ INSTANTIATE_TEST_SUITE_P(MemoryFileProtocolTest, CommonProtocolTest,
 
 TEST(MemoryFileProtocolTest, Construct) {
   MemoryFileProtocol protocol;
-  EXPECT_EQ(protocol.GetFlags(), kAllFileProtocolFlags);
+  EXPECT_EQ(protocol.GetFlags(), kReadWriteFileProtocolFlags);
   EXPECT_THAT(protocol.GetDefaultNames(), ElementsAre("mem"));
 
   const FileProtocolFlags flags = {FileProtocolFlag::kInfo,

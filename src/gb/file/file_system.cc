@@ -16,9 +16,6 @@ namespace gb {
 
 namespace {
 
-constexpr PathFlags kFileSystemPathFlags =
-    kGenericPathFlags + PathFlag::kRequireRoot;
-
 bool ValidateProtocolFlags(FileProtocolFlags flags) {
   if (flags.IsSet(FileProtocolFlag::kList) &&
       !flags.IsSet(FileProtocolFlag::kInfo)) {
@@ -113,17 +110,31 @@ FileProtocolFlags FileSystem::GetFlags(const std::string& protocol_name) const {
   return it->second->GetFlags();
 }
 
+std::string FileSystem::GetCurrentFolder(std::string_view protocol_name) {
+  auto it = protocol_map_.find(std::string(protocol_name));
+  if (it == protocol_map_.end()) {
+    return {};
+  }
+  return it->second->GetCurrentPath(protocol_name);
+}
+
+bool FileSystem::SetCurrentFolder(std::string_view path) {
+  auto [normalized_path, protocol_name, protocol] = GetNormalizedPath(path);
+  if (normalized_path.empty()) {
+    return false;
+  }
+  return protocol->SetCurrentPath(protocol_name, normalized_path);
+}
+
 std::vector<std::string> FileSystem::List(std::string_view path,
                                           std::string_view pattern,
                                           FolderMode mode) {
-  std::string normalized_path = NormalizePath(path, kFileSystemPathFlags);
+  auto [normalized_path, protocol_name, protocol] = GetNormalizedPath(path);
   if (normalized_path.empty()) {
     return {};
   }
   path = normalized_path;
-  auto [protocol_name, protocol] = GetProtocol(&path);
-  if (protocol == nullptr ||
-      !protocol->GetFlags().IsSet(FileProtocolFlag::kList)) {
+  if (!protocol->GetFlags().IsSet(FileProtocolFlag::kList)) {
     return {};
   }
   return protocol->List(protocol_name, path, pattern, mode,
@@ -133,14 +144,12 @@ std::vector<std::string> FileSystem::List(std::string_view path,
 std::vector<std::string> FileSystem::ListFolders(std::string_view path,
                                                  std::string_view pattern,
                                                  FolderMode mode) {
-  std::string normalized_path = NormalizePath(path, kFileSystemPathFlags);
+  auto [normalized_path, protocol_name, protocol] = GetNormalizedPath(path);
   if (normalized_path.empty()) {
     return {};
   }
   path = normalized_path;
-  auto [protocol_name, protocol] = GetProtocol(&path);
-  if (protocol == nullptr ||
-      !protocol->GetFlags().IsSet(FileProtocolFlag::kList)) {
+  if (!protocol->GetFlags().IsSet(FileProtocolFlag::kList)) {
     return {};
   }
   return protocol->List(protocol_name, path, pattern, mode, PathType::kFolder);
@@ -149,56 +158,48 @@ std::vector<std::string> FileSystem::ListFolders(std::string_view path,
 std::vector<std::string> FileSystem::ListFiles(std::string_view path,
                                                std::string_view pattern,
                                                FolderMode mode) {
-  std::string normalized_path = NormalizePath(path, kFileSystemPathFlags);
+  auto [normalized_path, protocol_name, protocol] = GetNormalizedPath(path);
   if (normalized_path.empty()) {
     return {};
   }
   path = normalized_path;
-  auto [protocol_name, protocol] = GetProtocol(&path);
-  if (protocol == nullptr ||
-      !protocol->GetFlags().IsSet(FileProtocolFlag::kList)) {
+  if (!protocol->GetFlags().IsSet(FileProtocolFlag::kList)) {
     return {};
   }
   return protocol->List(protocol_name, path, pattern, mode, PathType::kFile);
 }
 
 bool FileSystem::CreateFolder(std::string_view path, FolderMode mode) {
-  std::string normalized_path = NormalizePath(path, kFileSystemPathFlags);
+  auto [normalized_path, protocol_name, protocol] = GetNormalizedPath(path);
   if (normalized_path.empty()) {
     return false;
   }
   path = normalized_path;
-  auto [protocol_name, protocol] = GetProtocol(&path);
-  if (protocol == nullptr ||
-      !protocol->GetFlags().IsSet(FileProtocolFlag::kFolderCreate)) {
+  if (!protocol->GetFlags().IsSet(FileProtocolFlag::kFolderCreate)) {
     return false;
   }
   return protocol->CreateFolder(protocol_name, path, mode);
 }
 
 bool FileSystem::DeleteFolder(std::string_view path, FolderMode mode) {
-  std::string normalized_path = NormalizePath(path, kFileSystemPathFlags);
+  auto [normalized_path, protocol_name, protocol] = GetNormalizedPath(path);
   if (normalized_path.empty()) {
     return false;
   }
   path = normalized_path;
-  auto [protocol_name, protocol] = GetProtocol(&path);
-  if (protocol == nullptr ||
-      !protocol->GetFlags().IsSet(FileProtocolFlag::kFolderCreate)) {
+  if (!protocol->GetFlags().IsSet(FileProtocolFlag::kFolderCreate)) {
     return false;
   }
   return protocol->DeleteFolder(protocol_name, path, mode);
 }
 
 bool FileSystem::DeleteFile(std::string_view path) {
-  std::string normalized_path = NormalizePath(path, kFileSystemPathFlags);
+  auto [normalized_path, protocol_name, protocol] = GetNormalizedPath(path);
   if (normalized_path.empty()) {
     return false;
   }
   path = normalized_path;
-  auto [protocol_name, protocol] = GetProtocol(&path);
-  if (protocol == nullptr ||
-      !protocol->GetFlags().IsSet(FileProtocolFlag::kFileCreate)) {
+  if (!protocol->GetFlags().IsSet(FileProtocolFlag::kFileCreate)) {
     return false;
   }
   return protocol->DeleteFile(protocol_name, path);
@@ -206,22 +207,15 @@ bool FileSystem::DeleteFile(std::string_view path) {
 
 bool FileSystem::CopyFolder(std::string_view from_path,
                             std::string_view to_path) {
-  std::string normalized_from_path =
-      NormalizePath(from_path, kFileSystemPathFlags);
-  std::string normalized_to_path = NormalizePath(to_path, kFileSystemPathFlags);
+  auto [normalized_from_path, from_protocol_name, from_protocol] =
+      GetNormalizedPath(from_path);
+  auto [normalized_to_path, to_protocol_name, to_protocol] =
+      GetNormalizedPath(to_path);
   if (normalized_from_path.empty() || normalized_to_path.empty()) {
     return false;
   }
   from_path = normalized_from_path;
   to_path = normalized_to_path;
-  auto [from_protocol_name, from_protocol] = GetProtocol(&from_path);
-  if (from_protocol == nullptr) {
-    return false;
-  }
-  auto [to_protocol_name, to_protocol] = GetProtocol(&to_path);
-  if (to_protocol == nullptr) {
-    return false;
-  }
 
   auto from_flags = from_protocol->GetFlags();
   auto to_flags =
@@ -251,22 +245,15 @@ bool FileSystem::CopyFolder(std::string_view from_path,
 
 bool FileSystem::CopyFile(std::string_view from_path,
                           std::string_view to_path) {
-  std::string normalized_from_path =
-      NormalizePath(from_path, kFileSystemPathFlags);
-  std::string normalized_to_path = NormalizePath(to_path, kFileSystemPathFlags);
+  auto [normalized_from_path, from_protocol_name, from_protocol] =
+      GetNormalizedPath(from_path);
+  auto [normalized_to_path, to_protocol_name, to_protocol] =
+      GetNormalizedPath(to_path);
   if (normalized_from_path.empty() || normalized_to_path.empty()) {
     return false;
   }
   from_path = normalized_from_path;
   to_path = normalized_to_path;
-  auto [from_protocol_name, from_protocol] = GetProtocol(&from_path);
-  if (from_protocol == nullptr) {
-    return false;
-  }
-  auto [to_protocol_name, to_protocol] = GetProtocol(&to_path);
-  if (to_protocol == nullptr) {
-    return false;
-  }
 
   auto from_flags = from_protocol->GetFlags();
   auto to_flags =
@@ -287,14 +274,12 @@ bool FileSystem::CopyFile(std::string_view from_path,
 }
 
 PathInfo FileSystem::GetPathInfo(std::string_view path) {
-  std::string normalized_path = NormalizePath(path, kFileSystemPathFlags);
+  auto [normalized_path, protocol_name, protocol] = GetNormalizedPath(path);
   if (normalized_path.empty()) {
     return {};
   }
   path = normalized_path;
-  auto [protocol_name, protocol] = GetProtocol(&path);
-  if (protocol == nullptr ||
-      !protocol->GetFlags().IsSet(FileProtocolFlag::kInfo)) {
+  if (!protocol->GetFlags().IsSet(FileProtocolFlag::kInfo)) {
     return {};
   }
   return protocol->GetPathInfo(protocol_name, path);
@@ -302,15 +287,11 @@ PathInfo FileSystem::GetPathInfo(std::string_view path) {
 
 std::unique_ptr<File> FileSystem::OpenFile(std::string_view path,
                                            FileFlags flags) {
-  std::string normalized_path = NormalizePath(path, kFileSystemPathFlags);
+  auto [normalized_path, protocol_name, protocol] = GetNormalizedPath(path);
   if (normalized_path.empty()) {
     return nullptr;
   }
   path = normalized_path;
-  auto [protocol_name, protocol] = GetProtocol(&path);
-  if (protocol == nullptr) {
-    return nullptr;
-  }
   if (!flags.Intersects({FileFlag::kRead, FileFlag::kWrite})) {
     return nullptr;
   }
@@ -338,21 +319,33 @@ std::unique_ptr<File> FileSystem::OpenFile(std::string_view path,
   return absl::WrapUnique(new File(std::move(raw_file), flags));
 }
 
-std::tuple<std::string_view, FileProtocol*> FileSystem::GetProtocol(
-    std::string_view* path) {
+std::tuple<std::string, std::string, FileProtocol*>
+FileSystem::GetNormalizedPath(std::string_view path) {
+  std::string normalized_path = NormalizePath(path);
   FileProtocol* protocol = nullptr;
-  std::string_view protocol_name;
-  *path = RemoveProtocol(*path, &protocol_name);
+  std::string protocol_name;
+  normalized_path = RemoveProtocol(normalized_path, &protocol_name);
   if (protocol_name.empty()) {
     protocol = default_protocol_;
     protocol_name = default_protocol_name_;
   } else if (auto it = protocol_map_.find(protocol_name);
              it != protocol_map_.end()) {
     protocol = it->second;
-  } else {
-    protocol = nullptr;
   }
-  return {protocol_name, protocol};
+  if (protocol == nullptr) {
+    return {{}, protocol_name, protocol};
+  }
+  if (IsPathAbsolute(normalized_path)) {
+    return {normalized_path, protocol_name, protocol};
+  }
+  if (!protocol->GetFlags().IsSet(FileProtocolFlag::kCurrentPath)) {
+    return {{}, protocol_name, protocol};
+  }
+  std::string current_path = protocol->GetCurrentPath(protocol_name);
+  if (current_path.empty()) {
+    return {{}, protocol_name, protocol};
+  }
+  return {JoinPath(current_path, normalized_path), protocol_name, protocol};
 }
 
 bool FileSystem::GenericCopyFolder(std::string_view from_protocol_name,

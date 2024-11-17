@@ -92,6 +92,21 @@ std::unique_ptr<RawFile> FileProtocol::OpenFile(std::string_view protocol_name,
   return result;
 }
 
+std::string FileProtocol::GetCurrentPath(std::string_view protocol_name) {
+  Lock(LockType::kQuery);
+  auto result = DoGetCurrentPath(protocol_name);
+  Unlock(LockType::kQuery);
+  return result;
+}
+
+bool FileProtocol::SetCurrentPath(std::string_view protocol_name,
+                                  std::string_view path) {
+  Lock(LockType::kModify);
+  auto result = DoSetCurrentPath(protocol_name, path);
+  Unlock(LockType::kModify);
+  return result;
+}
+
 PathInfo FileProtocol::DoGetPathInfo(std::string_view protocol_name,
                                      std::string_view path) {
   LOG(ERROR) << "FileProtocol::DoGetPathInfo not implemented.";
@@ -292,6 +307,17 @@ std::unique_ptr<RawFile> FileProtocol::DoOpenFile(
     flags -= FileFlag::kCreate;
   }
   return BasicOpenFile(protocol_name, path, flags);
+}
+
+std::string FileProtocol::DoGetCurrentPath(std::string_view protocol_name) {
+  LOG(ERROR) << "FileProtocol::DoGetCurrentPath not implemented.";
+  return {};
+}
+
+bool FileProtocol::DoSetCurrentPath(std::string_view protocol_name,
+                                  std::string_view path) {
+  LOG(ERROR) << "FileProtocol::DoSetCurrentPath not implemented.";
+  return false;
 }
 
 std::vector<std::string> FileProtocol::BasicList(std::string_view protocol_name,

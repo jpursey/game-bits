@@ -88,6 +88,22 @@ class FileSystem final {
   // of flags.
   FileProtocolFlags GetFlags(const std::string& protocol_name) const;
 
+  // Returns the current folder for the specified protocol.
+  //
+  // If the protocol is not registered, or the protocol does not support current
+  // folders, this will return an empty string. This may also return an empty
+  // string if the current folder is outside the protocol (e.g. the protocol is
+  // scoped to a sub-folder of the current folder, or a different drive letter
+  // on Windows).
+  std::string GetCurrentFolder(std::string_view protocol_name);
+
+  // Sets the current folder that affects the current protocol.
+  //
+  // It is possible that setting the current folder could affect multiple
+  // protocols if they share the same current folder. Returns true if the
+  // current folder was successfully set.
+  bool SetCurrentFolder(std::string_view path);
+
   // Lists all files and folders matching the pattern.
   //
   // If the pattern is empty, this will return all matching paths. If a pattern
@@ -227,8 +243,10 @@ class FileSystem final {
   using Protocols = std::vector<std::unique_ptr<FileProtocol>>;
   using ProtocolMap = absl::flat_hash_map<std::string, FileProtocol*>;
 
-  std::tuple<std::string_view, FileProtocol*> GetProtocol(
-      std::string_view* path);
+  // Returns the normalized path, the protocol name, and the protocol for the
+  // path. If the path is invalid, the normalized path will be empty.
+  std::tuple<std::string, std::string, FileProtocol*> GetNormalizedPath(
+      std::string_view path);
   bool GenericCopyFolder(std::string_view from_protocol_name,
                          FileProtocol* from_protocol,
                          std::string_view from_path,

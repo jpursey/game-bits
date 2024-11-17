@@ -37,11 +37,14 @@ enum class FileProtocolFlag {
                   // and/or kFileWrite.
   kFileWrite,     // Supports writing files. Protocols must support this
                   // and/or kFileRead.
+  kCurrentPath,   // Supports getting and setting the current path. If this is
+                  // supported, then the FileSystem will support relative paths
+                  // with this protocol.
 };
 using FileProtocolFlags = Flags<FileProtocolFlag>;
 
-// Protocol supporting all features.
-inline constexpr FileProtocolFlags kAllFileProtocolFlags = {
+// Protocol supporting all file and folder reead/write features.
+inline constexpr FileProtocolFlags kReadWriteFileProtocolFlags = {
     FileProtocolFlag::kInfo,         FileProtocolFlag::kList,
     FileProtocolFlag::kFolderCreate, FileProtocolFlag::kFileCreate,
     FileProtocolFlag::kFileRead,     FileProtocolFlag::kFileWrite,
