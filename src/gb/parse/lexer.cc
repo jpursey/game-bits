@@ -124,6 +124,10 @@ LexerContentId Lexer::AddFileContent(std::string_view filename,
   if (!filename.empty()) {
     filename_to_id_[filename] = id;
   }
+
+  // Sanitize line endings in the content.
+  absl::StrReplaceAll({{"\r\n", "\n"}, {"\r", "\n"}}, &content->text);
+
   std::vector<std::string_view> lines = absl::StrSplit(content->text, '\n');
   if (!lines.empty() && lines.back().empty()) {
     lines.pop_back();
