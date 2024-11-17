@@ -13,8 +13,8 @@ std::string ParseError::FormatMessage() const {
   if (location_.line < 0) {
     return message_;
   }
-  return absl::StrCat(location_.filename, "(", location_.line, "): ", message_);
+  return absl::StrCat(location_.filename, "(", location_.line + 1, ":",
+                      location_.column + 1, "): ", message_);
 }
 
 }  // namespace gb
-
