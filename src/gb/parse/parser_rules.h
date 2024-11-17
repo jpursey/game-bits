@@ -151,7 +151,7 @@ class ParserToken final : public ParserRuleItem {
  private:
   template <typename Sink>
   friend void AbslStringify(Sink& sink, const ParserToken& token) {
-    absl::StrFormat(sink, "%s", token.ToString());
+    absl::Format(&sink, "%s", token.ToString());
   }
 
   const TokenType token_type_;
@@ -300,8 +300,8 @@ class ParserRules final {
 
   template <typename Sink>
   friend void AbslStringify(Sink& sink, const ParserRules& token) {
-    absl::StrFormat(
-        sink, "PaerserRules{%s}",
+    absl::Format(
+        &sink, "PaerserRules{%s}",
         absl::StrJoin(rules_, ",",
                       [](std::string* out, const Rules::value_type& value) {
                         absl::StrAppend(out, value.first);
