@@ -126,7 +126,7 @@ class Lexer final {
   // These may be returned as the message of a Token of type kTokenError.
   //----------------------------------------------------------------------------
 
-  // Internal error occured in the lexer (a bug) .
+  // Internal error occurred in the lexer (a bug) .
   static const std::string_view kErrorInternal;
 
   // The token referred to invalid content, or content not associated with this

@@ -35,12 +35,12 @@ namespace gb {
 // successful parse. Further, in a sequence all optional items in a group that
 // match are greedily accepted (there is no backtracking within a group). This
 // makes the "dangling else" problem trivial to resolve in the normal way, as it
-// will be greedily accepted as part of the closeset "if" statement if it
+// will be greedily accepted as part of the closest "if" statement if it
 // matches.
 //
 // Also, being a recursive-descent parser, left recursion is not allowed (which
 // makes binary expression recursion always right-associative by default).
-// However, if this is required for a language, each precendence level can
+// However, if this is required for a language, each precedence level can
 // instead be represented as a repeating group, leaving left/right association
 // decisions to the caller after parsing.
 //

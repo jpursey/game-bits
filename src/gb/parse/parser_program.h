@@ -34,7 +34,7 @@ namespace gb {
 //   %token-type = int-value ;
 //
 // Each rule-item can be a token type, a token literal, a rule name, or a
-// group of rule-items enclosed in parenthesis (required) or square brackets
+// group of rule-items enclosed in parentheses (required) or square brackets
 // (optional). Token types can be one of: %int, %float, %string, %char, %ident.
 // For example:
 //   %int                 Matches any integer token.
@@ -47,7 +47,7 @@ namespace gb {
 // Each rule-item can be further annotated with a name, which is used to
 // identify the matched item in the parse result, and a repeat specifier, which
 // can be '*' (zero or more), ',*' (zero or more separated by commas),
-// '+' (one or more), or ',+' (one or more separated by commas. For example:
+// '+' (one or more), or ',+' (one or more separated by commas). For example:
 //   $name=%ident      Assigns the matched identifier to the name "name".
 //   [rule_name]       Matches the rule named "rule_name" zero or one times.
 //   (statement ";")*  Matches zero or more statements separated by semicolons.

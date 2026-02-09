@@ -30,8 +30,8 @@ using ParsedItems = std::map<std::string, std::vector<ParsedItem>>;
 // This class represents a single parsed item in a parse tree.
 //
 // A parsed item contains the first token that was part of the match. If
-// this was group match, it will also contain a map of named sub-items that were
-// matched within the group.
+// this was a group match, it will also contain a map of named sub-items that
+// were matched within the group.
 class ParsedItem final {
  public:
   ParsedItem() = default;
@@ -70,14 +70,14 @@ class ParsedItem final {
   }
 
   // Gets all the named sub-items from this item. This will be empty if this
-  // item is not a group match. If "name"is scoped (separated by '.'), then
-  // GetItems() is called recusively on the the first sub item (if there is
+  // item is not a group match. If "name" is scoped (separated by '.'), then
+  // GetItems() is called recursively on the first sub item (if there is
   // one).
   absl::Span<const ParsedItem> GetItems(std::string_view name) const;
 
   // Gets the name of the sub-items iff there is exactly one name matched. This
   // will be an empty string if there are no matched sub-items, or there
-  // ar ematched sub-items with different names.
+  // are matched sub-items with different names.
   std::string_view GetMatchName() const {
     if (items_.size() != 1) {
       return {};
@@ -143,7 +143,7 @@ class ParsedItem final {
 //
 // A parse result is either an error or a successfully parsed item. The result
 // is "true" if it is a success, and IsOk() will return true as well. Callers
-// mush check it is a success before accessing the item.
+// must check it is a success before accessing the item.
 //
 // Similarly, the error can be accessed only if the result is not successful.
 class ParseResult {

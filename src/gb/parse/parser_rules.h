@@ -301,7 +301,7 @@ class ParserRules final {
   template <typename Sink>
   friend void AbslStringify(Sink& sink, const ParserRules& token) {
     absl::Format(
-        &sink, "PaerserRules{%s}",
+        &sink, "PerserRules{%s}",
         absl::StrJoin(rules_, ",",
                       [](std::string* out, const Rules::value_type& value) {
                         absl::StrAppend(out, value.first);
