@@ -102,8 +102,8 @@ namespace gb {
 //
 //   // Parse the tokens!
 //   int line = 0;
-//   for (Token token = lexer->NextToken(content_id); token.GetType() !=
-//   kTokenEnd;
+//   for (Token token = lexer->NextToken(content_id);
+//        token.GetType() != kTokenEnd;
 //        token = lexer->NextToken(content_id)) {
 //     if (lexer->GetCurrentLine(content_id) > line) {
 //       std::cout << std::endl;
