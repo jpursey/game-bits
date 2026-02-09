@@ -48,7 +48,8 @@ namespace gb {
 class Parser final {
  public:
   // Creates a parser with the specified lexer, lexer configuration and parser
-  // rules. If an error string is provided, it will be set to the error message.
+  // rules. If an error occurs, this returns null and error_message will be set
+  // (if provided).
   static std::unique_ptr<Parser> Create(
       LexerConfig config, std::shared_ptr<const ParserRules> rules,
       std::string* error_message = nullptr);

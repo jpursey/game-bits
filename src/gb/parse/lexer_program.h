@@ -76,7 +76,7 @@ class LexerProgram final {
   //----------------------------------------------------------------------------
 
   // Creates a lexer program from the specified lexer configuration. If an error
-  // string is provided, it will be set to the error message.
+  // occurs, this returns null and error_message will be set (if provided).
   static std::unique_ptr<const LexerProgram> Create(
       LexerConfig config, std::string* error_message = nullptr);
 
