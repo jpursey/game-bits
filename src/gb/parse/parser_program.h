@@ -56,12 +56,13 @@ namespace gb {
 // Matching a named rule by default scopes all named sub-items of the rule
 // (requiring it to be assigned a name in the parent to access any named
 // sub-items). However, it can optionally be set to promote any named sub-items
-// to the parent scope by prefixing enclosing in angle brackets. For example:
+// to the parent scope by enclosing in angle brackets. For example:
 //   rule_name         Scopes all named sub-items of "rule_name".
 //   <rule_name>       Promotes named sub-items of "rule_name" to this rule.
 //
 // Finally, rule-items can be combined with '|' to indicate alternatives, and
-// with ' ' to indicate sequence. For example:
+// with ' ' to indicate sequence. The '|' is lower precedence than ' '. For
+// example:
 //   %int | %float          Matches an integer or a float.
 //   %int %float | %string  Matches an integer followed by a float, or a string.
 class ParserProgram {
