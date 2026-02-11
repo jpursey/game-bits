@@ -5,9 +5,11 @@
 
 set(gb_config_SOURCE
   config.cc config.h
+  text_config.cc text_config.h
 )
 
 set(gb_config_DEPS
+  absl::status
   absl::strings
   gb_base
 )
