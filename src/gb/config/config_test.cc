@@ -49,13 +49,6 @@ TEST(ConfigTest, CreateIntNegative) {
   EXPECT_EQ(config.GetInt(), -100);
 }
 
-TEST(ConfigTest, CreateUInt) {
-  Config config = Config::UInt(123);
-  EXPECT_EQ(config.GetType(), Config::Type::kUInt);
-  EXPECT_TRUE(config.IsUInt());
-  EXPECT_EQ(config.GetUInt(), 123u);
-}
-
 TEST(ConfigTest, CreateFloat) {
   Config config = Config::Float(3.14);
   EXPECT_EQ(config.GetType(), Config::Type::kFloat);
@@ -143,10 +136,6 @@ TEST(ConfigTest, GetIntWrongType) {
   EXPECT_EQ(Config::String("42").GetInt(), 0);
 }
 
-TEST(ConfigTest, GetUIntWrongType) {
-  EXPECT_EQ(Config::Bool(true).GetUInt(), 0u);
-}
-
 TEST(ConfigTest, GetFloatWrongType) {
   EXPECT_EQ(Config::Int(42).GetFloat(), 0.0);
 }
@@ -192,9 +181,7 @@ TEST(ConfigTest, HasKeyMissing) {
   EXPECT_FALSE(config.HasKey("other"));
 }
 
-TEST(ConfigTest, HasKeyNotMap) {
-  EXPECT_FALSE(Config::Int(42).HasKey("key"));
-}
+TEST(ConfigTest, HasKeyNotMap) { EXPECT_FALSE(Config::Int(42).HasKey("key")); }
 
 //==============================================================================
 // Get(key) / Get(index)
@@ -359,22 +346,6 @@ TEST(ConfigTest, GetSetIntByIndex) {
   EXPECT_EQ(config.GetInt(0), 10);
 }
 
-TEST(ConfigTest, GetSetUIntByKey) {
-  Config config = Config::Map(Config::MapValue{});
-  config.SetUInt("val", 100u);
-  EXPECT_EQ(config.GetUInt("val"), 100u);
-  EXPECT_EQ(config.GetUInt("missing"), 0u);
-}
-
-TEST(ConfigTest, GetSetUIntByIndex) {
-  Config::ArrayValue arr;
-  arr.push_back(Config::UInt(5u));
-  Config config = Config::Array(std::move(arr));
-  EXPECT_EQ(config.GetUInt(0), 5u);
-  EXPECT_TRUE(config.SetUInt(0, 10u));
-  EXPECT_EQ(config.GetUInt(0), 10u);
-}
-
 TEST(ConfigTest, GetSetFloatByKey) {
   Config config = Config::Map(Config::MapValue{});
   config.SetFloat("val", 1.5);
@@ -462,13 +433,6 @@ TEST(ConfigTest, SetIntReplacesValue) {
   config.SetInt(99);
   EXPECT_TRUE(config.IsInt());
   EXPECT_EQ(config.GetInt(), 99);
-}
-
-TEST(ConfigTest, SetUIntReplacesValue) {
-  Config config = Config::Bool(true);
-  config.SetUInt(77u);
-  EXPECT_TRUE(config.IsUInt());
-  EXPECT_EQ(config.GetUInt(), 77u);
 }
 
 TEST(ConfigTest, SetFloatReplacesValue) {
@@ -629,13 +593,11 @@ TEST(ConfigTest, AppendTypedHelpers) {
   Config config = Config::Array(Config::ArrayValue{});
   config.AppendBool(true);
   config.AppendInt(42);
-  config.AppendUInt(100u);
   config.AppendFloat(1.5);
   config.AppendString("hello");
   EXPECT_EQ(config.GetArraySize(), 5);
   EXPECT_TRUE(config.GetBool(0));
   EXPECT_EQ(config.GetInt(1), 42);
-  EXPECT_EQ(config.GetUInt(2), 100u);
   EXPECT_EQ(config.GetFloat(3), 1.5);
   EXPECT_EQ(config.GetString(4), "hello");
 }
@@ -653,11 +615,6 @@ TEST(ConfigTest, AsBoolFromInt) {
   EXPECT_TRUE(Config::Int(1).AsBool());
   EXPECT_TRUE(Config::Int(-1).AsBool());
   EXPECT_FALSE(Config::Int(0).AsBool());
-}
-
-TEST(ConfigTest, AsBoolFromUInt) {
-  EXPECT_TRUE(Config::UInt(1).AsBool());
-  EXPECT_FALSE(Config::UInt(0).AsBool());
 }
 
 TEST(ConfigTest, AsBoolFromFloat) {
@@ -712,10 +669,6 @@ TEST(ConfigTest, AsIntFromInt) {
   EXPECT_EQ(Config::Int(-100).AsInt(), -100);
 }
 
-TEST(ConfigTest, AsIntFromUInt) {
-  EXPECT_EQ(Config::UInt(42).AsInt(), 42);
-}
-
 TEST(ConfigTest, AsIntFromFloat) {
   EXPECT_EQ(Config::Float(3.9).AsInt(), 3);
   EXPECT_EQ(Config::Float(-3.9).AsInt(), -3);
@@ -724,6 +677,19 @@ TEST(ConfigTest, AsIntFromFloat) {
 TEST(ConfigTest, AsIntFromFloatClamped) {
   EXPECT_EQ(Config::Float(1e30).AsInt(), std::numeric_limits<int64_t>::max());
   EXPECT_EQ(Config::Float(-1e30).AsInt(), std::numeric_limits<int64_t>::min());
+}
+
+TEST(ConfigTest, AsIntFromNanFloat) {
+  int64_t result =
+      Config::Float(std::numeric_limits<double>::quiet_NaN()).AsInt();
+  EXPECT_EQ(result, 0);
+}
+
+TEST(ConfigTest, AsIntFromInfFloat) {
+  EXPECT_EQ(Config::Float(std::numeric_limits<double>::infinity()).AsInt(),
+            std::numeric_limits<int64_t>::max());
+  EXPECT_EQ(Config::Float(-std::numeric_limits<double>::infinity()).AsInt(),
+            std::numeric_limits<int64_t>::min());
 }
 
 TEST(ConfigTest, AsIntFromString) {
@@ -754,59 +720,6 @@ TEST(ConfigTest, AsIntByIndex) {
 }
 
 //==============================================================================
-// AsUInt coercion
-//==============================================================================
-
-TEST(ConfigTest, AsUIntFromBool) {
-  EXPECT_EQ(Config::Bool(true).AsUInt(), 1u);
-  EXPECT_EQ(Config::Bool(false).AsUInt(), 0u);
-}
-
-TEST(ConfigTest, AsUIntFromInt) {
-  EXPECT_EQ(Config::Int(42).AsUInt(), 42u);
-}
-
-TEST(ConfigTest, AsUIntFromUInt) {
-  EXPECT_EQ(Config::UInt(42).AsUInt(), 42u);
-}
-
-TEST(ConfigTest, AsUIntFromFloat) {
-  EXPECT_EQ(Config::Float(3.9).AsUInt(), 3u);
-}
-
-TEST(ConfigTest, AsUIntFromFloatClamped) {
-  EXPECT_EQ(Config::Float(-1.0).AsUInt(), 0u);
-  EXPECT_EQ(Config::Float(1e30).AsUInt(),
-            std::numeric_limits<uint64_t>::max());
-}
-
-TEST(ConfigTest, AsUIntFromString) {
-  EXPECT_EQ(Config::String("42").AsUInt(), 42u);
-  EXPECT_EQ(Config::String("abc").AsUInt(), 0u);
-  EXPECT_EQ(Config::String("").AsUInt(), 0u);
-}
-
-TEST(ConfigTest, AsUIntFromMapArray) {
-  EXPECT_EQ(Config::Map(Config::MapValue{}).AsUInt(), 0u);
-  EXPECT_EQ(Config::Array(Config::ArrayValue{}).AsUInt(), 0u);
-}
-
-TEST(ConfigTest, AsUIntByKey) {
-  Config config = Config::Map(Config::MapValue{});
-  config.Set("val", Config::UInt(42u));
-  EXPECT_EQ(config.AsUInt("val"), 42u);
-  EXPECT_EQ(config.AsUInt("missing"), 0u);
-}
-
-TEST(ConfigTest, AsUIntByIndex) {
-  Config::ArrayValue arr;
-  arr.push_back(Config::Bool(true));
-  Config config = Config::Array(std::move(arr));
-  EXPECT_EQ(config.AsUInt(0), 1u);
-  EXPECT_EQ(config.AsUInt(1), 0u);
-}
-
-//==============================================================================
 // AsFloat coercion
 //==============================================================================
 
@@ -815,13 +728,7 @@ TEST(ConfigTest, AsFloatFromBool) {
   EXPECT_EQ(Config::Bool(false).AsFloat(), 0.0);
 }
 
-TEST(ConfigTest, AsFloatFromInt) {
-  EXPECT_EQ(Config::Int(42).AsFloat(), 42.0);
-}
-
-TEST(ConfigTest, AsFloatFromUInt) {
-  EXPECT_EQ(Config::UInt(42).AsFloat(), 42.0);
-}
+TEST(ConfigTest, AsFloatFromInt) { EXPECT_EQ(Config::Int(42).AsFloat(), 42.0); }
 
 TEST(ConfigTest, AsFloatFromFloat) {
   EXPECT_EQ(Config::Float(3.14).AsFloat(), 3.14);
@@ -865,10 +772,6 @@ TEST(ConfigTest, AsStringFromBool) {
 TEST(ConfigTest, AsStringFromInt) {
   EXPECT_EQ(Config::Int(42).AsString(), "42");
   EXPECT_EQ(Config::Int(-100).AsString(), "-100");
-}
-
-TEST(ConfigTest, AsStringFromUInt) {
-  EXPECT_EQ(Config::UInt(42).AsString(), "42");
 }
 
 TEST(ConfigTest, AsStringFromFloat) {
@@ -967,7 +870,7 @@ TEST(ConfigTest, AsArrayFromMapOrderedByKey) {
 }
 
 //==============================================================================
-// SetBool/SetInt/SetUInt/SetFloat/SetString by key on non-map
+// SetBool/SetInt/SetFloat/SetString by key on non-map
 //==============================================================================
 
 TEST(ConfigTest, SetBoolByKeyOnNonMap) {
@@ -982,13 +885,6 @@ TEST(ConfigTest, SetIntByKeyOnNonMap) {
   config.SetInt("val", 99);
   EXPECT_TRUE(config.IsMap());
   EXPECT_EQ(config.GetInt("val"), 99);
-}
-
-TEST(ConfigTest, SetUIntByKeyOnNonMap) {
-  Config config = Config::Bool(true);
-  config.SetUInt("val", 77u);
-  EXPECT_TRUE(config.IsMap());
-  EXPECT_EQ(config.GetUInt("val"), 77u);
 }
 
 TEST(ConfigTest, SetFloatByKeyOnNonMap) {
@@ -1006,7 +902,7 @@ TEST(ConfigTest, SetStringByKeyOnNonMap) {
 }
 
 //==============================================================================
-// SetBool/SetInt/SetUInt/SetFloat/SetString by index failures
+// SetBool/SetInt/SetFloat/SetString by index failures
 //==============================================================================
 
 TEST(ConfigTest, SetBoolByIndexFails) {
@@ -1017,11 +913,6 @@ TEST(ConfigTest, SetBoolByIndexFails) {
 TEST(ConfigTest, SetIntByIndexFails) {
   Config config = Config::Int(42);
   EXPECT_FALSE(config.SetInt(1, 99));
-}
-
-TEST(ConfigTest, SetUIntByIndexFails) {
-  Config config = Config::Int(42);
-  EXPECT_FALSE(config.SetUInt(1, 99u));
 }
 
 TEST(ConfigTest, SetFloatByIndexFails) {
@@ -1055,36 +946,6 @@ TEST(ConfigTest, GetArrayDirect) {
   EXPECT_EQ(span.size(), 2);
   EXPECT_EQ(span[0].GetInt(), 1);
   EXPECT_EQ(span[1].GetInt(), 2);
-}
-
-//==============================================================================
-// Edge cases for coercion
-//==============================================================================
-
-TEST(ConfigTest, AsIntFromNanFloat) {
-  int64_t result = Config::Float(std::numeric_limits<double>::quiet_NaN()).AsInt();
-  EXPECT_EQ(result, 0);
-}
-
-TEST(ConfigTest, AsIntFromInfFloat) {
-  EXPECT_EQ(Config::Float(std::numeric_limits<double>::infinity()).AsInt(),
-            std::numeric_limits<int64_t>::max());
-  EXPECT_EQ(Config::Float(-std::numeric_limits<double>::infinity()).AsInt(),
-            std::numeric_limits<int64_t>::min());
-}
-
-TEST(ConfigTest, AsUIntFromNanFloat) {
-  EXPECT_EQ(
-      Config::Float(std::numeric_limits<double>::quiet_NaN()).AsUInt(), 0u);
-}
-
-TEST(ConfigTest, AsUIntFromInfFloat) {
-  EXPECT_EQ(Config::Float(std::numeric_limits<double>::infinity()).AsUInt(),
-            std::numeric_limits<uint64_t>::max());
-}
-
-TEST(ConfigTest, AsUIntFromNegativeFloat) {
-  EXPECT_EQ(Config::Float(-1.0).AsUInt(), 0u);
 }
 
 }  // namespace

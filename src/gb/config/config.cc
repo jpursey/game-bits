@@ -142,33 +142,6 @@ void Config::SetInt(std::string_view key, int64_t value) {
 
 bool Config::SetInt(int index, int64_t value) { return Set(index, Int(value)); }
 
-// UInt accessors
-
-uint64_t Config::GetUInt() const {
-  auto* val = std::get_if<uint64_t>(&value_);
-  return val != nullptr ? *val : 0;
-}
-
-uint64_t Config::GetUInt(std::string_view key) const {
-  auto* config = Get(key);
-  return config != nullptr ? config->GetUInt() : 0;
-}
-
-uint64_t Config::GetUInt(int index) const {
-  auto* config = Get(index);
-  return config != nullptr ? config->GetUInt() : 0;
-}
-
-void Config::SetUInt(uint64_t value) { value_ = value; }
-
-void Config::SetUInt(std::string_view key, uint64_t value) {
-  Set(key, UInt(value));
-}
-
-bool Config::SetUInt(int index, uint64_t value) {
-  return Set(index, UInt(value));
-}
-
 // Float accessors
 
 double Config::GetFloat() const {
@@ -340,8 +313,6 @@ bool Config::AsBool() const {
           return val;
         } else if constexpr (std::is_same_v<T, int64_t>) {
           return val != 0;
-        } else if constexpr (std::is_same_v<T, uint64_t>) {
-          return val != 0;
         } else if constexpr (std::is_same_v<T, double>) {
           return val != 0.0;
         } else if constexpr (std::is_same_v<T, std::string>) {
@@ -375,8 +346,6 @@ int64_t Config::AsInt() const {
           return val ? 1 : 0;
         } else if constexpr (std::is_same_v<T, int64_t>) {
           return val;
-        } else if constexpr (std::is_same_v<T, uint64_t>) {
-          return static_cast<int64_t>(val);
         } else if constexpr (std::is_same_v<T, double>) {
           if (std::isnan(val) || std::isinf(val)) {
             if (std::isnan(val)) return 0;
@@ -411,50 +380,6 @@ int64_t Config::AsInt(int index) const {
   return config != nullptr ? config->AsInt() : 0;
 }
 
-uint64_t Config::AsUInt() const {
-  return std::visit(
-      [](const auto& val) -> uint64_t {
-        using T = std::decay_t<decltype(val)>;
-        if constexpr (std::is_same_v<T, bool>) {
-          return val ? 1 : 0;
-        } else if constexpr (std::is_same_v<T, int64_t>) {
-          return static_cast<uint64_t>(val);
-        } else if constexpr (std::is_same_v<T, uint64_t>) {
-          return val;
-        } else if constexpr (std::is_same_v<T, double>) {
-          if (std::isnan(val) || val < 0.0) {
-            if (std::isnan(val)) return 0;
-            return 0;
-          }
-          if (std::isinf(val)) {
-            return std::numeric_limits<uint64_t>::max();
-          }
-          if (val >=
-              static_cast<double>(std::numeric_limits<uint64_t>::max())) {
-            return std::numeric_limits<uint64_t>::max();
-          }
-          return static_cast<uint64_t>(val);
-        } else if constexpr (std::is_same_v<T, std::string>) {
-          char* end = nullptr;
-          uint64_t result = std::strtoull(val.c_str(), &end, 10);
-          return (end != val.c_str() && *end == '\0') ? result : 0;
-        } else {
-          return 0;
-        }
-      },
-      value_);
-}
-
-uint64_t Config::AsUInt(std::string_view key) const {
-  auto* config = Get(key);
-  return config != nullptr ? config->AsUInt() : 0;
-}
-
-uint64_t Config::AsUInt(int index) const {
-  auto* config = Get(index);
-  return config != nullptr ? config->AsUInt() : 0;
-}
-
 double Config::AsFloat() const {
   return std::visit(
       [](const auto& val) -> double {
@@ -462,8 +387,6 @@ double Config::AsFloat() const {
         if constexpr (std::is_same_v<T, bool>) {
           return val ? 1.0 : 0.0;
         } else if constexpr (std::is_same_v<T, int64_t>) {
-          return static_cast<double>(val);
-        } else if constexpr (std::is_same_v<T, uint64_t>) {
           return static_cast<double>(val);
         } else if constexpr (std::is_same_v<T, double>) {
           return val;
@@ -495,8 +418,6 @@ std::string Config::AsString() const {
         if constexpr (std::is_same_v<T, bool>) {
           return val ? "true" : "false";
         } else if constexpr (std::is_same_v<T, int64_t>) {
-          return absl::StrCat(val);
-        } else if constexpr (std::is_same_v<T, uint64_t>) {
           return absl::StrCat(val);
         } else if constexpr (std::is_same_v<T, double>) {
           return absl::StrCat(val);

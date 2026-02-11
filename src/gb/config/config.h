@@ -14,14 +14,13 @@
 
 namespace gb {
 
-// Represents a configuration value, which can be a bool, int, uint, float,
+// Represents a configuration value, which can be a bool, int, float,
 // string, or a map or array of other config values.
 class Config {
  public:
   enum class Type {
     kBool,    // A boolean value.
     kInt,     // A 64-bit integer value.
-    kUInt,    // A 64-bit unsigned integer value.
     kFloat,   // A 64-bit floating point value.
     kString,  // A string value.
     kMap,     // A map of string keys to values (unordered).
@@ -32,8 +31,8 @@ class Config {
   // GetType().
   using MapValue = absl::flat_hash_map<std::string, Config>;
   using ArrayValue = std::vector<Config>;
-  using Value = std::variant<bool, int64_t, uint64_t, double, std::string,
-                             MapValue, ArrayValue>;
+  using Value =
+      std::variant<bool, int64_t, double, std::string, MapValue, ArrayValue>;
 
   //----------------------------------------------------------------------------
   // Factory functions
@@ -42,7 +41,6 @@ class Config {
   // Creates a config value with the specified value.
   static Config Bool(bool value) { return Config(value); }
   static Config Int(int64_t value) { return Config(value); }
-  static Config UInt(uint64_t value) { return Config(value); }
   static Config Float(double value) { return Config(value); }
   static Config String(std::string value) { return Config(std::move(value)); }
   static Config String(std::string_view value) {
@@ -86,7 +84,6 @@ class Config {
   // Tests for the specific type of this config value.
   bool IsBool() const { return std::holds_alternative<bool>(value_); }
   bool IsInt() const { return std::holds_alternative<int64_t>(value_); }
-  bool IsUInt() const { return std::holds_alternative<uint64_t>(value_); }
   bool IsFloat() const { return std::holds_alternative<double>(value_); }
   bool IsString() const { return std::holds_alternative<std::string>(value_); }
   bool IsMap() const { return std::holds_alternative<MapValue>(value_); }
@@ -103,7 +100,7 @@ class Config {
   // value does not exist or is of the incorrect type, these will return the
   // default value for that type:
   //   - bool: false
-  //   - int / uint / float: 0
+  //   - int / float: 0
   //   - string: ""
   //   - map: nullptr
   //   - array: empty span
@@ -169,18 +166,6 @@ class Config {
   void SetInt(int64_t value);
   void SetInt(std::string_view key, int64_t value);
   bool SetInt(int index, int64_t value);
-
-  // Returns 0 if this is not a uint.
-  uint64_t GetUInt() const;
-  uint64_t GetUInt(std::string_view key) const;
-  uint64_t GetUInt(int index) const;
-
-  // Sets the value of this config to a uint, or a map / array containing a
-  // uint. Returns false if setting a value by index and it is not within the
-  // range [0,GetArraySize()].
-  void SetUInt(uint64_t value);
-  void SetUInt(std::string_view key, uint64_t value);
-  bool SetUInt(int index, uint64_t value);
 
   // Returns 0 if this is not a float.
   double GetFloat() const;
@@ -272,7 +257,6 @@ class Config {
   void Append(Config value);
   void AppendBool(bool value) { Append(Bool(value)); }
   void AppendInt(int64_t value) { Append(Int(value)); }
-  void AppendUInt(uint64_t value) { Append(UInt(value)); }
   void AppendFloat(double value) { Append(Float(value)); }
   void AppendString(std::string value) { Append(String(std::move(value))); }
   void AppendString(std::string_view value) { Append(String(value)); }
@@ -301,7 +285,6 @@ class Config {
   // Returns the following based on the type:
   //   - bool: The bool value.
   //   - int: False if the int value is zero, true otherwise.
-  //   - uint: False if the uint value is zero, true otherwise.
   //   - float: False if the float value is zero, true otherwise.
   //   - string: False if the string is empty, "false" (case-insensitive),
   //     "0", or "0.0"; true otherwise.
@@ -313,7 +296,6 @@ class Config {
   // Returns the following based on the type:
   //   - bool: 1 if true, 0 if false.
   //   - int: The int value.
-  //   - uint: The two's complement interpretation of the unsigned int value.
   //   - float: The truncated value of the float, clamped to the integer range.
   //   - string: The int value of the string, or 0 if the string is not a valid
   //     integer.
@@ -323,24 +305,9 @@ class Config {
   int64_t AsInt(int index) const;
 
   // Returns the following based on the type:
-  //   - bool: 1 if true, 0 if false.
-  //   - int: The two's complement representation of the int value.
-  //   - uint: The uint value.
-  //   - float: The truncated value of the float, clamped to the unsigned
-  //     integer range.
-  //   - string: The uint value of the string, or 0 if the string is not a valid
-  //     unsigned integer.
-  //   - map / array: Zero
-  uint64_t AsUInt() const;
-  uint64_t AsUInt(std::string_view key) const;
-  uint64_t AsUInt(int index) const;
-
-  // Returns the following based on the type:
   //   - bool: 1.0 if true, 0.0 if false.
   //   - int: The float value of the int. This is approximate for values beyond
   //   the precision of the float.
-  //   - uint: The float value of the uint. This is approximate for values
-  //   beyond the precision of the float.
   //   - float: The float value.
   //   - string: The float value of the string, or 0.0 if the string is not a
   //     valid float.
@@ -352,7 +319,6 @@ class Config {
   // Returns the following based on the type:
   //   - bool: "true" or "false".
   //   - int: The string value of the int.
-  //   - uint: The string value of the uint.
   //   - float: The string value of the float.
   //   - string: The string value.
   //   - map / array: Empty string.
@@ -363,7 +329,6 @@ class Config {
   // Returns the following based on the type:
   //   - bool: Map of any empty key to the bool value.
   //   - int: Map of any empty key to the int value.
-  //   - uint: Map of any empty key to the uint value.
   //   - float: Map of any empty key to the float value.
   //   - string: Map of any empty key to the string value.
   //   - map: The map value.
@@ -376,7 +341,6 @@ class Config {
   // Returns the following based on the type:
   //   - bool: Array containing the bool value.
   //   - int: Array containing the int value.
-  //   - uint: Array containing the uint value.
   //   - float: Array containing the float value.
   //   - string: Array containing the string value.
   //   - map: Array containing the value at each key, ordered by key.
