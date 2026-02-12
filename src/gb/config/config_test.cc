@@ -595,11 +595,11 @@ TEST(ConfigTest, AppendTypedHelpers) {
   config.AppendInt(42);
   config.AppendFloat(1.5);
   config.AppendString("hello");
-  EXPECT_EQ(config.GetArraySize(), 5);
+  EXPECT_EQ(config.GetArraySize(), 4);
   EXPECT_TRUE(config.GetBool(0));
   EXPECT_EQ(config.GetInt(1), 42);
-  EXPECT_EQ(config.GetFloat(3), 1.5);
-  EXPECT_EQ(config.GetString(4), "hello");
+  EXPECT_EQ(config.GetFloat(2), 1.5);
+  EXPECT_EQ(config.GetString(3), "hello");
 }
 
 //==============================================================================
