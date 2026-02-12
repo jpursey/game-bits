@@ -157,11 +157,12 @@ void WriteArrayValues(std::string& text, int child_indent,
 }
 
 void WriteConfig(std::string& text, int child_indent, const Config& config,
-               TextConfigFlags flags) {
-switch (config.GetType()) {
-  case Config::Type::kNone:
-    break;
-  case Config::Type::kBool:
+                 TextConfigFlags flags) {
+  switch (config.GetType()) {
+    case Config::Type::kNone:
+      absl::StrAppend(&text, "null");
+      break;
+    case Config::Type::kBool:
       absl::StrAppend(&text, config.GetBool() ? "true" : "false");
       break;
     case Config::Type::kInt:

@@ -64,6 +64,59 @@ TEST(WriteConfigToTextTest, FloatNegative) {
 }
 
 //==============================================================================
+// WriteConfigToText — None
+//==============================================================================
+
+TEST(WriteConfigToTextTest, None) {
+  EXPECT_EQ(WriteConfigToText(Config::None()), "null");
+}
+
+TEST(WriteConfigToTextTest, NoneDefault) {
+  EXPECT_EQ(WriteConfigToText(Config()), "null");
+}
+
+TEST(WriteConfigToTextTest, NoneCompact) {
+  EXPECT_EQ(WriteConfigToText(Config::None(), kCompactTextConfig), "null");
+}
+
+TEST(WriteConfigToTextTest, NoneJson) {
+  EXPECT_EQ(WriteConfigToText(Config::None(), kJsonTextConfig), "null");
+}
+
+TEST(WriteConfigToTextTest, NoneInArray) {
+  Config::ArrayValue arr;
+  arr.push_back(Config::Int(1));
+  arr.push_back(Config::None());
+  arr.push_back(Config::Int(3));
+  Config config = Config::Array(std::move(arr));
+  EXPECT_EQ(WriteConfigToText(config), "[1, null, 3]");
+}
+
+TEST(WriteConfigToTextTest, NoneInMap) {
+  Config config = Config::Map();
+  config.Set("a", Config::None());
+  EXPECT_EQ(WriteConfigToText(config), "{\n  a: null\n}");
+}
+
+TEST(WriteConfigToTextTest, NoneInCompactArray) {
+  Config::ArrayValue arr;
+  arr.push_back(Config::None());
+  arr.push_back(Config::Int(1));
+  Config config = Config::Array(std::move(arr));
+  EXPECT_EQ(WriteConfigToText(config, kCompactTextConfig), "[null,1]");
+}
+
+TEST(WriteConfigToTextTest, NoneInCompactMap) {
+  Config config = Config::Map();
+  config.Set("x", Config::None());
+  EXPECT_EQ(WriteConfigToText(config, kCompactTextConfig), "{x:null}");
+}
+
+TEST(WriteConfigToTextTest, NoneRootlessReturnsEmpty) {
+  EXPECT_EQ(WriteConfigToText(Config::None(), kRootlessTextConfig), "");
+}
+
+//==============================================================================
 // WriteConfigToText — Strings
 //==============================================================================
 
