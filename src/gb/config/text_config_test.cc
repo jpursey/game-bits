@@ -159,12 +159,12 @@ TEST(WriteConfigToTextTest, StringSingleQuotedWithEscapes) {
 //==============================================================================
 
 TEST(WriteConfigToTextTest, EmptyMap) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   EXPECT_EQ(WriteConfigToText(config), "{\n\n}");
 }
 
 TEST(WriteConfigToTextTest, EmptyArray) {
-  Config config = Config::Array(Config::ArrayValue{});
+  Config config = Config::Array();
   EXPECT_EQ(WriteConfigToText(config), "[]");
 }
 
@@ -173,13 +173,13 @@ TEST(WriteConfigToTextTest, EmptyArray) {
 //==============================================================================
 
 TEST(WriteConfigToTextTest, MapSingleKeyIdentifier) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("key", Config::Int(1));
   EXPECT_EQ(WriteConfigToText(config), "{\n  key: 1\n}");
 }
 
 TEST(WriteConfigToTextTest, MapMultipleKeysAreSorted) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("b", Config::Int(2));
   config.Set("a", Config::Int(1));
   config.Set("c", Config::Int(3));
@@ -187,52 +187,51 @@ TEST(WriteConfigToTextTest, MapMultipleKeysAreSorted) {
 }
 
 TEST(WriteConfigToTextTest, MapKeyStartingWithDigitNotIdentifier) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("123", Config::Int(1));
   EXPECT_EQ(WriteConfigToText(config), "{\n  \"123\": 1\n}");
 }
 
 TEST(WriteConfigToTextTest, MapKeyWithSpaceNotIdentifier) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("a b", Config::Int(1));
   EXPECT_EQ(WriteConfigToText(config), "{\n  \"a b\": 1\n}");
 }
 
 TEST(WriteConfigToTextTest, MapKeyEmptyStringNotIdentifier) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("", Config::Int(1));
   EXPECT_EQ(WriteConfigToText(config), "{\n  \"\": 1\n}");
 }
 
 TEST(WriteConfigToTextTest, MapKeyWithHyphenNotIdentifier) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("a-b", Config::Int(1));
   EXPECT_EQ(WriteConfigToText(config), "{\n  \"a-b\": 1\n}");
 }
 
 TEST(WriteConfigToTextTest, MapKeyIdentifierWithLeadingUnderscore) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("_foo", Config::Int(1));
   EXPECT_EQ(WriteConfigToText(config), "{\n  _foo: 1\n}");
 }
 
 TEST(WriteConfigToTextTest, MapKeySingleUnderscore) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("_", Config::Int(1));
   EXPECT_EQ(WriteConfigToText(config), "{\n  _: 1\n}");
 }
 
 TEST(WriteConfigToTextTest, MapKeyIdentifierWithTrailingDigits) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("item2", Config::Int(1));
   EXPECT_EQ(WriteConfigToText(config), "{\n  item2: 1\n}");
 }
 
 TEST(WriteConfigToTextTest, MapKeyNoIdentifierFlag) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("key", Config::Int(1));
-  EXPECT_EQ(WriteConfigToText(config, kJsonTextConfig),
-            "{\n  \"key\": 1\n}");
+  EXPECT_EQ(WriteConfigToText(config, kJsonTextConfig), "{\n  \"key\": 1\n}");
 }
 
 //==============================================================================
@@ -242,9 +241,9 @@ TEST(WriteConfigToTextTest, MapKeyNoIdentifierFlag) {
 TEST(WriteConfigToTextTest, MapWithAllValueTypes) {
   Config::ArrayValue arr;
   arr.push_back(Config::Int(10));
-  Config inner = Config::Map(Config::MapValue{});
+  Config inner = Config::Map();
   inner.Set("nested", Config::Bool(false));
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("a", Config::Bool(true));
   config.Set("b", Config::Int(42));
   config.Set("c", Config::Float(1.5));
@@ -265,9 +264,9 @@ TEST(WriteConfigToTextTest, MapWithAllValueTypes) {
 //==============================================================================
 
 TEST(WriteConfigToTextTest, NestedMap) {
-  Config inner = Config::Map(Config::MapValue{});
+  Config inner = Config::Map();
   inner.Set("c", Config::Int(3));
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("a", Config::Int(1));
   config.Set("b", std::move(inner));
   EXPECT_EQ(WriteConfigToText(config),
@@ -280,11 +279,11 @@ TEST(WriteConfigToTextTest, NestedMap) {
 }
 
 TEST(WriteConfigToTextTest, DeeplyNestedMap) {
-  Config inner2 = Config::Map(Config::MapValue{});
+  Config inner2 = Config::Map();
   inner2.Set("z", Config::Int(99));
-  Config inner1 = Config::Map(Config::MapValue{});
+  Config inner1 = Config::Map();
   inner1.Set("y", std::move(inner2));
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("x", std::move(inner1));
   EXPECT_EQ(WriteConfigToText(config),
             "{\n"
@@ -326,7 +325,7 @@ TEST(WriteConfigToTextTest, ArrayWithMixedTypes) {
 }
 
 TEST(WriteConfigToTextTest, ArrayWithNestedMap) {
-  Config inner = Config::Map(Config::MapValue{});
+  Config inner = Config::Map();
   inner.Set("a", Config::Int(1));
   Config::ArrayValue arr;
   arr.push_back(std::move(inner));
@@ -352,7 +351,7 @@ TEST(WriteConfigToTextTest, MapContainingArray) {
   Config::ArrayValue arr;
   arr.push_back(Config::Int(1));
   arr.push_back(Config::Int(2));
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("list", Config::Array(std::move(arr)));
   EXPECT_EQ(WriteConfigToText(config),
             "{\n"
@@ -404,7 +403,7 @@ TEST(WriteConfigToTextTest, ArrayWrappingInMap) {
   for (int i = 0; i < 30; ++i) {
     arr.push_back(Config::Int(1000000 + i));
   }
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("data", Config::Array(std::move(arr)));
   std::string result = WriteConfigToText(config);
   EXPECT_THAT(result, HasSubstr("data: ["));
@@ -429,19 +428,19 @@ TEST(WriteConfigToTextTest, CompactString) {
 }
 
 TEST(WriteConfigToTextTest, CompactEmptyMap) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   EXPECT_EQ(WriteConfigToText(config, kCompactTextConfig), "{}");
 }
 
 TEST(WriteConfigToTextTest, CompactMap) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("a", Config::Int(1));
   config.Set("b", Config::Int(2));
   EXPECT_EQ(WriteConfigToText(config, kCompactTextConfig), "{a:1,b:2}");
 }
 
 TEST(WriteConfigToTextTest, CompactEmptyArray) {
-  Config config = Config::Array(Config::ArrayValue{});
+  Config config = Config::Array();
   EXPECT_EQ(WriteConfigToText(config, kCompactTextConfig), "[]");
 }
 
@@ -455,9 +454,9 @@ TEST(WriteConfigToTextTest, CompactArray) {
 }
 
 TEST(WriteConfigToTextTest, CompactNestedMap) {
-  Config inner = Config::Map(Config::MapValue{});
+  Config inner = Config::Map();
   inner.Set("b", Config::Int(2));
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("a", std::move(inner));
   EXPECT_EQ(WriteConfigToText(config, kCompactTextConfig), "{a:{b:2}}");
 }
@@ -475,13 +474,13 @@ TEST(WriteConfigToTextTest, CompactMapWithArray) {
   Config::ArrayValue arr;
   arr.push_back(Config::Int(1));
   arr.push_back(Config::Int(2));
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("x", Config::Array(std::move(arr)));
   EXPECT_EQ(WriteConfigToText(config, kCompactTextConfig), "{x:[1,2]}");
 }
 
 TEST(WriteConfigToTextTest, CompactMapNoWhitespace) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("key", Config::String("value"));
   std::string result = WriteConfigToText(config, kCompactTextConfig);
   EXPECT_EQ(result.find(' '), std::string::npos);
@@ -489,9 +488,9 @@ TEST(WriteConfigToTextTest, CompactMapNoWhitespace) {
 }
 
 TEST(WriteConfigToTextTest, CompactArrayWithMaps) {
-  Config m1 = Config::Map(Config::MapValue{});
+  Config m1 = Config::Map();
   m1.Set("a", Config::Int(1));
-  Config m2 = Config::Map(Config::MapValue{});
+  Config m2 = Config::Map();
   m2.Set("b", Config::Int(2));
   Config::ArrayValue arr;
   arr.push_back(std::move(m1));
@@ -515,14 +514,14 @@ TEST(WriteConfigToTextTest, CompactLargeArrayNoWrapping) {
 //==============================================================================
 
 TEST(WriteConfigToTextTest, RootlessMap) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("a", Config::Int(1));
   config.Set("b", Config::Int(2));
   EXPECT_EQ(WriteConfigToText(config, kRootlessTextConfig), "a: 1,\nb: 2");
 }
 
 TEST(WriteConfigToTextTest, RootlessEmptyMap) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   EXPECT_EQ(WriteConfigToText(config, kRootlessTextConfig), "");
 }
 
@@ -531,14 +530,14 @@ TEST(WriteConfigToTextTest, RootlessNonMapReturnsEmpty) {
   EXPECT_EQ(WriteConfigToText(Config::Bool(true), kRootlessTextConfig), "");
   EXPECT_EQ(WriteConfigToText(Config::String("hi"), kRootlessTextConfig), "");
   EXPECT_EQ(WriteConfigToText(Config::Float(1.0), kRootlessTextConfig), "");
-  Config arr = Config::Array(Config::ArrayValue{});
+  Config arr = Config::Array();
   EXPECT_EQ(WriteConfigToText(arr, kRootlessTextConfig), "");
 }
 
 TEST(WriteConfigToTextTest, RootlessMapWithNestedMap) {
-  Config inner = Config::Map(Config::MapValue{});
+  Config inner = Config::Map();
   inner.Set("c", Config::Int(3));
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("a", Config::Int(1));
   config.Set("b", std::move(inner));
   EXPECT_EQ(WriteConfigToText(config, kRootlessTextConfig),
@@ -549,11 +548,11 @@ TEST(WriteConfigToTextTest, RootlessMapWithNestedMap) {
 }
 
 TEST(WriteConfigToTextTest, RootlessMapWithDeeplyNestedMap) {
-  Config inner2 = Config::Map(Config::MapValue{});
+  Config inner2 = Config::Map();
   inner2.Set("z", Config::Int(99));
-  Config inner1 = Config::Map(Config::MapValue{});
+  Config inner1 = Config::Map();
   inner1.Set("y", std::move(inner2));
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("x", std::move(inner1));
   EXPECT_EQ(WriteConfigToText(config, kRootlessTextConfig),
             "x: {\n"
@@ -567,13 +566,13 @@ TEST(WriteConfigToTextTest, RootlessMapWithArray) {
   Config::ArrayValue arr;
   arr.push_back(Config::Int(1));
   arr.push_back(Config::Int(2));
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("x", Config::Array(std::move(arr)));
   EXPECT_EQ(WriteConfigToText(config, kRootlessTextConfig), "x: [1, 2]");
 }
 
 TEST(WriteConfigToTextTest, RootlessMapKeysNotIndented) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("key", Config::Int(1));
   std::string result = WriteConfigToText(config, kRootlessTextConfig);
   EXPECT_EQ(result[0], 'k');
@@ -584,10 +583,9 @@ TEST(WriteConfigToTextTest, RootlessMapKeysNotIndented) {
 //==============================================================================
 
 TEST(WriteConfigToTextTest, JsonMap) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("key", Config::Int(1));
-  EXPECT_EQ(WriteConfigToText(config, kJsonTextConfig),
-            "{\n  \"key\": 1\n}");
+  EXPECT_EQ(WriteConfigToText(config, kJsonTextConfig), "{\n  \"key\": 1\n}");
 }
 
 TEST(WriteConfigToTextTest, JsonString) {
@@ -601,9 +599,9 @@ TEST(WriteConfigToTextTest, JsonStringWithDoubleQuote) {
 }
 
 TEST(WriteConfigToTextTest, JsonNestedMap) {
-  Config inner = Config::Map(Config::MapValue{});
+  Config inner = Config::Map();
   inner.Set("b", Config::Int(2));
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("a", std::move(inner));
   EXPECT_EQ(WriteConfigToText(config, kJsonTextConfig),
             "{\n"
@@ -620,7 +618,7 @@ TEST(WriteConfigToTextTest, JsonNestedMap) {
 TEST(WriteConfigToTextTest, CompactRootlessMap) {
   TextConfigFlags flags = {kDefaultTextConfig, TextConfigFlag::kCompact,
                            TextConfigFlag::kRootless};
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("a", Config::Int(1));
   config.Set("b", Config::Int(2));
   EXPECT_EQ(WriteConfigToText(config, flags), "a:1,b:2");
@@ -635,7 +633,7 @@ TEST(WriteConfigToTextTest, CompactRootlessNonMapReturnsEmpty) {
 TEST(WriteConfigToTextTest, CompactRootlessEmptyMap) {
   TextConfigFlags flags = {kDefaultTextConfig, TextConfigFlag::kCompact,
                            TextConfigFlag::kRootless};
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   EXPECT_EQ(WriteConfigToText(config, flags), "");
 }
 

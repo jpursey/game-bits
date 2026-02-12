@@ -170,13 +170,13 @@ TEST(ConfigTest, GetMapSizeNotMap) {
 //==============================================================================
 
 TEST(ConfigTest, HasKeyExisting) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("key", Config::Int(1));
   EXPECT_TRUE(config.HasKey("key"));
 }
 
 TEST(ConfigTest, HasKeyMissing) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("key", Config::Int(1));
   EXPECT_FALSE(config.HasKey("other"));
 }
@@ -188,7 +188,7 @@ TEST(ConfigTest, HasKeyNotMap) { EXPECT_FALSE(Config::Int(42).HasKey("key")); }
 //==============================================================================
 
 TEST(ConfigTest, GetByKey) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("x", Config::Int(10));
   const Config* result = config.Get("x");
   ASSERT_NE(result, nullptr);
@@ -196,7 +196,7 @@ TEST(ConfigTest, GetByKey) {
 }
 
 TEST(ConfigTest, GetByKeyMissing) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   EXPECT_EQ(config.Get("missing"), nullptr);
 }
 
@@ -234,7 +234,7 @@ TEST(ConfigTest, GetByIndexNotArray) {
 //==============================================================================
 
 TEST(ConfigTest, SetByKeyOnMap) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("a", Config::Int(1));
   config.Set("b", Config::Int(2));
   EXPECT_EQ(config.GetMapSize(), 2);
@@ -243,7 +243,7 @@ TEST(ConfigTest, SetByKeyOnMap) {
 }
 
 TEST(ConfigTest, SetByKeyReplacesExisting) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("a", Config::Int(1));
   config.Set("a", Config::Int(99));
   EXPECT_EQ(config.GetMapSize(), 1);
@@ -314,7 +314,7 @@ TEST(ConfigTest, ScalarNotInterchangeableWithArrayElement) {
 //==============================================================================
 
 TEST(ConfigTest, GetSetBoolByKey) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.SetBool("flag", true);
   EXPECT_TRUE(config.GetBool("flag"));
   EXPECT_FALSE(config.GetBool("missing"));
@@ -331,7 +331,7 @@ TEST(ConfigTest, GetSetBoolByIndex) {
 }
 
 TEST(ConfigTest, GetSetIntByKey) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.SetInt("val", 99);
   EXPECT_EQ(config.GetInt("val"), 99);
   EXPECT_EQ(config.GetInt("missing"), 0);
@@ -347,7 +347,7 @@ TEST(ConfigTest, GetSetIntByIndex) {
 }
 
 TEST(ConfigTest, GetSetFloatByKey) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.SetFloat("val", 1.5);
   EXPECT_EQ(config.GetFloat("val"), 1.5);
   EXPECT_EQ(config.GetFloat("missing"), 0.0);
@@ -363,7 +363,7 @@ TEST(ConfigTest, GetSetFloatByIndex) {
 }
 
 TEST(ConfigTest, GetSetStringByKey) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.SetString("val", "abc");
   EXPECT_EQ(config.GetString("val"), "abc");
   EXPECT_EQ(config.GetString("missing"), "");
@@ -379,9 +379,9 @@ TEST(ConfigTest, GetSetStringByIndex) {
 }
 
 TEST(ConfigTest, GetMapByKey) {
-  Config inner = Config::Map(Config::MapValue{});
+  Config inner = Config::Map();
   inner.Set("x", Config::Int(1));
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("sub", std::move(inner));
   const Config::MapValue* map = config.GetMap("sub");
   ASSERT_NE(map, nullptr);
@@ -390,7 +390,7 @@ TEST(ConfigTest, GetMapByKey) {
 }
 
 TEST(ConfigTest, GetMapByIndex) {
-  Config inner = Config::Map(Config::MapValue{});
+  Config inner = Config::Map();
   inner.Set("x", Config::Int(1));
   Config::ArrayValue arr;
   arr.push_back(std::move(inner));
@@ -403,7 +403,7 @@ TEST(ConfigTest, GetMapByIndex) {
 TEST(ConfigTest, GetArrayByKey) {
   Config::ArrayValue inner;
   inner.push_back(Config::Int(1));
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("arr", Config::Array(std::move(inner)));
   absl::Span<Config> span = config.GetArray("arr");
   EXPECT_EQ(span.size(), 1);
@@ -472,7 +472,7 @@ TEST(ConfigTest, SetArrayReplacesValue) {
 //==============================================================================
 
 TEST(ConfigTest, GetKeysReturnsAllKeys) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("a", Config::Int(1));
   config.Set("b", Config::Int(2));
   config.Set("c", Config::Int(3));
@@ -486,7 +486,7 @@ TEST(ConfigTest, GetKeysNotMapReturnsEmpty) {
 }
 
 TEST(ConfigTest, DeleteKeyExisting) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("a", Config::Int(1));
   config.Set("b", Config::Int(2));
   EXPECT_TRUE(config.DeleteKey("a"));
@@ -496,7 +496,7 @@ TEST(ConfigTest, DeleteKeyExisting) {
 }
 
 TEST(ConfigTest, DeleteKeyMissing) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("a", Config::Int(1));
   EXPECT_FALSE(config.DeleteKey("b"));
   EXPECT_EQ(config.GetMapSize(), 1);
@@ -541,7 +541,7 @@ TEST(ConfigTest, ResizeArrayFromNonArray) {
 }
 
 TEST(ConfigTest, ResizeArrayWithValue) {
-  Config config = Config::Array(Config::ArrayValue{});
+  Config config = Config::Array();
   config.ResizeArray(3, Config::Int(99));
   EXPECT_EQ(config.GetArraySize(), 3);
   EXPECT_EQ(config.GetInt(0), 99);
@@ -560,7 +560,7 @@ TEST(ConfigTest, PopBackOnArray) {
 }
 
 TEST(ConfigTest, PopBackOnEmptyArray) {
-  Config config = Config::Array(Config::ArrayValue{});
+  Config config = Config::Array();
   config.PopBack();
   EXPECT_EQ(config.GetArraySize(), 0);
 }
@@ -590,7 +590,7 @@ TEST(ConfigTest, AppendToNonArray) {
 }
 
 TEST(ConfigTest, AppendTypedHelpers) {
-  Config config = Config::Array(Config::ArrayValue{});
+  Config config = Config::Array();
   config.AppendBool(true);
   config.AppendInt(42);
   config.AppendFloat(1.5);
@@ -636,12 +636,12 @@ TEST(ConfigTest, AsBoolFromString) {
 }
 
 TEST(ConfigTest, AsBoolFromMapArray) {
-  EXPECT_FALSE(Config::Map(Config::MapValue{}).AsBool());
-  EXPECT_FALSE(Config::Array(Config::ArrayValue{}).AsBool());
+  EXPECT_FALSE(Config::Map().AsBool());
+  EXPECT_FALSE(Config::Array().AsBool());
 }
 
 TEST(ConfigTest, AsBoolByKey) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("flag", Config::Bool(true));
   EXPECT_TRUE(config.AsBool("flag"));
   EXPECT_FALSE(config.AsBool("missing"));
@@ -700,12 +700,12 @@ TEST(ConfigTest, AsIntFromString) {
 }
 
 TEST(ConfigTest, AsIntFromMapArray) {
-  EXPECT_EQ(Config::Map(Config::MapValue{}).AsInt(), 0);
-  EXPECT_EQ(Config::Array(Config::ArrayValue{}).AsInt(), 0);
+  EXPECT_EQ(Config::Map().AsInt(), 0);
+  EXPECT_EQ(Config::Array().AsInt(), 0);
 }
 
 TEST(ConfigTest, AsIntByKey) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("val", Config::Int(42));
   EXPECT_EQ(config.AsInt("val"), 42);
   EXPECT_EQ(config.AsInt("missing"), 0);
@@ -741,12 +741,12 @@ TEST(ConfigTest, AsFloatFromString) {
 }
 
 TEST(ConfigTest, AsFloatFromMapArray) {
-  EXPECT_EQ(Config::Map(Config::MapValue{}).AsFloat(), 0.0);
-  EXPECT_EQ(Config::Array(Config::ArrayValue{}).AsFloat(), 0.0);
+  EXPECT_EQ(Config::Map().AsFloat(), 0.0);
+  EXPECT_EQ(Config::Array().AsFloat(), 0.0);
 }
 
 TEST(ConfigTest, AsFloatByKey) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("val", Config::Float(1.5));
   EXPECT_EQ(config.AsFloat("val"), 1.5);
   EXPECT_EQ(config.AsFloat("missing"), 0.0);
@@ -784,12 +784,12 @@ TEST(ConfigTest, AsStringFromString) {
 }
 
 TEST(ConfigTest, AsStringFromMapArray) {
-  EXPECT_EQ(Config::Map(Config::MapValue{}).AsString(), "");
-  EXPECT_EQ(Config::Array(Config::ArrayValue{}).AsString(), "");
+  EXPECT_EQ(Config::Map().AsString(), "");
+  EXPECT_EQ(Config::Array().AsString(), "");
 }
 
 TEST(ConfigTest, AsStringByKey) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("val", Config::Int(42));
   EXPECT_EQ(config.AsString("val"), "42");
   EXPECT_EQ(config.AsString("missing"), "");
@@ -816,7 +816,7 @@ TEST(ConfigTest, AsMapFromScalar) {
 }
 
 TEST(ConfigTest, AsMapFromMap) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("a", Config::Int(1));
   config.Set("b", Config::Int(2));
   Config::MapValue result = config.AsMap();
@@ -858,7 +858,7 @@ TEST(ConfigTest, AsArrayFromArray) {
 }
 
 TEST(ConfigTest, AsArrayFromMapOrderedByKey) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("b", Config::Int(2));
   config.Set("a", Config::Int(1));
   config.Set("c", Config::Int(3));
@@ -930,7 +930,7 @@ TEST(ConfigTest, SetStringByIndexFails) {
 //==============================================================================
 
 TEST(ConfigTest, GetMapDirect) {
-  Config config = Config::Map(Config::MapValue{});
+  Config config = Config::Map();
   config.Set("a", Config::Int(1));
   const Config::MapValue* map = config.GetMap();
   ASSERT_NE(map, nullptr);

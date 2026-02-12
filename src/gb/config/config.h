@@ -47,6 +47,7 @@ class Config {
     return Config(std::string(value));
   }
   static Config String(const char* value) { return Config(std::string(value)); }
+  static Config Map() { return Config(MapValue()); }
   static Config Map(MapValue value) { return Config(std::move(value)); }
   static Config Map(absl::Span<const MapValue::value_type> value) {
     return Config(MapValue(value.begin(), value.end()));
@@ -55,6 +56,7 @@ class Config {
   static Config Map(Iterator begin, Iterator end) {
     return Config(MapValue(begin, end));
   }
+  static Config Array() { return Config(ArrayValue()); }
   static Config Array(ArrayValue value) { return Config(std::move(value)); }
   static Config Array(absl::Span<const Config> value) {
     return Config(ArrayValue(value.begin(), value.end()));
