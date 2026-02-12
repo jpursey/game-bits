@@ -19,6 +19,7 @@ namespace gb {
 class Config {
  public:
   enum class Type {
+    kNone,    // No value. This is the default state of a Config.
     kBool,    // A boolean value.
     kInt,     // A 64-bit integer value.
     kFloat,   // A 64-bit floating point value.
@@ -31,14 +32,15 @@ class Config {
   // GetType().
   using MapValue = absl::flat_hash_map<std::string, Config>;
   using ArrayValue = std::vector<Config>;
-  using Value =
-      std::variant<bool, int64_t, double, std::string, MapValue, ArrayValue>;
+  using Value = std::variant<std::monostate, bool, int64_t, double, std::string,
+                             MapValue, ArrayValue>;
 
   //----------------------------------------------------------------------------
   // Factory functions
   //----------------------------------------------------------------------------
 
   // Creates a config value with the specified value.
+  static Config None() { return Config(); }
   static Config Bool(bool value) { return Config(value); }
   static Config Int(int64_t value) { return Config(value); }
   static Config Float(double value) { return Config(value); }
@@ -70,6 +72,7 @@ class Config {
   // Construction / Destruction
   //----------------------------------------------------------------------------
 
+  Config() = default;
   Config(const Config& other) = default;
   Config(Config&& other) = default;
   Config& operator=(const Config& other) = default;
@@ -84,6 +87,7 @@ class Config {
   Type GetType() const;
 
   // Tests for the specific type of this config value.
+  bool IsNone() const { return std::holds_alternative<std::monostate>(value_); }
   bool IsBool() const { return std::holds_alternative<bool>(value_); }
   bool IsInt() const { return std::holds_alternative<int64_t>(value_); }
   bool IsFloat() const { return std::holds_alternative<double>(value_); }
@@ -144,6 +148,9 @@ class Config {
   // [0,GetArraySize()].
   void Set(std::string_view key, Config value);
   bool Set(int index, Config value);
+
+  // Clears the value of this config, setting it to None.
+  void Clear() { value_ = std::monostate(); }
 
   // Returns false if this is not a bool, or it is not found.
   bool GetBool() const;
@@ -285,6 +292,7 @@ class Config {
   //----------------------------------------------------------------------------
 
   // Returns the following based on the type:
+  //   - none: False
   //   - bool: The bool value.
   //   - int: False if the int value is zero, true otherwise.
   //   - float: False if the float value is zero, true otherwise.
@@ -296,6 +304,7 @@ class Config {
   bool AsBool(int index) const;
 
   // Returns the following based on the type:
+  //   - none: 0
   //   - bool: 1 if true, 0 if false.
   //   - int: The int value.
   //   - float: The truncated value of the float, clamped to the integer range.
@@ -307,6 +316,7 @@ class Config {
   int64_t AsInt(int index) const;
 
   // Returns the following based on the type:
+  //   - none: 0.0
   //   - bool: 1.0 if true, 0.0 if false.
   //   - int: The float value of the int. This is approximate for values beyond
   //   the precision of the float.
@@ -319,6 +329,7 @@ class Config {
   double AsFloat(int index) const;
 
   // Returns the following based on the type:
+  //   - none: Empty string.
   //   - bool: "true" or "false".
   //   - int: The string value of the int.
   //   - float: The string value of the float.
@@ -329,6 +340,7 @@ class Config {
   std::string AsString(int index) const;
 
   // Returns the following based on the type:
+  //   - none: Empty map.
   //   - bool: Map of any empty key to the bool value.
   //   - int: Map of any empty key to the int value.
   //   - float: Map of any empty key to the float value.
@@ -341,6 +353,7 @@ class Config {
   MapValue AsMap() const;
 
   // Returns the following based on the type:
+  //   - none: Empty array.
   //   - bool: Array containing the bool value.
   //   - int: Array containing the int value.
   //   - float: Array containing the float value.

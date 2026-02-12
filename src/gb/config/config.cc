@@ -444,7 +444,9 @@ Config::MapValue Config::AsMap() const {
   return std::visit(
       [](const auto& val) -> MapValue {
         using T = std::decay_t<decltype(val)>;
-        if constexpr (std::is_same_v<T, MapValue>) {
+        if constexpr (std::is_same_v<T, std::monostate>) {
+          return {};
+        } else if constexpr (std::is_same_v<T, MapValue>) {
           return val;
         } else if constexpr (std::is_same_v<T, ArrayValue>) {
           MapValue result;
@@ -465,7 +467,9 @@ Config::ArrayValue Config::AsArray() const {
   return std::visit(
       [](const auto& val) -> ArrayValue {
         using T = std::decay_t<decltype(val)>;
-        if constexpr (std::is_same_v<T, ArrayValue>) {
+        if constexpr (std::is_same_v<T, std::monostate>) {
+          return {};
+        } else if constexpr (std::is_same_v<T, ArrayValue>) {
           return val;
         } else if constexpr (std::is_same_v<T, MapValue>) {
           std::vector<std::string> keys;

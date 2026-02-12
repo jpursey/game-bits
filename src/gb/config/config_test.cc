@@ -96,6 +96,32 @@ TEST(ConfigTest, CreateArray) {
   EXPECT_EQ(config.GetArraySize(), 3);
 }
 
+TEST(ConfigTest, DefaultConstructIsNone) {
+  Config config;
+  EXPECT_EQ(config.GetType(), Config::Type::kNone);
+  EXPECT_TRUE(config.IsNone());
+  EXPECT_FALSE(config.IsBool());
+  EXPECT_FALSE(config.IsInt());
+  EXPECT_FALSE(config.IsFloat());
+  EXPECT_FALSE(config.IsString());
+  EXPECT_FALSE(config.IsMap());
+  EXPECT_FALSE(config.IsArray());
+}
+
+TEST(ConfigTest, CreateNone) {
+  Config config = Config::None();
+  EXPECT_EQ(config.GetType(), Config::Type::kNone);
+  EXPECT_TRUE(config.IsNone());
+}
+
+TEST(ConfigTest, Clear) {
+  Config config = Config::Int(42);
+  EXPECT_TRUE(config.IsInt());
+  config.Clear();
+  EXPECT_TRUE(config.IsNone());
+  EXPECT_EQ(config.GetType(), Config::Type::kNone);
+}
+
 TEST(ConfigTest, CopyConstruct) {
   Config original = Config::Int(42);
   Config copy(original);
@@ -150,6 +176,18 @@ TEST(ConfigTest, GetMapWrongType) {
 
 TEST(ConfigTest, GetArrayWrongType) {
   EXPECT_TRUE(Config::Int(42).GetArray().empty());
+}
+
+TEST(ConfigTest, NoneReturnsDefaults) {
+  Config config;
+  EXPECT_FALSE(config.GetBool());
+  EXPECT_EQ(config.GetInt(), 0);
+  EXPECT_EQ(config.GetFloat(), 0.0);
+  EXPECT_EQ(config.GetString(), "");
+  EXPECT_EQ(config.GetMap(), nullptr);
+  EXPECT_TRUE(config.GetArray().empty());
+  EXPECT_EQ(config.GetArraySize(), 0);
+  EXPECT_EQ(config.GetMapSize(), 0);
 }
 
 //==============================================================================
@@ -640,6 +678,10 @@ TEST(ConfigTest, AsBoolFromMapArray) {
   EXPECT_FALSE(Config::Array().AsBool());
 }
 
+TEST(ConfigTest, AsBoolFromNone) {
+  EXPECT_FALSE(Config::None().AsBool());
+}
+
 TEST(ConfigTest, AsBoolByKey) {
   Config config = Config::Map();
   config.Set("flag", Config::Bool(true));
@@ -704,6 +746,10 @@ TEST(ConfigTest, AsIntFromMapArray) {
   EXPECT_EQ(Config::Array().AsInt(), 0);
 }
 
+TEST(ConfigTest, AsIntFromNone) {
+  EXPECT_EQ(Config::None().AsInt(), 0);
+}
+
 TEST(ConfigTest, AsIntByKey) {
   Config config = Config::Map();
   config.Set("val", Config::Int(42));
@@ -743,6 +789,10 @@ TEST(ConfigTest, AsFloatFromString) {
 TEST(ConfigTest, AsFloatFromMapArray) {
   EXPECT_EQ(Config::Map().AsFloat(), 0.0);
   EXPECT_EQ(Config::Array().AsFloat(), 0.0);
+}
+
+TEST(ConfigTest, AsFloatFromNone) {
+  EXPECT_EQ(Config::None().AsFloat(), 0.0);
 }
 
 TEST(ConfigTest, AsFloatByKey) {
@@ -786,6 +836,10 @@ TEST(ConfigTest, AsStringFromString) {
 TEST(ConfigTest, AsStringFromMapArray) {
   EXPECT_EQ(Config::Map().AsString(), "");
   EXPECT_EQ(Config::Array().AsString(), "");
+}
+
+TEST(ConfigTest, AsStringFromNone) {
+  EXPECT_EQ(Config::None().AsString(), "");
 }
 
 TEST(ConfigTest, AsStringByKey) {
@@ -867,6 +921,16 @@ TEST(ConfigTest, AsArrayFromMapOrderedByKey) {
   EXPECT_EQ(result[0].GetInt(), 1);
   EXPECT_EQ(result[1].GetInt(), 2);
   EXPECT_EQ(result[2].GetInt(), 3);
+}
+
+TEST(ConfigTest, AsMapFromNone) {
+  Config::MapValue result = Config::None().AsMap();
+  EXPECT_TRUE(result.empty());
+}
+
+TEST(ConfigTest, AsArrayFromNone) {
+  Config::ArrayValue result = Config::None().AsArray();
+  EXPECT_TRUE(result.empty());
 }
 
 //==============================================================================
