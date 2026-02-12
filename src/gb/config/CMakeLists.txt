@@ -10,12 +10,14 @@ set(gb_config_SOURCE
 
 set(gb_config_DEPS
   absl::status
+  absl::statusor
   absl::strings
   gb_base
 )
 
 set(gb_config_TEST_SOURCE
   config_test.cc
+  text_config_test.cc
 )
 
 gb_add_library(gb_config)

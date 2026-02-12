@@ -18,12 +18,18 @@ namespace gb {
 // Config text file format
 //
 // The text config format is a human-readable format for representing Config
-// values. It is a super-set of JSON, with additional features that allow for
-// simpler and more concise configuration files. Specifically, it supports the
-// following extensions:
+// values. It is mostly a super-set of JSON (with the exception of some string
+// escape codes), with additional features that allow for simpler and more
+// concise configuration files. Specifically, it supports the following
+// extensions:
 //   - Map keys can be unquoted C-style identifiers in addition to being
 //     strings.
-//   - Strings can be single-quoted in addition to double-quoted.
+//   - Strings can be single-quoted in addition to double-quoted. Strings
+//     support all valid UTF-8 characters, with non-printable ASCII characters
+//     (those below 0x20) always being escaped. Quotes that match the enclosing
+//     quote style also be escaped. The escape character is '\' and supports
+//     '\n', '\t', and'\xNN' hex escapes. All other characters after '\' are
+//     treated as the character itself (e.g. '\\' is just '\').
 //   - Comments are allowed, using either // for line comments or /* */ for
 //     block comments.
 //   - By default, the text config format is rootless, meaning that the
@@ -53,8 +59,8 @@ enum class TextConfigFlag {
 
   // Allow single-quoted strings in the text config in addition to double-quoted
   // strings. When writing, strings will preferentially be output as
-  // double-quoted, unless outputing as single quoted would result in no
-  // escaping.
+  // double-quoted, unless a string contains a double quote but not a single
+  // quote, in which case it will be output as single-quoted.
   kSingleQuotes,
 
   // Allow // and /* */ comments in the text config. This is not compatible with
@@ -70,22 +76,43 @@ enum class TextConfigFlag {
 using TextConfigFlags = Flags<TextConfigFlag>;
 
 // Default flags for text config reading and writing supports the most expansive
-// value representations, and is rootless.
-inline constexpr TextConfigFlags kDefaultTextConfigFlags = {
-    TextConfigFlag::kRootless, TextConfigFlag::kIdentifiers,
-    TextConfigFlag::kSingleQuotes, TextConfigFlag::kComments};
-
-// Flags that represent strict JSON compatibility when reading and writing text
-// configs.
-inline constexpr TextConfigFlags kJsonTextConfigFlags = {};
-
-// Flags that represent JavaScript compatibility when reading and writing text
-// formatted like a JavaScript object. Map keys can be identifiers, strings may
-// be single or double quoted, and comments are allowed, but it must have a root
-// {...} structure.
-inline constexpr TextConfigFlags kJavaScriptTextConfigFlags = {
+// value representations.
+inline constexpr TextConfigFlags kDefaultTextConfig = {
     TextConfigFlag::kIdentifiers, TextConfigFlag::kSingleQuotes,
     TextConfigFlag::kComments};
+
+// Flags that represent compact output when writing text configs.
+inline constexpr TextConfigFlags kCompactTextConfig = {
+    kDefaultTextConfig, TextConfigFlag::kCompact};
+
+// Flags that represent rootless text configs when reading and writing text.
+// This is useful for reading / writing config files.
+inline constexpr TextConfigFlags kRootlessTextConfig = {
+    kDefaultTextConfig, TextConfigFlag::kRootless};
+
+// Flags that represent JSON compatibility when reading and writing text.
+inline constexpr TextConfigFlags kJsonTextConfig = {};
+
+//==============================================================================
+// Text config output settings
+//
+// This is only relevant when writing text configs, as reading ignores all
+// whitespace.
+//==============================================================================
+
+// The number of spaces to indent each level of nesting when writing text
+// configs. Indentation only occurs when kCompact is not set. Lines are indented
+// after new lines, with the ident level increasing only for child elements of a
+// map or array. Newlines are added after a map opening and closing brace, after
+// each map key/value pair, and whenever a list of array values exceeds
+// kTextConfigMaxArrayLineLength.
+constexpr int kTextConfigIndentSize = 2;
+
+// The preferred maximum line length when writing text config arrays. This is
+// only relevant when kCompact is not set. If multiple values in an array would
+// be written on the same line and exceed this length, a newline will be
+// inserted before the value.
+constexpr int kTextConfigMaxArrayLineLength = 80;
 
 //==============================================================================
 // Text config I/O
@@ -93,18 +120,20 @@ inline constexpr TextConfigFlags kJavaScriptTextConfigFlags = {
 
 // Writes the given config to text with the specified flags.
 //
-// If the Config is not a map this will return an empty string.
+// If kRootless is set and the Config is not a map, then this will return an
+// empty string. Otherwise, it will write the Config as requested.
 std::string WriteConfigToText(const Config& config,
-                              TextConfigFlags flags = kDefaultTextConfigFlags);
+                              TextConfigFlags flags = kDefaultTextConfig);
 
 // Parses the config from the specified text according to the specified flags.
 //
-// Returns an error if the configuration cannot be parsed. If kRootless is not
-// specified, then this will only read until the trailing '}' is reached,
-// ignoring any text following it. If kRootless is specified, then any
-// unparseable text will be an error.
+// Returns an error if the configuration cannot be parsed. If kRootless is set,
+// then the text will be read as if it is a map (key/value pairs). Otherwise it
+// will read the text as any Config type (maps must start be enclosed in {...}).
+// Any parse error will result in the entire config not being read, and an error
+// status returned indicating the parse error.
 absl::StatusOr<Config> ReadConfigFromText(
-    std::string text, TextConfigFlags flags = kDefaultTextConfigFlags);
+    std::string text, TextConfigFlags flags = kDefaultTextConfig);
 
 }  // namespace gb
 
