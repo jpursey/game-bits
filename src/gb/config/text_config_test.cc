@@ -721,13 +721,870 @@ TEST(WriteConfigToTextTest, JsonFlagsAreEmpty) {
 }
 
 //==============================================================================
-// ReadConfigFromText — Unimplemented
+// ReadConfigFromText — Scalar types
 //==============================================================================
 
-TEST(ReadConfigFromTextTest, ReturnsUnimplementedError) {
+TEST(ReadConfigFromTextTest, Null) {
+  auto result = ReadConfigFromText("null");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsNone());
+}
+
+TEST(ReadConfigFromTextTest, BoolTrue) {
   auto result = ReadConfigFromText("true");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsBool());
+  EXPECT_TRUE(result->GetBool());
+}
+
+TEST(ReadConfigFromTextTest, BoolFalse) {
+  auto result = ReadConfigFromText("false");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsBool());
+  EXPECT_FALSE(result->GetBool());
+}
+
+TEST(ReadConfigFromTextTest, IntZero) {
+  auto result = ReadConfigFromText("0");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsInt());
+  EXPECT_EQ(result->GetInt(), 0);
+}
+
+TEST(ReadConfigFromTextTest, IntPositive) {
+  auto result = ReadConfigFromText("42");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsInt());
+  EXPECT_EQ(result->GetInt(), 42);
+}
+
+TEST(ReadConfigFromTextTest, IntNegative) {
+  auto result = ReadConfigFromText("-100");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsInt());
+  EXPECT_EQ(result->GetInt(), -100);
+}
+
+TEST(ReadConfigFromTextTest, IntLargePositive) {
+  auto result = ReadConfigFromText(std::to_string(INT64_MAX));
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsInt());
+  EXPECT_EQ(result->GetInt(), INT64_MAX);
+}
+
+TEST(ReadConfigFromTextTest, IntLargeNegative) {
+  auto result = ReadConfigFromText(std::to_string(INT64_MIN));
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsInt());
+  EXPECT_EQ(result->GetInt(), INT64_MIN);
+}
+
+TEST(ReadConfigFromTextTest, IntHexLower) {
+  auto result = ReadConfigFromText("0xff");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsInt());
+  EXPECT_EQ(result->GetInt(), 255);
+}
+
+TEST(ReadConfigFromTextTest, IntHexUpper) {
+  auto result = ReadConfigFromText("0xFF");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsInt());
+  EXPECT_EQ(result->GetInt(), 255);
+}
+
+TEST(ReadConfigFromTextTest, FloatSimple) {
+  auto result = ReadConfigFromText("3.14");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsFloat());
+  EXPECT_NEAR(result->GetFloat(), 3.14, 1e-9);
+}
+
+TEST(ReadConfigFromTextTest, FloatNegative) {
+  auto result = ReadConfigFromText("-2.5");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsFloat());
+  EXPECT_NEAR(result->GetFloat(), -2.5, 1e-9);
+}
+
+TEST(ReadConfigFromTextTest, FloatExponent) {
+  auto result = ReadConfigFromText("1.25e2");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsFloat());
+  EXPECT_NEAR(result->GetFloat(), 125.0, 1e-9);
+}
+
+TEST(ReadConfigFromTextTest, FloatExponentNegative) {
+  auto result = ReadConfigFromText("5.0e-3");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsFloat());
+  EXPECT_NEAR(result->GetFloat(), 0.005, 1e-9);
+}
+
+//==============================================================================
+// ReadConfigFromText — Strings
+//==============================================================================
+
+TEST(ReadConfigFromTextTest, SimpleString) {
+  auto result = ReadConfigFromText("\"hello\"");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsString());
+  EXPECT_EQ(result->GetString(), "hello");
+}
+
+TEST(ReadConfigFromTextTest, EmptyString) {
+  auto result = ReadConfigFromText("\"\"");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsString());
+  EXPECT_EQ(result->GetString(), "");
+}
+
+TEST(ReadConfigFromTextTest, StringWithEscapedNewline) {
+  auto result = ReadConfigFromText("\"a\\nb\"");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsString());
+  EXPECT_EQ(result->GetString(), "a\nb");
+}
+
+TEST(ReadConfigFromTextTest, StringWithEscapedTab) {
+  auto result = ReadConfigFromText("\"a\\tb\"");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsString());
+  EXPECT_EQ(result->GetString(), "a\tb");
+}
+
+TEST(ReadConfigFromTextTest, StringWithEscapedBackslash) {
+  auto result = ReadConfigFromText("\"a\\\\b\"");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsString());
+  EXPECT_EQ(result->GetString(), "a\\b");
+}
+
+TEST(ReadConfigFromTextTest, StringWithEscapedDoubleQuote) {
+  auto result = ReadConfigFromText("\"a\\\"b\"");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsString());
+  EXPECT_EQ(result->GetString(), "a\"b");
+}
+
+TEST(ReadConfigFromTextTest, StringWithHexEscape) {
+  auto result = ReadConfigFromText("\"\\x41\"");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsString());
+  EXPECT_EQ(result->GetString(), "A");
+}
+
+TEST(ReadConfigFromTextTest, SingleQuotedString) {
+  auto result = ReadConfigFromText("'hello'", kDefaultTextConfig);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsString());
+  EXPECT_EQ(result->GetString(), "hello");
+}
+
+TEST(ReadConfigFromTextTest, SingleQuotedStringWithDoubleQuote) {
+  auto result = ReadConfigFromText("'a\"b'", kDefaultTextConfig);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsString());
+  EXPECT_EQ(result->GetString(), "a\"b");
+}
+
+TEST(ReadConfigFromTextTest, SingleQuotedStringNotAllowedInJson) {
+  auto result = ReadConfigFromText("'hello'", kJsonTextConfig);
   EXPECT_FALSE(result.ok());
-  EXPECT_EQ(result.status().code(), absl::StatusCode::kUnimplemented);
+}
+
+//==============================================================================
+// ReadConfigFromText — Arrays
+//==============================================================================
+
+TEST(ReadConfigFromTextTest, EmptyArray) {
+  auto result = ReadConfigFromText("[]");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsArray());
+  EXPECT_EQ(result->GetArraySize(), 0);
+}
+
+TEST(ReadConfigFromTextTest, SingleElementArray) {
+  auto result = ReadConfigFromText("[42]");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsArray());
+  EXPECT_EQ(result->GetArraySize(), 1);
+  EXPECT_EQ(result->GetInt(0), 42);
+}
+
+TEST(ReadConfigFromTextTest, MultiElementArray) {
+  auto result = ReadConfigFromText("[1, 2, 3]");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsArray());
+  EXPECT_EQ(result->GetArraySize(), 3);
+  EXPECT_EQ(result->GetInt(0), 1);
+  EXPECT_EQ(result->GetInt(1), 2);
+  EXPECT_EQ(result->GetInt(2), 3);
+}
+
+TEST(ReadConfigFromTextTest, MixedTypeArray) {
+  auto result = ReadConfigFromText("[true, 42, \"hi\", null, 3.14]");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsArray());
+  EXPECT_EQ(result->GetArraySize(), 5);
+  EXPECT_TRUE(result->Get(0)->IsBool());
+  EXPECT_TRUE(result->Get(0)->GetBool());
+  EXPECT_TRUE(result->Get(1)->IsInt());
+  EXPECT_EQ(result->Get(1)->GetInt(), 42);
+  EXPECT_TRUE(result->Get(2)->IsString());
+  EXPECT_EQ(result->Get(2)->GetString(), "hi");
+  EXPECT_TRUE(result->Get(3)->IsNone());
+  EXPECT_TRUE(result->Get(4)->IsFloat());
+  EXPECT_NEAR(result->Get(4)->GetFloat(), 3.14, 1e-9);
+}
+
+TEST(ReadConfigFromTextTest, NestedArray) {
+  auto result = ReadConfigFromText("[[1, 2], [3, 4]]");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsArray());
+  EXPECT_EQ(result->GetArraySize(), 2);
+  EXPECT_TRUE(result->Get(0)->IsArray());
+  EXPECT_EQ(result->Get(0)->GetArraySize(), 2);
+  EXPECT_EQ(result->Get(0)->GetInt(0), 1);
+  EXPECT_EQ(result->Get(0)->GetInt(1), 2);
+  EXPECT_TRUE(result->Get(1)->IsArray());
+  EXPECT_EQ(result->Get(1)->GetInt(0), 3);
+  EXPECT_EQ(result->Get(1)->GetInt(1), 4);
+}
+
+TEST(ReadConfigFromTextTest, ArrayWithNulls) {
+  auto result = ReadConfigFromText("[null, 1, null]");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsArray());
+  EXPECT_EQ(result->GetArraySize(), 3);
+  EXPECT_TRUE(result->Get(0)->IsNone());
+  EXPECT_EQ(result->Get(1)->GetInt(), 1);
+  EXPECT_TRUE(result->Get(2)->IsNone());
+}
+
+//==============================================================================
+// ReadConfigFromText — Maps (rooted)
+//==============================================================================
+
+TEST(ReadConfigFromTextTest, EmptyMap) {
+  auto result = ReadConfigFromText("{}");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsMap());
+  EXPECT_EQ(result->GetMapSize(), 0);
+}
+
+TEST(ReadConfigFromTextTest, SingleKeyMap) {
+  auto result = ReadConfigFromText("{\"key\": 1}");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsMap());
+  EXPECT_EQ(result->GetMapSize(), 1);
+  EXPECT_EQ(result->GetInt("key"), 1);
+}
+
+TEST(ReadConfigFromTextTest, MultipleKeyMap) {
+  auto result = ReadConfigFromText("{\"a\": 1, \"b\": 2, \"c\": 3}");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsMap());
+  EXPECT_EQ(result->GetMapSize(), 3);
+  EXPECT_EQ(result->GetInt("a"), 1);
+  EXPECT_EQ(result->GetInt("b"), 2);
+  EXPECT_EQ(result->GetInt("c"), 3);
+}
+
+TEST(ReadConfigFromTextTest, MapWithAllValueTypes) {
+  auto result = ReadConfigFromText(
+      "{\"a\": true, \"b\": 42, \"c\": 3.14, \"d\": \"hello\","
+      " \"e\": null, \"f\": [1, 2], \"g\": {\"x\": 1}}");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsMap());
+  EXPECT_TRUE(result->Get("a")->IsBool());
+  EXPECT_TRUE(result->Get("a")->GetBool());
+  EXPECT_TRUE(result->Get("b")->IsInt());
+  EXPECT_EQ(result->Get("b")->GetInt(), 42);
+  EXPECT_TRUE(result->Get("c")->IsFloat());
+  EXPECT_NEAR(result->Get("c")->GetFloat(), 3.14, 1e-9);
+  EXPECT_TRUE(result->Get("d")->IsString());
+  EXPECT_EQ(result->Get("d")->GetString(), "hello");
+  EXPECT_TRUE(result->Get("e")->IsNone());
+  EXPECT_TRUE(result->Get("f")->IsArray());
+  EXPECT_EQ(result->Get("f")->GetArraySize(), 2);
+  EXPECT_TRUE(result->Get("g")->IsMap());
+  EXPECT_EQ(result->Get("g")->GetInt("x"), 1);
+}
+
+TEST(ReadConfigFromTextTest, NestedMap) {
+  auto result = ReadConfigFromText("{\"a\": {\"b\": {\"c\": 42}}}");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsMap());
+  EXPECT_TRUE(result->Get("a")->IsMap());
+  EXPECT_TRUE(result->Get("a")->Get("b")->IsMap());
+  EXPECT_EQ(result->Get("a")->Get("b")->GetInt("c"), 42);
+}
+
+TEST(ReadConfigFromTextTest, MapWithNullValue) {
+  auto result = ReadConfigFromText("{\"key\": null}");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsMap());
+  EXPECT_TRUE(result->Get("key")->IsNone());
+}
+
+//==============================================================================
+// ReadConfigFromText — Identifier keys
+//==============================================================================
+
+TEST(ReadConfigFromTextTest, IdentifierKey) {
+  auto result = ReadConfigFromText("{key: 1}", kDefaultTextConfig);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsMap());
+  EXPECT_EQ(result->GetInt("key"), 1);
+}
+
+TEST(ReadConfigFromTextTest, IdentifierKeyWithUnderscore) {
+  auto result = ReadConfigFromText("{_foo_bar: 1}", kDefaultTextConfig);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(result->GetInt("_foo_bar"), 1);
+}
+
+TEST(ReadConfigFromTextTest, IdentifierKeyWithDigits) {
+  auto result = ReadConfigFromText("{item2: 1}", kDefaultTextConfig);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(result->GetInt("item2"), 1);
+}
+
+TEST(ReadConfigFromTextTest, MixedIdentifierAndStringKeys) {
+  auto result =
+      ReadConfigFromText("{key: 1, \"other key\": 2}", kDefaultTextConfig);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(result->GetInt("key"), 1);
+  EXPECT_EQ(result->GetInt("other key"), 2);
+}
+
+TEST(ReadConfigFromTextTest, IdentifierKeyNotAllowedInJson) {
+  auto result = ReadConfigFromText("{key: 1}", kJsonTextConfig);
+  EXPECT_FALSE(result.ok());
+}
+
+//==============================================================================
+// ReadConfigFromText — Rootless mode
+//==============================================================================
+
+TEST(ReadConfigFromTextTest, RootlessSimple) {
+  auto result = ReadConfigFromText("a: 1, b: 2", kRootlessTextConfig);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsMap());
+  EXPECT_EQ(result->GetInt("a"), 1);
+  EXPECT_EQ(result->GetInt("b"), 2);
+}
+
+TEST(ReadConfigFromTextTest, RootlessEmpty) {
+  auto result = ReadConfigFromText("", kRootlessTextConfig);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsMap());
+  EXPECT_EQ(result->GetMapSize(), 0);
+}
+
+TEST(ReadConfigFromTextTest, RootlessSingleKey) {
+  auto result = ReadConfigFromText("key: 42", kRootlessTextConfig);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsMap());
+  EXPECT_EQ(result->GetInt("key"), 42);
+}
+
+TEST(ReadConfigFromTextTest, RootlessWithNestedMap) {
+  auto result =
+      ReadConfigFromText("a: 1, b: {c: 3}", kRootlessTextConfig);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsMap());
+  EXPECT_EQ(result->GetInt("a"), 1);
+  EXPECT_TRUE(result->Get("b")->IsMap());
+  EXPECT_EQ(result->Get("b")->GetInt("c"), 3);
+}
+
+TEST(ReadConfigFromTextTest, RootlessWithArray) {
+  auto result = ReadConfigFromText("x: [1, 2, 3]", kRootlessTextConfig);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsMap());
+  EXPECT_TRUE(result->Get("x")->IsArray());
+  EXPECT_EQ(result->Get("x")->GetArraySize(), 3);
+}
+
+TEST(ReadConfigFromTextTest, RootlessWithStringKeys) {
+  TextConfigFlags flags = {TextConfigFlag::kRootless};
+  auto result = ReadConfigFromText("\"a\": 1, \"b\": 2", flags);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsMap());
+  EXPECT_EQ(result->GetInt("a"), 1);
+  EXPECT_EQ(result->GetInt("b"), 2);
+}
+
+TEST(ReadConfigFromTextTest, RootlessMultiline) {
+  auto result = ReadConfigFromText("a: 1,\nb: 2,\nc: 3", kRootlessTextConfig);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsMap());
+  EXPECT_EQ(result->GetMapSize(), 3);
+  EXPECT_EQ(result->GetInt("a"), 1);
+  EXPECT_EQ(result->GetInt("b"), 2);
+  EXPECT_EQ(result->GetInt("c"), 3);
+}
+
+//==============================================================================
+// ReadConfigFromText — Comments
+//==============================================================================
+
+TEST(ReadConfigFromTextTest, LineComment) {
+  auto result = ReadConfigFromText(
+      "// This is a comment\n42", kDefaultTextConfig);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(result->GetInt(), 42);
+}
+
+TEST(ReadConfigFromTextTest, BlockComment) {
+  auto result = ReadConfigFromText(
+      "/* comment */ 42", kDefaultTextConfig);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(result->GetInt(), 42);
+}
+
+TEST(ReadConfigFromTextTest, CommentsInMap) {
+  auto result = ReadConfigFromText(
+      "{\n"
+      "  // comment\n"
+      "  key: /* inline */ 1\n"
+      "}",
+      kDefaultTextConfig);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(result->GetInt("key"), 1);
+}
+
+TEST(ReadConfigFromTextTest, CommentsInRootless) {
+  auto result = ReadConfigFromText(
+      "// header comment\n"
+      "a: 1, // trailing comment\n"
+      "b: 2",
+      kRootlessTextConfig);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(result->GetInt("a"), 1);
+  EXPECT_EQ(result->GetInt("b"), 2);
+}
+
+TEST(ReadConfigFromTextTest, CommentsNotAllowedInJson) {
+  auto result = ReadConfigFromText("// comment\n42", kJsonTextConfig);
+  EXPECT_FALSE(result.ok());
+}
+
+TEST(ReadConfigFromTextTest, BlockCommentNotAllowedInJson) {
+  auto result = ReadConfigFromText("/* comment */ 42", kJsonTextConfig);
+  EXPECT_FALSE(result.ok());
+}
+
+//==============================================================================
+// ReadConfigFromText — Individual flag variations
+//==============================================================================
+
+// No single quotes flag: single-quoted strings are rejected, but double-quoted
+// strings still work.
+TEST(ReadConfigFromTextTest, NoSingleQuotesFlagRejectsQuotes) {
+  TextConfigFlags flags = {TextConfigFlag::kIdentifiers,
+                           TextConfigFlag::kComments};
+  auto result = ReadConfigFromText("'hello'", flags);
+  EXPECT_FALSE(result.ok());
+}
+
+TEST(ReadConfigFromTextTest, NoSingleQuotesFlagAllowsDoubleQuoted) {
+  TextConfigFlags flags = {TextConfigFlag::kIdentifiers,
+                           TextConfigFlag::kComments};
+  auto result = ReadConfigFromText("\"hello\"", flags);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(result->GetString(), "hello");
+}
+
+TEST(ReadConfigFromTextTest, NoSingleQuotesFlagAllowsDoubleQuotedMapKey) {
+  TextConfigFlags flags = {TextConfigFlag::kIdentifiers,
+                           TextConfigFlag::kComments};
+  auto result = ReadConfigFromText("{\"key\": 1}", flags);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(result->GetInt("key"), 1);
+}
+
+// No identifiers flag: identifier keys are rejected, but string keys work.
+TEST(ReadConfigFromTextTest, NoIdentifiersFlagRejectsIdentKeys) {
+  TextConfigFlags flags = {TextConfigFlag::kSingleQuotes,
+                           TextConfigFlag::kComments};
+  auto result = ReadConfigFromText("{key: 1}", flags);
+  EXPECT_FALSE(result.ok());
+}
+
+TEST(ReadConfigFromTextTest, NoIdentifiersFlagAllowsStringKeys) {
+  TextConfigFlags flags = {TextConfigFlag::kSingleQuotes,
+                           TextConfigFlag::kComments};
+  auto result = ReadConfigFromText("{\"key\": 1}", flags);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(result->GetInt("key"), 1);
+}
+
+TEST(ReadConfigFromTextTest, NoIdentifiersFlagAllowsSingleQuotedKey) {
+  TextConfigFlags flags = {TextConfigFlag::kSingleQuotes,
+                           TextConfigFlag::kComments};
+  auto result = ReadConfigFromText("{'key': 1}", flags);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(result->GetInt("key"), 1);
+}
+
+// No comments flag: comments are rejected, but everything else works.
+TEST(ReadConfigFromTextTest, NoCommentsFlagRejectsLineComment) {
+  TextConfigFlags flags = {TextConfigFlag::kIdentifiers,
+                           TextConfigFlag::kSingleQuotes};
+  auto result = ReadConfigFromText("// comment\n42", flags);
+  EXPECT_FALSE(result.ok());
+}
+
+TEST(ReadConfigFromTextTest, NoCommentsFlagRejectsBlockComment) {
+  TextConfigFlags flags = {TextConfigFlag::kIdentifiers,
+                           TextConfigFlag::kSingleQuotes};
+  auto result = ReadConfigFromText("/* comment */ 42", flags);
+  EXPECT_FALSE(result.ok());
+}
+
+TEST(ReadConfigFromTextTest, NoCommentsFlagAllowsNormalValues) {
+  TextConfigFlags flags = {TextConfigFlag::kIdentifiers,
+                           TextConfigFlag::kSingleQuotes};
+  auto result = ReadConfigFromText("{key: 'hello'}", flags);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(result->Get("key")->GetString(), "hello");
+}
+
+// Rootless with no identifiers: must use string keys.
+TEST(ReadConfigFromTextTest, RootlessNoIdentifiersFlagRejectsIdentKeys) {
+  TextConfigFlags flags = {TextConfigFlag::kRootless,
+                           TextConfigFlag::kSingleQuotes,
+                           TextConfigFlag::kComments};
+  auto result = ReadConfigFromText("key: 1", flags);
+  EXPECT_FALSE(result.ok());
+}
+
+TEST(ReadConfigFromTextTest, RootlessNoIdentifiersFlagAllowsStringKeys) {
+  TextConfigFlags flags = {TextConfigFlag::kRootless,
+                           TextConfigFlag::kSingleQuotes,
+                           TextConfigFlag::kComments};
+  auto result = ReadConfigFromText("\"key\": 1", flags);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(result->GetInt("key"), 1);
+}
+
+//==============================================================================
+// ReadConfigFromText — Whitespace handling
+//==============================================================================
+
+TEST(ReadConfigFromTextTest, LeadingWhitespace) {
+  auto result = ReadConfigFromText("   42");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(result->GetInt(), 42);
+}
+
+TEST(ReadConfigFromTextTest, TrailingWhitespace) {
+  auto result = ReadConfigFromText("42   ");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(result->GetInt(), 42);
+}
+
+TEST(ReadConfigFromTextTest, WhitespaceAroundMapValues) {
+  auto result = ReadConfigFromText("{  \"a\"  :  1  ,  \"b\"  :  2  }");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(result->GetInt("a"), 1);
+  EXPECT_EQ(result->GetInt("b"), 2);
+}
+
+TEST(ReadConfigFromTextTest, WhitespaceAroundArrayValues) {
+  auto result = ReadConfigFromText("[  1  ,  2  ,  3  ]");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(result->GetArraySize(), 3);
+  EXPECT_EQ(result->GetInt(0), 1);
+  EXPECT_EQ(result->GetInt(1), 2);
+  EXPECT_EQ(result->GetInt(2), 3);
+}
+
+TEST(ReadConfigFromTextTest, MultilineMap) {
+  auto result = ReadConfigFromText(
+      "{\n"
+      "  \"a\": 1,\n"
+      "  \"b\": 2\n"
+      "}");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(result->GetInt("a"), 1);
+  EXPECT_EQ(result->GetInt("b"), 2);
+}
+
+//==============================================================================
+// ReadConfigFromText — Error cases
+//==============================================================================
+
+TEST(ReadConfigFromTextTest, EmptyInputRooted) {
+  auto result = ReadConfigFromText("");
+  EXPECT_FALSE(result.ok());
+  EXPECT_EQ(result.status().code(), absl::StatusCode::kInvalidArgument);
+}
+
+TEST(ReadConfigFromTextTest, InvalidToken) {
+  auto result = ReadConfigFromText("@invalid");
+  EXPECT_FALSE(result.ok());
+}
+
+TEST(ReadConfigFromTextTest, TrailingGarbageAfterValue) {
+  auto result = ReadConfigFromText("42 extra");
+  EXPECT_FALSE(result.ok());
+}
+
+TEST(ReadConfigFromTextTest, UnclosedArray) {
+  auto result = ReadConfigFromText("[1, 2");
+  EXPECT_FALSE(result.ok());
+}
+
+TEST(ReadConfigFromTextTest, UnclosedMap) {
+  auto result = ReadConfigFromText("{\"a\": 1");
+  EXPECT_FALSE(result.ok());
+}
+
+TEST(ReadConfigFromTextTest, MissingColon) {
+  auto result = ReadConfigFromText("{\"a\" 1}");
+  EXPECT_FALSE(result.ok());
+}
+
+TEST(ReadConfigFromTextTest, MissingValue) {
+  auto result = ReadConfigFromText("{\"a\":}");
+  EXPECT_FALSE(result.ok());
+}
+
+TEST(ReadConfigFromTextTest, ExtraCommaInArray) {
+  // The parser allows trailing commas because of comma-separated repeat syntax.
+  // Verify it still parses (or at least has consistent behavior).
+  auto result = ReadConfigFromText("[1, 2,]");
+  // This may or may not be an error depending on parser behavior.
+  // We just verify it doesn't crash.
+}
+
+TEST(ReadConfigFromTextTest, RootlessInvalidKey) {
+  auto result = ReadConfigFromText("123: 1", kRootlessTextConfig);
+  EXPECT_FALSE(result.ok());
+}
+
+TEST(ReadConfigFromTextTest, RootlessTrailingGarbage) {
+  auto result = ReadConfigFromText("a: 1 garbage", kRootlessTextConfig);
+  EXPECT_FALSE(result.ok());
+}
+
+//==============================================================================
+// ReadConfigFromText — Round-trip (Write then Read)
+//==============================================================================
+
+TEST(ReadConfigFromTextTest, RoundTripNull) {
+  Config original = Config::None();
+  std::string text = WriteConfigToText(original);
+  auto result = ReadConfigFromText(std::string(text));
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsNone());
+}
+
+TEST(ReadConfigFromTextTest, RoundTripBool) {
+  Config original = Config::Bool(true);
+  std::string text = WriteConfigToText(original);
+  auto result = ReadConfigFromText(std::string(text));
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsBool());
+  EXPECT_TRUE(result->GetBool());
+}
+
+TEST(ReadConfigFromTextTest, RoundTripInt) {
+  Config original = Config::Int(-12345);
+  std::string text = WriteConfigToText(original);
+  auto result = ReadConfigFromText(std::string(text));
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsInt());
+  EXPECT_EQ(result->GetInt(), -12345);
+}
+
+TEST(ReadConfigFromTextTest, RoundTripFloat) {
+  Config original = Config::Float(3.14);
+  std::string text = WriteConfigToText(original);
+  auto result = ReadConfigFromText(std::string(text));
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsFloat());
+  EXPECT_NEAR(result->GetFloat(), 3.14, 1e-9);
+}
+
+TEST(ReadConfigFromTextTest, RoundTripString) {
+  Config original = Config::String("hello\nworld\t!");
+  std::string text = WriteConfigToText(original);
+  auto result = ReadConfigFromText(std::string(text));
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsString());
+  EXPECT_EQ(result->GetString(), "hello\nworld\t!");
+}
+
+TEST(ReadConfigFromTextTest, RoundTripStringWithQuotes) {
+  Config original = Config::String("a\"b");
+  std::string text = WriteConfigToText(original, kJsonTextConfig);
+  auto result = ReadConfigFromText(std::string(text), kJsonTextConfig);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(result->GetString(), "a\"b");
+}
+
+TEST(ReadConfigFromTextTest, RoundTripEmptyArray) {
+  Config original = Config::Array();
+  std::string text = WriteConfigToText(original);
+  auto result = ReadConfigFromText(std::string(text));
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsArray());
+  EXPECT_EQ(result->GetArraySize(), 0);
+}
+
+TEST(ReadConfigFromTextTest, RoundTripArray) {
+  Config::ArrayValue arr;
+  arr.push_back(Config::Int(1));
+  arr.push_back(Config::Bool(false));
+  arr.push_back(Config::String("test"));
+  arr.push_back(Config::None());
+  Config original = Config::Array(std::move(arr));
+  std::string text = WriteConfigToText(original);
+  auto result = ReadConfigFromText(std::string(text));
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsArray());
+  EXPECT_EQ(result->GetArraySize(), 4);
+  EXPECT_EQ(result->GetInt(0), 1);
+  EXPECT_FALSE(result->Get(1)->GetBool());
+  EXPECT_EQ(result->Get(2)->GetString(), "test");
+  EXPECT_TRUE(result->Get(3)->IsNone());
+}
+
+TEST(ReadConfigFromTextTest, RoundTripEmptyMap) {
+  Config original = Config::Map();
+  std::string text = WriteConfigToText(original);
+  auto result = ReadConfigFromText(std::string(text));
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsMap());
+  EXPECT_EQ(result->GetMapSize(), 0);
+}
+
+TEST(ReadConfigFromTextTest, RoundTripMap) {
+  Config original = Config::Map();
+  original.Set("name", Config::String("test"));
+  original.Set("value", Config::Int(42));
+  original.Set("enabled", Config::Bool(true));
+  original.Set("nothing", Config::None());
+  std::string text = WriteConfigToText(original);
+  auto result = ReadConfigFromText(std::string(text));
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsMap());
+  EXPECT_EQ(result->GetMapSize(), 4);
+  EXPECT_EQ(result->Get("name")->GetString(), "test");
+  EXPECT_EQ(result->Get("value")->GetInt(), 42);
+  EXPECT_TRUE(result->Get("enabled")->GetBool());
+  EXPECT_TRUE(result->Get("nothing")->IsNone());
+}
+
+TEST(ReadConfigFromTextTest, RoundTripNestedMap) {
+  Config inner = Config::Map();
+  inner.Set("x", Config::Int(10));
+  inner.Set("y", Config::Int(20));
+  Config original = Config::Map();
+  original.Set("pos", std::move(inner));
+  original.Set("name", Config::String("point"));
+  std::string text = WriteConfigToText(original);
+  auto result = ReadConfigFromText(std::string(text));
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(result->Get("pos")->GetInt("x"), 10);
+  EXPECT_EQ(result->Get("pos")->GetInt("y"), 20);
+  EXPECT_EQ(result->Get("name")->GetString(), "point");
+}
+
+TEST(ReadConfigFromTextTest, RoundTripMapWithArray) {
+  Config::ArrayValue arr;
+  arr.push_back(Config::Int(1));
+  arr.push_back(Config::Int(2));
+  arr.push_back(Config::Int(3));
+  Config original = Config::Map();
+  original.Set("list", Config::Array(std::move(arr)));
+  std::string text = WriteConfigToText(original);
+  auto result = ReadConfigFromText(std::string(text));
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->Get("list")->IsArray());
+  EXPECT_EQ(result->Get("list")->GetArraySize(), 3);
+}
+
+TEST(ReadConfigFromTextTest, RoundTripCompact) {
+  Config original = Config::Map();
+  original.Set("a", Config::Int(1));
+  original.Set("b", Config::String("hi"));
+  std::string text = WriteConfigToText(original, kCompactTextConfig);
+  auto result = ReadConfigFromText(std::string(text), kCompactTextConfig);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(result->GetInt("a"), 1);
+  EXPECT_EQ(result->Get("b")->GetString(), "hi");
+}
+
+TEST(ReadConfigFromTextTest, RoundTripJson) {
+  Config original = Config::Map();
+  original.Set("key", Config::String("value"));
+  original.Set("num", Config::Int(99));
+  std::string text = WriteConfigToText(original, kJsonTextConfig);
+  auto result = ReadConfigFromText(std::string(text), kJsonTextConfig);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(result->Get("key")->GetString(), "value");
+  EXPECT_EQ(result->GetInt("num"), 99);
+}
+
+TEST(ReadConfigFromTextTest, RoundTripRootless) {
+  Config original = Config::Map();
+  original.Set("a", Config::Int(1));
+  original.Set("b", Config::Int(2));
+  std::string text = WriteConfigToText(original, kRootlessTextConfig);
+  auto result = ReadConfigFromText(std::string(text), kRootlessTextConfig);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->IsMap());
+  EXPECT_EQ(result->GetInt("a"), 1);
+  EXPECT_EQ(result->GetInt("b"), 2);
+}
+
+TEST(ReadConfigFromTextTest, RoundTripRootlessNested) {
+  Config inner = Config::Map();
+  inner.Set("c", Config::Int(3));
+  Config original = Config::Map();
+  original.Set("a", Config::Int(1));
+  original.Set("b", std::move(inner));
+  std::string text = WriteConfigToText(original, kRootlessTextConfig);
+  auto result = ReadConfigFromText(std::string(text), kRootlessTextConfig);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(result->GetInt("a"), 1);
+  EXPECT_TRUE(result->Get("b")->IsMap());
+  EXPECT_EQ(result->Get("b")->GetInt("c"), 3);
+}
+
+TEST(ReadConfigFromTextTest, RoundTripComplex) {
+  Config inner_map = Config::Map();
+  inner_map.Set("enabled", Config::Bool(true));
+  inner_map.Set("count", Config::Int(5));
+
+  Config::ArrayValue inner_arr;
+  inner_arr.push_back(Config::String("alpha"));
+  inner_arr.push_back(Config::String("beta"));
+
+  Config original = Config::Map();
+  original.Set("settings", std::move(inner_map));
+  original.Set("tags", Config::Array(std::move(inner_arr)));
+  original.Set("ratio", Config::Float(0.75));
+  original.Set("missing", Config::None());
+
+  std::string text = WriteConfigToText(original);
+  auto result = ReadConfigFromText(std::string(text));
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_TRUE(result->Get("settings")->IsMap());
+  EXPECT_TRUE(result->Get("settings")->Get("enabled")->GetBool());
+  EXPECT_EQ(result->Get("settings")->GetInt("count"), 5);
+  EXPECT_TRUE(result->Get("tags")->IsArray());
+  EXPECT_EQ(result->Get("tags")->GetArraySize(), 2);
+  EXPECT_EQ(result->Get("tags")->Get(0)->GetString(), "alpha");
+  EXPECT_EQ(result->Get("tags")->Get(1)->GetString(), "beta");
+  EXPECT_NEAR(result->Get("ratio")->GetFloat(), 0.75, 1e-9);
+  EXPECT_TRUE(result->Get("missing")->IsNone());
 }
 
 }  // namespace

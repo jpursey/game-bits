@@ -13,6 +13,7 @@ set(gb_config_DEPS
   absl::statusor
   absl::strings
   gb_base
+  gb_parse
 )
 
 set(gb_config_TEST_SOURCE

@@ -5,12 +5,23 @@
 
 #include "gb/config/text_config.h"
 
+#include "absl/base/no_destructor.h"
 #include "absl/container/btree_map.h"
+#include "absl/container/flat_hash_map.h"
+#include "absl/log/log.h"
 #include "absl/strings/ascii.h"
+#include "gb/parse/lexer_config.h"
+#include "gb/parse/parser.h"
+#include "gb/parse/parser_program.h"
+#include "gb/parse/symbol.h"
 
 namespace gb {
 
 namespace {
+
+//=============================================================================
+// WriteConfigToText implementation
+//=============================================================================
 
 void WriteConfig(std::string& text, int child_indent, const Config& config,
                  TextConfigFlags flags);
@@ -195,6 +206,159 @@ void WriteConfig(std::string& text, int child_indent, const Config& config,
   }
 }
 
+//==============================================================================
+// ReadConfigFromText implementation
+//==============================================================================
+
+constexpr Symbol kSymbols[] = {
+    '[', ']', '{', '}', ':', ',',
+};
+constexpr LexerConfig kBaseLexerConfig = {
+    .flags =
+        {
+            kLexerFlags_Positive64BitNumbers,
+            kLexerFlags_NegativeNumbers,
+            LexerFlag::kHexUpperIntegers,
+            LexerFlag::kHexLowerIntegers,
+            kLexerFlags_AllFloatFormats,
+            kLexerFlags_CIdentifiers,
+            kLexerFlags_CStrings,
+            LexerFlag::kDecodeEscape,
+        },
+    .hex_prefix = "0x",
+    .escape = '\\',
+    .escape_newline = 'n',
+    .escape_tab = 't',
+    .escape_hex = 'x',
+    .symbols = kSymbols,
+};
+
+// The entire parser program except for the "Key" rule, which must be added in
+// conditionally based on the TextConfigFlags.
+constexpr std::string_view kBaseParserProgram = R"---(
+  Rooted {
+    <Value>
+   %end:"Unexpected text after value";
+  }  
+
+  Rootless {
+    $map=RootlessMap;
+  }
+
+  RootlessMap {
+    $values=MapValue,*
+    %end:"Invalid key";
+  }
+
+  Array {
+    "[" $values=Value,* "]";
+  }
+
+  Map {
+    "{" $values=MapValue,* "}";
+  }
+
+  MapValue {
+    $key=<Key>:"Expected string or identifier for key"
+    ":"
+    $value=Value;
+  }
+
+  Value {
+    $null="null";
+    $bool=("true" | "false");
+    $int=%int;
+    $float=%float;
+    $string=%string;
+    $array=Array;
+    $map=Map;
+  }
+)---";
+
+constexpr std::string_view kStringKeyParserProgram = R"---(
+  Key {
+    %string;
+  }
+)---";
+
+constexpr std::string_view kIdentKeyParserProgram = R"---(
+  Key {
+    (%string | %ident);
+  }
+)---";
+
+std::shared_ptr<ParserProgram> GetParserProgram(TextConfigFlags flags) {
+  static absl::NoDestructor<
+      absl::flat_hash_map<uint64_t, std::shared_ptr<ParserProgram>>>
+      parser_programs;
+
+  // Clear flags that only affect writing.
+  flags.Clear({TextConfigFlag::kRootless, TextConfigFlag::kCompact});
+
+  if (auto it = parser_programs->find(flags.GetMask());
+      it != parser_programs->end()) {
+    return it->second;
+  }
+
+  LexerConfig lexer_config = kBaseLexerConfig;
+  if (flags.IsSet(TextConfigFlag::kSingleQuotes)) {
+    lexer_config.flags.Set(LexerFlag::kSingleQuoteString);
+  }
+  if (flags.IsSet(TextConfigFlag::kComments)) {
+    lexer_config.line_comments = kCStyleLineComments;
+    lexer_config.block_comments = kCStyleBlockComments;
+  }
+
+  std::string parser_program_text = std::string(kBaseParserProgram);
+  if (flags.IsSet(TextConfigFlag::kIdentifiers)) {
+    absl::StrAppend(&parser_program_text, kIdentKeyParserProgram);
+  } else {
+    absl::StrAppend(&parser_program_text, kStringKeyParserProgram);
+  }
+
+  std::string error_message;
+  auto& parser_program = (*parser_programs)[flags.GetMask()] =
+      ParserProgram::Create(lexer_config, parser_program_text, &error_message);
+  DCHECK_NE(parser_program, nullptr) << error_message;
+  return parser_program;
+}
+
+Config GetParsedConfig(const ParsedItem& item) {
+  std::string_view item_type = item.GetMatchName();
+  if (item_type == "null") {
+    return Config::None();
+  }
+  if (item_type == "bool") {
+    return Config::Bool(item.GetToken("bool").GetString() == "true");
+  }
+  if (item_type == "int") {
+    return Config::Int(item.GetToken("int").GetInt64());
+  }
+  if (item_type == "float") {
+    return Config::Float(item.GetToken("float").GetFloat64());
+  }
+  if (item_type == "string") {
+    return Config::String(item.GetToken("string").GetString());
+  }
+  if (item_type == "array") {
+    std::vector<Config> array;
+    for (const auto& value_item : item.GetItem("array")->GetItems("values")) {
+      array.push_back(GetParsedConfig(value_item));
+    }
+    return Config::Array(std::move(array));
+  }
+  if (item_type == "map") {
+    Config::MapValue map;
+    for (const auto& value_item : item.GetItem("map")->GetItems("values")) {
+      std::string_view key = value_item.GetToken("key").GetString();
+      map[key] = GetParsedConfig(*value_item.GetItem("value"));
+    }
+    return Config::Map(std::move(map));
+  }
+  LOG(DFATAL) << "Unexpected item type: " << item_type;
+  return Config::None();
+}
+
 }  // namespace
 
 std::string WriteConfigToText(const Config& config, TextConfigFlags flags) {
@@ -209,7 +373,18 @@ std::string WriteConfigToText(const Config& config, TextConfigFlags flags) {
 
 absl::StatusOr<Config> ReadConfigFromText(std::string text,
                                           TextConfigFlags flags) {
-  return absl::UnimplementedError("ReadConfigFromText is not implemented");
+  auto parser = Parser::Create(GetParserProgram(flags));
+  DCHECK_NE(parser, nullptr);
+  LexerContentId content = parser->GetLexer().AddContent(std::move(text));
+  ParseResult result = parser->Parse(
+      content, flags.IsSet(TextConfigFlag::kRootless) ? "Rootless" : "Rooted");
+  if (!result) {
+    return absl::InvalidArgumentError(result.GetError().FormatMessage());
+  }
+
+  Config config = GetParsedConfig(*result.GetItem());
+
+  return config;
 }
 
 }  // namespace gb
