@@ -22,19 +22,35 @@ namespace gb {
 // This class represents a complete parser program, which includes a lexer and
 // a set of rules that define the grammar of the language being parsed.
 //
-// Parser rules are defined as a text with the following syntax:
-//   rule-name {
-//     rule-item... ;
-//     ...
-//     rule-item... ;
-//   }
+// A parser program consists of a set of parser rules and optional user token
+// types, which are defined in a text format as follows. Rules and user tokens
+// can be defined in any order, although typically any user token types are
+// defined first.
 //
+// Token types are referenced by a leading '%' character. These are the
+// predefined token types:
+//   %int        Matches any integer token (as configured in the lexer).
+//   %float      Matches any floating point token (as configured in the lexer).
+//   %string     Matches any string token (as configured in the lexer).
+//   %char       Matches any character token (as configured in the lexer).
+//   %ident      Matches any identifier token (as configured in the lexer).
+//   %linebreak  Matches the end-of-line token (must be enabled in the lexer).
 // User token types can be defined in the lexer specification, and can be
 // referenced in the parser rules as %token-type once defined:
 //   %token-type = int-value ;
 //
-// Each rule-item can be a token type, a token literal, a rule name, or a
-// group of rule-items enclosed in parentheses (required) or square brackets
+// Parser rules are defined as a text with the following syntax:
+//   rule_name {
+//     rule_item... ;
+//     ...
+//     rule_item... ;
+//   }
+// Each list of rule_items within a rule is separated by a semicolon, and
+// represents a mututally exclusive alternative for the rule. Note that this is
+// effectively lower precedence than the '|' operator described below.
+//
+// Each rule_item can be a token type, a token literal, a rule name, or a
+// group of rule_items enclosed in parentheses (required) or square brackets
 // (optional). Token types can be one of: %int, %float, %string, %char, %ident.
 // For example:
 //   %int                 Matches any integer token.
@@ -44,7 +60,7 @@ namespace gb {
 //   (%int "," %int)      Matches two integer tokens separated by a comma.
 //   [%ident "=" %float]  Matches an optional identifier assigned with a float.
 //
-// Each rule-item can be further annotated with a name, which is used to
+// Each rule_item can be further annotated with a name, which is used to
 // identify the matched item in the parse result, and a repeat specifier, which
 // can be '*' (zero or more), ',*' (zero or more separated by commas),
 // '+' (one or more), or ',+' (one or more separated by commas). For example:
@@ -53,6 +69,13 @@ namespace gb {
 //   (statement ";")*  Matches zero or more statements separated by semicolons.
 //   %int,+            Matches one or more integers separated by commas.
 //
+// A rule_item can be further annotated with an error message, which is used to
+// provide a custom error if the rule_item fails to match. This is specifed by
+// appending a ':' followed by the error message string. For example:
+//   %int:"Expected an integer"
+// If this is not specified, then a default error message states the unexpected
+// token that was encountered.
+//
 // Matching a named rule by default scopes all named sub-items of the rule
 // (requiring it to be assigned a name in the parent to access any named
 // sub-items). However, it can optionally be set to promote any named sub-items
@@ -60,7 +83,7 @@ namespace gb {
 //   rule_name         Scopes all named sub-items of "rule_name".
 //   <rule_name>       Promotes named sub-items of "rule_name" to this rule.
 //
-// Finally, rule-items can be combined with '|' to indicate alternatives, and
+// Finally, rule_items can be combined with '|' to indicate alternatives, and
 // with ' ' to indicate sequence. The '|' is lower precedence than ' '. For
 // example:
 //   %int | %float          Matches an integer or a float.
