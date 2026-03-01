@@ -115,8 +115,44 @@ unset(FLATBUFFERS_BUILD_TESTS)
 unset(FLATBUFFERS_INSTALL)
 
 ####### libccd
+# Instead of add_subdirectory, define the ccd target directly to avoid
+# libccd's outdated cmake_minimum_required(VERSION 2.8.11).
 
-add_subdirectory("${GB_THIRD_PARTY_DIR}/libccd")
+set(LIBCCD_SRC_DIR "${GB_THIRD_PARTY_DIR}/libccd/src")
+
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/libccd/ccd/config.h"
+  "#ifndef __CCD_CONFIG_H__\n"
+  "#define __CCD_CONFIG_H__\n"
+  "\n"
+  "#define CCD_SINGLE\n"
+  "/* #undef CCD_DOUBLE */\n"
+  "\n"
+  "#endif /* __CCD_CONFIG_H__ */\n"
+)
+
+add_library(ccd
+  "${LIBCCD_SRC_DIR}/ccd/ccd.h"
+  "${LIBCCD_SRC_DIR}/ccd/compiler.h"
+  "${LIBCCD_SRC_DIR}/ccd/ccd_export.h"
+  "${LIBCCD_SRC_DIR}/ccd/quat.h"
+  "${LIBCCD_SRC_DIR}/ccd/vec3.h"
+  "${CMAKE_CURRENT_BINARY_DIR}/libccd/ccd/config.h"
+  "${LIBCCD_SRC_DIR}/alloc.h"
+  "${LIBCCD_SRC_DIR}/ccd.c"
+  "${LIBCCD_SRC_DIR}/dbg.h"
+  "${LIBCCD_SRC_DIR}/list.h"
+  "${LIBCCD_SRC_DIR}/mpr.c"
+  "${LIBCCD_SRC_DIR}/polytope.c"
+  "${LIBCCD_SRC_DIR}/polytope.h"
+  "${LIBCCD_SRC_DIR}/simplex.h"
+  "${LIBCCD_SRC_DIR}/support.c"
+  "${LIBCCD_SRC_DIR}/support.h"
+  "${LIBCCD_SRC_DIR}/vec3.c"
+)
+target_include_directories(ccd PUBLIC
+  "${LIBCCD_SRC_DIR}"
+  "${CMAKE_CURRENT_BINARY_DIR}/libccd"
+)
 set_target_properties(ccd PROPERTIES FOLDER External/ccd)
 target_compile_definitions(ccd PUBLIC CCD_STATIC_DEFINE)
 if (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
