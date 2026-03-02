@@ -81,6 +81,8 @@ endif()
 
 ####### glm
 
+option(GLM_BUILD_INSTALL "" OFF)
+set(GLM_BUILD_INSTALL OFF)
 add_subdirectory("${GB_THIRD_PARTY_DIR}/glm")
 
 ####### googletest
