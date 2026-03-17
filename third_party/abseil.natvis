@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
+  <Type Name="absl::container_internal::map_slot_type&lt;*&gt;">
+    <DisplayString>{value}</DisplayString>
+    <Expand>
+      <Item Name="[key]" ExcludeView="simple">value.first</Item>
+      <Item Name="[value]" ExcludeView="simple">value.second</Item>
+    </Expand>
+  </Type>
+
+  <!--flat_hash_map-->
+  <Type Name="absl::container_internal::raw_hash_set&lt; absl::container_internal::FlatHashMapPolicy&lt;*&gt;,*&gt;">
+    <Intrinsic Name="sz" Expression="settings_.value.size_ &gt;&gt; 1"/>
+    <Intrinsic Name="cap" Expression="settings_.value.capacity_"/>
+    <!--slot_type = absl::container_internal::map_slot_type-->
+    <Intrinsic Name="to_displayable_slot" Expression="*slot">
+      <Parameter Name="slot" Type="slot_type *"/>
+    </Intrinsic>
+    <DisplayString>{*this,view(AbslHashSetView)}</DisplayString>
+    <Expand>
+      <ExpandedItem>this,view(AbslHashSetView)</ExpandedItem>
+    </Expand>
+  </Type>
+
+  <!--node_hash_map-->
+  <Type Name="absl::container_internal::raw_hash_set&lt; absl::container_internal::NodeHashMapPolicy&lt;*&gt;,*&gt;">
+    <Intrinsic Name="sz" Expression="settings_.value.size_ &gt;&gt; 1"/>
+    <Intrinsic Name="cap" Expression="settings_.value.capacity_"/>
+    <!--slot_type = std::pair<const Key, Value>*-->
+    <Intrinsic Name="to_displayable_slot" Expression="**slot" Optional="true">
+      <Parameter Name="slot" Type="slot_type *"/>
+    </Intrinsic>
+    <DisplayString>{*this,view(AbslHashSetView)}</DisplayString>
+    <Expand>
+      <ExpandedItem>this,view(AbslHashSetView)</ExpandedItem>
+    </Expand>
+  </Type>
+
+  <!--flat_hash_set-->
+  <Type Name="absl::container_internal::raw_hash_set&lt; absl::container_internal::FlatHashSetPolicy&lt;*&gt;,*&gt;">
+    <Intrinsic Name="sz" Expression="settings_.value.size_ &gt;&gt; 1"/>
+    <Intrinsic Name="cap" Expression="settings_.value.capacity_"/>
+    <!--slot_type = T (as in flat_hash_set<T>)-->
+    <Intrinsic Name="to_displayable_slot" Expression="*slot" Optional="true">
+      <Parameter Name="slot" Type="slot_type *"/>
+    </Intrinsic>
+    <DisplayString>{*this,view(AbslHashSetView)}</DisplayString>
+    <Expand>
+      <ExpandedItem>this,view(AbslHashSetView)</ExpandedItem>
+    </Expand>
+  </Type>
+
+  <!--node_hash_set-->
+  <Type Name="absl::container_internal::raw_hash_set&lt; absl::container_internal::NodeHashSetPolicy&lt;*&gt;,*&gt;">
+    <Intrinsic Name="sz" Expression="settings_.value.size_ &gt;&gt; 1"/>
+    <Intrinsic Name="cap" Expression="settings_.value.capacity_"/>
+    <!--slot_type = T* (as in node_hash_set<T>)-->
+    <Intrinsic Name="to_displayable_slot" Expression="**slot" Optional="true">
+      <Parameter Name="slot" Type="slot_type *"/>
+    </Intrinsic>
+    <DisplayString>{*this,view(AbslHashSetView)}</DisplayString>
+    <Expand>
+      <ExpandedItem>this,view(AbslHashSetView)</ExpandedItem>
+    </Expand>
+  </Type>
+
+  <!--Common implementation for the hash maps/sets. Uses the intrinsics defined in the specific other raw_hash_set definitions-->
+  <Type Name="absl::container_internal::raw_hash_set&lt;*&gt;" IncludeView="AbslHashSetView">
+    <DisplayString Condition="sz() == 0">empty</DisplayString>
+    <DisplayString>{{ size={sz()} }}</DisplayString>
+    <Expand>
+      <Item Name="[size]" ExcludeView="simple">sz()</Item>
+      <Item Name="[capacity]" ExcludeView="simple">cap()</Item>
+      <CustomListItems MaxItemsPerView="5000">
+        <Variable Name="iSlot" InitialValue="0" />
+        <Size>sz()</Size>
+        <Loop>
+          <!-- If the capacity is 1, abseil avoid heap allocations (small object optimization) -->
+          <!-- Abseil source: bool is_soo() const { return fits_in_soo(capacity()); } -->
+          <If Condition="cap() == 1">
+            <Item>to_displayable_slot(&amp;((slot_type*)(settings_.value.heap_or_soo_.soo_data))[iSlot])</Item>
+            <Break/>
+          </If>
+          <!--Without small object optimization-->
+          <!-- Abseil source: bool IsFull(ctrl_t c) { return c >= 0; } -->
+          <If Condition="settings_.value.heap_or_soo_.heap.control[iSlot] &gt;= 0">
+            <Item>to_displayable_slot(&amp;((slot_type*)(settings_.value.heap_or_soo_.heap.slot_array.p))[iSlot])</Item>
+          </If>
+          <Exec>iSlot++</Exec>
+          <Break Condition="iSlot == cap()"/>
+        </Loop>
+      </CustomListItems>
+    </Expand>
+  </Type>
+
+
+  <!--InlinedVector-->
+  <Type Name="absl::InlinedVector&lt;*&gt;">
+    <Intrinsic Name="sz" Expression="storage_.metadata_.value &gt;&gt; 1"/>
+
+    <Intrinsic Name="allocated" Expression="(storage_.metadata_.value &amp; 1) == 1" />
+    <Intrinsic Name="inlinedCapacity" Expression="storage_.kOptimalInlinedSize" />
+    <Intrinsic Name="allocatedCapacity" Expression="storage_.data_.allocated.allocated_capacity" />
+    <Intrinsic Name="capacity" Expression="allocated() ? allocatedCapacity() : inlinedCapacity()" />
+
+    <DisplayString>{{ size={sz()} }}</DisplayString>
+    <Expand>
+      <Synthetic Name="[storage]">
+        <DisplayString Condition="allocated()">allocated, capacity={capacity()}</DisplayString>
+        <DisplayString Condition="!allocated()">inlined, capacity={capacity()}</DisplayString>
+        <Expand>
+          <Item Name="[size]">sz()</Item>
+          <Item Name="[capacity]" Condition="!allocated()">inlinedCapacity()</Item>
+          <Item Name="[capacity]" Condition="allocated()">allocatedCapacity()</Item>
+          <Item Name="[allocator]">($T3)storage_.metadata_</Item>
+          <Item Name="[isAllocated]" ExcludeView="simple">allocated()</Item>
+          <Item Name="[inlinedCapacity]" ExcludeView="simple"> inlinedCapacity() </Item>
+          <Item Name="[requestedInlinedCapacity]" ExcludeView="simple"> $T2 </Item>
+        </Expand>
+      </Synthetic>
+      <IndexListItems Condition="!allocated()">
+        <Size>sz()</Size>
+        <ValueNode>(($T1*)(storage_.data_.inlined.inlined_data))[$i]</ValueNode>
+      </IndexListItems>
+      <IndexListItems Condition="allocated()">
+        <Size>sz()</Size>
+        <ValueNode>storage_.data_.allocated.allocated_data[$i]</ValueNode>
+      </IndexListItems>
+    </Expand>
+  </Type>
+
+
+  <!--FixedArray-->
+  <Type Name="absl::FixedArray&lt;*&gt;">
+    <Intrinsic Name="sz" Expression="storage_.size_alloc_.value"/>
+    <DisplayString>{{ size={sz()} }}</DisplayString>
+    <Expand>
+      <Item Name="[N]" ExcludeView="simple">inline_elements</Item>
+      <Item Name="[size]" ExcludeView="simple">sz()</Item>
+      <Item Name="[allocator]" ExcludeView="simple">
+        (allocator_type const&amp;)storage_.size_alloc_.value
+      </Item>
+      <IndexListItems>
+        <Size>sz()</Size>
+        <ValueNode>((value_type const*)storage_.data_)[$i]</ValueNode>
+      </IndexListItems>
+    </Expand>
+  </Type>
+</AutoVisualizer>
