@@ -3,7 +3,9 @@ set(sdl_template_SOURCE
 )
 
 set(sdl_template_LIBS
-  glog
+  absl::log
+  absl::log_globals
+  absl::log_initialize
   sdl2
   sdl2_main
 )

@@ -1,9 +1,10 @@
-#include "glog/logging.h"
+#include "absl/log/globals.h"
+#include "absl/log/initialize.h"
+#include "absl/log/log.h"
 
 int main(int argc, char* argv[]) {
-  FLAGS_alsologtostderr = 1;
-  google::InitGoogleLogging(argv[0]);
-  google::EnableLogCleaner(1);
+  absl::InitializeLog();
+  absl::SetStderrThreshold(absl::LogSeverityAtLeast::kInfo);
 
   LOG(INFO) << "Hello World";
 }

@@ -2,7 +2,9 @@
 
 #include "SDL.h"
 #include "SDL_main.h"
-#include "glog/logging.h"
+#include "absl/log/globals.h"
+#include "absl/log/initialize.h"
+#include "absl/log/log.h"
 
 bool MainLoop() {
   if (SDL_Init(SDL_INIT_VIDEO) != 0) {
@@ -39,8 +41,8 @@ bool MainLoop() {
 }
 
 SDLMAIN_DECLSPEC int main(int argc, char* argv[]) {
-  FLAGS_alsologtostderr = 1;
-  google::InitGoogleLogging(argv[0]);
-  google::EnableLogCleaner(1);
+  absl::InitializeLog();
+  absl::SetStderrThreshold(absl::LogSeverityAtLeast::kInfo);
+
   return MainLoop() ? 0 : 1;
 }
