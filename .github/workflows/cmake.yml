@@ -24,22 +24,21 @@ jobs:
         vulkan-components: Vulkan-Headers, Vulkan-Loader
         vulkan-use-cache: true
 
-    - name: Build external libraries and projects
+    - name: Build and test Game Bits
       shell: cmd
       working-directory: ${{github.workspace}}
-      run: build_vs2022
+      run: |
+        for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSPATH=%%i"
+        call "%VSPATH%\VC\Auxiliary\Build\vcvars64.bat" || exit /b 1
+        cmake -G Ninja -DCMAKE_BUILD_TYPE=%GB_BUILD_TYPE% -S . -B out/build/ci || exit /b 1
+        cmake --build out/build/ci || exit /b 1
+        ctest --test-dir out/build/ci --output-on-failure || exit /b 1
 
-    - name: Build Game Bits
-      working-directory: ${{github.workspace}}/build
+    - name: Build Block World example
       shell: cmd
-      run: cmake --build . --config %GB_BUILD_TYPE%
-
-    - name: Test Game Bits
-      working-directory: ${{github.workspace}}/build
-      shell: cmd
-      run: ctest -V -C %GB_BUILD_TYPE%
-
-    - name: Build Block World
-      working-directory: ${{github.workspace}}/build/examples/block-world
-      shell: cmd
-      run: cmake --build . --config %GB_BUILD_TYPE% --target block_world
+      working-directory: ${{github.workspace}}
+      run: |
+        for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSPATH=%%i"
+        call "%VSPATH%\VC\Auxiliary\Build\vcvars64.bat" || exit /b 1
+        cmake -G Ninja -DCMAKE_BUILD_TYPE=%GB_BUILD_TYPE% -S examples/block-world -B examples/block-world/out/build/ci || exit /b 1
+        cmake --build examples/block-world/out/build/ci --target block_world || exit /b 1

@@ -29,7 +29,7 @@ This is a CMake project, starting at the root. The directory structure is as fol
 
 ## Commands
 
-Everything is driven directly by CMake using the Ninja generator, which is exactly what Visual Studio's "open a local folder" CMake integration does (see CMakeSettings.json). Command line builds and IDE builds share the same build trees. The root `build.bat`, `build_vs2019.bat`, and `build_vs2022.bat` files generate Visual Studio solutions instead, and are stale -- do not use them.
+Everything is driven directly by CMake using the Ninja generator, which is exactly what Visual Studio's "open a local folder" CMake integration does (see CMakeSettings.json). Command line builds, IDE builds, and CI all use the same build.
 
 ### Developer environment (once per shell)
 
@@ -70,7 +70,9 @@ A full build is 530 steps and takes about 35 seconds on a 32 core machine; incre
 
 Game Bits code (everything under `src/gb`) compiles with warnings as errors (`/WX` on MSVC, `-Werror` on Clang). Third-party code does not.
 
-Do not build through a generated Visual Studio solution (`-G "Visual Studio 17 2022"`) instead: it is roughly twenty times slower, and MSBuild's batched code generation makes MSVC 14.44 fall over with `fatal error C1001` in random third-party translation units.
+Do not build through a generated Visual Studio solution (`-G "Visual Studio 17 2022"`) instead: it is roughly twenty times slower, and it makes the compiler crashes below happen constantly rather than rarely.
+
+MSVC 14.44 intermittently crashes (`fatal error C1001`, occasionally `LNK1127`) in the optimizer, in a different translation unit each time. This is a toolchain problem, not an error in the code, and it only shows up in optimized (`Release` / `RelWithDebInfo`) builds -- Debug builds are reliable. Re-run the exact same command and the failing target compiles.
 
 ### Test
 
@@ -135,5 +137,5 @@ Style comes from `src/.clang-format` (Google style); clang-format finds it autom
 ## Don't
 - Don't add new dependencies without asking.
 - Don't add or modify code outside src/gb/ without asking.
-- Don't use the root build*.bat files, and don't generate or build Visual Studio solutions; build with Ninja as described above.
+- Don't generate or build Visual Studio solutions; build with Ninja as described above.
 - Don't reformat files you aren't otherwise changing.
