@@ -18,6 +18,9 @@ bin/RelWithDebInfo
 bin/*.exe
 bin/*.pdb
 bin/*.ilk
+templates/*/bin/*.exe
+templates/*/bin/*.pdb
+templates/*/bin/*.ilk
 
 # Binary working output
 /*.ini
