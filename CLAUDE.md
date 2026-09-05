@@ -139,3 +139,4 @@ Style comes from `src/.clang-format` (Google style); clang-format finds it autom
 - Don't add or modify code outside src/gb/ without asking.
 - Don't generate or build Visual Studio solutions; build with Ninja as described above.
 - Don't reformat files you aren't otherwise changing.
+- Don't commit a change to a branch without a human review from the user first
