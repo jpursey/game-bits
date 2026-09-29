@@ -22,40 +22,53 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Profiler module
+## Fiber-safe thread locals
 
-- **Layers:** a new `gb/profile` library
-- **Size:** large
+- **Layers:** thread, job
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Profiler module](worklog/profiler_module.md) (To confirm)
+
+A fiber sees the `thread_local` variables of the thread it runs on, and
+without MSVC's `/GT` option the compiler can cache a thread local's address
+across a fiber switch, so a fiber that moved threads reads the old thread's
+storage (freed, if that thread exited). `FiberJobSystem` moves fibers between
+threads, and `job_system.cc` keeps the current `JobSystem` in a thread local,
+as `gb/thread` keeps the current thread. Check whether a job that waits and
+resumes on another thread can read the wrong value, with a test that does
+exactly that, and fix it if so: `/GT` on the affected code, or state that
+moves with the fiber.
+
+## Multithreaded profiles
+
+- **Layers:** profile
+- **Size:** medium
 - **Feature workflow:** yes
-- **Depends on:** *Function hooks*, for timing calls through function pointers
-- **Requested by:** JPRSurf *Profiler*
-- **Background:** none
+- **Depends on:** *Profiler module*
+- **Background:** [Profiler module](worklog/profiler_module.md)
 
-A profiler for a program with a main loop, cheap enough to leave on all the
-time in a realtime program:
-- **Points**, each defined once in code where it is used, of five kinds:
-  frames (one iteration of the program's loop), scopes (a section of the
-  program's own code), calls (a call out to another system), counters (work
-  done, such as messages sent), and values (numbers describing the workload,
-  set when they change).
-- **Self time:** each timed point records its time less the time of the points
-  inside it. A call out to another system that calls back into the program is
-  split correctly between the two.
-- **Frames:** a histogram of frame times, with a few buckets for each power of
-  two so percentiles are cheap, and the breakdown by point of the slowest frame
-  so far. A frame over a threshold the program sets is reported with its
-  breakdown.
-- **Cost:** a timed point is two reads of the CPU's timestamp counter
-  (`__rdtsc`), and an add into a fixed slot, with no lookups or allocation,
-  aiming at 20-25ns. The profiler measures its own cost when it starts, reports
-  its share of each frame, and checks it against a budget the program gives it
-  (a fixed time per frame, a fraction of the frame, or the larger of the two).
-- **Calls through function pointers:** a hook type for *Function hooks* that
-  times every call through the pointer as a call point.
-- **Output:** a plain text report, with the values as a header, and one line
-  per point in a stable order, so two reports diff cleanly.
-- **For tests:** counts can be read by name, and everything can be reset.
+Combine the profiles of several threads, each with its own `Profiler`, into
+one view: CPU time and calls per point across all threads, per frame of the
+main loop, and how busy each thread is per frame. Point indices are global, so
+every Profiler's slots line up and combining them is a sum. Each thread adds a
+snapshot into a shared total at a safe point of its own (the end of its frame,
+or between jobs), or the slots become atomics written only by their own thread
+(plain moves on x64) and are read live. Overlap and critical paths need a
+timeline of events instead, which this is not.
 
-Unit tested with a timestamp source the test controls, so no test reads real
-time. To confirm while designing it: that the timestamp counter is invariant on
-the machines it runs on, and what a timed point actually costs.
+## Fiber-aware profiling
+
+- **Layers:** thread, profile
+- **Size:** medium
+- **Feature workflow:** yes
+- **Depends on:** *Profiler module*, *Fiber-safe thread locals*
+- **Background:** [Profiler module](worklog/profiler_module.md)
+
+Let a timed point span a fiber switch, which is a CHECK failure today. When a
+fiber switches out, its open timers pause and leave the thread's timer stack,
+and when it switches back in, on any thread, they resume there, so a job that
+waits is charged only for the time it runs. Needs a hook in `gb/thread`'s fiber
+switch that the profiler can use without `gb/thread` depending on it. Most
+useful alongside *Multithreaded profiles*, since fiber jobs are the main
+multithreaded case.
