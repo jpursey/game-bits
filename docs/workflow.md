@@ -192,6 +192,10 @@ Beyond the Google C++ style guide
   `third_party/`.
 - Where Abseil and the C++ standard library both have a type, use Abseil's:
   `absl::Span`, not `std::span`.
+- Don't use iostreams. Build text in a `std::string` with Abseil's string
+  utilities (`absl::StrCat`, `absl::StrAppend`, `absl::StrFormat`), and write
+  files through Game Bits' `gb/file` when an abstraction over writing is
+  needed.
 - Files in the working tree use CRLF line endings (git `core.autocrlf` is true);
   leave them that way. In Git Bash, `sed -i` rewrites files as LF-only, so
   prefer the Edit tool. If sed is used, restore CRLF afterwards (watch for files
