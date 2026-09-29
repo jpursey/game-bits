@@ -102,6 +102,10 @@ sub-libraries (organized as subdirectories).
       code needing to know about it. Currently, a fully in-memory file system
       and local file system are supported. A custom IFF-style chunk file format
       is also provided.
+   *  [`gb_profile`](src/gb/profile): A profiler cheap enough to leave on all
+      the time in a realtime program. It times scopes in the program and calls
+      out to other systems (each charged only for its own time), and records
+      counters and values describing the workload.
    *  [`gb_thread`](src/gb/thread): Low level threading API providing additional
       functionality over the standard library (thread names, core pinning,
       fibers, etc.)

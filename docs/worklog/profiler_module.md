@@ -171,10 +171,18 @@ class Profiler {
   current frame's (calls, self ticks), tagged with the frame number they
   belong to. A point's first add in a new frame resets the frame's part, so
   nothing is cleared per frame.
+- Recording is the Profiler's job: timers and points call its private inline
+  members (start and end a timing, add time, add a count, set a value), and
+  never touch its slots directly, so later CLs change what is recorded in one
+  place.
 - Ticks are converted to time with a frequency calibrated against
-  `absl::Now()` when the Profiler starts, over about 1ms, which is also long
-  enough to measure a timed point's cost. With `FakeTicks`, the fake gives the
-  frequency, and startup takes no time.
+  `std::chrono::steady_clock` (QPC, never adjusted, unlike the wall clock
+  `absl::Now()` reads) when the first Profiler in the program starts, over
+  about 1ms, which is also long enough to measure a timed point's cost. Each
+  end of the calibration reads the clock between two reads of the counter,
+  five times, keeping the tightest, so a thread switch between the paired
+  reads can't skew it. With `FakeTicks`, the fake gives the frequency, and
+  startup takes no time.
 - **Brittleness:** points recorded on another thread are dropped silently.
   That is deliberate (a hooked function may be called from any thread), but a
   point placed on the wrong thread just reads zero.
@@ -215,12 +223,12 @@ void ProfileSetValue(int64_t value);
   exactly as a point kept by the program does.
 - The constructors are `[[nodiscard]]`, so a timer created without a variable
   name (which would end immediately) is a compile error under `/WX`.
-- A timer is its own entry in a stack of the timers running on the thread,
-  linked through the timers themselves on the C++ stack. Starting one reads the
-  counter and pushes it. Ending one checks it is the top, reads the counter,
-  pops it, adds its elapsed time to its parent's child time, and adds its
-  elapsed time less its own child time into its slot. Everything is inline,
-  and there is no lookup or allocation.
+- A timer holds a `Profiler::Timing`, its entry in a stack of the timings
+  running on the thread, linked through the timers themselves on the C++
+  stack. Starting one reads the counter and pushes it. Ending one checks it is
+  the top, reads the counter, pops it, adds its elapsed time to its parent's
+  child time, and adds its elapsed time less its own child time into its slot.
+  Everything is inline, and there is no lookup or allocation.
 - `ProfileFrame` is separate so that timers don't pay a branch on the kind.
   Ending a frame adds it to the histogram, and, rarely, copies its breakdown
   when it is the slowest so far or longer than `slow_frame`. Those walk every
@@ -255,10 +263,19 @@ class ProfileCallHook {
   the `thread_local` of the thread it runs on, and without `/GT` (which Game
   Bits doesn't use) a fiber that moved threads read the old thread's storage.
   Hence the rule that a timed point can't span a fiber switch.
+- **How reliable is a 1ms calibration?** Checked in CL1, against a 1s
+  calibration: within 100ppm (0.01%), limited by the clock's 100ns
+  resolution. A thread switch inside the window doesn't matter, as both clocks
+  keep running, but a simulated 2ms switch between the paired reads at either
+  end made the rate 100% to 1500% wrong. Bracketing each end with two counter
+  reads, keeping the tightest of five, held it within 63ppm in every case.
+  Reading the steady clock costs 11ns and the wall clock 14ns, both in 100ns
+  steps, against 5ns for the counter in 0.3ns steps, so neither could time the
+  points themselves.
 
 ## CLs
 
-### CL1 [ ] gb/profile: Timed points, counters, and values
+### CL1 [x] gb/profile: Timed points, counters, and values
 
 Depends on: nothing.
 
