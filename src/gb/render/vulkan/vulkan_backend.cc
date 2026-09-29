@@ -1049,14 +1049,10 @@ void VulkanBackend::EndFrame(RenderInternal) {
 
 void VulkanBackend::CallFrameCallbacks(std::vector<FrameCallback>* callbacks) {
   auto& frame = frames_[frame_index_];
-  auto callback_end = std::remove_if(
-      callbacks->begin(), callbacks->end(),
-      [commands = frame.commands](const FrameCallback& callback) {
-        return !callback(commands);
-      });
-  if (callback_end != callbacks->end()) {
-    callbacks->resize(callbacks->end() - callback_end);
-  }
+  std::erase_if(*callbacks,
+                [commands = frame.commands](const FrameCallback& callback) {
+                  return !callback(commands);
+                });
 }
 
 void VulkanBackend::EndFrameProcessUpdates() {
