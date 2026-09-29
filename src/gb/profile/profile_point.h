@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <optional>
 #include <string_view>
+#include <vector>
 
 namespace gb {
 
@@ -52,6 +53,9 @@ class ProfilePoint final {
   // Returns how many points are registered. Every point's index is less than
   // this.
   static int GetRegisteredCount();
+
+  // Returns every registered point, in index order.
+  static std::vector<ProfilePoint> GetRegisteredPoints();
 
   Kind GetKind() const { return kind_; }
   std::string_view GetName() const { return name_; }

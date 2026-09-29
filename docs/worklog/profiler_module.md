@@ -34,7 +34,7 @@ gb::ProfileSetValue<"tracks">(track_count);  // When it changes.
 // Every call through the pointer is a call point named "reaper/GetTrack".
 gb::FunctionHook<&GetTrack, gb::ProfileCallHook> hook("reaper/GetTrack");
 
-profiler.WriteReport(out);
+std::string report = profiler.GetReport();
 ```
 
 - **Points** have a kind and a name, and are defined once where they are used,
@@ -158,7 +158,7 @@ class Profiler {
   absl::Duration GetSelfTime(std::string_view name) const;
   int64_t GetValue(std::string_view name) const;
 
-  void WriteReport(std::ostream& out) const;
+  std::string GetReport() const;
 
   // Clears everything recorded. CHECK-fails inside a timed point.
   void Reset();
@@ -332,11 +332,14 @@ Depends on: CL2.
 - Performance: a real Profiler's `GetPointCost()` in a Release build, logged
   by a test, against the 20-25ns target.
 
-### CL4 [ ] gb/profile: Report and slow frames
+### CL4 [x] gb/profile: Report and slow frames
 
 Depends on: CL3.
 
-- `WriteReport()`, and `on_slow_frame` with the frame's report.
+- `GetReport()`, and `on_slow_frame` with the frame's report.
+- `ProfilePoint::GetRegisteredPoints()` gives the report each point's name and
+  kind. Only points the Profiler has recorded are reported, so setting a value
+  now also counts it.
 
 **Verify**
 - Standard checks.

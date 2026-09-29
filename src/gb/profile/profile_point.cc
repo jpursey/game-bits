@@ -80,6 +80,18 @@ int ProfilePoint::GetRegisteredCount() {
   return registry.count;
 }
 
+std::vector<ProfilePoint> ProfilePoint::GetRegisteredPoints() {
+  Registry& registry = GetRegistry();
+  absl::MutexLock lock(&registry.mutex);
+  std::vector<ProfilePoint> points;
+  points.reserve(registry.count);
+  for (int i = 0; i < registry.count; ++i) {
+    const Registered& registered = registry.points[i];
+    points.push_back(ProfilePoint(registered.kind, registered.name, i));
+  }
+  return points;
+}
+
 void ProfilePoint::Count(int64_t count) const {
   DCHECK(kind_ == Kind::kCounter) << name_ << " is not a counter";
   Profiler* const profiler = Profiler::s_current;

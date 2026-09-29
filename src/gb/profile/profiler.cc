@@ -11,8 +11,14 @@
 #include <cmath>
 #include <limits>
 #include <optional>
+#include <string>
+#include <utility>
+#include <vector>
 
+#include "absl/algorithm/container.h"
 #include "absl/log/check.h"
+#include "absl/strings/str_cat.h"
+#include "absl/strings/str_format.h"
 #include "absl/types/span.h"
 
 namespace gb {
@@ -108,6 +114,100 @@ int64_t GetFrameBucketMiddle(int bucket) {
   return (8 + bucket % 8) * width + width / 2;
 }
 
+//------------------------------------------------------------------------------
+// Report formatting
+//------------------------------------------------------------------------------
+
+using Table = std::vector<std::vector<std::string>>;
+
+// Shown in a table for a number that doesn't apply.
+constexpr std::string_view kNotApplicable = "-";
+
+// Formats a number with three significant digits, such as "0.50", "27.1", or
+// "142".
+std::string FormatNumber(double number) {
+  const int decimals = number >= 100 ? 0 : (number >= 10 ? 1 : 2);
+  return absl::StrFormat("%.*f", decimals, number);
+}
+
+// Formats a time with three significant digits, in the largest unit it has at
+// least one of, such as "27.1us". Zero is "0".
+std::string FormatTime(absl::Duration time) {
+  const double nanoseconds = absl::ToDoubleNanoseconds(time);
+  if (nanoseconds == 0) {
+    return "0";
+  }
+  if (nanoseconds >= 1e9) {
+    return FormatNumber(nanoseconds / 1e9) + "s";
+  }
+  if (nanoseconds >= 1e6) {
+    return FormatNumber(nanoseconds / 1e6) + "ms";
+  }
+  if (nanoseconds >= 1e3) {
+    return FormatNumber(nanoseconds / 1e3) + "us";
+  }
+  return FormatNumber(nanoseconds) + "ns";
+}
+
+std::string_view GetKindName(ProfilePoint::Kind kind) {
+  switch (kind) {
+    case ProfilePoint::Kind::kFrame:
+      return "frame";
+    case ProfilePoint::Kind::kScope:
+      return "scope";
+    case ProfilePoint::Kind::kCall:
+      return "call";
+    case ProfilePoint::Kind::kCounter:
+      return "counter";
+    case ProfilePoint::Kind::kValue:
+      return "value";
+  }
+  return "unknown";
+}
+
+// Formats a point's self time, which only a timed point has.
+std::string FormatSelfTime(ProfilePoint::Kind kind, absl::Duration self_time) {
+  if (!absl::c_linear_search(kTimedKinds, kind)) {
+    return std::string(kNotApplicable);
+  }
+  return FormatTime(self_time);
+}
+
+// Returns whether `a` comes before `b` in a report: grouped by kind, and
+// sorted by name.
+bool IsBeforeInReport(const ProfilePoint& a, const ProfilePoint& b) {
+  return std::pair(a.GetKind(), a.GetName()) <
+         std::pair(b.GetKind(), b.GetName());
+}
+
+// Appends `table` to `report` as columns, each as wide as its widest cell and
+// separated by two spaces. Every row has the same number of cells. The first
+// `left_columns` columns are aligned left, and the rest right. No line has
+// trailing spaces.
+void AppendTable(std::string& report, const Table& table, int left_columns) {
+  if (table.empty()) {
+    return;
+  }
+  const int columns = static_cast<int>(table[0].size());
+  std::vector<int> widths(columns, 0);
+  for (const std::vector<std::string>& row : table) {
+    for (int i = 0; i < columns; ++i) {
+      widths[i] = std::max(widths[i], static_cast<int>(row[i].size()));
+    }
+  }
+  for (const std::vector<std::string>& row : table) {
+    std::string line;
+    for (int i = 0; i < columns; ++i) {
+      const std::string padding(widths[i] - row[i].size(), ' ');
+      absl::StrAppend(&line, i > 0 ? "  " : "",
+                      i < left_columns ? row[i] : padding,
+                      i < left_columns ? padding : row[i]);
+    }
+    line.erase(line.find_last_not_of(' ') + 1);
+    absl::StrAppend(&report, line, "\n");
+  }
+}
+
 }  // namespace
 
 Profiler::Profiler() : Profiler(Options()) {}
@@ -120,7 +220,13 @@ Profiler::Profiler(Options options)
               ? static_cast<double>(fake_ticks_->GetTicksPerSecond())
               : GetTicksPerSecond()),
       budget_per_frame_(options.budget_per_frame),
-      budget_fraction_(options.budget_fraction) {
+      budget_fraction_(options.budget_fraction),
+      slow_frame_ticks_(
+          options.slow_frame == absl::InfiniteDuration()
+              ? std::numeric_limits<int64_t>::max()
+              : static_cast<int64_t>(absl::ToDoubleSeconds(options.slow_frame) *
+                                     ticks_per_second_)),
+      on_slow_frame_(std::move(options.on_slow_frame)) {
   CHECK(s_current == nullptr) << "Only one Profiler may exist per thread";
   s_current = this;
 
@@ -235,14 +341,32 @@ void Profiler::EndFrame(int index, Timing& timing) {
   ++frames_;
   total_frame_ticks_ += frame_ticks;
   ++frame_buckets_[GetFrameBucket(frame_ticks)];
-  if (frame_ticks > slowest_frame_.ticks) {
+  const bool is_slowest = frame_ticks > slowest_frame_.ticks;
+  if (is_slowest) {
     slowest_frame_ = CaptureFrame(frame_ticks);
   }
+  std::string slow_frame_report;
+  if (frame_ticks > slow_frame_ticks_ && on_slow_frame_ != nullptr) {
+    FrameBreakdown slow_frame;
+    if (!is_slowest) {
+      slow_frame = CaptureFrame(frame_ticks);
+    }
+    AppendFrame(slow_frame_report, "Slow frame",
+                is_slowest ? slowest_frame_ : slow_frame,
+                ProfilePoint::GetRegisteredPoints());
+  }
   current_frame_ = 0;
+
+  // The callback is called after the frame ends, so any points it reaches are
+  // outside the frame.
+  if (!slow_frame_report.empty()) {
+    on_slow_frame_(slow_frame_report);
+  }
 }
 
 Profiler::FrameBreakdown Profiler::CaptureFrame(int64_t ticks) const {
-  FrameBreakdown frame = {.ticks = ticks};
+  FrameBreakdown frame = {.ticks = ticks,
+                          .timed_points = current_frame_timed_points_};
   const int point_count = ProfilePoint::GetRegisteredCount();
   for (int i = 0; i < point_count; ++i) {
     const Slot& slot = slots_[i];
@@ -253,13 +377,125 @@ Profiler::FrameBreakdown Profiler::CaptureFrame(int64_t ticks) const {
   return frame;
 }
 
+std::string Profiler::GetReport() const {
+  const std::vector<ProfilePoint> registered =
+      ProfilePoint::GetRegisteredPoints();
+  std::vector<ProfilePoint> points = registered;
+  absl::c_sort(points, IsBeforeInReport);
+  std::string report;
+  AppendValues(report, points);
+  AppendFrameSummary(report);
+  AppendPoints(report, points);
+  if (frames_ > 0) {
+    absl::StrAppend(&report, "\n");
+    AppendFrame(report, "Slowest frame", slowest_frame_, registered);
+  }
+  return report;
+}
+
+void Profiler::AppendValues(std::string& report,
+                            absl::Span<const ProfilePoint> points) const {
+  Table table = {{"Value", "Latest"}};
+  for (const ProfilePoint& point : points) {
+    const Slot& slot = slots_[point.GetIndex()];
+    if (point.GetKind() == ProfilePoint::Kind::kValue && slot.count > 0) {
+      table.push_back({std::string(point.GetName()), absl::StrCat(slot.value)});
+    }
+  }
+  if (table.size() > 1) {
+    AppendTable(report, table, 1);
+    absl::StrAppend(&report, "\n");
+  }
+}
+
+void Profiler::AppendFrameSummary(std::string& report) const {
+  const FrameSummary summary = GetFrameSummary();
+  Table table = {{"Frames", absl::StrCat(summary.frames)}};
+  if (summary.frames > 0) {
+    std::string profiler =
+        absl::StrCat(FormatTime(summary.profiler_cost), " per frame, budget ",
+                     summary.budget == absl::InfiniteDuration()
+                         ? "none"
+                         : FormatTime(summary.budget));
+    if (summary.profiler_cost > summary.budget) {
+      absl::StrAppend(&profiler, " (over budget)");
+    }
+    table.push_back({"Total", FormatTime(summary.total)});
+    table.push_back({"Average", FormatTime(summary.average)});
+    table.push_back({"P50", FormatTime(summary.p50)});
+    table.push_back({"P90", FormatTime(summary.p90)});
+    table.push_back({"P99", FormatTime(summary.p99)});
+    table.push_back({"Max", FormatTime(summary.max)});
+    table.push_back({"Profiler", std::move(profiler)});
+  }
+  table.push_back({"Point cost", FormatTime(GetPointCost())});
+  AppendTable(report, table, 2);
+}
+
+void Profiler::AppendPoints(std::string& report,
+                            absl::Span<const ProfilePoint> points) const {
+  Table table = {{"Point", "Kind", "Count", "Count/frame", "Self", "Self/call",
+                  "Self/frame"}};
+  for (const ProfilePoint& point : points) {
+    const Slot& slot = slots_[point.GetIndex()];
+    if (point.GetKind() == ProfilePoint::Kind::kValue || slot.count == 0) {
+      continue;
+    }
+    const ProfilePoint::Kind kind = point.GetKind();
+    const absl::Duration self_time = TicksToDuration(slot.self_ticks);
+    const bool has_frames = frames_ > 0;
+    table.push_back(
+        {std::string(point.GetName()), std::string(GetKindName(kind)),
+         absl::StrCat(slot.count),
+         has_frames ? FormatNumber(static_cast<double>(slot.count) / frames_)
+                    : std::string(kNotApplicable),
+         FormatSelfTime(kind, self_time),
+         FormatSelfTime(kind, self_time / slot.count),
+         has_frames ? FormatSelfTime(kind, self_time / frames_)
+                    : std::string(kNotApplicable)});
+  }
+  absl::StrAppend(&report, "\n");
+  AppendTable(report, table, 2);
+}
+
+void Profiler::AppendFrame(std::string& report, std::string_view title,
+                           const FrameBreakdown& frame,
+                           absl::Span<const ProfilePoint> registered) const {
+  absl::StrAppend(
+      &report, title, ": ", FormatTime(TicksToDuration(frame.ticks)),
+      ", profiler ",
+      FormatTime(TicksToDuration(static_cast<double>(frame.timed_points) *
+                                 point_cost_ticks_)),
+      "\n");
+
+  // The frame's points, each with its part in the frame, in report order.
+  std::vector<std::pair<ProfilePoint, FrameBreakdown::Point>> points;
+  points.reserve(frame.points.size());
+  for (const FrameBreakdown::Point& frame_point : frame.points) {
+    points.emplace_back(registered[frame_point.index], frame_point);
+  }
+  absl::c_sort(points, [](const auto& a, const auto& b) {
+    return IsBeforeInReport(a.first, b.first);
+  });
+
+  Table table = {{"Point", "Kind", "Count", "Self"}};
+  for (const auto& [point, frame_point] : points) {
+    table.push_back({std::string(point.GetName()),
+                     std::string(GetKindName(point.GetKind())),
+                     absl::StrCat(frame_point.count),
+                     FormatSelfTime(point.GetKind(),
+                                    TicksToDuration(frame_point.self_ticks))});
+  }
+  AppendTable(report, table, 2);
+}
+
 int Profiler::FindIndex(std::string_view name,
                         absl::Span<const ProfilePoint::Kind> kinds) const {
   const std::optional<ProfilePoint> point = ProfilePoint::Find(name);
   if (!point.has_value()) {
     return -1;
   }
-  CHECK(std::find(kinds.begin(), kinds.end(), point->GetKind()) != kinds.end())
+  CHECK(absl::c_linear_search(kinds, point->GetKind()))
       << "Profile point \"" << name << "\" has the wrong kind";
   return point->GetIndex();
 }

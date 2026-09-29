@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -351,6 +352,171 @@ TEST(ProfilerBudgetTest, LargerOfFixedAndFraction) {
   // A quarter of the new average, 3ms, is 750us.
   RecordFrame(ticks, 5'000'000, 0);
   EXPECT_EQ(profiler.GetFrameSummary().budget, absl::Microseconds(750));
+}
+
+//------------------------------------------------------------------------------
+// Report
+//------------------------------------------------------------------------------
+
+TEST_F(ProfilerTest, Report) {
+  ProfileSetValue<"ReportTest/Tracks">(142);
+  {
+    ProfileFrame<"ReportTest/Run"> frame;
+    ticks_.Advance(1000);
+    {
+      ProfileScope<"ReportTest/Refresh"> scope;
+      ticks_.Advance(500);
+    }
+    for (int i = 0; i < 2; ++i) {
+      ProfileCall<"ReportTest/GetTrack"> call;
+      ticks_.Advance(100);
+    }
+    ProfileCount<"ReportTest/Messages">(3);
+  }
+  {
+    ProfileScope<"ReportTest/Outside"> scope;
+    ticks_.Advance(50);
+  }
+  {
+    ProfileFrame<"ReportTest/Run"> frame;
+    ticks_.Advance(300);
+    ProfileCount<"ReportTest/Messages">(1);
+  }
+
+  // P50 is the middle of the bucket the 300ns frame is in. The scope between
+  // frames is in the totals, but not the slowest frame.
+  EXPECT_EQ(profiler_.GetReport(),
+            R"(Value              Latest
+ReportTest/Tracks     142
+
+Frames      2
+Total       2.00us
+Average     1.00us
+P50         304ns
+P90         1.70us
+P99         1.70us
+Max         1.70us
+Profiler    0 per frame, budget none
+Point cost  0
+
+Point                Kind     Count  Count/frame    Self  Self/call  Self/frame
+ReportTest/Run       frame        2         1.00  1.30us      650ns       650ns
+ReportTest/Outside   scope        1         0.50  50.0ns     50.0ns      25.0ns
+ReportTest/Refresh   scope        1         0.50   500ns      500ns       250ns
+ReportTest/GetTrack  call         2         1.00   200ns      100ns       100ns
+ReportTest/Messages  counter      4         2.00       -          -           -
+
+Slowest frame: 1.70us, profiler 0
+Point                Kind     Count    Self
+ReportTest/Run       frame        1  1.00us
+ReportTest/Refresh   scope        1   500ns
+ReportTest/GetTrack  call         2   200ns
+ReportTest/Messages  counter      3       -
+)");
+}
+
+TEST_F(ProfilerTest, ReportWithNoFrames) {
+  {
+    ProfileScope<"ReportTest/NoFrames"> scope;
+    ticks_.Advance(10);
+  }
+  EXPECT_EQ(profiler_.GetReport(),
+            R"(Frames      0
+Point cost  0
+
+Point                Kind   Count  Count/frame    Self  Self/call  Self/frame
+ReportTest/NoFrames  scope      1            -  10.0ns     10.0ns           -
+)");
+}
+
+TEST_F(ProfilerTest, ReportOrderIgnoresRegistration) {
+  // Registered in the opposite order to the report's, and with a point that
+  // this Profiler never records.
+  ProfilePoint second(ProfilePoint::Kind::kScope, "ReportOrderTest/B");
+  ProfilePoint unused(ProfilePoint::Kind::kScope, "ReportOrderTest/Unused");
+  ProfilePoint first(ProfilePoint::Kind::kScope, "ReportOrderTest/A");
+  ProfilePoint counter(ProfilePoint::Kind::kCounter, "ReportOrderTest/0");
+  counter.Count(1);
+  {
+    ProfileTimer timer(second);
+  }
+  {
+    ProfileTimer timer(first);
+  }
+  const std::string report = profiler_.GetReport();
+  const int a = static_cast<int>(report.find("ReportOrderTest/A"));
+  const int b = static_cast<int>(report.find("ReportOrderTest/B"));
+  const int zero = static_cast<int>(report.find("ReportOrderTest/0"));
+  EXPECT_GE(a, 0);
+  EXPECT_LT(a, b);
+  EXPECT_LT(b, zero);
+  EXPECT_EQ(report.find("ReportOrderTest/Unused"), std::string::npos);
+}
+
+TEST(ProfilerReportTest, ProfilerCostAndBudget) {
+  FakeTicks ticks;
+  ticks.SetAutoAdvance(kReadTicks);
+  Profiler profiler(
+      {.fake_ticks = &ticks, .budget_per_frame = absl::Nanoseconds(300)});
+  ticks.SetAutoAdvance(0);
+  RecordFrame(ticks, 10'000, 1);
+
+  // Two timed points at 201ns each (see ProfilerCostTest) are over budget.
+  const std::string report = profiler.GetReport();
+  EXPECT_NE(report.find("Profiler    402ns per frame, budget 300ns (over "
+                        "budget)\nPoint cost  201ns\n"),
+            std::string::npos)
+      << report;
+  EXPECT_NE(report.find("Slowest frame: 10.0us, profiler 402ns\n"),
+            std::string::npos)
+      << report;
+}
+
+//------------------------------------------------------------------------------
+// Slow frames
+//------------------------------------------------------------------------------
+
+class ProfilerSlowFrameTest : public ::testing::Test {
+ protected:
+  FakeTicks ticks_;
+  std::vector<std::string> reports_;
+  Profiler profiler_{{.fake_ticks = &ticks_,
+                      .slow_frame = absl::Microseconds(1),
+                      .on_slow_frame = [this](std::string_view report) {
+                        reports_.emplace_back(report);
+                        ProfileCount<"SlowFrameTest/InCallback">(1);
+                      }}};
+};
+
+TEST_F(ProfilerSlowFrameTest, ReportsOnlySlowFrames) {
+  {
+    ProfileFrame<"SlowFrameTest/Frame"> frame;
+    ProfileScope<"SlowFrameTest/Fast"> scope;
+    ticks_.Advance(1000);
+  }
+  EXPECT_TRUE(reports_.empty());
+
+  {
+    ProfileFrame<"SlowFrameTest/Frame"> frame;
+    ProfileScope<"SlowFrameTest/Slow"> scope;
+    ticks_.Advance(1500);
+  }
+  ASSERT_EQ(reports_.size(), 1);
+  EXPECT_EQ(reports_[0], R"(Slow frame: 1.50us, profiler 0
+Point                Kind   Count    Self
+SlowFrameTest/Frame  frame      1       0
+SlowFrameTest/Slow   scope      1  1.50us
+)");
+}
+
+TEST_F(ProfilerSlowFrameTest, CallbackIsOutsideFrame) {
+  for (int64_t frame_ticks : {2000, 3000}) {
+    ProfileFrame<"SlowFrameTest/CallbackFrame"> frame;
+    ticks_.Advance(frame_ticks);
+  }
+  EXPECT_EQ(reports_.size(), 2);
+  EXPECT_EQ(profiler_.GetCount("SlowFrameTest/InCallback"), 2);
+  EXPECT_EQ(profiler_.GetSlowestFrameCount("SlowFrameTest/InCallback"), 0);
 }
 
 // Tests that set up their own Profiler.

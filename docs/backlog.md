@@ -55,7 +55,9 @@ every Profiler's slots line up and combining them is a sum. Each thread adds a
 snapshot into a shared total at a safe point of its own (the end of its frame,
 or between jobs), or the slots become atomics written only by their own thread
 (plain moves on x64) and are read live. Overlap and critical paths need a
-timeline of events instead, which this is not.
+timeline of events instead, which this is not. `Profiler::GetReport()` reads
+its own slots, so the combined view needs the report to format a snapshot of
+slots instead, which a combined total can also provide.
 
 ## Fiber-aware profiling
 

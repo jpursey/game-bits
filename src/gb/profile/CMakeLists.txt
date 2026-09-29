@@ -15,16 +15,16 @@ set(gb_profile_TEST_SOURCE
   profile_timer_test.cc
   profiler_test.cc
 )
-set(gb_profile_TEST_DEPS
-  absl::strings
-)
-
 set(gb_profile_DEPS
+  absl::algorithm_container
   absl::flat_hash_map
   absl::no_destructor
   absl::span
+  absl::str_format
+  absl::strings
   absl::synchronization
   absl::time
+  gb_base
 )
 
 set(gb_profile_LIBS

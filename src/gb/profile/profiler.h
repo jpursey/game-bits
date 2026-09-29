@@ -15,12 +15,14 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <string_view>
 #include <vector>
 
 #include "absl/log/check.h"
 #include "absl/time/time.h"
 #include "absl/types/span.h"
+#include "gb/base/callback.h"
 #include "gb/profile/fake_ticks.h"
 #include "gb/profile/profile_point.h"
 
@@ -61,6 +63,13 @@ class Profiler final {
     // no budget. See FrameSummary.
     absl::Duration budget_per_frame;
     double budget_fraction = 0;
+
+    // Called with a frame's report (its time, and the part each point had in
+    // it) when a frame takes longer than `slow_frame`. It is called on the
+    // Profiler's thread, just after the frame ends, so any points it reaches
+    // are outside the frame.
+    absl::Duration slow_frame = absl::InfiniteDuration();
+    Callback<void(std::string_view report)> on_slow_frame;
   };
 
   // Makes this the Profiler for points on the calling thread.
@@ -109,6 +118,21 @@ class Profiler final {
   FrameSummary GetFrameSummary() const;
 
   //----------------------------------------------------------------------------
+  // Report
+  //----------------------------------------------------------------------------
+
+  // Returns the profile as plain text: the values, the frame summary, one line
+  // for each point with its count and self time (in total, per frame, and per
+  // call), and the slowest frame's breakdown. Only points this Profiler has
+  // recorded are included (a counter whose total is zero counts as not
+  // recorded). Points are grouped by kind and sorted by name, so two reports
+  // of the same program diff cleanly.
+  //
+  // A program can put its own header (such as its build and the date) before
+  // the report.
+  std::string GetReport() const;
+
+  //----------------------------------------------------------------------------
   // For tests
   //
   // Each of these reads the point named `name`, returning zero if there is no
@@ -155,7 +179,8 @@ class Profiler final {
 
   // What is recorded for each point.
   struct Slot {
-    // Calls for a timed point, or the total for a counter.
+    // Calls for a timed point, the total for a counter, or the times a value
+    // was set. A point with a count of zero hasn't been recorded.
     int64_t count = 0;
     int64_t self_ticks = 0;
     int64_t value = 0;
@@ -177,6 +202,10 @@ class Profiler final {
     };
 
     int64_t ticks = 0;
+
+    // The timed points ended in the frame, including its own.
+    int64_t timed_points = 0;
+
     std::vector<Point> points;
   };
 
@@ -240,7 +269,23 @@ class Profiler final {
     slot.count += count;
     slot.frame_count += count;
   }
-  void SetValue(int index, int64_t value) { slots_[index].value = value; }
+  void SetValue(int index, int64_t value) {
+    Slot& slot = slots_[index];
+    ++slot.count;
+    slot.value = value;
+  }
+
+  // Report sections, each appended to `report`. AppendValues() and
+  // AppendPoints() take every registered point, sorted for the report, and
+  // AppendFrame() takes them in index order.
+  void AppendValues(std::string& report,
+                    absl::Span<const ProfilePoint> points) const;
+  void AppendFrameSummary(std::string& report) const;
+  void AppendPoints(std::string& report,
+                    absl::Span<const ProfilePoint> points) const;
+  void AppendFrame(std::string& report, std::string_view title,
+                   const FrameBreakdown& frame,
+                   absl::Span<const ProfilePoint> registered) const;
 
   // Returns the index of the point named `name`, or -1 if there is no such
   // point. CHECK-fails if the point's kind isn't one of `kinds`.
@@ -288,6 +333,8 @@ class Profiler final {
   const double ticks_per_second_;
   const absl::Duration budget_per_frame_;
   const double budget_fraction_;
+  const int64_t slow_frame_ticks_;
+  const Callback<void(std::string_view report)> on_slow_frame_;
   double point_cost_ticks_ = 0;
 
   // The timed points ended in every frame.
