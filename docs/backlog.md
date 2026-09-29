@@ -60,18 +60,6 @@ Unit tested with a timestamp source the test controls, so no test reads real
 time. To confirm while designing it: that the timestamp counter is invariant on
 the machines it runs on, and what a timed point actually costs.
 
-## Update the README's getting started
-
-- **Layers:** none (docs)
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** CLAUDE.md
-
-The README's "Getting started" section still describes Visual Studio 2019 and
-the batch files, and its library list predates `gb_collide` and `gb_config`.
-It should describe the CMake and Ninja build that CLAUDE.md does.
-
 ## Reformat the files clang-format has drifted from
 
 - **Layers:** any

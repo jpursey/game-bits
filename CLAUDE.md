@@ -6,7 +6,7 @@ This library is almost entirely self contained with all dependencies being broug
 
 It is used by other projects via direct inclusion based on the "GB_DIR" environment variable being set to this directory, and Game Bits specific CMake commands (see CMake/GameBitsTargetCommands.cmake for details)
 
-See README.md for full context (note: its "Getting started" section is stale -- it still describes Visual Studio 2019 and the batch files, and its library list predates `gb_collide` and `gb_config`).
+See README.md for full context.
 
 ## Workflow
 
