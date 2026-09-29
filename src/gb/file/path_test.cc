@@ -1014,6 +1014,22 @@ TEST(PathTest, NormalizePath) {
   EXPECT_TRUE(TestNormalize("a/../../", {}, "..", {}));
   EXPECT_TRUE(TestNormalize("a/../b/c/../../../..", {}, "../..", {}));
 
+  // Names that start with a dot are ordinary segments.
+  EXPECT_TRUE(TestNormalize(".a", {}, ".a", {}));
+  EXPECT_TRUE(TestNormalize("...", {}, "...", {}));
+  EXPECT_TRUE(TestNormalize("..a", {}, "..a", {}));
+  EXPECT_TRUE(TestNormalize("a/.b", {}, "a/.b", {}));
+  EXPECT_TRUE(TestNormalize("a/.../b", {}, "a/.../b", {}));
+  EXPECT_TRUE(TestNormalize("/a/..b/", {}, "/a/..b", {}));
+  EXPECT_TRUE(TestNormalize("a/./.b/../c", {}, "a/c", {}));
+  EXPECT_TRUE(TestNormalize("a/.b/..", {}, "a", {}));
+  EXPECT_TRUE(TestNormalize("../.a", {}, "../.a", {}));
+  EXPECT_TRUE(TestNormalize("C:/Projects/.claude/worktrees", kGenericPathFlags, "c:/Projects/.claude/worktrees", {}));
+
+  // Trailing dot segments don't read past the end of the path.
+  EXPECT_TRUE(TestNormalize(std::string_view("a/.....", 3), {}, "a", {}));
+  EXPECT_TRUE(TestNormalize(std::string_view("a/b/.....", 6), {}, "a", {}));
+
   EXPECT_TRUE(TestNormalize("", PathFlag::kRequireRoot, "", PathFlag::kRequireRoot));
   EXPECT_TRUE(TestNormalize("/", PathFlag::kRequireRoot, "/", {}));
   EXPECT_TRUE(TestNormalize("//", PathFlag::kRequireRoot, "/", {}));

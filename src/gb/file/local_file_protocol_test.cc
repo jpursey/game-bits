@@ -122,9 +122,17 @@ TEST(LocalFileProtocolTest, InvalidRoot) {
 
 TEST(LocalFileProtocolTest, RelativeRoot) {
   std::error_code error;
+  fs::path original_path = fs::current_path(error);
+  ASSERT_FALSE(error) << error.message();
   fs::path root_path = GetUnusedTempPath();
   ASSERT_TRUE(fs::create_directory(root_path, error)) << error.message();
-  ScopedCall scoped([&] { fs::remove_all(root_path, error); });
+
+  // The current directory is restored first, as Windows cannot remove a
+  // directory that is the current directory of a process.
+  ScopedCall scoped([&] {
+    fs::current_path(original_path, error);
+    fs::remove_all(root_path, error);
+  });
 
   fs::path subdir_path = root_path / "subdir";
   ASSERT_TRUE(fs::create_directory(subdir_path, error)) << error.message();

@@ -423,26 +423,26 @@ std::string NormalizePath(std::string_view path, PathFlags flags,
       // Collapse dot sequences.
       bool is_dot_path = false;
       while (in != in_end && *in == '.') {
-        // ./
-        if (IsSeparator(in + 1, in_end) || in + 1 == in_end) {
-          in = in + 2;
-          while (IsSeparator(in, in_end)) {
-            ++in;
-          }
-          continue;
+        const char* segment_end = in;
+        while (IsNonSeparator(segment_end, in_end)) {
+          ++segment_end;
         }
-        // ../
-        if ((IsSeparator(in + 2, in_end) || in + 2 == in_end) && in[1] == '.') {
+        const std::string_view segment(in, segment_end);
+        if (segment == "..") {
           if (segments.empty()) {
             is_dot_path = true;
             break;
           }
           out = segments.back();
           segments.pop_back();
-          in = in + 3;
-          while (IsSeparator(in, in_end)) {
-            ++in;
-          }
+        } else if (segment != ".") {
+          // Any other name starting with a dot (".git", "...") is an ordinary
+          // segment.
+          break;
+        }
+        in = segment_end;
+        while (IsSeparator(in, in_end)) {
+          ++in;
         }
       }
       if (!is_dot_path) {
