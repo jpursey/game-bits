@@ -8,6 +8,12 @@ It is used by other projects via direct inclusion based on the "GB_DIR" environm
 
 See README.md for full context (note: its "Getting started" section is stale -- it still describes Visual Studio 2019 and the batch files, and its library list predates `gb_collide` and `gb_config`).
 
+## Workflow
+
+@docs/workflow.md
+
+The workflow above is shared by Game Bits and every project built on it, which each import it from here. Everything below is specific to Game Bits.
+
 ## Directory Structure
 
 This is a CMake project, starting at the root. The directory structure is as follows:
@@ -25,6 +31,8 @@ This is a CMake project, starting at the root. The directory structure is as fol
                    and can get deleted at any time.
   assets/       -- Assets used at runtime by examples
   CMake/        -- Custom CMake rules used by all Game Bits modules in src/
+  docs/         -- The shared workflow, feature plans (worklog/), and the
+                   backlog
 ```
 
 ## Commands
@@ -110,6 +118,22 @@ clang-format --dry-run -Werror <files>   # check only
 
 Style comes from `src/.clang-format` (Google style); clang-format finds it automatically for any file under `src/`. Only format files you actually touch: about 18 existing files were formatted with an older clang-format and would otherwise churn unrelated lines.
 
+### Checks
+
+Every change is checked as follows:
+- It builds cleanly (warnings are errors) in both Debug and Release.
+- `ctest` passes in Debug.
+- Touched files pass `clang-format --dry-run -Werror`.
+- New and changed behavior has unit tests. Code that can't be unit tested (rendering, windows, input) is checked by hand in an example, which the user runs.
+
+## Sessions
+
+Projects build against this checkout as it stands (see Game Bits in the workflow), so Game Bits code is never changed in it directly:
+- A Game Bits session works in its own git worktree, and builds and tests there.
+- Once the user approves a change and it is committed on the worktree's branch, the session lands it on `main` in the main checkout: `git -C <main checkout> merge --ff-only <branch>`, or a cherry-pick if `main` has moved. Projects only ever build reviewed code.
+- The only direct edits in the main checkout are the docs changes other projects' sessions may make (a backlog item, or the workflow). They are committed as soon as the user approves them, so they never block landing.
+- Several Game Bits sessions can run at once, and each lands its own commits.
+
 ## Build system
 
 - Each library or executable is defined by a `CMakeLists.txt` in its own directory using the `gb_add_library` / `gb_add_executable` / `gb_add_win_executable` commands from `CMake/GameBitsTargetCommands.cmake`.
@@ -120,23 +144,15 @@ Style comes from `src/.clang-format` (Google style); clang-format finds it autom
 
 ## Conventions
 
-- Coding guidelines: Generally follows the Google C++ style guide (https://google.github.io/styleguide/cppguide.html).
+These add to the C++ style in the workflow.
 - Formatting strictly driven by clang-format in Google style via src/.clang-format
 - All Game Bits code is in the "gb" namespace.
 - Every file starts with the four line MIT copyright comment used everywhere in the tree, with the year the file was created.
 - Headers use include guards of the form `GB_<DIR>_<FILE>_H_` (not `#pragma once`), and end with `}  // namespace gb` followed by `#endif  // GB_<DIR>_<FILE>_H_`.
 - Include order: the file's own header first, then C/C++ standard headers in angle brackets, then third-party and Game Bits headers in quotes (`"absl/..."`, `"gtest/gtest.h"`, `"gb/..."`), with blank lines between groups.
-- Sections in a file are separated by //===== blocks (extending to column 80) surrounding descriptive text: One line section description, and if necessary further description in additional paragraphs.
-- Sections within a class or between groups of related functions are separated by //---- blocks (otherwise the same as above).
-- All comments are // style (not /// or /*...*/)
 - Unit tests live next to the code they test as `<file>_test.cc`, are written with GoogleTest/GoogleMock inside `namespace gb { namespace { ... } }`, and use the shared helpers in `gb_test` (`src/gb/test`) for threading and other cross-cutting test support.
-- Prefer Abseil (and other Google open source libraries already vendored in third_party/) over hand-rolled utilities.
 - C++20, built with both MSVC and clang-cl.
-- Files in the working tree use CRLF line endings (git `core.autocrlf` is true); leave them that way.
 
 ## Don't
-- Don't add new dependencies without asking.
 - Don't add or modify code outside src/gb/ without asking.
 - Don't generate or build Visual Studio solutions; build with Ninja as described above.
-- Don't reformat files you aren't otherwise changing.
-- Don't commit a change to a branch without a human review from the user first
