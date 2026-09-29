@@ -5,16 +5,19 @@
 
 set(gb_profile_SOURCE
   fake_ticks.h
+  profile_call_hook.h
   profile_point.cc profile_point.h
   profile_timer.h
   profiler.cc profiler.h
 )
 
 set(gb_profile_TEST_SOURCE
+  profile_call_hook_test.cc
   profile_point_test.cc
   profile_timer_test.cc
   profiler_test.cc
 )
+
 set(gb_profile_DEPS
   absl::algorithm_container
   absl::flat_hash_map

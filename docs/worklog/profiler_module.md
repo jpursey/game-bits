@@ -347,7 +347,7 @@ Depends on: CL3.
   stable order regardless of registration order; a slow frame reports once
   with its own breakdown.
 
-### CL5 [ ] gb/profile: ProfileCallHook
+### CL5 [x] gb/profile: ProfileCallHook
 
 Depends on: CL1.
 

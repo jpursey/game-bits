@@ -22,6 +22,27 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
+## FunctionHook skips null pointers
+
+- **Layers:** base
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Profiler module](worklog/profiler_module.md) (CL5)
+
+Installing a `FunctionHook` over a null pointer (a function that was never
+loaded) makes the pointer non-null. Code that checks whether the function
+exists then finds it, a hook stacked on top can't tell it is missing, and a
+Hook that only wraps its original (such as `ProfileCallHook`) calls through
+null. Leave a null pointer alone by default, so hooking every function in an
+API table is safe, and let a Hook that stands in for missing functions (such
+as a fake of the API) opt in, for instance with a static member the Hook
+declares. `ProfileCallHook`'s comment, which says to install it only over a
+loaded function, can then go.
+
+This changes `FunctionHook`'s behavior for existing callers that hook a null
+pointer: they must opt in to keep it.
+
 ## Fiber-safe thread locals
 
 - **Layers:** thread, job
