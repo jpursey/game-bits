@@ -9,7 +9,6 @@
 #include <string_view>
 #include <utility>
 
-#include "absl/log/check.h"
 #include "gb/profile/profile_point.h"
 #include "gb/profile/profile_timer.h"
 
@@ -27,10 +26,6 @@ namespace gb {
 // Each call is timed in the calling thread's Profiler, if any, and follows the
 // rules of ProfileTimer. With no Profiler on the thread, it is only called
 // through.
-//
-// Only install it over a function that was loaded. Installing any FunctionHook
-// makes the pointer non-null, so code that checks whether the function exists
-// would find it, and this hook can't stand in for it.
 class ProfileCallHook final {
  public:
   // Registers the call point named `name`.
@@ -43,7 +38,6 @@ class ProfileCallHook final {
   // Calls `original`, timing it as the call point.
   template <typename Function, typename... Args>
   auto Call(Function original, Args&&... args) {
-    DCHECK(original != nullptr) << point_.GetName() << " was never loaded";
     ProfileTimer timer(point_);
     return original(std::forward<Args>(args)...);
   }

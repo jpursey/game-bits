@@ -62,6 +62,8 @@ class DoubleHook {
 // Stands in for a function that was never loaded, returning a fixed value.
 class StubHook {
  public:
+  static constexpr bool kHookNotLoaded = true;
+
   explicit StubHook(std::string_view name) : name_(name) {}
 
   std::string_view last_call() const { return last_call_; }
@@ -138,9 +140,27 @@ TEST(FunctionHookTest, StandsInForFunctionNotLoaded) {
   EXPECT_EQ(g_not_loaded, nullptr);
 }
 
+TEST(FunctionHookTest, LeavesFunctionNotLoadedNull) {
+  std::vector<std::string> calls;
+  {
+    FunctionHook<&g_not_loaded, RecordHook> inner("inner", &calls);
+    EXPECT_EQ(g_not_loaded, nullptr);
+    {
+      FunctionHook<&g_not_loaded, StubHook> outer("outer");
+      EXPECT_EQ(g_not_loaded(1), -1);
+      EXPECT_EQ(outer.hook().last_call(), "outer");
+    }
+    EXPECT_EQ(g_not_loaded, nullptr);
+  }
+  EXPECT_EQ(g_not_loaded, nullptr);
+  EXPECT_TRUE(calls.empty());
+}
+
 // Aliases, as template argument lists can't be passed to EXPECT_DEATH.
 using AddRecordHook = FunctionHook<&g_add, RecordHook>;
 using AddDoubleHook = FunctionHook<&g_add, DoubleHook>;
+using NotLoadedRecordHook = FunctionHook<&g_not_loaded, RecordHook>;
+using NotLoadedStubHook = FunctionHook<&g_not_loaded, StubHook>;
 
 TEST(FunctionHookDeathTest, SameHookTwice) {
   AddDoubleHook hook;
@@ -153,6 +173,17 @@ TEST(FunctionHookDeathTest, DestroyedOutOfOrder) {
         std::vector<std::string> calls;
         auto inner = std::make_unique<AddRecordHook>("inner", &calls);
         AddDoubleHook outer;
+        inner.reset();
+      },
+      "reverse order");
+}
+
+TEST(FunctionHookDeathTest, HookLeftNullDestroyedOutOfOrder) {
+  EXPECT_DEATH(
+      {
+        std::vector<std::string> calls;
+        auto inner = std::make_unique<NotLoadedRecordHook>("inner", &calls);
+        NotLoadedStubHook outer("outer");
         inner.reset();
       },
       "reverse order");

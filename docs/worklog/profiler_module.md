@@ -156,9 +156,6 @@ On the development machine (3.187GHz, invariant TSC; QPC runs at 10MHz):
 
 Each is a backlog item:
 
-- **FunctionHook skips null pointers:** installing `ProfileCallHook` over a
-  function that was never loaded makes its pointer non-null, so for now it
-  must only be installed over loaded functions.
 - **Multithreaded profiles:** each thread's Profiler is separate, and the
   report reads a Profiler's own slots.
 - **Fiber-aware profiling:** a timed point can't span a fiber switch.
