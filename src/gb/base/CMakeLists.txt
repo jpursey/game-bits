@@ -33,7 +33,6 @@ set(gb_base_SOURCE
 )
 
 set(gb_base_TEST_SOURCE
-  callback_test.cc
   callback_scope_test.cc
   clock_test.cc
   context_test.cc
@@ -52,6 +51,7 @@ set_source_files_properties(validated_context_test.cc
 )
 
 set(gb_base_DEPS
+  absl::any_invocable
   absl::flat_hash_map
   absl::memory
   absl::strings
