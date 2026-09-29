@@ -59,7 +59,7 @@ class ProfileTimer final {
     if (profiler_ == nullptr) {
       return;
     }
-    profiler_->AddTime(index_, profiler_->EndTiming(timing_));
+    profiler_->EndTiming(index_, timing_);
   }
 
  private:
@@ -96,6 +96,48 @@ using ProfileScope =
 template <ProfileName kName>
 using ProfileCall =
     internal::NamedProfileTimer<ProfilePoint::Kind::kCall, kName>;
+
+//==============================================================================
+// ProfileFrame
+//==============================================================================
+
+// Times one frame (one iteration of the program's loop) as the frame point
+// named `kName`, for the lifetime of the ProfileFrame:
+//
+//   void Surface::Run() {
+//     ProfileFrame<"Run"> frame;
+//     ...
+//   }
+//
+// A frame is a timed point like a scope, charged with its self time, that also
+// records the frame as a whole (see Profiler::GetFrameSummary). Frames can't
+// nest (CHECK), and follow the same rules as other timers (see ProfileTimer).
+template <ProfileName kName>
+class ProfileFrame final {
+ public:
+  [[nodiscard]] ProfileFrame()
+      : profiler_(Profiler::s_current),
+        index_(internal::GetNamedPoint<ProfilePoint::Kind::kFrame, kName>()
+                   .GetIndex()) {
+    if (profiler_ == nullptr) {
+      return;
+    }
+    profiler_->StartFrame(timing_);
+  }
+  ProfileFrame(const ProfileFrame&) = delete;
+  ProfileFrame& operator=(const ProfileFrame&) = delete;
+  ~ProfileFrame() {
+    if (profiler_ == nullptr) {
+      return;
+    }
+    profiler_->EndFrame(index_, timing_);
+  }
+
+ private:
+  Profiler* const profiler_;
+  const int index_;
+  Profiler::Timing timing_;
+};
 
 //==============================================================================
 // Implementation

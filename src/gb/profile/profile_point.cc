@@ -74,6 +74,12 @@ std::optional<ProfilePoint> ProfilePoint::Find(std::string_view name) {
   return ProfilePoint(registered.kind, registered.name, it->second);
 }
 
+int ProfilePoint::GetRegisteredCount() {
+  Registry& registry = GetRegistry();
+  absl::MutexLock lock(&registry.mutex);
+  return registry.count;
+}
+
 void ProfilePoint::Count(int64_t count) const {
   DCHECK(kind_ == Kind::kCounter) << name_ << " is not a counter";
   Profiler* const profiler = Profiler::s_current;

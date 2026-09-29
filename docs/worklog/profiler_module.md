@@ -230,9 +230,11 @@ void ProfileSetValue(int64_t value);
   child time, and adds its elapsed time less its own child time into its slot.
   Everything is inline, and there is no lookup or allocation.
 - `ProfileFrame` is separate so that timers don't pay a branch on the kind.
-  Ending a frame adds it to the histogram, and, rarely, copies its breakdown
-  when it is the slowest so far or longer than `slow_frame`. Those walk every
-  slot, which is fine for a rare event.
+  Ending a frame adds it to the histogram, and, rarely, captures its
+  breakdown (a `FrameBreakdown`) when it is the slowest so far or longer than
+  `slow_frame`. A capture walks the slots of every registered point, which is
+  fine for a rare event. Between frames, points are recorded against frame 0,
+  which is never captured.
 - **Brittleness:** timers are RAII, so they can't be left unbalanced, and the
   top-of-stack CHECK catches a fiber switch inside one. Without `/GT`, MSVC
   can cache a `thread_local`'s address across a fiber switch, so the CHECK
@@ -295,12 +297,15 @@ Depends on: nothing.
   ignored; one Profiler per thread; ending a timer that isn't the innermost
   CHECKs; `Reset`.
 
-### CL2 [ ] gb/profile: Frames
+### CL2 [x] gb/profile: Frames
 
 Depends on: CL1.
 
 - `ProfileFrame`, the frame histogram and percentiles, the slowest frame's
   breakdown, and `GetFrameSummary()` (without cost).
+- For tests, `GetSlowestFrameCount()` and `GetSlowestFrameSelfTime()` read a
+  point's part in the slowest frame by name, and
+  `ProfilePoint::GetRegisteredCount()` bounds the capture.
 
 **Verify**
 - Standard checks.

@@ -5,7 +5,9 @@
 
 #include "gb/profile/profiler.h"
 
+#include <cstdint>
 #include <thread>
+#include <vector>
 
 #include "absl/time/time.h"
 #include "gb/profile/fake_ticks.h"
@@ -21,6 +23,14 @@ namespace {
 
 class ProfilerTest : public ::testing::Test {
  protected:
+  // Records a frame of each of `frame_ticks`, with nothing inside it.
+  void RecordFrames(const std::vector<int64_t>& frame_ticks) {
+    for (int64_t ticks : frame_ticks) {
+      ProfileFrame<"ProfilerTest/Frames"> frame;
+      ticks_.Advance(ticks);
+    }
+  }
+
   FakeTicks ticks_;
   Profiler profiler_{{.fake_ticks = &ticks_}};
 };
@@ -80,6 +90,180 @@ TEST_F(ProfilerTest, ResetClearsEverything) {
 TEST_F(ProfilerTest, ResetInTimerDies) {
   ProfileScope<"ProfilerTest/ResetInTimer"> scope;
   EXPECT_DEATH(profiler_.Reset(), "can't be reset in a timed point");
+}
+
+//------------------------------------------------------------------------------
+// Frames
+//------------------------------------------------------------------------------
+
+// Percentiles are within 1/16th of the true value.
+void ExpectPercentile(absl::Duration actual, absl::Duration expected) {
+  EXPECT_LE(absl::AbsDuration(actual - expected), expected / 16)
+      << "actual " << actual << ", expected " << expected;
+}
+
+TEST_F(ProfilerTest, FrameRecordsCountAndSelfTime) {
+  for (int i = 0; i < 2; ++i) {
+    ProfileFrame<"ProfilerTest/Frame"> frame;
+    ticks_.Advance(10);
+    ProfileScope<"ProfilerTest/InFrame"> scope;
+    ticks_.Advance(5);
+  }
+  EXPECT_EQ(profiler_.GetCount("ProfilerTest/Frame"), 2);
+  EXPECT_EQ(profiler_.GetSelfTime("ProfilerTest/Frame"), absl::Nanoseconds(20));
+  EXPECT_EQ(profiler_.GetSelfTime("ProfilerTest/InFrame"),
+            absl::Nanoseconds(10));
+}
+
+TEST_F(ProfilerTest, FrameInsideScope) {
+  {
+    ProfileScope<"ProfilerTest/AroundFrame"> scope;
+    ticks_.Advance(1);
+    ProfileFrame<"ProfilerTest/InsideFrame"> frame;
+    ticks_.Advance(10);
+  }
+  EXPECT_EQ(profiler_.GetSelfTime("ProfilerTest/AroundFrame"),
+            absl::Nanoseconds(1));
+  EXPECT_EQ(profiler_.GetFrameSummary().total, absl::Nanoseconds(10));
+}
+
+TEST_F(ProfilerTest, NestedFramesDie) {
+  ProfileFrame<"ProfilerTest/Outer"> frame;
+  EXPECT_DEATH({ ProfileFrame<"ProfilerTest/Inner"> inner; }, "can't nest");
+}
+
+TEST_F(ProfilerTest, FrameSummaryWithNoFrames) {
+  const Profiler::FrameSummary summary = profiler_.GetFrameSummary();
+  EXPECT_EQ(summary.frames, 0);
+  EXPECT_EQ(summary.total, absl::ZeroDuration());
+  EXPECT_EQ(summary.average, absl::ZeroDuration());
+  EXPECT_EQ(summary.p50, absl::ZeroDuration());
+  EXPECT_EQ(summary.max, absl::ZeroDuration());
+}
+
+TEST_F(ProfilerTest, FrameSummary) {
+  RecordFrames({10, 20, 30});
+  const Profiler::FrameSummary summary = profiler_.GetFrameSummary();
+  EXPECT_EQ(summary.frames, 3);
+  EXPECT_EQ(summary.total, absl::Nanoseconds(60));
+  EXPECT_EQ(summary.average, absl::Nanoseconds(20));
+  EXPECT_EQ(summary.max, absl::Nanoseconds(30));
+  ExpectPercentile(summary.p50, absl::Nanoseconds(20));
+}
+
+TEST_F(ProfilerTest, FramePercentiles) {
+  // Frames of 1us to 1000us, in a shuffled order.
+  std::vector<int64_t> frame_ticks;
+  for (int i = 0; i < 1000; ++i) {
+    frame_ticks.push_back(((i * 7919) % 1000 + 1) * 1000);
+  }
+  RecordFrames(frame_ticks);
+  const Profiler::FrameSummary summary = profiler_.GetFrameSummary();
+  ExpectPercentile(summary.p50, absl::Microseconds(500));
+  ExpectPercentile(summary.p90, absl::Microseconds(900));
+  ExpectPercentile(summary.p99, absl::Microseconds(990));
+  EXPECT_EQ(summary.max, absl::Microseconds(1000));
+}
+
+TEST_F(ProfilerTest, SmallFramePercentilesAreExact) {
+  RecordFrames({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15});
+  EXPECT_EQ(profiler_.GetFrameSummary().p50, absl::Nanoseconds(8));
+}
+
+TEST_F(ProfilerTest, LongFramePercentiles) {
+  constexpr int64_t kTicks = (int64_t{1} << 40) + (int64_t{1} << 40) / 3;
+  RecordFrames({kTicks});
+  const Profiler::FrameSummary summary = profiler_.GetFrameSummary();
+  ExpectPercentile(summary.p50, absl::Nanoseconds(kTicks));
+  EXPECT_EQ(summary.max, absl::Nanoseconds(kTicks));
+}
+
+TEST_F(ProfilerTest, SlowestFrameBreakdown) {
+  {
+    ProfileFrame<"ProfilerTest/Slowest"> frame;
+    ticks_.Advance(10);
+    ProfileCount<"ProfilerTest/SlowestCount">(2);
+    ProfileScope<"ProfilerTest/SlowestA"> scope;
+    ticks_.Advance(20);
+  }
+  {
+    // Faster, so it doesn't replace the slowest frame.
+    ProfileFrame<"ProfilerTest/Slowest"> frame;
+    ProfileScope<"ProfilerTest/SlowestB"> scope;
+    ticks_.Advance(20);
+  }
+  EXPECT_EQ(profiler_.GetSlowestFrameCount("ProfilerTest/Slowest"), 1);
+  EXPECT_EQ(profiler_.GetSlowestFrameSelfTime("ProfilerTest/Slowest"),
+            absl::Nanoseconds(10));
+  EXPECT_EQ(profiler_.GetSlowestFrameCount("ProfilerTest/SlowestA"), 1);
+  EXPECT_EQ(profiler_.GetSlowestFrameSelfTime("ProfilerTest/SlowestA"),
+            absl::Nanoseconds(20));
+  EXPECT_EQ(profiler_.GetSlowestFrameCount("ProfilerTest/SlowestCount"), 2);
+  EXPECT_EQ(profiler_.GetSlowestFrameCount("ProfilerTest/SlowestB"), 0);
+
+  {
+    // Slower, so it replaces the slowest frame.
+    ProfileFrame<"ProfilerTest/Slowest"> frame;
+    ProfileScope<"ProfilerTest/SlowestB"> scope;
+    ticks_.Advance(40);
+  }
+  EXPECT_EQ(profiler_.GetSlowestFrameCount("ProfilerTest/SlowestA"), 0);
+  EXPECT_EQ(profiler_.GetSlowestFrameCount("ProfilerTest/SlowestCount"), 0);
+  EXPECT_EQ(profiler_.GetSlowestFrameCount("ProfilerTest/SlowestB"), 1);
+  EXPECT_EQ(profiler_.GetSlowestFrameSelfTime("ProfilerTest/SlowestB"),
+            absl::Nanoseconds(40));
+  EXPECT_EQ(profiler_.GetCount("ProfilerTest/SlowestB"), 2);
+}
+
+TEST_F(ProfilerTest, PointsOutsideFramesAreOnlyInTotals) {
+  {
+    ProfileScope<"ProfilerTest/Outside"> scope;
+    ticks_.Advance(100);
+  }
+  {
+    ProfileFrame<"ProfilerTest/OutsideFrame"> frame;
+    ticks_.Advance(10);
+  }
+  {
+    ProfileScope<"ProfilerTest/Outside"> scope;
+    ProfileCount<"ProfilerTest/OutsideCount">(1);
+    ticks_.Advance(100);
+  }
+  {
+    // The slowest so far, which copies the breakdown of this frame only.
+    ProfileFrame<"ProfilerTest/OutsideFrame"> frame;
+    ticks_.Advance(20);
+  }
+  EXPECT_EQ(profiler_.GetCount("ProfilerTest/Outside"), 2);
+  EXPECT_EQ(profiler_.GetCount("ProfilerTest/OutsideCount"), 1);
+  EXPECT_EQ(profiler_.GetSlowestFrameCount("ProfilerTest/Outside"), 0);
+  EXPECT_EQ(profiler_.GetSlowestFrameCount("ProfilerTest/OutsideCount"), 0);
+  EXPECT_EQ(profiler_.GetFrameSummary().total, absl::Nanoseconds(30));
+}
+
+TEST_F(ProfilerTest, ResetClearsFrames) {
+  {
+    ProfileFrame<"ProfilerTest/ResetFrame"> frame;
+    ProfileScope<"ProfilerTest/ResetInFrame"> scope;
+    ticks_.Advance(10);
+  }
+  profiler_.Reset();
+  EXPECT_EQ(profiler_.GetFrameSummary().frames, 0);
+  EXPECT_EQ(profiler_.GetFrameSummary().max, absl::ZeroDuration());
+  EXPECT_EQ(profiler_.GetSlowestFrameCount("ProfilerTest/ResetInFrame"), 0);
+
+  {
+    ProfileFrame<"ProfilerTest/ResetFrame"> frame;
+    ticks_.Advance(5);
+  }
+  EXPECT_EQ(profiler_.GetFrameSummary().frames, 1);
+  EXPECT_EQ(profiler_.GetSlowestFrameCount("ProfilerTest/ResetFrame"), 1);
+}
+
+TEST_F(ProfilerTest, ReadingValueAsSlowestFrameDies) {
+  ProfilePoint value(ProfilePoint::Kind::kValue, "ProfilerTest/SlowestValue");
+  EXPECT_DEATH(profiler_.GetSlowestFrameCount("ProfilerTest/SlowestValue"),
+               "wrong kind");
 }
 
 // Tests that set up their own Profiler.

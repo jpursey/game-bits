@@ -60,6 +60,14 @@ TEST(ProfilePointTest, FindRegisteredPoint) {
   EXPECT_EQ(found->GetIndex(), point.GetIndex());
 }
 
+TEST(ProfilePointTest, RegisteredCountCoversEveryIndex) {
+  const int count_before = ProfilePoint::GetRegisteredCount();
+  ProfilePoint point(ProfilePoint::Kind::kScope, "PointTest/Counted");
+  ProfilePoint again(ProfilePoint::Kind::kScope, "PointTest/Counted");
+  EXPECT_EQ(ProfilePoint::GetRegisteredCount(), count_before + 1);
+  EXPECT_LT(point.GetIndex(), ProfilePoint::GetRegisteredCount());
+}
+
 TEST(ProfilePointTest, FindUnknownPoint) {
   EXPECT_FALSE(ProfilePoint::Find("PointTest/Unknown").has_value());
 }

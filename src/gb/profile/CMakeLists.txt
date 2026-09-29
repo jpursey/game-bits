@@ -22,6 +22,7 @@ set(gb_profile_TEST_DEPS
 set(gb_profile_DEPS
   absl::flat_hash_map
   absl::no_destructor
+  absl::span
   absl::synchronization
   absl::time
 )

@@ -12,13 +12,15 @@
 #include <x86intrin.h>
 #endif
 
+#include <array>
 #include <cstdint>
-#include <initializer_list>
 #include <memory>
 #include <string_view>
+#include <vector>
 
 #include "absl/log/check.h"
 #include "absl/time/time.h"
+#include "absl/types/span.h"
 #include "gb/profile/fake_ticks.h"
 #include "gb/profile/profile_point.h"
 
@@ -35,6 +37,10 @@ namespace gb {
 // time), the total of each counter, and the latest of each value. Points on
 // other threads, or on a thread with no Profiler, are ignored, and cost about a
 // nanosecond.
+//
+// Frames (see ProfileFrame) are timed points that also record a histogram of
+// frame times, and the breakdown by point of the slowest frame so far. Points
+// outside any frame are included in the totals, but in no frame's breakdown.
 //
 // Time is read from the CPU's timestamp counter, which must be invariant (true
 // of any x86-64 CPU in the last decade), unless a FakeTicks is given in the
@@ -62,20 +68,43 @@ class Profiler final {
   ~Profiler();
 
   //----------------------------------------------------------------------------
+  // Frames
+  //----------------------------------------------------------------------------
+
+  // Statistics over every frame recorded, whatever its point's name. The
+  // percentiles come from a histogram, and are within 1/16th of the true
+  // value. With no frames, everything is zero.
+  struct FrameSummary {
+    int64_t frames = 0;
+    absl::Duration total;
+    absl::Duration average;
+    absl::Duration p50;
+    absl::Duration p90;
+    absl::Duration p99;
+    absl::Duration max;
+  };
+  FrameSummary GetFrameSummary() const;
+
+  //----------------------------------------------------------------------------
   // For tests
   //
   // Each of these reads the point named `name`, returning zero if there is no
   // such point, and CHECK-fails if it has the wrong kind.
   //----------------------------------------------------------------------------
 
-  // Returns how many times a scope or call was timed, or a counter's total.
+  // Returns how many times a frame, scope, or call was timed, or a counter's
+  // total.
   int64_t GetCount(std::string_view name) const;
 
-  // Returns the total self time of a scope or call.
+  // Returns the total self time of a frame, scope, or call.
   absl::Duration GetSelfTime(std::string_view name) const;
 
   // Returns the latest value set for a value.
   int64_t GetValue(std::string_view name) const;
+
+  // As GetCount() and GetSelfTime(), for only the slowest frame so far.
+  int64_t GetSlowestFrameCount(std::string_view name) const;
+  absl::Duration GetSlowestFrameSelfTime(std::string_view name) const;
 
   // Clears everything recorded. CHECK-fails inside a timed point.
   void Reset();
@@ -83,6 +112,13 @@ class Profiler final {
  private:
   friend class ProfilePoint;
   friend class ProfileTimer;
+  template <ProfileName kName>
+  friend class ProfileFrame;
+
+  // Frame times are counted in 8 buckets for each power of two. The highest
+  // bit a positive int64_t can have is bit 62, which lands in the last of
+  // these (see GetFrameBucket in profiler.cc).
+  static constexpr int kFrameBuckets = 61 * 8;
 
   // A timed point in progress, kept by whatever times it. Timings running on
   // the thread form a stack, linked through `parent`.
@@ -100,6 +136,25 @@ class Profiler final {
     int64_t count = 0;
     int64_t self_ticks = 0;
     int64_t value = 0;
+
+    // The same, for only the frame numbered `frame` (see current_frame_). They
+    // are reset by the first add in a new frame, so nothing needs clearing
+    // when a frame starts.
+    int64_t frame = 0;
+    int64_t frame_count = 0;
+    int64_t frame_self_ticks = 0;
+  };
+
+  // A frame's time, and the part each point had in it.
+  struct FrameBreakdown {
+    struct Point {
+      int index;
+      int64_t count;
+      int64_t self_ticks;
+    };
+
+    int64_t ticks = 0;
+    std::vector<Point> points;
   };
 
   // Starts `timing` inside the innermost timing on this thread.
@@ -109,8 +164,9 @@ class Profiler final {
     timing.start_ticks = ReadTicks();
   }
 
-  // Ends `timing`, which must be the innermost, and returns its self ticks.
-  int64_t EndTiming(Timing& timing) {
+  // Ends `timing`, which must be the innermost, and adds its self time to the
+  // point at `index`. Returns its elapsed ticks.
+  int64_t EndTiming(int index, Timing& timing) {
     const int64_t elapsed_ticks = ReadTicks() - timing.start_ticks;
     CHECK(top_ == &timing)
         << "A timed point must end on the thread and fiber it started on, "
@@ -119,22 +175,61 @@ class Profiler final {
     if (top_ != nullptr) {
       top_->child_ticks += elapsed_ticks;
     }
-    return elapsed_ticks - timing.child_ticks;
+    AddTime(index, elapsed_ticks - timing.child_ticks);
+    return elapsed_ticks;
   }
 
-  // Record into the slot at `index` (a ProfilePoint's index).
-  void AddTime(int index, int64_t self_ticks) {
+  // Frames are timings that also record the frame as a whole. Frames can't
+  // nest.
+  void StartFrame(Timing& timing);
+  void EndFrame(int index, Timing& timing);
+
+  // Returns the current frame's time, `ticks`, and the part each point had in
+  // it.
+  FrameBreakdown CaptureFrame(int64_t ticks) const;
+
+  // Returns the slot at `index` (a ProfilePoint's index), with its frame part
+  // reset if it was for another frame.
+  Slot& GetFrameSlot(int index) {
     Slot& slot = slots_[index];
+    if (slot.frame != current_frame_) {
+      slot.frame = current_frame_;
+      slot.frame_count = 0;
+      slot.frame_self_ticks = 0;
+    }
+    return slot;
+  }
+
+  void AddTime(int index, int64_t self_ticks) {
+    Slot& slot = GetFrameSlot(index);
     ++slot.count;
     slot.self_ticks += self_ticks;
+    ++slot.frame_count;
+    slot.frame_self_ticks += self_ticks;
   }
-  void AddCount(int index, int64_t count) { slots_[index].count += count; }
+  void AddCount(int index, int64_t count) {
+    Slot& slot = GetFrameSlot(index);
+    slot.count += count;
+    slot.frame_count += count;
+  }
   void SetValue(int index, int64_t value) { slots_[index].value = value; }
 
-  // Returns the slot for `name`, or null if there is no such point.
-  // CHECK-fails if the point's kind isn't one of `kinds`.
+  // Returns the index of the point named `name`, or -1 if there is no such
+  // point. CHECK-fails if the point's kind isn't one of `kinds`.
+  int FindIndex(std::string_view name,
+                absl::Span<const ProfilePoint::Kind> kinds) const;
+
+  // As FindIndex(), returning the point's slot, or null.
   const Slot* FindSlot(std::string_view name,
-                       std::initializer_list<ProfilePoint::Kind> kinds) const;
+                       absl::Span<const ProfilePoint::Kind> kinds) const;
+
+  // As FindIndex(), returning the point's part in the slowest frame, or null
+  // if it had none.
+  const FrameBreakdown::Point* FindSlowestFramePoint(
+      std::string_view name, absl::Span<const ProfilePoint::Kind> kinds) const;
+
+  // Returns the frame time that `fraction` of frames are at or under.
+  int64_t GetFramePercentileTicks(double fraction) const;
 
   int64_t ReadTicks() const {
     if (fake_ticks_ != nullptr) {
@@ -153,6 +248,16 @@ class Profiler final {
 
   // The innermost timing on this thread, or null.
   Timing* top_ = nullptr;
+
+  // The number of the frame in progress, counting from 1, or 0 between
+  // frames. Points between frames are recorded against frame 0, which is
+  // never captured.
+  int64_t current_frame_ = 0;
+
+  int64_t frames_ = 0;
+  int64_t total_frame_ticks_ = 0;
+  std::array<int64_t, kFrameBuckets> frame_buckets_ = {};
+  FrameBreakdown slowest_frame_;
 };
 
 }  // namespace gb

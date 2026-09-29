@@ -49,6 +49,10 @@ class ProfilePoint final {
   // Returns the point registered with `name`, if there is one.
   static std::optional<ProfilePoint> Find(std::string_view name);
 
+  // Returns how many points are registered. Every point's index is less than
+  // this.
+  static int GetRegisteredCount();
+
   Kind GetKind() const { return kind_; }
   std::string_view GetName() const { return name_; }
 
