@@ -280,7 +280,9 @@ TEST(CallbackTest, RValueConstructMethodCounter) {
 
 TEST(CallbackTest, TemporaryConstructMethodCounter) {
   MethodCounter::Reset();
-  { Callback<void(void)> callback(MethodCounter{}); }
+  {
+    Callback<void(void)> callback(MethodCounter{});
+  }
   EXPECT_EQ(MethodCounter::Info().default_constructor_count_, 1);
   EXPECT_EQ(MethodCounter::Info().copy_constructor_count_, 0);
   EXPECT_EQ(MethodCounter::Info().move_constructor_count_, 1);
@@ -292,7 +294,9 @@ TEST(CallbackTest, TemporaryConstructMethodCounter) {
 
 TEST(CallbackTest, UniquePointerConstructMethodCounter) {
   MethodCounter::Reset();
-  { Callback<void(void)> callback(std::make_unique<MethodCounter>()); }
+  {
+    Callback<void(void)> callback(std::make_unique<MethodCounter>());
+  }
   EXPECT_EQ(MethodCounter::Info().default_constructor_count_, 1);
   EXPECT_EQ(MethodCounter::Info().copy_constructor_count_, 0);
   EXPECT_EQ(MethodCounter::Info().move_constructor_count_, 0);

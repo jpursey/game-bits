@@ -59,15 +59,3 @@ time in a realtime program:
 Unit tested with a timestamp source the test controls, so no test reads real
 time. To confirm while designing it: that the timestamp counter is invariant on
 the machines it runs on, and what a timed point actually costs.
-
-## Reformat the files clang-format has drifted from
-
-- **Layers:** any
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** CLAUDE.md (Format)
-
-About 18 files were formatted with an older clang-format, so formatting any of
-them churns unrelated lines, and CLAUDE.md has to warn about it. One commit
-that only reformats them, with nothing else in it, would remove the warning.

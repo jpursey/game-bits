@@ -8,11 +8,11 @@
 
 #include <memory>
 
-#include "gb/resource/resource.h"
 #include "gb/render/binding_data.h"
 #include "gb/render/local_binding_data.h"
 #include "gb/render/material_type.h"
 #include "gb/render/render_types.h"
+#include "gb/resource/resource.h"
 
 namespace gb {
 
@@ -71,8 +71,7 @@ class Material final : public Resource {
   // Internal
   //----------------------------------------------------------------------------
 
-  Material(RenderInternal, ResourceEntry entry,
-           MaterialType* material_type);
+  Material(RenderInternal, ResourceEntry entry, MaterialType* material_type);
 
  private:
   ~Material() override;

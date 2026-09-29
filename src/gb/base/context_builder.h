@@ -22,7 +22,7 @@ namespace gb {
 //                            .SetValue<int>("height", 768)
 //                            .Build());
 class ContextBuilder final {
-public:
+ public:
   // Standard constructors and destructors.
   ContextBuilder() = default;
   ContextBuilder(const ContextBuilder&) = delete;
@@ -89,10 +89,10 @@ public:
     return *this;
   }
 
-private:
+ private:
   Context context_;
 };
 
 }  // namespace gb
 
-#endif  // GB_BASE_CONTEXT_BUILDER_H_ 
+#endif  // GB_BASE_CONTEXT_BUILDER_H_

@@ -112,8 +112,7 @@ TEST_F(ThreadTest, CreateThreadWithAffinityWithStackSize) {
 }
 
 TEST_F(ThreadTest, ThreadIsActiveUntilJoined) {
-  Thread thread = CreateThread(
-      0, 0, nullptr, +[](void* user_data) {});
+  Thread thread = CreateThread(0, 0, nullptr, +[](void* user_data) {});
   ASSERT_NE(thread, nullptr);
   EXPECT_EQ(GetActiveThreadCount(), 1);
   JoinThread(thread);
@@ -166,8 +165,7 @@ TEST_F(ThreadTest, GetThisThreadWorksInThread) {
 }
 
 TEST_F(ThreadTest, ThreadName) {
-  Thread thread = CreateThread(
-      0, 0, nullptr, +[](void* user_data) {});
+  Thread thread = CreateThread(0, 0, nullptr, +[](void* user_data) {});
   ASSERT_NE(thread, nullptr);
   SetThreadName(thread, "Test");
   EXPECT_EQ(GetThreadName(thread), "Test");

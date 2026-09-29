@@ -4,8 +4,8 @@
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
 #include "gb/base/clock.h"
-#include "gb/base/fake_clock.h"
 
+#include "gb/base/fake_clock.h"
 #include "gtest/gtest.h"
 
 namespace gb {
@@ -114,5 +114,5 @@ TEST(FakeClockTest, AutoAdvanceDoesNotAffectSleepFor) {
   EXPECT_EQ(clock.GetTime(), now + sleep_amount);
 }
 
-}  // namespace 
+}  // namespace
 }  // namespace gb

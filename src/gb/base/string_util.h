@@ -17,7 +17,7 @@ struct StringKeyCompare {
   bool operator()(std::string_view a, std::string_view b) const {
     return a < b;
   }
-};  
+};
 
 }  // namespace gb
 

@@ -60,6 +60,6 @@ class CommonProtocolTest
   }
 };
 
-}  // namespace
+}  // namespace gb
 
 #endif  // GB_FILE_COMMON_PROTOCOL_TEST_H_

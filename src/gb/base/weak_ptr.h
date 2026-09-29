@@ -225,7 +225,7 @@ class WeakScope {
   // The pointer must remain valid (to a valid instance or nullptr) until
   // InvalidateWeakPtrs() is called on this instance.
   explicit WeakScope(Type* ptr)
-      : data_(std::make_shared<internal::WeakPtrData>(ptr)){};
+      : data_(std::make_shared<internal::WeakPtrData>(ptr)) {};
 
   // WeakScope is a move-only class.
   WeakScope(const WeakScope&) = delete;
@@ -272,8 +272,8 @@ inline void internal::WeakPtrData::Clear() {
   absl::MutexLock lock(&mutex_);
   DCHECK(!clear_pending_);
   clear_pending_ = true;
-  mutex_.Await(absl::Condition(
-      +[](int* count) { return *count == 0; }, &count_));
+  mutex_.Await(
+      absl::Condition(+[](int* count) { return *count == 0; }, &count_));
   ptr_ = nullptr;
   clear_pending_ = false;
 }

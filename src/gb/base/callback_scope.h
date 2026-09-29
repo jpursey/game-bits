@@ -38,17 +38,13 @@ class CallbackScope final {
   // Callback destructor.
   //
   // This will block until there are no scoped callbacks executing.
-  ~CallbackScope() {
-    scope_.InvalidateWeakPtrs();
-  }
+  ~CallbackScope() { scope_.InvalidateWeakPtrs(); }
 
   // Invalidates all callbacks for this scope.
   //
   // Any existing callbacks will become no-ops and all new callbacks created
   // after this is called will be no-ops.
-  void InvalidateCallbacks() {
-    scope_.InvalidateWeakPtrs();
-  }
+  void InvalidateCallbacks() { scope_.InvalidateWeakPtrs(); }
 
   // Creates a new void-return callback bound to this scope.
   //
@@ -78,8 +74,8 @@ class CallbackScope final {
     if (callback == nullptr) {
       return callback;
     }
-    return Factory<Callable>::NewDefault(
-        alive_, std::move(callback), std::move(default_value));
+    return Factory<Callable>::NewDefault(alive_, std::move(callback),
+                                         std::move(default_value));
   }
 
  private:

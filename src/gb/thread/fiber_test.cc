@@ -334,8 +334,7 @@ TEST_F(FiberTest, SwapThreadsAndExit) {
 
 TEST_F(FiberTest, FiberName) {
   CHECK_FIBER_SUPPORT();
-  Fiber fiber = CreateFiber(
-      {}, 0, nullptr, +[](void* user_data) {});
+  Fiber fiber = CreateFiber({}, 0, nullptr, +[](void* user_data) {});
   ASSERT_NE(fiber, nullptr);
   SetFiberName(fiber, "Test");
   EXPECT_EQ(GetFiberName(fiber), "Test");
@@ -350,8 +349,7 @@ TEST_F(FiberTest, AccessNulLFiberName) {
 
 TEST_F(FiberTest, FiberData) {
   CHECK_FIBER_SUPPORT();
-  Fiber fiber = CreateFiber(
-      {}, 0, nullptr, +[](void* user_data) {});
+  Fiber fiber = CreateFiber({}, 0, nullptr, +[](void* user_data) {});
   ASSERT_NE(fiber, nullptr);
   auto data = std::make_unique<int>();
   SetFiberData(fiber, data.get());

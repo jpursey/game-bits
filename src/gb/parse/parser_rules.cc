@@ -85,11 +85,11 @@ parser_internal::ParseMatch ParserToken::Match(Parser& parser) const {
   return parser.MatchTokenItem(*this);
 }
 
-std::string ParserRuleName::ToString() const { 
+std::string ParserRuleName::ToString() const {
   if (!scope_items_) {
     return absl::StrCat("<", rule_name_, ">");
   }
-  return rule_name_; 
+  return rule_name_;
 }
 
 bool ParserRuleName::Validate(ValidateContext& context) const {

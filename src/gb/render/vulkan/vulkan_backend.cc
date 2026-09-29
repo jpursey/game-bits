@@ -1282,10 +1282,10 @@ void VulkanBackend::EndFrameRenderPass() {
                       static_cast<uint32_t>(index_buffer->GetSize()), 1, 0, 0,
                       0);
                 }  // InstanceDraw
-              }    // InstanceGroupDraw
-            }      // IndexDraw
-          }        // VertexDraw
-        }          // MaterialDraw
+              }  // InstanceGroupDraw
+            }  // IndexDraw
+          }  // VertexDraw
+        }  // MaterialDraw
         VulkanRenderPipeline* last_pipeline = pipeline;
         VulkanRenderPipeline* next_pipeline = pipeline;
         VulkanRenderBuffer* last_vertex_buffer = nullptr;
@@ -1393,8 +1393,8 @@ void VulkanBackend::EndFrameRenderPass() {
           }
         }
       }  // PipelineDraw
-    }    // SceneDraw
-  }      // SceneGroupDraw
+    }  // SceneDraw
+  }  // SceneGroupDraw
 
   CallFrameCallbacks(&end_render_callbacks_);
 

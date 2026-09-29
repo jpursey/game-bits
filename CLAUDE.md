@@ -111,19 +111,28 @@ The `14.44.35112` version directory changes with Visual Studio updates. Only Deb
 
 ### Format
 
+The reference clang-format is the one that ships with Visual Studio (currently 19.1.5), which is also what Visual Studio's Format Document uses:
+
 ```
-clang-format -i <files>              # format in place
-clang-format --dry-run -Werror <files>   # check only
+# PowerShell
+$clangFormat = "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\Llvm\x64\bin\clang-format.exe"
+& $clangFormat -i <files>                  # format in place
+& $clangFormat --dry-run -Werror <files>   # check only
+
+# bash
+CLANG_FORMAT="/c/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/Llvm/x64/bin/clang-format.exe"
+"$CLANG_FORMAT" -i <files>
+"$CLANG_FORMAT" --dry-run -Werror <files>
 ```
 
-Style comes from `src/.clang-format` (Google style); clang-format finds it automatically for any file under `src/`. Only format files you actually touch: about 18 existing files were formatted with an older clang-format and would otherwise churn unrelated lines.
+A `clang-format` on PATH may be a different version, and versions disagree on a few constructs (18 and 19 differ on bare `{ ... }` scope blocks), so use this one. Style comes from `src/.clang-format` (Google style); clang-format finds it automatically for any file under `src/`. Every file under `src/` passes the check, so formatting a touched file only changes the lines you edited.
 
 ### Checks
 
 Every change is checked as follows:
 - It builds cleanly (warnings are errors) in both Debug and Release.
 - `ctest` passes in Debug.
-- Touched files pass `clang-format --dry-run -Werror`.
+- Touched files pass the clang-format check (see Format above).
 - New and changed behavior has unit tests. Code that can't be unit tested (rendering, windows, input) is checked by hand in an example, which the user runs.
 
 ## Sessions

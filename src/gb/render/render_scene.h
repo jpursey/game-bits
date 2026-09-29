@@ -37,9 +37,9 @@ class RenderScene {
 
   // Returns the scene type for this scene.
   //
-  // The scene type is registered with the RenderSystem. It represents the how the
-  // scene is handled by the RenderSystem, and what common bindings are defined for
-  // all binding sets.
+  // The scene type is registered with the RenderSystem. It represents the how
+  // the scene is handled by the RenderSystem, and what common bindings are
+  // defined for all binding sets.
   RenderSceneType* GetType() const { return type_; }
 
   // Returns the scene order for this scene.

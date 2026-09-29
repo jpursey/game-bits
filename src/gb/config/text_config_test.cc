@@ -1091,8 +1091,7 @@ TEST(ReadConfigFromTextTest, RootlessSingleKey) {
 }
 
 TEST(ReadConfigFromTextTest, RootlessWithNestedMap) {
-  auto result =
-      ReadConfigFromText("a: 1, b: {c: 3}", kRootlessTextConfig);
+  auto result = ReadConfigFromText("a: 1, b: {c: 3}", kRootlessTextConfig);
   ASSERT_TRUE(result.ok()) << result.status();
   EXPECT_TRUE(result->IsMap());
   EXPECT_EQ(result->GetInt("a"), 1);
@@ -1132,15 +1131,14 @@ TEST(ReadConfigFromTextTest, RootlessMultiline) {
 //==============================================================================
 
 TEST(ReadConfigFromTextTest, LineComment) {
-  auto result = ReadConfigFromText(
-      "// This is a comment\n42", kDefaultTextConfig);
+  auto result =
+      ReadConfigFromText("// This is a comment\n42", kDefaultTextConfig);
   ASSERT_TRUE(result.ok()) << result.status();
   EXPECT_EQ(result->GetInt(), 42);
 }
 
 TEST(ReadConfigFromTextTest, BlockComment) {
-  auto result = ReadConfigFromText(
-      "/* comment */ 42", kDefaultTextConfig);
+  auto result = ReadConfigFromText("/* comment */ 42", kDefaultTextConfig);
   ASSERT_TRUE(result.ok()) << result.status();
   EXPECT_EQ(result->GetInt(), 42);
 }

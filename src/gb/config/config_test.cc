@@ -678,9 +678,7 @@ TEST(ConfigTest, AsBoolFromMapArray) {
   EXPECT_FALSE(Config::Array().AsBool());
 }
 
-TEST(ConfigTest, AsBoolFromNone) {
-  EXPECT_FALSE(Config::None().AsBool());
-}
+TEST(ConfigTest, AsBoolFromNone) { EXPECT_FALSE(Config::None().AsBool()); }
 
 TEST(ConfigTest, AsBoolByKey) {
   Config config = Config::Map();
@@ -746,9 +744,7 @@ TEST(ConfigTest, AsIntFromMapArray) {
   EXPECT_EQ(Config::Array().AsInt(), 0);
 }
 
-TEST(ConfigTest, AsIntFromNone) {
-  EXPECT_EQ(Config::None().AsInt(), 0);
-}
+TEST(ConfigTest, AsIntFromNone) { EXPECT_EQ(Config::None().AsInt(), 0); }
 
 TEST(ConfigTest, AsIntByKey) {
   Config config = Config::Map();
@@ -791,9 +787,7 @@ TEST(ConfigTest, AsFloatFromMapArray) {
   EXPECT_EQ(Config::Array().AsFloat(), 0.0);
 }
 
-TEST(ConfigTest, AsFloatFromNone) {
-  EXPECT_EQ(Config::None().AsFloat(), 0.0);
-}
+TEST(ConfigTest, AsFloatFromNone) { EXPECT_EQ(Config::None().AsFloat(), 0.0); }
 
 TEST(ConfigTest, AsFloatByKey) {
   Config config = Config::Map();
@@ -838,9 +832,7 @@ TEST(ConfigTest, AsStringFromMapArray) {
   EXPECT_EQ(Config::Array().AsString(), "");
 }
 
-TEST(ConfigTest, AsStringFromNone) {
-  EXPECT_EQ(Config::None().AsString(), "");
-}
+TEST(ConfigTest, AsStringFromNone) { EXPECT_EQ(Config::None().AsString(), ""); }
 
 TEST(ConfigTest, AsStringByKey) {
   Config config = Config::Map();

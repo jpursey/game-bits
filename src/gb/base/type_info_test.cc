@@ -33,7 +33,7 @@ class NoCopyItem final {
   NoCopyItem(Counts* counts) : counts(counts) {}
   NoCopyItem(const NoCopyItem&) = delete;
   NoCopyItem& operator=(const NoCopyItem&) = delete;
-  NoCopyItem(NoCopyItem&& other) : counts(other.counts){};
+  NoCopyItem(NoCopyItem&& other) : counts(other.counts) {};
   ~NoCopyItem() { ++counts->destruct; }
 
  private:

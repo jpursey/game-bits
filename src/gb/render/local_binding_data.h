@@ -12,9 +12,9 @@
 
 #include "absl/types/span.h"
 #include "gb/base/type_info.h"
-#include "gb/resource/resource.h"
 #include "gb/render/binding.h"
 #include "gb/render/binding_data.h"
+#include "gb/resource/resource.h"
 
 namespace gb {
 
@@ -52,8 +52,7 @@ class LocalBindingData : public BindingData {
   bool Validate(int index, TypeKey* type) const override;
   void DoSet(int index, const void* value) override;
   void DoGet(int index, void* value) const override;
-  void DoGetDependencies(
-      ResourceDependencyList* dependencies) const override;
+  void DoGetDependencies(ResourceDependencyList* dependencies) const override;
 
  private:
   static const RenderDataType* GetTextureDataType();

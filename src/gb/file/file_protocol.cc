@@ -315,7 +315,7 @@ std::string FileProtocol::DoGetCurrentPath(std::string_view protocol_name) {
 }
 
 bool FileProtocol::DoSetCurrentPath(std::string_view protocol_name,
-                                  std::string_view path) {
+                                    std::string_view path) {
   LOG(ERROR) << "FileProtocol::DoSetCurrentPath not implemented.";
   return false;
 }
