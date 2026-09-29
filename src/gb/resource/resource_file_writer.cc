@@ -50,7 +50,7 @@ bool ResourceFileWriter::Write(std::string_view name, Resource* resource,
                << name;
     return false;
   }
-  const auto& writer_info = writer_it->second;
+  auto& writer_info = writer_it->second;
 
   const std::string name_string(name.data(), name.size());
   context.SetValue<std::string>(kKeyResourceName, name_string);

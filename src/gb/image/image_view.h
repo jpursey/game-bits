@@ -139,7 +139,7 @@ class ImageView {
   const int width_;
   const int height_;
   void* const pixels_;
-  const Callback<void(bool modified)> on_delete_;
+  Callback<void(bool modified)> on_delete_;
   bool modified_ = false;
 };
 

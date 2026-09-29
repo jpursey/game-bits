@@ -483,7 +483,7 @@ bool ResourceFileReader::RegisterResourceChunk(
       TypeKey::Get<ChunkStruct>(), static_cast<int>(sizeof(ChunkStruct)),
       [reader = std::move(reader)](Context* context, ChunkReader* chunk_reader,
                                    ResourceEntry resource_entry,
-                                   Resource** out_resource) {
+                                   Resource** out_resource) mutable {
         *out_resource =
             reader(context, chunk_reader, std::move(resource_entry));
         return *out_resource != nullptr;
@@ -501,7 +501,7 @@ bool ResourceFileReader::RegisterResourceFlatBufferChunk(
       kMinSizeFlatBufferResourceChunk,
       [reader = std::move(reader)](Context* context, ChunkReader* chunk_reader,
                                    ResourceEntry resource_entry,
-                                   Resource** out_resource) {
+                                   Resource** out_resource) mutable {
         auto* id = chunk_reader->GetChunkData<ResourceId>();
         if (id == nullptr) {
           return false;
@@ -524,7 +524,7 @@ bool ResourceFileReader::RegisterGenericChunk(const ChunkType& chunk_type,
       static_cast<int>(sizeof(ChunkStruct)),
       [reader = std::move(reader)](Context* context, ChunkReader* chunk_reader,
                                    ResourceEntry resource_entry,
-                                   Resource** out_resource) {
+                                   Resource** out_resource) mutable {
         *out_resource = nullptr;
         return reader(context, chunk_reader);
       });
@@ -538,7 +538,7 @@ bool ResourceFileReader::RegisterGenericFlatBufferChunk(
       chunk_type, version, nullptr, nullptr, kMinSizeFlatBufferGenericChunk,
       [reader = std::move(reader)](Context* context, ChunkReader* chunk_reader,
                                    ResourceEntry resource_entry,
-                                   Resource** out_resource) {
+                                   Resource** out_resource) mutable {
         auto* chunk_data = chunk_reader->GetChunkData<void>();
         if (chunk_data == nullptr) {
           return false;

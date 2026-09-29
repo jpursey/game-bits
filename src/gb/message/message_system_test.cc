@@ -439,9 +439,9 @@ TEST(MessageSystemTest, BroadcastMessage) {
     EXPECT_EQ(message, 42);
   };
   auto endpoint_1 = message_system->CreateEndpoint();
-  endpoint_1->SetHandler<int>(&handler);
+  endpoint_1->SetHandler<int>(handler);
   auto endpoint_2 = message_system->CreateEndpoint();
-  endpoint_2->SetHandler<int>(&handler);
+  endpoint_2->SetHandler<int>(handler);
   EXPECT_TRUE(message_system->Send(kBroadcastMessageEndpointId, 42));
   EXPECT_EQ(call_count, 2);
 }
@@ -483,14 +483,14 @@ TEST(MessageSystemTest, SendChannelMessage) {
   auto endpoint_1 = message_system->CreateEndpoint();
   EXPECT_TRUE(endpoint_1->Subscribe(channel));
   EXPECT_TRUE(endpoint_1->IsSubscribed(channel));
-  endpoint_1->SetHandler<int>(&handler);
+  endpoint_1->SetHandler<int>(handler);
   auto endpoint_2 = message_system->CreateEndpoint();
   EXPECT_TRUE(endpoint_2->Subscribe(channel));
   EXPECT_TRUE(endpoint_2->IsSubscribed(channel));
-  endpoint_2->SetHandler<int>(&handler);
+  endpoint_2->SetHandler<int>(handler);
   // Endpoint 3 does *not* subscribe.
   auto endpoint_3 = message_system->CreateEndpoint();
-  endpoint_3->SetHandler<int>(&handler);
+  endpoint_3->SetHandler<int>(handler);
   EXPECT_TRUE(message_system->Send(channel, 42));
   EXPECT_EQ(call_count, 2);
 }
@@ -507,11 +507,11 @@ TEST(MessageSystemTest, SendToRemovedChannel) {
   auto endpoint_1 = message_system->CreateEndpoint();
   EXPECT_TRUE(endpoint_1->Subscribe(channel));
   EXPECT_TRUE(endpoint_1->IsSubscribed(channel));
-  endpoint_1->SetHandler<int>(&handler);
+  endpoint_1->SetHandler<int>(handler);
   auto endpoint_2 = message_system->CreateEndpoint();
   EXPECT_TRUE(endpoint_2->Subscribe(channel));
   EXPECT_TRUE(endpoint_2->IsSubscribed(channel));
-  endpoint_2->SetHandler<int>(&handler);
+  endpoint_2->SetHandler<int>(handler);
   message_system->RemoveChannel(channel);
   EXPECT_FALSE(message_system->IsValidEndpoint(channel));
   EXPECT_EQ(message_system->GetEndpointType(channel),
@@ -533,10 +533,10 @@ TEST(MessageSystemTest, SendToUnsubscribedEndpoint) {
   auto channel = message_system->AddChannel();
   auto endpoint_1 = message_system->CreateEndpoint();
   EXPECT_TRUE(endpoint_1->Subscribe(channel));
-  endpoint_1->SetHandler<int>(&handler);
+  endpoint_1->SetHandler<int>(handler);
   auto endpoint_2 = message_system->CreateEndpoint();
   EXPECT_TRUE(endpoint_2->Subscribe(channel));
-  endpoint_2->SetHandler<int>(&handler);
+  endpoint_2->SetHandler<int>(handler);
   endpoint_1->Unsubscribe(channel);
   EXPECT_FALSE(endpoint_1->IsSubscribed(channel));
   EXPECT_TRUE(message_system->Send(channel, 42));
@@ -554,10 +554,10 @@ TEST(MessageSystemTest, SendToDeletedEndpointViaChannel) {
   auto channel = message_system->AddChannel();
   auto endpoint_1 = message_system->CreateEndpoint();
   EXPECT_TRUE(endpoint_1->Subscribe(channel));
-  endpoint_1->SetHandler<int>(&handler);
+  endpoint_1->SetHandler<int>(handler);
   auto endpoint_2 = message_system->CreateEndpoint();
   EXPECT_TRUE(endpoint_2->Subscribe(channel));
-  endpoint_2->SetHandler<int>(&handler);
+  endpoint_2->SetHandler<int>(handler);
   endpoint_1.reset();
   EXPECT_TRUE(message_system->Send(channel, 42));
   EXPECT_EQ(call_count, 1);
@@ -572,7 +572,7 @@ TEST(MessageSystemTest, SendToDeletedEndpoint) {
     EXPECT_EQ(message, 42);
   };
   auto endpoint = message_system->CreateEndpoint();
-  endpoint->SetHandler<int>(&handler);
+  endpoint->SetHandler<int>(handler);
   auto endpoint_id = endpoint->GetId();
   endpoint.reset();
   EXPECT_FALSE(message_system->Send(endpoint_id, 42));
@@ -595,12 +595,12 @@ TEST(MessageSystemTest, SubscribeToEndpoint) {
     EXPECT_EQ(message, 42);
   };
   auto endpoint_1 = message_system->CreateEndpoint();
-  endpoint_1->SetHandler<int>(&handler);
+  endpoint_1->SetHandler<int>(handler);
   auto endpoint_2 = message_system->CreateEndpoint();
   EXPECT_TRUE(endpoint_2->Subscribe(endpoint_1->GetId()));
   EXPECT_TRUE(endpoint_2->IsSubscribed(endpoint_1->GetId()));
   EXPECT_FALSE(endpoint_1->IsSubscribed(endpoint_2->GetId()));
-  endpoint_2->SetHandler<int>(&handler);
+  endpoint_2->SetHandler<int>(handler);
   EXPECT_TRUE(message_system->Send(endpoint_1->GetId(), 42));
   EXPECT_EQ(call_count, 2);
 }
@@ -614,10 +614,10 @@ TEST(MessageSystemTest, SelfSubscription) {
     EXPECT_EQ(message, 42);
   };
   auto endpoint = message_system->CreateEndpoint();
-  endpoint->SetHandler<int>(&handler);
+  endpoint->SetHandler<int>(handler);
   EXPECT_TRUE(endpoint->Subscribe(endpoint->GetId()));
   EXPECT_TRUE(endpoint->IsSubscribed(endpoint->GetId()));
-  endpoint->SetHandler<int>(&handler);
+  endpoint->SetHandler<int>(handler);
   EXPECT_TRUE(message_system->Send(endpoint->GetId(), 42));
   EXPECT_EQ(call_count, 1);
 }
@@ -631,13 +631,13 @@ TEST(MessageSystemTest, DuplicateSubscription) {
     EXPECT_EQ(message, 42);
   };
   auto endpoint_1 = message_system->CreateEndpoint();
-  endpoint_1->SetHandler<int>(&handler);
+  endpoint_1->SetHandler<int>(handler);
   auto endpoint_2 = message_system->CreateEndpoint();
   EXPECT_TRUE(endpoint_2->Subscribe(endpoint_1->GetId()));
   EXPECT_TRUE(endpoint_2->Subscribe(endpoint_1->GetId()));
   EXPECT_TRUE(endpoint_2->IsSubscribed(endpoint_1->GetId()));
   EXPECT_FALSE(endpoint_1->IsSubscribed(endpoint_2->GetId()));
-  endpoint_2->SetHandler<int>(&handler);
+  endpoint_2->SetHandler<int>(handler);
   EXPECT_TRUE(message_system->Send(endpoint_1->GetId(), 42));
   EXPECT_EQ(call_count, 2);
 }
@@ -651,13 +651,13 @@ TEST(MessageSystemTest, RecursiveSubscription) {
     EXPECT_EQ(message, 42);
   };
   auto endpoint_1 = message_system->CreateEndpoint();
-  endpoint_1->SetHandler<int>(&handler);
+  endpoint_1->SetHandler<int>(handler);
   auto endpoint_2 = message_system->CreateEndpoint();
   EXPECT_TRUE(endpoint_1->Subscribe(endpoint_2->GetId()));
   EXPECT_TRUE(endpoint_2->Subscribe(endpoint_1->GetId()));
   EXPECT_TRUE(endpoint_2->IsSubscribed(endpoint_1->GetId()));
   EXPECT_TRUE(endpoint_1->IsSubscribed(endpoint_2->GetId()));
-  endpoint_2->SetHandler<int>(&handler);
+  endpoint_2->SetHandler<int>(handler);
   EXPECT_TRUE(message_system->Send(endpoint_1->GetId(), 42));
   EXPECT_EQ(call_count, 2);
   EXPECT_TRUE(message_system->Send(endpoint_2->GetId(), 42));
@@ -671,14 +671,14 @@ TEST(MessageSystemTest, SubscribeToDeletedEndpoint) {
     call_count += 1;
   };
   auto endpoint_1 = message_system->CreateEndpoint();
-  endpoint_1->SetHandler<int>(&handler);
+  endpoint_1->SetHandler<int>(handler);
   auto endpoint_1_id = endpoint_1->GetId();
   endpoint_1.reset();
   auto endpoint_2 = message_system->CreateEndpoint();
   EXPECT_FALSE(endpoint_2->Subscribe(endpoint_1_id));
   EXPECT_FALSE(endpoint_2->IsSubscribed(endpoint_1_id));
   endpoint_2->Unsubscribe(endpoint_1_id);
-  endpoint_2->SetHandler<int>(&handler);
+  endpoint_2->SetHandler<int>(handler);
   EXPECT_FALSE(message_system->Send(endpoint_1_id, 42));
   EXPECT_EQ(call_count, 0);
 }
@@ -690,14 +690,14 @@ TEST(MessageSystemTest, SubscribeToEndpointThenDelete) {
     call_count += 1;
   };
   auto endpoint_1 = message_system->CreateEndpoint();
-  endpoint_1->SetHandler<int>(&handler);
+  endpoint_1->SetHandler<int>(handler);
   auto endpoint_1_id = endpoint_1->GetId();
   auto endpoint_2 = message_system->CreateEndpoint();
   EXPECT_TRUE(endpoint_2->Subscribe(endpoint_1_id));
   EXPECT_TRUE(endpoint_2->IsSubscribed(endpoint_1_id));
   endpoint_1.reset();
   EXPECT_FALSE(endpoint_2->IsSubscribed(endpoint_1_id));
-  endpoint_2->SetHandler<int>(&handler);
+  endpoint_2->SetHandler<int>(handler);
   EXPECT_FALSE(message_system->Send(endpoint_1_id, 42));
   EXPECT_EQ(call_count, 0);
 }

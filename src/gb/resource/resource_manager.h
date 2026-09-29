@@ -206,12 +206,11 @@ template <typename Type>
 void ResourceManager::InitLoader(
     Callback<Type*(Context* context, std::string_view name)> callback) {
   static_assert(std::is_base_of_v<Resource, Type>, "Type is not a resource");
-  DoInitLoader(
-      TypeKey::Get<Type>(),
-      [loader = std::move(callback)](Context* context, TypeKey* type,
-                                     std::string_view name) -> Resource* {
-        return loader(context, name);
-      });
+  DoInitLoader(TypeKey::Get<Type>(),
+               [loader = std::move(callback)](Context* context, TypeKey* type,
+                                              std::string_view name) mutable {
+                 return loader(context, name);
+               });
 }
 
 template <typename Type>
@@ -220,7 +219,7 @@ void ResourceManager::InitReleaseHandler(
   static_assert(std::is_base_of_v<Resource, Type>, "Type is not a resource");
   DoInitReleaseHandler(
       TypeKey::Get<Type>(),
-      [release_handler = std::move(callback)](Resource* resource) {
+      [release_handler = std::move(callback)](Resource* resource) mutable {
         return release_handler(static_cast<Type*>(resource));
       });
 }

@@ -183,7 +183,7 @@ void MessageEndpoint::SetHandler(MessageHandler<Message> callback) {
   absl::WriterMutexLock lock(&handler_mutex_);
   handlers_[TypeKey::Get<Message>()] = [callback = std::move(callback)](
                                            MessageEndpointId from,
-                                           const void* message) {
+                                           const void* message) mutable {
     callback(from, *static_cast<const Message*>(message));
   };
 }

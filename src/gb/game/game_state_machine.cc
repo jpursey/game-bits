@@ -67,12 +67,12 @@ void GameStateMachine::SetTraceHandler(GameStateTraceHandler handler) {
 }
 
 void GameStateMachine::AddTraceHandler(GameStateTraceHandler handler) {
-  auto new_handler = [handler_1 = std::move(trace_handler_),
-                      handler_2 =
-                          std::move(handler)](const GameStateTrace& trace) {
-    handler_1(trace);
-    handler_2(trace);
-  };
+  auto new_handler =
+      [handler_1 = std::move(trace_handler_),
+       handler_2 = std::move(handler)](const GameStateTrace& trace) mutable {
+        handler_1(trace);
+        handler_2(trace);
+      };
   trace_handler_ = std::move(new_handler);
 }
 

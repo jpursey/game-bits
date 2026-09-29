@@ -13,7 +13,7 @@ void MessageStackHandlers::SetStack(MessageInternal,
   CHECK(stack_ == nullptr || stack == nullptr);
   stack_ = stack;
   if (stack_ != nullptr) {
-    for (const auto& handler_info : handlers_) {
+    for (auto& handler_info : handlers_) {
       handler_info.second.register_message();
     }
   }
@@ -65,7 +65,7 @@ MessageStackEndpoint::~MessageStackEndpoint() {
   std::vector<StackNode> stack;
   {
     absl::MutexLock lock(&mutex_);
-    for (const auto& message_info : messages_) {
+    for (auto& message_info : messages_) {
       message_info.second.clear_handler();
     }
     messages_.clear();

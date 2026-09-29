@@ -91,7 +91,7 @@ class CallbackScope final {
     static Callback<void(Args...)> NewVoid(WeakPtr<CallbackScope> alive,
                                            Callback<Return(Args...)> callback) {
       return [alive = std::move(alive),
-              callback = std::move(callback)](Args&&... args) {
+              callback = std::move(callback)](Args&&... args) mutable {
         auto lock = alive.Lock();
         if (lock) {
           callback(std::forward<Args>(args)...);
@@ -104,14 +104,15 @@ class CallbackScope final {
     static Callback<Return(Args...)> NewDefault(
         WeakPtr<CallbackScope> alive, Callback<Return(Args...)> callback,
         DefaultType default_value) {
-      return [alive = std::move(alive), callback = std::move(callback),
-              default_value = std::move(default_value)](Args&&... args) {
-        auto lock = alive.Lock();
-        if (lock) {
-          return callback(std::forward<Args>(args)...);
-        }
-        return default_value;
-      };
+      return
+          [alive = std::move(alive), callback = std::move(callback),
+           default_value = std::move(default_value)](Args&&... args) mutable {
+            auto lock = alive.Lock();
+            if (lock) {
+              return callback(std::forward<Args>(args)...);
+            }
+            return default_value;
+          };
     }
   };
 };

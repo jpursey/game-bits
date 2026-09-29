@@ -195,7 +195,8 @@ void MessageStackHandlers::SetHandler(MessageStackHandler<Message> callback) {
   absl::MutexLock lock(&mutex_);
   auto& handler_info = handlers_[TypeKey::Get<Message>()];
   handler_info.callback = [callback = std::move(callback)](
-                              MessageEndpointId from, const void* message) {
+                              MessageEndpointId from,
+                              const void* message) mutable {
     return callback(from, *static_cast<const Message*>(message));
   };
   handler_info.register_message = [this]() ABSL_NO_THREAD_SAFETY_ANALYSIS {

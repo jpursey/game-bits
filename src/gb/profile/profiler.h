@@ -334,7 +334,7 @@ class Profiler final {
   const absl::Duration budget_per_frame_;
   const double budget_fraction_;
   const int64_t slow_frame_ticks_;
-  const Callback<void(std::string_view report)> on_slow_frame_;
+  Callback<void(std::string_view report)> on_slow_frame_;
   double point_cost_ticks_ = 0;
 
   // The timed points ended in every frame.

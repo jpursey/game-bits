@@ -195,7 +195,7 @@ bool ResourceFileWriter::RegisterResourceWriter(
       chunk_type, TypeKey::Get<ResourceType>(),
       [writer = std::move(writer)](Context* context, Resource* resource,
                                    std::vector<ChunkWriter>* out_chunks,
-                                   FlatBuffers*) {
+                                   FlatBuffers*) mutable {
         return writer(context, static_cast<ResourceType*>(resource),
                       out_chunks);
       });
@@ -211,7 +211,8 @@ bool ResourceFileWriter::RegisterResourceFlatBufferWriter(
       chunk_type, TypeKey::Get<ResourceType>(),
       [this, chunk_type, version, writer = std::move(writer)](
           Context* context, Resource* resource,
-          std::vector<ChunkWriter>* out_chunks, FlatBuffers* flat_buffers) {
+          std::vector<ChunkWriter>* out_chunks,
+          FlatBuffers* flat_buffers) mutable {
         flatbuffers::FlatBufferBuilder builder(kInitFlatBufferSize,
                                                &flat_buffer_allocator_);
         if (!writer(context, static_cast<ResourceType*>(resource), &builder)) {
