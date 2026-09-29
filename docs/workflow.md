@@ -190,6 +190,8 @@ Beyond the Google C++ style guide
 - Prefer existing libraries over hand-rolled utilities: Game Bits itself, then
   Abseil and the other Google open source libraries vendored in Game Bits'
   `third_party/`.
+- Where Abseil and the C++ standard library both have a type, use Abseil's:
+  `absl::Span`, not `std::span`.
 - Files in the working tree use CRLF line endings (git `core.autocrlf` is true);
   leave them that way. In Git Bash, `sed -i` rewrites files as LF-only, so
   prefer the Edit tool. If sed is used, restore CRLF afterwards (watch for files
