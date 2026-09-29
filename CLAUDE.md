@@ -146,7 +146,9 @@ Projects build against this checkout as it stands (see Game Bits in the workflow
 
 These add to the C++ style in the workflow.
 - Formatting strictly driven by clang-format in Google style via src/.clang-format
-- All Game Bits code is in the "gb" namespace.
+- All Game Bits code is in the "gb" namespace. Anything in a header that only
+  implements the public API (such as a `FooImpl` behind a `using Foo = ...`
+  alias) goes in a nested `internal` namespace.
 - Every file starts with the four line MIT copyright comment used everywhere in the tree, with the year the file was created.
 - Headers use include guards of the form `GB_<DIR>_<FILE>_H_` (not `#pragma once`), and end with `}  // namespace gb` followed by `#endif  // GB_<DIR>_<FILE>_H_`.
 - Include order: the file's own header first, then C/C++ standard headers in angle brackets, then third-party and Game Bits headers in quotes (`"absl/..."`, `"gtest/gtest.h"`, `"gb/..."`), with blank lines between groups.

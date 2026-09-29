@@ -175,7 +175,8 @@ Beyond the Google C++ style guide
   for opaque IDs and bit patterns. Cast container sizes at the boundary:
   `const int count = static_cast<int>(items.size());`.
 - Mutable globals, including file-local ones in an anonymous namespace, take a
-  `g_` prefix. Constants use `kName`.
+  `g_` prefix, and static data members and function-local statics take `s_`.
+  Constants use `kName`.
 - Include the header that declares a type rather than forward declaring it.
   Forward declarations are only for breaking an include cycle within a library,
   or a circular reference within the header itself.
