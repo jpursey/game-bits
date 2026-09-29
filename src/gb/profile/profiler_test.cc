@@ -6,9 +6,11 @@
 #include "gb/profile/profiler.h"
 
 #include <cstdint>
+#include <optional>
 #include <thread>
 #include <vector>
 
+#include "absl/log/log.h"
 #include "absl/time/time.h"
 #include "gb/profile/fake_ticks.h"
 #include "gb/profile/profile_point.h"
@@ -266,6 +268,91 @@ TEST_F(ProfilerTest, ReadingValueAsSlowestFrameDies) {
                "wrong kind");
 }
 
+//------------------------------------------------------------------------------
+// Own cost and budget
+//------------------------------------------------------------------------------
+
+// Every read of the ticks advances them by this much, so a timed point, which
+// reads them twice, costs twice this.
+constexpr int64_t kReadTicks = 100;
+
+// Records a frame of `ticks`, with `scopes` scopes inside it.
+void RecordFrame(FakeTicks& ticks, int64_t frame_ticks, int scopes) {
+  ProfileFrame<"ProfilerCostTest/Frame"> frame;
+  for (int i = 0; i < scopes; ++i) {
+    ProfileScope<"ProfilerCostTest/Scope"> scope;
+  }
+  ticks.Advance(frame_ticks);
+}
+
+// A Profiler whose timed points each cost 2 * kReadTicks.
+class ProfilerCostTest : public ::testing::Test {
+ protected:
+  ProfilerCostTest() {
+    ticks_.SetAutoAdvance(kReadTicks);
+    profiler_.emplace(Profiler::Options{.fake_ticks = &ticks_});
+  }
+
+  FakeTicks ticks_;
+  std::optional<Profiler> profiler_;
+};
+
+TEST_F(ProfilerCostTest, MeasuresPointCost) {
+  // The measurement's own closing read adds a little, spread over its points.
+  EXPECT_NEAR(absl::ToDoubleNanoseconds(profiler_->GetPointCost()),
+              2 * kReadTicks, 2);
+}
+
+TEST_F(ProfilerCostTest, CostPerFrame) {
+  // Four timed points in two frames, and one outside them, which isn't in any
+  // frame's cost.
+  RecordFrame(ticks_, 1000, 2);
+  {
+    ProfileScope<"ProfilerCostTest/Outside"> scope;
+  }
+  RecordFrame(ticks_, 1000, 0);
+  EXPECT_EQ(profiler_->GetFrameSummary().profiler_cost,
+            profiler_->GetPointCost() * 2);
+}
+
+TEST_F(ProfilerCostTest, ResetClearsCostPerFrame) {
+  const absl::Duration point_cost = profiler_->GetPointCost();
+  RecordFrame(ticks_, 1000, 3);
+  profiler_->Reset();
+  RecordFrame(ticks_, 1000, 0);
+  EXPECT_EQ(profiler_->GetFrameSummary().profiler_cost, point_cost);
+  EXPECT_EQ(profiler_->GetPointCost(), point_cost);
+}
+
+TEST(ProfilerBudgetTest, NoBudgetIsInfinite) {
+  FakeTicks ticks;
+  Profiler profiler({.fake_ticks = &ticks});
+  RecordFrame(ticks, 1000, 0);
+  EXPECT_EQ(profiler.GetFrameSummary().budget, absl::InfiniteDuration());
+}
+
+TEST(ProfilerBudgetTest, FractionAlone) {
+  FakeTicks ticks;
+  Profiler profiler({.fake_ticks = &ticks, .budget_fraction = 0.25});
+  RecordFrame(ticks, 1000, 0);
+  EXPECT_EQ(profiler.GetFrameSummary().budget, absl::Nanoseconds(250));
+}
+
+TEST(ProfilerBudgetTest, LargerOfFixedAndFraction) {
+  FakeTicks ticks;
+  Profiler profiler({.fake_ticks = &ticks,
+                     .budget_per_frame = absl::Microseconds(500),
+                     .budget_fraction = 0.25});
+
+  // A quarter of 1ms is 250us, under the fixed 500us.
+  RecordFrame(ticks, 1'000'000, 0);
+  EXPECT_EQ(profiler.GetFrameSummary().budget, absl::Microseconds(500));
+
+  // A quarter of the new average, 3ms, is 750us.
+  RecordFrame(ticks, 5'000'000, 0);
+  EXPECT_EQ(profiler.GetFrameSummary().budget, absl::Microseconds(750));
+}
+
 // Tests that set up their own Profiler.
 
 TEST(ProfilerSetupTest, NewProfilerStartsEmpty) {
@@ -276,6 +363,12 @@ TEST(ProfilerSetupTest, NewProfilerStartsEmpty) {
   }
   Profiler profiler({.fake_ticks = &ticks});
   EXPECT_EQ(profiler.GetCount("ProfilerTest/StartsEmpty"), 0);
+}
+
+TEST(ProfilerSetupTest, FreeReadsCostNothing) {
+  FakeTicks ticks;
+  Profiler profiler({.fake_ticks = &ticks});
+  EXPECT_EQ(profiler.GetPointCost(), absl::ZeroDuration());
 }
 
 TEST(ProfilerSetupTest, OtherTicksPerSecond) {
@@ -290,7 +383,8 @@ TEST(ProfilerSetupTest, OtherTicksPerSecond) {
 }
 
 // Only checks that the real timestamp counter is read. How long anything takes
-// isn't checked, as no test depends on real time.
+// isn't checked, as no test depends on real time, but the cost of a timed point
+// is logged, to measure it in an optimized build.
 TEST(ProfilerSetupTest, RealTicks) {
   Profiler profiler;
   {
@@ -299,6 +393,8 @@ TEST(ProfilerSetupTest, RealTicks) {
   EXPECT_EQ(profiler.GetCount("ProfilerTest/RealTicks"), 1);
   EXPECT_GT(profiler.GetSelfTime("ProfilerTest/RealTicks"),
             absl::ZeroDuration());
+  EXPECT_GT(profiler.GetPointCost(), absl::ZeroDuration());
+  LOG(INFO) << "A timed point costs " << profiler.GetPointCost();
 }
 
 }  // namespace

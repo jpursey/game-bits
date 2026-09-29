@@ -66,7 +66,8 @@ profiler.WriteReport(out);
 - **Cost:** when it starts, the Profiler measures what a timed point costs, and
   from that reports its own share of each frame. It checks that against the
   budget: the larger of a fixed time per frame and a fraction of the average
-  frame. Counters and values aren't included; they cost a few adds.
+  frame, or no budget if neither is set. Counters and values aren't included;
+  they cost a few adds.
 - **Report:** values first as a header, then a frame summary, then one line
   per point, grouped by kind and sorted by name so two reports diff cleanly,
   then the slowest frame's breakdown. The program writes its own header lines
@@ -149,7 +150,7 @@ class Profiler {
   absl::Duration GetPointCost() const;
 
   // Whole-profile frame statistics: frames, total, average, p50/p90/p99, max,
-  // the profiler's own cost per frame, and whether it is within budget.
+  // the profiler's own cost per frame, and its budget per frame.
   FrameSummary GetFrameSummary() const;
 
   // For tests. Unknown names return zero.
@@ -260,7 +261,11 @@ class ProfileCallHook {
 - **What a timed point costs:** a prototype of the timer above (thread-local
   profiler, self time, frame tagging) measured 13.4ns a point in an optimized
   build, nested or not, and 0.9ns with no profiler. A bare `__rdtsc` is 5.3ns.
-  CL3 measures the real thing.
+  CL3 measured the real thing in a Release (RelWithDebInfo) build, as a
+  Profiler measures it when created: 11.75ns to 12.25ns a point over six runs
+  (17.75ns in Debug), well under the 20-25ns target. That measures the timing
+  itself, from the Profiler's side, so a ProfileTimer's thread_local read and
+  null check (about 1ns) aren't included.
 - **Does `thread_local` follow a fiber?** Checked before CL1: no. A fiber sees
   the `thread_local` of the thread it runs on, and without `/GT` (which Game
   Bits doesn't use) a fiber that moved threads read the old thread's storage.
@@ -313,7 +318,7 @@ Depends on: CL1.
   frame's breakdown is replaced only by a slower frame; points outside frames
   count in totals; nested frames CHECK.
 
-### CL3 [ ] gb/profile: Own cost and budget
+### CL3 [x] gb/profile: Own cost and budget
 
 Depends on: CL2.
 

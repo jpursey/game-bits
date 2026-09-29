@@ -55,17 +55,29 @@ class Profiler final {
     // Replaces the CPU's timestamp counter, for tests. It must outlive the
     // Profiler.
     FakeTicks* fake_ticks = nullptr;
+
+    // The profiler's own budget per frame is the larger of these: a fixed
+    // time, and a fraction of the average frame. With neither set, there is
+    // no budget. See FrameSummary.
+    absl::Duration budget_per_frame;
+    double budget_fraction = 0;
   };
 
   // Makes this the Profiler for points on the calling thread.
   //
-  // Without a FakeTicks, the first Profiler in a program takes about a
+  // This measures what a timed point costs, which takes a few microseconds.
+  // Without a FakeTicks, the first Profiler in a program also takes about a
   // millisecond to measure how fast the timestamp counter runs.
   Profiler();
   explicit Profiler(Options options);
   Profiler(const Profiler&) = delete;
   Profiler& operator=(const Profiler&) = delete;
   ~Profiler();
+
+  // Returns what one timed point costs, as measured when the Profiler was
+  // created: the time a frame, scope, or call adds to the timed point around
+  // it. This leaves out finding the thread's Profiler, about a nanosecond.
+  absl::Duration GetPointCost() const;
 
   //----------------------------------------------------------------------------
   // Frames
@@ -82,6 +94,17 @@ class Profiler final {
     absl::Duration p90;
     absl::Duration p99;
     absl::Duration max;
+
+    // The profiler's own average cost per frame: the timed points in frames,
+    // times GetPointCost(). Counters and values aren't included, as they cost
+    // only a few adds.
+    absl::Duration profiler_cost;
+
+    // The budget for profiler_cost: the larger of the options'
+    // budget_per_frame and budget_fraction of the average frame, or infinite
+    // if neither is set. The profiler is within its budget if profiler_cost is
+    // no more than this.
+    absl::Duration budget;
   };
   FrameSummary GetFrameSummary() const;
 
@@ -176,8 +199,13 @@ class Profiler final {
       top_->child_ticks += elapsed_ticks;
     }
     AddTime(index, elapsed_ticks - timing.child_ticks);
+    ++current_frame_timed_points_;
     return elapsed_ticks;
   }
+
+  // Returns the ticks a timed point adds to the timed point around it, the
+  // least of several measurements, so a thread switch doesn't skew it.
+  double MeasurePointCost();
 
   // Frames are timings that also record the frame as a whole. Frames can't
   // nest.
@@ -238,12 +266,12 @@ class Profiler final {
     return static_cast<int64_t>(__rdtsc());
   }
 
-  absl::Duration TicksToDuration(int64_t ticks) const;
+  absl::Duration TicksToDuration(double ticks) const;
 
   static inline constinit thread_local Profiler* s_current = nullptr;
 
+  // What every timed point uses comes first, to share a cache line.
   FakeTicks* const fake_ticks_;
-  const double ticks_per_second_;
   const std::unique_ptr<Slot[]> slots_;
 
   // The innermost timing on this thread, or null.
@@ -253,6 +281,17 @@ class Profiler final {
   // frames. Points between frames are recorded against frame 0, which is
   // never captured.
   int64_t current_frame_ = 0;
+
+  // The timed points ended in the frame in progress, including its own.
+  int64_t current_frame_timed_points_ = 0;
+
+  const double ticks_per_second_;
+  const absl::Duration budget_per_frame_;
+  const double budget_fraction_;
+  double point_cost_ticks_ = 0;
+
+  // The timed points ended in every frame.
+  int64_t frame_timed_points_ = 0;
 
   int64_t frames_ = 0;
   int64_t total_frame_ticks_ = 0;

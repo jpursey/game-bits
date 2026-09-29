@@ -17,7 +17,8 @@ namespace gb {
 // A timestamp source that a test controls, standing in for the CPU's timestamp
 // counter when passed to a Profiler.
 //
-// The ticks start at zero and only change when the test advances them.
+// The ticks start at zero and only change when the test advances them, or
+// when they are read, if an auto advance is set.
 class FakeTicks {
  public:
   // Every tick is a nanosecond by default.
@@ -29,14 +30,22 @@ class FakeTicks {
 
   int64_t GetTicksPerSecond() const { return ticks_per_second_; }
 
-  // Returns the current ticks.
-  int64_t Now() const { return ticks_; }
+  // Advances the ticks by the auto advance, and returns them.
+  int64_t Now() {
+    ticks_ += auto_advance_;
+    return ticks_;
+  }
 
   void Advance(int64_t ticks) { ticks_ += ticks; }
+
+  // Sets how far each call to Now() advances the ticks, such as to give each
+  // read of the ticks a cost.
+  void SetAutoAdvance(int64_t ticks) { auto_advance_ = ticks; }
 
  private:
   const int64_t ticks_per_second_;
   int64_t ticks_ = 0;
+  int64_t auto_advance_ = 0;
 };
 
 }  // namespace gb

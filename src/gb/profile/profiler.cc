@@ -72,6 +72,11 @@ double GetTicksPerSecond() {
   return s_ticks_per_second;
 }
 
+// How the cost of a timed point is measured: this many rounds of this many
+// points, keeping the fastest round.
+constexpr int kCostRounds = 5;
+constexpr int kCostPoints = 100;
+
 // The kinds of point each reader accepts.
 constexpr ProfilePoint::Kind kCountedKinds[] = {
     ProfilePoint::Kind::kFrame, ProfilePoint::Kind::kScope,
@@ -109,13 +114,19 @@ Profiler::Profiler() : Profiler(Options()) {}
 
 Profiler::Profiler(Options options)
     : fake_ticks_(options.fake_ticks),
+      slots_(std::make_unique<Slot[]>(kMaxProfilePoints)),
       ticks_per_second_(
           fake_ticks_ != nullptr
               ? static_cast<double>(fake_ticks_->GetTicksPerSecond())
               : GetTicksPerSecond()),
-      slots_(std::make_unique<Slot[]>(kMaxProfilePoints)) {
+      budget_per_frame_(options.budget_per_frame),
+      budget_fraction_(options.budget_fraction) {
   CHECK(s_current == nullptr) << "Only one Profiler may exist per thread";
   s_current = this;
+
+  // Measuring times points into the slots, which are then cleared.
+  point_cost_ticks_ = MeasurePointCost();
+  Reset();
 }
 
 Profiler::~Profiler() {
@@ -125,18 +136,32 @@ Profiler::~Profiler() {
   s_current = nullptr;
 }
 
+absl::Duration Profiler::GetPointCost() const {
+  return TicksToDuration(point_cost_ticks_);
+}
+
 Profiler::FrameSummary Profiler::GetFrameSummary() const {
   if (frames_ == 0) {
     return {};
   }
+  const absl::Duration total = TicksToDuration(total_frame_ticks_);
+  const absl::Duration average = total / frames_;
+  const bool has_budget =
+      budget_per_frame_ != absl::ZeroDuration() || budget_fraction_ != 0;
   return {
       .frames = frames_,
-      .total = TicksToDuration(total_frame_ticks_),
-      .average = TicksToDuration(total_frame_ticks_) / frames_,
+      .total = total,
+      .average = average,
       .p50 = TicksToDuration(GetFramePercentileTicks(0.5)),
       .p90 = TicksToDuration(GetFramePercentileTicks(0.9)),
       .p99 = TicksToDuration(GetFramePercentileTicks(0.99)),
       .max = TicksToDuration(slowest_frame_.ticks),
+      .profiler_cost =
+          TicksToDuration(static_cast<double>(frame_timed_points_) *
+                          point_cost_ticks_ / frames_),
+      .budget = has_budget
+                    ? std::max(budget_per_frame_, average * budget_fraction_)
+                    : absl::InfiniteDuration(),
   };
 }
 
@@ -171,20 +196,42 @@ absl::Duration Profiler::GetSlowestFrameSelfTime(std::string_view name) const {
 void Profiler::Reset() {
   CHECK(top_ == nullptr) << "A Profiler can't be reset in a timed point";
   std::fill_n(slots_.get(), kMaxProfilePoints, Slot());
+  frame_timed_points_ = 0;
   frames_ = 0;
   total_frame_ticks_ = 0;
   frame_buckets_ = {};
   slowest_frame_ = {};
 }
 
+double Profiler::MeasurePointCost() {
+  // The points are timed inside another, as most are, so each also adds its
+  // time to its parent's.
+  Timing outer;
+  StartTiming(outer);
+  int64_t fastest_ticks = std::numeric_limits<int64_t>::max();
+  for (int round = 0; round < kCostRounds; ++round) {
+    const int64_t start_ticks = ReadTicks();
+    for (int i = 0; i < kCostPoints; ++i) {
+      Timing timing;
+      StartTiming(timing);
+      EndTiming(0, timing);
+    }
+    fastest_ticks = std::min(fastest_ticks, ReadTicks() - start_ticks);
+  }
+  EndTiming(0, outer);
+  return static_cast<double>(fastest_ticks) / kCostPoints;
+}
+
 void Profiler::StartFrame(Timing& timing) {
   CHECK(current_frame_ == 0) << "Profile frames can't nest";
   current_frame_ = frames_ + 1;
+  current_frame_timed_points_ = 0;
   StartTiming(timing);
 }
 
 void Profiler::EndFrame(int index, Timing& timing) {
   const int64_t frame_ticks = EndTiming(index, timing);
+  frame_timed_points_ += current_frame_timed_points_;
   ++frames_;
   total_frame_ticks_ += frame_ticks;
   ++frame_buckets_[GetFrameBucket(frame_ticks)];
@@ -247,9 +294,8 @@ int64_t Profiler::GetFramePercentileTicks(double fraction) const {
   return slowest_frame_.ticks;
 }
 
-absl::Duration Profiler::TicksToDuration(int64_t ticks) const {
-  return absl::Nanoseconds(static_cast<double>(ticks) * 1e9 /
-                           ticks_per_second_);
+absl::Duration Profiler::TicksToDuration(double ticks) const {
+  return absl::Nanoseconds(ticks * 1e9 / ticks_per_second_);
 }
 
 }  // namespace gb
