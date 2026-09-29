@@ -22,32 +22,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Function hooks
-
-- **Layers:** base
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Requested by:** JPRSurf *REAPER API list*
-- **Background:** none
-
-A header-only template in `gb/base` for C APIs whose functions are loaded into
-global function pointers, such as a host application's API table, or Vulkan's.
-Given the address of a global function pointer and a hook type, it provides a
-function with the same signature, which calls `Hook::Call(original, args...)`,
-where `original` is the pointer's value when the hook was installed.
-- The signature comes from the pointer's type, so no wrapper is written by
-  hand, and a program can hook a whole list of functions from one macro.
-- Installing and uninstalling just assign the pointer, so a hook that isn't
-  installed costs nothing. Neither is synchronized with calls through the
-  pointer: the caller installs hooks while no call is in flight.
-- Hooks stack: a hook installed over another calls it as its original.
-- A hook doesn't have to call its original, so one can stand in for a function
-  that was never loaded, such as a test stub that fails naming the function.
-  A hook can be given the function's name for this.
-
-Unit tested with function pointers the test defines.
-
 ## Profiler module
 
 - **Layers:** a new `gb/profile` library

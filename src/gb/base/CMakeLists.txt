@@ -21,6 +21,7 @@ set(gb_base_SOURCE
   context_builder.h
   fake_clock.h
   flags.h
+  function_hook.h
   platform_requirements.cc platform_requirements.h
   scoped_call.h
   string_util.h
@@ -37,6 +38,7 @@ set(gb_base_TEST_SOURCE
   clock_test.cc
   context_test.cc
   flags_test.cc
+  function_hook_test.cc
   type_info_test.cc
   unicode_test.cc
   validated_context_test.cc
