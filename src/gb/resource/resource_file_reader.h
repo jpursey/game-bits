@@ -10,8 +10,8 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/functional/any_invocable.h"
 #include "flatbuffers/flatbuffers.h"
-#include "gb/base/callback.h"
 #include "gb/base/validated_context.h"
 #include "gb/file/chunk_reader.h"
 #include "gb/file/file_types.h"
@@ -190,7 +190,7 @@ class ResourceFileReader final {
   //
   // See class description above for details on the passed in context.
   template <typename ResourceType>
-  using ResourceChunkReader = Callback<ResourceType*(
+  using ResourceChunkReader = absl::AnyInvocable<ResourceType*(
       Context* context, ChunkReader* chunk_reader, ResourceEntry entry)>;
 
   // A resource flat buffer chunk reader must return a resource of the specified
@@ -211,7 +211,7 @@ class ResourceFileReader final {
   //
   // See class description above for details on the passed in context.
   template <typename ResourceType, typename FlatBufferType>
-  using ResourceFlatBufferChunkReader = Callback<ResourceType*(
+  using ResourceFlatBufferChunkReader = absl::AnyInvocable<ResourceType*(
       Context* context, const FlatBufferType* chunk, ResourceEntry entry)>;
 
   // A generic chunk reader is called on generic chunks to do any processing and
@@ -225,7 +225,7 @@ class ResourceFileReader final {
   //
   // See class description above for details on the passed in context.
   using GenericChunkReader =
-      Callback<bool(Context* context, ChunkReader* chunk_reader)>;
+      absl::AnyInvocable<bool(Context* context, ChunkReader* chunk_reader)>;
 
   // A generic flat buffer chunk reader is called on generic chunks to do
   // processing on the chunk (for instance, adding data to the context for later
@@ -242,7 +242,7 @@ class ResourceFileReader final {
   // See class description above for details on the passed in context.
   template <typename FlatBufferType>
   using GenericFlatBufferChunkReader =
-      Callback<bool(Context* context, const FlatBufferType* chunk)>;
+      absl::AnyInvocable<bool(Context* context, const FlatBufferType* chunk)>;
 
   //----------------------------------------------------------------------------
   // Contract constraints
@@ -399,9 +399,9 @@ class ResourceFileReader final {
   static inline constexpr int kMinSizeFlatBufferResourceChunk =
       kMinSizeFlatBufferGenericChunk + 8;
 
-  using ChunkReaderCallback =
-      Callback<bool(Context* context, ChunkReader* chunk_reader,
-                    ResourceEntry resource_entry, Resource** out_resource)>;
+  using ChunkReaderCallback = absl::AnyInvocable<bool(
+      Context* context, ChunkReader* chunk_reader, ResourceEntry resource_entry,
+      Resource** out_resource)>;
   struct ChunkReaderInfo {
     TypeKey* resource_type = nullptr;
     TypeKey* struct_type =

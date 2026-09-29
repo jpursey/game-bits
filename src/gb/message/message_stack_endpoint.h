@@ -7,6 +7,7 @@
 #define GB_MESSAGE_MESSAGE_STACK_ENDPOINT_H_
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/functional/any_invocable.h"
 #include "absl/synchronization/mutex.h"
 #include "gb/base/weak_ptr.h"
 #include "gb/message/message_dispatcher.h"
@@ -21,7 +22,7 @@ namespace gb {
 
 template <typename Message>
 using MessageStackHandler =
-    Callback<bool(MessageEndpointId from, const Message& message)>;
+    absl::AnyInvocable<bool(MessageEndpointId from, const Message& message)>;
 
 // This class manages a set of message handlers that can be pushed onto a
 // MessageStackEndpoint.
@@ -58,8 +59,9 @@ class MessageStackHandlers final : public WeakScope<MessageStackHandlers> {
 
  private:
   struct HandlerInfo {
-    Callback<bool(MessageEndpointId from, const void* message)> callback;
-    Callback<void()> register_message;
+    absl::AnyInvocable<bool(MessageEndpointId from, const void* message)>
+        callback;
+    absl::AnyInvocable<void()> register_message;
   };
   using Handlers = absl::flat_hash_map<TypeKey*, HandlerInfo>;
 
@@ -160,7 +162,7 @@ class MessageStackEndpoint final {
   struct MessageInfo {
     MessageInfo() = default;
     MessageStackOrder order = MessageStackOrder::kTopDown;
-    Callback<void()> clear_handler;
+    absl::AnyInvocable<void()> clear_handler;
   };
   using Messages = absl::flat_hash_map<TypeKey*, MessageInfo>;
 

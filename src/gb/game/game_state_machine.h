@@ -13,9 +13,9 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/functional/any_invocable.h"
 #include "absl/synchronization/mutex.h"
 #include "absl/time/time.h"
-#include "gb/base/callback.h"
 #include "gb/game/game_state.h"
 
 namespace gb {
@@ -119,7 +119,7 @@ struct GameStateTrace {
 };
 
 // Handler definition of the callback that receives a GameStateTrace.
-using GameStateTraceHandler = Callback<void(const GameStateTrace&)>;
+using GameStateTraceHandler = absl::AnyInvocable<void(const GameStateTrace&)>;
 
 // Helpers to stringify traces.
 std::string ToString(GameStateTraceType trace_type);
@@ -180,7 +180,7 @@ class GameStateInfo {
   GameStateList::Type valid_siblings_type = GameStateList::kNone;
   std::vector<GameStateId> valid_siblings;
   std::vector<ContextConstraint> constraints;
-  Callback<std::unique_ptr<GameState>()> factory;
+  absl::AnyInvocable<std::unique_ptr<GameState>()> factory;
 
   // Working state (guarded by mutex).
   std::unique_ptr<GameState> instance;
@@ -401,7 +401,7 @@ class GameStateMachine final {
                   GameStateList::Type valid_siblings_type,
                   std::vector<GameStateId> valid_siblings,
                   std::vector<ContextConstraint> constraints,
-                  Callback<std::unique_ptr<GameState>()> factory)
+                  absl::AnyInvocable<std::unique_ptr<GameState>()> factory)
       ABSL_LOCKS_EXCLUDED(mutex_);
 
   // Performs the actual update.

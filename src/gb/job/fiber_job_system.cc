@@ -259,7 +259,8 @@ void FiberJobSystem::JobMain(Fiber fiber) {
 }
 
 bool FiberJobSystem::DoRun(std::string_view name, JobCounter* counter,
-                           Context* context, Callback<void()> callback) {
+                           Context* context,
+                           absl::AnyInvocable<void()> callback) {
   Job* job = job_allocator_.New<Job>();
   if (job == nullptr) {
     return false;

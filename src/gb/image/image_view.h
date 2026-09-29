@@ -8,8 +8,8 @@
 
 #include <vector>
 
+#include "absl/functional/any_invocable.h"
 #include "absl/types/span.h"
-#include "gb/base/callback.h"
 #include "gb/image/image_types.h"
 #include "gb/image/pixel.h"
 
@@ -39,7 +39,7 @@ class ImageView {
 
   ImageView(int width, int height, void* pixels);
   ImageView(int width, int height, void* pixels,
-            Callback<void(bool modified)> on_delete);
+            absl::AnyInvocable<void(bool modified)> on_delete);
   ImageView(const ImageView& other) = delete;
   ImageView(ImageView&& other) = delete;
   ImageView& operator=(const ImageView& other) = delete;
@@ -139,7 +139,7 @@ class ImageView {
   const int width_;
   const int height_;
   void* const pixels_;
-  Callback<void(bool modified)> on_delete_;
+  absl::AnyInvocable<void(bool modified)> on_delete_;
   bool modified_ = false;
 };
 

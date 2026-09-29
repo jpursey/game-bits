@@ -11,8 +11,8 @@
 #include <string_view>
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/functional/any_invocable.h"
 #include "absl/synchronization/mutex.h"
-#include "gb/base/callback.h"
 #include "gb/base/type_info.h"
 #include "gb/base/validated_context.h"
 #include "gb/resource/resource_ptr.h"
@@ -160,8 +160,9 @@ class ResourceSystem final {
                          const std::string& name);
 
  private:
-  using Loader = Callback<Resource*(Context*, TypeKey*, std::string_view)>;
-  using ReleaseHandler = Callback<void(Resource*)>;
+  using Loader =
+      absl::AnyInvocable<Resource*(Context*, TypeKey*, std::string_view)>;
+  using ReleaseHandler = absl::AnyInvocable<void(Resource*)>;
 
   struct ResourceTypeInfo {
     ResourceTypeInfo() = default;

@@ -19,10 +19,10 @@
 #include <string_view>
 #include <vector>
 
+#include "absl/functional/any_invocable.h"
 #include "absl/log/check.h"
 #include "absl/time/time.h"
 #include "absl/types/span.h"
-#include "gb/base/callback.h"
 #include "gb/profile/fake_ticks.h"
 #include "gb/profile/profile_point.h"
 
@@ -69,7 +69,7 @@ class Profiler final {
     // Profiler's thread, just after the frame ends, so any points it reaches
     // are outside the frame.
     absl::Duration slow_frame = absl::InfiniteDuration();
-    Callback<void(std::string_view report)> on_slow_frame;
+    absl::AnyInvocable<void(std::string_view report)> on_slow_frame;
   };
 
   // Makes this the Profiler for points on the calling thread.
@@ -334,7 +334,7 @@ class Profiler final {
   const absl::Duration budget_per_frame_;
   const double budget_fraction_;
   const int64_t slow_frame_ticks_;
-  Callback<void(std::string_view report)> on_slow_frame_;
+  absl::AnyInvocable<void(std::string_view report)> on_slow_frame_;
   double point_cost_ticks_ = 0;
 
   // The timed points ended in every frame.

@@ -8,7 +8,7 @@
 
 #include <vector>
 
-#include "gb/base/callback.h"
+#include "absl/functional/any_invocable.h"
 #include "gb/resource/resource.h"
 
 namespace gb {
@@ -33,7 +33,7 @@ class TestResource : public Resource {
     counts_->construct += 1;
   }
 
-  void SetDeleteCallback(Callback<void()> callback) {
+  void SetDeleteCallback(absl::AnyInvocable<void()> callback) {
     delete_callback_ = std::move(callback);
   }
 
@@ -61,7 +61,7 @@ class TestResource : public Resource {
 
  private:
   Counts* counts_ = nullptr;
-  Callback<void()> delete_callback_;
+  absl::AnyInvocable<void()> delete_callback_;
   std::vector<TestResource*> dependencies_;
 };
 

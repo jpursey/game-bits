@@ -10,6 +10,9 @@
 
 namespace gb {
 
+// Deprecated: use absl::AnyInvocable directly. This alias remains only until
+// projects built on Game Bits have moved off it.
+//
 // Defines a callback to any callable type with the signature Sig, such as
 // `Callback<int(float)>`. It accepts callables that are move-only (such as a
 // lambda that captures a std::unique_ptr), and is itself move-only.

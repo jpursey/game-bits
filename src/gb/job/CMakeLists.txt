@@ -19,6 +19,7 @@ set(gb_job_TEST_SOURCE
 )
 
 set(gb_job_DEPS
+  absl::any_invocable
   absl::strings
   absl::str_format
   absl::synchronization

@@ -64,7 +64,7 @@ void SdlVulkanWindow::OnEvent(const SDL_Event& event) {
 }
 
 void SdlVulkanWindow::SetSizeChangedCallback(
-    gb::Callback<void()> size_changed_callback) {
+    absl::AnyInvocable<void()> size_changed_callback) {
   absl::MutexLock lock(&mutex_);
   size_changed_callback_ = std::move(size_changed_callback);
 }

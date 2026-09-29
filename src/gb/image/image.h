@@ -6,6 +6,7 @@
 #ifndef GB_IMAGE_IMAGE_H_
 #define GB_IMAGE_IMAGE_H_
 
+#include "absl/functional/any_invocable.h"
 #include "absl/types/span.h"
 #include "gb/image/image_types.h"
 #include "gb/image/image_view.h"
@@ -27,7 +28,8 @@ class Image final {
   Image(int width, int height, Pixel pixel);
 
   // Creates an image using an already allocated array of pixels.
-  Image(int width, int height, void* pixels, Callback<void(void*)> free_pixels);
+  Image(int width, int height, void* pixels,
+        absl::AnyInvocable<void(void*)> free_pixels);
 
   Image(const Image&) = delete;
   Image(Image&&) = delete;
@@ -71,7 +73,7 @@ class Image final {
 
  private:
   ImageView view_;
-  Callback<void(void*)> free_pixels_;
+  absl::AnyInvocable<void(void*)> free_pixels_;
 };
 
 }  // namespace gb

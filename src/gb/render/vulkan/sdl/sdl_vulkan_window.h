@@ -9,6 +9,7 @@
 #include <memory>
 
 #include "SDL.h"
+#include "absl/functional/any_invocable.h"
 #include "absl/synchronization/mutex.h"
 #include "gb/base/validated_context.h"
 #include "gb/message/message_endpoint.h"
@@ -58,7 +59,7 @@ class SdlVulkanWindow final : public VulkanWindow {
   //----------------------------------------------------------------------------
 
   void SetSizeChangedCallback(
-      gb::Callback<void()> size_changed_callback) override;
+      absl::AnyInvocable<void()> size_changed_callback) override;
   bool GetExtensions(vk::Instance instance,
                      std::vector<const char*>* extensions) override;
   vk::SurfaceKHR CreateSurface(vk::Instance instance) override;
@@ -74,7 +75,7 @@ class SdlVulkanWindow final : public VulkanWindow {
   std::unique_ptr<gb::MessageEndpoint> endpoint_;
 
   absl::Mutex mutex_;
-  gb::Callback<void()> size_changed_callback_ ABSL_GUARDED_BY(mutex_);
+  absl::AnyInvocable<void()> size_changed_callback_ ABSL_GUARDED_BY(mutex_);
 };
 
 }  // namespace gb

@@ -37,6 +37,7 @@ set(gb_render_vulkan_DEFINES
 )
 
 set(gb_render_vulkan_DEPS
+  absl::any_invocable
   absl::memory
   absl::time
   gb_base

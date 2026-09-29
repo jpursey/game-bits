@@ -8,8 +8,8 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
+#include "absl/functional/any_invocable.h"
 #include "absl/synchronization/mutex.h"
-#include "gb/base/callback.h"
 #include "gb/base/context.h"
 #include "gb/resource/resource_entry.h"
 #include "gb/resource/resource_name_reservation.h"
@@ -51,14 +51,15 @@ namespace gb {
 // registered with a ResourceSystem.
 class ResourceManager final {
  public:
-  using GenericLoader = Callback<Resource*(Context* context, TypeKey* type,
-                                           std::string_view name)>;
-  using GenericReleaseHandler = Callback<void(Resource* resource)>;
+  using GenericLoader = absl::AnyInvocable<Resource*(
+      Context* context, TypeKey* type, std::string_view name)>;
+  using GenericReleaseHandler = absl::AnyInvocable<void(Resource* resource)>;
 
   template <typename Type>
-  using Loader = Callback<Type*(Context* context, std::string_view name)>;
+  using Loader =
+      absl::AnyInvocable<Type*(Context* context, std::string_view name)>;
   template <typename Type>
-  using ReleaseHandler = Callback<void(Type* resource)>;
+  using ReleaseHandler = absl::AnyInvocable<void(Type* resource)>;
 
   //----------------------------------------------------------------------------
   // Construction / Destruction
@@ -203,8 +204,7 @@ class ResourceManager final {
 };
 
 template <typename Type>
-void ResourceManager::InitLoader(
-    Callback<Type*(Context* context, std::string_view name)> callback) {
+void ResourceManager::InitLoader(Loader<Type> callback) {
   static_assert(std::is_base_of_v<Resource, Type>, "Type is not a resource");
   DoInitLoader(TypeKey::Get<Type>(),
                [loader = std::move(callback)](Context* context, TypeKey* type,
@@ -214,8 +214,7 @@ void ResourceManager::InitLoader(
 }
 
 template <typename Type>
-void ResourceManager::InitReleaseHandler(
-    Callback<void(Type* resource)> callback) {
+void ResourceManager::InitReleaseHandler(ReleaseHandler<Type> callback) {
   static_assert(std::is_base_of_v<Resource, Type>, "Type is not a resource");
   DoInitReleaseHandler(
       TypeKey::Get<Type>(),

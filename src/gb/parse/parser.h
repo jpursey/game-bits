@@ -9,6 +9,7 @@
 #include <memory>
 #include <string_view>
 
+#include "absl/functional/any_invocable.h"
 #include "gb/parse/lexer.h"
 #include "gb/parse/parse_result.h"
 #include "gb/parse/parse_types.h"
@@ -90,13 +91,14 @@ class Parser final {
   using ParseMatch = parser_internal::ParseMatch;
 
   struct ParseMatchError {
-    ParseMatchError(Token in_token, Callback<ParseError()> in_error_callback)
+    ParseMatchError(Token in_token,
+                    absl::AnyInvocable<ParseError()> in_error_callback)
         : token(in_token), error_callback(std::move(in_error_callback)) {}
     ParseMatchError(ParseError error)
         : error_callback([error] { return error; }) {}
 
     Token token;
-    Callback<ParseError()> error_callback;
+    absl::AnyInvocable<ParseError()> error_callback;
   };
 
   Parser(std::shared_ptr<Lexer> lexer, std::shared_ptr<const ParserRules> rules)

@@ -10,7 +10,7 @@ namespace gb {
 ImageView::ImageView(int width, int height, void* pixels)
     : width_(width), height_(height), pixels_(pixels) {}
 ImageView::ImageView(int width, int height, void* pixels,
-                     Callback<void(bool modified)> on_delete)
+                     absl::AnyInvocable<void(bool modified)> on_delete)
     : width_(width),
       height_(height),
       pixels_(pixels),

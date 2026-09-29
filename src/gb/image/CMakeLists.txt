@@ -12,6 +12,7 @@ set(gb_image_SOURCE
 )
 
 set(gb_image_DEPS
+  absl::any_invocable
   absl::span
   gb_base
   gb_file

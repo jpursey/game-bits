@@ -8,7 +8,7 @@
 
 #include <vector>
 
-#include "gb/base/callback.h"
+#include "absl/functional/any_invocable.h"
 #include "gb/render/vulkan/vulkan_types.h"
 
 namespace gb {
@@ -23,7 +23,7 @@ class VulkanWindow {
   // Registers a callback which should be triggered when the window's render
   // size changes.
   virtual void SetSizeChangedCallback(
-      gb::Callback<void()> size_changed_callback) {}
+      absl::AnyInvocable<void()> size_changed_callback) {}
 
   // This returns any required extensions for rendering to the window.
   virtual bool GetExtensions(vk::Instance instance,

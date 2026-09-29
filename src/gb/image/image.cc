@@ -34,7 +34,7 @@ Image::Image(int width, int height, Pixel pixel)
     : view_(width, height, NewPixels(width, height, pixel)) {}
 
 Image::Image(int width, int height, void* pixels,
-             Callback<void(void*)> free_pixels)
+             absl::AnyInvocable<void(void*)> free_pixels)
     : view_(width, height, pixels), free_pixels_(std::move(free_pixels)) {}
 
 Image::~Image() {

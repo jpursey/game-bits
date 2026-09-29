@@ -7,6 +7,7 @@
 #define GB_JOB_FIBER_JOB_SYSTEM_H_
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/functional/any_invocable.h"
 #include "concurrentqueue.h"
 #include "gb/alloc/pool_allocator.h"
 #include "gb/base/context.h"
@@ -93,7 +94,7 @@ class FiberJobSystem : public JobSystem {
 
  protected:
   bool DoRun(std::string_view name, JobCounter* counter, Context* context,
-             Callback<void()> callback) override;
+             absl::AnyInvocable<void()> callback) override;
   void DoWait(JobCounter* counter) override;
   Context& DoGetContext() override;
   JobData& DoGetJobData() override;
@@ -107,7 +108,7 @@ class FiberJobSystem : public JobSystem {
     std::string name;
 
     // Callback that is executed to perform this job.
-    Callback<void()> callback;
+    absl::AnyInvocable<void()> callback;
 
     // Run counter which if not null is incremented when the job is initially
     // queued, and decremented when the job completes.

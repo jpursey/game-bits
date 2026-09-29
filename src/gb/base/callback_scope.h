@@ -10,8 +10,8 @@
 #include <type_traits>
 #include <utility>
 
+#include "absl/functional/any_invocable.h"
 #include "absl/synchronization/mutex.h"
-#include "gb/base/callback.h"
 #include "gb/base/weak_ptr.h"
 
 namespace gb {
@@ -53,9 +53,10 @@ class CallbackScope final {
   //
   // When the scope is deleted, then the returned callback will do nothing.
   // Please see the class overview for thread safety details.
-  template <typename Callable, typename = std::enable_if_t<std::is_void_v<
-                                   typename Callback<Callable>::result_type>>>
-  Callback<Callable> New(Callback<Callable> callback) {
+  template <typename Callable,
+            typename = std::enable_if_t<std::is_void_v<
+                typename absl::AnyInvocable<Callable>::result_type>>>
+  absl::AnyInvocable<Callable> New(absl::AnyInvocable<Callable> callback) {
     if (callback == nullptr) {
       return callback;
     }
@@ -73,11 +74,12 @@ class CallbackScope final {
   // When the scope is deleted, then the returned callback will return a default
   // value (which is the default-constructed return type, if not specified).
   // Please see the class overview for thread safety details.
-  template <typename Callable, typename = std::enable_if_t<!std::is_void_v<
-                                   typename Callback<Callable>::result_type>>>
-  Callback<Callable> New(
-      Callback<Callable> callback,
-      typename Callback<Callable>::result_type default_value = {}) {
+  template <typename Callable,
+            typename = std::enable_if_t<!std::is_void_v<
+                typename absl::AnyInvocable<Callable>::result_type>>>
+  absl::AnyInvocable<Callable> New(
+      absl::AnyInvocable<Callable> callback,
+      typename absl::AnyInvocable<Callable>::result_type default_value = {}) {
     if (callback == nullptr) {
       return callback;
     }

@@ -520,7 +520,7 @@ void GameStateMachine::DoRegister(
     GameStateList::Type valid_siblings_type,
     std::vector<GameStateId> valid_siblings,
     std::vector<ContextConstraint> constraints,
-    Callback<std::unique_ptr<GameState>()> factory) {
+    absl::AnyInvocable<std::unique_ptr<GameState>()> factory) {
   GameStateInfo* state_info = nullptr;
   {
     absl::MutexLock lock(&mutex_);

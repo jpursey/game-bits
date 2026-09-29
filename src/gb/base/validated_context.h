@@ -11,8 +11,8 @@
 #include <string>
 #include <vector>
 
+#include "absl/functional/any_invocable.h"
 #include "absl/memory/memory.h"
-#include "gb/base/callback.h"
 #include "gb/base/context.h"
 
 namespace gb {
@@ -137,7 +137,7 @@ class ContextContract;
 // constructor).
 class ValidatedContext final {
  public:
-  using ErrorCallback = Callback<void(const std::string& message)>;
+  using ErrorCallback = absl::AnyInvocable<void(const std::string& message)>;
 
   // Default constructor.
   //

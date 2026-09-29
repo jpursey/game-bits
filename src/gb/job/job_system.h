@@ -8,8 +8,8 @@
 
 #include <string_view>
 
+#include "absl/functional/any_invocable.h"
 #include "absl/log/log.h"
-#include "gb/base/callback.h"
 #include "gb/base/context.h"
 #include "gb/job/job_counter.h"
 #include "gb/job/job_types.h"
@@ -84,7 +84,7 @@ class JobSystem {
   template <typename Type>
   JobDataHandle AllocDataHandle();
   template <typename Type>
-  JobDataHandle AllocDataHandle(Callback<Type*()> create);
+  JobDataHandle AllocDataHandle(absl::AnyInvocable<Type*()> create);
 
   //----------------------------------------------------------------------------
   // Job execution
@@ -100,15 +100,17 @@ class JobSystem {
   // If a context is provided, the job will be initialized with that context,
   // which can be retrieved within the job by calling JobSystem::GetContext.
   bool Run(std::string_view name, JobCounter* counter,
-           Callback<void()> callback);
-  bool Run(JobCounter* counter, Callback<void()> callback);
-  bool Run(std::string_view name, Callback<void()> callback);
-  bool Run(Callback<void()> callback);
+           absl::AnyInvocable<void()> callback);
+  bool Run(JobCounter* counter, absl::AnyInvocable<void()> callback);
+  bool Run(std::string_view name, absl::AnyInvocable<void()> callback);
+  bool Run(absl::AnyInvocable<void()> callback);
   bool Run(std::string_view name, JobCounter* counter, Context context,
-           Callback<void()> callback);
-  bool Run(JobCounter* counter, Context context, Callback<void()> callback);
-  bool Run(std::string_view name, Context context, Callback<void()> callback);
-  bool Run(Context context, Callback<void()> callback);
+           absl::AnyInvocable<void()> callback);
+  bool Run(JobCounter* counter, Context context,
+           absl::AnyInvocable<void()> callback);
+  bool Run(std::string_view name, Context context,
+           absl::AnyInvocable<void()> callback);
+  bool Run(Context context, absl::AnyInvocable<void()> callback);
 
   //----------------------------------------------------------------------------
   // Job operations
@@ -157,17 +159,17 @@ class JobSystem {
   void SetThreadState();
 
   virtual bool DoRun(std::string_view name, JobCounter* counter,
-                     Context* context, Callback<void()> callback) = 0;
+                     Context* context, absl::AnyInvocable<void()> callback) = 0;
   virtual void DoWait(JobCounter* counter) = 0;
   virtual Context& DoGetContext() = 0;
   virtual JobData& DoGetJobData() = 0;
 
  private:
   struct JobDataType {
-    JobDataType(TypeInfo* in_type, Callback<void*()> in_alloc)
+    JobDataType(TypeInfo* in_type, absl::AnyInvocable<void*()> in_alloc)
         : type(in_type), alloc(std::move(in_alloc)) {}
     TypeInfo* type;
-    Callback<void*()> alloc;
+    absl::AnyInvocable<void*()> alloc;
   };
 
   absl::Mutex job_data_mutex_;
@@ -186,7 +188,7 @@ JobDataHandle JobSystem::AllocDataHandle() {
 }
 
 template <typename Type>
-JobDataHandle JobSystem::AllocDataHandle(Callback<Type*()> create) {
+JobDataHandle JobSystem::AllocDataHandle(absl::AnyInvocable<Type*()> create) {
   absl::WriterMutexLock lock(&job_data_mutex_);
   if (job_data_types_.size() == kMaxJobDataHandles) {
     return kInvalidJobDataHandle;
@@ -196,38 +198,42 @@ JobDataHandle JobSystem::AllocDataHandle(Callback<Type*()> create) {
 }
 
 inline bool JobSystem::Run(std::string_view name, JobCounter* counter,
-                           Callback<void()> callback) {
+                           absl::AnyInvocable<void()> callback) {
   return DoRun(name, counter, nullptr, std::move(callback));
 }
 
-inline bool JobSystem::Run(JobCounter* counter, Callback<void()> callback) {
+inline bool JobSystem::Run(JobCounter* counter,
+                           absl::AnyInvocable<void()> callback) {
   return DoRun({}, counter, nullptr, std::move(callback));
 }
 
-inline bool JobSystem::Run(std::string_view name, Callback<void()> callback) {
+inline bool JobSystem::Run(std::string_view name,
+                           absl::AnyInvocable<void()> callback) {
   return DoRun(name, nullptr, nullptr, std::move(callback));
 }
 
-inline bool JobSystem::Run(Callback<void()> callback) {
+inline bool JobSystem::Run(absl::AnyInvocable<void()> callback) {
   return DoRun({}, nullptr, nullptr, std::move(callback));
 }
 
 inline bool JobSystem::Run(std::string_view name, JobCounter* counter,
-                           Context context, Callback<void()> callback) {
+                           Context context,
+                           absl::AnyInvocable<void()> callback) {
   return DoRun(name, counter, &context, std::move(callback));
 }
 
 inline bool JobSystem::Run(JobCounter* counter, Context context,
-                           Callback<void()> callback) {
+                           absl::AnyInvocable<void()> callback) {
   return DoRun({}, counter, &context, std::move(callback));
 }
 
 inline bool JobSystem::Run(std::string_view name, Context context,
-                           Callback<void()> callback) {
+                           absl::AnyInvocable<void()> callback) {
   return DoRun(name, nullptr, &context, std::move(callback));
 }
 
-inline bool JobSystem::Run(Context context, Callback<void()> callback) {
+inline bool JobSystem::Run(Context context,
+                           absl::AnyInvocable<void()> callback) {
   return DoRun({}, nullptr, &context, std::move(callback));
 }
 
@@ -248,7 +254,7 @@ Type* JobSystem::GetData(JobDataHandle handle) {
   if (data != nullptr) {
     return static_cast<Type*>(data);
   }
-  Callback<void*()>* alloc;
+  absl::AnyInvocable<void*()>* alloc;
   {
     absl::ReaderMutexLock lock(&self->job_data_mutex_);
     DCHECK(handle <= self->job_data_types_.size() &&

@@ -13,8 +13,8 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/functional/any_invocable.h"
 #include "absl/synchronization/mutex.h"
-#include "gb/base/callback.h"
 #include "gb/base/type_info.h"
 #include "gb/base/weak_ptr.h"
 #include "gb/message/message_types.h"
@@ -50,7 +50,7 @@ inline constexpr MessageEndpointId kBroadcastMessageEndpointId = 1;
 // Signature of a message handler callback.
 template <typename Message>
 using MessageHandler =
-    Callback<void(MessageEndpointId from, const Message& message)>;
+    absl::AnyInvocable<void(MessageEndpointId from, const Message& message)>;
 
 //------------------------------------------------------------------------------
 // MessageEndpoint
@@ -158,7 +158,7 @@ class MessageEndpoint final {
     void* const message;
   };
   using GenericHandler =
-      Callback<void(MessageEndpointId from, const void* message)>;
+      absl::AnyInvocable<void(MessageEndpointId from, const void* message)>;
   using Handlers = absl::flat_hash_map<TypeKey*, GenericHandler>;
   using QueuedMessages = std::vector<QueuedMessage>;
 

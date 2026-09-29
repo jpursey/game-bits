@@ -21,6 +21,7 @@ set(gb_message_TEST_DEPS
 )
 
 set(gb_message_DEPS
+  absl::any_invocable
   absl::flat_hash_map
   absl::flat_hash_set
   gb_base

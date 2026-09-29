@@ -19,6 +19,7 @@ set(gb_game_TEST_DEPS
 )
 
 set(gb_game_DEPS
+  absl::any_invocable
   absl::flat_hash_map
   absl::strings
   absl::time

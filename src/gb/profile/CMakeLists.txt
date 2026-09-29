@@ -20,6 +20,7 @@ set(gb_profile_TEST_SOURCE
 
 set(gb_profile_DEPS
   absl::algorithm_container
+  absl::any_invocable
   absl::flat_hash_map
   absl::no_destructor
   absl::span

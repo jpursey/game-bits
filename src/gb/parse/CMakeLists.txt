@@ -18,6 +18,7 @@ set(gb_parse_SOURCE
 )
 
 set(gb_parse_DEPS
+  absl::any_invocable
   absl::strings
   gb_base
   re2

@@ -18,6 +18,7 @@ set(gb_resource_SOURCE
 )
 
 set(gb_resource_DEPS
+  absl::any_invocable
   absl::flat_hash_map
   absl::flat_hash_set
   absl::memory

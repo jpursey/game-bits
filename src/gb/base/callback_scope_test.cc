@@ -54,10 +54,10 @@ TEST(CallbackScopeTest, VoidCallbackWorksWithLambda) {
   EXPECT_EQ(value, 5);
 }
 
-TEST(CallbackScopeTest, VoidCallbackWorksWithCallback) {
+TEST(CallbackScopeTest, VoidCallbackWorksWithAnyInvocable) {
   CallbackScope scope;
   int value = 0;
-  Callback<void(int)> in_callback = [&value](int new_value) {
+  absl::AnyInvocable<void(int)> in_callback = [&value](int new_value) {
     value = new_value;
   };
   auto callback = scope.New<void(int)>(std::move(in_callback));
@@ -67,7 +67,7 @@ TEST(CallbackScopeTest, VoidCallbackWorksWithCallback) {
 
 TEST(CallbackScopeTest, VoidCallbackFallbackWorks) {
   int value = 0;
-  Callback<void(int*, int)> callback;
+  absl::AnyInvocable<void(int*, int)> callback;
   {
     CallbackScope scope;
     callback = scope.New<void(int*, int)>(SetValue);
@@ -96,10 +96,10 @@ TEST(CallbackScopeTest, CallbackWorksWithLambda) {
   EXPECT_EQ(callback(2), 3);
 }
 
-TEST(CallbackScopeTest, CallbackWorksWithCallback) {
+TEST(CallbackScopeTest, CallbackWorksWithAnyInvocable) {
   CallbackScope scope;
   int value = 1;
-  Callback<int(int)> in_callback = [&value](int other_value) {
+  absl::AnyInvocable<int(int)> in_callback = [&value](int other_value) {
     return value + other_value;
   };
   auto callback = scope.New<int(int)>(std::move(in_callback));
@@ -107,7 +107,7 @@ TEST(CallbackScopeTest, CallbackWorksWithCallback) {
 }
 
 TEST(CallbackScopeTest, CallbackWorksFallbackWorks) {
-  Callback<int(int, int)> callback;
+  absl::AnyInvocable<int(int, int)> callback;
   {
     CallbackScope scope;
     callback = scope.New<int(int, int)>(AddValue);
@@ -116,7 +116,7 @@ TEST(CallbackScopeTest, CallbackWorksFallbackWorks) {
 }
 
 TEST(CallbackScopeTest, CallbackWorksFallbackWorksWithDefault) {
-  Callback<int(int, int)> callback;
+  absl::AnyInvocable<int(int, int)> callback;
   {
     CallbackScope scope;
     callback = scope.New<int(int, int)>(AddValue, 42);

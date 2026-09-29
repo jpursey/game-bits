@@ -10,8 +10,8 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/functional/any_invocable.h"
 #include "flatbuffers/flatbuffers.h"
-#include "gb/base/callback.h"
 #include "gb/base/validated_context.h"
 #include "gb/file/chunk_writer.h"
 #include "gb/file/file_types.h"
@@ -42,8 +42,9 @@ class ResourceFileWriter final {
   // A resource writer must write the resource out to one or more chunks in
   // out_chunks. These will be written to the same order.
   template <typename ResourceType>
-  using ResourceWriter = Callback<bool(Context* context, ResourceType* resource,
-                                       std::vector<ChunkWriter>* out_chunks)>;
+  using ResourceWriter =
+      absl::AnyInvocable<bool(Context* context, ResourceType* resource,
+                              std::vector<ChunkWriter>* out_chunks)>;
 
   // A resource writer must write the resource to the provided flat buffer
   // builder.
@@ -52,8 +53,8 @@ class ResourceFileWriter final {
   // builder before returning true.
   template <typename ResourceType>
   using ResourceFlatBufferWriter =
-      Callback<bool(Context* context, ResourceType* resource,
-                    flatbuffers::FlatBufferBuilder* builder)>;
+      absl::AnyInvocable<bool(Context* context, ResourceType* resource,
+                              flatbuffers::FlatBufferBuilder* builder)>;
 
   //----------------------------------------------------------------------------
   // Contract constraints
@@ -149,9 +150,9 @@ class ResourceFileWriter final {
   static inline constexpr int kInitFlatBufferSize = 16 * 1024;
 
   using FlatBuffers = std::vector<flatbuffers::FlatBufferBuilder>;
-  using GenericWriter = Callback<bool(Context* context, Resource* resource,
-                                      std::vector<ChunkWriter>* out_chunks,
-                                      FlatBuffers* flat_buffers)>;
+  using GenericWriter = absl::AnyInvocable<bool(
+      Context* context, Resource* resource,
+      std::vector<ChunkWriter>* out_chunks, FlatBuffers* flat_buffers)>;
   struct WriterInfo {
     ChunkType chunk_type;
     GenericWriter writer;

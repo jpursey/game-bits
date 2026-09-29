@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 
+#include "absl/functional/any_invocable.h"
 #include "absl/synchronization/mutex.h"
 #include "gb/base/callback_scope.h"
 #include "gb/base/validated_context.h"
@@ -44,7 +45,7 @@ class VulkanBackend final : public RenderBackend {
   //
   // The recommended approach when adding end frame callbacks is to use a
   // gb::CallbackScope to manage the lifecycle and automatically return false.
-  using FrameCallback = gb::Callback<bool(vk::CommandBuffer commands)>;
+  using FrameCallback = absl::AnyInvocable<bool(vk::CommandBuffer commands)>;
 
   // Render stage within EndFrame.
   enum class RenderStage {

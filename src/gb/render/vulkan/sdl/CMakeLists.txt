@@ -8,6 +8,7 @@ set(gb_render_vulkan_sdl_SOURCE
 )
 
 set(gb_render_vulkan_sdl_DEPS
+  absl::any_invocable
   absl::synchronization
   gb_render_vulkan
 )
