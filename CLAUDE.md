@@ -129,10 +129,37 @@ Every change is checked as follows:
 ## Sessions
 
 Projects build against this checkout as it stands (see Game Bits in the workflow), so Game Bits code is never changed in it directly:
-- A Game Bits session works in its own git worktree, and builds and tests there.
-- Once the user approves a change and it is committed on the worktree's branch, the session lands it on `main` in the main checkout: `git -C <main checkout> merge --ff-only <branch>`, or a cherry-pick if `main` has moved. Projects only ever build reviewed code.
+- A Game Bits session works in its own git worktree, and builds and tests there (see Worktrees below).
+- Once the user approves a change and it is committed on the worktree's branch, the session lands it on `main` from the main checkout: `git merge --ff-only <branch>`, or a cherry-pick if `main` has moved. Projects only ever build reviewed code.
 - The only direct edits in the main checkout are the docs changes other projects' sessions may make (a backlog item, or the workflow). They are committed as soon as the user approves them, so they never block landing.
 - Several Game Bits sessions can run at once, and each lands its own commits.
+
+### Worktrees
+
+Create the worktree from the local `main`, not `origin/main`, which is behind whenever the user hasn't pushed. Then switch the session into it (EnterWorktree with its `path`; EnterWorktree's `name` form branches from `origin/main`):
+
+```
+git worktree add -b <branch> .claude/worktrees/<branch> main
+```
+
+A new worktree has no submodules checked out, and configuring fails with "does not contain a CMakeLists.txt file" until they are. Initialize each one from the main checkout's copy, so almost nothing is downloaded. Run it once per submodule listed in `.gitmodules`, with the paths written out; the session refuses a shell loop over them:
+
+```
+git submodule update --init --reference <main checkout>/third_party/<name> -- third_party/<name>
+```
+
+The worktree has its own `out/`, so its first build in each configuration is a full build.
+
+To land the change, leave the worktree first, keeping it (ExitWorktree with `keep`), since a session in a worktree can't run git against the main checkout. Then merge from the main checkout as above.
+
+Once landed, remove the worktree from the main checkout. First check that `git status` in the worktree is clean, and that no shell is still inside it. `--force` is needed because it has submodules:
+
+```
+git worktree remove --force .claude/worktrees/<branch>
+git branch -d <branch>
+```
+
+If removal fails with "Permission denied", git has already unregistered the worktree. Delete the leftover folder, then run `git worktree prune`.
 
 ## Build system
 

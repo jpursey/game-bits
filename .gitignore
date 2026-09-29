@@ -4,6 +4,9 @@
 out/
 .vs/
 
+# Claude Code session worktrees
+/.claude/worktrees/
+
 # Sublime files
 game-bits.sublime-workspace
 
