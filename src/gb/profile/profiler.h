@@ -64,10 +64,9 @@ class Profiler final {
     absl::Duration budget_per_frame;
     double budget_fraction = 0;
 
-    // Called with a frame's report (its time, and the part each point had in
-    // it) when a frame takes longer than `slow_frame`. It is called on the
-    // Profiler's thread, just after the frame ends, so any points it reaches
-    // are outside the frame.
+    // Called with a frame's breakdown (see GetReport()) when a frame takes
+    // longer than `slow_frame`. It is called on the Profiler's thread, just
+    // after the frame ends, so any points it reaches are outside the frame.
     absl::Duration slow_frame = absl::InfiniteDuration();
     absl::AnyInvocable<void(std::string_view report)> on_slow_frame;
   };
@@ -127,6 +126,11 @@ class Profiler final {
   // recorded are included (a counter whose total is zero counts as not
   // recorded). Points are grouped by kind and sorted by name, so two reports
   // of the same program diff cleanly.
+  //
+  // A frame's breakdown is read to find what made it slow, so it has the
+  // frame's self time by kind (frames, scopes, and calls, which add up to the
+  // frame's time), then the frame's count and self time of each point, slowest
+  // first.
   //
   // A program can put its own header (such as its build and the date) before
   // the report.

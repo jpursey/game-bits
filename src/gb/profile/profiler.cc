@@ -468,15 +468,33 @@ void Profiler::AppendFrame(std::string& report, std::string_view title,
                                  point_cost_ticks_)),
       "\n");
 
-  // The frame's points, each with its part in the frame, in report order.
+  // The frame's points, each with its part in the frame, slowest first.
   std::vector<std::pair<ProfilePoint, FrameBreakdown::Point>> points;
   points.reserve(frame.points.size());
   for (const FrameBreakdown::Point& frame_point : frame.points) {
     points.emplace_back(registered[frame_point.index], frame_point);
   }
   absl::c_sort(points, [](const auto& a, const auto& b) {
+    if (a.second.self_ticks != b.second.self_ticks) {
+      return a.second.self_ticks > b.second.self_ticks;
+    }
     return IsBeforeInReport(a.first, b.first);
   });
+
+  // The self times of the kinds add up to the frame's time.
+  Table kinds = {{"Kind", "Self"}};
+  for (ProfilePoint::Kind kind : kTimedKinds) {
+    int64_t self_ticks = 0;
+    for (const auto& [point, frame_point] : points) {
+      if (point.GetKind() == kind) {
+        self_ticks += frame_point.self_ticks;
+      }
+    }
+    kinds.push_back({std::string(GetKindName(kind)),
+                     FormatTime(TicksToDuration(self_ticks))});
+  }
+  AppendTable(report, kinds, 1);
+  absl::StrAppend(&report, "\n");
 
   Table table = {{"Point", "Kind", "Count", "Self"}};
   for (const auto& [point, frame_point] : points) {

@@ -78,8 +78,12 @@ std::string report = profiler.GetReport();
   zero counts as not recorded), grouped by kind and sorted by name, with aligned
   columns and times to three significant digits, so two reports diff cleanly.
   A program puts its own header (build, date) before it.
+- **Frame breakdowns:** a frame's breakdown is read to find what made it slow,
+  so it starts with the frame's self time by kind (frames, scopes, and calls,
+  which add up to the frame's time, splitting it into the program's own time
+  and other systems'), then lists its points slowest first.
 - **Slow frames:** a frame longer than `slow_frame` calls `on_slow_frame` with
-  that frame's report, just after the frame ends, so any points the callback
+  that frame's breakdown, just after the frame ends, so any points the callback
   reaches are outside the frame.
 - **For tests:** `GetCount()`, `GetSelfTime()`, `GetValue()`,
   `GetSlowestFrameCount()`, and `GetSlowestFrameSelfTime()` read a point by

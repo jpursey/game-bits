@@ -369,7 +369,7 @@ TEST_F(ProfilerTest, Report) {
     }
     for (int i = 0; i < 2; ++i) {
       ProfileCall<"ReportTest/GetTrack"> call;
-      ticks_.Advance(100);
+      ticks_.Advance(400);
     }
     ProfileCount<"ReportTest/Messages">(3);
   }
@@ -383,19 +383,20 @@ TEST_F(ProfilerTest, Report) {
     ProfileCount<"ReportTest/Messages">(1);
   }
 
-  // P50 is the middle of the bucket the 300ns frame is in. The scope between
-  // frames is in the totals, but not the slowest frame.
+  // P50 and P90 are the middle of the buckets the frames are in. The scope
+  // between frames is in the totals, but not the slowest frame. The slowest
+  // frame's points are slowest first, rather than in the report's order.
   EXPECT_EQ(profiler_.GetReport(),
             R"(Value              Latest
 ReportTest/Tracks     142
 
 Frames      2
-Total       2.00us
-Average     1.00us
+Total       2.60us
+Average     1.30us
 P50         304ns
-P90         1.70us
-P99         1.70us
-Max         1.70us
+P90         2.18us
+P99         2.18us
+Max         2.30us
 Profiler    0 per frame, budget none
 Point cost  0
 
@@ -403,14 +404,19 @@ Point                Kind     Count  Count/frame    Self  Self/call  Self/frame
 ReportTest/Run       frame        2         1.00  1.30us      650ns       650ns
 ReportTest/Outside   scope        1         0.50  50.0ns     50.0ns      25.0ns
 ReportTest/Refresh   scope        1         0.50   500ns      500ns       250ns
-ReportTest/GetTrack  call         2         1.00   200ns      100ns       100ns
+ReportTest/GetTrack  call         2         1.00   800ns      400ns       400ns
 ReportTest/Messages  counter      4         2.00       -          -           -
 
-Slowest frame: 1.70us, profiler 0
+Slowest frame: 2.30us, profiler 0
+Kind     Self
+frame  1.00us
+scope   500ns
+call    800ns
+
 Point                Kind     Count    Self
 ReportTest/Run       frame        1  1.00us
+ReportTest/GetTrack  call         2   800ns
 ReportTest/Refresh   scope        1   500ns
-ReportTest/GetTrack  call         2   200ns
 ReportTest/Messages  counter      3       -
 )");
 }
@@ -503,9 +509,46 @@ TEST_F(ProfilerSlowFrameTest, ReportsOnlySlowFrames) {
   }
   ASSERT_EQ(reports_.size(), 1);
   EXPECT_EQ(reports_[0], R"(Slow frame: 1.50us, profiler 0
+Kind     Self
+frame       0
+scope  1.50us
+call        0
+
 Point                Kind   Count    Self
-SlowFrameTest/Frame  frame      1       0
 SlowFrameTest/Slow   scope      1  1.50us
+SlowFrameTest/Frame  frame      1       0
+)");
+}
+
+TEST_F(ProfilerSlowFrameTest, BreakdownAddsUpKindsAndOrdersTiesByName) {
+  {
+    ProfileFrame<"SlowFrameTest/Frame"> frame;
+    ticks_.Advance(100);
+    {
+      ProfileScope<"SlowFrameTest/B"> scope;
+      ticks_.Advance(500);
+    }
+    {
+      ProfileScope<"SlowFrameTest/A"> scope;
+      ticks_.Advance(500);
+    }
+    {
+      ProfileCall<"SlowFrameTest/Call"> call;
+      ticks_.Advance(600);
+    }
+  }
+  ASSERT_EQ(reports_.size(), 1);
+  EXPECT_EQ(reports_[0], R"(Slow frame: 1.70us, profiler 0
+Kind     Self
+frame   100ns
+scope  1.00us
+call    600ns
+
+Point                Kind   Count   Self
+SlowFrameTest/Call   call       1  600ns
+SlowFrameTest/A      scope      1  500ns
+SlowFrameTest/B      scope      1  500ns
+SlowFrameTest/Frame  frame      1  100ns
 )");
 }
 
