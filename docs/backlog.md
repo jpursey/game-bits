@@ -22,6 +22,27 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
+## Frame breakdowns by time and kind
+
+- **Layers:** profile
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Requested by:** JPRSurf *Profiler*
+- **Background:** [Profiler module](worklog/profiler_module.md)
+
+A frame's breakdown (the report's slowest frame, and the report passed to
+`on_slow_frame`) is read to find what made that frame slow, not diffed against
+another report, so:
+- Sort its points by self time, slowest first, rather than by kind and name.
+  The report's main table keeps its order, so two reports still diff cleanly.
+- Add the frame's self time by kind (frames, scopes, and calls) above its
+  points. Calls are time spent in other systems, so this splits the frame into
+  the program's time and theirs.
+
+`on_slow_frame` only receives the finished text, and a Profiler has no public
+way to read the frame that just ended, so a program can't add either itself.
+
 ## Fiber-safe thread locals
 
 - **Layers:** thread, job
