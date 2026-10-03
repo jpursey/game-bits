@@ -180,6 +180,26 @@ Beyond the Google C++ style guide
 - Include the header that declares a type rather than forward declaring it.
   Forward declarations are only for breaking an include cycle within a library,
   or a circular reference within the header itself.
+- A class that keeps an object it doesn't own takes and holds it by pointer
+  (`T* const`), not reference, so call sites show `&` and its uses show `->`.
+  A reference member hides that the object lives elsewhere. The constructor's
+  comment says how long it must live ("`reaper` must outlive this").
+- No leading `::` on a name (`&::Name`, `decltype(::Name)`) unless something
+  else in scope has the same name. Namespace scope `using` declarations are
+  the exception, as in the Google style guide (`using ::testing::IsEmpty;`).
+  Avoid such conflicts where that isn't awkward.
+- Keep a returned pointer as a pointer. Don't dereference it into a reference
+  (`T& x = *FindX(...)`) to show it can't be null: store it in a `T*` and use
+  `->`, with a short comment if whether it can be null isn't clear.
+- Use member pointers, templates, and similar tricks to share code only when
+  the shared logic is substantial. A few duplicated lines written out case by
+  case are often easier to read and maintain.
+- No exceptions, which Abseil doesn't support either. Don't use APIs whose
+  failure is a throw, such as `.at()`. For a lookup, use `operator[]` when
+  creating the entry is harmless (and don't hold a reference from one across
+  another, as an insert can rehash), and otherwise `find()`, handling the miss:
+  a test failure in test code, a returned error, or a `CHECK` if it is truly
+  unrecoverable.
 - A local helper is a private member function, not a one-off lambda inside
   another function. Lambdas are for APIs that need a callable, ideally as a thin
   call to a member function.
