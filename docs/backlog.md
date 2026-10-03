@@ -22,6 +22,53 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
+## Profile times that hold across sessions
+
+- **Layers:** profile
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Requested by:** JPRSurf *Profiles after Game Bits' timing fix*
+- **Background:** [Profiler module](worklog/profiler_module.md)
+
+On one machine, an i9-14900KF with 8 performance and 16 efficiency cores,
+profiles of the same scenario vary by about 30% between sessions, with every
+point faster or slower together, including code that didn't change. Something
+shifts the whole profile, not the code. There are two explanations, which a
+profile can't tell apart today:
+- **The tick rate is wrong.** Times are `__rdtsc()` ticks divided by a rate
+  measured once, over 1ms against the steady clock (`GetTicksPerSecond()` in
+  `profiler.cc`). A wrong rate scales every time by the same factor, which is
+  the symptom. With an invariant TSC (a constant rate whatever the core or its
+  clock speed, kept in step across cores, as on recent Intel and AMD CPUs) the
+  rate should be the same every session, but nothing checks that it is.
+- **The code ran slower.** The TSC counts time, not work. On an efficiency
+  core, or a core Windows has slowed (such as the power throttling it applies
+  to a window in the background), the same code takes longer, and the profile
+  is right to say so. Then the conditions vary, not the measurement.
+
+The machine is set up to keep its speed: core parking is off in Windows, and C
+states are off in the BIOS. Its cores still slow to 800MHz with nothing
+running. With REAPER idle for over a minute, the performance cores ran at
+5400-5700MHz and the efficiency cores at 4200-4400MHz (HWMonitor, 2026-10-03).
+So a core of one kind varies by about 5%, and the two kinds differ by about
+30% in clock speed alone, before the efficiency cores' lower work per clock.
+That makes the core a run was on the likelier cause, but nothing has shown it
+yet.
+
+To tell them apart, the report would show:
+- The measured tick rate in the header, and the CPU's own, from CPUID leaf
+  0x15 where it has one. A rate that changes between sessions is the first.
+- The kind of core each frame ran on: `__rdtscp()` returns the processor
+  number with the timestamp, which `GetLogicalProcessorInformationEx()` maps
+  to its efficiency class. The report splits frames by class, and warns when a
+  profile mixes them. Frames on slower cores are the second.
+
+The fix follows from which it is: a rate from CPUID, or a longer, checked
+calibration, for the first; for the second, the split report, and a way to
+profile on one kind of core. Any change to what a timed point or a frame costs
+says so here, as projects set a budget for the profiler's own cost on it.
+
 ## Fiber-safe thread locals
 
 - **Layers:** thread, job
