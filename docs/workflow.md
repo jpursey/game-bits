@@ -159,6 +159,9 @@ Beyond the Google C++ style guide
 - Comments on a public API say what it does and what a caller needs to know to
   use it correctly, not how it works. Implementation comments only explain what
   isn't obvious from the code itself.
+- Comments describe the code as it is, and stand on their own. Where a fact
+  came from (a trace, a test run, a review, a date) and the history that led to
+  the code belong in the commit message or the worklog, not the comment.
 - A comment that follows code at the same indent level has a blank line above
   it. A comment that opens a block (right after a `{`) doesn't need one.
 - Sections in a file are separated by `//=====` blocks (extending to column 80)
@@ -174,6 +177,9 @@ Beyond the Google C++ style guide
   sized signed type like `int64_t` when the range needs it. Unsigned types are
   for opaque IDs and bit patterns. Cast container sizes at the boundary:
   `const int count = static_cast<int>(items.size());`.
+- A time, or any other quantity with a unit, held as a plain number rather
+  than a type that carries its unit (such as `absl::Duration`) names the unit:
+  `kTimeoutSecs`, `delay_ms`.
 - Mutable globals, including file-local ones in an anonymous namespace, take a
   `g_` prefix, and static data members and function-local statics take `s_`.
   Constants use `kName`.
