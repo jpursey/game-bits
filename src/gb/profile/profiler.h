@@ -48,6 +48,11 @@ namespace gb {
 // of any x86-64 CPU in the last decade), unless a FakeTicks is given in the
 // options.
 //
+// The counter counts time, not work, so the same code takes longer on a slower
+// core. On a CPU with more than one kind of core (such as Intel's performance
+// and efficiency cores), each frame records the class of core it ran on, where
+// a higher class is faster, and the report splits frames by it.
+//
 // There can be at most one Profiler per thread, and it must be destroyed on the
 // thread that created it, outside any timed point. This class is
 // thread-compatible, and only its thread may call it.
@@ -120,17 +125,25 @@ class Profiler final {
   // Report
   //----------------------------------------------------------------------------
 
-  // Returns the profile as plain text: the values, the frame summary, one line
-  // for each point with its count and self time (in total, per frame, and per
-  // call), and the slowest frame's breakdown. Only points this Profiler has
-  // recorded are included (a counter whose total is zero counts as not
-  // recorded). Points are grouped by kind and sorted by name, so two reports
-  // of the same program diff cleanly.
+  // Returns the profile as plain text: the values, the frame summary, the tick
+  // rate, the frames by class of core, one line for each point with its count
+  // and self time (in total, per frame, and per call), and the slowest frame's
+  // breakdown. Only points this Profiler has recorded are included (a counter
+  // whose total is zero counts as not recorded). Points are grouped by kind
+  // and sorted by name, so two reports of the same program diff cleanly.
+  //
+  // The tick rate is the one measured, which converts ticks to time, and the
+  // one the CPU reports, where it does. Two that differ, or a measured rate
+  // that changes between runs, make every time wrong by the same factor.
+  //
+  // A frame's class of core is the one it started and ended on, or "mixed" if
+  // those differ. The report warns when frames ran on more than one class, as
+  // their times aren't comparable.
   //
   // A frame's breakdown is read to find what made it slow, so it has the
-  // frame's self time by kind (frames, scopes, and calls, which add up to the
-  // frame's time), then the frame's count and self time of each point, slowest
-  // first.
+  // frame's class of core and self time by kind (frames, scopes, and calls,
+  // which add up to the frame's time), then the frame's count and self time of
+  // each point, slowest first.
   //
   // A program can put its own header (such as its build and the date) before
   // the report.
@@ -171,6 +184,19 @@ class Profiler final {
   // these (see GetFrameBucket in profiler.cc).
   static constexpr int kFrameBuckets = 61 * 8;
 
+  // Frames are counted for each class of core up to kCoreClasses (higher
+  // classes count as the highest), and then for frames that started and ended
+  // on different classes, as kMixedCores.
+  static constexpr int kCoreClasses = 8;
+  static constexpr int kMixedCores = kCoreClasses;
+
+  // The frames that ran on one class of core (or kMixedCores).
+  struct CoreFrames {
+    int64_t frames = 0;
+    int64_t ticks = 0;
+    int64_t max_ticks = 0;
+  };
+
   // A timed point in progress, kept by whatever times it. Timings running on
   // the thread form a stack, linked through `parent`.
   struct Timing {
@@ -206,6 +232,9 @@ class Profiler final {
     };
 
     int64_t ticks = 0;
+
+    // The class of core the frame ran on, or kMixedCores.
+    int core = 0;
 
     // The timed points ended in the frame, including its own.
     int64_t timed_points = 0;
@@ -245,9 +274,9 @@ class Profiler final {
   void StartFrame(Timing& timing);
   void EndFrame(int index, Timing& timing);
 
-  // Returns the current frame's time, `ticks`, and the part each point had in
-  // it.
-  FrameBreakdown CaptureFrame(int64_t ticks) const;
+  // Returns the current frame's time, `ticks`, the class of core it ran on,
+  // `core`, and the part each point had in it.
+  FrameBreakdown CaptureFrame(int64_t ticks, int core) const;
 
   // Returns the slot at `index` (a ProfilePoint's index), with its frame part
   // reset if it was for another frame.
@@ -285,6 +314,7 @@ class Profiler final {
   void AppendValues(std::string& report,
                     absl::Span<const ProfilePoint> points) const;
   void AppendFrameSummary(std::string& report) const;
+  void AppendCoreFrames(std::string& report) const;
   void AppendPoints(std::string& report,
                     absl::Span<const ProfilePoint> points) const;
   void AppendFrame(std::string& report, std::string_view title,
@@ -315,6 +345,12 @@ class Profiler final {
     return static_cast<int64_t>(__rdtsc());
   }
 
+  // Returns the class of core the thread is on, below kCoreClasses.
+  int ReadCoreClass() const;
+
+  // Formats a class of core, or kMixedCores, such as "class 1" or "mixed".
+  static std::string FormatCore(int core);
+
   absl::Duration TicksToDuration(double ticks) const;
 
   static inline constinit thread_local Profiler* s_current = nullptr;
@@ -334,7 +370,14 @@ class Profiler final {
   // The timed points ended in the frame in progress, including its own.
   int64_t current_frame_timed_points_ = 0;
 
+  // The class of core the frame in progress started on.
+  int current_frame_start_core_ = 0;
+
   const double ticks_per_second_;
+
+  // The rate the CPU reports for its timestamp counter, or 0 if none.
+  const double cpu_ticks_per_second_;
+
   const absl::Duration budget_per_frame_;
   const double budget_fraction_;
   const int64_t slow_frame_ticks_;
@@ -347,6 +390,7 @@ class Profiler final {
   int64_t frames_ = 0;
   int64_t total_frame_ticks_ = 0;
   std::array<int64_t, kFrameBuckets> frame_buckets_ = {};
+  std::array<CoreFrames, kCoreClasses + 1> core_frames_ = {};
   FrameBreakdown slowest_frame_;
 };
 

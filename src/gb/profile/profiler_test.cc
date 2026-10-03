@@ -399,6 +399,10 @@ P99         2.18us
 Max         2.30us
 Profiler    0 per frame, budget none
 Point cost  0
+Tick rate   1.00GHz measured, 1.00GHz reported
+
+Core     Frames  Average     Max
+class 0       2   1.30us  2.30us
 
 Point                Kind     Count  Count/frame    Self  Self/call  Self/frame
 ReportTest/Run       frame        2         1.00  1.30us      650ns       650ns
@@ -407,7 +411,7 @@ ReportTest/Refresh   scope        1         0.50   500ns      500ns       250ns
 ReportTest/GetTrack  call         2         1.00   800ns      400ns       400ns
 ReportTest/Messages  counter      4         2.00       -          -           -
 
-Slowest frame: 2.30us, profiler 0
+Slowest frame: 2.30us, core class 0, profiler 0
 Kind     Self
 frame  1.00us
 scope   500ns
@@ -429,6 +433,7 @@ TEST_F(ProfilerTest, ReportWithNoFrames) {
   EXPECT_EQ(profiler_.GetReport(),
             R"(Frames      0
 Point cost  0
+Tick rate   1.00GHz measured, 1.00GHz reported
 
 Point                Kind   Count  Count/frame    Self  Self/call  Self/frame
 ReportTest/NoFrames  scope      1            -  10.0ns     10.0ns           -
@@ -473,9 +478,83 @@ TEST(ProfilerReportTest, ProfilerCostAndBudget) {
                         "budget)\nPoint cost  201ns\n"),
             std::string::npos)
       << report;
-  EXPECT_NE(report.find("Slowest frame: 10.0us, profiler 402ns\n"),
+  EXPECT_NE(
+      report.find("Slowest frame: 10.0us, core class 0, profiler 402ns\n"),
+      std::string::npos)
+      << report;
+}
+
+//------------------------------------------------------------------------------
+// Tick rates and cores
+//------------------------------------------------------------------------------
+
+TEST(ProfilerTickRateTest, MeasuredAndReportedRates) {
+  FakeTicks ticks(3'187'200'000);
+  ticks.SetCpuTicksPerSecond(3'000'000'000);
+  Profiler profiler({.fake_ticks = &ticks});
+  const std::string report = profiler.GetReport();
+  EXPECT_NE(report.find("Tick rate   3.19GHz measured, 3.00GHz reported\n"),
             std::string::npos)
       << report;
+}
+
+TEST(ProfilerTickRateTest, NoReportedRate) {
+  FakeTicks ticks;
+  ticks.SetCpuTicksPerSecond(0);
+  Profiler profiler({.fake_ticks = &ticks});
+  const std::string report = profiler.GetReport();
+  EXPECT_NE(report.find("Tick rate   1.00GHz measured, none reported\n"),
+            std::string::npos)
+      << report;
+}
+
+TEST_F(ProfilerTest, FramesByCoreClass) {
+  ticks_.SetCoreClass(1);
+  RecordFrames({1000});
+  ticks_.SetCoreClass(0);
+  RecordFrames({2000, 1000});
+
+  // A frame that starts on one class and ends on another is mixed.
+  {
+    ProfileFrame<"ProfilerTest/Frames"> frame;
+    ticks_.SetCoreClass(1);
+    ticks_.Advance(3000);
+  }
+
+  const std::string report = profiler_.GetReport();
+  EXPECT_NE(report.find(R"(
+Core     Frames  Average     Max
+class 0       2   1.50us  2.00us
+class 1       1   1.00us  1.00us
+mixed         1   3.00us  3.00us
+Warning: frames ran on more than one class of core, which run at different speeds
+)"),
+            std::string::npos)
+      << report;
+  EXPECT_NE(report.find("Slowest frame: 3.00us, core mixed, profiler 0\n"),
+            std::string::npos)
+      << report;
+}
+
+TEST_F(ProfilerTest, OutOfRangeCoreClassesAreClamped) {
+  ticks_.SetCoreClass(100);
+  RecordFrames({1000});
+  ticks_.SetCoreClass(-1);
+  RecordFrames({1000});
+  const std::string report = profiler_.GetReport();
+  EXPECT_NE(report.find("\nclass 0       1"), std::string::npos) << report;
+  EXPECT_NE(report.find("\nclass 7       1"), std::string::npos) << report;
+}
+
+TEST_F(ProfilerTest, ResetClearsCoreClasses) {
+  ticks_.SetCoreClass(1);
+  RecordFrames({1000});
+  profiler_.Reset();
+  ticks_.SetCoreClass(0);
+  RecordFrames({1000});
+  const std::string report = profiler_.GetReport();
+  EXPECT_EQ(report.find("class 1"), std::string::npos) << report;
+  EXPECT_EQ(report.find("Warning"), std::string::npos) << report;
 }
 
 //------------------------------------------------------------------------------
@@ -508,7 +587,7 @@ TEST_F(ProfilerSlowFrameTest, ReportsOnlySlowFrames) {
     ticks_.Advance(1500);
   }
   ASSERT_EQ(reports_.size(), 1);
-  EXPECT_EQ(reports_[0], R"(Slow frame: 1.50us, profiler 0
+  EXPECT_EQ(reports_[0], R"(Slow frame: 1.50us, core class 0, profiler 0
 Kind     Self
 frame       0
 scope  1.50us
@@ -538,7 +617,7 @@ TEST_F(ProfilerSlowFrameTest, BreakdownAddsUpKindsAndOrdersTiesByName) {
     }
   }
   ASSERT_EQ(reports_.size(), 1);
-  EXPECT_EQ(reports_[0], R"(Slow frame: 1.70us, profiler 0
+  EXPECT_EQ(reports_[0], R"(Slow frame: 1.70us, core class 0, profiler 0
 Kind     Self
 frame   100ns
 scope  1.00us
@@ -591,19 +670,23 @@ TEST(ProfilerSetupTest, OtherTicksPerSecond) {
             absl::Milliseconds(3));
 }
 
-// Only checks that the real timestamp counter is read. How long anything takes
-// isn't checked, as no test depends on real time, but the cost of a timed point
-// is logged, to measure it in an optimized build.
+// Only checks that the real timestamp counter and core are read. How long
+// anything takes isn't checked, as no test depends on real time, but the report
+// is logged, to see the cost of a timed point in an optimized build, and the
+// tick rates.
 TEST(ProfilerSetupTest, RealTicks) {
   Profiler profiler;
   {
+    ProfileFrame<"ProfilerTest/RealFrame"> frame;
     ProfileScope<"ProfilerTest/RealTicks"> scope;
   }
   EXPECT_EQ(profiler.GetCount("ProfilerTest/RealTicks"), 1);
   EXPECT_GT(profiler.GetSelfTime("ProfilerTest/RealTicks"),
             absl::ZeroDuration());
   EXPECT_GT(profiler.GetPointCost(), absl::ZeroDuration());
-  LOG(INFO) << "A timed point costs " << profiler.GetPointCost();
+  const std::string report = profiler.GetReport();
+  EXPECT_NE(report.find("Slowest frame: "), std::string::npos) << report;
+  LOG(INFO) << report;
 }
 
 }  // namespace

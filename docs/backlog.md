@@ -34,8 +34,7 @@ Each item carries:
 On one machine, an i9-14900KF with 8 performance and 16 efficiency cores,
 profiles of the same scenario vary by about 30% between sessions, with every
 point faster or slower together, including code that didn't change. Something
-shifts the whole profile, not the code. There are two explanations, which a
-profile can't tell apart today:
+shifts the whole profile, not the code. There are two explanations:
 - **The tick rate is wrong.** Times are `__rdtsc()` ticks divided by a rate
   measured once, over 1ms against the steady clock (`GetTicksPerSecond()` in
   `profiler.cc`). A wrong rate scales every time by the same factor, which is
@@ -56,18 +55,23 @@ So a core of one kind varies by about 5%, and the two kinds differ by about
 That makes the core a run was on the likelier cause, but nothing has shown it
 yet.
 
-To tell them apart, the report would show:
-- The measured tick rate in the header, and the CPU's own, from CPUID leaf
-  0x15 where it has one. A rate that changes between sessions is the first.
-- The kind of core each frame ran on: `__rdtscp()` returns the processor
-  number with the timestamp, which `GetLogicalProcessorInformationEx()` maps
-  to its efficiency class. The report splits frames by class, and warns when a
-  profile mixes them. Frames on slower cores are the second.
+The report now tells them apart. Its frame summary has the tick rate measured
+and the rate CPUID leaf 0x15 reports (both 3.19GHz on this machine), and a
+rate that changes between sessions, or differs from the CPU's, is the first. It
+splits frames by the efficiency class of the core they ran on (here, class 1
+for performance cores and 0 for efficiency cores), and warns when a profile
+mixes them. Frames on slower cores, or a whole session on them, are the
+second. Reading the core's class at each end of a frame added 4.8ns to a frame;
+a timed point costs what it did.
 
-The fix follows from which it is: a rate from CPUID, or a longer, checked
-calibration, for the first; for the second, the split report, and a way to
-profile on one kind of core. Any change to what a timed point or a frame costs
-says so here, as projects set a budget for the profiler's own cost on it.
+What is left is the fix, once profiles from that machine show which it is: a
+rate from CPUID, or a longer, checked calibration, for the first; a way to
+profile on one kind of core for the second. Pinning a thread to one kind of
+core needs the table of each processor's class that `gb/profile`'s
+`win_cpu_info.cc` builds, which would then move to `gb/thread` beside its
+affinity code, with `gb/profile` calling it. Any change to what a timed point or
+a frame costs says so here, as projects set a budget for the profiler's own
+cost on it.
 
 ## Fiber-safe thread locals
 

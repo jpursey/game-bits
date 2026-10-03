@@ -71,26 +71,36 @@ std::string report = profiler.GetReport();
   created, and `FrameSummary` reports its own cost per frame (the timed points
   in frames times that cost) and its budget: the larger of `budget_per_frame`
   and `budget_fraction` of the average frame, or infinite if neither is set.
+- **Tick rate and cores:** the timestamp counter counts time, not work, so a
+  profile can be slower because the code ran on a slower core, or because the
+  rate that converts ticks to time is wrong. The report shows the rate measured
+  and the rate the CPU reports (CPUID leaf 0x15), where it does. Each frame
+  records the efficiency class of the core it started and ended on (higher is
+  faster, and every core is class 0 on a CPU with one kind), or "mixed" if
+  those differ, and the report gives each class's frame count, average, and
+  max, warning when there is more than one.
 - **Report:** `GetReport()` returns the values, the frame summary (with the
-  profiler's cost against its budget), one line per point with its count and
-  self time in total, per frame, and per call, and the slowest frame's
-  breakdown. Only points the Profiler recorded appear (a counter whose total is
+  profiler's cost against its budget, and the tick rates), the frames by class
+  of core, one line per point with its count and self time in total, per frame,
+  and per call, and the slowest frame's breakdown. Only points the Profiler recorded appear (a counter whose total is
   zero counts as not recorded), grouped by kind and sorted by name, with aligned
   columns and times to three significant digits, so two reports diff cleanly.
   A program puts its own header (build, date) before it.
 - **Frame breakdowns:** a frame's breakdown is read to find what made it slow,
-  so it starts with the frame's self time by kind (frames, scopes, and calls,
-  which add up to the frame's time, splitting it into the program's own time
-  and other systems'), then lists its points slowest first.
+  so it starts with the frame's class of core and self time by kind (frames,
+  scopes, and calls, which add up to the frame's time, splitting it into the
+  program's own time and other systems'), then lists its points slowest first.
 - **Slow frames:** a frame longer than `slow_frame` calls `on_slow_frame` with
   that frame's breakdown, just after the frame ends, so any points the callback
   reaches are outside the frame.
 - **For tests:** `GetCount()`, `GetSelfTime()`, `GetValue()`,
   `GetSlowestFrameCount()`, and `GetSlowestFrameSelfTime()` read a point by
   name, and `Reset()` clears everything recorded. A `FakeTicks` in the options
-  replaces the CPU's timestamp counter, so no test reads real time.
+  replaces the CPU's timestamp counter, so no test reads real time. It also
+  sets the rate the CPU reports and the class of core it is read on.
 - **Platforms:** x86-64 only, where `__rdtsc` exists, which is every platform
-  Game Bits builds on. The timestamp counter must be invariant.
+  Game Bits builds on. The timestamp counter must be invariant. Off Windows,
+  every core is class 0.
 
 ## Structure
 
@@ -101,6 +111,7 @@ std::string report = profiler.GetReport();
 | `profiler.h`          | `Profiler`: recording, frames, cost, and the report                                   |
 | `profile_call_hook.h` | `ProfileCallHook`, a Hook for `gb/base/function_hook.h`                               |
 | `fake_ticks.h`        | `FakeTicks`, the timestamp counter for tests                                          |
+| `cpu_info.h`          | The class of the current core (`win_cpu_info.cc`)                                     |
 
 - **Registry:** global and mutex protected, touched only when a point is
   registered. Points live in a fixed array, so names stay at fixed addresses,
@@ -121,9 +132,14 @@ std::string report = profiler.GetReport();
   child ticks, and adds its elapsed ticks less its own child ticks to its slot.
   `ProfileFrame` is a separate type, so other timers don't pay a branch on the
   kind.
-- **Frames:** ending a frame adds it to the histogram, and, rarely, captures its
-  breakdown (walking only the registered points) when it is the slowest so far
-  or slow.
+- **Frames:** ending a frame adds it to the histogram and to its class of
+  core's totals, and, rarely, captures its breakdown (walking only the
+  registered points) when it is the slowest so far or slow.
+- **Cores:** a frame reads its core's class just before it starts timing and
+  just after it ends, from `GetCurrentProcessorNumberEx()` and a table of
+  classes by processor built once, by the first Profiler without a FakeTicks,
+  from
+  `GetLogicalProcessorInformationEx()`.
 - **Cost:** the constructor times 5 rounds of 100 points inside an outer
   timing, keeps the fastest round, then clears everything with `Reset()`.
 - **Calibration:** ticks are converted to time with a rate measured once per
@@ -139,12 +155,18 @@ timestamp counter in `profiler.cc`.
 
 ## Measurements
 
-On the development machine (3.187GHz, invariant TSC; QPC runs at 10MHz):
+On the development machine (an i9-14900KF, with 8 performance cores of class 1
+and 16 efficiency cores of class 0; 3.187GHz invariant TSC, as measured and as
+CPUID leaf 0x15 reports; QPC runs at 10MHz):
 
 - **A timed point:** 11.75ns to 12.25ns in a RelWithDebInfo build, as a
   Profiler measures it (17.75ns in Debug). That leaves out finding the thread's
   Profiler, about 1ns. With no Profiler, a point costs about 1ns. A bare
   `__rdtsc` is 5.3ns.
+- **A frame:** an empty frame takes 24.8ns in a RelWithDebInfo build, 4.8ns of
+  it reading the core's class at each end (`GetCurrentProcessorNumberEx()` is
+  2.4ns), which falls outside the frame's own time. `__rdtscp`, which returns
+  the processor number with the timestamp, is 4.5ns slower than `__rdtsc`.
 - **Calibration:** a 1ms calibration is within 100ppm of a 1s one, limited by
   the steady clock's 100ns resolution. A simulated 2ms thread switch between
   the paired reads at either end made an unbracketed calibration 100% to 1500%

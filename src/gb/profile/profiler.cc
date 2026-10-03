@@ -5,6 +5,10 @@
 
 #include "gb/profile/profiler.h"
 
+#ifndef _MSC_VER
+#include <cpuid.h>
+#endif
+
 #include <algorithm>
 #include <bit>
 #include <chrono>
@@ -20,6 +24,7 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/types/span.h"
+#include "gb/profile/cpu_info.h"
 
 namespace gb {
 
@@ -76,6 +81,32 @@ double MeasureTicksPerSecond() {
 double GetTicksPerSecond() {
   static const double s_ticks_per_second = MeasureTicksPerSecond();
   return s_ticks_per_second;
+}
+
+// Returns how fast the CPU says its timestamp counter runs, or 0 if it doesn't
+// say. CPUID leaf 0x15 gives the rate as a ratio (EBX / EAX) of the core
+// crystal clock (ECX, in Hz), each 0 if the CPU doesn't report it.
+double GetCpuTicksPerSecond() {
+  uint32_t eax = 0;
+  uint32_t ebx = 0;
+  uint32_t ecx = 0;
+#ifdef _MSC_VER
+  int registers[4];
+  __cpuid(registers, 0);
+  if (registers[0] >= 0x15) {
+    __cpuid(registers, 0x15);
+    eax = static_cast<uint32_t>(registers[0]);
+    ebx = static_cast<uint32_t>(registers[1]);
+    ecx = static_cast<uint32_t>(registers[2]);
+  }
+#else
+  uint32_t edx = 0;
+  __get_cpuid(0x15, &eax, &ebx, &ecx, &edx);
+#endif
+  if (eax == 0 || ebx == 0 || ecx == 0) {
+    return 0;
+  }
+  return static_cast<double>(ecx) * ebx / eax;
 }
 
 // How the cost of a timed point is measured: this many rounds of this many
@@ -149,6 +180,11 @@ std::string FormatTime(absl::Duration time) {
   return FormatNumber(nanoseconds) + "ns";
 }
 
+// Formats a tick rate in GHz with three significant digits, such as "3.19GHz".
+std::string FormatTickRate(double ticks_per_second) {
+  return FormatNumber(ticks_per_second / 1e9) + "GHz";
+}
+
 std::string_view GetKindName(ProfilePoint::Kind kind) {
   switch (kind) {
     case ProfilePoint::Kind::kFrame:
@@ -219,6 +255,10 @@ Profiler::Profiler(Options options)
           fake_ticks_ != nullptr
               ? static_cast<double>(fake_ticks_->GetTicksPerSecond())
               : GetTicksPerSecond()),
+      cpu_ticks_per_second_(
+          fake_ticks_ != nullptr
+              ? static_cast<double>(fake_ticks_->GetCpuTicksPerSecond())
+              : GetCpuTicksPerSecond()),
       budget_per_frame_(options.budget_per_frame),
       budget_fraction_(options.budget_fraction),
       slow_frame_ticks_(
@@ -229,6 +269,12 @@ Profiler::Profiler(Options options)
       on_slow_frame_(std::move(options.on_slow_frame)) {
   CHECK(s_current == nullptr) << "Only one Profiler may exist per thread";
   s_current = this;
+
+  // The first read of the core's class finds every core's class, which is
+  // done here rather than in the first frame.
+  if (fake_ticks_ == nullptr) {
+    internal::GetCoreClass();
+  }
 
   // Measuring times points into the slots, which are then cleared.
   point_cost_ticks_ = MeasurePointCost();
@@ -306,6 +352,7 @@ void Profiler::Reset() {
   frames_ = 0;
   total_frame_ticks_ = 0;
   frame_buckets_ = {};
+  core_frames_ = {};
   slowest_frame_ = {};
 }
 
@@ -332,6 +379,7 @@ void Profiler::StartFrame(Timing& timing) {
   CHECK(current_frame_ == 0) << "Profile frames can't nest";
   current_frame_ = frames_ + 1;
   current_frame_timed_points_ = 0;
+  current_frame_start_core_ = ReadCoreClass();
   StartTiming(timing);
 }
 
@@ -341,15 +389,22 @@ void Profiler::EndFrame(int index, Timing& timing) {
   ++frames_;
   total_frame_ticks_ += frame_ticks;
   ++frame_buckets_[GetFrameBucket(frame_ticks)];
+  const int end_core = ReadCoreClass();
+  const int core =
+      end_core == current_frame_start_core_ ? end_core : kMixedCores;
+  CoreFrames& core_frames = core_frames_[core];
+  ++core_frames.frames;
+  core_frames.ticks += frame_ticks;
+  core_frames.max_ticks = std::max(core_frames.max_ticks, frame_ticks);
   const bool is_slowest = frame_ticks > slowest_frame_.ticks;
   if (is_slowest) {
-    slowest_frame_ = CaptureFrame(frame_ticks);
+    slowest_frame_ = CaptureFrame(frame_ticks, core);
   }
   std::string slow_frame_report;
   if (frame_ticks > slow_frame_ticks_ && on_slow_frame_ != nullptr) {
     FrameBreakdown slow_frame;
     if (!is_slowest) {
-      slow_frame = CaptureFrame(frame_ticks);
+      slow_frame = CaptureFrame(frame_ticks, core);
     }
     AppendFrame(slow_frame_report, "Slow frame",
                 is_slowest ? slowest_frame_ : slow_frame,
@@ -364,8 +419,9 @@ void Profiler::EndFrame(int index, Timing& timing) {
   }
 }
 
-Profiler::FrameBreakdown Profiler::CaptureFrame(int64_t ticks) const {
+Profiler::FrameBreakdown Profiler::CaptureFrame(int64_t ticks, int core) const {
   FrameBreakdown frame = {.ticks = ticks,
+                          .core = core,
                           .timed_points = current_frame_timed_points_};
   const int point_count = ProfilePoint::GetRegisteredCount();
   for (int i = 0; i < point_count; ++i) {
@@ -385,6 +441,7 @@ std::string Profiler::GetReport() const {
   std::string report;
   AppendValues(report, points);
   AppendFrameSummary(report);
+  AppendCoreFrames(report);
   AppendPoints(report, points);
   if (frames_ > 0) {
     absl::StrAppend(&report, "\n");
@@ -429,7 +486,40 @@ void Profiler::AppendFrameSummary(std::string& report) const {
     table.push_back({"Profiler", std::move(profiler)});
   }
   table.push_back({"Point cost", FormatTime(GetPointCost())});
+  table.push_back(
+      {"Tick rate",
+       absl::StrCat(FormatTickRate(ticks_per_second_), " measured, ",
+                    cpu_ticks_per_second_ > 0
+                        ? FormatTickRate(cpu_ticks_per_second_)
+                        : std::string("none"),
+                    " reported")});
   AppendTable(report, table, 2);
+}
+
+void Profiler::AppendCoreFrames(std::string& report) const {
+  if (frames_ == 0) {
+    return;
+  }
+  Table table = {{"Core", "Frames", "Average", "Max"}};
+  int cores = 0;
+  for (int core = 0; core < static_cast<int>(core_frames_.size()); ++core) {
+    const CoreFrames& core_frames = core_frames_[core];
+    if (core_frames.frames == 0) {
+      continue;
+    }
+    ++cores;
+    table.push_back(
+        {FormatCore(core), absl::StrCat(core_frames.frames),
+         FormatTime(TicksToDuration(core_frames.ticks) / core_frames.frames),
+         FormatTime(TicksToDuration(core_frames.max_ticks))});
+  }
+  absl::StrAppend(&report, "\n");
+  AppendTable(report, table, 1);
+  if (cores > 1) {
+    absl::StrAppend(&report,
+                    "Warning: frames ran on more than one class of core, "
+                    "which run at different speeds\n");
+  }
 }
 
 void Profiler::AppendPoints(std::string& report,
@@ -462,8 +552,8 @@ void Profiler::AppendFrame(std::string& report, std::string_view title,
                            const FrameBreakdown& frame,
                            absl::Span<const ProfilePoint> registered) const {
   absl::StrAppend(
-      &report, title, ": ", FormatTime(TicksToDuration(frame.ticks)),
-      ", profiler ",
+      &report, title, ": ", FormatTime(TicksToDuration(frame.ticks)), ", core ",
+      FormatCore(frame.core), ", profiler ",
       FormatTime(TicksToDuration(static_cast<double>(frame.timed_points) *
                                  point_cost_ticks_)),
       "\n");
@@ -546,6 +636,19 @@ int64_t Profiler::GetFramePercentileTicks(double fraction) const {
     }
   }
   return slowest_frame_.ticks;
+}
+
+int Profiler::ReadCoreClass() const {
+  const int core_class = fake_ticks_ != nullptr ? fake_ticks_->GetCoreClass()
+                                                : internal::GetCoreClass();
+  return std::clamp(core_class, 0, kCoreClasses - 1);
+}
+
+std::string Profiler::FormatCore(int core) {
+  if (core == kMixedCores) {
+    return "mixed";
+  }
+  return absl::StrCat("class ", core);
 }
 
 absl::Duration Profiler::TicksToDuration(double ticks) const {
