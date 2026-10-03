@@ -33,6 +33,9 @@ set(gb_file_TEST_SOURCE
 set(gb_file_DEPS
   absl::flat_hash_map
   gb_base
+)
+
+set(gb_file_TEST_DEPS
   gb_test
 )
 

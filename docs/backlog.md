@@ -22,35 +22,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Fail tests on logged errors
-
-- **Layers:** test
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Requested by:** JPRSurf *Surface tests*
-- **Background:** none
-
-A test of a whole program can't check every outcome directly, but anything the
-code logs at `ERROR` is a sign something went wrong that the test should fail
-on. Add a class to `gb/test` that, for as long as it exists, records every
-Abseil log message at or above a severity (`ERROR` by default), and fails the
-current test with each one (`ADD_FAILURE()`, with the message's file, line, and
-text) when it is destroyed. A fixture holds one as a member, so every test
-fails on an error logged anywhere in it, its setup and teardown included.
-- **Expected errors.** A test that means to log an error can take the messages
-  recorded so far, which clears them, and check them itself. Nothing fails for
-  the messages taken.
-- **No global changes.** It works whether or not `absl::InitializeLog()` has
-  been called, and leaves the minimum log level, the stderr threshold, and
-  other sinks as they were.
-- **Threads.** Messages logged on any thread are recorded, and the failures
-  are reported on the thread that destroys it.
-- **Its own tests:** an error logged fails the test (checked with gtest-spi's
-  `ScopedFakeTestPartResultReporter`), a warning doesn't, taken messages don't,
-  a lower severity can be asked for, and nothing is recorded after it is
-  destroyed.
-
 ## Profile times that hold across sessions
 
 - **Layers:** profile
