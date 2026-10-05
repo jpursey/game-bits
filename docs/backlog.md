@@ -101,3 +101,32 @@ multithreaded case.
 projects built on Game Bits keep compiling until they switch to
 `absl::AnyInvocable` themselves. Once none use it, delete `callback.h` and
 remove it from `gb_base`. This breaks any project still using it.
+
+## Log file
+
+- **Layers:** base
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Requested by:** Terra Diem *Log file*, JPRSurf *Use Game Bits' log file*
+- **Background:** JPRSurf's `src/jpr/common/log_file.h` and `local_time.h`
+
+Abseil logging only writes to stderr, which a Windows (non-console) program or
+a DLL loaded by another program doesn't show. Add a `LogFile`: an RAII object
+that, for as long as it lives, writes every Abseil log message at or above a
+minimum level to a file, which it replaces when it is created. Each message is
+flushed as it is written, so the log is complete after a crash or a failed
+`CHECK`. The first `LogFile` also initializes Abseil logging.
+
+JPRSurf already has this, proven in use, in `jpr/common/log_file.{h,cc}`, and
+it knows nothing of JPRSurf. Move it rather than writing a new one, with:
+- The file written without iostreams (it uses `std::ofstream` today), per the
+  C++ style.
+- `GetLocalTimeZone()` (`jpr/common/local_time.{h,cc}`) moved with it, for the
+  timestamps. `absl::LocalTimeZone()` returns UTC inside some host processes,
+  so this reads the zone from Windows, behind a portable declaration.
+- Tests that log from several threads and read the file back, and that a
+  second `LogFile` on the same path replaces the file.
+
+The log's location stays the caller's choice. JPRSurf's `GetLogPath()`, which
+puts files under `%APPDATA%`, stays in JPRSurf.
