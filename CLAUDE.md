@@ -78,9 +78,7 @@ A full build is 530 steps and takes about 35 seconds on a 32 core machine; incre
 
 Game Bits code (everything under `src/gb`) compiles with warnings as errors (`/WX` on MSVC, `-Werror` on Clang). Third-party code does not.
 
-Do not build through a generated Visual Studio solution (`-G "Visual Studio 17 2022"`) instead: it is roughly twenty times slower, and it makes the compiler crashes below happen constantly rather than rarely.
-
-MSVC 14.44 intermittently crashes (`fatal error C1001`, occasionally `LNK1127`) in the optimizer, in a different translation unit each time. This is a toolchain problem, not an error in the code, and it only shows up in optimized (`Release` / `RelWithDebInfo`) builds -- Debug builds are reliable. Re-run the exact same command and the failing target compiles.
+Do not build through a generated Visual Studio solution (`-G "Visual Studio 17 2022"`) instead: it is roughly twenty times slower.
 
 ### Test
 
