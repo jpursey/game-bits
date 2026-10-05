@@ -22,57 +22,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Profile times that hold across sessions
-
-- **Layers:** profile
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Requested by:** JPRSurf *Profiles after Game Bits' timing fix*
-- **Background:** [Profiler module](worklog/profiler_module.md)
-
-On one machine, an i9-14900KF with 8 performance and 16 efficiency cores,
-profiles of the same scenario vary by about 30% between sessions, with every
-point faster or slower together, including code that didn't change. Something
-shifts the whole profile, not the code. There are two explanations:
-- **The tick rate is wrong.** Times are `__rdtsc()` ticks divided by a rate
-  measured once, over 1ms against the steady clock (`GetTicksPerSecond()` in
-  `profiler.cc`). A wrong rate scales every time by the same factor, which is
-  the symptom. With an invariant TSC (a constant rate whatever the core or its
-  clock speed, kept in step across cores, as on recent Intel and AMD CPUs) the
-  rate should be the same every session, but nothing checks that it is.
-- **The code ran slower.** The TSC counts time, not work. On an efficiency
-  core, or a core Windows has slowed (such as the power throttling it applies
-  to a window in the background), the same code takes longer, and the profile
-  is right to say so. Then the conditions vary, not the measurement.
-
-The machine is set up to keep its speed: core parking is off in Windows, and C
-states are off in the BIOS. Its cores still slow to 800MHz with nothing
-running. With REAPER idle for over a minute, the performance cores ran at
-5400-5700MHz and the efficiency cores at 4200-4400MHz (HWMonitor, 2026-10-03).
-So a core of one kind varies by about 5%, and the two kinds differ by about
-30% in clock speed alone, before the efficiency cores' lower work per clock.
-That makes the core a run was on the likelier cause, but nothing has shown it
-yet.
-
-The report now tells them apart. Its frame summary has the tick rate measured
-and the rate CPUID leaf 0x15 reports (both 3.19GHz on this machine), and a
-rate that changes between sessions, or differs from the CPU's, is the first. It
-splits frames by the efficiency class of the core they ran on (here, class 1
-for performance cores and 0 for efficiency cores), and warns when a profile
-mixes them. Frames on slower cores, or a whole session on them, are the
-second. Reading the core's class at each end of a frame added 4.8ns to a frame;
-a timed point costs what it did.
-
-What is left is the fix, once profiles from that machine show which it is: a
-rate from CPUID, or a longer, checked calibration, for the first; a way to
-profile on one kind of core for the second. Pinning a thread to one kind of
-core needs the table of each processor's class that `gb/profile`'s
-`win_cpu_info.cc` builds, which would then move to `gb/thread` beside its
-affinity code, with `gb/profile` calling it. Any change to what a timed point or
-a frame costs says so here, as projects set a budget for the profiler's own
-cost on it.
-
 ## Fiber-safe thread locals
 
 - **Layers:** thread, job
@@ -109,6 +58,19 @@ or between jobs), or the slots become atomics written only by their own thread
 timeline of events instead, which this is not. `Profiler::GetReport()` reads
 its own slots, so the combined view needs the report to format a snapshot of
 slots instead, which a combined total can also provide.
+
+The kind of core a thread runs on matters as much as what it runs. On an
+i9-14900KF (8 performance and 16 efficiency cores), frames on efficiency cores
+took about 25-30% longer than the same frames on performance cores, and
+Windows moved a program's main thread onto them when its window was in the
+background (2026-10-05). The tick rate was not at fault: it measured the same
+in every session, matching what CPUID reports. The single-thread report
+already splits frames by core class and warns when they mix; a combined view
+needs the same per thread, since job threads spread across both kinds of core.
+Pinning threads to one kind would make profiles compare, but `gb/thread`'s
+affinities don't know which hardware threads are which kind. Only
+`gb/profile`'s `win_cpu_info.cc` builds that table, which would move to
+`gb/thread` for it.
 
 ## Fiber-aware profiling
 
