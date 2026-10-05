@@ -3,8 +3,8 @@
 #include "SDL.h"
 #include "SDL_main.h"
 #include "absl/log/globals.h"
-#include "absl/log/initialize.h"
 #include "absl/log/log.h"
+#include "gb/base/init_logging.h"
 
 bool MainLoop() {
   if (SDL_Init(SDL_INIT_VIDEO) != 0) {
@@ -41,7 +41,7 @@ bool MainLoop() {
 }
 
 SDLMAIN_DECLSPEC int main(int argc, char* argv[]) {
-  absl::InitializeLog();
+  gb::InitLogging();
   absl::SetStderrThreshold(absl::LogSeverityAtLeast::kInfo);
 
   return MainLoop() ? 0 : 1;

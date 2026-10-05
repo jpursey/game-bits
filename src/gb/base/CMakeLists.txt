@@ -5,10 +5,13 @@
 
 if (WIN32)
   set(gb_base_internal_SOURCE
+    win_local_time.cc
     win_platform.cc win_platform.h
   )
 else()
-  set(gb_base_internal_SOURCE)
+  set(gb_base_internal_SOURCE
+    gen_local_time.cc
+  )
 endif()
 
 set(gb_base_SOURCE
@@ -22,6 +25,9 @@ set(gb_base_SOURCE
   fake_clock.h
   flags.h
   function_hook.h
+  init_logging.cc init_logging.h
+  local_time.h
+  log_file.cc log_file.h
   platform_requirements.cc platform_requirements.h
   scoped_call.h
   string_util.h
@@ -38,6 +44,9 @@ set(gb_base_TEST_SOURCE
   context_test.cc
   flags_test.cc
   function_hook_test.cc
+  init_logging_test.cc
+  local_time_test.cc
+  log_file_test.cc
   type_info_test.cc
   unicode_test.cc
   validated_context_test.cc
@@ -52,8 +61,15 @@ set_source_files_properties(validated_context_test.cc
 
 set(gb_base_DEPS
   absl::any_invocable
+  absl::base
   absl::flat_hash_map
+  absl::log_entry
+  absl::log_initialize
+  absl::log_severity
+  absl::log_sink
+  absl::log_sink_registry
   absl::memory
+  absl::str_format
   absl::strings
   absl::synchronization
   absl::time
