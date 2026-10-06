@@ -87,17 +87,3 @@ waits is charged only for the time it runs. Needs a hook in `gb/thread`'s fiber
 switch that the profiler can use without `gb/thread` depending on it. Most
 useful alongside *Multithreaded profiles*, since fiber jobs are the main
 multithreaded case.
-
-## Remove Callback
-
-- **Layers:** base
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** none
-
-`gb::Callback` in `gb/base/callback.h` is now only an alias of
-`absl::AnyInvocable`, and nothing in Game Bits uses it. It remains so that
-projects built on Game Bits keep compiling until they switch to
-`absl::AnyInvocable` themselves. Once none use it, delete `callback.h` and
-remove it from `gb_base`. This breaks any project still using it.

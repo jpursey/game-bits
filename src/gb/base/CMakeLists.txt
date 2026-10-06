@@ -17,7 +17,6 @@ endif()
 set(gb_base_SOURCE
   access_token.h
   allocator.cc allocator.h
-  callback.h
   callback_scope.h
   clock.h
   context.cc context.h
