@@ -5,6 +5,7 @@
 
 #include "gb/base/context.h"
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -513,6 +514,30 @@ TEST(ContextTest, SetNamedPtrDoesNotPassOwnership) {
   EXPECT_TRUE(context.Exists<int>("int"));
   EXPECT_FALSE(context.Owned<int>("int"));
   EXPECT_EQ(context.GetPtr<int>("int"), value.get());
+}
+
+TEST(ContextTest, SetOwnedTakesOwnershipOfSamePtr) {
+  Counts counts;
+  auto item = std::make_unique<Item>(&counts);
+  Context context;
+  context.SetPtr<Item>(item.get());
+  context.SetOwned(std::move(item));
+  EXPECT_TRUE(context.Owned<Item>());
+  context.Reset();
+  EXPECT_EQ(counts.destruct, 1);
+}
+
+TEST(ContextTest, SetPtrReleasesOwnershipOfSamePtr) {
+  Counts counts;
+  Context context;
+  context.SetNew<Item>(&counts);
+  std::unique_ptr<Item> item(context.GetPtr<Item>());
+  context.SetPtr<Item>(item.get());
+  EXPECT_FALSE(context.Owned<Item>());
+  context.Reset();
+  EXPECT_EQ(counts.destruct, 0);
+  item.reset();
+  EXPECT_EQ(counts.destruct, 1);
 }
 
 TEST(ContextTest, SetNewUsesDefaultConstructor) {
@@ -1260,6 +1285,47 @@ TEST(ContextTest, ParentDeletion) {
   EXPECT_EQ(child.GetValue<int>(), 0);
 }
 
+TEST(ContextTest, MoveConstruct) {
+  Context parent;
+  Counts counts;
+  Context context;
+  context.SetParent(&parent);
+  context.SetNew<Item>(&counts);
+  context.SetValue<int>("one", 1);
+  Context moved_context(std::move(context));
+  EXPECT_TRUE(context.Empty());
+  EXPECT_TRUE(moved_context.Owned<Item>());
+  EXPECT_EQ(moved_context.GetValue<int>("one"), 1);
+  EXPECT_TRUE(moved_context.NameExists("one"));
+  EXPECT_EQ(moved_context.GetParent().Lock().Get(), &parent);
+  EXPECT_EQ(counts.destruct, 0);
+}
+
+TEST(ContextTest, MoveAssignDeletesOwnedItems) {
+  Counts old_counts;
+  Counts new_counts;
+  Context context;
+  context.SetNew<Item>(&old_counts);
+  context.SetNamedNew<Item>("item", &old_counts);
+  Context other_context;
+  other_context.SetNew<Item>(&new_counts);
+  context = std::move(other_context);
+  EXPECT_EQ(old_counts.destruct, 2);
+  EXPECT_FALSE(context.NameExists("item"));
+  EXPECT_TRUE(context.Owned<Item>());
+  EXPECT_EQ(new_counts.destruct, 0);
+}
+
+TEST(ContextTest, MoveAssignToSelf) {
+  Counts counts;
+  Context context;
+  context.SetNew<Item>(&counts);
+  Context& self = context;
+  context = std::move(self);
+  EXPECT_TRUE(context.Owned<Item>());
+  EXPECT_EQ(counts.destruct, 0);
+}
+
 TEST(ContextTest, ThreadAbuse) {
   Context parent;
   Context context;
@@ -1312,7 +1378,7 @@ TEST(ContextTest, ThreadAbuse) {
     return true;
   };
   tester.RunLoop(1, "loop", func, ThreadTester::MaxConcurrency());
-  absl::SleepFor(absl::Seconds(1));
+  ASSERT_TRUE(tester.WaitForLoopCount("loop", 1000));
   EXPECT_TRUE(tester.Complete()) << tester.GetResultString();
 }
 

@@ -155,6 +155,61 @@ TEST(ThreadTesterTest, RunLoopFails) {
   EXPECT_EQ(count, 2);
 }
 
+TEST(ThreadTesterTest, WaitForLoopCount) {
+  ThreadTester tester;
+  std::atomic<int> count = 0;
+  tester.RunLoop(100, "test", [&count]() {
+    ++count;
+    return true;
+  });
+  EXPECT_TRUE(tester.WaitForLoopCount("test", 1000));
+  EXPECT_GE(count, 1000);
+  EXPECT_TRUE(tester.Complete()) << tester.GetResultString();
+}
+
+TEST(ThreadTesterTest, WaitForLoopCountAcrossThreads) {
+  ThreadTester tester;
+  std::atomic<int> count = 0;
+  auto func = [&count]() {
+    ++count;
+    return true;
+  };
+  tester.RunLoop(100, "test", func, ThreadTester::MaxConcurrency());
+  tester.RunLoop(100, "test", func);
+  EXPECT_TRUE(tester.WaitForLoopCount("test", 10000));
+  EXPECT_GE(count, 10000);
+  EXPECT_TRUE(tester.Complete()) << tester.GetResultString();
+}
+
+TEST(ThreadTesterTest, WaitForLoopCountMultipleWaiters) {
+  ThreadTester tester;
+  tester.RunLoop(100, "loop", []() { return true; });
+  tester.Run("wait", [&tester]() {
+    return tester.WaitForLoopCount("loop", 1000) &&
+           tester.WaitForLoopCount("loop", 3000);
+  });
+  EXPECT_TRUE(tester.WaitForLoopCount("loop", 2000));
+  EXPECT_TRUE(tester.WaitForLoopCount("loop", 4000));
+  EXPECT_TRUE(tester.Complete()) << tester.GetResultString();
+}
+
+TEST(ThreadTesterTest, WaitForLoopCountNotReached) {
+  ThreadTester tester;
+  tester.RunLoop(100, "test", []() { return false; });
+
+  // The loop stops after its first call fails.
+  EXPECT_TRUE(tester.WaitForLoopCount("test", 1));
+  EXPECT_FALSE(tester.WaitForLoopCount("test", 2, absl::ZeroDuration()));
+  EXPECT_FALSE(tester.Complete()) << tester.GetResultString();
+}
+
+TEST(ThreadTesterTest, WaitForLoopCountUnknownLoop) {
+  ThreadTester tester;
+  tester.Run("test", []() { return true; });
+  EXPECT_FALSE(tester.WaitForLoopCount("test", 1, absl::ZeroDuration()));
+  EXPECT_TRUE(tester.Complete()) << tester.GetResultString();
+}
+
 TEST(ThreadTesterTest, MultipleNamedThreadsSuccess) {
   ThreadTester tester;
   tester.RunThenSignal(100, "a", [&tester]() {

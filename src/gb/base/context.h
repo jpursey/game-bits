@@ -6,6 +6,7 @@
 #ifndef GB_BASE_CONTEXT_H_
 #define GB_BASE_CONTEXT_H_
 
+#include <memory>
 #include <string_view>
 #include <tuple>
 
@@ -88,8 +89,8 @@ class Context final : public WeakScope<Context> {
   // Sets the value of the specified Type with the context taking ownership.
   //
   // Any existing owned value will be destructed and replaced with the new
-  // value. If the new value is the same as the old value, then no destruction
-  // will not occur -- only the ownership may change (from unowned to owned). If
+  // value. If the new value is the same as the old value, then it is not
+  // destructed -- only the ownership changes (from unowned to owned). If
   // a null is passed in, this is equivalent to calling Clear<Type> with no
   // value being stored.
   //
@@ -107,8 +108,8 @@ class Context final : public WeakScope<Context> {
   // Sets the value of the specified Type without the context taking ownership.
   //
   // Any existing owned value will be destructed and replaced with the new
-  // value. If the new value is the same as the old value, then no destruction
-  // will not occur -- only the ownership may change (from owned to unowned). If
+  // value. If the new value is the same as the old value, then it is not
+  // destructed -- only the ownership changes (from owned to unowned). If
   // a null is passed in, this is equivalent to calling Clear<Type> with no
   // value being stored.
   //
@@ -324,9 +325,12 @@ class Context final : public WeakScope<Context> {
 
  private:
   struct Value {
-    Value() = default;
     TypeInfo* type = nullptr;
-    char* name = nullptr;
+
+    // The name that the value's keys in Values and Names point to, if it has
+    // one. Its Names entry must be erased before the Value is.
+    std::unique_ptr<char[]> name;
+
     void* value = nullptr;
     bool owned = false;
   };

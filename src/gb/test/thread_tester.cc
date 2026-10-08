@@ -64,19 +64,60 @@ void ThreadTester::RunThenSignal(int signal_id, const std::string& name,
 void ThreadTester::RunLoop(int signal_id, const std::string& name,
                            TestFunction func, int thread_count) {
   absl::Notification* notification = nullptr;
+  LoopCount* loop_count = nullptr;
   {
     absl::MutexLock lock(&mutex_);
     notification = GetNotification(signal_id);
+    auto& loop_count_ptr = loop_counts_[name];
+    if (loop_count_ptr == nullptr) {
+      loop_count_ptr = std::make_unique<LoopCount>();
+    }
+    loop_count = loop_count_ptr.get();
   }
-  auto loop_func = [func, notification]() {
+  auto loop_func = [this, func, notification, loop_count]() {
     while (!notification->HasBeenNotified()) {
-      if (!func()) {
+      const bool success = func();
+      CountLoop(loop_count);
+      if (!success) {
         return false;
       }
     }
     return true;
   };
   Run(name, loop_func, thread_count);
+}
+
+void ThreadTester::CountLoop(LoopCount* loop_count) {
+  const int count = loop_count->count.fetch_add(1) + 1;
+  if (count >= loop_count->wake_count.load(std::memory_order_relaxed)) {
+    // Releasing the mutex makes waiting WaitForLoopCount() calls check the
+    // count again.
+    absl::MutexLock lock(&mutex_);
+  }
+}
+
+bool ThreadTester::WaitForLoopCount(const std::string& name, int count,
+                                    absl::Duration timeout) {
+  absl::MutexLock lock(&mutex_);
+  auto it = loop_counts_.find(name);
+  if (it == loop_counts_.end()) {
+    LOG(ERROR) << "Requested count of non-existent loop: \"" << name << "\"";
+    return false;
+  }
+  LoopCount* loop_count = it->second.get();
+  ++loop_count->waiting;
+  if (count < loop_count->wake_count) {
+    loop_count->wake_count = count;
+  }
+  const auto count_reached = [loop_count, count]() {
+    return loop_count->count >= count;
+  };
+  const bool reached =
+      mutex_.AwaitWithTimeout(absl::Condition(&count_reached), timeout);
+  if (--loop_count->waiting == 0) {
+    loop_count->wake_count = std::numeric_limits<int>::max();
+  }
+  return reached;
 }
 
 bool ThreadTester::Wait(int signal_id, absl::Duration timeout) {

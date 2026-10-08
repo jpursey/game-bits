@@ -5,6 +5,8 @@
 
 #include "gb/base/type_info.h"
 
+#include <string>
+
 #include "absl/strings/match.h"
 #include "gb/test/thread_tester.h"
 #include "gtest/gtest.h"
@@ -120,7 +122,7 @@ TEST(TypeKeyTest, SetTypeNameThreadAbuse) {
     std::string name = TypeKey::Get<TestType>()->GetTypeName();
     return (name == "A" || name == "B");
   });
-  absl::SleepFor(absl::Seconds(1));
+  ASSERT_TRUE(tester.WaitForLoopCount("get", 10000));
   EXPECT_TRUE(tester.Complete()) << tester.GetResultString();
 }
 

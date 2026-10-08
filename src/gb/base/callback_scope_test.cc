@@ -130,20 +130,18 @@ TEST(CallbackScopeTest, CallbackDeletedWithMultipleThreads) {
   auto count = std::make_unique<std::atomic<int>>(0);
   ThreadTester tester;
   auto callback = scope->New<bool()>(
-      [&count, &tester]() {
+      [&count]() {
         if (count == nullptr) {
           return false;
         }
-        if (++*count == 10000) {
-          tester.Signal(2);
-        }
+        ++*count;
         return true;
       },
       true);
   tester.RunLoop(
       1, "test", [&callback]() { return callback(); },
       ThreadTester::MaxConcurrency());
-  ASSERT_TRUE(tester.Wait(2));
+  ASSERT_TRUE(tester.WaitForLoopCount("test", 10000));
   scope.reset();
   count.reset();
   EXPECT_TRUE(tester.Complete()) << tester.GetResultString();

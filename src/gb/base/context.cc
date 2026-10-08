@@ -6,6 +6,7 @@
 #include "gb/base/context.h"
 
 #include <cstring>
+#include <utility>
 
 namespace gb {
 
@@ -14,11 +15,20 @@ Context::Context(Context&& other) : WeakScope<Context>(this) {
 }
 
 Context& Context::operator=(Context&& other) {
-  absl::WriterMutexLock other_lock(&other.mutex_);
-  absl::WriterMutexLock this_lock(&mutex_);
-  parent_ = std::move(other.parent_);
-  values_ = std::move(other.values_);
-  names_ = std::move(other.names_);
+  if (&other == this) {
+    return *this;
+  }
+  {
+    absl::WriterMutexLock other_lock(&other.mutex_);
+    absl::WriterMutexLock this_lock(&mutex_);
+    parent_ = std::exchange(other.parent_, nullptr);
+    std::swap(values_, other.values_);
+    std::swap(names_, other.names_);
+  }
+
+  // `other` now holds this context's old values, which are destroyed outside
+  // of the locks.
+  other.Reset();
   return *this;
 }
 
@@ -36,27 +46,19 @@ void Context::SetImpl(std::string_view name, TypeInfo* type, void* new_value,
     // (and delete if owned) the existing value.
     stored_value = &it->second;
     if (new_value == nullptr) {
-      char* owned_name = stored_value->name;
       if (stored_value->owned) {
         delete_type = stored_value->type;
         delete_value = stored_value->value;
       }
-      values_.erase(it);
-      if (owned_name != nullptr) {
-        names_.erase(std::get<0>(key));
-        delete[] owned_name;  // Must be after erase.
+      if (stored_value->name != nullptr) {
+        names_.erase(name);
       }
+      values_.erase(it);
 
       mutex_.WriterUnlock();
       if (delete_value != nullptr) {
         delete_type->Destroy(delete_value);
       }
-      return;
-    }
-
-    // If the new and old value are identical, there is nothing to do.
-    if (new_value == stored_value->value) {
-      mutex_.WriterUnlock();
       return;
     }
   } else if (new_value == nullptr) {
@@ -74,7 +76,7 @@ void Context::SetImpl(std::string_view name, TypeInfo* type, void* new_value,
     return;
   } else {
     // We are adding a new value!
-    char* owned_name = nullptr;
+    std::unique_ptr<char[]> owned_name;
     if (!name.empty()) {
       // A name was specified, so we must first clear any existing value of the
       // same name.
@@ -85,17 +87,18 @@ void Context::SetImpl(std::string_view name, TypeInfo* type, void* new_value,
         SetImpl(name, type, new_value, owned);
         return;
       }
-      owned_name = new char[name.size() + 1];
-      std::memcpy(owned_name, name.data(), name.size());
-      owned_name[name.size()] = 0;
-      std::string_view name_key = owned_name;
+      owned_name = std::make_unique_for_overwrite<char[]>(name.size());
+      std::memcpy(owned_name.get(), name.data(), name.size());
+      const std::string_view name_key(owned_name.get(), name.size());
       key = std::make_tuple(name_key, type->Key());
       names_[name_key] = type;
     }
     stored_value = &values_[key];
-    stored_value->name = owned_name;
+    stored_value->name = std::move(owned_name);
   }
-  if (stored_value->owned) {
+
+  // Setting the value it already holds only changes its ownership.
+  if (stored_value->owned && stored_value->value != new_value) {
     delete_type = stored_value->type;
     delete_value = stored_value->value;
   }
@@ -110,19 +113,15 @@ void Context::SetImpl(std::string_view name, TypeInfo* type, void* new_value,
 }
 
 void* Context::ReleaseImpl(std::string_view name, TypeInfo* type) {
-  auto key = std::make_pair(name, type->Key());
-  void* released_value = nullptr;
-  auto it = values_.find(key);
-  if (it != values_.end() && it->second.owned) {
-    char* owned_name = it->second.name;
-    released_value = it->second.value;
-    auto name_key = std::get<0>(it->first);
-    values_.erase(it);
-    if (owned_name != nullptr) {
-      names_.erase(name_key);
-      delete[] owned_name;  // Must be after erase.
-    }
+  auto it = values_.find(std::make_tuple(name, type->Key()));
+  if (it == values_.end() || !it->second.owned) {
+    return nullptr;
   }
+  void* released_value = it->second.value;
+  if (it->second.name != nullptr) {
+    names_.erase(name);
+  }
+  values_.erase(it);
   return released_value;
 }
 
@@ -130,25 +129,13 @@ void Context::Reset() {
   Values old_values;
   {
     absl::WriterMutexLock lock(&mutex_);
-    old_values = std::move(values_);
     names_.clear();
+    old_values = std::exchange(values_, {});
   }
-
-  std::vector<char*> names;
-  names.reserve(old_values.size());
-
-  for (auto& value : old_values) {
-    if (value.second.name != nullptr) {
-      names.push_back(value.second.name);
+  for (auto& [key, value] : old_values) {
+    if (value.owned) {
+      value.type->Destroy(value.value);
     }
-    if (value.second.owned) {
-      value.second.type->Destroy(value.second.value);
-    }
-  }
-
-  // Must be after clear.
-  for (char* name : names) {
-    delete[] name;
   }
 }
 

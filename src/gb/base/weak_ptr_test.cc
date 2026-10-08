@@ -209,19 +209,12 @@ TEST(WeakPtrTest, ThreadAbuse) {
   ThreadTester tester;
   auto instance = std::make_unique<DerivedClass>(42);
   WeakPtr<DerivedClass> ptr(instance.get());
-  std::atomic<int> lock_count = 0;
-  auto func = [ptr, &lock_count, &tester]() {
+  auto func = [ptr]() {
     WeakLock<DerivedClass> lock(&ptr);
-    if (lock == nullptr) {
-      return true;
-    }
-    if (++lock_count == 10000) {
-      tester.Signal(2);
-    }
-    return lock->GetValue() == 42;
+    return lock == nullptr || lock->GetValue() == 42;
   };
   tester.RunLoop(1, "loop", func, ThreadTester::MaxConcurrency());
-  ASSERT_TRUE(tester.Wait(2));
+  ASSERT_TRUE(tester.WaitForLoopCount("loop", 10000));
   instance = nullptr;
   EXPECT_TRUE(tester.Complete()) << tester.GetResultString();
 }

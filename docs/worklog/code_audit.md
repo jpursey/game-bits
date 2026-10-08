@@ -14,8 +14,9 @@ audited after everything it depends on. For each one:
 - Make optimizations that are measurable, or plainly wasteful as written
   (needless copies, allocations, or locking).
 
-Anything found that would change the public API, or is too large for the
-audit, becomes its own backlog item instead, named in the library's CL.
+New APIs may be added where a fix or test needs one. Anything found that would
+break an existing public API, or is too large for the audit, becomes its own
+backlog item instead, named in the library's CL.
 
 Code that can't be unit tested (rendering, windows, input) is read for bugs
 only, and any fix is checked by hand in an example.
@@ -73,23 +74,30 @@ Depends on: CL1.
   scoped callbacks calling each other while the scope is destroyed, and a
   `WeakPtr` to a base class at a different address (CHECK failure).
 
-### CL3 [ ] base: audit Context and ValidatedContext
+### CL3 [x] base: audit Context and ValidatedContext
 
 Depends on: CL2.
 
 - `Context` move assignment overwrote the target's values without destroying
-  the owned ones or freeing their names, and self-move deadlocked.
+  the owned ones or freeing their names, and self-move deadlocked. Each value
+  now owns its name, so no path that removes values can leak one.
 - Setting a value to the pointer it already held (`SetPtr()` then
   `SetOwned()`, or the reverse) kept the old ownership, contrary to the
   comment, leaking the value or deleting one the caller still owned.
-- `ValidatedContext::Complete()` kept a shared context alive until the
-  `ValidatedContext` was destroyed or reassigned.
+- `ValidatedContext::Complete()` keeps a shared context alive until the
+  `ValidatedContext` is destroyed or reassigned. This is left as it is, as
+  `Assign()` depends on it when the same context is assigned again with new
+  constraints, which now has a test.
 - `ContextTest.ThreadAbuse` and `TypeInfoTest` waited on real time.
+- `ThreadTester::WaitForLoopCount()` is new, waiting until a `RunLoop()` has
+  run its function a number of times. It replaces the counters and signals
+  the stress tests in CL2 and this CL each wrote by hand.
 
 **Verify**
 - Standard checks.
 - Unit tests: move construction and assignment, ownership changes on the same
-  pointer, and releasing a shared context on completion.
+  pointer, assigning the same shared context again, and `WaitForLoopCount()`
+  (across threads, with several waiters, and when the count isn't reached).
 
 ### CL4 [ ] base: audit the rest of gb_base
 

@@ -1501,5 +1501,17 @@ TEST_F(ContextOwnershipTest, AssignTakesSharedOwnership) {
   EXPECT_EQ(validated_context_c->GetValue<int>(), kDefaultInValue);
 }
 
+TEST_F(ContextOwnershipTest, AssignSharedContextAgain) {
+  Counts counts;
+  auto context = std::make_shared<Context>();
+  context->SetNew<Item>(&counts);
+  ValidatedContext validated_context(context, {kInRequiredItem});
+  context = nullptr;
+  EXPECT_TRUE(validated_context.Assign(validated_context.GetContext(),
+                                       {kInRequiredItem}));
+  EXPECT_NE(validated_context.GetPtr<Item>(), nullptr);
+  EXPECT_EQ(counts.destruct, 0);
+}
+
 }  // namespace
 }  // namespace gb

@@ -7,7 +7,9 @@
 #define GB_TEST_THREAD_TESTER_H_
 
 #include <algorithm>
+#include <atomic>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <string>
 #include <thread>
@@ -56,6 +58,12 @@ class ThreadTester {
   void RunLoop(int signal_id, const std::string& name, TestFunction func,
                int thread_count = 1);
 
+  // Waits until the loops started by RunLoop() with the specified name have
+  // called their function at least `count` times, in total across all their
+  // threads. Returns false if the timeout was reached first.
+  bool WaitForLoopCount(const std::string& name, int count,
+                        absl::Duration timeout = absl::Seconds(30));
+
   // Waits on or signals a notification. Notifications can only be signaled
   // once. Wait returns false if the timeout was reached before the signal
   // occurred.
@@ -78,20 +86,39 @@ class ThreadTester {
     bool success = true;
   };
 
+  // The number of times the loops of one name have called their function.
+  struct LoopCount {
+    std::atomic<int> count = 0;
+
+    // The lowest count a WaitForLoopCount() call is waiting for. From this
+    // count on, each call locks the mutex, so that waiting calls check the
+    // count again.
+    std::atomic<int> wake_count = std::numeric_limits<int>::max();
+
+    // The number of WaitForLoopCount() calls waiting. Guarded by the
+    // ThreadTester's mutex.
+    int waiting = 0;
+  };
+
   using Notifications =
       absl::flat_hash_map<int, std::unique_ptr<absl::Notification>>;
   using Threads = std::vector<std::unique_ptr<std::thread>>;
   using Results = absl::flat_hash_map<std::string, ResultInfo>;
+  using LoopCounts =
+      absl::flat_hash_map<std::string, std::unique_ptr<LoopCount>>;
 
   void RunFunction(const std::string& name, const TestFunction& func)
       ABSL_LOCKS_EXCLUDED(mutex_);
   absl::Notification* GetNotification(int signal_id)
       ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+  // Counts one call of a loop's function.
+  void CountLoop(LoopCount* loop_count) ABSL_LOCKS_EXCLUDED(mutex_);
 
   mutable absl::Mutex mutex_;
   Threads threads_ ABSL_GUARDED_BY(mutex_);
   Notifications signals_ ABSL_GUARDED_BY(mutex_);
   Results results_ ABSL_GUARDED_BY(mutex_);
+  LoopCounts loop_counts_ ABSL_GUARDED_BY(mutex_);
   bool success_ ABSL_GUARDED_BY(mutex_) = true;
 };
 
