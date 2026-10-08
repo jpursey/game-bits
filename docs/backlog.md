@@ -22,6 +22,24 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
+## Code audit
+
+- **Layers:** all of `src/gb`, lower tiers first
+- **Size:** large
+- **Feature workflow:** yes
+- **Depends on:** nothing
+- **Background:** none
+
+Go through every Game Bits library in tier order, looking for bugs, missing
+tests, and optimizations that leave the public API unchanged. Each library is
+one or more CLs: read the code and its tests, write a failing test for each bug
+before fixing it, add tests for untested behavior and edge cases, and make
+optimizations that are measurable or plainly wasteful as written (needless
+copies, allocations, or locking). Anything found that would change the public
+API, or is too large for the audit, becomes its own backlog item instead. The
+plan lists the libraries with what was found in each, so the audit can stop and
+resume between libraries.
+
 ## Fiber-safe thread locals
 
 - **Layers:** thread, job
