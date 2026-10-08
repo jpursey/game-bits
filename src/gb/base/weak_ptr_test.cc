@@ -5,6 +5,9 @@
 
 #include "gb/base/weak_ptr.h"
 
+#include <atomic>
+#include <thread>
+
 #include "gb/test/thread_tester.h"
 #include "gtest/gtest.h"
 
@@ -145,6 +148,53 @@ TEST(WeakPtrLock, WeakPtrToBaseClass) {
   EXPECT_EQ(ptr.Lock().Get(), static_cast<WeakScope<DerivedClass>*>(&instance));
 }
 
+struct FirstBase {
+  int first = 1;
+};
+
+struct SecondBase {
+  int second = 2;
+};
+
+class MultipleBases final : public FirstBase,
+                            public SecondBase,
+                            public WeakScope<MultipleBases> {
+ public:
+  MultipleBases() : WeakScope<MultipleBases>(this) {}
+  ~MultipleBases() override { InvalidateWeakPtrs(); }
+};
+
+TEST(WeakPtrDeathTest, WeakPtrToBaseClassAtDifferentAddress) {
+  MultipleBases instance;
+  EXPECT_DEATH(WeakPtr<SecondBase>{&instance}, "same address");
+}
+
+TEST(WeakPtrTest, LockIsNullOnceInvalidateStarts) {
+  auto instance = std::make_unique<DerivedClass>(42);
+  WeakPtr<DerivedClass> ptr(instance.get());
+  WeakLock<DerivedClass> lock = ptr.Lock();
+  std::atomic<bool> invalidated = false;
+  ThreadTester tester;
+  tester.Run("invalidate", [&instance, &invalidated]() {
+    instance->InvalidateWeakPtrs();
+    invalidated = true;
+    return true;
+  });
+
+  // This thread holds a lock, so invalidation can't finish until it is
+  // released. New locks, including copies of the lock held, must be null
+  // rather than wait for invalidation to finish.
+  while (ptr.Lock() != nullptr) {
+    std::this_thread::yield();
+  }
+  EXPECT_EQ(WeakLock<DerivedClass>(lock), nullptr);
+  EXPECT_FALSE(invalidated);
+  EXPECT_EQ(lock->GetValue(), 42);
+  lock = WeakLock<DerivedClass>();
+  EXPECT_TRUE(tester.Complete()) << tester.GetResultString();
+  EXPECT_TRUE(invalidated);
+}
+
 TEST(WeakPtrTest, WeakConstPtr) {
   DerivedClass instance(42);
   WeakPtr<const DerivedClass> ptr(&instance);
@@ -159,15 +209,20 @@ TEST(WeakPtrTest, ThreadAbuse) {
   ThreadTester tester;
   auto instance = std::make_unique<DerivedClass>(42);
   WeakPtr<DerivedClass> ptr(instance.get());
-  auto func = [ptr]() {
+  std::atomic<int> lock_count = 0;
+  auto func = [ptr, &lock_count, &tester]() {
     WeakLock<DerivedClass> lock(&ptr);
-    absl::SleepFor(absl::Milliseconds(1));
-    return lock == nullptr || lock->GetValue() == 42;
+    if (lock == nullptr) {
+      return true;
+    }
+    if (++lock_count == 10000) {
+      tester.Signal(2);
+    }
+    return lock->GetValue() == 42;
   };
   tester.RunLoop(1, "loop", func, ThreadTester::MaxConcurrency());
-  absl::SleepFor(absl::Milliseconds(500));
+  ASSERT_TRUE(tester.Wait(2));
   instance = nullptr;
-  absl::SleepFor(absl::Milliseconds(500));
   EXPECT_TRUE(tester.Complete()) << tester.GetResultString();
 }
 

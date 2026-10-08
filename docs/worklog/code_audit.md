@@ -46,74 +46,140 @@ Depends on: nothing.
   size, character range, and distinct adjacent characters of both test string
   generators.
 
-### CL2 [ ] base: audit gb_base
+### CL2 [x] base: audit WeakPtr and CallbackScope
 
 Depends on: CL1.
 
-### CL3 [ ] alloc: audit gb_alloc
+- A `WeakLock` taken while `InvalidateWeakPtrs()` was waiting for existing
+  locks blocked until it finished, rather than being null as documented. A
+  thread that already held a lock and took another (directly, by copying it,
+  or by one scoped callback calling another) deadlocked with the invalidating
+  thread. New locks are now null as soon as invalidation starts.
+- A moved-from `WeakScope` crashed in its destructor (and in
+  `InvalidateWeakPtrs()`), as it dereferenced its moved-away data. A moved
+  scope also kept pointing at the instance it was constructed with, so
+  `WeakScope` is no longer movable. Nothing moved one, and any move crashed.
+- A `WeakPtr` to a base class that isn't at the start of the scope's object
+  (multiple inheritance) locked to the wrong address, as the pointer was cast
+  through `void*`. Supporting it would make every `WeakPtr` half again as
+  large, so it is a documented requirement instead, which `GetWeakPtr()`
+  CHECKs.
+- `WeakPtrTest.ThreadAbuse` and `CallbackScopeTest` waited on real time
+  (sleeps). They now synchronize on signals and counts.
+
+**Verify**
+- Standard checks (see CLAUDE.md).
+- Unit tests: locking (and copying a lock) while another thread invalidates,
+  scoped callbacks calling each other while the scope is destroyed, and a
+  `WeakPtr` to a base class at a different address (CHECK failure).
+
+### CL3 [ ] base: audit Context and ValidatedContext
 
 Depends on: CL2.
 
-### CL4 [ ] container: audit gb_container
+- `Context` move assignment overwrote the target's values without destroying
+  the owned ones or freeing their names, and self-move deadlocked.
+- Setting a value to the pointer it already held (`SetPtr()` then
+  `SetOwned()`, or the reverse) kept the old ownership, contrary to the
+  comment, leaking the value or deleting one the caller still owned.
+- `ValidatedContext::Complete()` kept a shared context alive until the
+  `ValidatedContext` was destroyed or reassigned.
+- `ContextTest.ThreadAbuse` and `TypeInfoTest` waited on real time.
 
-Depends on: CL2.
+**Verify**
+- Standard checks.
+- Unit tests: move construction and assignment, ownership changes on the same
+  pointer, and releasing a shared context on completion.
 
-### CL5 [ ] thread: audit gb_thread
+### CL4 [ ] base: audit the rest of gb_base
 
-Depends on: CL2.
+Depends on: CL1.
 
-### CL6 [ ] profile: audit gb_profile
+- `Allocator::New()` and `TsAllocator`'s constructor took their arguments by
+  value, so a constructor taking a reference bound to a temporary copy, and
+  `NewArray()` moved the same arguments into every element, leaving all but
+  the first moved-from.
+- `StdAllocator` and `StdGlobalAllocator` didn't compile once a container used
+  them.
+- `ToUtf16()` and `ToUtf8()` threw on invalid input (utfcpp's checked
+  conversions), rather than returning an empty string as documented.
+- `IsPlatformSupported()` was defined outside `namespace gb`, so the declared
+  function had no definition.
+- `GetWindowsError()` kept the trailing line break from `FormatMessage()` in
+  the middle of the message.
+- `ScopedCall` was copyable, so a copy called the function twice.
 
-Depends on: CL2.
+**Verify**
+- Standard checks.
+- Unit tests: `Allocator` helpers with reference and move-only arguments,
+  `StdAllocator` and `StdGlobalAllocator` in standard containers, invalid
+  UTF-8 and UTF-16 conversions, `IsPlatformSupported()`, `GetWindowsError()`,
+  and `ScopedCall`.
 
-### CL7 [ ] file: audit gb_file
+### CL5 [ ] alloc: audit gb_alloc
 
-Depends on: CL2.
+Depends on: CL4.
 
-### CL8 [ ] sdl: audit gb_sdl
+### CL6 [ ] container: audit gb_container
 
-Depends on: CL2.
+Depends on: CL4.
 
-### CL9 [ ] parse: audit gb_parse
+### CL7 [ ] thread: audit gb_thread
 
-Depends on: CL2.
+Depends on: CL4.
 
-### CL10 [ ] config: audit gb_config
+### CL8 [ ] profile: audit gb_profile
+
+Depends on: CL4.
+
+### CL9 [ ] file: audit gb_file
+
+Depends on: CL4.
+
+### CL10 [ ] sdl: audit gb_sdl
+
+Depends on: CL4.
+
+### CL11 [ ] parse: audit gb_parse
+
+Depends on: CL4.
+
+### CL12 [ ] config: audit gb_config
+
+Depends on: CL11.
+
+### CL13 [ ] collide: audit gb_collide
+
+Depends on: CL4.
+
+### CL14 [ ] game: audit gb_game
+
+Depends on: CL4.
+
+### CL15 [ ] image: audit gb_image
 
 Depends on: CL9.
 
-### CL11 [ ] collide: audit gb_collide
+### CL16 [ ] job: audit gb_job
 
-Depends on: CL2.
+Depends on: CL5, CL7.
 
-### CL12 [ ] game: audit gb_game
+### CL17 [ ] message: audit gb_message
 
-Depends on: CL2.
+Depends on: CL4.
 
-### CL13 [ ] image: audit gb_image
+### CL18 [ ] resource: audit gb_resource
 
-Depends on: CL7.
+Depends on: CL9.
 
-### CL14 [ ] job: audit gb_job
+### CL19 [ ] render: audit gb_render
 
-Depends on: CL3, CL5.
+Depends on: CL18.
 
-### CL15 [ ] message: audit gb_message
+### CL20 [ ] render: audit gb_render_vulkan and gb_render_vulkan_sdl
 
-Depends on: CL2.
+Depends on: CL19.
 
-### CL16 [ ] resource: audit gb_resource
+### CL21 [ ] imgui: audit gb_imgui and gb_imgui_sdl
 
-Depends on: CL7.
-
-### CL17 [ ] render: audit gb_render
-
-Depends on: CL16.
-
-### CL18 [ ] render: audit gb_render_vulkan and gb_render_vulkan_sdl
-
-Depends on: CL17.
-
-### CL19 [ ] imgui: audit gb_imgui and gb_imgui_sdl
-
-Depends on: CL17.
+Depends on: CL19.

@@ -7,6 +7,7 @@
 #define GB_BASE_WEAK_PTR_H
 
 #include <memory>
+#include <utility>
 
 #include "absl/log/check.h"
 #include "absl/synchronization/mutex.h"
@@ -15,21 +16,24 @@ namespace gb {
 
 namespace internal {
 
-// Internal structure used by Weak* classes.
+// Internal structure used by Weak* classes, shared by a WeakScope and every
+// WeakPtr and WeakLock from it.
 class WeakPtrData {
  public:
   explicit WeakPtrData(void* ptr) : ptr_(ptr) {}
 
-  void* Get() { return ptr_; }
-  void Clear();
-  void ReaderLock();
+  // Sets the pointer to null, then waits for all reader locks to be released.
+  void Invalidate();
+
+  // Takes a reader lock and returns the pointer, if it isn't null. Otherwise
+  // returns null without taking a lock.
+  void* ReaderLock();
   void ReaderUnlock();
 
  private:
   absl::Mutex mutex_;
-  bool clear_pending_ ABSL_GUARDED_BY(mutex_) = false;
+  void* ptr_ ABSL_GUARDED_BY(mutex_);
   int count_ ABSL_GUARDED_BY(mutex_) = 0;  // Number of WeakLocks active.
-  void* ptr_ = nullptr;
 };
 
 }  // namespace internal
@@ -44,12 +48,12 @@ class WeakScope;
 // This class represents a weak reference to an instance of Type.
 //
 // This is roughly equivalent in functionality to std::weak_ptr, except that it
-// does not require shared ownership of the underlying instance. Instead, when
-// the WeakPtr is tied to a WeakScope class which controls the value of the
-// WeakPtr instance. To access the underlying pointer, it must be locked (via
-// constructing a WeakLock<Type>), at which point the associated Scope is
-// blocks if it attempts to invalidate the pointer (setting it to nullptr) until
-// the lock is released. See WeakScope for examples.
+// does not require shared ownership of the underlying instance. Instead, the
+// WeakPtr is tied to a WeakScope, which controls how long it stays valid. To
+// access the underlying pointer, it must be locked (via constructing a
+// WeakLock<Type>), which is null once the scope is invalidated. While a lock is
+// held, invalidating the scope blocks until it is released. See WeakScope for
+// examples.
 //
 // This class is thread-compatible. However, all WeakPtr, WeakLock, and
 // WeakScope instances are thread-safe relative to each other. In other words,
@@ -88,7 +92,8 @@ class WeakPtr {
   friend class WeakScope;
   friend class WeakLock<Type>;
 
-  explicit WeakPtr(std::shared_ptr<internal::WeakPtrData> data) : data_(data) {}
+  explicit WeakPtr(std::shared_ptr<internal::WeakPtrData> data)
+      : data_(std::move(data)) {}
 
   std::shared_ptr<internal::WeakPtrData> data_;
 };
@@ -96,8 +101,8 @@ class WeakPtr {
 // This class locks a WeakPtr<Type> providing a stable pointer to the underlying
 // instance.
 //
-// While any WeakLock instance exists, the underlying WeakScope will be
-// block if it attempts to invaldate the pointer (setting it to null).
+// While any non-null WeakLock exists, invalidating its WeakScope blocks until
+// the lock is released.
 //
 // This class is thread-compatible. However, all WeakPtr, WeakLock, and
 // WeakScope instances are thread-safe relative to each other. In other words,
@@ -108,7 +113,8 @@ class WeakLock final {
  public:
   // Constructs a WeakLock from a WeakPtr.
   //
-  // This prevents the underlying instance pointer from changing until the
+  // The lock is null if the WeakPtr is null, or its scope has started being
+  // invalidated. Otherwise, the scope can't finish being invalidated until the
   // WeakLock is destructed.
   explicit WeakLock(const WeakPtr<Type>* ptr);
 
@@ -118,7 +124,8 @@ class WeakLock final {
   // Default construction.
   WeakLock() = default;
 
-  // WeakLock supports all standard copy and assignment methods.
+  // WeakLock supports all standard copy and assignment methods. A copy is a new
+  // lock, so it is null if the scope has started being invalidated.
   WeakLock(const WeakLock& other);
   WeakLock(WeakLock&& other);
   WeakLock& operator=(const WeakLock& other);
@@ -225,64 +232,69 @@ class WeakScope {
   // The pointer must remain valid (to a valid instance or nullptr) until
   // InvalidateWeakPtrs() is called on this instance.
   explicit WeakScope(Type* ptr)
-      : data_(std::make_shared<internal::WeakPtrData>(ptr)) {};
+      : data_(std::make_shared<internal::WeakPtrData>(ptr)), ptr_(ptr) {};
 
-  // WeakScope is a move-only class.
+  // WeakScope can't be copied or moved, as its WeakPtrs point to the instance
+  // it was constructed with.
   WeakScope(const WeakScope&) = delete;
   WeakScope& operator=(const WeakScope&) = delete;
-  WeakScope(WeakScope&&) = default;
-  WeakScope& operator=(WeakScope&&) = default;
 
   // Destructor. InvalidateWeakPtrs() must be called before destruction.
   virtual ~WeakScope();
 
-  // Invalidates all WeakPtrs retrieved from this scope (sets their pointer to
-  // nullptr).
+  // Invalidates all WeakPtrs retrieved from this scope.
   //
-  // As soon as this call begins execution, all WeakPtrs and new WeakLocks will
-  // be null. The call then blocks until all previously existing WeakLocks
-  // are destructed.
+  // As soon as this call begins execution, all new WeakLocks will be null. The
+  // call then blocks until all previously existing WeakLocks are destructed.
   void InvalidateWeakPtrs();
 
   // Returns a WeakPtr to the instance managed by this scope.
   //
+  // OtherType may be Type or a base class of it, but the base class must start
+  // at the same address as the instance, which this CHECKs. With single
+  // inheritance it always does. With multiple inheritance, which base class
+  // starts there depends on the compiler (MSVC puts one with virtual functions,
+  // such as WeakScope, ahead of the others).
+  //
   // If InvalidateWeakPtrs was already called (or the scope was constructed with
-  // nullptr), this will return a null WeakPtr.
+  // nullptr), locks of the returned WeakPtr are null.
   template <typename OtherType = const Type,
             typename = std::enable_if_t<
                 std::is_convertible<const Type*, OtherType*>::value>>
   WeakPtr<OtherType> GetWeakPtr() const {
-    return WeakPtr<OtherType>(data_);
+    return DoGetWeakPtr<OtherType>();
   }
   template <typename OtherType = Type,
             typename =
                 std::enable_if_t<std::is_convertible<Type*, OtherType*>::value>>
   WeakPtr<OtherType> GetWeakPtr() {
-    return WeakPtr<OtherType>(data_);
+    return DoGetWeakPtr<OtherType>();
   }
 
  private:
-  std::shared_ptr<internal::WeakPtrData> data_;
+  template <typename OtherType>
+  WeakPtr<OtherType> DoGetWeakPtr() const;
+
+  const std::shared_ptr<internal::WeakPtrData> data_;
+  Type* ptr_;  // Null once invalidated.
 };
 
 //==============================================================================
 // Implementation
 
-inline void internal::WeakPtrData::Clear() {
+inline void internal::WeakPtrData::Invalidate() {
   absl::MutexLock lock(&mutex_);
-  DCHECK(!clear_pending_);
-  clear_pending_ = true;
+  ptr_ = nullptr;
   mutex_.Await(
       absl::Condition(+[](int* count) { return *count == 0; }, &count_));
-  ptr_ = nullptr;
-  clear_pending_ = false;
 }
 
-inline void internal::WeakPtrData::ReaderLock() {
+inline void* internal::WeakPtrData::ReaderLock() {
   absl::MutexLock lock(&mutex_);
-  mutex_.Await(absl::Condition(
-      +[](bool* clear_pending) { return !*clear_pending; }, &clear_pending_));
-  ++count_;
+  if (ptr_ != nullptr) {
+    ++count_;
+  }
+  return ptr_;
 }
 
 inline void internal::WeakPtrData::ReaderUnlock() {
@@ -305,18 +317,21 @@ WeakLock<Type> WeakPtr<Type>::Lock() const {
 
 template <typename Type>
 WeakLock<Type>::WeakLock(const WeakPtr<Type>* ptr) {
-  if (ptr != nullptr && ptr->data_ != nullptr) {
+  if (ptr == nullptr || ptr->data_ == nullptr) {
+    return;
+  }
+  void* const locked_ptr = ptr->data_->ReaderLock();
+  if (locked_ptr != nullptr) {
     data_ = ptr->data_;
-    data_->ReaderLock();
-    ptr_ = static_cast<Type*>(data_->Get());
+    ptr_ = static_cast<Type*>(locked_ptr);
   }
 }
 
 template <typename Type>
-WeakLock<Type>::WeakLock(const WeakLock& other)
-    : data_(other.data_), ptr_(other.ptr_) {
-  if (data_ != nullptr) {
-    data_->ReaderLock();
+WeakLock<Type>::WeakLock(const WeakLock& other) {
+  if (other.data_ != nullptr && other.data_->ReaderLock() != nullptr) {
+    data_ = other.data_;
+    ptr_ = other.ptr_;
   }
 }
 
@@ -327,16 +342,8 @@ WeakLock<Type>::WeakLock(WeakLock&& other)
 
 template <typename Type>
 WeakLock<Type>& WeakLock<Type>::operator=(const WeakLock& other) {
-  if (&other == this) {
-    return *this;
-  }
-  if (data_ != nullptr) {
-    data_->ReaderUnlock();
-  }
-  data_ = other.data_;
-  ptr_ = other.ptr_;
-  if (data_ != nullptr) {
-    data_->ReaderLock();
+  if (&other != this) {
+    *this = WeakLock(other);
   }
   return *this;
 }
@@ -362,14 +369,27 @@ WeakLock<Type>::~WeakLock() {
 }
 
 template <typename Type>
+template <typename OtherType>
+WeakPtr<OtherType> WeakScope<Type>::DoGetWeakPtr() const {
+  // WeakPtrData holds the instance as a void*, so a WeakPtr can only point to
+  // a type at the same address.
+  OtherType* const other_ptr = ptr_;
+  CHECK(static_cast<const void*>(other_ptr) == static_cast<const void*>(ptr_))
+      << "WeakPtr type must start at the same address as the WeakScope's "
+         "instance";
+  return WeakPtr<OtherType>(data_);
+}
+
+template <typename Type>
 WeakScope<Type>::~WeakScope() {
-  CHECK_EQ(data_->Get(), nullptr)
+  CHECK(ptr_ == nullptr)
       << "Invalidate() must be called prior to WeakScope destruction.";
 }
 
 template <typename Type>
 void WeakScope<Type>::InvalidateWeakPtrs() {
-  data_->Clear();
+  data_->Invalidate();
+  ptr_ = nullptr;
 }
 
 }  // namespace gb
