@@ -91,6 +91,27 @@ TEST(ThreadTesterTest, RunThenSignalFails) {
   EXPECT_FALSE(tester.Complete()) << tester.GetResultString();
 }
 
+TEST(ThreadTesterTest, RunThenSignalAlreadySignaled) {
+  ThreadTester tester;
+  tester.RunThenSignal(1, "test", [&tester]() {
+    tester.Wait(2);
+    return true;
+  });
+  tester.Signal(1);
+  tester.Signal(2);
+  EXPECT_TRUE(tester.Complete()) << tester.GetResultString();
+  EXPECT_EQ(tester.GetRunResult("test"), ThreadTester::kSuccess);
+}
+
+TEST(ThreadTesterTest, RunThenSignalTwiceOnSameSignal) {
+  ThreadTester tester;
+  tester.RunThenSignal(1, "a", []() { return true; });
+  tester.RunThenSignal(1, "b", []() { return true; });
+  EXPECT_TRUE(tester.Complete()) << tester.GetResultString();
+  EXPECT_EQ(tester.GetRunResult("a"), ThreadTester::kSuccess);
+  EXPECT_EQ(tester.GetRunResult("b"), ThreadTester::kSuccess);
+}
+
 TEST(ThreadTesterTest, RunLoopSucceeds) {
   ThreadTester tester;
   std::atomic<int> id = 0;

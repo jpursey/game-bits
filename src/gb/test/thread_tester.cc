@@ -54,11 +54,10 @@ void ThreadTester::RunThenSignal(int signal_id, const std::string& name,
                                  TestFunction func) {
   absl::MutexLock lock(&mutex_);
   results_[name].running += 1;
-  auto* notification = GetNotification(signal_id);
   threads_.emplace_back(
-      std::make_unique<std::thread>([this, name, func, notification]() {
+      std::make_unique<std::thread>([this, signal_id, name, func]() {
         RunFunction(name, func);
-        notification->Notify();
+        Signal(signal_id);
       }));
 }
 

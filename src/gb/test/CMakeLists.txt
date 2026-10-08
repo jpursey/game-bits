@@ -13,6 +13,7 @@ set(gb_test_SOURCE
 set(gb_test_TEST_SOURCE
   log_error_guard_test.cc
   log_recorder_test.cc
+  test_util_test.cc
   thread_tester_test.cc
 )
 
