@@ -8,6 +8,7 @@
 #include "absl/strings/str_cat.h"
 #include "gb/file/common_protocol_test.h"
 #include "gb/file/file_system.h"
+#include "gb/file/raw_file.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
@@ -76,6 +77,69 @@ TEST(MemoryFileProtocolTest, FileInvalidAfterClose) {
   EXPECT_EQ(files[1]->SeekTo(5), -1);
   EXPECT_THAT(files[2]->ReadString(10), IsEmpty());
   EXPECT_EQ(files[3]->WriteString("abcdefghij"), 0);
+}
+
+TEST(MemoryFileProtocolTest, CreateFolderUnderMissingHost) {
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(std::make_unique<MemoryFileProtocol>()));
+  EXPECT_FALSE(
+      file_system.CreateFolder("mem://host/a", FolderMode::kRecursive));
+}
+
+TEST(MemoryFileProtocolTest, ResetFileHasNoSize) {
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(std::make_unique<MemoryFileProtocol>()));
+  ASSERT_TRUE(file_system.WriteFile("mem:/file", "12345"));
+  auto file =
+      file_system.OpenFile("mem:/file", {FileFlag::kWrite, FileFlag::kReset});
+  ASSERT_NE(file, nullptr);
+  file.reset();
+  EXPECT_EQ(file_system.GetPathInfo("mem:/file").size, 0);
+}
+
+TEST(MemoryFileProtocolTest, CopyMissingFolderAcrossProtocols) {
+  FileSystem file_system;
+  ASSERT_TRUE(
+      file_system.Register(std::make_unique<MemoryFileProtocol>(), "a"));
+  ASSERT_TRUE(
+      file_system.Register(std::make_unique<MemoryFileProtocol>(), "b"));
+  ASSERT_TRUE(file_system.WriteFile("a:/file", "12345"));
+  EXPECT_FALSE(file_system.CopyFolder("a:/missing", "b:/missing"));
+  EXPECT_EQ(file_system.GetPathInfo("b:/missing").type, PathType::kInvalid);
+  EXPECT_FALSE(file_system.CopyFolder("a:/file", "b:/file"));
+  EXPECT_EQ(file_system.GetPathInfo("b:/file").type, PathType::kInvalid);
+}
+
+TEST(MemoryFileProtocolTest, CopyWithinProtocolWithTwoNames) {
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(std::make_unique<MemoryFileProtocol>(),
+                                   std::vector<std::string>{"a", "b"}));
+  ASSERT_TRUE(file_system.CreateFolder("a:/folder"));
+  ASSERT_TRUE(file_system.WriteFile("a:/folder/file", "12345"));
+
+  // The same file under both names isn't truncated by copying it to itself.
+  file_system.CopyFile("a:/folder/file", "b:/folder/file");
+  std::string contents;
+  ASSERT_TRUE(file_system.ReadFile("a:/folder/file", &contents));
+  EXPECT_EQ(contents, "12345");
+
+  // A folder can't be copied into itself, under either name.
+  EXPECT_FALSE(file_system.CopyFolder("a:/folder", "b:/folder/sub"));
+
+  // Copies under the other name work as they do under one name.
+  EXPECT_TRUE(file_system.CopyFile("a:/folder/file", "b:/copy"));
+  ASSERT_TRUE(file_system.ReadFile("a:/copy", &contents));
+  EXPECT_EQ(contents, "12345");
+}
+
+TEST(MemoryFileProtocolTest, RelativePathsAreRejected) {
+  MemoryFileProtocol protocol;
+  EXPECT_EQ(protocol.GetPathInfo("mem", "").type, PathType::kInvalid);
+  EXPECT_FALSE(protocol.CreateFolder("mem", "folder", FolderMode::kNormal));
+  EXPECT_EQ(protocol.OpenFile("mem", "file", kNewFileFlags), nullptr);
+  EXPECT_THAT(protocol.List("mem", "", {}, FolderMode::kRecursive,
+                            {PathType::kFile, PathType::kFolder}),
+              IsEmpty());
 }
 
 }  // namespace

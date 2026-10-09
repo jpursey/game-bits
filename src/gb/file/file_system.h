@@ -37,31 +37,28 @@ class FileSystem final {
 
   // Registers a protocol using its default protocol name(s).
   //
-  // The protocol must have at least one default protocol name. This will
-  // replace any protocol(s) previously registered against the same name(s).
-  // If the protocol is null, or no the protocol does not define any protocol
-  // names, or any of the protocol names are invalid, this will return false and
-  // no protocol will be registered.
+  // The protocol must have at least one default protocol name. If the protocol
+  // is null, or the protocol does not define any protocol names, or any of the
+  // protocol names are invalid or already registered, this will return false
+  // and no protocol will be registered.
   bool Register(std::unique_ptr<FileProtocol> protocol);
 
   // Registers a protocol with the filesystem against the specified protocol
   // name.
   //
-  // This will replace any protocol previously registered against the same name.
-  // If the protocol is null or the protocol name is invalid, this will return
-  // false and no protocol will be registered.
+  // If the protocol is null, or the protocol name is invalid or already
+  // registered, this will return false and no protocol will be registered.
   bool Register(std::unique_ptr<FileProtocol> protocol,
                 const std::string& protocol_name);
 
   // Registers a protocol with the filesystem against the specified protocol
   // names.
   //
-  // There must be at least one protocol name specified, and each name must
-  // non-empty, consisting of ASCII alpha-numeric characters only. This will
-  // replace any protocol(s) previously registered against the same name(s).
-  // If the protocol is null, or no protocol names were specified, or any
-  // protocol names are invalid, this will return false and no protocol will be
-  // registered.
+  // There must be at least one protocol name specified, and each name must be
+  // non-empty, consisting of ASCII alpha-numeric characters only. If the
+  // protocol is null, or no protocol names were specified, or any protocol
+  // names are invalid or already registered, this will return false and no
+  // protocol will be registered.
   bool Register(std::unique_ptr<FileProtocol> protocol,
                 std::vector<std::string> protocol_names);
 
@@ -101,7 +98,8 @@ class FileSystem final {
   //
   // It is possible that setting the current folder could affect multiple
   // protocols if they share the same current folder. Returns true if the
-  // current folder was successfully set.
+  // current folder was successfully set, and false if the protocol is not
+  // registered, does not support current folders, or could not set it.
   bool SetCurrentFolder(std::string_view path);
 
   // Lists all files and folders matching the pattern.

@@ -45,7 +45,11 @@ bool FileSystem::Register(std::unique_ptr<FileProtocol> protocol) {
   if (protocol == nullptr) {
     return false;
   }
-  return Register(std::move(protocol), protocol->GetDefaultNames());
+
+  // The names are read before the protocol is moved into the argument, as the
+  // order arguments are evaluated in is unspecified.
+  std::vector<std::string> protocol_names = protocol->GetDefaultNames();
+  return Register(std::move(protocol), std::move(protocol_names));
 }
 
 bool FileSystem::Register(std::unique_ptr<FileProtocol> protocol,
@@ -112,7 +116,8 @@ FileProtocolFlags FileSystem::GetFlags(const std::string& protocol_name) const {
 
 std::string FileSystem::GetCurrentFolder(std::string_view protocol_name) {
   auto it = protocol_map_.find(std::string(protocol_name));
-  if (it == protocol_map_.end()) {
+  if (it == protocol_map_.end() ||
+      !it->second->GetFlags().IsSet(FileProtocolFlag::kCurrentPath)) {
     return {};
   }
   return it->second->GetCurrentPath(protocol_name);
@@ -120,7 +125,8 @@ std::string FileSystem::GetCurrentFolder(std::string_view protocol_name) {
 
 bool FileSystem::SetCurrentFolder(std::string_view path) {
   auto [normalized_path, protocol_name, protocol] = GetNormalizedPath(path);
-  if (normalized_path.empty()) {
+  if (normalized_path.empty() ||
+      !protocol->GetFlags().IsSet(FileProtocolFlag::kCurrentPath)) {
     return false;
   }
   return protocol->SetCurrentPath(protocol_name, normalized_path);
@@ -224,7 +230,9 @@ bool FileSystem::CopyFolder(std::string_view from_path,
     return false;
   }
 
-  if (from_protocol != to_protocol || from_protocol_name != to_protocol_name) {
+  // Two names for the same protocol name the same files, so only a copy between
+  // protocols is generic.
+  if (from_protocol != to_protocol) {
     if (!from_flags.IsSet(
             {FileProtocolFlag::kFileRead, FileProtocolFlag::kList}) ||
         !to_flags.IsSet({FileProtocolFlag::kFolderCreate,
@@ -261,7 +269,7 @@ bool FileSystem::CopyFile(std::string_view from_path,
   if (!to_flags.IsSet(FileProtocolFlag::kFileCreate)) {
     return false;
   }
-  if (from_protocol != to_protocol || from_protocol_name != to_protocol_name) {
+  if (from_protocol != to_protocol) {
     if (!from_flags.IsSet(FileProtocolFlag::kFileRead) ||
         !to_flags.IsSet(
             {FileProtocolFlag::kFileCreate, FileProtocolFlag::kFileWrite})) {
@@ -354,6 +362,11 @@ bool FileSystem::GenericCopyFolder(std::string_view from_protocol_name,
                                    std::string_view to_protocol_name,
                                    FileProtocol* to_protocol,
                                    std::string_view to_path) {
+  if (from_protocol->GetPathInfo(from_protocol_name, from_path).type !=
+      PathType::kFolder) {
+    return false;
+  }
+
   // Ensure the folder is created.
   if (!to_protocol->CreateFolder(to_protocol_name, to_path,
                                  FolderMode::kNormal)) {

@@ -209,6 +209,7 @@ std::unique_ptr<RawFile> MemoryFileProtocol::BasicOpenFile(
   }
   if (flags.IsSet(FileFlag::kReset)) {
     node->contents.clear();
+    node->size = 0;
   }
   return std::make_unique<MemoryFile>(node);
 }

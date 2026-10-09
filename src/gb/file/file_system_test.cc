@@ -7,8 +7,9 @@
 
 #include <algorithm>
 
+#include "gb/file/memory_file_protocol.h"
 #include "gb/file/test_protocol.h"
-#include "gb/test/test_util.cc"
+#include "gb/test/test_util.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
@@ -19,6 +20,29 @@ using ::testing::ElementsAre;
 using ::testing::IsEmpty;
 using ::testing::UnorderedElementsAre;
 using ::testing::UnorderedElementsAreArray;
+
+// A protocol that implements current paths whatever flags it is given.
+class CurrentPathProtocol : public MemoryFileProtocol {
+ public:
+  explicit CurrentPathProtocol(FileProtocolFlags flags)
+      : MemoryFileProtocol(flags) {}
+
+  int GetCallCount() const { return call_count_; }
+
+ protected:
+  std::string DoGetCurrentPath(std::string_view protocol_name) override {
+    ++call_count_;
+    return "/";
+  }
+  bool DoSetCurrentPath(std::string_view protocol_name,
+                        std::string_view path) override {
+    ++call_count_;
+    return true;
+  }
+
+ private:
+  int call_count_ = 0;
+};
 
 TEST(FileSystemTest, DefaultConstruct) {
   FileSystem file_system;
@@ -95,6 +119,34 @@ TEST(FileSystemTest, RegisterNullProtocol) {
   FileSystem file_system;
   EXPECT_FALSE(file_system.Register(nullptr));
   EXPECT_FALSE(file_system.Register(nullptr, "test"));
+}
+
+TEST(FileSystemTest, CurrentFolder) {
+  FileSystem file_system;
+  auto protocol = std::make_unique<CurrentPathProtocol>(FileProtocolFlags(
+      {kReadWriteFileProtocolFlags, FileProtocolFlag::kCurrentPath}));
+  CurrentPathProtocol* protocol_ptr = protocol.get();
+  ASSERT_TRUE(file_system.Register(std::move(protocol), "mem"));
+  EXPECT_EQ(file_system.GetCurrentFolder("mem"), "/");
+  EXPECT_TRUE(file_system.SetCurrentFolder("mem:/"));
+  EXPECT_EQ(protocol_ptr->GetCallCount(), 2);
+}
+
+TEST(FileSystemTest, CurrentFolderNeedsProtocolSupport) {
+  FileSystem file_system;
+  auto protocol =
+      std::make_unique<CurrentPathProtocol>(kReadWriteFileProtocolFlags);
+  CurrentPathProtocol* protocol_ptr = protocol.get();
+  ASSERT_TRUE(file_system.Register(std::move(protocol), "mem"));
+  EXPECT_EQ(file_system.GetCurrentFolder("mem"), "");
+  EXPECT_FALSE(file_system.SetCurrentFolder("mem:/"));
+  EXPECT_EQ(protocol_ptr->GetCallCount(), 0);
+}
+
+TEST(FileSystemTest, CurrentFolderOfUnregisteredProtocol) {
+  FileSystem file_system;
+  EXPECT_EQ(file_system.GetCurrentFolder("mem"), "");
+  EXPECT_FALSE(file_system.SetCurrentFolder("mem:/"));
 }
 
 TEST(FileSystemTest, SetDefaultProtocol) {

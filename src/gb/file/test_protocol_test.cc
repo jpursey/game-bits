@@ -16,6 +16,9 @@ namespace {
 
 using ::testing::Values;
 
+// The FileProtocol base class rejects relative paths, so calls with them never
+// reach TestProtocol, and aren't counted as invalid or as calls.
+
 std::unique_ptr<FileProtocol> TestProtocolFactory(
     FileProtocolFlags flags, const CommonProtocolTestInit& init) {
   TestProtocol::State* state = new TestProtocol::State;
@@ -112,7 +115,7 @@ TEST(TestProtocolTest, GetPathInfo) {
   info = protocol.GetPathInfo("test", "");
   EXPECT_EQ(info.type, PathType::kInvalid);
   EXPECT_EQ(info.size, 0);
-  EXPECT_EQ(state.invalid_call_count, 1);
+  EXPECT_EQ(state.invalid_call_count, 0);
   state.ResetCounts();
 
   state.flags -= FileProtocolFlag::kInfo;
@@ -132,7 +135,7 @@ TEST(TestProtocolTest, GetPathInfo) {
   info = protocol.GetPathInfo("test", "file");
   EXPECT_EQ(info.type, PathType::kInvalid);
   EXPECT_EQ(info.size, 0);
-  EXPECT_EQ(state.invalid_call_count, 1);
+  EXPECT_EQ(state.invalid_call_count, 0);
   state.ResetCounts();
 
   info = protocol.GetPathInfo("test", "/file");
@@ -183,8 +186,8 @@ TEST(TestProtocolTest, List) {
 
   paths = protocol.List("test", "", {}, FolderMode::kNormal, kAllPathTypes);
   EXPECT_EQ(paths, std::vector<std::string>());
-  EXPECT_EQ(state.invalid_call_count, 1);
-  EXPECT_EQ(state.list_count, 1);
+  EXPECT_EQ(state.invalid_call_count, 0);
+  EXPECT_EQ(state.list_count, 0);
   EXPECT_EQ(state.basic_list_count, 0);
   state.ResetCounts();
 
@@ -200,8 +203,8 @@ TEST(TestProtocolTest, List) {
   paths =
       protocol.List("test", "folder", {}, FolderMode::kNormal, kAllPathTypes);
   EXPECT_EQ(paths, std::vector<std::string>());
-  EXPECT_EQ(state.invalid_call_count, 1);
-  EXPECT_EQ(state.list_count, 1);
+  EXPECT_EQ(state.invalid_call_count, 0);
+  EXPECT_EQ(state.list_count, 0);
   EXPECT_EQ(state.basic_list_count, 0);
   state.ResetCounts();
 
@@ -222,8 +225,8 @@ TEST(TestProtocolTest, CreateFolder) {
 
   EXPECT_FALSE(
       protocol.CreateFolder("test", "new-folder", FolderMode::kNormal));
-  EXPECT_EQ(state.invalid_call_count, 1);
-  EXPECT_EQ(state.create_folder_count, 1);
+  EXPECT_EQ(state.invalid_call_count, 0);
+  EXPECT_EQ(state.create_folder_count, 0);
   EXPECT_EQ(state.basic_create_folder_count, 0);
   state.ResetCounts();
 
@@ -252,8 +255,8 @@ TEST(TestProtocolTest, DeleteFolder) {
   TestProtocol protocol(&state);
 
   EXPECT_FALSE(protocol.DeleteFolder("test", "folder", FolderMode::kNormal));
-  EXPECT_EQ(state.invalid_call_count, 1);
-  EXPECT_EQ(state.delete_folder_count, 1);
+  EXPECT_EQ(state.invalid_call_count, 0);
+  EXPECT_EQ(state.delete_folder_count, 0);
   EXPECT_EQ(state.basic_delete_folder_count, 0);
   state.ResetCounts();
 
@@ -281,14 +284,14 @@ TEST(TestProtocolTest, CopyFolder) {
   TestProtocol protocol(&state);
 
   EXPECT_FALSE(protocol.CopyFolder("test", "folder", "/new-folder"));
-  EXPECT_EQ(state.invalid_call_count, 1);
-  EXPECT_EQ(state.copy_folder_count, 1);
+  EXPECT_EQ(state.invalid_call_count, 0);
+  EXPECT_EQ(state.copy_folder_count, 0);
   EXPECT_EQ(state.copy_file_count, 0);
   state.ResetCounts();
 
   EXPECT_FALSE(protocol.CopyFolder("test", "/folder", "new-folder"));
-  EXPECT_EQ(state.invalid_call_count, 1);
-  EXPECT_EQ(state.copy_folder_count, 1);
+  EXPECT_EQ(state.invalid_call_count, 0);
+  EXPECT_EQ(state.copy_folder_count, 0);
   EXPECT_EQ(state.copy_file_count, 0);
   state.ResetCounts();
 
@@ -315,8 +318,8 @@ TEST(TestProtocolTest, DeleteFile) {
   TestProtocol protocol(&state);
 
   EXPECT_FALSE(protocol.DeleteFile("test", "file"));
-  EXPECT_EQ(state.invalid_call_count, 1);
-  EXPECT_EQ(state.delete_file_count, 1);
+  EXPECT_EQ(state.invalid_call_count, 0);
+  EXPECT_EQ(state.delete_file_count, 0);
   EXPECT_EQ(state.basic_delete_file_count, 0);
   state.ResetCounts();
 
@@ -344,14 +347,14 @@ TEST(TestProtocolTest, CopyFile) {
   TestProtocol protocol(&state);
 
   EXPECT_FALSE(protocol.CopyFile("test", "file", "/new-file"));
-  EXPECT_EQ(state.invalid_call_count, 1);
-  EXPECT_EQ(state.copy_file_count, 1);
+  EXPECT_EQ(state.invalid_call_count, 0);
+  EXPECT_EQ(state.copy_file_count, 0);
   EXPECT_EQ(state.basic_copy_file_count, 0);
   state.ResetCounts();
 
   EXPECT_FALSE(protocol.CopyFile("test", "/file", "new-file"));
-  EXPECT_EQ(state.invalid_call_count, 1);
-  EXPECT_EQ(state.copy_file_count, 1);
+  EXPECT_EQ(state.invalid_call_count, 0);
+  EXPECT_EQ(state.copy_file_count, 0);
   EXPECT_EQ(state.basic_copy_file_count, 0);
   state.ResetCounts();
 
@@ -380,8 +383,8 @@ TEST(TestProtocolTest, OpenFile) {
 
   file = protocol.OpenFile("test", "file", kReadWriteFileFlags);
   EXPECT_EQ(file, nullptr);
-  EXPECT_EQ(state.invalid_call_count, 1);
-  EXPECT_EQ(state.open_file_count, 1);
+  EXPECT_EQ(state.invalid_call_count, 0);
+  EXPECT_EQ(state.open_file_count, 0);
   EXPECT_EQ(state.basic_open_file_count, 0);
   file.reset();
   state.ResetCounts();

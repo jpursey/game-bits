@@ -10,6 +10,7 @@
 #include <memory>
 #include <vector>
 
+#include "absl/log/check.h"
 #include "gb/file/file_protocol.h"
 
 namespace gb {
@@ -22,6 +23,11 @@ class TestProtocol : public FileProtocol {
   // Internal tracking state for a file.
   struct FileState {
     explicit FileState(std::string contents) : contents(std::move(contents)) {}
+    ~FileState() {
+      CHECK(file == nullptr)
+          << "A TestProtocol file must be closed before its path is deleted "
+             "or replaced";
+    }
 
     void ResetCounts();
 

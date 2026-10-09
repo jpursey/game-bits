@@ -12,6 +12,16 @@
 
 namespace gb {
 
+namespace {
+
+// Paths passed to a protocol must be absolute, which every public function
+// checks before passing them on.
+bool IsAbsolute(std::string_view path) {
+  return !path.empty() && path[0] == '/';
+}
+
+}  // namespace
+
 std::vector<std::string> FileProtocol::GetDefaultNames() const { return {}; }
 
 void FileProtocol::Lock(LockType type) {}
@@ -19,6 +29,9 @@ void FileProtocol::Unlock(LockType type) {}
 
 PathInfo FileProtocol::GetPathInfo(std::string_view protocol_name,
                                    std::string_view path) {
+  if (!IsAbsolute(path)) {
+    return {};
+  }
   Lock(LockType::kQuery);
   auto result = DoGetPathInfo(protocol_name, path);
   Unlock(LockType::kQuery);
@@ -29,6 +42,9 @@ std::vector<std::string> FileProtocol::List(std::string_view protocol_name,
                                             std::string_view path,
                                             std::string_view pattern,
                                             FolderMode mode, PathTypes types) {
+  if (!IsAbsolute(path)) {
+    return {};
+  }
   Lock(LockType::kQuery);
   auto result = DoList(protocol_name, path, pattern, mode, types);
   Unlock(LockType::kQuery);
@@ -37,6 +53,9 @@ std::vector<std::string> FileProtocol::List(std::string_view protocol_name,
 
 bool FileProtocol::CreateFolder(std::string_view protocol_name,
                                 std::string_view path, FolderMode mode) {
+  if (!IsAbsolute(path)) {
+    return false;
+  }
   Lock(LockType::kModify);
   auto result = DoCreateFolder(protocol_name, path, mode);
   Unlock(LockType::kModify);
@@ -46,6 +65,9 @@ bool FileProtocol::CreateFolder(std::string_view protocol_name,
 bool FileProtocol::CopyFolder(std::string_view protocol_name,
                               std::string_view from_path,
                               std::string_view to_path) {
+  if (!IsAbsolute(from_path) || !IsAbsolute(to_path)) {
+    return false;
+  }
   Lock(LockType::kModify);
   auto result = DoCopyFolder(protocol_name, from_path, to_path);
   Unlock(LockType::kModify);
@@ -54,6 +76,9 @@ bool FileProtocol::CopyFolder(std::string_view protocol_name,
 
 bool FileProtocol::DeleteFolder(std::string_view protocol_name,
                                 std::string_view path, FolderMode mode) {
+  if (!IsAbsolute(path)) {
+    return false;
+  }
   Lock(LockType::kModify);
   auto result = DoDeleteFolder(protocol_name, path, mode);
   Unlock(LockType::kModify);
@@ -63,6 +88,9 @@ bool FileProtocol::DeleteFolder(std::string_view protocol_name,
 bool FileProtocol::CopyFile(std::string_view protocol_name,
                             std::string_view from_path,
                             std::string_view to_path) {
+  if (!IsAbsolute(from_path) || !IsAbsolute(to_path)) {
+    return false;
+  }
   Lock(LockType::kModify);
   auto result = DoCopyFile(protocol_name, from_path, to_path);
   Unlock(LockType::kModify);
@@ -71,6 +99,9 @@ bool FileProtocol::CopyFile(std::string_view protocol_name,
 
 bool FileProtocol::DeleteFile(std::string_view protocol_name,
                               std::string_view path) {
+  if (!IsAbsolute(path)) {
+    return false;
+  }
   Lock(LockType::kModify);
   auto result = DoDeleteFile(protocol_name, path);
   Unlock(LockType::kModify);
@@ -80,6 +111,9 @@ bool FileProtocol::DeleteFile(std::string_view protocol_name,
 std::unique_ptr<RawFile> FileProtocol::OpenFile(std::string_view protocol_name,
                                                 std::string_view path,
                                                 FileFlags flags) {
+  if (!IsAbsolute(path)) {
+    return nullptr;
+  }
   LockType lock_type = LockType::kOpenRead;
   if (flags.IsSet(FileFlag::kCreate)) {
     lock_type = LockType::kModify;
@@ -101,6 +135,9 @@ std::string FileProtocol::GetCurrentPath(std::string_view protocol_name) {
 
 bool FileProtocol::SetCurrentPath(std::string_view protocol_name,
                                   std::string_view path) {
+  if (!IsAbsolute(path)) {
+    return false;
+  }
   Lock(LockType::kModify);
   auto result = DoSetCurrentPath(protocol_name, path);
   Unlock(LockType::kModify);
@@ -174,7 +211,13 @@ bool FileProtocol::DoCreateFolder(std::string_view protocol_name,
   std::vector<std::string_view> paths;
   do {
     paths.emplace_back(path);
-    path = RemoveFilename(path);
+    const std::string_view parent = RemoveFilename(path);
+    if (parent == path) {
+      // The root (or a host) doesn't exist, so there is nothing to create the
+      // folders in.
+      return false;
+    }
+    path = parent;
     info = DoGetPathInfo(protocol_name, path);
   } while (info.type == PathType::kInvalid);
   if (info.type != PathType::kFolder) {
@@ -267,7 +310,6 @@ bool FileProtocol::DoCopyFile(std::string_view protocol_name,
   if (DoGetPathInfo(protocol_name, from_path).type != PathType::kFile) {
     return false;
   }
-  std::string new_to_path;
   auto to_info = DoGetPathInfo(protocol_name, to_path);
   if (to_info.type == PathType::kFolder) {
     return false;

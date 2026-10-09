@@ -213,7 +213,7 @@ inline bool IsPathAbsolute(std::string_view path,
 // Input path is expected to be normalized (see NormalizePath).
 inline bool IsRootPath(std::string_view path,
                        PathFlags flags = kGenericPathFlags) {
-  return RemoveRoot(path, flags).empty();
+  return IsPathAbsolute(path, flags) && RemoveRoot(path, flags).empty();
 }
 
 // Appends path_b to path_a, separating with a path separator.

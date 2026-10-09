@@ -245,8 +245,9 @@ Depends on: CL4.
 
 Depends on: CL4.
 
-gb_file was audited as three CLs, in dependency order: paths, then `File` and
-chunk files, then `FileSystem` and the protocols.
+gb_file was audited as four CLs, in dependency order: paths, then `File` and
+chunk files, then `FileSystem` and the generic protocols, then
+`LocalFileProtocol`.
 
 - `NormalizePath()` kept a `..` above the root of an absolute path (`/..`,
   `mem:/../a`, `//host/..`), so a `FileSystem` path could reach outside a
@@ -312,54 +313,98 @@ Depends on: CL9.
   MSVC Debug only), `ChunkType` in a `std::unordered_set`, a chunk too large
   (CHECK failure), a version 0 chunk file, and mixed line endings in one file.
 
-### CL11 [ ] file: audit FileSystem and the protocols
+### CL11 [x] file: audit FileSystem and the generic protocols
 
 Depends on: CL10.
 
-### CL12 [ ] sdl: audit gb_sdl
+- Nothing enforced that paths passed to a `FileProtocol` are absolute, as its
+  header requires, and `IsRootPath()` being true for an empty path (see CL9)
+  was all that kept a direct `DeleteFolder("")` from deleting a protocol's
+  root. Every public `FileProtocol` function now fails for a relative path,
+  and `IsRootPath()` is false for an empty path and a protocol on its own.
+- A recursive `CreateFolder()` under a host that doesn't exist
+  (`mem://host/a`) looped forever, as removing the last segment of `//host`
+  leaves it unchanged.
+- Copying a folder between protocols created the destination before checking
+  the source, so a missing source, or a file, "copied" as an empty folder.
+- One protocol registered under two names was copied between those names as if
+  they were different protocols, with no checks for overlap:
+  `CopyFile("a:/x", "b:/x")` emptied the file, and copying a folder into its
+  own subfolder recursed until the stack overflowed. Two names for one
+  protocol now copy as one protocol.
+- Opening a `MemoryFileProtocol` file with `kReset` emptied it, but its size
+  was still reported as before.
+- `FileSystem::Register()` read the protocol's default names in the same call
+  that moved the protocol into an argument, which relies on the unspecified
+  order arguments are evaluated in. The `Register()` comments also said a
+  name already registered is replaced, when registering fails instead.
+- Deleting or replacing a `TestProtocol` file's path while the file is open
+  left the file writing to freed state when closed. No test does it, so it is
+  now a CHECK failure, rather than freed memory written silently.
+- `FileSystem::GetCurrentFolder()` and `SetCurrentFolder()` called the
+  protocol whether or not it supports `kCurrentPath`, unlike every other
+  `FileSystem` function, so a protocol without it logged an error from the
+  default implementation, and one that implemented current paths anyway was
+  used. They now return an empty folder, or false, without calling it.
+- `file_system_test.cc` included `gb/test/test_util.cc` rather than its header,
+  compiling a second copy of `GenerateTestString()` into the test.
 
-Depends on: CL4.
+**Verify**
+- Standard checks.
+- Unit tests: relative paths passed to a protocol, `IsRootPath()` of an empty
+  path and a protocol, a recursive create under a missing host, the size of a
+  reset file, copying a missing folder or a file as a folder between
+  protocols, copying under two names for one protocol, and current folders
+  with and without `kCurrentPath`.
 
-### CL13 [ ] parse: audit gb_parse
-
-Depends on: CL4.
-
-### CL14 [ ] config: audit gb_config
-
-Depends on: CL13.
-
-### CL15 [ ] collide: audit gb_collide
-
-Depends on: CL4.
-
-### CL16 [ ] game: audit gb_game
-
-Depends on: CL4.
-
-### CL17 [ ] image: audit gb_image
+### CL12 [ ] file: audit LocalFileProtocol
 
 Depends on: CL11.
 
-### CL18 [ ] job: audit gb_job
+### CL13 [ ] sdl: audit gb_sdl
+
+Depends on: CL4.
+
+### CL14 [ ] parse: audit gb_parse
+
+Depends on: CL4.
+
+### CL15 [ ] config: audit gb_config
+
+Depends on: CL14.
+
+### CL16 [ ] collide: audit gb_collide
+
+Depends on: CL4.
+
+### CL17 [ ] game: audit gb_game
+
+Depends on: CL4.
+
+### CL18 [ ] image: audit gb_image
+
+Depends on: CL12.
+
+### CL19 [ ] job: audit gb_job
 
 Depends on: CL5, CL7.
 
-### CL19 [ ] message: audit gb_message
+### CL20 [ ] message: audit gb_message
 
 Depends on: CL4.
 
-### CL20 [ ] resource: audit gb_resource
+### CL21 [ ] resource: audit gb_resource
 
-Depends on: CL11.
+Depends on: CL12.
 
-### CL21 [ ] render: audit gb_render
-
-Depends on: CL20.
-
-### CL22 [ ] render: audit gb_render_vulkan and gb_render_vulkan_sdl
+### CL22 [ ] render: audit gb_render
 
 Depends on: CL21.
 
-### CL23 [ ] imgui: audit gb_imgui and gb_imgui_sdl
+### CL23 [ ] render: audit gb_render_vulkan and gb_render_vulkan_sdl
 
-Depends on: CL21.
+Depends on: CL22.
+
+### CL24 [ ] imgui: audit gb_imgui and gb_imgui_sdl
+
+Depends on: CL22.

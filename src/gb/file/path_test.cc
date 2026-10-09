@@ -928,6 +928,8 @@ TEST(PathTest, IsRootPath) {
   EXPECT_TRUE(IsRootPath("//host"));
   EXPECT_TRUE(IsRootPath("//host/"));
   EXPECT_TRUE(IsRootPath("abc://host"));
+  EXPECT_FALSE(IsRootPath(""));
+  EXPECT_FALSE(IsRootPath("abc:"));
   EXPECT_FALSE(IsRootPath("a"));
   EXPECT_FALSE(IsRootPath("/a"));
   EXPECT_FALSE(IsRootPath("abc:/a"));
