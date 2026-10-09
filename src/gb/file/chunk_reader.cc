@@ -15,6 +15,7 @@ ChunkReader& ChunkReader::operator=(ChunkReader&& other) {
     return *this;
   }
   header_ = other.header_;
+  std::free(data_);
   data_ = std::exchange(other.data_, nullptr);
   return *this;
 }
@@ -74,7 +75,7 @@ bool ReadChunkFile(File* file, ChunkType* file_type,
     LOG(ERROR) << "File is not a chunk file";
     return false;
   }
-  if (file_header.version < 0 || file_header.size != 0) {
+  if (file_header.version <= 0 || file_header.size != 0) {
     LOG(ERROR) << "Corrupt chunk file";
     return false;
   }

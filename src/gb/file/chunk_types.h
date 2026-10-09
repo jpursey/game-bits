@@ -83,8 +83,7 @@ inline constexpr ChunkType kChunkTypeFile = {'G', 'B', 'F', 'I'};
 //   chunk file version, as well as the primary chunk type this file is for. The
 //   "file" member specifies the file's primary chunk type.
 // - Single chunk: This is a chunk that is defined in its entirety by a single
-//   structured block of data. The "file" and "count" fields are unused (and
-//   will be zero).
+//   structured block of data. The "file" field is unused, and "count" is 1.
 // - List chunk: This is a chunk that consists of a list of chunk entries. The
 //   "count" field indicates the number of entries in the chunk. Note that
 //   additional data may also be stored after the entries in the chunk.
@@ -194,7 +193,7 @@ namespace std {
 
 template <>
 struct hash<gb::ChunkType> {
-  size_t operator()(const gb::ChunkType& type) {
+  size_t operator()(const gb::ChunkType& type) const {
     return std::hash<std::string_view>{}(type.ToString());
   }
 };

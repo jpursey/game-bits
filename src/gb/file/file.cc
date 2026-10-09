@@ -5,11 +5,33 @@
 
 #include "gb/file/file.h"
 
-#include "absl/strings/str_replace.h"
+#include <string_view>
+
 #include "absl/strings/str_split.h"
 #include "gb/file/raw_file.h"
 
 namespace gb {
+
+namespace {
+
+// An absl::StrSplit delimiter for any line ending: "\r\n", "\n", or "\r".
+class ByLineEnding {
+ public:
+  // Abseil's delimiter interface, which takes a size_t position.
+  std::string_view Find(std::string_view text, size_t pos) const {
+    const size_t found = text.find_first_of("\r\n", pos);
+    if (found == std::string_view::npos) {
+      return text.substr(text.size());
+    }
+    if (text[found] == '\r' && found + 1 < text.size() &&
+        text[found + 1] == '\n') {
+      return text.substr(found, 2);
+    }
+    return text.substr(found, 1);
+  }
+};
+
+}  // namespace
 
 File::File(std::unique_ptr<RawFile> file, FileFlags flags)
     : file_(std::move(file)), flags_(flags) {}
@@ -17,11 +39,17 @@ File::File(std::unique_ptr<RawFile> file, FileFlags flags)
 File::~File() {}
 
 int64_t File::SeekEnd() {
+  if (position_ < 0) {
+    return -1;
+  }
   position_ = file_->SeekEnd();
   return position_;
 }
 
 int64_t File::SeekTo(int64_t position) {
+  if (position_ < 0) {
+    return -1;
+  }
   position_ = file_->SeekTo(position);
   return position_;
 }
@@ -80,9 +108,11 @@ int64_t File::ReadRemainingLines(std::vector<std::string>* lines) {
     lines->clear();
     return 0;
   }
-  text = absl::StrReplaceAll(text, {{"\r\n", "\n"}, {"\r", "\n"}});
-  *lines = absl::StrSplit(text, "\n");
-  if (text.back() == '\n') {
+  *lines = absl::StrSplit(text, ByLineEnding());
+
+  // A line ending at the end of the text ends the last line, rather than
+  // starting an empty one.
+  if (text.back() == '\n' || text.back() == '\r') {
     lines->pop_back();
   }
   return static_cast<int64_t>(lines->size());
@@ -163,7 +193,7 @@ bool File::DoReadLine(ReadLineState* state, std::string* line) {
       continue;
     }
 
-    line->append(state->buffer.c_str(), state->pos, pos - state->pos);
+    line->append(state->buffer, state->pos, pos - state->pos);
     if (state->buffer[pos] == '\r') {
       if (state->buffer.size() == pos + 1) {
         skip_linefeed = true;

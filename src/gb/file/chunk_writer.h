@@ -28,7 +28,7 @@ namespace gb {
 // core memory chunk type or chunk entry type (if a non-zero count is
 // specified). Code that writes must then call use GetChunkData to initialize
 // the chunk. If the chunk data contains pointers to extra data, then these can
-// be added and converted to a write-comaptible format by calling AddData or
+// be added and converted to a write-compatible format by calling AddData or
 // AddString.
 //
 // Example:
@@ -38,8 +38,8 @@ namespace gb {
 //  inline static constexpr ChunkType kChunkTypeExample = {'X', 'M', 'P', 'L'};
 //  inline static constexpr ChunkType kChunkTypeBar = {'B', 'A', 'R', 0};
 //
-//  struct Foo { int32_t x,y,z; }
-//  struct Bar { float a,b,c; }
+//  struct Foo { int32_t x, y, z; };
+//  struct Bar { float a, b, c; };
 //
 //  // Structure should be trivially copyable (can be initialized correctly via
 //  // memcpy), as this is just read/written direction from/to files.
@@ -67,11 +67,11 @@ namespace gb {
 //  ChunkWriter WriteExampleChunk(std::string_view name, float value,
 //                                absl::Span<const Foo> foos) {
 //    auto chunk_writer = ChunkWriter::New<ExampleChunk>(kChunkTypeExample, 1);
-//    auto* chunk = chunk_writer->GetChunkData<ExampleChunk>();
+//    auto* chunk = chunk_writer.GetChunkData<ExampleChunk>();
 //    chunk->name = chunk_writer.AddString(name);
 //    chunk->value = value;
 //    chunk->foo_count = static_cast<int32_t>(foos.size());
-//    chunk->foos = chunk_writer.AddPtr(foos.data(), chunk.foo_count);
+//    chunk->foos = chunk_writer.AddData(foos);
 //    return chunk_writer;
 //  }
 //
@@ -80,7 +80,8 @@ namespace gb {
 //  ChunkWriter WriteBarChunk(absl::Span<const Bar> bars) {
 //    auto chunk_writer = ChunkWriter::New<Bar>(
 //        kChunkTypeBar, 1, static_cast<int32_t>(bars.size()));
-//    std::memcpy(chunk_writer->GetChunkData(), bars.data(), bars.size());
+//    std::memcpy(chunk_writer.GetChunkData<Bar>(), bars.data(),
+//                bars.size() * sizeof(Bar));
 //    return chunk_writer;
 //  }
 // ```

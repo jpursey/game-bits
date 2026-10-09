@@ -207,6 +207,60 @@ TEST(FileTest, Write) {
   EXPECT_EQ(file->GetPosition(), 0);
 }
 
+TEST(FileTest, SeekingInvalidFileFails) {
+  TestProtocol::State state;
+  FileSystem file_system;
+  file_system.Register(std::make_unique<TestProtocol>(&state), "test");
+
+  state.paths["/file"] = TestProtocol::PathState::NewFile("1234567890");
+  auto* file_state = state.paths["/file"].GetFile();
+  auto file = file_system.OpenFile("test:/file", FileFlag::kRead);
+  ASSERT_NE(file, nullptr);
+  file_state->position = -1;
+  EXPECT_EQ(file->SeekTo(5), -1);
+  ASSERT_FALSE(file->IsValid());
+
+  // The underlying file works again, but the File stays invalid.
+  file_state->position = 0;
+  EXPECT_EQ(file->SeekBegin(), -1);
+  EXPECT_EQ(file->SeekEnd(), -1);
+  EXPECT_EQ(file->SeekTo(5), -1);
+  EXPECT_EQ(file->SeekBy(1), -1);
+  EXPECT_FALSE(file->IsValid());
+  char buffer[5] = {};
+  EXPECT_EQ(file->Read(buffer, 5), 0);
+}
+
+TEST(FileTest, ReadLineKeepsNulBytes) {
+  TestProtocol::State state;
+  FileSystem file_system;
+  file_system.Register(std::make_unique<TestProtocol>(&state), "test");
+
+  state.paths["/file"] =
+      TestProtocol::PathState::NewFile(std::string("a\0b\nc\n", 6));
+  auto file = file_system.OpenFile("test:/file", FileFlag::kRead);
+  ASSERT_NE(file, nullptr);
+  std::string line;
+  ASSERT_TRUE(file->ReadLine(&line));
+  EXPECT_EQ(line, std::string("a\0b", 3));
+  ASSERT_TRUE(file->ReadLine(&line));
+  EXPECT_EQ(line, "c");
+}
+
+TEST(FileTest, ReadRemainingLinesWithMixedLineEndings) {
+  TestProtocol::State state;
+  FileSystem file_system;
+  file_system.Register(std::make_unique<TestProtocol>(&state), "test");
+
+  // "\n\r" is two line endings, unlike "\r\n".
+  state.paths["/file"] =
+      TestProtocol::PathState::NewFile("a\nb\r\nc\rd\n\re\r\n\r\nf\r");
+  auto file = file_system.OpenFile("test:/file", FileFlag::kRead);
+  ASSERT_NE(file, nullptr);
+  EXPECT_THAT(file->ReadRemainingLines(),
+              ElementsAre("a", "b", "c", "d", "", "e", "", "f"));
+}
+
 TEST(FileTest, Read) {
   TestProtocol::State state;
   FileSystem file_system;

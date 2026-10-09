@@ -5,30 +5,44 @@
 
 #include "gb/file/chunk_writer.h"
 
+#include <cstring>
+#include <limits>
+
+#include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "gb/base/allocator.h"
 #include "gb/file/file.h"
 
 namespace gb {
 
+namespace {
+
+// Returns `size` rounded up to a multiple of 8, as every part of a chunk is.
+int64_t PadSize(int64_t size) { return (size + 7) & ~int64_t{7}; }
+
+}  // namespace
+
 ChunkWriter::ChunkWriter(const ChunkType& type, int32_t version, int32_t count,
                          int32_t item_size, void* chunk_data) {
+  const int64_t size = int64_t{item_size} * count;
+  CHECK(count >= 0 && item_size >= 0 &&
+        PadSize(size) <= std::numeric_limits<int32_t>::max())
+      << "Chunk " << type.ToString() << " is too large: " << count
+      << " items of " << item_size << " bytes";
   header_.type = type;
   header_.version = version;
   header_.count = count;
-  header_.size = item_size * count;
-  const int32_t remainder = header_.size % 8;
-  if (remainder != 0) {
-    header_.size += 8 - remainder;
-  }
+  header_.size = static_cast<int32_t>(PadSize(size));
   if (chunk_data == nullptr) {
     owns_chunk_buffer_ = true;
     chunk_buffer_size_ = header_.size;
-    chunk_buffer_ = GetDefaultAllocator()->Alloc(chunk_buffer_size_);
-    std::memset(chunk_buffer_, 0, chunk_buffer_size_);
+    if (chunk_buffer_size_ > 0) {
+      chunk_buffer_ = GetDefaultAllocator()->Alloc(chunk_buffer_size_);
+      std::memset(chunk_buffer_, 0, chunk_buffer_size_);
+    }
   } else {
     owns_chunk_buffer_ = false;
-    chunk_buffer_size_ = item_size * count;
+    chunk_buffer_size_ = static_cast<int32_t>(size);
     chunk_buffer_ = chunk_data;
   }
 }
@@ -68,10 +82,10 @@ bool ChunkWriter::Write(File* file) const {
     if (file->Write(chunk_buffer_, chunk_buffer_size_) != chunk_buffer_size_) {
       return false;
     }
-    const int32_t remainder = chunk_buffer_size_ % 8;
-    if (remainder != 0) {
+    const int64_t padding_size =
+        PadSize(chunk_buffer_size_) - chunk_buffer_size_;
+    if (padding_size > 0) {
       const uint64_t padding = 0;
-      const int32_t padding_size = 8 - remainder;
       if (file->Write(static_cast<const void*>(&padding), padding_size) !=
           padding_size) {
         return false;
@@ -103,12 +117,13 @@ bool WriteChunkFile(File* file, const ChunkType& file_type,
 }
 
 std::tuple<int64_t, void*> ChunkWriter::ReserveExtra(int64_t total_size) {
-  int64_t remainder = (total_size % 8);
-  if (remainder != 0) {
-    total_size += 8 - remainder;
-  }
-  int64_t index = extra_buffer_.size();
-  int64_t offset = chunk_buffer_size_ + (extra_buffer_.size() * 8);
+  total_size = PadSize(total_size);
+  CHECK(header_.size + total_size <= std::numeric_limits<int32_t>::max())
+      << "Chunk " << header_.type.ToString() << " is too large";
+  const int64_t index = extra_buffer_.size();
+
+  // The chunk data is padded when written, so extra data starts after it.
+  const int64_t offset = PadSize(chunk_buffer_size_) + index * 8;
   extra_buffer_.resize(extra_buffer_.size() + (total_size / 8), 0);
   header_.size += static_cast<int32_t>(total_size);
   return {offset, static_cast<void*>(extra_buffer_.data() + index)};

@@ -275,9 +275,42 @@ chunk files, then `FileSystem` and the protocols.
   joining under the second path's host, and `IsRootPath()`, which had no
   tests.
 
-### CL10 [ ] file: audit File and chunk files
+### CL10 [x] file: audit File and chunk files
 
 Depends on: CL9.
+
+- `File::ReadLine()` and `ReadLines()` passed their buffer to `append()` as a
+  C string, so a line was cut at its first NUL byte, and the next line's
+  offset into that shorter string threw (fatal without exceptions).
+- Seeking an invalid `File` made it valid again, though the header says every
+  operation fails once it is invalid.
+- A `ChunkWriter` given data it doesn't own, whose size isn't a multiple of 8,
+  returned extra data offsets that didn't count the padding written after the
+  data, so read pointers landed short of their data.
+- `ChunkReader` move assignment leaked the data it replaced (as did
+  `std::vector<ChunkReader>` operations that assign).
+- `std::hash<ChunkType>::operator()` wasn't `const`, so a `ChunkType` couldn't
+  be a key in a standard unordered container, as documented.
+- A chunk larger than an `int32_t` holds overflowed into a negative size. It
+  is now a CHECK failure. An empty owned chunk no longer allocates zero bytes,
+  which `Allocator` leaves undefined.
+- `ReadChunkFile()` accepted a file header with version 0, which
+  `ChunkReader` treats as corrupt in every other chunk.
+- `File::ReadRemainingLines()` copied the whole text once more to normalize
+  line endings before splitting. It now splits on any line ending directly,
+  with an `absl::StrSplit` delimiter that reads `\r\n` as one ending.
+- The `ChunkWriter` example didn't compile, and the chunk header comment said a
+  single chunk's count is 0 (it is 1).
+- Left as is: a zero-byte chunk of unowned data is written with a count of 1,
+  which the reader rejects as corrupt; `ConvertToPtr()` trusts the offset
+  (documented as a precondition).
+
+**Verify**
+- Standard checks.
+- Unit tests: lines with NUL bytes, seeking an invalid file, unowned unaligned
+  data with extra data, `ChunkReader` move assignment (Debug heap counts, so
+  MSVC Debug only), `ChunkType` in a `std::unordered_set`, a chunk too large
+  (CHECK failure), a version 0 chunk file, and mixed line endings in one file.
 
 ### CL11 [ ] file: audit FileSystem and the protocols
 

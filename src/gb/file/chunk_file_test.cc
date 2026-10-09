@@ -3,6 +3,13 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
+#if defined(_MSC_VER) && defined(_DEBUG)
+#include <crtdbg.h>
+#endif
+
+#include <unordered_set>
+#include <utility>
+
 #include "absl/types/span.h"
 #include "gb/file/chunk_reader.h"
 #include "gb/file/chunk_types.h"
@@ -850,6 +857,79 @@ TEST_F(ChunkFileTest, ReadWriteMultiChunkFile) {
   EXPECT_EQ(example_chunk->foos.ptr[1].x, 4);
   EXPECT_EQ(example_chunk->foos.ptr[1].y, 5);
   EXPECT_EQ(example_chunk->foos.ptr[1].z, 6);
+}
+
+TEST_F(ChunkFileTest, UnownedUnalignedDataWithExtraData) {
+  // Unowned data that isn't a multiple of 8 bytes is padded when written, so
+  // the extra data starts after the padding.
+  alignas(8) char data[12] = {};
+  auto chunk_writer = ChunkWriter::New(kChunkTypeBar, 1, data, sizeof(data));
+  auto* name = reinterpret_cast<ChunkPtr<const char>*>(data);
+  *name = chunk_writer.AddString("name");
+  auto file = file_system_->OpenFile("mem:/test", kNewFileFlags);
+  ASSERT_NE(file, nullptr);
+  ASSERT_TRUE(chunk_writer.Write(file.get()));
+  file.reset();
+
+  file = file_system_->OpenFile("mem:/test", kReadFileFlags);
+  ASSERT_NE(file, nullptr);
+  auto chunk_reader = ChunkReader::Read(file.get());
+  ASSERT_TRUE(chunk_reader);
+  EXPECT_EQ(chunk_reader->GetSize(), chunk_writer.GetSize());
+  auto* read_name = chunk_reader->GetChunkData<ChunkPtr<const char>>();
+  ASSERT_NE(read_name, nullptr);
+  chunk_reader->ConvertToPtr(read_name);
+  EXPECT_STREQ(read_name->ptr, "name");
+}
+
+#if defined(_MSC_VER) && defined(_DEBUG)
+TEST_F(ChunkFileTest, ChunkReaderMoveAssignmentFreesData) {
+  auto chunk_writer = ChunkWriter::New<Bar>(kChunkTypeBar, 1);
+  auto file = file_system_->OpenFile("mem:/test", kNewFileFlags);
+  ASSERT_NE(file, nullptr);
+  ASSERT_TRUE(chunk_writer.Write(file.get()));
+  ASSERT_TRUE(chunk_writer.Write(file.get()));
+  file.reset();
+
+  file = file_system_->OpenFile("mem:/test", kReadFileFlags);
+  ASSERT_NE(file, nullptr);
+  auto chunk_reader_1 = ChunkReader::Read(file.get());
+  auto chunk_reader_2 = ChunkReader::Read(file.get());
+  ASSERT_TRUE(chunk_reader_1);
+  ASSERT_TRUE(chunk_reader_2);
+
+  // The debug heap counts allocations, so the assignment must free one.
+  _CrtMemState before;
+  _CrtMemCheckpoint(&before);
+  *chunk_reader_1 = std::move(*chunk_reader_2);
+  _CrtMemState after;
+  _CrtMemCheckpoint(&after);
+  EXPECT_EQ(after.lCounts[_NORMAL_BLOCK], before.lCounts[_NORMAL_BLOCK] - 1);
+}
+#endif  // defined(_MSC_VER) && defined(_DEBUG)
+
+TEST_F(ChunkFileTest, ChunkTypeInStdHashSet) {
+  std::unordered_set<ChunkType> types = {kChunkTypeBar, kChunkTypeExample};
+  EXPECT_TRUE(types.contains(kChunkTypeBar));
+  EXPECT_FALSE(types.contains(kChunkTypeFile));
+}
+
+TEST_F(ChunkFileTest, ChunkWriterTooLargeDies) {
+  EXPECT_DEATH(ChunkWriter::New<int64_t>(kChunkTypeBar, 1, 300'000'000),
+               "too large");
+}
+
+TEST_F(ChunkFileTest, ReadChunkFileVersionZeroIsCorrupt) {
+  ChunkHeader header = {kChunkTypeFile, 0, 0};
+  header.file = kChunkTypeExample;
+  auto file = file_system_->OpenFile("mem:/test", kNewFileFlags);
+  ASSERT_NE(file, nullptr);
+  ASSERT_EQ(file->Write(&header), 1);
+  file.reset();
+
+  file = file_system_->OpenFile("mem:/test", kReadFileFlags);
+  ASSERT_NE(file, nullptr);
+  EXPECT_FALSE(ReadChunkFile(file.get(), nullptr, nullptr));
 }
 
 }  // namespace
