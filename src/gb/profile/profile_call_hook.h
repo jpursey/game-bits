@@ -37,7 +37,7 @@ class ProfileCallHook final {
 
   // Calls `original`, timing it as the call point.
   template <typename Function, typename... Args>
-  auto Call(Function original, Args&&... args) {
+  decltype(auto) Call(Function original, Args&&... args) {
     ProfileTimer timer(point_);
     return original(std::forward<Args>(args)...);
   }

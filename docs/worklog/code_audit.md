@@ -223,9 +223,23 @@ Depends on: CL4.
   handle counts), and switching fibers between 16 threads (fails every run
   without the fix, in both Debug and Release).
 
-### CL8 [ ] profile: audit gb_profile
+### CL8 [x] profile: audit gb_profile
 
 Depends on: CL4.
+
+- `ProfileCallHook::Call()` returned `auto`, which drops references, so a
+  function returning a reference couldn't be hooked (and one returning a const
+  reference would have returned one to a temporary). It returns
+  `decltype(auto)`, as `FunctionHook`'s example Hook now does too.
+- A `slow_frame` time longer than an `int64_t` of ticks holds (but not
+  infinite) overflowed converting to ticks, which reported every frame as slow.
+- The rest of the library was already well tested, and reads no real time in
+  its tests.
+
+**Verify**
+- Standard checks.
+- Unit tests: hooking a function that returns a reference, and a slow frame
+  time too long to reach.
 
 ### CL9 [ ] file: audit gb_file
 

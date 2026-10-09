@@ -641,6 +641,21 @@ TEST_F(ProfilerSlowFrameTest, CallbackIsOutsideFrame) {
   EXPECT_EQ(profiler_.GetSlowestFrameCount("SlowFrameTest/InCallback"), 0);
 }
 
+// A slow frame time with more ticks than an int64_t holds is never reached.
+TEST(ProfilerLongSlowFrameTest, IsNeverReached) {
+  FakeTicks ticks;
+  int reports = 0;
+  Profiler profiler(
+      {.fake_ticks = &ticks,
+       .slow_frame = absl::Hours(24 * 365 * 1000),
+       .on_slow_frame = [&reports](std::string_view report) { ++reports; }});
+  {
+    ProfileFrame<"SlowFrameTest/LongLimit"> frame;
+    ticks.Advance(1000);
+  }
+  EXPECT_EQ(reports, 0);
+}
+
 // Tests that set up their own Profiler.
 
 TEST(ProfilerSetupTest, NewProfilerStartsEmpty) {

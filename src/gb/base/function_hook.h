@@ -43,14 +43,15 @@ class FunctionHookImpl;
 //
 // Hook must have a Call member function (static or not) that accepts the
 // original function pointer followed by the function's arguments. It is
-// usually a template, so one Hook type can hook functions of any signature:
+// usually a template, so one Hook type can hook functions of any signature,
+// returning `decltype(auto)` so a function that returns a reference still does:
 //
 //   class LogHook {
 //    public:
 //     explicit LogHook(std::string_view name) : name_(name) {}
 //
 //     template <typename Function, typename... Args>
-//     auto Call(Function original, Args&&... args) {
+//     decltype(auto) Call(Function original, Args&&... args) {
 //       LOG(INFO) << name_;
 //       return original(std::forward<Args>(args)...);
 //     }

@@ -34,8 +34,12 @@ void CallBack() {
   g_ticks.Advance(4);
 }
 
+int g_value = 0;
+int& GetValue() { return g_value; }
+
 int (*g_add)(int, int) = &Add;
 void (*g_call_back)() = &CallBack;
+int& (*g_get_value)() = &GetValue;
 
 class ProfileCallHookTest : public ::testing::Test {
  protected:
@@ -57,6 +61,12 @@ TEST_F(ProfileCallHookTest, CallbackIsSubtracted) {
             absl::Nanoseconds(10));
   EXPECT_EQ(profiler_.GetSelfTime("CallHookTest/Callback"),
             absl::Nanoseconds(4));
+}
+
+TEST_F(ProfileCallHookTest, ReturnsReferences) {
+  FunctionHook<&g_get_value, ProfileCallHook> hook("CallHookTest/GetValue");
+  EXPECT_EQ(&g_get_value(), &g_value);
+  EXPECT_EQ(profiler_.GetCount("CallHookTest/GetValue"), 1);
 }
 
 TEST(ProfileCallHookNoProfilerTest, CallsThrough) {

@@ -109,6 +109,19 @@ double GetCpuTicksPerSecond() {
   return static_cast<double>(ecx) * ebx / eax;
 }
 
+// Returns `time` in ticks, limited to what an int64_t holds (so an infinite
+// time is the most ticks there can be).
+int64_t ToTicks(absl::Duration time, double ticks_per_second) {
+  const double ticks = absl::ToDoubleSeconds(time) * ticks_per_second;
+  if (ticks >= 0x1p63) {
+    return std::numeric_limits<int64_t>::max();
+  }
+  if (ticks < -0x1p63) {
+    return std::numeric_limits<int64_t>::min();
+  }
+  return static_cast<int64_t>(ticks);
+}
+
 // How the cost of a timed point is measured: this many rounds of this many
 // points, keeping the fastest round.
 constexpr int kCostRounds = 5;
@@ -261,11 +274,7 @@ Profiler::Profiler(Options options)
               : GetCpuTicksPerSecond()),
       budget_per_frame_(options.budget_per_frame),
       budget_fraction_(options.budget_fraction),
-      slow_frame_ticks_(
-          options.slow_frame == absl::InfiniteDuration()
-              ? std::numeric_limits<int64_t>::max()
-              : static_cast<int64_t>(absl::ToDoubleSeconds(options.slow_frame) *
-                                     ticks_per_second_)),
+      slow_frame_ticks_(ToTicks(options.slow_frame, ticks_per_second_)),
       on_slow_frame_(std::move(options.on_slow_frame)) {
   CHECK(s_current == nullptr) << "Only one Profiler may exist per thread";
   s_current = this;
