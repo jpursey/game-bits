@@ -99,7 +99,7 @@ Depends on: CL2.
   pointer, assigning the same shared context again, and `WaitForLoopCount()`
   (across threads, with several waiters, and when the count isn't reached).
 
-### CL4 [ ] base: audit the rest of gb_base
+### CL4 [x] base: audit the rest of gb_base
 
 Depends on: CL1.
 
@@ -107,6 +107,10 @@ Depends on: CL1.
   value, so a constructor taking a reference bound to a temporary copy, and
   `NewArray()` moved the same arguments into every element, leaving all but
   the first moved-from.
+- `TsAllocator` hid `Allocator::Alloc(size)`, as overriding `Alloc(size,
+  align)` hides the other overload. Every other subclass does too, and fixing
+  that in `Allocator` breaks subclasses, so it is the backlog item *Allocator
+  overrides*.
 - `StdAllocator` and `StdGlobalAllocator` didn't compile once a container used
   them.
 - `ToUtf16()` and `ToUtf8()` threw on invalid input (utfcpp's checked
@@ -114,7 +118,8 @@ Depends on: CL1.
 - `IsPlatformSupported()` was defined outside `namespace gb`, so the declared
   function had no definition.
 - `GetWindowsError()` kept the trailing line break from `FormatMessage()` in
-  the middle of the message.
+  the middle of the message, and returned "no message" for any error whose
+  message has inserts (such as `ERROR_WRONG_DISK`).
 - `ScopedCall` was copyable, so a copy called the function twice.
 
 **Verify**

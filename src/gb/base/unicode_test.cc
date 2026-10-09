@@ -431,5 +431,26 @@ TEST(UnicodeTest, EmptyString) {
             StringEncoding::kUtf16WithBom);
 }
 
+TEST(UnicodeTest, ToUtf16InvalidUtf8IsEmpty) {
+  EXPECT_THAT(ToUtf16("a\xFF"), IsEmpty());             // Invalid byte.
+  EXPECT_THAT(ToUtf16("a\xC3"), IsEmpty());             // Truncated sequence.
+  EXPECT_THAT(ToUtf16("a\xC3z"), IsEmpty());            // Bad continuation.
+  EXPECT_THAT(ToUtf16("a\xC0\xAF"), IsEmpty());         // Overlong encoding.
+  EXPECT_THAT(ToUtf16("a\xED\xA0\x80"), IsEmpty());     // UTF-16 surrogate.
+  EXPECT_THAT(ToUtf16("\xEF\xBB\xBF\xFF"), IsEmpty());  // Invalid after BOM.
+}
+
+TEST(UnicodeTest, ToUtf8InvalidUtf16IsEmpty) {
+  EXPECT_THAT(ToUtf8(u"a\xD800"), IsEmpty());       // Truncated pair.
+  EXPECT_THAT(ToUtf8(u"a\xD800z"), IsEmpty());      // Lead without trail.
+  EXPECT_THAT(ToUtf8(u"a\xDC00z"), IsEmpty());      // Trail without lead.
+  EXPECT_THAT(ToUtf8(u"\xFFFE\x00D8"), IsEmpty());  // Swapped, after BOM.
+}
+
+TEST(UnicodeTest, ToUtf8SurrogatePair) {
+  EXPECT_EQ(ToUtf8(u"a\xD83D\xDE00z"), "a\xF0\x9F\x98\x80z");
+  EXPECT_EQ(ToUtf8(u"\xFFFE\x3DD8\x00DE"), "\xF0\x9F\x98\x80");
+}
+
 }  // namespace
 }  // namespace gb

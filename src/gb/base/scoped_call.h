@@ -6,6 +6,8 @@
 #ifndef GB_BASE_SCOPED_CALL_H_
 #define GB_BASE_SCOPED_CALL_H_
 
+#include <utility>
+
 namespace gb {
 
 // This is a simple RAII class that wraps a callable function (usually a local
@@ -15,6 +17,8 @@ class ScopedCall final {
  public:
   ScopedCall(const Callable& callback) : callback_(callback) {}
   ScopedCall(Callable&& callback) : callback_(std::move(callback)) {}
+  ScopedCall(const ScopedCall&) = delete;
+  ScopedCall& operator=(const ScopedCall&) = delete;
   ~ScopedCall() { callback_(); }
 
  private:

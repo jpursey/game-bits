@@ -249,6 +249,24 @@ void EncodingDetector::Process() {
   }
 }
 
+// Returns true if every UTF-16 surrogate in the string is part of a valid pair.
+bool HasValidSurrogates(std::u16string_view str) {
+  const int size = static_cast<int>(str.size());
+  for (int i = 0; i < size; ++i) {
+    const char16_t ch = str[i];
+    if (ch >= 0xDC00 && ch < 0xE000) {
+      return false;
+    }
+    if (ch >= 0xD800 && ch < 0xDC00) {
+      ++i;
+      if (i == size || str[i] < 0xDC00 || str[i] >= 0xE000) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 }  // namespace
 
 StringEncoding GetStringEncoding(std::string_view str,
@@ -260,6 +278,9 @@ StringEncoding GetStringEncoding(std::string_view str,
   return detector.GetEncoding();
 }
 
+// utfcpp's checked conversions throw on invalid input, so ToUtf16() and
+// ToUtf8() validate the input first, and then convert it unchecked.
+
 std::u16string ToUtf16(std::string_view utf8_string) {
   const unsigned char* const bom =
       reinterpret_cast<const unsigned char*>(utf8_string.data());
@@ -267,8 +288,12 @@ std::u16string ToUtf16(std::string_view utf8_string) {
                         bom[1] == 0xBB && bom[2] == 0xBF);
   const char* begin = utf8_string.data() + (has_bom ? 3 : 0);
   const char* const end = utf8_string.data() + utf8_string.size();
+  if (!utf8::is_valid(begin, end)) {
+    return {};
+  }
   std::u16string result;
-  utf8::utf8to16(begin, end, std::back_insert_iterator<std::u16string>(result));
+  utf8::unchecked::utf8to16(begin, end,
+                            std::back_insert_iterator<std::u16string>(result));
   return result;
 }
 
@@ -283,10 +308,17 @@ std::string ToUtf8(std::u16string_view utf16_string) {
     }
     utf16_string = swapped;
   }
-  const char16_t* const begin = utf16_string.data() + (has_bom ? 1 : 0);
+  if (has_bom) {
+    utf16_string.remove_prefix(1);
+  }
+  if (!HasValidSurrogates(utf16_string)) {
+    return {};
+  }
+  const char16_t* const begin = utf16_string.data();
   const char16_t* const end = utf16_string.data() + utf16_string.size();
   std::string result;
-  utf8::utf16to8(begin, end, std::back_insert_iterator<std::string>(result));
+  utf8::unchecked::utf16to8(begin, end,
+                            std::back_insert_iterator<std::string>(result));
   return result;
 }
 

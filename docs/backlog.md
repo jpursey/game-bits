@@ -87,3 +87,34 @@ waits is charged only for the time it runs. Needs a hook in `gb/thread`'s fiber
 switch that the profiler can use without `gb/thread` depending on it. Most
 useful alongside *Multithreaded profiles*, since fiber jobs are the main
 multithreaded case.
+
+## Allocator overrides
+
+- **Layers:** base, alloc
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Code audit](worklog/code_audit.md) (CL4)
+
+Every `Allocator` subclass that overrides `Alloc(size, align)` hides the
+one-argument `Alloc(size)`, so it can't be called on the concrete type
+(`pool_allocator.Alloc(64)` doesn't compile). `TsAllocator` brings it back with
+a `using`, but each other subclass would have to remember to. Make `Alloc()`
+and `Free()` public non-virtual functions that call protected virtual
+`DoAlloc()` and `DoFree()`, so overriding can't hide anything. This breaks
+every subclass outside Game Bits, which must rename its overrides.
+
+## Replace ScopedCall with absl::Cleanup
+
+- **Layers:** base, file, resource
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** none
+
+`gb::ScopedCall` does what `absl::Cleanup` does (from `absl/cleanup/cleanup.h`),
+which also has `Cancel()` and `Invoke()`. Switch Game Bits' own uses to
+`absl::Cleanup` (`local_file_protocol_test.cc`, `resource_file_reader.cc`, and
+`resource_file_writer.cc`), and mark `ScopedCall` deprecated in favor of it.
+Removing `ScopedCall` breaks every project that uses it, so each one switches
+first, and it is removed once they have.

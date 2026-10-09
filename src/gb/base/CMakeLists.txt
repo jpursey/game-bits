@@ -8,6 +8,9 @@ if (WIN32)
     win_local_time.cc
     win_platform.cc win_platform.h
   )
+  set(gb_base_internal_TEST_SOURCE
+    win_platform_test.cc
+  )
 else()
   set(gb_base_internal_SOURCE
     gen_local_time.cc
@@ -38,6 +41,7 @@ set(gb_base_SOURCE
 )
 
 set(gb_base_TEST_SOURCE
+  allocator_test.cc
   callback_scope_test.cc
   clock_test.cc
   context_test.cc
@@ -46,10 +50,13 @@ set(gb_base_TEST_SOURCE
   init_logging_test.cc
   local_time_test.cc
   log_file_test.cc
+  platform_requirements_test.cc
+  scoped_call_test.cc
   type_info_test.cc
   unicode_test.cc
   validated_context_test.cc
   weak_ptr_test.cc
+  ${gb_base_internal_TEST_SOURCE}
 )
 set(gb_base_TEST_DEPS
   gb_test

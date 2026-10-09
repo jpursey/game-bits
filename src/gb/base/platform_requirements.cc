@@ -165,7 +165,11 @@ static_assert('|' == 0x7C, "ASCII encoding required.");
 static_assert('}' == 0x7D, "ASCII encoding required.");
 static_assert('~' == 0x7E, "ASCII encoding required.");
 
+namespace gb {
+
 bool IsPlatformSupported() {
   // Always true, as there are only compile time dependencies.
   return true;
 }
+
+}  // namespace gb

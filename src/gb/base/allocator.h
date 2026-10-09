@@ -25,7 +25,7 @@ class Allocator {
 
   // Helper methods to new/delete classes using this allocator.
   template <typename Type, typename... Args>
-  Type* New(Args... args) {
+  Type* New(Args&&... args) {
     return new (Alloc(sizeof(Type), alignof(Type)))
         Type(std::forward<Args>(args)...);
   }
@@ -38,13 +38,14 @@ class Allocator {
     }
   }
 
-  // Helper methods to new/delete arrays using this allocator.
+  // Helper methods to new/delete arrays using this allocator. Every element is
+  // constructed from the same `args`, so they are passed as const references.
   template <typename Type, typename... Args>
-  Type* NewArray(int count, Args... args) {
+  Type* NewArray(int count, const Args&... args) {
     Type* objects =
         static_cast<Type*>(Alloc(sizeof(Type) * count, alignof(Type)));
     for (int i = 0; i < count; ++i) {
-      new (objects + i) Type(std::forward<Args>(args)...);
+      new (objects + i) Type(args...);
     }
     return objects;
   }
@@ -88,10 +89,11 @@ class TsAllocator : public BaseAllocator {
                 "BaseAllocator must be an Allocator");
 
   template <typename... Args>
-  explicit TsAllocator(Args... args)
+  explicit TsAllocator(Args&&... args)
       : BaseAllocator(std::forward<Args>(args)...) {}
   ~TsAllocator() override = default;
 
+  using Allocator::Alloc;
   void* Alloc(size_t size, size_t align) override {
     absl::MutexLock lock(&mutex_);
     return BaseAllocator::Alloc(size, align);
@@ -151,7 +153,7 @@ struct GlobalAllocatorTraits {
 // By default, this will return an allocator implemented via the default
 // allocator. However, it can be specialized to be any allocator by defining a
 // traits struct with a single static method Get() which returns the desired
-// global allocator. See StdDefaultAllocatorTraits for an example.
+// global allocator. See DefaultGlobalAllocatorTraits for an example.
 template <typename Type, typename Traits = DefaultGlobalAllocatorTraits>
 class StdGlobalAllocator {
  public:
@@ -168,8 +170,6 @@ class StdGlobalAllocator {
   StdGlobalAllocator(StdGlobalAllocator&&) noexcept = default;
   template <typename OtherType>
   StdGlobalAllocator(const StdGlobalAllocator<OtherType, Traits>&) noexcept {}
-  template <typename OtherType>
-  StdGlobalAllocator(StdGlobalAllocator<OtherType, Traits>&&) noexcept {}
   StdGlobalAllocator<Type, Traits>& operator=(
       const StdGlobalAllocator&) noexcept = default;
   StdGlobalAllocator<Type, Traits>& operator=(StdGlobalAllocator&&) noexcept =
@@ -177,17 +177,16 @@ class StdGlobalAllocator {
   ~StdGlobalAllocator() noexcept = default;
 
   Type* allocate(size_type count) {
-    return Traits::Get()->Alloc(count * sizeof(Type), alignof(Type));
+    return static_cast<Type*>(
+        Traits::Get()->Alloc(count * sizeof(Type), alignof(Type)));
   }
   void deallocate(Type* ptr, size_type /*count*/) {
     return Traits::Get()->Free(ptr);
   }
 
-  bool operator==(const StdGlobalAllocator<Type, Traits>& other) {
+  template <typename OtherType>
+  bool operator==(const StdGlobalAllocator<OtherType, Traits>&) const {
     return true;
-  }
-  bool operator!=(const StdGlobalAllocator<Type, Traits>& other) {
-    return false;
   }
 };
 
@@ -216,28 +215,27 @@ class StdAllocator {
   template <typename OtherType>
   StdAllocator(const StdAllocator<OtherType>& other) noexcept
       : allocator_(other.allocator_) {}
-  template <typename OtherType>
-  StdAllocator(StdAllocator<OtherType>&& other) noexcept
-      : allocator_(other.GetAllocator()) {}
   StdAllocator<Type>& operator=(const StdAllocator&) noexcept = default;
   StdAllocator<Type>& operator=(StdAllocator&&) noexcept = default;
   ~StdAllocator() noexcept = default;
 
   Type* allocate(size_type count) {
-    return allocator_->Alloc(count * sizeof(Type), alignof(Type));
+    return static_cast<Type*>(
+        allocator_->Alloc(count * sizeof(Type), alignof(Type)));
   }
   void deallocate(Type* ptr, size_type /*count*/) {
     return allocator_->Free(ptr);
   }
 
-  bool operator==(const StdAllocator<Type>& other) {
+  template <typename OtherType>
+  bool operator==(const StdAllocator<OtherType>& other) const {
     return allocator_ == other.allocator_;
-  }
-  bool operator!=(const StdAllocator<Type>& other) {
-    return allocator_ != other.allocator_;
   }
 
  private:
+  template <typename OtherType>
+  friend class StdAllocator;
+
   Allocator* allocator_;
 };
 
