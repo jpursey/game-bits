@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <utility>
 
 #include "absl/log/check.h"
 
@@ -25,17 +26,33 @@ size_t GetDefaultAlignment(size_t size) {
   return align;
 }
 
+// Every slot must be aligned for its allocation, and for the FreeNode (a
+// pointer) it holds while it is free.
+size_t GetSlotAlignment(size_t alloc_size, size_t alloc_align) {
+  if (alloc_align == 0) {
+    alloc_align = GetDefaultAlignment(alloc_size);
+  }
+  return std::max(alloc_align, alignof(void*));
+}
+
+// Slots are a whole number of alignments, so every slot in a bucket is aligned.
+size_t GetSlotSize(size_t alloc_size, size_t slot_align) {
+  const size_t size = std::max(alloc_size, sizeof(void*));
+  return (size + slot_align - 1) & ~(slot_align - 1);
+}
+
 }  // namespace
 
 PoolAllocator::PoolAllocator(Allocator* bucket_allocator, size_t bucket_size,
                              size_t alloc_size, size_t alloc_align)
     : bucket_allocator_(bucket_allocator),
       bucket_size_(bucket_size),
-      alloc_size_(std::max({alloc_align, alloc_size, sizeof(FreeNode)})),
-      alloc_align_(alloc_align == 0 ? GetDefaultAlignment(alloc_size)
-                                    : alloc_align) {
+      alloc_align_(GetSlotAlignment(alloc_size, alloc_align)),
+      alloc_size_(GetSlotSize(alloc_size, alloc_align_)) {
   DCHECK(bucket_size_ > 0);
   DCHECK(alloc_size_ > 0);
+  DCHECK((alloc_align_ & (alloc_align_ - 1)) == 0)
+      << "Alignment must be a power of two";
 }
 
 PoolAllocator::~PoolAllocator() {

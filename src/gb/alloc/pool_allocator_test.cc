@@ -90,6 +90,26 @@ TEST(PoolAllocatorTest, AddBucket) {
   }
 }
 
+TEST(PoolAllocatorTest, AlignsEveryAllocationWhenSizeIsNotAMultiple) {
+  TestAllocator heap;
+  PoolAllocator allocator(&heap, 10, 24, 16);
+  for (int i = 0; i < 10; ++i) {
+    void* ptr = allocator.Alloc(24, 16);
+    EXPECT_TRUE(heap.IsValidMemory(ptr, 24, 16)) << "allocation " << i;
+  }
+  EXPECT_EQ(heap.GetAllocCount(), 1);
+}
+
+TEST(PoolAllocatorTest, FreeListIsAlignedForSmallAlignments) {
+  TestAllocator heap;
+  PoolAllocator allocator(&heap, 10, 12);
+  for (int i = 0; i < 10; ++i) {
+    void* ptr = allocator.Alloc(12, 4);
+    EXPECT_TRUE(heap.IsValidMemory(ptr, 12, alignof(void*)))
+        << "allocation " << i;
+  }
+}
+
 TEST(PoolAllocatorTest, HeapAllocFail) {
   TestAllocator heap;
   PoolAllocator allocator(&heap, 10, sizeof(int));
@@ -103,10 +123,17 @@ TEST(PoolAllocatorTest, AllocTooLarge) {
   EXPECT_EQ(allocator.Alloc(1001, 0), nullptr);
 }
 
-TEST(PoolAllocatorTest, AlignToLarge) {
+TEST(PoolAllocatorTest, AlignTooLarge) {
   TestAllocator heap;
-  PoolAllocator allocator(&heap, 10, sizeof(int), 1);
-  EXPECT_EQ(allocator.Alloc(sizeof(int), 2), nullptr);
+  PoolAllocator allocator(&heap, 10, sizeof(int), 8);
+  EXPECT_EQ(allocator.Alloc(sizeof(int), 16), nullptr);
+}
+
+TEST(PoolAllocatorTest, SmallerAlignmentIsAllowed) {
+  TestAllocator heap;
+  PoolAllocator allocator(&heap, 10, sizeof(int), 8);
+  void* ptr = allocator.Alloc(sizeof(int), 2);
+  EXPECT_TRUE(heap.IsValidMemory(ptr, sizeof(int), 8));
 }
 
 }  // namespace

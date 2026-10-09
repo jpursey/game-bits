@@ -9,11 +9,13 @@ set(gb_alloc_SOURCE
 
 set(gb_alloc_TEST_SOURCE
   pool_allocator_test.cc
-  test_allocator.cc
+  test_allocator.cc test_allocator.h
+  test_allocator_test.cc
 )
 set(gb_alloc_TEST_DEPS
   absl::flat_hash_map
   absl::flat_hash_set
+  gb_test
 )
 
 set(gb_alloc_DEPS

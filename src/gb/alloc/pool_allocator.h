@@ -30,6 +30,11 @@ class PoolAllocator : public Allocator {
   // Creates a pool allocator with the specified bucket size (number of pool
   // allocations per bucket) and the individual allocation size and alignment.
   // Buckets are allocated from the default allocator.
+  //
+  // An alignment of zero is the largest power of two (up to the default heap
+  // alignment) that divides the size. Each allocation takes at least the size
+  // of a pointer, rounded up to a multiple of its alignment, which is at least
+  // that of a pointer. Alloc() returns null for a larger size or alignment.
   PoolAllocator(size_t bucket_size, size_t alloc_size, size_t alloc_align = 0);
 
   // Creates a pool allocator that allocates its blocks from the specified
@@ -60,8 +65,8 @@ class PoolAllocator : public Allocator {
 
   Allocator* const bucket_allocator_;
   const size_t bucket_size_;
+  const size_t alloc_align_;  // Must be initialized before alloc_size_.
   const size_t alloc_size_;
-  const size_t alloc_align_;
   Bucket* buckets_ = nullptr;
   FreeNode* free_ = nullptr;
   size_t unused_ = 0;

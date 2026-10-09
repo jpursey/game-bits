@@ -129,9 +129,26 @@ Depends on: CL1.
   UTF-8 and UTF-16 conversions, `IsPlatformSupported()`, `GetWindowsError()`,
   and `ScopedCall`.
 
-### CL5 [ ] alloc: audit gb_alloc
+### CL5 [x] alloc: audit gb_alloc
 
 Depends on: CL4.
+
+- `TestAllocator::IsValidMemory()` compared the pointer against itself rather
+  than each allocation, so it passed almost any pointer, and the pool tests'
+  memory checks checked nothing.
+- `PoolAllocator` didn't round its slots up to a multiple of their alignment,
+  so with a size that isn't a multiple (24 bytes aligned to 16) every other
+  slot was misaligned. Slots also weren't aligned for the free list pointer
+  they hold when free (12 bytes aligned to 4). Slots are now at least
+  pointer-aligned, so a pool accepts any alignment up to that.
+- `TestAllocator` had no tests, and `test_allocator.cc` had no copyright
+  header.
+
+**Verify**
+- Standard checks.
+- Unit tests: `TestAllocator` (counts, failing allocations, memory inside,
+  outside and misaligned), and pool slot alignment for sizes that aren't a
+  multiple of the alignment.
 
 ### CL6 [ ] container: audit gb_container
 

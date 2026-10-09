@@ -1,6 +1,12 @@
+// Copyright (c) 2020 John Pursey
+//
+// Use of this source code is governed by an MIT-style License that can be found
+// in the LICENSE file or at https://opensource.org/licenses/MIT.
+
 #include "gb/alloc/test_allocator.h"
 
 #include <cstddef>
+#include <cstdint>
 
 #include "absl/log/check.h"
 #include "absl/log/log.h"
@@ -41,7 +47,7 @@ bool TestAllocator::IsValidMemory(void* ptr, size_t size, size_t align) const {
     return false;
   }
   for (const auto& [alloc_ptr, alloc_info] : allocs_) {
-    auto alloc_address = reinterpret_cast<uintptr_t>(ptr);
+    auto alloc_address = reinterpret_cast<uintptr_t>(alloc_ptr);
     if (ptr_address >= alloc_address &&
         ptr_address + size <= alloc_address + alloc_info.size) {
       return true;
