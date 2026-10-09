@@ -6,7 +6,6 @@
 #ifndef GB_CONTAINER_OFFSET_ARRAY_H_
 #define GB_CONTAINER_OFFSET_ARRAY_H_
 
-#include "absl/log/log.h"
 #include "glm/glm.hpp"
 
 namespace gb {
@@ -27,7 +26,7 @@ class OffsetArray {
   Type value_[Size] = {};
 };
 
-// This class provides access to a 2D array of equal size dimentions with an
+// This class provides access to a 2D array of equal size dimensions with an
 // implied offset to every indexing operation in all dimensions.
 //
 // The underlying type must support default construction.
@@ -52,7 +51,7 @@ class OffsetArray2d {
   Type value_[Size][Size] = {};
 };
 
-// This class provides access to a 3D array of equal size dimentions with an
+// This class provides access to a 3D array of equal size dimensions with an
 // implied offset to every indexing operation in all dimensions.
 //
 // The underlying type must support default construction.

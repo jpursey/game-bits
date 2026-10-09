@@ -6,8 +6,10 @@
 #ifndef GB_CONTAINER_BUFFER_VIEW_H_
 #define GB_CONTAINER_BUFFER_VIEW_H_
 
+#include <algorithm>
+#include <cstdint>
+
 #include "absl/log/check.h"
-#include "absl/log/log.h"
 #include "gb/base/allocator.h"
 #include "gb/container/buffer_view_operations.h"
 

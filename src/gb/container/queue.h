@@ -6,11 +6,15 @@
 #ifndef GB_CONTAINER_QUEUE_H_
 #define GB_CONTAINER_QUEUE_H_
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdlib>
 #include <limits>
 #include <new>
 #include <type_traits>
 #include <utility>
+
+#include "absl/log/check.h"
 
 namespace gb {
 
@@ -36,7 +40,11 @@ namespace gb {
 // The first bucket has an initial capacity, and if the queue is full, it will
 // grow by adding a bucket of the specified "grow capacity" (which may be zero,
 // indicating the queue cannot grow). Memory allocations are per bucket (so in
-// units of the initial capacity and grow capacity).
+// units of the initial capacity and grow capacity). Pushing to a full queue
+// that cannot grow is a fatal error.
+//
+// Copies and assignments take the grow capacity of the queue they copy, and
+// swap exchanges it.
 //
 // This class is thread-compatible.
 template <typename Type>
@@ -58,9 +66,9 @@ class Queue {
   explicit Queue(size_type capacity);
   Queue(size_type init_capacity, size_type grow_capacity);
   Queue(const Queue& other);
-  Queue(Queue&& other);
+  Queue(Queue&& other) noexcept;
   Queue& operator=(const Queue& other);
-  Queue& operator=(Queue&& other);
+  Queue& operator=(Queue&& other) noexcept;
   ~Queue();
 
   //----------------------------------------------------------------------------
@@ -82,6 +90,7 @@ class Queue {
   void pop();
 
   void swap(Queue& other) noexcept;
+  friend void swap(Queue& a, Queue& b) noexcept { a.swap(b); }
 
   //----------------------------------------------------------------------------
   // Extended methods
@@ -100,8 +109,8 @@ class Queue {
     Bucket() = default;
 
     // True if this bucket can be pushed to at the front. This is set to true
-    // when back_ points to the first element, and is cleared when front_
-    // consumes the first element.
+    // when front_ consumes the first element, and is cleared when back_ points
+    // to the first element.
     bool can_push = false;
 
     // How many elements this bucket can hold.
@@ -143,8 +152,7 @@ class Queue {
   Bucket* NewBucket(size_type capacity);
 
   // Allocates a new bucket of size grow_capacity_ and inserts it after
-  // prev_bucket. If a new bucket could not be created (grow_capacity_ is zero),
-  // this returns null.
+  // prev_bucket. The queue must be able to grow (grow_capacity_ is not zero).
   Bucket* AddBucket(Bucket* prev_bucket);
 
   // Advances the supplied position to the next element in the queue. This is
@@ -153,6 +161,9 @@ class Queue {
 
   // Initializes the queue with the specified capacity. It must be cleared (or
   // not yet created).
+  //
+  // The first bucket has one more slot than the capacity, so the back of a
+  // full queue never reaches its front.
   void Init(size_type init_capacity);
 
   // Clears the bucket, returning it to its pre-initialized state.
@@ -164,12 +175,12 @@ class Queue {
 
   // Allocates space for new element from the queue. The returned pointer is
   // uninitialized memory and must be constructed by the caller with placement
-  // new. If no space could be allocated, this returns null.
+  // new. The queue must have space, or be able to grow.
   Type* PushAlloc();
 
   // Size of buckets to add when the queue is full. This is zero if the queue is
   // not resizable.
-  const size_type grow_capacity_;
+  size_type grow_capacity_;
 
   size_type capacity_ = 0;     // Total capacity of all buckets.
   size_type size_ = 0;         // Current number of elements in the queue.
@@ -194,10 +205,8 @@ typename Queue<Type>::Bucket* Queue<Type>::NewBucket(size_type capacity) {
 
 template <typename Type>
 typename Queue<Type>::Bucket* Queue<Type>::AddBucket(Bucket* prev_bucket) {
+  CHECK(grow_capacity_ > 0) << "Queue is full and cannot grow";
   Bucket* bucket = NewBucket(grow_capacity_);
-  if (bucket == nullptr) {
-    return nullptr;
-  }
   bucket->next = prev_bucket->next;
   bucket->prev = prev_bucket;
   bucket->next->prev = bucket->prev->next = bucket;
@@ -246,11 +255,10 @@ void Queue<Type>::Clear() {
 
 template <typename Type>
 void Queue<Type>::Copy(const Queue& other) {
-  size_type init_capacity = other.size_;
-  if (other.buckets_ != nullptr && other.buckets_->capacity > init_capacity) {
-    init_capacity = other.buckets_->capacity;
-  }
-  Init(init_capacity);
+  // The first bucket's capacity includes its extra slot (see Init).
+  const size_type first_capacity =
+      other.buckets_ != nullptr ? other.buckets_->capacity - 1 : 0;
+  Init(std::max(other.size_, first_capacity));
 
   Position it = other.front_;
   size_type i = 0;
@@ -264,6 +272,7 @@ void Queue<Type>::Copy(const Queue& other) {
 template <typename Type>
 Type* Queue<Type>::PushAlloc() {
   if (back_.bucket == nullptr) {
+    CHECK(grow_capacity_ > 0) << "Queue is full and cannot grow";
     Init(grow_capacity_);
   }
   Type* new_data = back_.bucket->Data(back_.index);
@@ -275,16 +284,10 @@ Type* Queue<Type>::PushAlloc() {
     if (!new_back.bucket->can_push ||
         new_back.bucket->push_end != kInvalidIndex) {
       new_back.bucket = AddBucket(back_.bucket);
-      if (new_back.bucket == nullptr) {
-        return nullptr;
-      }
     }
   } else if (new_back == front_) {
     Bucket* pop_next = back_.bucket->next;
     new_back.bucket = AddBucket(back_.bucket);
-    if (new_back.bucket == nullptr) {
-      return nullptr;
-    }
     new_back.index = 0;
     back_.bucket->pop_next = pop_next;
     back_.bucket->push_end = back_.index;
@@ -313,7 +316,7 @@ Queue<Type>::Queue(const Queue& other) : grow_capacity_(other.grow_capacity_) {
 }
 
 template <typename Type>
-Queue<Type>::Queue(Queue&& other)
+Queue<Type>::Queue(Queue&& other) noexcept
     : grow_capacity_(other.grow_capacity_),
       capacity_(std::exchange(other.capacity_, 0)),
       size_(std::exchange(other.size_, 0)),
@@ -327,16 +330,18 @@ Queue<Type>& Queue<Type>::operator=(const Queue& other) {
     return *this;
   }
   Clear();
+  grow_capacity_ = other.grow_capacity_;
   Copy(other);
   return *this;
 }
 
 template <typename Type>
-Queue<Type>& Queue<Type>::operator=(Queue&& other) {
+Queue<Type>& Queue<Type>::operator=(Queue&& other) noexcept {
   if (&other == this) {
     return *this;
   }
   Clear();
+  grow_capacity_ = other.grow_capacity_;
   capacity_ = std::exchange(other.capacity_, 0);
   size_ = std::exchange(other.size_, 0);
   buckets_ = std::exchange(other.buckets_, nullptr);
@@ -437,6 +442,7 @@ void Queue<Type>::pop() {
 
 template <typename Type>
 void Queue<Type>::swap(Queue& other) noexcept {
+  std::swap(other.grow_capacity_, grow_capacity_);
   std::swap(other.capacity_, capacity_);
   std::swap(other.size_, size_);
   std::swap(other.buckets_, buckets_);
@@ -445,14 +451,5 @@ void Queue<Type>::swap(Queue& other) noexcept {
 }
 
 }  // namespace gb
-
-namespace std {
-
-template <typename Type>
-void swap(gb::Queue<Type>& a, gb::Queue<Type>& b) noexcept {
-  a.swap(b);
-}
-
-}  // namespace std
 
 #endif  // GB_CONTAINER_QUEUE_H_

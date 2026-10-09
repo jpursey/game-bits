@@ -150,9 +150,41 @@ Depends on: CL4.
   outside and misaligned), and pool slot alignment for sizes that aren't a
   multiple of the alignment.
 
-### CL6 [ ] container: audit gb_container
+### CL6 [x] container: audit gb_container
 
 Depends on: CL4.
+
+- `Array3d<Type, X, Y, Z>` dropped its Z size, so it was `X` deep instead.
+- `Array` classes didn't satisfy Container as documented: `swap()` couldn't be
+  called (it was inherited from a private `std::array` base), and there was no
+  `==`. Each class now has both, for its own type only. Their `constexpr`
+  constructor called `memset`, so no `Array` could be constant-initialized; it
+  now value-initializes instead.
+- Pushing to a full `Queue` that can't grow (or one constructed with no
+  capacity) wrote through a null pointer. It is now a CHECK failure.
+- Copying a `Queue` with spare capacity added one to the copy's capacity
+  (counting the first bucket's extra slot), so each copy of a copy grew.
+- `Queue` moves weren't `noexcept`, so a `std::vector` of queues copied every
+  queue and its elements when it grew.
+- `Queue` assignment and swap kept the destination's grow capacity, unlike
+  construction. They now take it from the queue they copy, and swap exchanges
+  it.
+- `Queue` overloaded `std::swap`, which programs may not add to `std`. Its
+  `swap()` is now found by argument-dependent lookup, and `std::swap()` still
+  works through the moves.
+- `Array` and `OffsetArray` had no tests. `Queue` is now also checked against
+  `std::deque` through long runs of pushes, pops, and copies.
+- `BufferView` is unchanged apart from missing includes and comment typos.
+  `SetOrigin()` DCHECKs that the origin isn't negative, although the
+  constructor allows it and nothing else depends on it.
+
+**Verify**
+- Standard checks.
+- Unit tests: every `Array` class (initialization, indexing and memory order,
+  dimensions, `fill()`, `swap()`, `==`), `OffsetArray` in each dimension, and
+  `Queue` capacity after copies, grow capacity after assignment and swap,
+  moves in a `std::vector`, pushing to a full queue (CHECK failure), and
+  random pushes and pops against `std::deque`.
 
 ### CL7 [ ] thread: audit gb_thread
 

@@ -5,6 +5,13 @@
 
 #include "gb/container/queue.h"
 
+#include <deque>
+#include <memory>
+#include <random>
+#include <utility>
+#include <vector>
+
+#include "absl/strings/str_cat.h"
 #include "gtest/gtest.h"
 
 namespace gb {
@@ -456,7 +463,8 @@ TEST(QueueTest, SwapFunction) {
   auto queue_1 = InitQueueWith12345(&counts);
   auto queue_2 = InitQueueWith67890(&counts);
 
-  std::swap(*queue_2, *queue_1);
+  using std::swap;
+  swap(*queue_2, *queue_1);
   EXPECT_EQ(counts.init_construct, 0);
   EXPECT_EQ(counts.copy_construct, 0);
   EXPECT_EQ(counts.move_construct, 0);
@@ -477,6 +485,112 @@ TEST(QueueTest, SwapFunction) {
     EXPECT_EQ(queue_1->front().GetValue(), i + 5);
     queue_2->pop();
     queue_1->pop();
+  }
+}
+
+TEST(QueueTest, CopyKeepsCapacity) {
+  Queue<int> queue(10);
+  queue.push(1);
+
+  Queue<int> copy(queue);
+  EXPECT_EQ(copy.capacity(), 10);
+
+  Queue<int> assigned(2);
+  assigned = queue;
+  EXPECT_EQ(assigned.capacity(), 10);
+
+  Queue<int> copy_of_copy(copy);
+  EXPECT_EQ(copy_of_copy.capacity(), 10);
+}
+
+TEST(QueueTest, CopyAssignmentTakesGrowCapacity) {
+  Queue<int> queue(1, 5);
+  Queue<int> assigned(1, 0);
+  assigned = queue;
+  EXPECT_EQ(assigned.grow_capacity(), 5);
+}
+
+TEST(QueueTest, MoveAssignmentTakesGrowCapacity) {
+  Queue<int> queue(1, 5);
+  Queue<int> assigned(1, 0);
+  assigned = std::move(queue);
+  EXPECT_EQ(assigned.grow_capacity(), 5);
+}
+
+TEST(QueueTest, SwapExchangesGrowCapacity) {
+  Queue<int> queue_1(1, 5);
+  Queue<int> queue_2(1, 0);
+  queue_1.swap(queue_2);
+  EXPECT_EQ(queue_1.grow_capacity(), 0);
+  EXPECT_EQ(queue_2.grow_capacity(), 5);
+}
+
+TEST(QueueTest, VectorOfQueuesMovesQueues) {
+  Counts counts;
+  std::vector<Queue<Item>> queues;
+  for (int i = 0; i < 10; ++i) {
+    queues.emplace_back(2);
+    queues.back().emplace(&counts, i);
+  }
+  EXPECT_EQ(counts.copy_construct, 0);
+  EXPECT_EQ(counts.destruct, 0);
+}
+
+TEST(QueueDeathTest, PushToFullQueueThatCannotGrow) {
+  Queue<int> queue(1, 0);
+  queue.push(1);
+  EXPECT_DEATH(queue.push(2), "full");
+}
+
+TEST(QueueDeathTest, PushToZeroCapacityQueueThatCannotGrow) {
+  Queue<int> queue(0, 0);
+  EXPECT_DEATH(queue.push(1), "full");
+}
+
+// Checks queues against std::deque through long runs of pushes and pops, so
+// they fill, grow, wrap, and split buckets in many different ways.
+TEST(QueueTest, MatchesDeque) {
+  const std::pair<int, int> kCapacities[] = {
+      {1, 1}, {2, 2}, {3, 1}, {4, 2}, {0, 3}, {5, 7}, {4, 0}, {16, 0},
+  };
+  for (const auto& [init_capacity, grow_capacity] : kCapacities) {
+    SCOPED_TRACE(absl::StrCat("init_capacity=", init_capacity,
+                              ", grow_capacity=", grow_capacity));
+    Counts counts;
+    {
+      Queue<Item> queue(init_capacity, grow_capacity);
+      std::deque<int> expected;
+      std::mt19937 random(init_capacity * 100 + grow_capacity);
+      int next_value = 0;
+      for (int i = 0; i < 2000; ++i) {
+        // Alternate between mostly pushing and mostly popping.
+        const int push_chance = (i / 100) % 2 == 0 ? 3 : 1;
+        const bool full = grow_capacity == 0 &&
+                          static_cast<int>(expected.size()) == init_capacity;
+        if (!full && (expected.empty() ||
+                      static_cast<int>(random() % 4) < push_chance)) {
+          queue.emplace(&counts, next_value);
+          expected.push_back(next_value++);
+        } else {
+          queue.pop();
+          expected.pop_front();
+        }
+        ASSERT_EQ(queue.size(), expected.size()) << "step " << i;
+        if (!expected.empty()) {
+          ASSERT_EQ(queue.front().GetValue(), expected.front()) << "step " << i;
+          ASSERT_EQ(queue.back().GetValue(), expected.back()) << "step " << i;
+        }
+        if (i % 97 == 0) {
+          Queue<Item> copy(queue);
+          for (int value : expected) {
+            ASSERT_EQ(copy.front().GetValue(), value) << "step " << i;
+            copy.pop();
+          }
+          ASSERT_TRUE(copy.empty()) << "step " << i;
+        }
+      }
+    }
+    EXPECT_EQ(counts.init_construct + counts.copy_construct, counts.destruct);
   }
 }
 

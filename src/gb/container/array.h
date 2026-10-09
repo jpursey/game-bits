@@ -7,17 +7,18 @@
 #define GB_CONTAINER_ARRAY_H_
 
 //==============================================================================
-// These classes encapsulate a fixed size potentially multi-demensional array.
+// These classes encapsulate a fixed size potentially multi-dimensional array.
 //
 // These classes satisfy standard C++17 container requirements Container and
 // ReversibleContainer (except that it is default-constructed to be full, and
-// the complexity of swap is linear). and also satisfies the requirements of
+// the complexity of swap is linear), and also satisfy the requirements of
 // ContiguousContainer. Unlike std::array, these do not satisfy any additional
 // requirements of SequenceContainer.
 //
 // The Array family of classes are implemented in terms of std::array. However,
-// unlike std::array, it is never "uninitialized" even for POD types (trivially
-// constructible types are zero initialized).
+// unlike std::array, it is never "uninitialized" even for POD types: elements
+// are value-initialized, so any type without a user-provided default
+// constructor is zero initialized first.
 //
 // Beyond standard container requirements, these containers do not provide
 // additional accessors except for the following:
@@ -33,8 +34,8 @@
 //  - operator[]: Provides direct access to a value in the array via the
 //    designated index type of the array (int for Array, glm::ivec2 for Array2d,
 //    etc.)
-//  - operator(): Like operator[], provides direct access to a to a value in the
-//    array. However this supports both the index type and or individual integer
+//  - operator(): Like operator[], provides direct access to a value in the
+//    array. However this supports both the index type or individual integer
 //    indexes.
 //
 // Multidimensional arrays also support multiple memory ordering options. For
@@ -51,17 +52,15 @@ namespace gb {
 
 namespace internal {
 
-template <typename Type, int Size>
+// Derived is the array class, so that swap and comparison only accept another
+// array with the same layout.
+template <typename Derived, typename Type, int Size>
 class BaseArray : private std::array<Type, Size> {
  public:
   using Base = typename std::array<Type, Size>;
 
-  // Explicit default constructor that zero-initializes POD types.
-  constexpr BaseArray() {
-    if (std::is_trivially_constructible_v<Type>) {
-      std::memset(data(), 0, size() * sizeof(Type));
-    }
-  }
+  // Value-initializes every element.
+  constexpr BaseArray() : Base() {}
 
   // Container types
   using Base::const_iterator;
@@ -95,7 +94,11 @@ class BaseArray : private std::array<Type, Size> {
 
   // container operations
   using Base::fill;
-  using Base::swap;
+  constexpr void swap(Derived& other) { Base::swap(other); }
+  friend constexpr void swap(Derived& a, Derived& b) { a.swap(b); }
+  friend constexpr bool operator==(const Derived& a, const Derived& b) {
+    return static_cast<const Base&>(a) == static_cast<const Base&>(b);
+  }
 
  protected:
   // Make available to derived classes
@@ -109,9 +112,9 @@ class BaseArray : private std::array<Type, Size> {
 // Note: There is no advantage of this over std::array as it is strictly more
 // limited, it is only provided here for parity / consistency.
 template <typename Type, int Size>
-class Array : public internal::BaseArray<Type, Size> {
+class Array : public internal::BaseArray<Array<Type, Size>, Type, Size> {
  public:
-  using Base = typename internal::BaseArray<Type, Size>;
+  using Base = typename internal::BaseArray<Array, Type, Size>;
   using index_type = int;
 
   constexpr index_type dim() const { return Size; }
@@ -140,9 +143,10 @@ class Array : public internal::BaseArray<Type, Size> {
 // array declaration, and Y major is what is generally expected in many 2D
 // representations (for instance a 2D image).
 template <typename Type, int XSize, int YSize = XSize>
-class ArrayXY : public internal::BaseArray<Type, XSize * YSize> {
+class ArrayXY : public internal::BaseArray<ArrayXY<Type, XSize, YSize>, Type,
+                                           XSize * YSize> {
  public:
-  using Base = typename internal::BaseArray<Type, XSize * YSize>;
+  using Base = typename internal::BaseArray<ArrayXY, Type, XSize * YSize>;
   using index_type = glm::ivec2;
 
   constexpr index_type dim() const { return {XSize, YSize}; }
@@ -173,9 +177,10 @@ class ArrayXY : public internal::BaseArray<Type, XSize * YSize> {
 };
 
 template <typename Type, int XSize, int YSize = XSize>
-class ArrayYX : public internal::BaseArray<Type, XSize * YSize> {
+class ArrayYX : public internal::BaseArray<ArrayYX<Type, XSize, YSize>, Type,
+                                           XSize * YSize> {
  public:
-  using Base = typename internal::BaseArray<Type, XSize * YSize>;
+  using Base = typename internal::BaseArray<ArrayYX, Type, XSize * YSize>;
   using index_type = glm::ivec2;
 
   constexpr index_type dim() const { return {XSize, YSize}; }
@@ -222,9 +227,11 @@ using Array2d = ArrayYX<Type, XSize, YSize>;
 // array declaration, and Z major is what is generally expected in many 3D
 // representations (for instance, an array of 2D images).
 template <typename Type, int XSize, int YSize = XSize, int ZSize = XSize>
-class ArrayXYZ : public internal::BaseArray<Type, XSize * YSize * ZSize> {
+class ArrayXYZ : public internal::BaseArray<ArrayXYZ<Type, XSize, YSize, ZSize>,
+                                            Type, XSize * YSize * ZSize> {
  public:
-  using Base = typename internal::BaseArray<Type, XSize * YSize * ZSize>;
+  using Base =
+      typename internal::BaseArray<ArrayXYZ, Type, XSize * YSize * ZSize>;
   using index_type = glm::ivec3;
 
   constexpr index_type dim() const { return {XSize, YSize, ZSize}; }
@@ -259,9 +266,11 @@ class ArrayXYZ : public internal::BaseArray<Type, XSize * YSize * ZSize> {
 };
 
 template <typename Type, int XSize, int YSize = XSize, int ZSize = XSize>
-class ArrayZYX : public internal::BaseArray<Type, XSize * YSize * ZSize> {
+class ArrayZYX : public internal::BaseArray<ArrayZYX<Type, XSize, YSize, ZSize>,
+                                            Type, XSize * YSize * ZSize> {
  public:
-  using Base = typename internal::BaseArray<Type, XSize * YSize * ZSize>;
+  using Base =
+      typename internal::BaseArray<ArrayZYX, Type, XSize * YSize * ZSize>;
   using index_type = glm::ivec3;
 
   constexpr index_type dim() const { return {XSize, YSize, ZSize}; }
@@ -296,7 +305,7 @@ class ArrayZYX : public internal::BaseArray<Type, XSize * YSize * ZSize> {
 };
 
 template <typename Type, int XSize, int YSize = XSize, int ZSize = XSize>
-using Array3d = ArrayZYX<Type, XSize, YSize>;
+using Array3d = ArrayZYX<Type, XSize, YSize, ZSize>;
 
 }  // namespace gb
 

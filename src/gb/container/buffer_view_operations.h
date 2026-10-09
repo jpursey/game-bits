@@ -6,10 +6,12 @@
 #ifndef GB_CONTAINER_BUFFER_VIEW_OPERATIONS_H_
 #define GB_CONTAINER_BUFFER_VIEW_OPERATIONS_H_
 
+#include <new>
+
 namespace gb {
 
 // =============================================================================
-// This functions in this header are used by the BufferView family of containers
+// The functions in this header are used by the BufferView family of containers
 // to perform operations on elements of the buffer.
 // =============================================================================
 
@@ -27,10 +29,10 @@ void BufferViewConstructAt(const Position& pos, Type* value) {
   BufferViewConstruct<Type>(value);
 }
 
-// Destructs a valud in a BufferView
+// Destructs a value in a BufferView.
 //
 // This is called in the BufferView destructor to delete all values. By default,
-// this calls the destructor. Override ufferViewDestruct to customize this
+// this calls the destructor. Override BufferViewDestruct to customize this
 // behavior.
 template <typename Type>
 void BufferViewDestruct(Type* value) {

@@ -15,10 +15,16 @@ set(gb_container_SOURCE
 )
 
 set(gb_container_TEST_SOURCE
+  array_test.cc
   buffer_view_test.cc
+  buffer_view_test_types.h
   buffer_view_2d_test.cc
   buffer_view_3d_test.cc
+  offset_array_test.cc
   queue_test.cc
+)
+set(gb_container_TEST_DEPS
+  absl::strings
 )
 
 set(gb_container_DEPS

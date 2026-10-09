@@ -6,8 +6,10 @@
 #ifndef GB_CONTAINER_BUFFER_VIEW_3D_H_
 #define GB_CONTAINER_BUFFER_VIEW_3D_H_
 
+#include <algorithm>
+#include <cstdint>
+
 #include "absl/log/check.h"
-#include "absl/log/log.h"
 #include "gb/base/allocator.h"
 #include "gb/container/buffer_view_operations.h"
 #include "glm/glm.hpp"
@@ -90,7 +92,7 @@ class BufferView3d {
     }
     return pos;
   }
-  void ClearRelativeImpl(const glm::ivec3& new_origin, const glm::ivec3& rpos,
+  void ClearRelativeImpl(const glm::ivec3& delta, const glm::ivec3& rpos,
                          const glm::ivec3& size);
 
   const glm::ivec3 size_;
