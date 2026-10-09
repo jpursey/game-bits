@@ -9,7 +9,6 @@
 #include "absl/strings/ascii.h"
 #include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
-#include "absl/strings/str_replace.h"
 
 namespace gb {
 
@@ -239,8 +238,11 @@ std::string JoinPath(std::string_view path_a, std::string_view path_b,
       path_b.remove_prefix(host_b.size() + 2);
       result.append("//", 2);
       result.append(host_b.data(), host_b.size());
-      if ((!path_b.empty() && path_b[0] == '/') ||
-          (path_b.empty() && !path_a.empty() && path_a[0] != '/')) {
+
+      // The joined path follows the host, so it needs a separator unless it
+      // starts with one.
+      const std::string_view joined_start = path_a.empty() ? path_b : path_a;
+      if (!joined_start.empty() && joined_start[0] != '/') {
         result.append(1, '/');
       }
     }
@@ -297,8 +299,14 @@ bool PathMatchesPattern(std::string_view path, std::string_view pattern) {
       continue;
     }
 
-    auto find_pos = path.rfind(subpattern);
-    if (find_pos == std::string_view::npos || find_pos < path_pos) {
+    // The last part must end the path. Every other part matches as early as
+    // it can, leaving the most path for the parts after it.
+    if (pattern_pos == pattern.size()) {
+      return path.size() - path_pos >= subpattern.size() &&
+             absl::EndsWith(path, subpattern);
+    }
+    const auto find_pos = path.find(subpattern, path_pos);
+    if (find_pos == std::string_view::npos) {
       return false;
     }
     path_pos = find_pos + subpattern.size();
@@ -370,8 +378,9 @@ std::string NormalizePath(std::string_view path, PathFlags flags,
   }
 
   // Validate root.
+  const bool is_absolute = IsSeparator(in, in_end);
   bool segment_is_host = false;
-  if (!IsSeparator(in, in_end)) {
+  if (!is_absolute) {
     if (flags.IsSet(PathFlag::kRequireHost)) {
       if (failed_flag != nullptr) {
         *failed_flag = PathFlag::kRequireHost;
@@ -385,7 +394,7 @@ std::string NormalizePath(std::string_view path, PathFlags flags,
       return {};
     }
   } else if (flags.Intersects(kHostPathFlags)) {
-    in = ++in;
+    ++in;
     *out++ = '/';
     segment_is_host = IsSeparator(in, in_end);
     if (flags.IsSet(PathFlag::kRequireHost) && !segment_is_host) {
@@ -429,12 +438,15 @@ std::string NormalizePath(std::string_view path, PathFlags flags,
         }
         const std::string_view segment(in, segment_end);
         if (segment == "..") {
-          if (segments.empty()) {
+          if (!segments.empty()) {
+            out = segments.back();
+            segments.pop_back();
+          } else if (!is_absolute || flags.IsSet(PathFlag::kRequireRoot)) {
             is_dot_path = true;
             break;
           }
-          out = segments.back();
-          segments.pop_back();
+
+          // Otherwise, ".." at the root of an absolute path stays at the root.
         } else if (segment != ".") {
           // Any other name starting with a dot (".git", "...") is an ordinary
           // segment.

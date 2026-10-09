@@ -241,54 +241,92 @@ Depends on: CL4.
 - Unit tests: hooking a function that returns a reference, and a slow frame
   time too long to reach.
 
-### CL9 [ ] file: audit gb_file
+### CL9 [x] file: audit paths
 
 Depends on: CL4.
 
-### CL10 [ ] sdl: audit gb_sdl
+gb_file was audited as three CLs, in dependency order: paths, then `File` and
+chunk files, then `FileSystem` and the protocols.
+
+- `NormalizePath()` kept a `..` above the root of an absolute path (`/..`,
+  `mem:/../a`, `//host/..`), so a `FileSystem` path could reach outside a
+  protocol's root: `DeleteFolder("file:/..", kRecursive)` would delete the
+  parent of `LocalFileProtocol`'s root. A `..` at the root of an absolute path
+  is now removed, as the root has no parent. `kRequireRoot` still fails on it,
+  as it did, and a relative path keeps its leading `..` segments.
+- `PathMatchesPattern()` matched each part between `*`s at its last place in
+  the path, so a part that appeared again later failed the rest of the
+  pattern: `"*/*/*.png"` didn't match `"a/b/c.png"`. Folder listings filter
+  with it.
+- `JoinPath()` doubled the separator after the second path's host when the
+  first path was absolute or empty (`JoinPath("/x", "//b/y")` was
+  `"//b//x/y"`).
+- The `RemoveProtocol()` comment said it returns an empty string without
+  protocol flags, rather than the path unchanged.
+- `IsRootPath()` is true for an empty path and for a protocol on its own
+  (`"mem:"`), which aren't absolute. That is fixed in CL11, after protocols
+  reject relative paths, as it is all that stops `DeleteFolder("")` from
+  deleting a protocol's root today.
+
+**Verify**
+- Standard checks.
+- Unit tests: `..` at the root of absolute, protocol, and host paths (and
+  still failing with `kRequireRoot`), patterns whose parts repeat in the path,
+  joining under the second path's host, and `IsRootPath()`, which had no
+  tests.
+
+### CL10 [ ] file: audit File and chunk files
+
+Depends on: CL9.
+
+### CL11 [ ] file: audit FileSystem and the protocols
+
+Depends on: CL10.
+
+### CL12 [ ] sdl: audit gb_sdl
 
 Depends on: CL4.
 
-### CL11 [ ] parse: audit gb_parse
+### CL13 [ ] parse: audit gb_parse
 
 Depends on: CL4.
 
-### CL12 [ ] config: audit gb_config
+### CL14 [ ] config: audit gb_config
+
+Depends on: CL13.
+
+### CL15 [ ] collide: audit gb_collide
+
+Depends on: CL4.
+
+### CL16 [ ] game: audit gb_game
+
+Depends on: CL4.
+
+### CL17 [ ] image: audit gb_image
 
 Depends on: CL11.
 
-### CL13 [ ] collide: audit gb_collide
-
-Depends on: CL4.
-
-### CL14 [ ] game: audit gb_game
-
-Depends on: CL4.
-
-### CL15 [ ] image: audit gb_image
-
-Depends on: CL9.
-
-### CL16 [ ] job: audit gb_job
+### CL18 [ ] job: audit gb_job
 
 Depends on: CL5, CL7.
 
-### CL17 [ ] message: audit gb_message
+### CL19 [ ] message: audit gb_message
 
 Depends on: CL4.
 
-### CL18 [ ] resource: audit gb_resource
+### CL20 [ ] resource: audit gb_resource
 
-Depends on: CL9.
+Depends on: CL11.
 
-### CL19 [ ] render: audit gb_render
+### CL21 [ ] render: audit gb_render
 
-Depends on: CL18.
+Depends on: CL20.
 
-### CL20 [ ] render: audit gb_render_vulkan and gb_render_vulkan_sdl
+### CL22 [ ] render: audit gb_render_vulkan and gb_render_vulkan_sdl
 
-Depends on: CL19.
+Depends on: CL21.
 
-### CL21 [ ] imgui: audit gb_imgui and gb_imgui_sdl
+### CL23 [ ] imgui: audit gb_imgui and gb_imgui_sdl
 
-Depends on: CL19.
+Depends on: CL21.

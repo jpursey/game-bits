@@ -46,8 +46,9 @@ bool IsValidProtocolName(std::string_view protocol_name);
 //
 // If specified, flags determine whether the protocol is considered in the path.
 // If neither kAllowProtocol nor kRequireProtocol are present in the flags, this
-// will always return an empty string. If no flags are specifed, then the
-// protocol is considered (the same as passing PathFlag::kAllowProtocol).
+// returns the path unchanged and an empty protocol. If no flags are specifed,
+// then the protocol is considered (the same as passing
+// PathFlag::kAllowProtocol).
 //
 // Input path is expected to be normalized (see NormalizePath).
 std::string_view RemoveProtocol(std::string_view path, PathFlags flags,
@@ -255,6 +256,9 @@ bool PathMatchesPattern(std::string_view path, std::string_view pattern);
 // - Collapses redundant path separators.
 // - Collapses . path segments.
 // - Collapses .. path segments with prior non-host segment, if there is one.
+//   In an absolute path, a .. at the root is removed, as the root has no
+//   parent (unless kRequireRoot is set, which fails instead). A relative path
+//   keeps any leading .. segments.
 //
 // In addition, normalization does the following based on the flags present:
 // - kRequireProtocol: If a protocol is present, but not lowercase, it will be
@@ -268,8 +272,8 @@ bool PathMatchesPattern(std::string_view path, std::string_view pattern);
 //   done, and the path is assumed to not have a protocol. Any protocol-like
 //   prefix will be considered the first path segment.
 // - kRequireRoot: The path must be a root path or specify a host (path after
-//   protocol starts with a path separator). On failure, kRequireRoot will be
-//   set as the failed flag.
+//   protocol starts with a path separator), and no .. segment may go above
+//   the root. On failure, kRequireRoot will be set as the failed flag.
 // - kRequireHost: The path must start with "//" and be followed by a non-empty
 //   path segment, or it will fail. The following path segment is considered a
 //   host. On failure, kRequireHost will be set as the failed flag.

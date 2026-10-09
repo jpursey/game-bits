@@ -355,7 +355,7 @@ TEST(PathTest, RemoveRoot) {
   REMOVE_ROOT_TEST("ABC:xyz", PathFlag::kAllowHost, "ABC:xyz", "");
   REMOVE_ROOT_TEST("ABC:xyz", PathFlag::kRequireHost, "ABC:xyz", "");
   REMOVE_ROOT_TEST("ABC:xyz", kLocalPathFlags, "ABC:xyz", "");
-  //clang-format on
+  // clang-format on
 }
 
 TEST(PathTest, RemoveFilename) {
@@ -903,6 +903,37 @@ TEST(PathTest, JoinPath) {
   // clang-format on
 }
 
+TEST(PathTest, PathMatchesPatternWithRepeatedParts) {
+  EXPECT_TRUE(PathMatchesPattern("a/b/c.png", "*/*/*.png"));
+  EXPECT_FALSE(PathMatchesPattern("a/b.png", "*/*/*.png"));
+  EXPECT_TRUE(PathMatchesPattern("aa", "*a*a"));
+  EXPECT_FALSE(PathMatchesPattern("a", "*a*a"));
+  EXPECT_TRUE(PathMatchesPattern("abab", "*ab"));
+  EXPECT_FALSE(PathMatchesPattern("aba", "*ab"));
+  EXPECT_TRUE(PathMatchesPattern("xabyab", "x*ab*ab"));
+  EXPECT_FALSE(PathMatchesPattern("xab", "x*ab*ab"));
+}
+
+TEST(PathTest, JoinPathUnderHostOfSecondPath) {
+  EXPECT_EQ(JoinPath("", "//b/y"), "//b/y");
+  EXPECT_EQ(JoinPath("/", "//b/y"), "//b/y");
+  EXPECT_EQ(JoinPath("/x", "//b/y"), "//b/x/y");
+  EXPECT_EQ(JoinPath("/x", "//b"), "//b/x");
+  EXPECT_EQ(JoinPath("abc:/x", "//b/y"), "abc://b/x/y");
+}
+
+TEST(PathTest, IsRootPath) {
+  EXPECT_TRUE(IsRootPath("/"));
+  EXPECT_TRUE(IsRootPath("abc:/"));
+  EXPECT_TRUE(IsRootPath("//host"));
+  EXPECT_TRUE(IsRootPath("//host/"));
+  EXPECT_TRUE(IsRootPath("abc://host"));
+  EXPECT_FALSE(IsRootPath("a"));
+  EXPECT_FALSE(IsRootPath("/a"));
+  EXPECT_FALSE(IsRootPath("abc:/a"));
+  EXPECT_FALSE(IsRootPath("//host/a"));
+}
+
 TEST(PathTest, PathMatchesPattern) {
   EXPECT_TRUE(PathMatchesPattern("", ""));
   EXPECT_TRUE(PathMatchesPattern("a", "a"));
@@ -994,16 +1025,19 @@ TEST(PathTest, NormalizePath) {
   EXPECT_TRUE(TestNormalize("/./a", {}, "/a", {}));
   EXPECT_TRUE(TestNormalize("/./a/././b", {}, "/a/b", {}));
   EXPECT_TRUE(TestNormalize("/a/../b", {}, "/b", {}));
-  EXPECT_TRUE(TestNormalize("/a/../../b", {}, "/../b", {}));
+  EXPECT_TRUE(TestNormalize("/a/../../b", {}, "/b", {}));
   EXPECT_TRUE(TestNormalize("/.", {}, "/", {}));
   EXPECT_TRUE(TestNormalize("/./", {}, "/", {}));
-  EXPECT_TRUE(TestNormalize("/..", {}, "/..", {}));
-  EXPECT_TRUE(TestNormalize("/../", {}, "/..", {}));
+  EXPECT_TRUE(TestNormalize("/..", {}, "/", {}));
+  EXPECT_TRUE(TestNormalize("/../", {}, "/", {}));
   EXPECT_TRUE(TestNormalize("/a/..", {}, "/", {}));
   EXPECT_TRUE(TestNormalize("/a/../", {}, "/", {}));
-  EXPECT_TRUE(TestNormalize("/a/../..", {}, "/..", {}));
-  EXPECT_TRUE(TestNormalize("/a/../../", {}, "/..", {}));
-  EXPECT_TRUE(TestNormalize("/a/../b/c/../../../..", {}, "/../..", {}));
+  EXPECT_TRUE(TestNormalize("/a/../..", {}, "/", {}));
+  EXPECT_TRUE(TestNormalize("/a/../../", {}, "/", {}));
+  EXPECT_TRUE(TestNormalize("/a/../b/c/../../../..", {}, "/", {}));
+  EXPECT_TRUE(TestNormalize("abc:/../a", PathFlag::kAllowProtocol, "abc:/a", {}));
+  EXPECT_TRUE(TestNormalize("abc:../a", PathFlag::kAllowProtocol, "abc:../a", {}));
+  EXPECT_TRUE(TestNormalize("//host/../a", PathFlag::kAllowHost, "//host/a", {}));
   EXPECT_TRUE(TestNormalize(".", {}, "", {}));
   EXPECT_TRUE(TestNormalize("./", {}, "", {}));
   EXPECT_TRUE(TestNormalize("..", {}, "..", {}));
@@ -1195,7 +1229,7 @@ TEST(PathTest, NormalizePath) {
   EXPECT_TRUE(TestNormalize("//Host", PathFlag::kAllowHost, "//Host", {}));
   EXPECT_TRUE(TestNormalize("//Host/", PathFlag::kAllowHost, "//Host", {}));
   EXPECT_TRUE(TestNormalize("//Host/.", PathFlag::kAllowHost, "//Host", {}));
-  EXPECT_TRUE(TestNormalize("//Host/..", PathFlag::kAllowHost, "//Host/..", {}));
+  EXPECT_TRUE(TestNormalize("//Host/..", PathFlag::kAllowHost, "//Host", {}));
   EXPECT_TRUE(TestNormalize("//Host/a/b", PathFlag::kAllowHost, "//Host/a/b", {}));
   EXPECT_TRUE(TestNormalize("PROTOCOL://Host", PathFlag::kAllowHost, "PROTOCOL:/Host", {}));
   EXPECT_TRUE(TestNormalize("PROTOCOL://Host/", PathFlag::kAllowHost, "PROTOCOL:/Host", {}));
@@ -1225,7 +1259,7 @@ TEST(PathTest, NormalizePath) {
   EXPECT_TRUE(TestNormalize("//Host", PathFlag::kRequireHost, "//Host", {}));
   EXPECT_TRUE(TestNormalize("//Host/", PathFlag::kRequireHost, "//Host", {}));
   EXPECT_TRUE(TestNormalize("//Host/.", PathFlag::kRequireHost, "//Host", {}));
-  EXPECT_TRUE(TestNormalize("//Host/..", PathFlag::kRequireHost, "//Host/..", {}));
+  EXPECT_TRUE(TestNormalize("//Host/..", PathFlag::kRequireHost, "//Host", {}));
   EXPECT_TRUE(TestNormalize("//Host/a/b", PathFlag::kRequireHost, "//Host/a/b", {}));
   EXPECT_TRUE(TestNormalize("PROTOCOL://Host", PathFlag::kRequireHost, "", PathFlag::kRequireHost));
 
@@ -1239,7 +1273,7 @@ TEST(PathTest, NormalizePath) {
   EXPECT_TRUE(TestNormalize("//Host", kHostPathFlags, "//Host", {}));
   EXPECT_TRUE(TestNormalize("//Host/", kHostPathFlags, "//Host", {}));
   EXPECT_TRUE(TestNormalize("//Host/.", kHostPathFlags, "//Host", {}));
-  EXPECT_TRUE(TestNormalize("//Host/..", kHostPathFlags, "//Host/..", {}));
+  EXPECT_TRUE(TestNormalize("//Host/..", kHostPathFlags, "//Host", {}));
   EXPECT_TRUE(TestNormalize("//Host/a/b", kHostPathFlags, "//Host/a/b", {}));
   EXPECT_TRUE(TestNormalize("PROTOCOL://Host", kHostPathFlags, "", PathFlag::kRequireHost));
 
@@ -1271,7 +1305,7 @@ TEST(PathTest, NormalizePath) {
   EXPECT_TRUE(TestNormalize("PROTOCOL:.", kGenericPathFlags, "protocol:", {}));
   EXPECT_TRUE(TestNormalize("PROTOCOL:..", kGenericPathFlags, "protocol:..", {}));
   EXPECT_TRUE(TestNormalize("PROTOCOL:/.", kGenericPathFlags, "protocol:/", {}));
-  EXPECT_TRUE(TestNormalize("PROTOCOL:/..", kGenericPathFlags, "protocol:/..", {}));
+  EXPECT_TRUE(TestNormalize("PROTOCOL:/..", kGenericPathFlags, "protocol:/", {}));
   EXPECT_TRUE(TestNormalize("PROTOCOL:a/b", kGenericPathFlags, "protocol:a/b", {}));
   EXPECT_TRUE(TestNormalize("PROTOCOL:a/b/", kGenericPathFlags, "protocol:a/b", {}));
   EXPECT_TRUE(TestNormalize("PROTOCOL:/a/b", kGenericPathFlags, "protocol:/a/b", {}));
@@ -1279,12 +1313,12 @@ TEST(PathTest, NormalizePath) {
   EXPECT_TRUE(TestNormalize("//Host", kGenericPathFlags, "//Host", {}));
   EXPECT_TRUE(TestNormalize("//Host/", kGenericPathFlags, "//Host", {}));
   EXPECT_TRUE(TestNormalize("//Host/.", kGenericPathFlags, "//Host", {}));
-  EXPECT_TRUE(TestNormalize("//Host/..", kGenericPathFlags, "//Host/..", {}));
+  EXPECT_TRUE(TestNormalize("//Host/..", kGenericPathFlags, "//Host", {}));
   EXPECT_TRUE(TestNormalize("//Host/a/b", kGenericPathFlags, "//Host/a/b", {}));
   EXPECT_TRUE(TestNormalize("PROTOCOL://Host", kGenericPathFlags, "protocol://Host", {}));
   EXPECT_TRUE(TestNormalize("PROTOCOL://Host/", kGenericPathFlags, "protocol://Host", {}));
   EXPECT_TRUE(TestNormalize("PROTOCOL://Host/.", kGenericPathFlags, "protocol://Host", {}));
-  EXPECT_TRUE(TestNormalize("PROTOCOL://Host/..", kGenericPathFlags, "protocol://Host/..", {}));
+  EXPECT_TRUE(TestNormalize("PROTOCOL://Host/..", kGenericPathFlags, "protocol://Host", {}));
   EXPECT_TRUE(TestNormalize("PROTOCOL://Host/a/b", kGenericPathFlags, "protocol://Host/a/b", {}));
   EXPECT_TRUE(TestNormalize("proto-call:", kGenericPathFlags, "", PathFlag::kAllowProtocol));
   EXPECT_TRUE(TestNormalize("proto-call:/a/b", kGenericPathFlags, "", PathFlag::kAllowProtocol));
