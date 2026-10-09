@@ -5,12 +5,17 @@
 
 #include "gb/thread/fiber.h"
 
+#include <algorithm>
+#include <atomic>
+#include <string>
+#include <string_view>
 #include <thread>
+#include <vector>
 
+#include "absl/cleanup/cleanup.h"
 #include "absl/log/log.h"
 #include "absl/synchronization/mutex.h"
 #include "absl/synchronization/notification.h"
-#include "absl/time/clock.h"
 #include "absl/types/span.h"
 #include "gb/container/queue.h"
 #include "gb/thread/thread.h"
@@ -199,7 +204,6 @@ TEST_F(FiberTest, CreateFiber) {
         ++state.counter;
       });
   ASSERT_NE(fiber, nullptr);
-  absl::SleepFor(absl::Milliseconds(100));
   EXPECT_EQ(state.counter, 0);
   DeleteFiber(fiber);
 }
@@ -216,7 +220,6 @@ TEST_F(FiberTest, CreateFiberWithExplicitStackSize) {
         ++state.counter;
       });
   ASSERT_NE(fiber, nullptr);
-  absl::SleepFor(absl::Milliseconds(100));
   EXPECT_EQ(state.counter, 0);
   DeleteFiber(fiber);
 }
@@ -341,6 +344,25 @@ TEST_F(FiberTest, FiberName) {
   DeleteFiber(fiber);
 }
 
+TEST_F(FiberTest, LongFiberNameIsTrimmed) {
+  CHECK_FIBER_SUPPORT();
+  Fiber fiber = CreateFiber({}, 0, nullptr, +[](void* user_data) {});
+  ASSERT_NE(fiber, nullptr);
+  SetFiberName(fiber, std::string(200, 'a'));
+  EXPECT_EQ(GetFiberName(fiber), std::string(127, 'a'));
+  DeleteFiber(fiber);
+}
+
+TEST_F(FiberTest, FiberNameIsOnlyTheGivenText) {
+  CHECK_FIBER_SUPPORT();
+  Fiber fiber = CreateFiber({}, 0, nullptr, +[](void* user_data) {});
+  ASSERT_NE(fiber, nullptr);
+  const std::string text = "Test" + std::string(200, 'b');
+  SetFiberName(fiber, std::string_view(text).substr(0, 4));
+  EXPECT_EQ(GetFiberName(fiber), std::string_view("Test"));
+  DeleteFiber(fiber);
+}
+
 TEST_F(FiberTest, AccessNulLFiberName) {
   CHECK_FIBER_SUPPORT();
   SetFiberName(nullptr, "Test");
@@ -379,6 +401,7 @@ TEST_F(FiberTest, IsFiberRunningNotStarted) {
 }
 
 TEST_F(FiberTest, IsFiberRunningWithinFiber) {
+  CHECK_FIBER_SUPPORT();
   auto fiber_threads = CreateFiberThreads(
       1, FiberOption::kSetThreadName, 4096, nullptr, +[](void* user_data) {
         EXPECT_EQ(GetFiberState(GetThisFiber()), FiberState::kRunning);
@@ -512,6 +535,78 @@ TEST_F(FiberTest, ThreadAbuse) {
     DeleteFiber(fiber);
   }
   state.mutex.Unlock();
+}
+
+// Switches between fibers on many threads as fast as possible, so a fiber is
+// often switched to just as another thread switches away from it.
+TEST(FiberStressTest, SwitchFibersAcrossThreads) {
+  CHECK_FIBER_SUPPORT();
+  constexpr int kThreadCount = 16;
+  constexpr int kSwitchesPerFiber = 5000;
+
+  // Abseil's deadlock detection, which debug builds run on every lock, makes
+  // this many switches far too slow.
+  absl::SetMutexDeadlockDetectionMode(absl::OnDeadlockCycle::kIgnore);
+  absl::Cleanup restore_deadlock_detection = [] {
+    absl::SetMutexDeadlockDetectionMode(absl::OnDeadlockCycle::kAbort);
+  };
+
+  struct State {
+    State() = default;
+    std::atomic<bool> start = false;
+    std::vector<Fiber> fibers;
+    std::atomic<int> switch_count = 0;
+  } state;
+
+  // Each fiber switches to the next fiber that isn't running, until it has
+  // switched enough times or there are no fibers to switch to.
+  FiberMain fiber_main = +[](void* user_data) {
+    auto* state = static_cast<State*>(user_data);
+
+    // Spin rather than wait, so every thread starts switching at once.
+    while (!state->start) {
+      std::this_thread::yield();
+    }
+    const Fiber this_fiber = GetThisFiber();
+    const int fiber_count = static_cast<int>(state->fibers.size());
+    for (int i = 0; i < kSwitchesPerFiber; ++i) {
+      bool switched = false;
+      for (int j = 0; j < fiber_count; ++j) {
+        const Fiber fiber = state->fibers[(i + j) % fiber_count];
+        if (fiber != this_fiber && SwitchToFiber(fiber)) {
+          switched = true;
+          break;
+        }
+      }
+      if (!switched) {
+        return;
+      }
+      ASSERT_EQ(GetThisFiber(), this_fiber);
+      ++state->switch_count;
+    }
+  };
+
+  for (int i = 0; i < kThreadCount; ++i) {
+    Fiber fiber = CreateFiber({}, 0, &state, fiber_main);
+    ASSERT_NE(fiber, nullptr);
+    state.fibers.push_back(fiber);
+  }
+  auto fiber_threads =
+      CreateFiberThreads(kThreadCount, {}, 0, &state, fiber_main);
+  ASSERT_EQ(fiber_threads.size(), kThreadCount);
+  for (const auto& fiber_thread : fiber_threads) {
+    state.fibers.push_back(fiber_thread.fiber);
+  }
+  state.start = true;
+
+  for (const auto& fiber_thread : fiber_threads) {
+    JoinThread(fiber_thread.thread);
+  }
+  for (Fiber fiber : state.fibers) {
+    DeleteFiber(fiber);
+  }
+  EXPECT_GT(state.switch_count, 0);
+  EXPECT_EQ(GetRunningFiberCount(), 0);
 }
 
 }  // namespace

@@ -5,8 +5,12 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstdio>
+#include <cstring>
 #include <memory>
+#include <string>
 #include <thread>
+#include <utility>
 
 #include "absl/log/log.h"
 #include "absl/strings/str_format.h"
@@ -18,14 +22,12 @@ namespace gb {
 namespace {
 
 #if GB_BUILD_ENABLE_THREAD_LOGGING
-bool g_enable_thread_logging_ = false;
-#define GB_THREAD_LOG LOG_IF(INFO, g_enable_thread_logging_) << "Thread: "
+std::atomic<bool> g_enable_thread_logging = false;
+#define GB_THREAD_LOG                                                   \
+  LOG_IF(INFO, g_enable_thread_logging.load(std::memory_order_relaxed)) \
+      << "Thread: "
 #else  // GB_BUILD_ENABLE_THREAD_LOGGING
-#define GB_THREAD_LOG \
-  if (true)           \
-    ;                 \
-  else                \
-    std::cout
+#define GB_THREAD_LOG LOG_IF(INFO, false)
 #endif  // GB_BUILD_ENABLE_THREAD_LOGGING
 
 thread_local Thread tls_this_thread = nullptr;
@@ -90,7 +92,7 @@ void ThreadStartRoutine(void* param) {
 
 void SetThreadVerboseLogging(bool enabled) {
 #if GB_BUILD_ENABLE_THREAD_LOGGING
-  g_enable_thread_logging_ = enabled;
+  g_enable_thread_logging.store(enabled, std::memory_order_relaxed);
 #endif  // GB_BUILD_ENABLE_THREAD_LOGGING
 }
 
@@ -161,7 +163,8 @@ void SetThreadName(Thread thread, std::string_view name) {
     return;
   }
   absl::MutexLock lock(&thread->mutex);
-  size_t name_size = std::max<size_t>(name.size(), kMaxThreadNameSize - 1);
+  const int name_size =
+      std::min(static_cast<int>(name.size()), kMaxThreadNameSize - 1);
   std::memcpy(thread->name, name.data(), name_size);
   thread->name[name_size] = 0;
 }

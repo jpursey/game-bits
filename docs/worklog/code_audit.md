@@ -186,9 +186,42 @@ Depends on: CL4.
   moves in a `std::vector`, pushing to a full queue (CHECK failure), and
   random pushes and pops against `std::deque`.
 
-### CL7 [ ] thread: audit gb_thread
+### CL7 [x] thread: audit gb_thread
 
 Depends on: CL4.
+
+- `SetThreadName()` and `SetFiberName()` used `std::max` where they meant
+  `std::min`. They always copied 127 bytes, reading past short names (so a
+  `string_view` into a longer string took the rest of it), and a name longer
+  than 127 bytes overflowed the buffer. `FiberJobSystem` names fibers after
+  their jobs.
+- `SwitchToFiber()` marked the fiber it switched from as suspended before the
+  thread had left its stack, and an exiting fiber was marked exited before it
+  switched away. Another thread could switch to the fiber (or delete it) while
+  it was still running, which crashed. A fiber now stays running until the
+  next fiber on its thread has started, so `GetFiberState()` only reports a
+  fiber suspended or exited once it is safe to switch to or delete.
+- On Windows, a thread that had already exited when it was joined or detached
+  leaked its handle, as the thread cleared the handle on exit.
+- `GetThisFiber()` returned the startup data, rather than null, on the thread's
+  own fiber that `CreateFiberThreads()` switches back to when a fiber exits.
+- On other platforms, `gen_fiber.cc` defined an undeclared `IsFiberRunning()`
+  instead of `GetFiberState()`, so nothing calling it linked, and
+  `gen_thread.cc` didn't compile with thread logging disabled (release builds),
+  as the disabled logging macro used `std::cout` without including it. Both
+  were compiled by hand to check them, as they aren't built on Windows.
+- The verbose logging flags were plain `bool`s read by every thread.
+- `CreateFiberThreads()` documented a negative thread count as subtracting
+  from the maximum concurrency twice.
+- The `CreateFiber` tests waited on real time, and one fiber test didn't
+  check for fiber support.
+
+**Verify**
+- Standard checks.
+- Unit tests: long thread and fiber names, names that are part of a longer
+  string, joining and detaching threads that have already exited (Windows
+  handle counts), and switching fibers between 16 threads (fails every run
+  without the fix, in both Debug and Release).
 
 ### CL8 [ ] profile: audit gb_profile
 

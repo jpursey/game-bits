@@ -18,6 +18,9 @@ if (WIN32)
     absl::check
     absl::log
   )
+  set(gb_thread_internal_TEST_SOURCE
+    win_thread_test.cc
+  )
 else()
   set(gb_thread_internal_SOURCE
     gen_fiber.cc
@@ -54,12 +57,13 @@ set(gb_thread_LIBS
 set(gb_thread_TEST_SOURCE
   fiber_test.cc
   thread_test.cc
+  ${gb_thread_internal_TEST_SOURCE}
 )
 
 set(gb_thread_TEST_DEPS
+  absl::cleanup
   absl::flat_hash_map
   absl::synchronization
-  absl::time
   gb_base
 )
 

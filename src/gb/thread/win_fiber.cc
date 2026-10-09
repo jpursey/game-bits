@@ -3,9 +3,10 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
+#include <algorithm>
 #include <atomic>
 #include <cstdio>
-#include <iostream>
+#include <cstring>
 
 #include "absl/log/check.h"
 #include "absl/log/log.h"
@@ -27,14 +28,12 @@ namespace gb {
 namespace {
 
 #if GB_BUILD_ENABLE_THREAD_LOGGING
-bool g_enable_fiber_logging_ = false;
-#define GB_FIBER_LOG LOG_IF(INFO, g_enable_fiber_logging_) << "Fiber: "
+std::atomic<bool> g_enable_fiber_logging = false;
+#define GB_FIBER_LOG                                                   \
+  LOG_IF(INFO, g_enable_fiber_logging.load(std::memory_order_relaxed)) \
+      << "Fiber: "
 #else  // GB_BUILD_ENABLE_THREAD_LOGGING
-#define GB_FIBER_LOG \
-  if (true)          \
-    ;                \
-  else               \
-    std::cout
+#define GB_FIBER_LOG LOG_IF(INFO, false)
 #endif  // GB_BUILD_ENABLE_THREAD_LOGGING
 
 using WinFiber = void*;
@@ -42,6 +41,19 @@ using WinFiber = void*;
 inline constexpr int kMaxFiberNameSize = 128;
 std::atomic<int> g_fiber_index = 0;
 std::atomic<int> g_running_count = 0;
+
+// Returns the thread local storage index holding the fiber that the thread
+// last switched away from. This is Windows thread local storage, rather than
+// thread_local, as a fiber can resume on a different thread, and the compiler
+// may reuse a thread_local's address from before a switch.
+DWORD GetPrevFiberTlsIndex() {
+  static const DWORD s_index = [] {
+    const DWORD index = ::TlsAlloc();
+    CHECK(index != TLS_OUT_OF_INDEXES) << "Failed to allocate fiber TLS index";
+    return index;
+  }();
+  return s_index;
+}
 
 }  // namespace
 
@@ -80,6 +92,30 @@ std::string ToString(Fiber fiber) ABSL_LOCKS_EXCLUDED(fiber->mutex) {
                          fiber->thread_win_fiber);
 }
 
+//------------------------------------------------------------------------------
+// A fiber stays marked as running until its thread has switched off its stack,
+// so no other thread can switch to it or delete it while it is still in use.
+// Before switching away, a fiber records itself with SetPrevFiber(), and
+// whatever runs next on the thread calls ReleasePrevFiber() as soon as it runs.
+//------------------------------------------------------------------------------
+
+void SetPrevFiber(Fiber fiber) { ::TlsSetValue(GetPrevFiberTlsIndex(), fiber); }
+
+void ReleasePrevFiber() {
+  const DWORD index = GetPrevFiberTlsIndex();
+  Fiber fiber = static_cast<Fiber>(::TlsGetValue(index));
+  if (fiber == nullptr) {
+    return;
+  }
+  ::TlsSetValue(index, nullptr);
+  absl::MutexLock lock(&fiber->mutex);
+  fiber->thread = nullptr;
+  fiber->thread_win_fiber = nullptr;
+  if (fiber->exited) {
+    --g_running_count;
+  }
+}
+
 // Temporary data used when starting a thread-based fiber.
 struct FiberThreadStartInfo {
   FiberThreadStartInfo() = default;
@@ -97,22 +133,21 @@ void RunFiberMain(Fiber fiber) {
   fiber->fiber_main(fiber->user_data);
 
   // fiber_main may never return. This would happen if the fiber switches
-  // to a different fiber and then never switches back. In this case,
-  // SwitchToFiber will set this fiber to not be running. If we do get here,
-  // then we need clean up the fiber state and switch to a thread-based fiber to
+  // to a different fiber and then never switches back. If we do get here, then
+  // we need clean up the fiber state and switch to a thread-based fiber to
   // shutdown (ending the thread).
   GB_FIBER_LOG << "Exiting fiber " << ToString(fiber);
   fiber->mutex.Lock();
   fiber->exited = true;
-  fiber->thread = nullptr;
-  WinFiber thread_win_fiber = std::exchange(fiber->thread_win_fiber, nullptr);
-  --g_running_count;
+  WinFiber thread_win_fiber = fiber->thread_win_fiber;
   fiber->mutex.Unlock();
 
+  SetPrevFiber(fiber);
   ::SwitchToFiber(thread_win_fiber);
 }
 
 void FiberStartRoutine(void* param) {
+  ReleasePrevFiber();
   Fiber fiber = static_cast<Fiber>(param);
   GB_FIBER_LOG << "Starting fiber " << ToString(fiber);
   RunFiberMain(fiber);
@@ -144,8 +179,10 @@ void FiberStartRoutineFromThread(void* param) {
 
 void FiberThreadStartRoutine(void* param) {
   auto* start_info = static_cast<FiberThreadStartInfo*>(param);
+
+  // The thread's own fiber has no Fiber, so GetThisFiber() returns null on it.
   WinFiber thread_win_fiber =
-      ::ConvertThreadToFiberEx(param, FIBER_FLAG_FLOAT_SWITCH);
+      ::ConvertThreadToFiberEx(nullptr, FIBER_FLAG_FLOAT_SWITCH);
   if (thread_win_fiber == nullptr) {
     start_info->error = GetLastError();
     start_info->started.Notify();  // start_info is deleted after this call.
@@ -163,9 +200,10 @@ void FiberThreadStartRoutine(void* param) {
   fiber->mutex.Unlock();
   ::SwitchToFiber(next_win_fiber);
 
-  // At this point, start_info is long gone and is no longer usable (or
-  // relevant). Converting the fiber back to a thread will clean up any fiber
-  // state.
+  // A fiber exited on this thread. At this point, start_info is long gone and
+  // is no longer usable (or relevant). Converting the fiber back to a thread
+  // will clean up any fiber state.
+  ReleasePrevFiber();
   ::ConvertFiberToThread();
   GB_FIBER_LOG << "Exiting thread " << thread_win_fiber;
 }
@@ -176,7 +214,7 @@ bool SupportsFibers() { return true; }
 
 void SetFiberVerboseLogging(bool enabled) {
 #if GB_BUILD_ENABLE_THREAD_LOGGING
-  g_enable_fiber_logging_ = enabled;
+  g_enable_fiber_logging.store(enabled, std::memory_order_relaxed);
 #endif  // GB_BUILD_ENABLE_THREAD_LOGGING
 }
 
@@ -301,12 +339,9 @@ bool SwitchToFiber(Fiber fiber) {
   GB_FIBER_LOG << "Switching thread from fiber " << ToString(current_fiber)
                << " to fiber " << ToString(fiber);
 
-  current_fiber->mutex.Lock();
-  current_fiber->thread = nullptr;
-  current_fiber->thread_win_fiber = nullptr;
-  current_fiber->mutex.Unlock();
-
+  SetPrevFiber(current_fiber);
   ::SwitchToFiber(win_fiber);
+  ReleasePrevFiber();
   return true;
 }
 
@@ -323,7 +358,8 @@ void SetFiberName(Fiber fiber, std::string_view name) {
     return;
   }
   absl::MutexLock lock(&fiber->mutex);
-  size_t name_size = std::max<size_t>(name.size(), kMaxFiberNameSize - 1);
+  const int name_size =
+      std::min(static_cast<int>(name.size()), kMaxFiberNameSize - 1);
   std::memcpy(fiber->name, name.data(), name_size);
   fiber->name[name_size] = 0;
   if (fiber->set_thread_name && fiber->thread != nullptr) {

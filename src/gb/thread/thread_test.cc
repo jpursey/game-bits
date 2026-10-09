@@ -5,6 +5,9 @@
 
 #include "gb/thread/thread.h"
 
+#include <atomic>
+#include <string>
+#include <string_view>
 #include <thread>
 
 #include "absl/container/flat_hash_map.h"
@@ -169,6 +172,25 @@ TEST_F(ThreadTest, ThreadName) {
   ASSERT_NE(thread, nullptr);
   SetThreadName(thread, "Test");
   EXPECT_EQ(GetThreadName(thread), "Test");
+  JoinThread(thread);
+}
+
+TEST_F(ThreadTest, LongThreadNameIsTrimmed) {
+  Thread thread = CreateThread(0, 0, nullptr, +[](void* user_data) {});
+  ASSERT_NE(thread, nullptr);
+  SetThreadName(thread, std::string(200, 'a'));
+  const std::string_view name = GetThreadName(thread);
+  EXPECT_LT(name.size(), 200);
+  EXPECT_EQ(name, std::string(name.size(), 'a'));
+  JoinThread(thread);
+}
+
+TEST_F(ThreadTest, ThreadNameIsOnlyTheGivenText) {
+  Thread thread = CreateThread(0, 0, nullptr, +[](void* user_data) {});
+  ASSERT_NE(thread, nullptr);
+  const std::string text = "Test" + std::string(200, 'b');
+  SetThreadName(thread, std::string_view(text).substr(0, 4));
+  EXPECT_EQ(GetThreadName(thread), std::string_view("Test"));
   JoinThread(thread);
 }
 

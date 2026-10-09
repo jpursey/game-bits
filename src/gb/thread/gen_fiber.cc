@@ -44,7 +44,7 @@ void* SwapFiberData(Fiber, void*) { return nullptr; }
 
 Fiber GetThisFiber() { return nullptr; }
 
-bool IsFiberRunning(Fiber) { return false; }
+FiberState GetFiberState(Fiber) { return FiberState::kExited; }
 
 int GetRunningFiberCount() { return 0; }
 

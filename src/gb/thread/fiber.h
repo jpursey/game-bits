@@ -22,7 +22,7 @@ namespace gb {
 // Signature for the main function of a fiber.
 using FiberMain = void (*)(void* user_data);
 
-// This class represents an initial pairing of a fiber and the thread it begain
+// This class represents an initial pairing of a fiber and the thread it began
 // running on.
 //
 // This is returned by CreateFiberThreads.
@@ -84,7 +84,7 @@ void SetFiberVerboseLogging(bool enabled);
 // process):
 //   - Positive value: Creates thread_count threads/fibers
 //   - Zero: Creates max_concurrency threads/fibers.
-//   - Negative: Creates max(max_concurrency - thread_count, 1) threads/fibers.
+//   - Negative: Creates max(max_concurrency + thread_count, 1) threads/fibers.
 // If 'FiberOption::kPinThreads' is set AND the number of threads created is
 // less than or equal to max_concurrency, then each thread will be bound to a
 // specific core.
@@ -99,7 +99,7 @@ void SetFiberVerboseLogging(bool enabled);
 // DeleteFiber.
 //
 // Returns the successfully created set of fibers, each running on their own
-// thread. If fibers are not supported or creation fails this may be less that
+// thread. If fibers are not supported or creation fails this may be less than
 // the requested number of fibers (potentially empty). Both the threads and
 // fibers returned must be managed by the caller. DeleteFiber must be called to
 // delete each fiber when it is not running in a thread, and either DetachThread

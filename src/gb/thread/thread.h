@@ -81,7 +81,7 @@ Thread CreateThread(uint64_t affinity, uint32_t stack_size, void* user_data,
 // and cleaning up any thread resources.
 //
 // This blocks the current thread until the specified thread completes. If the
-// thread handle is already completed, this is returns immediately. After
+// thread handle is already completed, this returns immediately. After
 // JoinThread returns, the thread handle is cleaned up and invalid.
 //
 // This function is thread-compatible with other functions that operate on the
@@ -129,7 +129,7 @@ Thread GetThisThread();
 
 // Returns the number of threads still active.
 //
-// A thread is considerd no longer active if it JoinThread or DetachThread have
+// A thread is considered no longer active if JoinThread or DetachThread have
 // been called on it AND it is no longer running. This only returns the count of
 // threads created via CreateThread.
 //

@@ -5,7 +5,9 @@
 
 #include <algorithm>
 #include <atomic>
-#include <iostream>
+#include <cstdio>
+#include <cstring>
+#include <string>
 
 #include "absl/log/log.h"
 #include "absl/strings/str_format.h"
@@ -24,14 +26,12 @@ namespace gb {
 namespace {
 
 #if GB_BUILD_ENABLE_THREAD_LOGGING
-bool g_enable_thread_logging_ = false;
-#define GB_THREAD_LOG LOG_IF(INFO, g_enable_thread_logging_) << "Thread: "
+std::atomic<bool> g_enable_thread_logging = false;
+#define GB_THREAD_LOG                                                   \
+  LOG_IF(INFO, g_enable_thread_logging.load(std::memory_order_relaxed)) \
+      << "Thread: "
 #else  // GB_BUILD_ENABLE_THREAD_LOGGING
-#define GB_THREAD_LOG \
-  if (true)           \
-    ;                 \
-  else                \
-    std::cout
+#define GB_THREAD_LOG LOG_IF(INFO, false)
 #endif  // GB_BUILD_ENABLE_THREAD_LOGGING
 
 thread_local Thread tls_this_thread = nullptr;
@@ -110,9 +110,13 @@ struct ThreadType {
   uint64_t affinity = 0;
 
   absl::Mutex mutex;
+
+  // The thread handle stays open until the thread is joined, or until it is
+  // both detached and exited.
   HANDLE win_thread ABSL_GUARDED_BY(mutex) = NULL;
   bool detached ABSL_GUARDED_BY(mutex) = false;
   bool joined ABSL_GUARDED_BY(mutex) = false;
+  bool exited ABSL_GUARDED_BY(mutex) = false;
   char name[kMaxThreadNameSize] ABSL_GUARDED_BY(mutex) = {};
 };
 
@@ -147,7 +151,7 @@ unsigned __stdcall ThreadStartRoutine(void* param) {
   bool detached = false;
   {
     absl::MutexLock lock(&thread->mutex);
-    thread->win_thread = NULL;
+    thread->exited = true;
     detached = thread->detached;
   }
   if (detached) {
@@ -161,7 +165,7 @@ unsigned __stdcall ThreadStartRoutine(void* param) {
 
 void SetThreadVerboseLogging(bool enabled) {
 #if GB_BUILD_ENABLE_THREAD_LOGGING
-  g_enable_thread_logging_ = enabled;
+  g_enable_thread_logging.store(enabled, std::memory_order_relaxed);
 #endif  // GB_BUILD_ENABLE_THREAD_LOGGING
 }
 
@@ -217,9 +221,7 @@ void JoinThread(Thread thread) {
     thread->joined = true;
     win_thread = thread->win_thread;
   }
-  if (win_thread != NULL) {
-    ::WaitForSingleObject(win_thread, INFINITE);
-  }
+  ::WaitForSingleObject(win_thread, INFINITE);
   GB_THREAD_LOG << "Joined thread " << ToString(thread);
   delete thread;
   ::CloseHandle(win_thread);
@@ -228,6 +230,7 @@ void JoinThread(Thread thread) {
 void DetachThread(Thread thread) {
   GB_THREAD_LOG << "Detaching thread " << ToString(thread);
   HANDLE win_thread = NULL;
+  bool exited = false;
   {
     absl::MutexLock lock(&thread->mutex);
     if (thread->detached || thread->joined) {
@@ -237,9 +240,11 @@ void DetachThread(Thread thread) {
     }
     thread->detached = true;
     win_thread = thread->win_thread;
+    exited = thread->exited;
   }
-  if (win_thread == NULL) {
+  if (exited) {
     delete thread;
+    ::CloseHandle(win_thread);
   }
 }
 
@@ -258,10 +263,11 @@ void SetThreadName(Thread thread, std::string_view name) {
     return;
   }
   absl::MutexLock lock(&thread->mutex);
-  size_t name_size = std::max<size_t>(name.size(), kMaxThreadNameSize - 1);
+  const int name_size =
+      std::min(static_cast<int>(name.size()), kMaxThreadNameSize - 1);
   std::memcpy(thread->name, name.data(), name_size);
   thread->name[name_size] = 0;
-  if (thread->win_thread != NULL) {
+  if (!thread->exited) {
     SetWinThreadName(thread->win_thread, thread->name);
   }
 }
