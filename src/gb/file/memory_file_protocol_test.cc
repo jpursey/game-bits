@@ -142,5 +142,20 @@ TEST(MemoryFileProtocolTest, RelativePathsAreRejected) {
               IsEmpty());
 }
 
+TEST(MemoryFileProtocolTest, PathsThatAreNotNormalizedAreRejected) {
+  MemoryFileProtocol protocol;
+  ASSERT_TRUE(protocol.CreateFolder("mem", "/a", FolderMode::kNormal));
+  for (std::string_view path :
+       {"/a/", "/a/.", "/a/./b", "/a/../b", "/a//b", "/a\\b", "/..", "//"}) {
+    EXPECT_FALSE(protocol.CreateFolder("mem", path, FolderMode::kNormal))
+        << path;
+    EXPECT_EQ(protocol.GetPathInfo("mem", path).type, PathType::kInvalid)
+        << path;
+  }
+  EXPECT_THAT(protocol.List("mem", "/", {}, FolderMode::kRecursive,
+                            {PathType::kFile, PathType::kFolder}),
+              ElementsAre("mem:/a"));
+}
+
 }  // namespace
 }  // namespace gb

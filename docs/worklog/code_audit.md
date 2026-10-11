@@ -357,9 +357,59 @@ Depends on: CL10.
   protocols, copying under two names for one protocol, and current folders
   with and without `kCurrentPath`.
 
-### CL12 [ ] file: audit LocalFileProtocol
+### CL12 [x] file: audit LocalFileProtocol
 
 Depends on: CL11.
+
+- A path passed straight to a protocol could leave its root:
+  `DeleteFile("file", "/../outside")` deleted a file beside a
+  `LocalFileProtocol`'s root. `FileSystem` normalizes paths, so only direct
+  calls could, but nothing required them to be normalized. Every public
+  `FileProtocol` function now fails for a path that isn't normalized, as it
+  does for a relative one (see CL11).
+- `LocalFileProtocol` joined a path with a host (`file://host/a`) to its root
+  as a network path. A path with a host is now invalid.
+- Paths went through the Windows code page, not UTF-8: a non-ASCII name was
+  created mangled on disk, and listing a name outside the code page threw,
+  which ends the process outside a test. Paths now convert through
+  `gb/base/unicode.h`, and a path that isn't valid UTF-8 is invalid.
+- A root that wasn't normalized was kept as given, so listing skipped every
+  entry (`c:/a/./b`) and current folders were wrong. The root is normalized.
+- A recursive `DeleteFolder()` that failed (a file open elsewhere) returned
+  true, as `remove_all()`'s error result of -1 converts to true. A recursive
+  `CreateFolder()` of an existing folder returned false.
+- `GetCurrentFolder()` returned "" at the root rather than "/", and a folder
+  beside the root whose name starts with the root's name counted as under it.
+- Copying a file onto itself failed, where the other protocols succeed. It now
+  succeeds for any path to the same file (Windows paths ignore case).
+- A write straight after a read on a `LocalFile` was lost (and a read after a
+  write is undefined), as an `fstream` needs a seek between them, like C's
+  `FILE`. `LocalFile` now seeks when switching.
+- The header said links are skipped or invalid, when they are followed. It now
+  describes what happens (checked by hand with a junction, as creating a
+  symbolic link needs a privilege).
+- Smaller fixes: an unreachable error check when creating the root (now checked
+  first), the destructor logging a path through the code page, which could
+  throw, and an unused parameter of `ListFolder()`. Listing uses each entry's
+  cached status, rather than querying it again.
+- Most write errors go unreported, as `fstream` buffers writes and an error
+  when a file closes is lost; this needs new `File` API, so it is the backlog
+  item *Report buffered write errors*.
+- Left as is: a failed write leaves the file invalid from then on, as its
+  contents are unknown; listing stops at an entry whose status can't be read
+  (such as a dangling link), returning what it has so far; and checking that a
+  protocol path is normalized allocates a normalized copy to compare, where a
+  check that doesn't allocate would repeat the normalization rules.
+
+**Verify**
+- Standard checks.
+- Unit tests: paths that aren't normalized, for every protocol; recursive
+  creates of existing folders, copying a file onto itself, and reads and
+  writes without a seek between them, for every protocol; and for
+  `LocalFileProtocol`, paths that leave the root or have a host, a recursive
+  delete that fails, current folders at the root and beside it, non-ASCII and
+  invalid UTF-8 names, roots that need normalizing (including "."), and
+  copying a file onto itself under another case.
 
 ### CL13 [ ] sdl: audit gb_sdl
 

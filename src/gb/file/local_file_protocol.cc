@@ -8,12 +8,14 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <random>
 
 #include "absl/log/log.h"
-#include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/strip.h"
 #include "gb/base/context_builder.h"
+#include "gb/base/unicode.h"
 #include "gb/file/path.h"
 #include "gb/file/raw_file.h"
 
@@ -34,11 +36,26 @@ class LocalFile : public RawFile {
   int64_t Read(void* buffer, int64_t size) override;
 
  private:
+  enum class Access { kRead, kWrite };
+
   int64_t GetPosition();
+
+  // Records the access about to be made, seeking first if the last access was
+  // the other kind: like C's FILE, the stream needs a seek between reading and
+  // writing.
+  void BeginAccess(Access access);
 
   std::fstream file_;
   int64_t position_ = 0;
+  Access last_access_ = Access::kRead;
 };
+
+void LocalFile::BeginAccess(Access access) {
+  if (last_access_ != access) {
+    file_.seekg(static_cast<std::fstream::pos_type>(position_));
+    last_access_ = access;
+  }
+}
 
 inline int64_t LocalFile::GetPosition() {
   auto pos = file_.tellg();
@@ -61,6 +78,7 @@ int64_t LocalFile::SeekTo(int64_t position) {
 }
 
 int64_t LocalFile::Write(const void* buffer, int64_t size) {
+  BeginAccess(Access::kWrite);
   file_.write(reinterpret_cast<const char*>(buffer),
               static_cast<std::streamsize>(size));
   if (file_.fail()) {
@@ -75,6 +93,7 @@ int64_t LocalFile::Write(const void* buffer, int64_t size) {
 }
 
 int64_t LocalFile::Read(void* buffer, int64_t size) {
+  BeginAccess(Access::kRead);
   file_.read(reinterpret_cast<char*>(buffer),
              static_cast<std::streamsize>(size));
   if (file_.eof()) {
@@ -95,12 +114,77 @@ int64_t LocalFile::Read(void* buffer, int64_t size) {
   return size;
 }
 
+// Paths are UTF-8, which std::filesystem doesn't assume for char strings, and
+// its own UTF-8 conversion throws for an invalid string. These convert through
+// UTF-16 instead, which gives an empty string for an invalid one.
 std::string ToString(const fs::path& path) {
-  return NormalizePath(path.generic_string());
+  return NormalizePath(ToUtf8(path.generic_u16string()));
 }
 
 fs::path ToPath(std::string_view path) {
-  return fs::path(path, fs::path::generic_format);
+  return fs::path(ToUtf16(path), fs::path::generic_format);
+}
+
+// Returns the operating system path for a protocol path under the root, or
+// nullopt for an invalid path: one with a host, which isn't under the root, or
+// one that isn't valid UTF-8.
+std::optional<fs::path> ToFullPath(std::string_view root,
+                                   std::string_view path) {
+  if (!GetHostName(path).empty()) {
+    return std::nullopt;
+  }
+  fs::path full_path = ToPath(JoinPath(root, path));
+  if (full_path.empty()) {
+    return std::nullopt;
+  }
+  return full_path;
+}
+
+// Returns the protocol path for a normalized operating system path, or an
+// empty string if it is not under the root.
+std::string ToProtocolPath(std::string_view root, std::string_view path) {
+  if (!absl::ConsumePrefix(&path, root)) {
+    return {};
+  }
+
+  // Only a root folder (such as "c:/") ends in a separator, so the rest of a
+  // path under any other root starts with one.
+  if (root.back() != '/' && !path.empty() && !absl::ConsumePrefix(&path, "/")) {
+    return {};
+  }
+  return absl::StrCat("/", path);
+}
+
+template <typename Iterator>
+std::vector<std::string> ListFolder(Iterator it, std::string_view root,
+                                    std::string_view protocol_name,
+                                    std::string_view pattern, PathTypes types) {
+  std::error_code error;
+  std::vector<std::string> entries;
+  for (const Iterator end; it != end; it.increment(error)) {
+    const std::string entry_path = ToString(it->path());
+    if (!pattern.empty() &&
+        !PathMatchesPattern(RemoveFolder(entry_path), pattern)) {
+      continue;
+    }
+    auto status = it->status(error);
+    if (error) {
+      break;
+    }
+    if ((fs::is_directory(status) && types.IsSet(PathType::kFolder)) ||
+        (fs::is_regular_file(status) && types.IsSet(PathType::kFile))) {
+      const std::string protocol_path = ToProtocolPath(root, entry_path);
+      if (protocol_path.empty()) {
+        LOG_FIRST_N(ERROR, 1)
+            << "Directory iteration returned a path \"" << entry_path
+            << "\" which is not a valid path under root \"" << root
+            << "\"! Skipping...";
+        continue;
+      }
+      entries.emplace_back(absl::StrCat(protocol_name, ":", protocol_path));
+    }
+  }
+  return entries;
 }
 
 }  // namespace
@@ -123,7 +207,14 @@ std::unique_ptr<LocalFileProtocol> LocalFileProtocol::Create(
 
   // Change relative paths to be relative to the current working directory for
   // this process.
-  std::string root = context.GetValue<std::string>(kKeyRoot);
+  const std::string requested_root = context.GetValue<std::string>(kKeyRoot);
+  PathFlags failed_flag;
+  std::string root = NormalizePath(requested_root, &failed_flag);
+  if (!failed_flag.IsEmpty()) {
+    LOG(ERROR) << "Requested root path \"" << requested_root
+               << "\" could not be normalized";
+    return nullptr;
+  }
   if (!IsPathAbsolute(root)) {
     if (current_path.empty()) {
       LOG(ERROR) << "Cannot access current directory when resolving requested "
@@ -133,16 +224,15 @@ std::unique_ptr<LocalFileProtocol> LocalFileProtocol::Create(
     }
     root = NormalizePath(JoinPath(current_path, root));
     if (root.empty()) {
-      LOG(ERROR) << "Requested root path \""
-                 << context.GetValue<std::string>(kKeyRoot)
+      LOG(ERROR) << "Requested root path \"" << requested_root
                  << "\" could not be resolved against current directory \""
                  << current_path << "\"";
       return nullptr;
     }
   } else {
     // On Windows, drive letters (aka protocols) are a thing. If a protocol
-    // was specified we need to honor it, and if it wasn't specified but the
-    // current_path
+    // was specified we need to honor it, and if it wasn't specified, the root
+    // is on the drive of the current path.
     std::string_view root_protocol_name;
     RemoveProtocol(root, &root_protocol_name);
     if (root_protocol_name.empty()) {
@@ -158,29 +248,25 @@ std::unique_ptr<LocalFileProtocol> LocalFileProtocol::Create(
   // root, if there is one.
   std::string sub_directory;
   auto root_status = fs::status(ToPath(root), error);
-  if (!fs::exists(root_status)) {
+  if (!fs::status_known(root_status)) {
+    LOG(ERROR) << "Error accessing requested root path \"" << requested_root
+               << "\". Error: " << error.message();
+    return nullptr;
+  } else if (!fs::exists(root_status)) {
     root = RemoveFilename(root, &sub_directory);
     auto parent_status = fs::status(ToPath(root), error);
     if (!fs::status_known(parent_status)) {
       LOG(ERROR) << "Could not access parent path of root path \""
-                 << context.GetValue<std::string>(kKeyRoot)
-                 << "\". Error: " << error.message();
+                 << requested_root << "\". Error: " << error.message();
       return nullptr;
     }
     if (!fs::is_directory(parent_status)) {
-      LOG(ERROR) << "Requested root path \""
-                 << context.GetValue<std::string>(kKeyRoot)
+      LOG(ERROR) << "Requested root path \"" << requested_root
                  << "\" is not relative to a valid directory.";
       return nullptr;
     }
-  } else if (!fs::status_known(root_status)) {
-    LOG(ERROR) << "Error accessing requested root path \""
-               << context.GetValue<std::string>(kKeyRoot)
-               << "\". Error: " << error.message();
-    return nullptr;
   } else if (!fs::is_directory(root_status)) {
-    LOG(ERROR) << "Requested root path \""
-               << context.GetValue<std::string>(kKeyRoot)
+    LOG(ERROR) << "Requested root path \"" << requested_root
                << "\" exists but is not a valid directory.";
     return nullptr;
   }
@@ -272,22 +358,19 @@ LocalFileProtocol::~LocalFileProtocol() {
     return;
   }
 
+  // An error from the iterator ends it, so it is reported after the loop.
   fs::directory_iterator it(ToPath(root_), error);
+  for (const fs::directory_iterator end; it != end; it.increment(error)) {
+    std::error_code remove_error;
+    fs::remove_all(it->path(), remove_error);
+    if (remove_error) {
+      LOG(ERROR) << "Failed to delete \"" << ToString(it->path())
+                 << "\". Error: " << remove_error.message();
+    }
+  }
   if (error) {
     LOG(ERROR) << "Failed to delete directory \"" << root_
                << "\". Error: " << error.message();
-  }
-  fs::directory_iterator end;
-  for (; it != end; it.increment(error)) {
-    if (error) {
-      LOG(ERROR) << "Failed to delete directory \"" << root_
-                 << "\". Error: " << error.message();
-    }
-    fs::remove_all(it->path(), error);
-    if (error) {
-      LOG(ERROR) << "Failed to delete \"" << it->path()
-                 << "\". Error: " << error.message();
-    }
   }
 }
 
@@ -299,13 +382,17 @@ std::vector<std::string> LocalFileProtocol::GetDefaultNames() const {
 
 PathInfo LocalFileProtocol::DoGetPathInfo(std::string_view protocol_name,
                                           std::string_view path) {
+  auto full_path = ToFullPath(root_, path);
+  if (!full_path) {
+    return {};
+  }
+
   std::error_code error;
-  fs::path full_path = ToPath(JoinPath(root_, path));
-  auto status = fs::status(full_path, error);
+  auto status = fs::status(*full_path, error);
   if (fs::is_directory(status)) {
     return {PathType::kFolder};
   } else if (fs::is_regular_file(status)) {
-    auto size = fs::file_size(full_path, error);
+    auto size = fs::file_size(*full_path, error);
     if (!error) {
       return {PathType::kFile, static_cast<int64_t>(size)};
     }
@@ -313,150 +400,127 @@ PathInfo LocalFileProtocol::DoGetPathInfo(std::string_view protocol_name,
   return {};
 }
 
-template <typename Iterator>
-std::vector<std::string> ListFolder(Iterator& it, fs::path& path,
-                                    const std::string& root,
-                                    std::string_view protocol_name,
-                                    std::string_view pattern, PathTypes types) {
-  std::error_code error;
-  Iterator end;
-  std::vector<std::string> entries;
-  const std::string prefix = absl::StrCat(protocol_name, ":/");
-  for (; it != end; it.increment(error)) {
-    if (error) {
-      break;
-    }
-    if (!pattern.empty() &&
-        !PathMatchesPattern(RemoveFolder(ToString(it->path())), pattern)) {
-      continue;
-    }
-    auto status = fs::status(it->path(), error);
-    if (error) {
-      break;
-    }
-    if ((fs::is_directory(status) && types.IsSet(PathType::kFolder)) ||
-        (fs::is_regular_file(status) && types.IsSet(PathType::kFile))) {
-      const std::string entry_path = ToString(it->path());
-      if (!absl::StartsWith(entry_path, root)) {
-        LOG_FIRST_N(ERROR, 1)
-            << "Directory iteration returned a string \"" << entry_path
-            << "\" which is not under root \"" << root << "\"! Skipping...";
-        continue;
-      }
-      std::string_view relative_path = entry_path;
-      relative_path.remove_prefix(root.size());
-      entries.emplace_back(JoinPath(prefix, relative_path));
-    }
-  }
-  return entries;
-}
-
 std::vector<std::string> LocalFileProtocol::DoList(
     std::string_view protocol_name, std::string_view path,
     std::string_view pattern, FolderMode mode, PathTypes types) {
-  std::error_code error;
-  fs::path full_path = ToPath(JoinPath(root_, path));
+  auto full_path = ToFullPath(root_, path);
+  if (!full_path) {
+    return {};
+  }
 
+  std::error_code error;
   if (mode == FolderMode::kNormal) {
     fs::directory_iterator it(
-        full_path, fs::directory_options::skip_permission_denied, error);
+        *full_path, fs::directory_options::skip_permission_denied, error);
     if (error) {
       return {};
     }
-    return ListFolder(it, full_path, root_, protocol_name, pattern, types);
+    return ListFolder(std::move(it), root_, protocol_name, pattern, types);
   } else {  // mode == FolderMode::kRecursive
     fs::recursive_directory_iterator it(
-        full_path, fs::directory_options::skip_permission_denied, error);
+        *full_path, fs::directory_options::skip_permission_denied, error);
     if (error) {
       return {};
     }
-    return ListFolder(it, full_path, root_, protocol_name, pattern, types);
+    return ListFolder(std::move(it), root_, protocol_name, pattern, types);
   }
 }
 
 bool LocalFileProtocol::DoCreateFolder(std::string_view protocol_name,
                                        std::string_view path, FolderMode mode) {
-  std::error_code error;
-  fs::path full_path = ToPath(JoinPath(root_, path));
-
-  if (mode == FolderMode::kNormal) {
-    auto status = fs::status(full_path, error);
-    if (fs::is_directory(status)) {
-      return true;
-    }
-    if (fs::exists(status)) {
-      return false;
-    }
-    if (!fs::create_directory(full_path, error)) {
-      return false;
-    }
-  } else {
-    if (!fs::create_directories(full_path, error)) {
-      return false;
-    }
+  auto full_path = ToFullPath(root_, path);
+  if (!full_path) {
+    return false;
   }
-  return true;
+
+  std::error_code error;
+  auto status = fs::status(*full_path, error);
+  if (fs::is_directory(status)) {
+    return true;
+  }
+  if (fs::exists(status)) {
+    return false;
+  }
+  if (mode == FolderMode::kNormal) {
+    return fs::create_directory(*full_path, error);
+  } else {  // mode == FolderMode::kRecursive
+    return fs::create_directories(*full_path, error);
+  }
 }
 
 bool LocalFileProtocol::DoCopyFolder(std::string_view protocol_name,
                                      std::string_view from_path,
                                      std::string_view to_path) {
-  std::error_code error;
-
-  fs::path full_from_path = ToPath(JoinPath(root_, from_path));
-  if (!fs::is_directory(full_from_path, error)) {
+  auto full_from_path = ToFullPath(root_, from_path);
+  auto full_to_path = ToFullPath(root_, to_path);
+  if (!full_from_path || !full_to_path) {
     return false;
   }
 
-  fs::path full_to_path = ToPath(JoinPath(root_, to_path));
-  auto to_status = fs::status(full_to_path, error);
+  std::error_code error;
+  if (!fs::is_directory(*full_from_path, error)) {
+    return false;
+  }
+  auto to_status = fs::status(*full_to_path, error);
   if (!fs::is_directory(to_status) && fs::exists(to_status)) {
     return false;
   }
 
   auto options =
       fs::copy_options::overwrite_existing | fs::copy_options::recursive;
-  fs::copy(full_from_path, full_to_path, options, error);
+  fs::copy(*full_from_path, *full_to_path, options, error);
   return !error;
 }
 
 bool LocalFileProtocol::DoDeleteFolder(std::string_view protocol_name,
                                        std::string_view path, FolderMode mode) {
-  if (IsRootPath(path)) {
+  auto full_path = ToFullPath(root_, path);
+  if (!full_path || IsRootPath(path)) {
     return false;
   }
 
   std::error_code error;
-  fs::path full_path = ToPath(JoinPath(root_, path));
-
-  auto status = fs::status(full_path, error);
+  auto status = fs::status(*full_path, error);
   if (!fs::is_directory(status)) {
     return !fs::exists(status);
   }
 
   if (mode == FolderMode::kNormal) {
-    return fs::remove(full_path, error);
+    return fs::remove(*full_path, error);
   } else {  // mode == FolderMode::kRecursive
-    return fs::remove_all(full_path, error);
+    fs::remove_all(*full_path, error);
+    return !error;
   }
 }
 
 bool LocalFileProtocol::DoCopyFile(std::string_view protocol_name,
                                    std::string_view from_path,
                                    std::string_view to_path) {
+  auto full_from_path = ToFullPath(root_, from_path);
+  auto full_to_path = ToFullPath(root_, to_path);
+  if (!full_from_path || !full_to_path) {
+    return false;
+  }
+
+  // std::filesystem fails to copy a file onto itself, which another path can
+  // also name (Windows paths ignore case).
   std::error_code error;
-  fs::path full_from_path = ToPath(JoinPath(root_, from_path));
-  fs::path full_to_path = ToPath(JoinPath(root_, to_path));
-  return fs::copy_file(full_from_path, full_to_path,
+  if (fs::equivalent(*full_from_path, *full_to_path, error)) {
+    return fs::is_regular_file(*full_from_path, error);
+  }
+  return fs::copy_file(*full_from_path, *full_to_path,
                        fs::copy_options::overwrite_existing, error);
 }
 
 bool LocalFileProtocol::DoDeleteFile(std::string_view protocol_name,
                                      std::string_view path) {
-  std::error_code error;
-  fs::path full_path = ToPath(JoinPath(root_, path));
+  auto full_path = ToFullPath(root_, path);
+  if (!full_path) {
+    return false;
+  }
 
-  auto status = fs::status(full_path, error);
+  std::error_code error;
+  auto status = fs::status(*full_path, error);
   if (!fs::exists(status)) {
     return true;
   }
@@ -464,14 +528,18 @@ bool LocalFileProtocol::DoDeleteFile(std::string_view protocol_name,
     return false;
   }
 
-  return fs::remove(full_path, error);
+  return fs::remove(*full_path, error);
 }
 
 std::unique_ptr<RawFile> LocalFileProtocol::DoOpenFile(
     std::string_view protocol_name, std::string_view path, FileFlags flags) {
+  auto full_path = ToFullPath(root_, path);
+  if (!full_path) {
+    return nullptr;
+  }
+
   std::error_code error;
-  fs::path full_path = ToPath(JoinPath(root_, path));
-  const bool file_exists = fs::is_regular_file(full_path, error);
+  const bool file_exists = fs::is_regular_file(*full_path, error);
 
   if (!flags.IsSet(FileFlag::kCreate) && !file_exists) {
     return nullptr;
@@ -491,7 +559,7 @@ std::unique_ptr<RawFile> LocalFileProtocol::DoOpenFile(
   if (flags.IsSet(FileFlag::kReset) || !file_exists) {
     mode |= std::fstream::trunc;
   }
-  std::fstream file(full_path, mode);
+  std::fstream file(*full_path, mode);
   if (file.fail()) {
     return nullptr;
   }
@@ -505,19 +573,18 @@ std::string LocalFileProtocol::DoGetCurrentPath(
   if (error) {
     return {};
   }
-  std::string current_path = ToString(fs_current_path);
-  if (!absl::StartsWith(current_path, root_)) {
-    return {};
-  }
-  current_path.erase(0, root_.size() - (IsRootPath(root_) ? 1 : 0));
-  return current_path;
+  return ToProtocolPath(root_, ToString(fs_current_path));
 }
 
 bool LocalFileProtocol::DoSetCurrentPath(std::string_view protocol_name,
                                          std::string_view path) {
-  fs::path full_path = ToPath(JoinPath(root_, path));
+  auto full_path = ToFullPath(root_, path);
+  if (!full_path) {
+    return false;
+  }
+
   std::error_code error;
-  fs::current_path(full_path, error);
+  fs::current_path(*full_path, error);
   return !error;
 }
 

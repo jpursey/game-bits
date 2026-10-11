@@ -40,6 +40,29 @@ resumes on another thread can read the wrong value, with a test that does
 exactly that, and fix it if so: `/GT` on the affected code, or state that
 moves with the fiber.
 
+## Report buffered write errors
+
+- **Layers:** file
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Code audit](worklog/code_audit.md) CL12
+
+Most write errors are never reported. `LocalFileProtocol` writes through a
+buffered `std::fstream`, so `File::Write()` succeeds once the data is buffered,
+and the disk write happens later: an error from a full buffer comes back as a
+short count from a later `Write()` call, and an error when the file closes is
+lost, as the destructor can't report it. So `FileSystem::WriteFile()` of a
+small file on a full disk returns true and leaves a truncated file. When an
+error is reported, the count is 0 even if some bytes were written, as the
+failed stream reports no position.
+
+Add a `RawFile::Flush()` that every protocol implements, `File::Flush()` and a
+`File::Close()` that return whether everything written reached the file, and
+have `FileSystem::WriteFile()` check it. Fakes cover `File`
+(`TestProtocol::FileState::fail_write_after`); a real write failure can't be
+made in a unit test, so `LocalFile` is checked by hand.
+
 ## Multithreaded profiles
 
 - **Layers:** profile

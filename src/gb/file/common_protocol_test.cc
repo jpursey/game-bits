@@ -259,6 +259,11 @@ TEST_P(CommonProtocolTest, CreateFolder) {
       !check_info ||
       file_system.GetPathInfo("test:/folder-1/folder-6/folder-7").type ==
           PathType::kFolder);
+  EXPECT_TRUE(file_system.CreateFolder("test:/folder-1/folder-6",
+                                       FolderMode::kRecursive));
+  EXPECT_TRUE(file_system.CreateFolder("test:/", FolderMode::kRecursive));
+  EXPECT_FALSE(
+      file_system.CreateFolder("test:/file-1", FolderMode::kRecursive));
 }
 
 TEST_P(CommonProtocolTest, DeleteFolder) {
@@ -533,6 +538,10 @@ TEST_P(CommonProtocolTest, CopyFile) {
   EXPECT_TRUE(!check_info || file_system.IsValidFile("test:/new-file"));
   EXPECT_TRUE(!check_contents ||
               CheckContents(file_system, "test:/new-file", "1234567890"));
+
+  EXPECT_TRUE(file_system.CopyFile("test:/file-2", "test:/file-2"));
+  EXPECT_TRUE(!check_contents ||
+              CheckContents(file_system, "test:/file-2", "abcde"));
 }
 
 TEST_P(CommonProtocolTest, CreateFile) {
@@ -693,6 +702,33 @@ TEST_P(CommonProtocolTest, WriteFile) {
       contents.substr(0, 50), contents.substr(kFileSize / 4, kFileSize / 2));
   EXPECT_TRUE(!check_contents ||
               CheckContents(file_system, "test:/file", expected_contents));
+}
+
+TEST_P(CommonProtocolTest, ReadAndWriteFile) {
+  CommonProtocolTestInit init;
+  init.files = {{"/file", "1234567890"}};
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(NewProtocol(init), "test"));
+  if (!file_system.GetFlags("test").IsSet(
+          {FileProtocolFlag::kFileRead, FileProtocolFlag::kFileWrite})) {
+    return;
+  }
+
+  // Reads and writes continue from where the last one ended, with no seek
+  // in between.
+  std::unique_ptr<File> file =
+      file_system.OpenFile("test:/file", kReadWriteFileFlags);
+  ASSERT_NE(file, nullptr);
+  EXPECT_EQ(file->ReadString(2), "12");
+  EXPECT_EQ(file->WriteString("ab"), 2);
+  EXPECT_EQ(file->GetPosition(), 4);
+  EXPECT_EQ(file->ReadString(2), "56");
+  EXPECT_EQ(file->WriteString("cd"), 2);
+  EXPECT_EQ(file->ReadRemainingString(), "90");
+  EXPECT_EQ(file->WriteString("ef"), 2);
+  EXPECT_EQ(file->GetPosition(), 12);
+  file.reset();
+  EXPECT_TRUE(CheckContents(file_system, "test:/file", "12ab56cd90ef"));
 }
 
 }  // namespace

@@ -20,10 +20,15 @@ namespace gb {
 // requirements of the underlying operating system. By default, it will register
 // under the "file" protocol name.
 //
-// Only directories and regular files are supported. If other types of files
-// are encountered (most common is a symlink), they are skipped or appear as
-// invalid when queried with GetPathInfo(). The existence of these types of
-// files can interfere with folder copying and deletion.
+// Paths are UTF-8. A path with a host (such as "file://host/a") isn't under the
+// root, so it is invalid.
+//
+// Only directories and regular files are supported. Links (symbolic links and
+// junctions) are followed, so a link appears as the file or folder it links to,
+// except that recursive listing doesn't descend into a linked folder, and
+// deleting a link deletes only the link. Other types of files are skipped when
+// listing, and appear invalid when queried with GetPathInfo(). Links and other
+// types of files can interfere with folder copying and deletion.
 //
 // This class is thread-safe.
 class LocalFileProtocol : public FileProtocol {
@@ -37,11 +42,12 @@ class LocalFileProtocol : public FileProtocol {
                                        FileProtocolFlags, kDefaultFlags);
 
   // This defines the root path on the local filesystem that will be the root
-  // folder for this protocol. This should be a normalized path (see path.h for
-  // details). Relative paths are allowed (including the empty string), which
-  // will be relative to the current working directory. This must be a path to a
-  // valid folder or a new path whose parent folder is a valid folder. In the
-  // latter case, a folder will be created if possible.
+  // folder for this protocol. It is normalized (see path.h for details), and
+  // GetRoot() returns the normalized path. Relative paths are allowed
+  // (including the empty string), which will be relative to the current working
+  // directory. This must be a path to a valid folder or a new path whose parent
+  // folder is a valid folder. In the latter case, a folder will be created if
+  // possible.
   static inline constexpr const char* kKeyRoot = "root";
   static GB_CONTEXT_CONSTRAINT_NAMED(kConstraintRoot, kInRequired, std::string,
                                      kKeyRoot);

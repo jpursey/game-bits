@@ -30,9 +30,10 @@ namespace gb {
 // environment. See each function for the precondition guarantees provided to
 // each.
 //
-// All paths passed to a file protocol are absolute paths (start with / or //),
-// and do not contain a protocol prefix (this is passed as a separate argument
-// in all cases). The public functions fail for any other path.
+// All paths passed to a file protocol are absolute paths (start with / or //)
+// that are normalized (see NormalizePath), and do not contain a protocol prefix
+// (this is passed as a separate argument in all cases). The public functions
+// fail for any other path.
 //
 // This class has no state of its own and its thread-safety is the same as
 // whatever the derived protocol class guarantees. However, see caution above if
