@@ -5,30 +5,23 @@
 
 #include "gb/parse/parse_result.h"
 
-#include "absl/strings/str_split.h"
-
 namespace gb {
 
 absl::Span<const ParsedItem> ParsedItem::GetItems(std::string_view name) const {
   const ParsedItem* item = this;
-  if (name.find('.') != std::string_view::npos) {
-    std::vector<std::string_view> names = absl::StrSplit(name, '.');
-    std::string_view new_name = names.back();
-    names.pop_back();
-    for (const auto& name : names) {
-      item = item->GetItem(name);
-      if (item == nullptr) {
-        {};
-      }
+  for (auto dot = name.find('.'); dot != std::string_view::npos;
+       dot = name.find('.')) {
+    item = item->GetItem(name.substr(0, dot));
+    if (item == nullptr) {
+      return {};
     }
-    name = new_name;
+    name.remove_prefix(dot + 1);
   }
-  absl::Span<const ParsedItem> result;
-  if (auto it = item->items_.find(std::string(name));
-      it != item->items_.end()) {
-    result = absl::MakeConstSpan(it->second);
+  auto it = item->items_.find(name);
+  if (it == item->items_.end()) {
+    return {};
   }
-  return result;
+  return it->second;
 }
 
 }  // namespace gb

@@ -6,6 +6,7 @@
 #include "gb/parse/parser_rules.h"
 
 #include "absl/strings/ascii.h"
+#include "absl/strings/str_cat.h"
 #include "gb/parse/lexer.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -613,6 +614,24 @@ TEST(ParserRulesTest, RecursiveAlternates) {
   std::string error;
   EXPECT_FALSE(rules.Validate(*lexer, &error));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("left-recursive"));
+}
+
+TEST(ParserRulesTest, DuplicateRuleNameIsInvalid) {
+  auto lexer = Lexer::Create(kCStyleLexerConfig);
+  ASSERT_NE(lexer, nullptr);
+  ParserRules rules;
+  rules.AddRule("rule", NewValidRule());
+  rules.AddRule("rule", NewValidRule());
+  std::string error;
+  EXPECT_FALSE(rules.Validate(*lexer, &error));
+  EXPECT_THAT(absl::AsciiStrToLower(error),
+              AllOf(HasSubstr("rule"), HasSubstr("duplicate")));
+}
+
+TEST(ParserRulesTest, Stringify) {
+  ParserRules rules;
+  rules.AddRule("rule", NewValidRule());
+  EXPECT_EQ(absl::StrCat(rules), "ParserRules{rule}");
 }
 
 }  // namespace

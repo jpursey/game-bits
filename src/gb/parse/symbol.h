@@ -6,10 +6,14 @@
 #ifndef GB_PARSE_SYMBOL_H_
 #define GB_PARSE_SYMBOL_H_
 
+#include <algorithm>
 #include <cstdint>
+#include <cstring>
+#include <string>
 #include <string_view>
 
 #include "absl/strings/ascii.h"
+#include "absl/strings/str_format.h"
 
 namespace gb {
 
@@ -54,7 +58,7 @@ class Symbol {
   Symbol(const std::string& str) noexcept : Symbol(std::string_view(str)) {}
 
   // Returns true if the symbol is valid (contains only ASCII characters between
-  // 33 and 127). The default symbol is invalid as it is empty.
+  // 33 and 126). The default symbol is invalid as it is empty.
   constexpr bool IsValid() const;
 
   // Returns the underlying symbol value.

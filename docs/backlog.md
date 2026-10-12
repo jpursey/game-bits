@@ -141,3 +141,20 @@ which also has `Cancel()` and `Invoke()`. Switch Game Bits' own uses to
 `resource_file_writer.cc`), and mark `ScopedCall` deprecated in favor of it.
 Removing `ScopedCall` breaks every project that uses it, so each one switches
 first, and it is removed once they have.
+
+## Parser rules shared between threads
+
+- **Layers:** parse
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Code audit](worklog/code_audit.md) CL14
+
+`ParserRules::Validate()` is const, but sets the value of each token item from
+the lexer it validates against, so two `Parser::Create()` calls with the same
+new `ParserRules` on different threads race, and rules validated against one
+lexer keep values from it when used with another (a lexer that forces
+identifiers to lower case parses a literal differently). Resolve token values
+per parser instead, such as in a table the `Parser` builds from its rules and
+lexer, so shared rules are never written. `ParserProgram` validates its rules
+once and is unaffected.

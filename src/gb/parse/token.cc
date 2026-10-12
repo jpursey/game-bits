@@ -5,7 +5,9 @@
 
 #include "gb/parse/token.h"
 
+#include <cstdint>
 #include <string>
+#include <variant>
 
 #include "absl/strings/str_cat.h"
 
@@ -26,6 +28,34 @@ TokenValue Token::GetValue() const {
       return GetSymbol();
   }
   return TokenValue();
+}
+
+bool Token::HasValue(const TokenValue& value) const {
+  if (std::holds_alternative<NoTokenValue>(value)) {
+    return true;
+  }
+  switch (value_type_) {
+    case ValueType::kNone:
+      return false;
+    case ValueType::kFloat: {
+      const double* expected = std::get_if<double>(&value);
+      return expected != nullptr && *expected == GetFloat();
+    }
+    case ValueType::kInt: {
+      const int64_t* expected = std::get_if<int64_t>(&value);
+      return expected != nullptr && *expected == GetInt();
+    }
+    case ValueType::kString:
+    case ValueType::kStringView: {
+      const std::string* expected = std::get_if<std::string>(&value);
+      return expected != nullptr && *expected == GetString();
+    }
+    case ValueType::kSymbol: {
+      const Symbol* expected = std::get_if<Symbol>(&value);
+      return expected != nullptr && *expected == GetSymbol();
+    }
+  }
+  return false;
 }
 
 std::string Token::ToString() const {

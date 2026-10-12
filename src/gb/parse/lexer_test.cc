@@ -5,7 +5,13 @@
 
 #include "gb/parse/lexer.h"
 
+#include <cstdint>
+#include <limits>
+#include <string>
+#include <string_view>
+
 #include "absl/strings/ascii.h"
+#include "absl/strings/str_cat.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
@@ -3990,6 +3996,235 @@ TEST(LexerTest, ParseTokenText) {
   EXPECT_THAT(token,
               IsToken(kTokenError, std::string(Lexer::kErrorInvalidToken)));
   EXPECT_EQ(token.GetTokenIndex(), kInvalidTokenIndex);
+}
+
+TEST(LexerTest, FilenameIsCopied) {
+  auto lexer = Lexer::Create(ValidConfigForTest());
+  ASSERT_NE(lexer, nullptr);
+  std::string filename = "a.txt";
+  const LexerContentId content = lexer->AddFileContent(filename, "1");
+  filename = "b.txt";
+  EXPECT_EQ(lexer->GetFileContentId("a.txt"), content);
+  EXPECT_EQ(lexer->GetFileContentId("b.txt"), kNoLexerContent);
+  EXPECT_EQ(lexer->GetContentFilename(content), "a.txt");
+}
+
+TEST(LexerTest, FailedAddLeavesNoContent) {
+  auto lexer = Lexer::Create(ValidConfigForTest());
+  ASSERT_NE(lexer, nullptr);
+  EXPECT_EQ(lexer->AddFileContent("a.txt", std::string(kMaxTokensPerLine, '1')),
+            kNoLexerContent);
+  EXPECT_EQ(lexer->GetFileContentId("a.txt"), kNoLexerContent);
+  const LexerContentId failed_content = 1;
+  EXPECT_EQ(lexer->GetContentFilename(failed_content), "");
+  Token token = lexer->NextToken(failed_content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidTokenContent);
+
+  const LexerContentId content = lexer->AddFileContent("b.txt", "1");
+  EXPECT_EQ(lexer->GetFileContentId("b.txt"), content);
+  EXPECT_THAT(lexer->NextToken(content), IsToken(kTokenInt, int64_t(1)));
+}
+
+TEST(LexerTest, GetLineTextOutOfRange) {
+  auto lexer = Lexer::Create(ValidConfigForTest());
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId first = lexer->AddContent("1\n2");
+  const LexerContentId second = lexer->AddContent("3\n4");
+  EXPECT_EQ(lexer->GetLineText(first, 1), "2");
+  EXPECT_EQ(lexer->GetLineText(first, 2), "");
+  EXPECT_EQ(lexer->GetLineText(first, 3), "");
+  EXPECT_EQ(lexer->GetLineText(second, 0), "3");
+  EXPECT_EQ(lexer->GetLineText(second, -1), "");
+  EXPECT_EQ(lexer->GetLineText(second, -2), "");
+}
+
+TEST(LexerTest, RewindLineInLaterContent) {
+  auto lexer = Lexer::Create(ValidConfigForTest());
+  ASSERT_NE(lexer, nullptr);
+  lexer->AddContent("1\n2");
+  const LexerContentId content = lexer->AddContent("3\n4");
+  EXPECT_EQ(lexer->NextLine(content), "3");
+  EXPECT_TRUE(lexer->RewindLine(content));
+  EXPECT_EQ(lexer->GetCurrentLine(content), 0);
+  EXPECT_FALSE(lexer->RewindLine(content));
+  EXPECT_EQ(lexer->NextLine(content), "3");
+}
+
+TEST(LexerTest, RewindTokenAtStartOfLaterContent) {
+  auto lexer = Lexer::Create(ValidConfigForTest());
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId first = lexer->AddContent("1 2");
+  const LexerContentId second = lexer->AddContent("3");
+  EXPECT_THAT(lexer->NextToken(first), IsToken(kTokenInt, int64_t(1)));
+  EXPECT_THAT(lexer->NextToken(first), IsToken(kTokenInt, int64_t(2)));
+  EXPECT_FALSE(lexer->RewindToken(second));
+  EXPECT_EQ(lexer->GetCurrentLine(second), 0);
+  EXPECT_THAT(lexer->NextToken(second), IsToken(kTokenInt, int64_t(3)));
+}
+
+TEST(LexerTest, TokensFromAnotherLexer) {
+  auto other_lexer = Lexer::Create(ValidConfigForTest());
+  ASSERT_NE(other_lexer, nullptr);
+  const LexerContentId other_content = other_lexer->AddContent("1 2\n3");
+  other_lexer->NextToken(other_content);
+  const Token second = other_lexer->NextToken(other_content);
+  const Token third = other_lexer->NextToken(other_content);
+  const Token end = other_lexer->NextToken(other_content);
+  ASSERT_TRUE(end.IsEnd());
+
+  // Line 0 has one token, and line 1 is between the two contents.
+  auto lexer = Lexer::Create(ValidConfigForTest());
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("4");
+  lexer->AddContent("5");
+  EXPECT_THAT(lexer->NextToken(content), IsToken(kTokenInt, int64_t(4)));
+  for (const Token& token : {second, third, end}) {
+    SCOPED_TRACE(absl::StrCat(token));
+    Token parsed = lexer->ParseToken(token.GetTokenIndex());
+    EXPECT_EQ(parsed.GetType(), kTokenError);
+    EXPECT_EQ(parsed.GetString(), Lexer::kErrorInvalidTokenContent);
+    EXPECT_EQ(lexer->GetTokenLocation(token), LexerLocation());
+    EXPECT_EQ(lexer->GetTokenText(token), "");
+    EXPECT_FALSE(lexer->SetNextToken(token));
+  }
+}
+
+TEST(LexerTest, InvalidTokenAtUnmatchedSymbolStart) {
+  const Symbol kSymbols[] = {"<<"};
+  auto lexer = Lexer::Create({
+      .flags = {kLexerFlags_CIdentifiers},
+      .line_comments = kCStyleLineComments,
+      .symbols = kSymbols,
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("<x << /x");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.ToString(), Lexer::kErrorInvalidToken);
+  EXPECT_EQ(lexer->GetTokenText(token), "<x");
+  EXPECT_TRUE(lexer->NextToken(content).IsSymbol("<<"));
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(lexer->GetTokenText(token), "/x");
+  EXPECT_TRUE(lexer->NextToken(content).IsEnd());
+}
+
+TEST(LexerTest, ParseFloatZero) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kFloat64, LexerFlag::kDecimalFloats,
+                LexerFlag::kExponentFloats, LexerFlag::kNegativeFloats},
+  });
+  ASSERT_NE(lexer, nullptr);
+  LexerContentId content = lexer->AddContent("0.0 0 -0.0 0e5");
+  for (int i = 0; i < 4; ++i) {
+    EXPECT_THAT(lexer->NextToken(content), IsToken(kTokenFloat, 0.0));
+  }
+  EXPECT_TRUE(lexer->NextToken(content).IsEnd());
+
+  lexer = Lexer::Create({
+      .flags = {LexerFlag::kFloat32, LexerFlag::kDecimalFloats},
+  });
+  ASSERT_NE(lexer, nullptr);
+  content = lexer->AddContent("0.0");
+  EXPECT_THAT(lexer->NextToken(content), IsToken(kTokenFloat, 0.0));
+}
+
+TEST(LexerTest, ParseNonDecimalIntegerBeyondBitDepth) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt8, LexerFlag::kBinaryIntegers,
+                LexerFlag::kOctalIntegers, LexerFlag::kHexUpperIntegers},
+      .binary_prefix = "0b",
+      .octal_prefix = "0o",
+      .hex_prefix = "0x",
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content =
+      lexer->AddContent("0xFF 0x1FF 0x180 0o377 0o777 0b11111111 0b111111111");
+  EXPECT_THAT(lexer->NextToken(content), IsToken(kTokenInt, int64_t(-1)));
+  for (std::string_view text : {"0x1FF", "0x180"}) {
+    Token token = lexer->NextToken(content);
+    EXPECT_EQ(token.GetType(), kTokenError) << text;
+    EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidInteger) << text;
+    EXPECT_EQ(lexer->GetTokenText(token), text);
+  }
+  EXPECT_THAT(lexer->NextToken(content), IsToken(kTokenInt, int64_t(-1)));
+  EXPECT_EQ(lexer->NextToken(content).GetString(), Lexer::kErrorInvalidInteger);
+  EXPECT_THAT(lexer->NextToken(content), IsToken(kTokenInt, int64_t(-1)));
+  EXPECT_EQ(lexer->NextToken(content).GetString(), Lexer::kErrorInvalidInteger);
+  EXPECT_TRUE(lexer->NextToken(content).IsEnd());
+}
+
+TEST(LexerTest, NegativeIntegerIsNotUint) {
+  auto lexer = Lexer::Create({.flags = {kLexerFlags_Positive64BitNumbers,
+                                        kLexerFlags_NegativeNumbers}});
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("-1 1");
+  Token token = lexer->NextToken(content);
+  EXPECT_TRUE(token.IsInt(-1));
+  EXPECT_FALSE(token.IsUint());
+  EXPECT_FALSE(token.IsUint(std::numeric_limits<uint64_t>::max()));
+  token = lexer->NextToken(content);
+  EXPECT_TRUE(token.IsUint());
+  EXPECT_TRUE(token.IsUint(1));
+}
+
+TEST(LexerTest, TokenHasValue) {
+  auto lexer = Lexer::Create(kCStyleLexerConfig);
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("42 1.5 \"text\" + if");
+  for (int i = 0; i < 5; ++i) {
+    const Token token = lexer->NextToken(content);
+    SCOPED_TRACE(absl::StrCat(token));
+    EXPECT_TRUE(token.HasValue(token.GetValue()));
+    EXPECT_TRUE(token.HasValue(NoTokenValue()));
+  }
+  lexer->RewindContent(content);
+  Token token = lexer->NextToken(content);
+  EXPECT_FALSE(token.HasValue(int64_t(43)));
+  EXPECT_FALSE(token.HasValue(42.0));
+  EXPECT_FALSE(token.HasValue(std::string("42")));
+  token = lexer->NextToken(content);
+  EXPECT_FALSE(token.HasValue(1.25));
+  token = lexer->NextToken(content);
+  EXPECT_FALSE(token.HasValue(std::string("other")));
+  token = lexer->NextToken(content);
+  EXPECT_FALSE(token.HasValue(Symbol('-')));
+  EXPECT_FALSE(lexer->NextToken(content).HasValue(std::string("else")));
+  EXPECT_FALSE(lexer->NextToken(content).HasValue(std::string()));
+}
+
+TEST(LexerTest, DecodeWithoutEscapeCharacter) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kDoubleQuoteString, LexerFlag::kSingleQuoteCharacter,
+                LexerFlag::kDecodeEscape},
+      .escape = '\\',
+      .escape_newline = 'n',
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent(R"("a\nb" "a\" '\')");
+  EXPECT_TRUE(lexer->NextToken(content).IsString("a\\nb"));
+  EXPECT_TRUE(lexer->NextToken(content).IsString("a\\"));
+  EXPECT_TRUE(lexer->NextToken(content).IsChar('\\'));
+  EXPECT_TRUE(lexer->NextToken(content).IsEnd());
+}
+
+TEST(LexerTest, DecodeIncompleteHexEscape) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kDoubleQuoteString, LexerFlag::kSingleQuoteCharacter,
+                LexerFlag::kEscapeCharacter, LexerFlag::kDecodeEscape},
+      .escape = '\\',
+      .escape_hex = 'x',
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content =
+      lexer->AddContent(R"("\x4" "\xZZ" "\x" '\x' "\x41")");
+  EXPECT_TRUE(lexer->NextToken(content).IsString("x4"));
+  EXPECT_TRUE(lexer->NextToken(content).IsString("xZZ"));
+  EXPECT_TRUE(lexer->NextToken(content).IsString("x"));
+  EXPECT_TRUE(lexer->NextToken(content).IsChar('x'));
+  EXPECT_TRUE(lexer->NextToken(content).IsString("A"));
+  EXPECT_TRUE(lexer->NextToken(content).IsEnd());
 }
 
 }  // namespace

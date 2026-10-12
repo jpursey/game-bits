@@ -121,6 +121,36 @@ TEST(LexerProgramTest, ConflictingCommentSpecifications) {
   EXPECT_EQ(error, LexerProgram::kErrorConflictingCommentSpec);
 }
 
+TEST(LexerProgramTest, CommentStartIsPrefixOfAnother) {
+  std::string error;
+
+  auto program = LexerProgram::Create(
+      {.flags = kLexerFlags_CIdentifiers, .line_comments = {"//", "///"}},
+      &error);
+  EXPECT_EQ(program, nullptr);
+  EXPECT_EQ(error, LexerProgram::kErrorConflictingCommentSpec);
+
+  program =
+      LexerProgram::Create({.flags = kLexerFlags_CIdentifiers,
+                            .block_comments = {{"/**", "**/"}, {"/*", "*/"}}},
+                           &error);
+  EXPECT_EQ(program, nullptr);
+  EXPECT_EQ(error, LexerProgram::kErrorConflictingCommentSpec);
+
+  program = LexerProgram::Create({.flags = kLexerFlags_CIdentifiers,
+                                  .line_comments = {"#"},
+                                  .block_comments = {{"#[", "]#"}}},
+                                 &error);
+  EXPECT_EQ(program, nullptr);
+  EXPECT_EQ(error, LexerProgram::kErrorConflictingCommentSpec);
+
+  program = LexerProgram::Create({.flags = kLexerFlags_CIdentifiers,
+                                  .line_comments = kCStyleLineComments,
+                                  .block_comments = kCStyleBlockComments},
+                                 &error);
+  EXPECT_NE(program, nullptr);
+}
+
 TEST(LexerProgramTest, EmptyStringCommentSpecifications) {
   std::string error;
 

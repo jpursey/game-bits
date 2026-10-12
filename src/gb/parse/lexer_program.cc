@@ -6,6 +6,7 @@
 #include "gb/parse/lexer_program.h"
 
 #include <memory>
+#include <vector>
 
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/str_cat.h"
@@ -292,10 +293,29 @@ bool CreateSymbolPattern(std::string& symbol_pattern, std::string& symbol_chars,
   return true;
 }
 
+// Returns true if a comment start is a prefix of another one (or the same), so
+// that the lexer can't tell which comment it starts.
+bool HasConflictingCommentStarts(const LexerConfig& config) {
+  std::vector<std::string_view> starts(config.line_comments.begin(),
+                                       config.line_comments.end());
+  for (const auto& [start, end] : config.block_comments) {
+    starts.push_back(start);
+  }
+  const int count = static_cast<int>(starts.size());
+  for (int i = 0; i < count; ++i) {
+    for (int j = i + 1; j < count; ++j) {
+      if (starts[i].starts_with(starts[j]) ||
+          starts[j].starts_with(starts[i])) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 bool CreateWhitespacePattern(std::string& whitespace_pattern,
                              std::string& whitespace_chars,
                              const LexerConfig& config, std::string& error) {
-  absl::flat_hash_set<std::string_view> comment_starts;
   if (whitespace_chars.find(' ') == std::string::npos) {
     whitespace_chars.push_back(' ');
   }
@@ -309,10 +329,6 @@ bool CreateWhitespacePattern(std::string& whitespace_pattern,
     for (const auto& [start, end] : config.block_comments) {
       if (start.empty() || end.empty()) {
         error = LexerProgram::kErrorEmptyCommentSpec;
-        return false;
-      }
-      if (!comment_starts.insert(start).second) {
-        error = LexerProgram::kErrorConflictingCommentSpec;
         return false;
       }
       const char first_char = start[0];
@@ -332,10 +348,6 @@ bool CreateWhitespacePattern(std::string& whitespace_pattern,
         error = LexerProgram::kErrorEmptyCommentSpec;
         return false;
       }
-      if (!comment_starts.insert(line_comment).second) {
-        error = LexerProgram::kErrorConflictingCommentSpec;
-        return false;
-      }
       const char first_char = line_comment[0];
       if (whitespace_chars.find(first_char) == std::string::npos) {
         whitespace_chars.push_back(first_char);
@@ -344,6 +356,10 @@ bool CreateWhitespacePattern(std::string& whitespace_pattern,
     }
     whitespace_pattern.pop_back();
     absl::StrAppend(&whitespace_pattern, ").*)?");
+  }
+  if (HasConflictingCommentStarts(config)) {
+    error = LexerProgram::kErrorConflictingCommentSpec;
+    return false;
   }
   return true;
 }
@@ -455,7 +471,9 @@ std::unique_ptr<const LexerProgram> LexerProgram::Create(
   state.ident_config.prefix = config.ident_prefix.size();
   state.ident_config.size_offset =
       state.ident_config.prefix + config.ident_suffix.size();
-  state.escape = config.escape;
+  if (config.flags.IsSet(LexerFlag::kEscapeCharacter)) {
+    state.escape = config.escape;
+  }
   state.escape_newline = config.escape_newline;
   state.escape_tab = config.escape_tab;
   state.escape_hex = config.escape_hex;
@@ -486,23 +504,18 @@ std::unique_ptr<const LexerProgram> LexerProgram::Create(
     state.re_args[i].int_parse_type = IntParseType::kHex;
   }
   if (float_index >= 0) {
-    const int i = float_index;
     state.re_args[float_index].type = kTokenFloat;
   }
   if (char_index >= 0) {
-    const int i = char_index;
     state.re_args[char_index].type = kTokenChar;
   }
   if (string_index >= 0) {
-    const int i = string_index;
     state.re_args[string_index].type = kTokenString;
   }
   if (keyword_index >= 0) {
-    const int i = keyword_index;
     state.re_args[keyword_index].type = kTokenKeyword;
   }
   if (ident_index >= 0) {
-    const int i = ident_index;
     state.re_args[ident_index].type = kTokenIdentifier;
   }
   for (int j = 0; j < config.user_tokens.size(); ++j) {

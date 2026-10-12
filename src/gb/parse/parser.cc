@@ -166,10 +166,8 @@ parser_internal::ParseMatch Parser::MatchTokenItem(
   }
 
   TokenType expected_type = parser_token.GetTokenType();
-  const TokenValue& expected_value = parser_token.GetValue();
   if (token.GetType() != expected_type ||
-      (!std::holds_alternative<NoTokenValue>(expected_value) &&
-       token.GetValue() != expected_value)) {
+      !token.HasValue(parser_token.GetValue())) {
     return MatchError(token, expected_type, parser_token.GetTokenText());
   }
 
@@ -261,9 +259,6 @@ parser_internal::ParseMatch Parser::MatchGroup(const ParserGroup& group) {
         if (match.IsAbort()) {
           SetNextToken(group_token);
           return match;
-        }
-        if (!match.IsAbort() && !sub_item.error.empty()) {
-          SetError(item_token, sub_item.error);
         }
         if (with_comma) {
           RewindToken();

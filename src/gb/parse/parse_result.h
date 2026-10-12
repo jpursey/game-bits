@@ -6,11 +6,14 @@
 #ifndef GB_PARSE_PARSE_RESULT_H_
 #define GB_PARSE_PARSE_RESULT_H_
 
+#include <cstdint>
+#include <functional>
 #include <map>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
-#include "absl/container/flat_hash_map.h"
 #include "absl/types/span.h"
 #include "gb/parse/parse_error.h"
 #include "gb/parse/parse_types.h"
@@ -23,9 +26,7 @@ namespace gb {
 //==============================================================================
 
 class ParsedItem;
-// using ParsedItems = absl::flat_hash_map<std::string,
-// std::vector<ParsedItem>>;
-using ParsedItems = std::map<std::string, std::vector<ParsedItem>>;
+using ParsedItems = std::map<std::string, std::vector<ParsedItem>, std::less<>>;
 
 // This class represents a single parsed item in a parse tree.
 //

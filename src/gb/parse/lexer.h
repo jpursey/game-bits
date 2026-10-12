@@ -293,10 +293,11 @@ class Lexer final {
   // Token parsing
   //----------------------------------------------------------------------------
 
-  // Sets the next token to be parsed to the specified token index.
+  // Sets the next token to be parsed to the specified token, which may be an
+  // end token.
   //
-  // If the token is the end token, error token, or it was not a token
-  // previously parsed by this Lexer, then this will fail and return false.
+  // If the token was not previously parsed from this Lexer's content, then
+  // this will fail and return false.
   bool SetNextToken(Token token);
 
   // Parses the token at the specified token index.
@@ -336,6 +337,9 @@ class Lexer final {
   // Parses the specified token text. The resulting token is not part of any
   // content, has s defaulted token index, and so is invalid to use with
   // SetNextToken.
+  //
+  // Unlike the other const functions, this uses the Lexer's working state, so
+  // it must not be called at the same time as any other function.
   Token ParseTokenText(std::string_view token_text) const;
 
  private:
@@ -396,6 +400,10 @@ class Lexer final {
   Line* GetLine(int line);
 
   std::tuple<Content*, Line*> GetContentLine(LexerContentId id);
+
+  // Returns the line of the token at `index`, or null if `index` is neither a
+  // token parsed from this lexer's content nor the end of a content.
+  const Line* GetTokenLine(TokenIndex index) const;
 
   Token ParseInt(TokenIndex token_index, std::string_view text,
                  IntParseType int_parse_type) const;

@@ -249,6 +249,22 @@ TEST(ParserProgramTest, InvalidRuleName) {
               AllOf(HasSubstr("rule2"), HasSubstr("not defined")));
 }
 
+TEST(ParserProgramTest, DuplicateRuleName) {
+  std::string error;
+  auto program = ParserProgram::Create(kCStyleLexerConfig, R"(
+    rule1 {
+      %int;
+    }
+    rule1 {
+      %float;
+    }
+  )",
+                                       &error);
+  EXPECT_EQ(program, nullptr);
+  EXPECT_THAT(absl::AsciiStrToLower(error),
+              AllOf(HasSubstr("rule1"), HasSubstr("duplicate")));
+}
+
 TEST(ParserProgramTest, OptionalItem) {
   std::string error;
   std::string program_text = R"(

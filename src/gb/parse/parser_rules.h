@@ -273,16 +273,20 @@ class ParserRules final {
   ParserRules& operator=(ParserRules&&) = default;
   ~ParserRules() = default;
 
-  // Adds a rule to the parser rules.
+  // Adds a rule to the parser rules. If a rule with the same name was already
+  // added, `item` is discarded, and the rules are invalid (see Validate).
   ParserRules& AddRule(std::string_view name,
                        std::unique_ptr<ParserGroup> item) {
-    rules_.emplace(std::string(name), std::move(item));
+    if (!rules_.emplace(std::string(name), std::move(item)).second &&
+        duplicate_name_.empty()) {
+      duplicate_name_ = name;
+    }
     return *this;
   }
 
   // Returns the rule with the specified name, or nullptr if it does not exist.
   const ParserRuleItem* GetRule(std::string_view name) const {
-    auto it = rules_.find(std::string(name));
+    auto it = rules_.find(name);
     return it != rules_.end() ? it->second.get() : nullptr;
   }
 
@@ -298,16 +302,17 @@ class ParserRules final {
       absl::flat_hash_map<std::string, std::unique_ptr<const ParserRuleItem>>;
 
   template <typename Sink>
-  friend void AbslStringify(Sink& sink, const ParserRules& token) {
+  friend void AbslStringify(Sink& sink, const ParserRules& rules) {
     absl::Format(
-        &sink, "PerserRules{%s}",
-        absl::StrJoin(rules_, ",",
+        &sink, "ParserRules{%s}",
+        absl::StrJoin(rules.rules_, ",",
                       [](std::string* out, const Rules::value_type& value) {
                         absl::StrAppend(out, value.first);
                       }));
   }
 
   Rules rules_;
+  std::string duplicate_name_;  // The first name added twice, if any.
 };
 
 //==============================================================================

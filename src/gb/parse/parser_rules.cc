@@ -210,6 +210,13 @@ bool ParserRules::Validate(Lexer& lexer, std::string* error_message) const {
     }
     return false;
   }
+  if (!duplicate_name_.empty()) {
+    if (error_message != nullptr) {
+      *error_message =
+          absl::StrCat("Duplicate rule name: \"", duplicate_name_, "\"");
+    }
+    return false;
+  }
   ParserRuleItem::ValidateContext context = {*this, lexer};
   for (const auto& [name, rule] : rules_) {
     if (name.empty()) {

@@ -114,8 +114,14 @@ class Token final {
   // Returns the parsed value of the token.
   TokenValue GetValue() const;
 
+  // Returns true if GetValue() would equal `value`, or `value` is NoTokenValue
+  // (which matches any token). Unlike comparing GetValue(), this doesn't copy a
+  // string value.
+  bool HasValue(const TokenValue& value) const;
+
   // Returns the value of the token as a string, regardless of the underlying
-  // type. This returns an empty string for errors or tokens that have no value.
+  // type. This returns the message for errors, and an empty string for tokens
+  // that have no value.
   std::string ToString() const;
 
   // Returns the typed value of the token or a default value if it isn't valid
@@ -147,9 +153,7 @@ class Token final {
     return GetType() == kTokenInt && GetInt() == value;
   }
   bool IsUint() const { return GetType() == kTokenInt && GetInt() >= 0; }
-  bool IsUint(uint64_t value) const {
-    return GetType() == kTokenInt && GetUInt() == value;
-  }
+  bool IsUint(uint64_t value) const { return IsUint() && GetUInt() == value; }
   bool IsFloat() const { return GetType() == kTokenFloat; }
   bool IsFloat(double value) const {
     return GetType() == kTokenFloat && GetFloat() == value;

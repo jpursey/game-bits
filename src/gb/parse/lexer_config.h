@@ -57,13 +57,10 @@ enum class LexerFlag {
   // String and character escape settings.
   // - Both kQuoteQuoteEscape and kEscapeCharacter may be set, in which case
   //   both forms of escaping are allowed in strings.
-  // - kNewlineEscape, kTabEscape, and kHexEscape are only used if
-  //   kEscapeCharacter is set.
+  // - The newline, tab, and hex escapes are enabled by setting their
+  //   characters in LexerConfig, and are only used if kEscapeCharacter is set.
   kQuoteQuoteEscape,  // Allows "" or '' inside similarly quoted strings.
   kEscapeCharacter,   // Escape character provides escape (set in config).
-  kNewlineEscape,     // Allows newline escape character (set in config).
-  kTabEscape,         // Allows tab escape character (set in config).
-  kHexEscape,         // Allows hex escape character (set in config).
   kDecodeEscape,      // Decodes escape sequences for token values.
 
   // Identifier parsing flags.
@@ -131,15 +128,15 @@ inline constexpr LexerFlags kLexerFlags_AllFloats = {
 inline constexpr LexerFlags kLexerFlags_AllFloatFormats = {
     LexerFlag::kDecimalFloats, LexerFlag::kExponentFloats};
 
-// Support C style strings and escaping.
+// Support C style strings and escaping (with the escape characters set in
+// LexerConfig, as in kCStyleLexerConfig).
 inline constexpr LexerFlags kLexerFlags_CStrings = {
-    LexerFlag::kDoubleQuoteString, LexerFlag::kEscapeCharacter,
-    LexerFlag::kNewlineEscape, LexerFlag::kTabEscape, LexerFlag::kHexEscape};
+    LexerFlag::kDoubleQuoteString, LexerFlag::kEscapeCharacter};
 
-// Support C style characters and escaping.
+// Support C style characters and escaping (with the escape characters set in
+// LexerConfig, as in kCStyleLexerConfig).
 inline constexpr LexerFlags kLexerFlags_CCharacters = {
-    LexerFlag::kSingleQuoteCharacter, LexerFlag::kEscapeCharacter,
-    LexerFlag::kNewlineEscape, LexerFlag::kTabEscape, LexerFlag::kHexEscape};
+    LexerFlag::kSingleQuoteCharacter, LexerFlag::kEscapeCharacter};
 
 // Support C style identifiers.
 inline constexpr LexerFlags kLexerFlags_CIdentifiers = {
@@ -210,11 +207,13 @@ struct LexerConfig {
   std::string_view ident_prefix = "";    // Used for identifiers.
   std::string_view ident_suffix = "";    // Used for identifiers.
 
-  // Escape character settings.
-  char escape = 0;          // Used for kCharacterEscaping or kEscapeNewLine.
-  char escape_newline = 0;  // Used for kNewlineEscape.
-  char escape_tab = 0;      // Used for kTabEscape.
-  char escape_hex = 0;      // Used for kHexEscape (followed by 2 hex digits).
+  // Escape character settings, used if kEscapeCharacter is set. Each of the
+  // others follows `escape` to escape a newline, tab, or a character in hex (as
+  // two hex digits), and is disabled if it is 0.
+  char escape = 0;
+  char escape_newline = 0;
+  char escape_tab = 0;
+  char escape_hex = 0;
 
   // Comment settings.
   struct BlockComment {

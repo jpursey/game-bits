@@ -430,9 +430,77 @@ Depends on: CL4.
   VLOG(1), critical as DFATAL, each category's prefix, and unknown priorities
   ignored.
 
-### CL14 [ ] parse: audit gb_parse
+### CL14 [x] parse: audit gb_parse
 
 Depends on: CL4.
+
+- `ParsedItem::GetItems()` of a scoped name ("a.b") whose first part didn't
+  match dereferenced null, as its `return` was missing.
+- `AbslStringify()` of `ParserRules` named a member without its object, so it
+  failed to compile wherever it was used.
+- A `Lexer` kept the caller's view of a filename, not its own copy, so
+  `GetFileContentId()` failed (or read freed memory) once the caller's string
+  changed. Content that failed to add (a line too long) stayed registered under
+  its filename, with an id that parsed garbage token indexes.
+- Content after the first had several bugs from mixing a line within the
+  content with a line within the lexer: `RewindLine()` failed at any line,
+  `RewindToken()` at the start of the content moved into the content before it,
+  and `GetLineText()` of a line out of range returned another content's line.
+- `ParseToken()` of an index from another lexer (one past the tokens parsed on
+  a line, or on the empty line between contents) read past the line's tokens,
+  and `GetTokenLocation()` and `SetNextToken()` of an end index between contents
+  dereferenced null. Token indexes are now checked in one place.
+- An invalid token that started with a character that starts a symbol or
+  comment, but didn't match one (`<x` with only the symbol `<<`), was an empty
+  error token that didn't advance, so the lexer never reached the end.
+- Floats of zero ("0.0") were invalid, as zero isn't a normal float.
+- Binary, octal, and hex integers wider than the bit depth wrapped instead of
+  failing: `0x1FF` at 8 bits was -1.
+- Decoding escapes used the escape character even without `kEscapeCharacter`,
+  so `"a\"` read past the string. An incomplete hex escape (`"\x4"`, `'\x'`),
+  which the lexer accepts as escaping `x`, read past the token when decoded.
+- Comment starts that were a prefix of another (`#` and `#[`, `/*` and `/**`)
+  were accepted, though one hides the other, and the error for them says they
+  are rejected. They now are.
+- `Token::IsUint(value)` was true for a negative integer equal to `value` as
+  unsigned (-1 for `UINT64_MAX`), unlike `IsUint()`.
+- Rules with two rules of the same name (from a parser program, or
+  `ParserRules::AddRule()`) kept the first and ignored the second. They are now
+  invalid.
+- Every `ParserProgram::Create()` validated the shared rules for the program
+  syntax, and the first validation sets their token values, so two first calls
+  on different threads raced. They are validated once when created, with a
+  lexer program that is also created once, rather than on every call.
+- Optimizations: matching a token compared it against a copy of its value
+  (allocating for every string), and `ParserRules::GetRule()` and
+  `ParsedItem::GetItems()` allocated a string to look up each name. None
+  allocate now; the new `Token::HasValue()` compares a value in place. Hex
+  integers parse with `absl::SimpleHexAtoi()`.
+- `LexerFlag::kNewlineEscape`, `kTabEscape`, and `kHexEscape` had no effect,
+  as the `LexerConfig` characters enable those escapes, so they are removed
+  (breaking any config that names them; no project does).
+- Doc fixes: `SetNextToken()` accepts end tokens; `Token::ToString()` returns
+  an error's message; `ParseTokenText()` isn't safe to call at the same time as
+  other const functions; and `Symbol` characters go up to 126. Smaller
+  cleanups: unused locals, a duplicated error check in `Parser::MatchGroup()`,
+  and missing includes in `symbol.h` and `parse_result.h`.
+- Backlog item: *Parser rules shared between threads* (validating rules writes
+  to them).
+- Left as is: decoded strings, escaped characters, and forced-case identifiers
+  are stored again each time a token is parsed again after the parser backs
+  up, so memory grows with parsing work (bounded per token only by caching
+  per token, which a block comment re-tokenizing a line complicates); and a
+  symbol longer than 7 characters is silently truncated by `Symbol`.
+
+**Verify**
+- Standard checks.
+- Unit tests: scoped item names that don't match, stringifying rules, a copied
+  filename, a failed add, lines and rewinds in a later content, token indexes
+  from another lexer, an invalid token at an unmatched symbol or comment start,
+  zero floats, non-decimal integers beyond the bit depth, `IsUint()` of a
+  negative integer, `Token::HasValue()`, decoding without an escape character
+  and with incomplete hex escapes, comment starts that prefix another, and
+  duplicate rule names, in a program and in `ParserRules`.
 
 ### CL15 [ ] config: audit gb_config
 

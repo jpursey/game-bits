@@ -1101,5 +1101,29 @@ TEST(ParserTest, ExplicitError) {
   EXPECT_THAT(result.GetError().GetLocation(), IsLocation(content, 0, 22));
 }
 
+TEST(ParserTest, ScopedItemNames) {
+  std::string error;
+  auto parser = Parser::Create(ParserProgram::Create(kCStyleLexerConfig, R"(
+    Program {
+      $outer=Inner %end;
+    }
+    Inner {
+      $name=%ident;
+    }
+  )",
+                                                     &error));
+  ASSERT_NE(parser, nullptr) << "Error: " << error;
+  LexerContentId content = parser->GetLexer().AddContent("abc");
+  ParseResult result = parser->Parse(content, "Program");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_EQ(result->GetString("outer.name"), "abc");
+  EXPECT_THAT(result->GetItems("outer.name"),
+              ElementsAre(IsToken(kTokenIdentifier, "abc")));
+  EXPECT_THAT(result->GetItems("outer.missing"), IsEmpty());
+  EXPECT_THAT(result->GetItems("missing.name"), IsEmpty());
+  EXPECT_THAT(result->GetItems("outer.name.more"), IsEmpty());
+  EXPECT_EQ(result->GetItem("missing.name"), nullptr);
+}
+
 }  // namespace
 }  // namespace gb

@@ -5,9 +5,13 @@
 
 #include "gb/parse/lexer.h"
 
+#include <cmath>
+
 #include "absl/container/flat_hash_set.h"
 #include "absl/log/log.h"
 #include "absl/memory/memory.h"
+#include "absl/strings/ascii.h"
+#include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_replace.h"
 #include "absl/strings/str_split.h"
@@ -118,12 +122,7 @@ std::tuple<Lexer::Content*, Lexer::Line*> Lexer::GetContentLine(
 
 LexerContentId Lexer::AddFileContent(std::string_view filename,
                                      std::string text) {
-  const LexerContentId id = GetContentId(content_.size());
-  content_.emplace_back(std::make_unique<Content>(filename, std::move(text)));
-  Content* content = content_.back().get();
-  if (!filename.empty()) {
-    filename_to_id_[filename] = id;
-  }
+  auto content = std::make_unique<Content>(filename, std::move(text));
 
   // Sanitize line endings in the content.
   absl::StrReplaceAll({{"\r\n", "\n"}, {"\r", "\n"}}, &content->text);
@@ -148,6 +147,7 @@ LexerContentId Lexer::AddFileContent(std::string_view filename,
     }
   }
 
+  const LexerContentId id = GetContentId(content_.size());
   content->start_line = lines_.size();
   content->end_line = content->start_line + lines.size();
   lines_.reserve(content->end_line + 2);
@@ -155,6 +155,10 @@ LexerContentId Lexer::AddFileContent(std::string_view filename,
     lines_.emplace_back(id, line);
   }
   lines_.emplace_back(kNoLexerContent, "");
+  if (!content->filename.empty()) {
+    filename_to_id_[content->filename] = id;
+  }
+  content_.push_back(std::move(content));
   return id;
 }
 
@@ -205,23 +209,17 @@ int Lexer::GetLineCount(LexerContentId id) const {
 
 std::string_view Lexer::GetLineText(LexerContentId id, int line_index) const {
   const Content* content = GetContent(id);
-  if (content == nullptr) {
+  if (content == nullptr || line_index < 0 ||
+      line_index >= content->end_line - content->start_line) {
     return {};
   }
-  const Line* line = GetLine(content->start_line + line_index);
-  if (line == nullptr) {
-    return {};
-  }
-  return line->line;
+  return lines_[content->start_line + line_index].line;
 }
 
 LexerLocation Lexer::GetLineLocation(LexerContentId id, int line_index) const {
   const Content* content = GetContent(id);
-  if (content == nullptr) {
-    return {};
-  }
-  const Line* line = GetLine(content->start_line + line_index);
-  if (line == nullptr || line->id != id) {
+  if (content == nullptr || line_index < 0 ||
+      line_index >= content->end_line - content->start_line) {
     return {};
   }
   return {
@@ -256,11 +254,26 @@ bool Lexer::RewindLine(LexerContentId id) {
     content->token = 0;
     return true;
   }
-  if (content->line <= content->start_line) {
+  if (content->line <= 0) {
     return false;
   }
   --content->line;
   return true;
+}
+
+const Lexer::Line* Lexer::GetTokenLine(TokenIndex index) const {
+  const Line* line = GetLine(index.line);
+  if (line == nullptr || line->id == kNoLexerContent) {
+    return nullptr;
+  }
+  if (index.token < line->tokens.size()) {
+    return line;
+  }
+  if (index.token == kTokenIndexEndToken &&
+      static_cast<int>(index.line) == GetContent(line->id)->end_line - 1) {
+    return line;
+  }
+  return nullptr;
 }
 
 LexerLocation Lexer::GetTokenLocation(const Token& token) const {
@@ -268,20 +281,14 @@ LexerLocation Lexer::GetTokenLocation(const Token& token) const {
 }
 
 LexerLocation Lexer::GetTokenLocation(TokenIndex index) const {
-  const Line* line = GetLine(index.line);
+  const Line* line = GetTokenLine(index);
   if (line == nullptr) {
     return {};
   }
-  int column;
-  if (index.token < line->tokens.size()) {
-    column = static_cast<int>(line->tokens[index.token].column);
-  } else if (index.token == kTokenIndexEndToken) {
-    column = line->line.size();
-  } else {
-    return {};
-  }
+  const int column = (index.token == kTokenIndexEndToken
+                          ? static_cast<int>(line->line.size())
+                          : static_cast<int>(line->tokens[index.token].column));
   const Content* content = GetContent(line->id);
-  DCHECK(content != nullptr);
   return {.id = line->id,
           .filename = content->filename,
           .line = static_cast<int>(index.line) - content->start_line,
@@ -293,15 +300,12 @@ std::string_view Lexer::GetTokenText(const Token& token) const {
 }
 
 std::string_view Lexer::GetTokenText(TokenIndex index) const {
-  const Line* line = GetLine(index.line);
-  if (line == nullptr) {
+  const Line* line = GetTokenLine(index);
+  if (line == nullptr || index.token == kTokenIndexEndToken) {
     return {};
   }
-  if (index.token < line->tokens.size()) {
-    const TokenInfo token_info = line->tokens[index.token];
-    return line->line.substr(token_info.column, token_info.size);
-  }
-  return {};
+  const TokenInfo token_info = line->tokens[index.token];
+  return line->line.substr(token_info.column, token_info.size);
 }
 
 Token Lexer::ParseTokenText(std::string_view token_text) const {
@@ -323,7 +327,6 @@ Token Lexer::ParseTokenText(std::string_view token_text) const {
     LOG(DFATAL) << "Token found without a token type match";
     return Token::CreateError(kInvalidTokenIndex, &kErrorInternal);
   }
-  Token token;
   switch (match->type) {
     case kTokenInt:
       return ParseInt(kInvalidTokenIndex, match->text, match->int_parse_type);
@@ -349,15 +352,12 @@ Token Lexer::ParseTokenText(std::string_view token_text) const {
 
 bool Lexer::SetNextToken(Token token) {
   const TokenIndex index = token.GetTokenIndex();
-  const Line* line = GetLine(index.line);
-  if (line == nullptr || (index.token >= line->tokens.size() &&
-                          index.token != kTokenIndexEndToken)) {
+  const Line* line = GetTokenLine(index);
+  if (line == nullptr) {
     return false;
   }
   Content* content = GetContent(line->id);
-  DCHECK(content != nullptr);
   if (index.token == kTokenIndexEndToken) {
-    DCHECK(index.line == content->end_line - 1);
     content->line = content->end_line - content->start_line;
     content->token = 0;
     last_token_ = token;
@@ -370,12 +370,12 @@ bool Lexer::SetNextToken(Token token) {
 }
 
 Token Lexer::ParseToken(TokenIndex index) {
-  const Line* line = GetLine(index.line);
-  if (line == nullptr || index.token > line->tokens.size()) {
-    if (index.token == kTokenIndexEndToken) {
-      return Token::CreateEnd(index);
-    }
+  const Line* line = GetTokenLine(index);
+  if (line == nullptr) {
     return Token::CreateError(kInvalidTokenIndex, &kErrorInvalidTokenContent);
+  }
+  if (index.token == kTokenIndexEndToken) {
+    return Token::CreateEnd(index);
   }
   if (index == last_token_.GetTokenIndex()) {
     return last_token_;
@@ -452,107 +452,78 @@ Token Lexer::ParseNextSymbol(Content* content, Line* line, bool advance) {
 
 Token Lexer::ParseInt(TokenIndex token_index, std::string_view text,
                       IntParseType int_parse_type) const {
-  int64_t value = 0;
+  uint64_t value = 0;
   switch (int_parse_type) {
     case IntParseType::kDefault: {
       std::string_view digits =
           text.substr(state_.decimal_config.prefix,
                       text.size() - state_.decimal_config.size_offset);
-      if (!absl::SimpleAtoi(digits, &value)) {
+      int64_t decimal_value = 0;
+      if (!absl::SimpleAtoi(digits, &decimal_value) ||
+          decimal_value < state_.min_int || decimal_value > state_.max_int) {
         return Token::CreateError(token_index, &kErrorInvalidInteger);
       }
-    } break;
+      return Token::CreateInt(token_index, decimal_value);
+    }
     case IntParseType::kHex: {
-      uint64_t hex_value = 0;
       std::string_view digits =
           text.substr(state_.hex_config.prefix,
                       text.size() - state_.hex_config.size_offset);
-      for (char ch : digits) {
-        if (hex_value >> 60 != 0) {
-          return Token::CreateError(token_index, &kErrorInvalidInteger);
-        }
-        hex_value <<= 4;
-        if (ch >= '0' && ch <= '9') {
-          hex_value |= ch - '0';
-        } else if (ch >= 'A' && ch <= 'F') {
-          hex_value |= ch - 'A' + 10;
-        } else if (ch >= 'a' && ch <= 'f') {
-          hex_value |= ch - 'a' + 10;
-        }
+      if (!absl::SimpleHexAtoi(digits, &value)) {
+        return Token::CreateError(token_index, &kErrorInvalidInteger);
       }
-      // This is now defined behavior to 2's compliment starting in C++20.
-      if (hex_value > static_cast<uint64_t>(state_.max_int)) {
-        hex_value |= state_.int_sign_extend;
-      }
-      value = hex_value;
     } break;
     case IntParseType::kOctal: {
-      uint64_t octal_value = 0;
       std::string_view digits =
           text.substr(state_.octal_config.prefix,
                       text.size() - state_.octal_config.size_offset);
       for (char ch : digits) {
-        if (octal_value >> 61 != 0) {
+        if (value >> 61 != 0) {
           return Token::CreateError(token_index, &kErrorInvalidInteger);
         }
-        octal_value <<= 3;
+        value <<= 3;
         if (ch >= '0' && ch <= '7') {
-          octal_value |= ch - '0';
+          value |= ch - '0';
         }
       }
-      // This is now defined behavior to 2's compliment starting in C++20.
-      if (octal_value > static_cast<uint64_t>(state_.max_int)) {
-        octal_value |= state_.int_sign_extend;
-      }
-      value = octal_value;
     } break;
     case IntParseType::kBinary: {
-      uint64_t binary_value = 0;
       std::string_view digits =
           text.substr(state_.binary_config.prefix,
                       text.size() - state_.binary_config.size_offset);
       for (char ch : digits) {
-        if (binary_value >> 63 != 0) {
+        if (value >> 63 != 0) {
           return Token::CreateError(token_index, &kErrorInvalidInteger);
         }
-        binary_value <<= 1;
+        value <<= 1;
         if (ch == '1') {
-          binary_value |= 1;
+          value |= 1;
         }
       }
-      // This is now defined behavior to 2's compliment starting in C++20.
-      if (binary_value > static_cast<uint64_t>(state_.max_int)) {
-        binary_value |= state_.int_sign_extend;
-      }
-      value = binary_value;
     } break;
   }
-  if (value < state_.min_int || value > state_.max_int) {
+
+  // Binary, octal, and hex values are unsigned at the lexer's bit depth, so
+  // they must fit in that many bits, and are negative if the top bit is set.
+  if ((value & state_.int_sign_extend) != 0) {
     return Token::CreateError(token_index, &kErrorInvalidInteger);
   }
-  return Token::CreateInt(token_index, value);
-}
-
-Token Lexer::ParseFloat(TokenIndex token_index, std::string_view text) const {
-  std::string_view digits =
-      text.substr(state_.float_config.prefix,
-                  text.size() - state_.float_config.size_offset);
-  if (state_.flags.IsSet(LexerFlag::kFloat64)) {
-    double value = 0;
-    if (!absl::SimpleAtod(digits, &value) || !std::isnormal(value)) {
-      return Token::CreateError(token_index, &kErrorInvalidFloat);
-    }
-    return Token::CreateFloat(token_index, value);
-  } else {
-    float value = 0;
-    if (!absl::SimpleAtof(digits, &value) || !std::isnormal(value)) {
-      return Token::CreateError(token_index, &kErrorInvalidFloat);
-    }
-    return Token::CreateFloat(token_index, value);
+  if (value > static_cast<uint64_t>(state_.max_int)) {
+    value |= state_.int_sign_extend;
   }
+  return Token::CreateInt(token_index, static_cast<int64_t>(value));
 }
 
 namespace {
+
+// Returns true if `digits` is a float with a value of zero, which is valid
+// even though it isn't a normal float. A value too small for the bit depth
+// also parses as zero, but isn't valid.
+bool IsZeroFloat(std::string_view digits) {
+  return digits.substr(0, digits.find_first_of("eE"))
+             .find_first_not_of("-0.") == std::string_view::npos;
+}
+
 unsigned char ToHex(char ch) {
   if (absl::ascii_isdigit(ch)) {
     return ch - '0';
@@ -565,7 +536,37 @@ unsigned char ToHex(char ch) {
   }
   return 0;
 }
+
+// Returns true if `text` starts with a hex escape: an escape character, then
+// `escape_hex` and two hex digits. Without both digits, `escape_hex` is escaped
+// like any other character.
+bool StartsWithHexEscape(std::string_view text, char escape_hex) {
+  return escape_hex != 0 && text.size() >= 4 && text[1] == escape_hex &&
+         absl::ascii_isxdigit(text[2]) && absl::ascii_isxdigit(text[3]);
+}
+
 }  // namespace
+
+Token Lexer::ParseFloat(TokenIndex token_index, std::string_view text) const {
+  std::string_view digits =
+      text.substr(state_.float_config.prefix,
+                  text.size() - state_.float_config.size_offset);
+  if (state_.flags.IsSet(LexerFlag::kFloat64)) {
+    double value = 0;
+    if (!absl::SimpleAtod(digits, &value) ||
+        !(std::isnormal(value) || IsZeroFloat(digits))) {
+      return Token::CreateError(token_index, &kErrorInvalidFloat);
+    }
+    return Token::CreateFloat(token_index, value);
+  } else {
+    float value = 0;
+    if (!absl::SimpleAtof(digits, &value) ||
+        !(std::isnormal(value) || IsZeroFloat(digits))) {
+      return Token::CreateError(token_index, &kErrorInvalidFloat);
+    }
+    return Token::CreateFloat(token_index, value);
+  }
+}
 
 Token Lexer::ParseChar(TokenIndex token_index, std::string_view text) const {
   DCHECK(text.size() >= 3);
@@ -584,8 +585,7 @@ Token Lexer::ParseChar(TokenIndex token_index, std::string_view text) const {
     DCHECK(char_text.size() == 2);
     return Token::CreateChar(token_index, "\t", 1);
   }
-  if (state_.escape_hex != 0 && char_text[1] == state_.escape_hex) {
-    DCHECK(char_text.size() == 4);
+  if (StartsWithHexEscape(char_text, state_.escape_hex)) {
     const char hex = ToHex(char_text[2]) << 4 | ToHex(char_text[3]);
     std::string& str =
         *modified_text_.emplace_back(std::make_unique<std::string>(1, hex));
@@ -620,8 +620,7 @@ Token Lexer::ParseString(TokenIndex token_index, std::string_view text) const {
     } else if (state_.escape_tab != 0 && char_text[1] == state_.escape_tab) {
       absl::StrAppend(&str, "\t");
       char_text.remove_prefix(2);
-    } else if (state_.escape_hex != 0 && char_text[1] == state_.escape_hex) {
-      DCHECK(char_text.size() >= 4);
+    } else if (StartsWithHexEscape(char_text, state_.escape_hex)) {
       const char hex = ToHex(char_text[2]) << 4 | ToHex(char_text[3]);
       absl::StrAppend(&str, std::string_view(&hex, 1));
       char_text.remove_prefix(4);
@@ -860,7 +859,10 @@ Token Lexer::NextToken(LexerContentId id, bool advance) {
     if (advance) {
       ++content->token;
     }
+    // The error covers at least the first character, which may start a symbol
+    // or comment that didn't match, so the next token starts after it.
     const char* token_start = line->remain.data();
+    line->remain.remove_prefix(1);
     RE2::Consume(&line->remain, *state_.re_not_token_end);
     line->tokens.emplace_back(token_start - line->line.data(),
                               line->remain.data() - token_start, kTokenError);
@@ -876,15 +878,14 @@ bool Lexer::RewindToken(LexerContentId id) {
   if (content == nullptr) {
     return false;
   }
-  Line* line = GetLine(content->GetLineIndex());
   --content->token;
   while (content->token < 0) {
-    if (content->line == content->start_line) {
+    if (content->line == 0) {
       content->token = 0;
       return false;
     }
     --content->line;
-    Line* line = GetLine(content->GetLineIndex());
+    const Line* line = GetLine(content->GetLineIndex());
     if (line->tokens.empty()) {
       continue;
     }

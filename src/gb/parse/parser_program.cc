@@ -45,7 +45,7 @@ constexpr LexerConfig kProgramLexerConfig = {
     .user_tokens = kProgramUserTokens,
 };
 
-std::shared_ptr<const ParserRules> CreateProgramRules() {
+std::shared_ptr<const ParserRules> CreateProgramRules(Lexer& lexer) {
   auto rules = std::make_shared<ParserRules>();
 
   // %token_type = 0;
@@ -181,6 +181,13 @@ std::shared_ptr<const ParserRules> CreateProgramRules() {
       ParserRuleItem::CreateToken(kTokenSymbol, ")"));
   group_item_inner->AddSubItem(std::move(group_item_inner_group));
   rules->AddRule("group_item_inner", std::move(group_item_inner));
+
+  // Validating rules sets their tokens' values, so it is done once here, and
+  // later validations by concurrent ParseProgram() calls only read them.
+  std::string error;
+  if (!rules->Validate(lexer, &error)) {
+    LOG(DFATAL) << "Internal error: " << error;
+  }
 
   return std::move(rules);
 }
@@ -351,10 +358,16 @@ std::unique_ptr<const ParserRules> ParseProgram(Lexer& lexer,
   context.token_types["ident"] = kTokenIdentifier;
   context.token_types["linebreak"] = kTokenLineBreak;
 
-  static absl::NoDestructor<std::shared_ptr<const ParserRules>> program_rules(
-      CreateProgramRules());
-  auto program_parser =
-      Parser::Create(kProgramLexerConfig, *program_rules, &context.error);
+  static const absl::NoDestructor<std::shared_ptr<const LexerProgram>>
+      program_lexer(LexerProgram::Create(kProgramLexerConfig));
+  if (*program_lexer == nullptr) {
+    LOG(DFATAL) << "Internal error: invalid program lexer config";
+    return nullptr;
+  }
+  static const absl::NoDestructor<std::shared_ptr<const ParserRules>>
+      program_rules(CreateProgramRules(*Lexer::Create(*program_lexer)));
+  auto program_parser = Parser::Create(Lexer::Create(*program_lexer),
+                                       *program_rules, &context.error);
   if (program_parser == nullptr) {
     LOG(DFATAL) << "Internal error: " << context.error;
     return nullptr;
