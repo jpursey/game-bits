@@ -5,6 +5,9 @@
 
 #include "gb/collide/intersect.h"
 
+#include <cmath>
+#include <limits>
+
 #undef _CRT_SECURE_NO_WARNINGS
 #include "absl/log/check.h"
 #include "ccd/ccd.h"
@@ -13,42 +16,58 @@ namespace gb {
 
 namespace {
 
-inline bool IsNormalized(const glm::vec3& v) {
-  const float dist_sq = glm::dot(v, v);
-  return dist_sq > 1.0f - kCEpsilon && dist_sq < 1.0f + kCEpsilon;
-}
+// Allows for the rounding error in a normalized float vector, which is several
+// times the float epsilon.
+constexpr float kNormalizedEpsilon = 0.00001f;
 
 inline float LengthSquared(const glm::vec3& v) { return glm::dot(v, v); }
 
-// Returns true if the point is in the sphere and calculates the squared
-// distance of that point to the center of the sphere.
-bool IsPointInSphereImpl(const glm::vec3& p, const glm::vec3& center,
-                         float radius_sq) {
-  return LengthSquared(p - center) < radius_sq;
+inline bool IsNormalized(const glm::vec3& v) {
+  return std::abs(LengthSquared(v) - 1.0f) < kNormalizedEpsilon;
 }
 
+// Returns true if the point is in (or on) the sphere of the squared radius.
+bool IsPointInSphereImpl(const glm::vec3& p, const glm::vec3& center,
+                         float radius_sq) {
+  return LengthSquared(p - center) <= radius_sq;
+}
+
+// Returns true if the infinite line through origin along dir passes within the
+// squared radius of the center. dir must not be zero.
+//
+// The squared distance from the line is |to_center x dir|^2 / |dir|^2, so this
+// compares without dividing.
+bool IsLineThroughSphere(const glm::vec3& to_center, const glm::vec3& dir,
+                         float radius_sq) {
+  return LengthSquared(glm::cross(to_center, dir)) <=
+         radius_sq * LengthSquared(dir);
+}
+
+// Returns true if the ray hits the sphere. dir need not be normalized.
 bool IsRayInSphere(const glm::vec3& origin, const glm::vec3& dir,
-                   const glm::vec3& center, float radius_sq, float& t) {
-  t = glm::dot(center - origin, dir);
-  if (t < 0.0f) {
-    // Closest point is before the ray origin, so check if the ray origin is in
-    // the sphere.
-    return IsPointInSphereImpl(origin, center, radius_sq);
+                   const glm::vec3& center, float radius_sq) {
+  const glm::vec3 to_center = center - origin;
+  if (glm::dot(to_center, dir) <= 0.0f) {
+    // The closest point on the ray is its origin (which includes a zero dir).
+    return LengthSquared(to_center) <= radius_sq;
   }
-  // The closest point on the ray to the sphere center is beyond the start of
-  // the ray. If the closest point is is within the radius of the sphere, we
-  // have a hit.
-  return IsPointInSphereImpl(origin + dir * t, center, radius_sq);
+  return IsLineThroughSphere(to_center, dir, radius_sq);
 }
 
 bool IsLineInSphere(const glm::vec3& l0, const glm::vec3& l1,
                     const glm::vec3& center, float radius_sq) {
-  float t;
   const glm::vec3 dir = l1 - l0;
-  if (!IsRayInSphere(l0, dir, center, radius_sq, t)) {
-    return false;
+  const glm::vec3 to_center = center - l0;
+  const float along = glm::dot(to_center, dir);
+  if (along <= 0.0f) {
+    // The closest point on the segment is l0 (which includes a zero length).
+    return LengthSquared(to_center) <= radius_sq;
   }
-  return t < 1.0f || IsPointInSphereImpl(l1, center, radius_sq);
+  if (along >= LengthSquared(dir)) {
+    // The closest point on the segment is l1.
+    return IsPointInSphereImpl(l1, center, radius_sq);
+  }
+  return IsLineThroughSphere(to_center, dir, radius_sq);
 }
 
 glm::vec3 SphereSupport(const CSphere& sphere, const glm::vec3& dir) {
@@ -83,6 +102,7 @@ void CapsuleCcdSupport(const void* obj, const ccd_vec3_t* dir,
 }
 
 glm::vec3 PointCloudSupport(const CPointCloud& points, const glm::vec3& dir) {
+  DCHECK(!points.points.empty());
   glm::vec3 result = {};
   float max_dot = std::numeric_limits<float>::lowest();
   for (const glm::vec3& point : points.points) {
@@ -105,17 +125,26 @@ void PointCloudCcdSupport(const void* obj, const ccd_vec3_t* dir,
   vec->v[2] = result.z;
 }
 
+// Returns the libccd settings to collide two shapes with the support functions.
+ccd_t CreateCcd(ccd_support_fn support1, ccd_support_fn support2) {
+  ccd_t ccd;
+  CCD_INIT(&ccd);
+  ccd.support1 = support1;
+  ccd.support2 = support2;
+  ccd.max_iterations = 100;
+  return ccd;
+}
+
 }  // namespace
 
 bool IsPointInTriangle(const glm::vec3& p, const glm::vec3& v0,
                        const glm::vec3& v1, const glm::vec3& v2) {
-  const glm::vec3 ov0 = v0 - p;
-  const glm::vec3 ov1 = v1 - p;
-  const glm::vec3 ov2 = v2 - p;
-  const glm::vec3 n0 = glm::cross(ov1, ov2);
-  const glm::vec3 n1 = glm::cross(ov2, ov0);
-  const glm::vec3 n2 = glm::cross(ov0, ov1);
-  return glm::dot(n0, n1) >= 0.0f && glm::dot(n0, n2) >= 0.0f;
+  // The point is inside if it is on the inner side of each edge, which is the
+  // side where the edge and the point wind the same way as the triangle.
+  const glm::vec3 normal = glm::cross(v1 - v0, v2 - v0);
+  return glm::dot(glm::cross(v1 - v0, p - v0), normal) >= 0.0f &&
+         glm::dot(glm::cross(v2 - v1, p - v1), normal) >= 0.0f &&
+         glm::dot(glm::cross(v0 - v2, p - v2), normal) >= 0.0f;
 }
 
 bool IsPointInSphere(const glm::vec3& p, const glm::vec3& center,
@@ -156,8 +185,7 @@ bool RayHitsTriangleAt(const glm::vec3& origin, const glm::vec3& dir,
 
 bool RayHitsSphere(const glm::vec3& origin, const glm::vec3& dir,
                    const glm::vec3& center, float radius) {
-  float t;
-  return IsRayInSphere(origin, dir, center, radius * radius, t);
+  return IsRayInSphere(origin, dir, center, radius * radius);
 }
 
 bool LineHitsSphere(const glm::vec3& l0, const glm::vec3& l1,
@@ -170,45 +198,32 @@ bool SphereHitsTriangle(const glm::vec3& center, float radius,
                         const glm::vec3& v2, const glm::vec3& normal) {
   DCHECK(IsNormalized(normal));
 
-  // Quick reject. If we don't intersect the plane, then we don't intersect the
-  // triangle.
+  // Quick reject. If we don't intersect the plane (from either side), then we
+  // don't intersect the triangle.
   const float plane_distance = glm::dot(normal, center - v0);
-  if (plane_distance > radius - kCEpsilon) {
+  if (std::abs(plane_distance) > radius) {
     return false;
   }
 
-  const float radius_sq = radius * radius - kCEpsilon;
+  const float radius_sq = radius * radius;
   return
-      // If any triangle corner is in the sphere, then we intersect.
-      IsPointInSphereImpl(v0, center, radius_sq) ||
-      IsPointInSphereImpl(v1, center, radius_sq) ||
-      IsPointInSphereImpl(v2, center, radius_sq) ||
-      // If the sphere's intersection with the plane is in the triangle, then we
-      // intersect.
-      IsPointInTriangle(center - normal * plane_distance, v0, v1, v2) ||
-      // Now we need to check each triangle edge. If any edge intersects the
-      // sphere, then we intersect, otherwise we do not.
+      // If the center projects onto the triangle, then we intersect.
+      IsPointInTriangle(center, v0, v1, v2) ||
+      // Otherwise we intersect only if an edge (including its end points)
+      // intersects the sphere.
       IsLineInSphere(v0, v1, center, radius_sq) ||
       IsLineInSphere(v0, v2, center, radius_sq) ||
       IsLineInSphere(v1, v2, center, radius_sq);
 }
 
 bool SphereHitsCapsule(const CSphere& a, const CCapsule& b) {
-  ccd_t ccd;
-  CCD_INIT(&ccd);
-  ccd.support1 = SphereCcdSupport;
-  ccd.support2 = CapsuleCcdSupport;
-  ccd.max_iterations = 100;
+  const ccd_t ccd = CreateCcd(SphereCcdSupport, CapsuleCcdSupport);
   return ccdGJKIntersect(&a, &b, &ccd);
 }
 
 bool SphereHitsConvexMesh(const CSphere& a, const CPointCloud& b,
                           CollisionInfo* result) {
-  ccd_t ccd;
-  CCD_INIT(&ccd);
-  ccd.support1 = SphereCcdSupport;
-  ccd.support2 = PointCloudCcdSupport;
-  ccd.max_iterations = 100;
+  const ccd_t ccd = CreateCcd(SphereCcdSupport, PointCloudCcdSupport);
   if (result == nullptr) {
     return ccdGJKIntersect(&a, &b, &ccd);
   }
@@ -221,20 +236,12 @@ bool SphereHitsConvexMesh(const CSphere& a, const CPointCloud& b,
 }
 
 bool CapsuleHitsCapsule(const CCapsule& a, const CCapsule& b) {
-  ccd_t ccd;
-  CCD_INIT(&ccd);
-  ccd.support1 = CapsuleCcdSupport;
-  ccd.support2 = CapsuleCcdSupport;
-  ccd.max_iterations = 100;
+  const ccd_t ccd = CreateCcd(CapsuleCcdSupport, CapsuleCcdSupport);
   return ccdGJKIntersect(&a, &b, &ccd);
 }
 
 bool CapsuleHitsConvexMesh(const CCapsule& a, const CPointCloud& b) {
-  ccd_t ccd;
-  CCD_INIT(&ccd);
-  ccd.support1 = CapsuleCcdSupport;
-  ccd.support2 = PointCloudCcdSupport;
-  ccd.max_iterations = 100;
+  const ccd_t ccd = CreateCcd(CapsuleCcdSupport, PointCloudCcdSupport);
   return ccdGJKIntersect(&a, &b, &ccd);
 }
 

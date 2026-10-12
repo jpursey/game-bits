@@ -10,13 +10,19 @@ set(gb_collide_SOURCE
 
 set(gb_collide_DEPS
   absl::base
+  absl::check
+  absl::log
+  absl::span
   ccd
 )
 
-set (gb_collide_LIBS
+set(gb_collide_LIBS
   glm
-  absl::check
-  absl::log
+)
+
+set(gb_collide_TEST_SOURCE
+  intersect_test.cc
+  shapes_test.cc
 )
 
 gb_add_library(gb_collide)

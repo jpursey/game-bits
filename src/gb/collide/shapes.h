@@ -3,10 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef GB_COLLIDE_SHAPES_H
-#define GB_COLLIDE_SHAPES_H
-
-#include <algorithm>
+#ifndef GB_COLLIDE_SHAPES_H_
+#define GB_COLLIDE_SHAPES_H_
 
 #include "absl/types/span.h"
 #include "glm/glm.hpp"
@@ -17,13 +15,15 @@ namespace gb {
 // Convenience methods to calculate properties of a shape
 //==============================================================================
 
-// Assumes counterclockwise order of vertices.
+// Returns the normalized normal of the front face of a triangle, whose vertices
+// are in counterclockwise order when seen from the front. The triangle must not
+// be degenerate (with all three vertices on a line).
 inline glm::vec3 GetTriangleNormal(const glm::vec3& v0, const glm::vec3& v1,
                                    const glm::vec3& v2) {
   return glm::normalize(glm::cross(v2 - v0, v0 - v1));
 }
 
-// Returns the point which is the component-wise minimum for of set of points.
+// Returns the point which is the component-wise minimum of a set of points.
 inline glm::vec3 GetMinBounds(const glm::vec3& a, const glm::vec3& b) {
   return glm::min(a, b);
 }
@@ -32,7 +32,7 @@ inline glm::vec3 GetMinBounds(const glm::vec3& a, const glm::vec3& b,
   return glm::min(glm::min(a, b), c);
 }
 
-// Returns the point which is the component-wise maximum for of set of points.
+// Returns the point which is the component-wise maximum of a set of points.
 inline glm::vec3 GetMaxBounds(const glm::vec3& a, const glm::vec3& b) {
   return glm::max(a, b);
 }
@@ -52,8 +52,7 @@ inline glm::vec3 GetMaxBounds(const glm::vec3& a, const glm::vec3& b,
 
 // A ray is defined by an origin point and direction vector.
 //
-// For most collision functions, the direction vector must be normalized. If it
-// does *not* need to be normalized, that will be noted in the function docs.
+// The direction vector does not need to be normalized.
 struct CRay {
   CRay() = default;
   CRay(const glm::vec3& in_origin, const glm::vec3& in_dir)
@@ -89,7 +88,7 @@ struct CTriangle {
 // A triangle defined by three vertices and a normal.
 //
 // This is the same as CTriangle but also stores the normal for the triangle.
-// For use with collision routines, the normal must be normalizes and correct
+// For use with collision routines, the normal must be normalized and correct
 // for the stored vertices.
 struct CNormalTriangle : CTriangle {
   CNormalTriangle() = default;
@@ -116,21 +115,21 @@ struct CSphere {
   float radius;
 };
 
-// A capsule is defined by two points and a radius,
+// A capsule is defined by two points and a radius.
 struct CCapsule {
   CCapsule() = default;
   CCapsule(const glm::vec3& v0, const glm::vec3& v1, float in_radius)
       : vertex{v0, v1}, radius(in_radius) {}
-  CCapsule(glm::vec3 v[2], float in_radius)
+  CCapsule(const glm::vec3 v[2], float in_radius)
       : vertex{v[0], v[1]}, radius(in_radius) {}
 
   glm::vec3 vertex[2];
   float radius;
 };
 
-// A point cloud is can be used to define a convex polytope in simple collision
+// A point cloud can be used to define a convex polytope in simple collision
 // tests where additional topology specification is not needed (like GJK and MPR
-// collision).
+// collision). It must have at least one point.
 struct CPointCloud {
   CPointCloud() = default;
   explicit CPointCloud(absl::Span<const glm::vec3> in_points)
@@ -156,4 +155,4 @@ struct CAabb {
 
 }  // namespace gb
 
-#endif  // GB_COLLIDE_SHAPES_H
+#endif  // GB_COLLIDE_SHAPES_H_

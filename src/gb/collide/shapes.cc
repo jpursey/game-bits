@@ -5,8 +5,6 @@
 
 #include "gb/collide/shapes.h"
 
-#include <algorithm>
-
 namespace gb {
 
 CAabb::CAabb(const CLine& line)

@@ -555,9 +555,67 @@ Depends on: CL14.
   wrapping of long values and after a multi-line value, keyword map keys, and
   reading with every flag combination on several threads at once.
 
-### CL16 [ ] collide: audit gb_collide
+### CL16 [x] collide: audit gb_collide
 
 Depends on: CL4.
+
+- `gb_collide` had no tests; it now has them for every shape and intersection.
+- `SphereHitsSphere()` compared the squared distance to the product of the
+  radii rather than the square of their sum, so most overlapping spheres
+  missed (two unit spheres 1.5 apart).
+- The `RayHitsTriangleAt()` and `RayHitsNormalTriangleAt()` overloads that
+  return a position never returned on a hit (undefined behavior), so the
+  `Intersects()` overloads of a ray and triangle with a position did too.
+  Nothing called them, so the compiler never reported it.
+- Ray / sphere intersection found the closest point on the ray as if its
+  direction were normalized. `RayHitsSphere()` was wrong for any other
+  direction (its docs said it needn't be normalized), and `LineHitsSphere()`,
+  whose direction is the segment, was wrong for any segment not of length 1.
+  `SphereHitsTriangle()` uses it for the triangle's edges, so it missed spheres
+  that only touch an edge. It now compares the distance from the line with a
+  cross product, which needs no division.
+- `IsPointInTriangle()` was true for any point on the line through the second
+  and third vertices, past either end, so `SphereHitsTriangle()` hit spheres
+  beside a corner whose center was on that line.
+- Touching shapes intersected for some pairs and not others (a point on a
+  sphere's surface was outside it, touching spheres intersected, touching
+  boxes didn't, and a sphere touching a triangle's plane missed). Touching
+  shapes now always intersect, as libccd's GJK mostly treats them (within its
+  tolerance of about 0.0001), and as a ray through the edge shared by two
+  triangles must, so meshes have no cracks. A ray or line starting on a
+  triangle still misses it, so a ray cast from a surface doesn't hit it.
+- `SphereHitsTriangle()` only rejected spheres in front of the triangle's
+  plane, so a sphere far behind a triangle hit it. It also DCHECK failed in
+  debug builds for most normals from `GetTriangleNormal()`, as its check that
+  the normal is normalized allowed less error than a float has.
+- `Intersects()` of a point with a triangle or sphere took the shape by
+  non-const reference, and `CCapsule` took a non-const array, so neither
+  worked with const shapes.
+- Docs: `IsPointInTriangle()` tests a point off the plane by its projection,
+  rays never need a normalized direction, `GetTriangleNormal()` needs a
+  non-degenerate triangle, and a point cloud needs a point (now a DCHECK, as
+  an empty one collided as a point at the origin). Removed docs of
+  parameters that don't exist, and fixed typos. Smaller cleanups: include
+  guards named as in the rest of Game Bits, `absl::check` and `absl::log` as
+  dependencies rather than libraries, missing includes, an unused
+  `<algorithm>` include in `shapes.h`, and one function to set up libccd
+  rather than four copies.
+- Left as is: shapes' default constructors leave their members uninitialized,
+  as `glm::vec3` does; ray / triangle intersection treats a ray as parallel
+  using an absolute epsilon, so a very short direction can miss; and `CLine`
+  and `CTriangle` convert implicitly from a pointer to an array, which can't
+  be made explicit without breaking callers.
+
+**Verify**
+- Standard checks.
+- Unit tests: triangle normals, bounds, and boxes around shapes; each
+  intersection hitting and missing, including from behind a triangle, rays
+  and segments with unnormalized directions, spheres touching only a
+  triangle's edge or corner, points past the ends of each triangle edge,
+  points off a triangle's plane, normals computed for skewed triangles, and
+  the penetration of a sphere into a box; and every exactly touching case of
+  points, rays, lines, spheres, triangles, and boxes, and rays and lines
+  starting on a triangle.
 
 ### CL17 [ ] game: audit gb_game
 

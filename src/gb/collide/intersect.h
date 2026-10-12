@@ -3,8 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef GB_COLLIDE_INTERSECT_H
-#define GB_COLLIDE_INTERSECT_H
+#ifndef GB_COLLIDE_INTERSECT_H_
+#define GB_COLLIDE_INTERSECT_H_
 
 #include "gb/collide/shapes.h"
 
@@ -24,6 +24,12 @@ inline constexpr float kCEpsilon = 0.0000001f;
 // Requesting an intersection point or collision result is generally a more
 // expensive operation, so should be used only when needed.
 //
+// Shapes that only touch intersect: a point on a sphere's surface, a ray
+// through a triangle's edge, or spheres whose surfaces meet. The one exception
+// is that a ray (or line) starting on a triangle doesn't hit it, so a ray cast
+// from a surface doesn't hit that surface. Intersections of capsules and convex
+// meshes are approximate, within about 0.0001, so touching may go either way.
+//
 // Convenience "Intersects" overloads for every combination of C* shape classes
 // are defined after.
 //------------------------------------------------------------------------------
@@ -39,10 +45,13 @@ struct CollisionInfo {
 // Point / Triangle intersection
 //------------------------------------------------------------------------------
 
+// Returns true if "p" is inside the triangle or on its edge. A point off the
+// triangle's plane is tested by where it projects onto the plane. The triangle
+// must not be degenerate.
 bool IsPointInTriangle(const glm::vec3& p, const glm::vec3& v0,
                        const glm::vec3& v1, const glm::vec3& v2);
 
-inline bool Intersects(const glm::vec3& a, CTriangle& b) {
+inline bool Intersects(const glm::vec3& a, const CTriangle& b) {
   return IsPointInTriangle(a, b.vertex[0], b.vertex[1], b.vertex[2]);
 }
 
@@ -52,7 +61,7 @@ inline bool Intersects(const glm::vec3& a, CTriangle& b) {
 
 bool IsPointInSphere(const glm::vec3& p, const glm::vec3& center, float radius);
 
-inline bool Intersects(const glm::vec3& a, CSphere& b) {
+inline bool Intersects(const glm::vec3& a, const CSphere& b) {
   return IsPointInSphere(a, b.center, b.radius);
 }
 
@@ -69,8 +78,9 @@ inline bool Intersects(const glm::vec3& a, CSphere& b) {
 // that side will be hit. "normal" must be normalized.
 //
 // If "t" is provided and an intersection occurs, it will be updated with the
-// magnitude of "dir" where intersection occurs (it is always positive). The
-// intersection point is then: origin + dir * t
+// magnitude of "dir" where intersection occurs (it is always positive, as a ray
+// starting on the triangle doesn't hit it). The intersection point is then:
+// origin + dir * t
 //
 // Alternatively if "pos" is provided and an intersection occurs, it will be
 // updated with the actual intersection point.
@@ -107,6 +117,7 @@ inline bool RayHitsTriangleAt(const glm::vec3& origin, const glm::vec3& dir,
     return false;
   }
   out_pos = origin + dir * t;
+  return true;
 }
 inline bool RayHitsNormalTriangleAt(const glm::vec3& origin,
                                     const glm::vec3& dir, const glm::vec3& v0,
@@ -118,6 +129,7 @@ inline bool RayHitsNormalTriangleAt(const glm::vec3& origin,
     return false;
   }
   out_pos = origin + dir * t;
+  return true;
 }
 
 inline bool Intersects(const CRay& a, const CTriangle& b) {
@@ -236,11 +248,7 @@ inline bool Intersects(const CNormalTriangle& a, const CLine& b,
 
 // Intersects a ray against a sphere, returning true if an intersection occurs.
 //
-// If "i" is provided and an intersection occurs, it will be updated with the
-// actual intersection point.
-//
-// Note: if "i" is not required, then "dir" does NOT need to be normalized.
-// Otherwise, it must be.
+// Note: "dir" does NOT need to be normalized.
 bool RayHitsSphere(const glm::vec3& origin, const glm::vec3& dir,
                    const glm::vec3& center, float radius);
 
@@ -252,11 +260,8 @@ inline bool Intersects(const CRay& a, const CSphere& b) {
 // Line / Sphere intersection
 //------------------------------------------------------------------------------
 
-// Intersects a line segment against a triangle, returning true if an
+// Intersects a line segment against a sphere, returning true if an
 // intersection occurs.
-//
-// If "i" is provided and an intersection occurs, it will be updated with the
-// actual intersection point.
 bool LineHitsSphere(const glm::vec3& l0, const glm::vec3& l1,
                     const glm::vec3& center, float radius);
 
@@ -271,7 +276,7 @@ inline bool Intersects(const CSphere& a, const CLine& b) {
 // Sphere / Triangle intersection
 //------------------------------------------------------------------------------
 
-// Intersects a sphere a triangle, returning true if they intersect.
+// Intersects a sphere with a triangle, returning true if they intersect.
 //
 // A normal for the triangle may also be provided (this must be normalized) if
 // it is known as an optimization.
@@ -310,7 +315,8 @@ inline bool Intersects(const CNormalTriangle& a, const CSphere& b) {
 inline bool SphereHitsSphere(const glm::vec3& a_center, float a_radius,
                              const glm::vec3& b_center, float b_radius) {
   const glm::vec3 delta = a_center - b_center;
-  return glm::dot(delta, delta) <= a_radius * b_radius;
+  const float radius = a_radius + b_radius;
+  return glm::dot(delta, delta) <= radius * radius;
 }
 
 inline bool Intersects(const CSphere& a, const CSphere& b) {
@@ -396,9 +402,9 @@ inline bool Intersects(const CCapsule& a, const CPointCloud& b) {
 // The bounding box size must not be negative.
 inline bool AabbHitsAabb(const glm::vec3& a_pos, const glm::vec3& a_size,
                          const glm::vec3& b_pos, const glm::vec3& b_size) {
-  return a_pos.x + a_size.x > b_pos.x && b_pos.x + b_size.x > a_pos.x &&
-         a_pos.y + a_size.y > b_pos.y && b_pos.y + b_size.y > a_pos.y &&
-         a_pos.z + a_size.z > b_pos.z && b_pos.z + b_size.z > a_pos.z;
+  return a_pos.x + a_size.x >= b_pos.x && b_pos.x + b_size.x >= a_pos.x &&
+         a_pos.y + a_size.y >= b_pos.y && b_pos.y + b_size.y >= a_pos.y &&
+         a_pos.z + a_size.z >= b_pos.z && b_pos.z + b_size.z >= a_pos.z;
 }
 
 inline bool Intersects(const CAabb& a, const CAabb& b) {
@@ -407,4 +413,4 @@ inline bool Intersects(const CAabb& a, const CAabb& b) {
 
 }  // namespace gb
 
-#endif  // GB_COLLIDE_INTERSECT_H
+#endif  // GB_COLLIDE_INTERSECT_H_
