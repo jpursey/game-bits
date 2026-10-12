@@ -13,4 +13,11 @@ set(gb_sdl_LIBS
   sdl2
 )
 
+set(gb_sdl_TEST_SOURCE
+  sdl_glog_test.cc
+)
+set(gb_sdl_TEST_DEPS
+  gb_test
+)
+
 gb_add_library(gb_sdl)

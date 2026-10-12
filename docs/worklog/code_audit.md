@@ -411,9 +411,24 @@ Depends on: CL11.
   invalid UTF-8 names, roots that need normalizing (including "."), and
   copying a file onto itself under another case.
 
-### CL13 [ ] sdl: audit gb_sdl
+### CL13 [x] sdl: audit gb_sdl
 
 Depends on: CL4.
+
+- No bugs found. `SdlToGLog()` had no tests; it now does, for every priority
+  and category, including VLOG(1) for verbose and DFATAL for critical.
+- `sdl_glog.h` had no include guard, and said it sends logs to glog, which Game
+  Bits replaced with Abseil logging. It now says how to install it and how SDL
+  priorities map to log severities.
+- Left as is: the `GLog` in the name, as renaming it breaks every caller for
+  little gain, and critical messages ending a debug build, which is the
+  intended mapping.
+
+**Verify**
+- Standard checks.
+- Unit tests: each SDL priority's log severity, verbose logging only at
+  VLOG(1), critical as DFATAL, each category's prefix, and unknown priorities
+  ignored.
 
 ### CL14 [ ] parse: audit gb_parse
 
