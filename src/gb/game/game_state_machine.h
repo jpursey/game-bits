@@ -7,9 +7,11 @@
 #define GB_GAME_GAME_STATE_MACHINE_H_
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
@@ -46,8 +48,8 @@ enum class GameStateTraceType : int {
                           // active.
   kInvalidChangeParent,   // The parent state is not registered, not active, or
                           // not allowed.
-  kInvalidChangeSibling,  // The sibling state is not registered or is not
-                          // allowed.
+  kInvalidChangeSibling,  // The current state is not active, or does not allow
+                          // the new state as its sibling.
   kConstraintFailure,     // The context constraints were not met.
 
   // Info trace
@@ -82,7 +84,7 @@ struct GameStateTrace {
         parent(parent),
         state(state),
         method(method),
-        message(message) {}
+        message(std::move(message)) {}
 
   // Returns true if this trace represents an error level trace only.
   bool IsError() const {
@@ -103,12 +105,13 @@ struct GameStateTrace {
   GameStateTraceType type = GameStateTraceType::kUnknown;
 
   // Parent state for the trace. This is set only for kInvalidChangeState,
-  // kInvalidChangeParent, kRequestChange, kAbortChange, kCompleteChange,
-  // kOnChildEnter, and kOnChildExit. For all other trace types it is always
-  // kNoGameStateId.
+  // kInvalidChangeParent, kInvalidChangeSibling, kRequestChange, kAbortChange,
+  // kCompleteChange, kOnChildEnter, and kOnChildExit. For all other trace types
+  // it is always kNoGameStateId.
   GameStateId parent = kNoGameStateId;
 
-  // State for the trace. This is always set.
+  // State for the trace. For a state change, this is the new state, which is
+  // kNoGameStateId when the change exits the parent's child state.
   GameStateId state = kNoGameStateId;
 
   // GameStateMachine public method that the trace occurred in.
@@ -201,7 +204,7 @@ inline GameStateId GetGameStateId(GameStateInfo* info) {
 // This class manages a hierarchical state machine for use in games.
 //
 // Game states are uniquely defined by a subclass of GameState. The state
-// machine instance manages a pool these states which are either active or
+// machine instance manages a pool of these states which are either active or
 // inactive.
 //
 // The structure of the state hierarchy is defined by the ParentStates and
@@ -211,8 +214,8 @@ inline GameStateId GetGameStateId(GameStateInfo* info) {
 // within the same branch.
 //
 // State transitions can be requested at any time (generally within one of the
-// active state's callbacks). However, the the actual state transition always
-// happens directly with in the GameStateMachine::Update call (never while
+// active state's callbacks). However, the actual state transition always
+// happens directly within the GameStateMachine::Update call (never while
 // executing any GameState callback).
 //
 // This class is thread-safe, except as noted.
@@ -249,9 +252,10 @@ class GameStateMachine final {
 
   // Set the trace handler for this state machine.
   //
-  // This completely replaces any prior handler, including the default hander
-  // (which logs the trace). To add an additional handler, call AddTraceHandler
-  // instead. See GameStateTrace for more information on trace output.
+  // This completely replaces any prior handler, including the default handler
+  // (which logs the trace). A null handler removes them all. To add an
+  // additional handler, call AddTraceHandler instead. See GameStateTrace for
+  // more information on trace output.
   //
   // Trace handlers may be called on multiple threads, but will never be
   // called from multiple threads concurrently. This GameStateMachine instance
@@ -264,7 +268,8 @@ class GameStateMachine final {
   // Adds an additional trace handler for this state machine.
   //
   // This leaves any existing handlers in place, and adds this handler in
-  // addition. See GameStateTrace for more information on trace output.
+  // addition. A null handler is ignored. See GameStateTrace for more
+  // information on trace output.
   //
   // Trace handlers may be called on multiple threads, but will never be
   // called from multiple threads concurrently. This GameStateMachine instance
@@ -285,7 +290,7 @@ class GameStateMachine final {
   template <typename StateType>
   void Register() {
     DoRegister(
-        TypeInfo::Get<StateType>()->Key(), StateType::Lifetime::kType,
+        GetGameStateId<StateType>(), StateType::Lifetime::kType,
         StateType::ParentStates::kType, StateType::ParentStates::GetIds(),
         StateType::SiblingStates::kType, StateType::SiblingStates::GetIds(),
         StateType::Contract::GetConstraints(),
@@ -297,7 +302,7 @@ class GameStateMachine final {
   // Returns the game state ID for a registered state by name.
   GameStateId GetRegisteredId(std::string_view name) const;
 
-  // Returns true if the specifid state is registered.
+  // Returns true if the specified state is registered.
   bool IsRegistered(GameStateId state) const;
 
   template <typename StateType>
@@ -363,20 +368,33 @@ class GameStateMachine final {
   //
   // States are updated from parent to child. State changes may be requested at
   // any point during Update (even -- and commonly -- within state callbacks),
-  // and they will be performed as soon possible.
+  // and they will be performed as soon as possible. Each active state is
+  // updated once per call, or once more if it is exited and entered again.
   //
   // Update is not reentrant. If it is called while it is still executing, a
   // warning is logged and the Update call will be ignored.
   void Update(absl::Duration delta_time);
 
  private:
+  friend class GameState;
+
   using States =
       absl::flat_hash_map<GameStateId, std::unique_ptr<GameStateInfo>>;
 
   explicit GameStateMachine(ValidatedContext context);
 
-  // Dumps the trace to glog.
+  // Logs the trace.
   void LogTrace(const GameStateTrace& trace);
+
+  // Implements GameState::ChangeState() and GameState::ExitState(), changing
+  // from the state `from` to a new state under the same parent. This fails if
+  // `from` is not active.
+  bool ChangeStateFrom(const GameStateInfo* from, GameStateId state)
+      ABSL_LOCKS_EXCLUDED(mutex_);
+
+  // Implements ChangeState().
+  bool DoChangeState(GameStateId parent, GameStateId state)
+      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   // Returns human-readable debug strings for the requested state paths.
   std::string GetStatePath(GameStateId parent, GameStateId state)
@@ -409,13 +427,16 @@ class GameStateMachine final {
       ABSL_EXCLUSIVE_LOCKS_REQUIRED(update_mutex_);
 
   // Performs any state transitions previously requested via ChangeState. If a
-  // ChangeState is called during this funciton, it will return early without
+  // ChangeState is called during this function, it will return early without
   // completing the previous transition.
   void ProcessTransition() ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   std::atomic<bool> enable_logging_ = true;
   mutable absl::Mutex update_mutex_;  // Reentrance guard for Update method.
   mutable absl::Mutex mutex_;         // Mutex for execution state.
+
+  // Counts calls to DoUpdate(), so each state is updated once per call.
+  int64_t update_id_ ABSL_GUARDED_BY(update_mutex_) = 0;
 
   // Context used for this state machine and all game states. This is not
   // guarded by any mutex as it is only ever changed at state machine

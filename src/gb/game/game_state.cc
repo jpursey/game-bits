@@ -5,7 +5,6 @@
 
 #include "gb/game/game_state.h"
 
-#include "absl/log/log.h"
 #include "gb/game/game_state_machine.h"
 
 namespace gb {
@@ -35,11 +34,9 @@ bool GameState::ChangeChildState(GameStateId state) {
 }
 
 bool GameState::ChangeState(GameStateId state) {
-  return info_->GetStateMachine()->ChangeState(GetParentId(), state);
+  return info_->GetStateMachine()->ChangeStateFrom(info_, state);
 }
 
-bool GameState::ExitState() {
-  return info_->GetStateMachine()->ChangeState(GetParentId(), kNoGameStateId);
-}
+bool GameState::ExitState() { return ChangeState(kNoGameStateId); }
 
 }  // namespace gb

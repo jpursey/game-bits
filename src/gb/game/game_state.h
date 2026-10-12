@@ -6,7 +6,10 @@
 #ifndef GB_GAME_GAME_STATE_H_
 #define GB_GAME_GAME_STATE_H_
 
+#include <vector>
+
 #include "absl/time/time.h"
+#include "gb/base/type_info.h"
 #include "gb/base/validated_context.h"
 
 namespace gb {
@@ -18,8 +21,8 @@ class GameStateMachine;
 // GameStateId
 //------------------------------------------------------------------------------
 
-// A GameStateId is a unique used to identify a GameState. It can be determined
-// from a GameState derived class type via GetGameStateId().
+// A GameStateId is a unique ID used to identify a GameState. It can be
+// determined from a GameState derived class type via GetGameStateId().
 using GameStateId = TypeKey*;
 
 // Retrieves the GameStateId for the specified state type. It is sufficient for
@@ -93,12 +96,13 @@ struct GameStates : GameStateList {
 // GameStateLifetime
 //------------------------------------------------------------------------------
 
-// A GameStateLifetime class determines when a GameState will be destructed and
-// destructed within a GameStateMachine. To define a lifetime for a state, use
-// one of the derived types: GlobalGameStateLifetime or ActiveGameStateLifetime.
+// A GameStateLifetime class determines when a GameState will be constructed
+// and destructed within a GameStateMachine. To define a lifetime for a state,
+// use one of the derived types: GlobalGameStateLifetime or
+// ActiveGameStateLifetime.
 struct GameStateLifetime {
   enum Type {
-    kGlobal,  // The state is constructed at regististration and destructed at
+    kGlobal,  // The state is constructed at registration and destructed at
               // state machine destruction.
     kActive,  // The state is constructed and destructed when the state is
               // entered and exited respectively.
@@ -185,17 +189,18 @@ class GameState {
   GameStateId GetId() const;
   GameStateMachine* GetStateMachine() const;
 
-  // The following attributes are only set if the state is active (during
-  // OnEnter and OnExit and any time in between these two calls). Notably these
-  // will return kNoGameStateId or null in the constructor and destructor.
+  // The following attributes are only set if the state is active (from OnEnter
+  // until OnExit is called, as the state is no longer active during OnExit).
+  // Notably these will return kNoGameStateId or null in the constructor and
+  // destructor.
   GameStateId GetParentId() const;
   GameState* GetParent() const;
   GameStateId GetChildId() const;
   GameState* GetChild() const;
 
   // Changes the child for this state. See GameStateMachine::ChangeState() for
-  // details on state change handling. This state must be a valid parent as
-  // controlled by the childs ParentStates attribute.
+  // details on state change handling. This state must be active, and a valid
+  // parent as controlled by the child's ParentStates attribute.
   bool ChangeChildState(GameStateId state);
   template <typename StateType>
   bool ChangeChildState() {
@@ -204,8 +209,8 @@ class GameState {
 
   // Exits this state and switches to the specified state under the same parent.
   // See GameStateMachine::ChangeState() for details on state change handling.
-  // The new state must be a valid sibling as controlled by this states
-  // SiblingStates attribute.
+  // This state must be active, and the new state must be a valid sibling as
+  // controlled by this state's SiblingStates attribute.
   bool ChangeState(GameStateId state);
   template <typename StateType>
   bool ChangeState() {
@@ -213,7 +218,7 @@ class GameState {
   }
 
   // Exits this state. See GameStateMachine::ChangeState() for details on state
-  // change handling.
+  // change handling. This state must be active.
   bool ExitState();
 
  protected:
@@ -261,16 +266,17 @@ class GameState {
   // If the Lifetime attribute is ActiveGameStateLifetime, it will be destructed
   // immediately after OnExit returns.
   //
-  // If the state is changed within this callback, then that state will be
-  // switched to instead of whatever state change caused OnExit in the first
-  // place. The parent state (if there is one), may still change the state in
-  // OnChildExit.
+  // The state is no longer active, so ChangeChildState(), ChangeState(), and
+  // ExitState() fail. If the state is changed within this callback through the
+  // GameStateMachine, then that state will be switched to instead of whatever
+  // state change caused OnExit in the first place. The parent state (if there
+  // is one), may still change the state in OnChildExit.
   virtual void OnExit() {}
 
   // Called immediately before a child state is entered.
   //
   // The specified child state will always be entered when this call returns (it
-  // will receives its OnEnter call). If the state is changed during
+  // will receive its OnEnter call). If the state is changed during
   // OnChildEnter, then the child specified here will be entered and then
   // immediately exited (and OnChildExit will be called on this state). Then the
   // new state will be switched to.

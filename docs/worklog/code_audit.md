@@ -617,9 +617,58 @@ Depends on: CL4.
   points, rays, lines, spheres, triangles, and boxes, and rays and lines
   starting on a triangle.
 
-### CL17 [ ] game: audit gb_game
+### CL17 [x] game: audit gb_game
 
 Depends on: CL4.
+
+- After a frame more than a millisecond late, the game loop set the next
+  frame's deadline to the time it was already past, so every later frame that
+  took over a millisecond was late too and the frame rate cap was lost for
+  good (after loading a level, say). The next frame now gets a full frame from
+  when the slow one ended.
+- `Game::Run(argc, argv)` built its arguments from `argv + 1` to `argv + argc`,
+  a reversed range when `argc` is zero (undefined behavior, and an assert in
+  debug builds).
+- `GameStateMachine::Update()` meant to update each state once, restarting
+  from the top state after a state change, but never recorded which states it
+  had updated, so a parent was updated again when its child changed state
+  during its update. Its counter was also a function static shared by every
+  state machine, which raced when two were updated on different threads; it
+  is now a member.
+- `GameState::ChangeState()` and `ExitState()` from a state that isn't active
+  (including from its own `OnExit()`, as a state is inactive by then) changed
+  the top state instead, since an inactive state has no parent: `ExitState()`
+  exited every state. They now fail with a `kInvalidChangeSibling` trace, and
+  read the state's parent under the same lock as checking it is active.
+- `SetTraceHandler(nullptr)` and `AddTraceHandler(nullptr)` crashed on the next
+  trace. A null handler now removes all handlers, or is ignored when added.
+- `CMakeLists.txt` set `gb_base_LIBS` rather than `gb_game_LIBS`, so the
+  `absl::check` and `absl::log` it named only came in indirectly. They are now
+  dependencies, with `absl::synchronization` and `absl::algorithm_container`.
+- Tests no longer wait on real time where they can be given a clock: the game
+  tests that take a context run on a fake clock, and the state machine's
+  thread test waits for its loops to run rather than sleeping for a second.
+- Docs: a state's parent and child are cleared before `OnExit()` (the docs
+  said they were set during it); `ChangeState()`, `ExitState()`, and
+  `ChangeChildState()` need an active state; a trace's state is
+  `kNoGameStateId` for a request to exit; and `kInvalidChangeSibling` traces
+  have a parent. Fixed typos. Smaller cleanups: missing includes, an unused
+  include, `absl::StrAppend` to build trace strings, `absl::c_linear_search`,
+  the trace message moved rather than copied, and an unneeded lock in the
+  state machine's constructor.
+- Left as is: the tests of the `Run()` overloads that make their own context
+  still run a frame on the real clock, as nothing can give them a fake one;
+  the `kInvalidChangeSibling` trace for an inactive state names that state only
+  in its message, as the trace has no field for the requesting state; and
+  trace messages are still built when tracing is enabled but the handler is
+  null (the trace level turns tracing off).
+
+**Verify**
+- Standard checks.
+- Unit tests: the frame rate holding after a slow frame, `Run()` with an empty
+  `argv`, a parent updated once when its child changes state during its
+  update, `ChangeState()` and `ExitState()` failing from an inactive state, and
+  null trace handlers.
 
 ### CL18 [ ] image: audit gb_image
 

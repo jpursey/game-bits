@@ -5,8 +5,7 @@
 
 #include "gb/game/game_state_machine.h"
 
-#include <algorithm>
-
+#include "absl/algorithm/container.h"
 #include "absl/log/log.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
@@ -49,11 +48,11 @@ std::string ToString(const GameStateTrace& trace) {
   std::string result = absl::StrCat("[GameState] ", trace.method, ": ",
                                     ToString(trace.type), "(");
   if (trace.parent != kNoGameStateId) {
-    result = absl::StrCat(result, "p=", GetGameStateName(trace.parent), ",");
+    absl::StrAppend(&result, "p=", GetGameStateName(trace.parent), ",");
   }
-  result = absl::StrCat(result, "s=", GetGameStateName(trace.state), ")");
+  absl::StrAppend(&result, "s=", GetGameStateName(trace.state), ")");
   if (!trace.message.empty()) {
-    result = absl::StrCat(result, " ", trace.message);
+    absl::StrAppend(&result, " ", trace.message);
   }
   return result;
 }
@@ -63,10 +62,16 @@ void GameStateMachine::SetTraceLevel(GameStateTraceLevel trace_level) {
 }
 
 void GameStateMachine::SetTraceHandler(GameStateTraceHandler handler) {
+  if (handler == nullptr) {
+    handler = [](const GameStateTrace&) {};
+  }
   trace_handler_ = std::move(handler);
 }
 
 void GameStateMachine::AddTraceHandler(GameStateTraceHandler handler) {
+  if (handler == nullptr) {
+    return;
+  }
   auto new_handler =
       [handler_1 = std::move(trace_handler_),
        handler_2 = std::move(handler)](const GameStateTrace& trace) mutable {
@@ -87,7 +92,6 @@ std::unique_ptr<GameStateMachine> GameStateMachine::Create(Contract contract) {
 
 GameStateMachine::GameStateMachine(ValidatedContext context)
     : context_(std::move(context)) {
-  absl::MutexLock lock(&mutex_);
   trace_handler_ = [this](const GameStateTrace& trace) { LogTrace(trace); };
 }
 
@@ -113,9 +117,7 @@ GameStateMachine::~GameStateMachine() {
   // Now iterate over each state and delete any active instances. This ensures
   // that GameStateInfo still exists during the GameState destructor.
   for (auto& state : old_states) {
-    if (state.second->instance.get() != nullptr) {
-      state.second->instance.reset();
-    }
+    state.second->instance.reset();
   }
   old_states.clear();
 
@@ -178,7 +180,25 @@ GameState* GameStateMachine::GetState(GameStateId state) const {
 
 bool GameStateMachine::ChangeState(GameStateId parent, GameStateId state) {
   absl::MutexLock lock(&mutex_);
+  return DoChangeState(parent, state);
+}
 
+bool GameStateMachine::ChangeStateFrom(const GameStateInfo* from,
+                                       GameStateId state) {
+  absl::MutexLock lock(&mutex_);
+  if (!from->active) {
+    if (trace_level_ >= GameStateTraceLevel::kError) {
+      trace_handler_({GameStateTraceType::kInvalidChangeSibling, kNoGameStateId,
+                      state, "ChangeState",
+                      absl::StrCat("Current state ", GetGameStateName(from->id),
+                                   " is not active")});
+    }
+    return false;
+  }
+  return DoChangeState(GetGameStateId(from->parent), state);
+}
+
+bool GameStateMachine::DoChangeState(GameStateId parent, GameStateId state) {
   // If a transition is in progress, make sure it is different.
   if (transition_) {
     if (parent == GetGameStateId(transition_parent_) &&
@@ -243,9 +263,7 @@ bool GameStateMachine::ChangeState(GameStateId parent, GameStateId state) {
       (parent_info == nullptr ? top_state_ : parent_info->child);
   if (state_info != nullptr && sibling_info != nullptr &&
       sibling_info->valid_siblings_type != GameStateList::kAll) {
-    if (std::find(sibling_info->valid_siblings.begin(),
-                  sibling_info->valid_siblings.end(),
-                  state) == sibling_info->valid_siblings.end()) {
+    if (!absl::c_linear_search(sibling_info->valid_siblings, state)) {
       if (trace_level_ >= GameStateTraceLevel::kError) {
         trace_handler_({GameStateTraceType::kInvalidChangeSibling, parent,
                         state, "ChangeState",
@@ -258,9 +276,7 @@ bool GameStateMachine::ChangeState(GameStateId parent, GameStateId state) {
   // Validate the new state can be parented as requested.
   if (parent != kNoGameStateId && state != kNoGameStateId &&
       state_info->valid_parents_type != GameStateList::kAll) {
-    if (std::find(state_info->valid_parents.begin(),
-                  state_info->valid_parents.end(),
-                  parent) == state_info->valid_parents.end()) {
+    if (!absl::c_linear_search(state_info->valid_parents, parent)) {
       if (trace_level_ >= GameStateTraceLevel::kError) {
         trace_handler_({GameStateTraceType::kInvalidChangeParent, parent, state,
                         "ChangeState",
@@ -298,8 +314,7 @@ void GameStateMachine::Update(absl::Duration delta_time) {
 }
 
 void GameStateMachine::DoUpdate(absl::Duration delta_time) {
-  static int64_t update_id = 0;
-  ++update_id;
+  const int64_t update_id = ++update_id_;
 
   absl::MutexLock lock(&mutex_);
   bool needs_update = false;
@@ -322,6 +337,7 @@ void GameStateMachine::DoUpdate(absl::Duration delta_time) {
                absl::StrCat("path=", GetStatePath(GetGameStateId(state_info),
                                                   kNoGameStateId))});
         }
+        state_info->update_id = update_id;
         mutex_.Unlock();
         state_info->instance->OnUpdate(delta_time);
         mutex_.Lock();

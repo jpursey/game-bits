@@ -8,6 +8,7 @@
 
 #include <memory>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "absl/time/time.h"
@@ -59,8 +60,12 @@ class Game {
   // initialization.
   bool Run(GameContract contract, const std::vector<std::string_view>& args);
   bool Run(GameContract contract, int argc, char** argv) {
-    return Run(std::move(contract),
-               std::vector<std::string_view>(argv + 1, argv + argc));
+    // argv[0] is the program name, and argc may be zero.
+    std::vector<std::string_view> args;
+    if (argc > 1) {
+      args.assign(argv + 1, argv + argc);
+    }
+    return Run(std::move(contract), args);
   }
   bool Run(const std::vector<std::string_view>& args) {
     return Run(std::make_unique<gb::Context>(), args);
@@ -86,7 +91,7 @@ class Game {
  private:
   void GameLoop();
 
-  Clock* clock_;
+  Clock* clock_ = nullptr;
   ValidatedContext context_;
 };
 

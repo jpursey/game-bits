@@ -24,6 +24,9 @@ class TestGame : public Game {
   void SetUpdateDelay(absl::Duration update_delay) {
     update_delay_ = update_delay;
   }
+  void SetFirstUpdateDelay(absl::Duration first_update_delay) {
+    first_update_delay_ = first_update_delay;
+  }
 
   const std::vector<std::string_view>& GetInitArgs() const {
     return init_args_;
@@ -46,7 +49,8 @@ class TestGame : public Game {
     last_delta_time_ = delta_time;
     total_update_time_ += delta_time;
     if (clock_ != nullptr) {
-      clock_->AdvanceTime(update_delay_);
+      clock_->AdvanceTime(update_delay_ + first_update_delay_);
+      first_update_delay_ = absl::ZeroDuration();
     }
     return --update_count_ > 0;
   }
@@ -61,14 +65,27 @@ class TestGame : public Game {
   bool update_run_ = false;
   bool cleanup_run_ = false;
   absl::Duration update_delay_;
+  absl::Duration first_update_delay_;
   absl::Duration last_delta_time_;
   absl::Duration total_update_time_;
   std::vector<std::string_view> init_args_;
 };
 
-TEST(GameTest, GameIsNotAbstract) { Game game; }
+// Runs games passed context_ on a fake clock, so they don't wait on real time.
+class GameTest : public ::testing::Test {
+ protected:
+  GameTest() {
+    clock_.SetAutoAdvance(absl::Microseconds(10));
+    context_.SetPtr<Clock>(&clock_);
+  }
 
-TEST(GameTest, RunNoContextNoArgs) {
+  FakeClock clock_;
+  Context context_;
+};
+
+TEST_F(GameTest, GameIsNotAbstract) { Game game; }
+
+TEST_F(GameTest, RunNoContextNoArgs) {
   TestGame game;
   EXPECT_TRUE(game.Run({}));
   EXPECT_TRUE(game.InitRun());
@@ -83,34 +100,32 @@ TEST(GameTest, RunNoContextNoArgs) {
   EXPECT_THAT(game.GetInitArgs(), IsEmpty());
 }
 
-TEST(GameTest, RunInvalidFps) {
-  Context context;
-  context.SetValue<double>(Game::kKeyMaxFps, 1.0 / 60.0);
+TEST_F(GameTest, RunInvalidFps) {
+  context_.SetValue<double>(Game::kKeyMaxFps, 1.0 / 60.0);
   TestGame game;
-  EXPECT_FALSE(game.Run(&context, {}));
+  EXPECT_FALSE(game.Run(&context_, {}));
   EXPECT_FALSE(game.InitRun());
   EXPECT_FALSE(game.UpdateRun());
   EXPECT_FALSE(game.CleanupRun());
 }
 
-TEST(GameTest, RunSpecifiedFps) {
-  Context context;
-  context.SetValue<int>(Game::kKeyMaxFps, 30);
+TEST_F(GameTest, RunSpecifiedFps) {
+  context_.SetValue<int>(Game::kKeyMaxFps, 30);
   TestGame game;
-  EXPECT_TRUE(game.Run(&context, {}));
+  EXPECT_TRUE(game.Run(&context_, {}));
   EXPECT_EQ(game.Context().GetValue<int>(Game::kKeyMaxFps), 30);
   EXPECT_GE(game.GetLastDeltaTime(),
             absl::Seconds(1.0 / 30.0) - absl::Microseconds(1));
 }
 
-TEST(GameTest, RunNoContextWithArgs) {
+TEST_F(GameTest, RunNoContextWithArgs) {
   TestGame game;
   std::vector<std::string_view> args = {"one", "two", "three"};
   EXPECT_TRUE(game.Run(args));
   EXPECT_EQ(game.GetInitArgs(), args);
 }
 
-TEST(GameTest, RunNoContextWithArgcArgv) {
+TEST_F(GameTest, RunNoContextWithArgcArgv) {
   TestGame game;
   std::vector<std::string_view> args = {"one", "two", "three"};
   char* argv[] = {
@@ -123,19 +138,17 @@ TEST(GameTest, RunNoContextWithArgcArgv) {
   EXPECT_EQ(game.GetInitArgs(), args);
 }
 
-TEST(GameTest, RunWithContextWithArgs) {
-  Context context;
-  context.SetValue<int>(Game::kKeyMaxFps, 30);
+TEST_F(GameTest, RunWithContextWithArgs) {
+  context_.SetValue<int>(Game::kKeyMaxFps, 30);
   TestGame game;
   std::vector<std::string_view> args = {"one", "two", "three"};
-  EXPECT_TRUE(game.Run(&context, args));
+  EXPECT_TRUE(game.Run(&context_, args));
   EXPECT_EQ(game.Context().GetValue<int>(Game::kKeyMaxFps), 30);
   EXPECT_EQ(game.GetInitArgs(), args);
 }
 
-TEST(GameTest, RunWithContextWithArgcArgv) {
-  Context context;
-  context.SetValue<int>(Game::kKeyMaxFps, 30);
+TEST_F(GameTest, RunWithContextWithArgcArgv) {
+  context_.SetValue<int>(Game::kKeyMaxFps, 30);
   TestGame game;
   std::vector<std::string_view> args = {"one", "two", "three"};
   char* argv[] = {
@@ -144,12 +157,19 @@ TEST(GameTest, RunWithContextWithArgcArgv) {
       const_cast<char*>(args[1].data()),
       const_cast<char*>(args[2].data()),
   };
-  EXPECT_TRUE(game.Run(&context, 4, argv));
+  EXPECT_TRUE(game.Run(&context_, 4, argv));
   EXPECT_EQ(game.Context().GetValue<int>(Game::kKeyMaxFps), 30);
   EXPECT_EQ(game.GetInitArgs(), args);
 }
 
-TEST(GameTest, RunWithInitFailure) {
+TEST_F(GameTest, RunWithEmptyArgv) {
+  TestGame game;
+  char* argv[] = {nullptr};
+  EXPECT_TRUE(game.Run(&context_, 0, argv));
+  EXPECT_THAT(game.GetInitArgs(), IsEmpty());
+}
+
+TEST_F(GameTest, RunWithInitFailure) {
   TestGame game;
   game.SetInitResult(false);
   EXPECT_FALSE(game.Run({}));
@@ -158,56 +178,63 @@ TEST(GameTest, RunWithInitFailure) {
   EXPECT_TRUE(game.CleanupRun());
 }
 
-TEST(GameTest, GameTimesDoNotDrift) {
+TEST_F(GameTest, GameTimesDoNotDrift) {
   // Pick two prime numbers that are never going to line up perfecting to 10
   // millisecond frame times.
-  FakeClock clock;
-  clock.SetAutoAdvance(absl::Microseconds(3001));
-  clock.SetSleepOffset(absl::Microseconds(1009));
+  clock_.SetAutoAdvance(absl::Microseconds(3001));
+  clock_.SetSleepOffset(absl::Microseconds(1009));
   const absl::Duration max_drift = absl::Milliseconds(10);
-
-  Context context;
-  context.SetPtr<Clock>(&clock);
-  context.SetValue<int>(Game::kKeyMaxFps, 100);
+  context_.SetValue<int>(Game::kKeyMaxFps, 100);
 
   // Run for enough time to detect drift.
   TestGame game;
   const absl::Duration expected_duration = absl::Minutes(1);
   game.SetUpdateCount(6000);  // One minutes at 100 fps
 
-  const absl::Time start = clock.GetTime();
-  EXPECT_TRUE(game.Run(&context, {}));
-  const absl::Duration time = clock.GetTime() - start;
+  const absl::Time start = clock_.GetTime();
+  EXPECT_TRUE(game.Run(&context_, {}));
+  const absl::Duration time = clock_.GetTime() - start;
   EXPECT_GE(time, expected_duration);
   EXPECT_LE(time, expected_duration + max_drift);
   EXPECT_GE(game.GetTotalUpdateTime(), expected_duration);
   EXPECT_LE(game.GetTotalUpdateTime(), expected_duration + max_drift);
 }
 
-TEST(GameTest, GameFrameRateSlows) {
-  FakeClock clock;
-  clock.SetAutoAdvance(absl::Microseconds(10));
+TEST_F(GameTest, GameFrameRateSlows) {
   const absl::Duration max_drift = absl::Milliseconds(10);
+  context_.SetValue<int>(Game::kKeyMaxFps, 100);
 
-  Context context;
-  context.SetPtr<Clock>(&clock);
-  context.SetValue<int>(Game::kKeyMaxFps, 100);
-
-  TestGame game(&clock);
+  TestGame game(&clock_);
   const absl::Duration expected_duration =
       absl::Seconds(100) + absl::Milliseconds(10);
   const absl::Duration update_delay = absl::Seconds(1);
   game.SetUpdateDelay(update_delay);
   game.SetUpdateCount(100);
 
-  const absl::Time start = clock.GetTime();
-  EXPECT_TRUE(game.Run(&context, {}));
-  const absl::Duration time = clock.GetTime() - start;
+  const absl::Time start = clock_.GetTime();
+  EXPECT_TRUE(game.Run(&context_, {}));
+  const absl::Duration time = clock_.GetTime() - start;
   EXPECT_GE(time, expected_duration);
   EXPECT_LE(time, expected_duration + max_drift);
   EXPECT_GE(game.GetTotalUpdateTime(), expected_duration - update_delay);
   EXPECT_LE(game.GetTotalUpdateTime(),
             expected_duration - update_delay + max_drift);
+}
+
+TEST_F(GameTest, GameFrameRateRecoversAfterSlowFrame) {
+  context_.SetValue<int>(Game::kKeyMaxFps, 100);
+
+  // One long frame (such as loading a level), followed by frames that take
+  // less time than the frame rate allows.
+  TestGame game(&clock_);
+  game.SetFirstUpdateDelay(absl::Seconds(1));
+  game.SetUpdateDelay(absl::Milliseconds(2));
+  game.SetUpdateCount(10);
+
+  EXPECT_TRUE(game.Run(&context_, {}));
+  EXPECT_GE(game.GetLastDeltaTime(), absl::Milliseconds(10));
+  EXPECT_LE(game.GetLastDeltaTime(),
+            absl::Milliseconds(10) + absl::Microseconds(100));
 }
 
 }  // namespace

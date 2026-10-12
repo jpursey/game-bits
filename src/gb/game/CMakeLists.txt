@@ -19,16 +19,15 @@ set(gb_game_TEST_DEPS
 )
 
 set(gb_game_DEPS
+  absl::algorithm_container
   absl::any_invocable
+  absl::check
   absl::flat_hash_map
+  absl::log
   absl::strings
+  absl::synchronization
   absl::time
   gb_base
-)
-
-set(gb_base_LIBS
-  absl::check
-  absl::log
 )
 
 gb_add_library(gb_game)

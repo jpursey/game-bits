@@ -32,10 +32,10 @@ bool Game::Run(GameContract contract,
 
 void Game::GameLoop() {
   // Determine minimum delta time based on the requested frame rate.
-  int64_t max_fps = context_.GetValue<int>(kKeyMaxFps);
+  const int max_fps = context_.GetValue<int>(kKeyMaxFps);
   absl::Duration min_delta_time;
   if (max_fps > 0) {
-    min_delta_time = absl::Nanoseconds(1000000000LL / max_fps);
+    min_delta_time = absl::Seconds(1) / max_fps;
   }
 
   absl::Time last_time = clock_->Now();
@@ -50,12 +50,10 @@ void Game::GameLoop() {
       // rate is unlocked). If it is close (within a millisecond), then we will
       // try to absorb the time in the next frame (it may be a one off issue).
       // Otherwise, we just eat the cost in this frame, and give the next frame
-      // more time. This is important when a single frame may take many seconds
-      // (for instance loading a level).
+      // a full frame from now. This is important when a single frame may take
+      // many seconds (for instance loading a level).
       if (time_remaining < -absl::Milliseconds(1)) {
         next_time = now;
-      } else {
-        next_time += min_delta_time;
       }
     } else {
       // We have extra time on our hands. Be nice first, and yield time to the
@@ -74,11 +72,12 @@ void Game::GameLoop() {
 
       // Calculate the actual delta.
       delta_time = now - last_time;
-
-      // Advance last time by min_delta_time so we can maintain a reliable frame
-      // rate. Otherwise we will drift slightly slower than the desired rate.
-      next_time += min_delta_time;
     }
+
+    // Advance the next time by min_delta_time (rather than from now) so we can
+    // maintain a reliable frame rate. Otherwise we will drift slightly slower
+    // than the desired rate.
+    next_time += min_delta_time;
     last_time = now;
   } while (Update(delta_time));
 }
