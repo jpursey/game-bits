@@ -27,14 +27,14 @@ namespace gb {
 //   - Strings can be single-quoted in addition to double-quoted. Strings
 //     support all valid UTF-8 characters, with non-printable ASCII characters
 //     (those below 0x20) always being escaped. Quotes that match the enclosing
-//     quote style also be escaped. The escape character is '\' and supports
-//     '\n', '\t', and'\xNN' hex escapes. All other characters after '\' are
+//     quote style are also escaped. The escape character is '\' and supports
+//     '\n', '\t', and '\xNN' hex escapes. All other characters after '\' are
 //     treated as the character itself (e.g. '\\' is just '\').
 //   - Comments are allowed, using either // for line comments or /* */ for
 //     block comments.
-//   - By default, the text config format is rootless, meaning that the
+//   - The text config can be rootless (see kRootless), meaning that the
 //     top-level structure is a map without an enclosing {...} wrapper. This
-//     allows for more concise configuration files
+//     allows for more concise configuration files.
 //
 // Finally, although this does not affect the format of reading and writing
 // files, Config values make a distinction between integers and floating point
@@ -69,7 +69,7 @@ enum class TextConfigFlag {
   // produce comments.
   kComments,
 
-  // This enabled compact output with no unnecessary whitespace. This is only
+  // This enables compact output with no unnecessary whitespace. This is only
   // meaningful when writing, as reading will ignore all whitespace.
   kCompact,
 };
@@ -102,9 +102,9 @@ inline constexpr TextConfigFlags kJsonTextConfig = {};
 
 // The number of spaces to indent each level of nesting when writing text
 // configs. Indentation only occurs when kCompact is not set. Lines are indented
-// after new lines, with the ident level increasing only for child elements of a
-// map or array. Newlines are added after a map opening and closing brace, after
-// each map key/value pair, and whenever a list of array values exceeds
+// after new lines, with the indent level increasing only for child elements of
+// a map or array. Newlines are added after a map opening and closing brace,
+// after each map key/value pair, and whenever a list of array values exceeds
 // kTextConfigMaxArrayLineLength.
 constexpr int kTextConfigIndentSize = 2;
 
@@ -129,7 +129,7 @@ std::string WriteConfigToText(const Config& config,
 //
 // Returns an error if the configuration cannot be parsed. If kRootless is set,
 // then the text will be read as if it is a map (key/value pairs). Otherwise it
-// will read the text as any Config type (maps must start be enclosed in {...}).
+// will read the text as any Config type (maps must be enclosed in {...}).
 // Any parse error will result in the entire config not being read, and an error
 // status returned indicating the parse error.
 absl::StatusOr<Config> ReadConfigFromText(

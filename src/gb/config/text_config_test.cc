@@ -5,7 +5,13 @@
 
 #include "gb/config/text_config.h"
 
+#include <cmath>
+#include <iterator>
+#include <string>
+
+#include "absl/strings/str_cat.h"
 #include "absl/strings/str_split.h"
+#include "gb/test/thread_tester.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
@@ -16,7 +22,7 @@ using ::testing::HasSubstr;
 using ::testing::Not;
 
 //==============================================================================
-// WriteConfigToText — Scalar types
+// WriteConfigToText - Scalar types
 //==============================================================================
 
 TEST(WriteConfigToTextTest, BoolTrue) {
@@ -55,7 +61,22 @@ TEST(WriteConfigToTextTest, Float) {
 }
 
 TEST(WriteConfigToTextTest, FloatZero) {
-  EXPECT_EQ(WriteConfigToText(Config::Float(0.0)), "0");
+  EXPECT_EQ(WriteConfigToText(Config::Float(0.0)), "0.0");
+}
+
+TEST(WriteConfigToTextTest, FloatWholeNumber) {
+  EXPECT_EQ(WriteConfigToText(Config::Float(2.0)), "2.0");
+  EXPECT_EQ(WriteConfigToText(Config::Float(-3.0)), "-3.0");
+}
+
+TEST(WriteConfigToTextTest, FloatExponent) {
+  EXPECT_EQ(WriteConfigToText(Config::Float(1e300)), "1e+300");
+  EXPECT_EQ(WriteConfigToText(Config::Float(1.5e-300)), "1.5e-300");
+}
+
+TEST(WriteConfigToTextTest, FloatShortest) {
+  EXPECT_EQ(WriteConfigToText(Config::Float(0.1)), "0.1");
+  EXPECT_EQ(WriteConfigToText(Config::Float(1.0 / 3.0)), "0.3333333333333333");
 }
 
 TEST(WriteConfigToTextTest, FloatNegative) {
@@ -64,7 +85,7 @@ TEST(WriteConfigToTextTest, FloatNegative) {
 }
 
 //==============================================================================
-// WriteConfigToText — None
+// WriteConfigToText - None
 //==============================================================================
 
 TEST(WriteConfigToTextTest, None) {
@@ -117,7 +138,7 @@ TEST(WriteConfigToTextTest, NoneRootlessReturnsEmpty) {
 }
 
 //==============================================================================
-// WriteConfigToText — Strings
+// WriteConfigToText - Strings
 //==============================================================================
 
 TEST(WriteConfigToTextTest, SimpleString) {
@@ -165,6 +186,11 @@ TEST(WriteConfigToTextTest, StringPrintableCharPassthrough) {
   EXPECT_EQ(WriteConfigToText(Config::String("~")), "\"~\"");
 }
 
+TEST(WriteConfigToTextTest, StringUtf8Passthrough) {
+  EXPECT_EQ(WriteConfigToText(Config::String("caf\xc3\xa9")),
+            "\"caf\xc3\xa9\"");
+}
+
 TEST(WriteConfigToTextTest, StringMultipleEscapes) {
   EXPECT_EQ(WriteConfigToText(Config::String("a\nb\tc\\")),
             "\"a\\nb\\tc\\\\\"");
@@ -208,7 +234,7 @@ TEST(WriteConfigToTextTest, StringSingleQuotedWithEscapes) {
 }
 
 //==============================================================================
-// WriteConfigToText — Empty map and array
+// WriteConfigToText - Empty map and array
 //==============================================================================
 
 TEST(WriteConfigToTextTest, EmptyMap) {
@@ -222,7 +248,7 @@ TEST(WriteConfigToTextTest, EmptyArray) {
 }
 
 //==============================================================================
-// WriteConfigToText — Map with identifier keys (default flags)
+// WriteConfigToText - Map with identifier keys (default flags)
 //==============================================================================
 
 TEST(WriteConfigToTextTest, MapSingleKeyIdentifier) {
@@ -288,7 +314,7 @@ TEST(WriteConfigToTextTest, MapKeyNoIdentifierFlag) {
 }
 
 //==============================================================================
-// WriteConfigToText — Map with all value types
+// WriteConfigToText - Map with all value types
 //==============================================================================
 
 TEST(WriteConfigToTextTest, MapWithAllValueTypes) {
@@ -313,7 +339,7 @@ TEST(WriteConfigToTextTest, MapWithAllValueTypes) {
 }
 
 //==============================================================================
-// WriteConfigToText — Nested maps with indentation
+// WriteConfigToText - Nested maps with indentation
 //==============================================================================
 
 TEST(WriteConfigToTextTest, NestedMap) {
@@ -349,7 +375,7 @@ TEST(WriteConfigToTextTest, DeeplyNestedMap) {
 }
 
 //==============================================================================
-// WriteConfigToText — Array values
+// WriteConfigToText - Array values
 //==============================================================================
 
 TEST(WriteConfigToTextTest, SingleElementArray) {
@@ -413,7 +439,7 @@ TEST(WriteConfigToTextTest, MapContainingArray) {
 }
 
 //==============================================================================
-// WriteConfigToText — Array line wrapping
+// WriteConfigToText - Array line wrapping
 //==============================================================================
 
 TEST(WriteConfigToTextTest, ArrayShortNoWrapping) {
@@ -451,6 +477,30 @@ TEST(WriteConfigToTextTest, ArrayLineWrappingRespectsLineLength) {
   }
 }
 
+TEST(WriteConfigToTextTest, ArrayWrapsEachLongValue) {
+  const std::string a(60, 'a');
+  const std::string b(60, 'b');
+  const std::string c(60, 'c');
+  Config config = Config::Array();
+  config.AppendString(a);
+  config.AppendString(b);
+  config.AppendString(c);
+  EXPECT_EQ(WriteConfigToText(config),
+            absl::StrCat("[\"", a, "\",\n  \"", b, "\",\n  \"", c, "\"]"));
+}
+
+TEST(WriteConfigToTextTest, ArrayWrapsFromLastLineOfValue) {
+  const std::string x(70, 'x');
+  Config inner = Config::Map();
+  inner.Set("key", Config::String(x));
+  Config config = Config::Array();
+  config.Append(std::move(inner));
+  config.AppendInt(1);
+  config.AppendInt(2);
+  EXPECT_EQ(WriteConfigToText(config),
+            absl::StrCat("[{\n    key: \"", x, "\"\n  }, 1, 2]"));
+}
+
 TEST(WriteConfigToTextTest, ArrayWrappingInMap) {
   Config::ArrayValue arr;
   for (int i = 0; i < 30; ++i) {
@@ -464,7 +514,7 @@ TEST(WriteConfigToTextTest, ArrayWrappingInMap) {
 }
 
 //==============================================================================
-// WriteConfigToText — Compact output
+// WriteConfigToText - Compact output
 //==============================================================================
 
 TEST(WriteConfigToTextTest, CompactBool) {
@@ -563,7 +613,7 @@ TEST(WriteConfigToTextTest, CompactLargeArrayNoWrapping) {
 }
 
 //==============================================================================
-// WriteConfigToText — Rootless mode
+// WriteConfigToText - Rootless mode
 //==============================================================================
 
 TEST(WriteConfigToTextTest, RootlessMap) {
@@ -632,7 +682,7 @@ TEST(WriteConfigToTextTest, RootlessMapKeysNotIndented) {
 }
 
 //==============================================================================
-// WriteConfigToText — JSON-style flags (no identifiers, no single quotes)
+// WriteConfigToText - JSON-style flags (no identifiers, no single quotes)
 //==============================================================================
 
 TEST(WriteConfigToTextTest, JsonMap) {
@@ -665,7 +715,7 @@ TEST(WriteConfigToTextTest, JsonNestedMap) {
 }
 
 //==============================================================================
-// WriteConfigToText — Compact + Rootless combination
+// WriteConfigToText - Compact + Rootless combination
 //==============================================================================
 
 TEST(WriteConfigToTextTest, CompactRootlessMap) {
@@ -691,7 +741,7 @@ TEST(WriteConfigToTextTest, CompactRootlessEmptyMap) {
 }
 
 //==============================================================================
-// WriteConfigToText — Predefined flag constants
+// WriteConfigToText - Predefined flag constants
 //==============================================================================
 
 TEST(WriteConfigToTextTest, DefaultFlagsHaveIdentifiersAndSingleQuotes) {
@@ -721,7 +771,7 @@ TEST(WriteConfigToTextTest, JsonFlagsAreEmpty) {
 }
 
 //==============================================================================
-// ReadConfigFromText — Scalar types
+// ReadConfigFromText - Scalar types
 //==============================================================================
 
 TEST(ReadConfigFromTextTest, Null) {
@@ -822,7 +872,7 @@ TEST(ReadConfigFromTextTest, FloatExponentNegative) {
 }
 
 //==============================================================================
-// ReadConfigFromText — Strings
+// ReadConfigFromText - Strings
 //==============================================================================
 
 TEST(ReadConfigFromTextTest, SimpleString) {
@@ -894,7 +944,7 @@ TEST(ReadConfigFromTextTest, SingleQuotedStringNotAllowedInJson) {
 }
 
 //==============================================================================
-// ReadConfigFromText — Arrays
+// ReadConfigFromText - Arrays
 //==============================================================================
 
 TEST(ReadConfigFromTextTest, EmptyArray) {
@@ -963,7 +1013,7 @@ TEST(ReadConfigFromTextTest, ArrayWithNulls) {
 }
 
 //==============================================================================
-// ReadConfigFromText — Maps (rooted)
+// ReadConfigFromText - Maps (rooted)
 //==============================================================================
 
 TEST(ReadConfigFromTextTest, EmptyMap) {
@@ -1029,7 +1079,7 @@ TEST(ReadConfigFromTextTest, MapWithNullValue) {
 }
 
 //==============================================================================
-// ReadConfigFromText — Identifier keys
+// ReadConfigFromText - Identifier keys
 //==============================================================================
 
 TEST(ReadConfigFromTextTest, IdentifierKey) {
@@ -1065,7 +1115,7 @@ TEST(ReadConfigFromTextTest, IdentifierKeyNotAllowedInJson) {
 }
 
 //==============================================================================
-// ReadConfigFromText — Rootless mode
+// ReadConfigFromText - Rootless mode
 //==============================================================================
 
 TEST(ReadConfigFromTextTest, RootlessSimple) {
@@ -1127,7 +1177,7 @@ TEST(ReadConfigFromTextTest, RootlessMultiline) {
 }
 
 //==============================================================================
-// ReadConfigFromText — Comments
+// ReadConfigFromText - Comments
 //==============================================================================
 
 TEST(ReadConfigFromTextTest, LineComment) {
@@ -1176,7 +1226,7 @@ TEST(ReadConfigFromTextTest, BlockCommentNotAllowedInJson) {
 }
 
 //==============================================================================
-// ReadConfigFromText — Individual flag variations
+// ReadConfigFromText - Individual flag variations
 //==============================================================================
 
 // No single quotes flag: single-quoted strings are rejected, but double-quoted
@@ -1270,7 +1320,7 @@ TEST(ReadConfigFromTextTest, RootlessNoIdentifiersFlagAllowsStringKeys) {
 }
 
 //==============================================================================
-// ReadConfigFromText — Whitespace handling
+// ReadConfigFromText - Whitespace handling
 //==============================================================================
 
 TEST(ReadConfigFromTextTest, LeadingWhitespace) {
@@ -1313,7 +1363,7 @@ TEST(ReadConfigFromTextTest, MultilineMap) {
 }
 
 //==============================================================================
-// ReadConfigFromText — Error cases
+// ReadConfigFromText - Error cases
 //==============================================================================
 
 TEST(ReadConfigFromTextTest, EmptyInputRooted) {
@@ -1371,7 +1421,7 @@ TEST(ReadConfigFromTextTest, RootlessTrailingGarbage) {
 }
 
 //==============================================================================
-// ReadConfigFromText — Round-trip (Write then Read)
+// ReadConfigFromText - Round-trip (Write then Read)
 //==============================================================================
 
 TEST(ReadConfigFromTextTest, RoundTripNull) {
@@ -1407,6 +1457,64 @@ TEST(ReadConfigFromTextTest, RoundTripFloat) {
   ASSERT_TRUE(result.ok()) << result.status();
   EXPECT_TRUE(result->IsFloat());
   EXPECT_NEAR(result->GetFloat(), 3.14, 1e-9);
+}
+
+TEST(ReadConfigFromTextTest, RoundTripFloatIsExact) {
+  const double kValues[] = {1.0 / 3.0, 0.1, 2.0,  -3.0,         1e300,
+                            1.5e-300,  0.0, -0.0, 123456789.125};
+  for (double value : kValues) {
+    std::string text = WriteConfigToText(Config::Float(value));
+    auto result = ReadConfigFromText(text);
+    ASSERT_TRUE(result.ok()) << text << ": " << result.status();
+    EXPECT_TRUE(result->IsFloat()) << text;
+    EXPECT_EQ(result->GetFloat(), value) << text;
+    EXPECT_EQ(std::signbit(result->GetFloat()), std::signbit(value)) << text;
+  }
+}
+
+TEST(ReadConfigFromTextTest, RoundTripUtf8String) {
+  Config original = Config::String("caf\xc3\xa9 \xe2\x82\xac");
+  auto result = ReadConfigFromText(WriteConfigToText(original));
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(result->GetString(), original.GetString());
+}
+
+TEST(ReadConfigFromTextTest, RoundTripKeywordKeys) {
+  Config original = Config::Map();
+  original.Set("null", Config::Int(1));
+  original.Set("true", Config::Int(2));
+  original.Set("false", Config::Int(3));
+  std::string text = WriteConfigToText(original);
+  auto result = ReadConfigFromText(text);
+  ASSERT_TRUE(result.ok()) << text << ": " << result.status();
+  EXPECT_EQ(result->GetInt("null"), 1);
+  EXPECT_EQ(result->GetInt("true"), 2);
+  EXPECT_EQ(result->GetInt("false"), 3);
+}
+
+TEST(ReadConfigFromTextTest, ReadOnSeveralThreads) {
+  const TextConfigFlag kReadFlags[] = {TextConfigFlag::kIdentifiers,
+                                       TextConfigFlag::kSingleQuotes,
+                                       TextConfigFlag::kComments};
+  const int kFlagCount = static_cast<int>(std::size(kReadFlags));
+  ThreadTester tester;
+  for (int mask = 0; mask < (1 << kFlagCount); ++mask) {
+    TextConfigFlags flags;
+    for (int i = 0; i < kFlagCount; ++i) {
+      if ((mask & (1 << i)) != 0) {
+        flags.Set(kReadFlags[i]);
+      }
+    }
+    tester.Run(absl::StrCat("read", mask), [&tester, flags]() {
+      if (!tester.Wait(1)) {
+        return false;
+      }
+      auto result = ReadConfigFromText("{\"a\": [1, 2.5, \"x\"]}", flags);
+      return result.ok() && result->GetArray("a").size() == 3;
+    });
+  }
+  tester.Signal(1);
+  EXPECT_TRUE(tester.Complete()) << tester.GetResultString();
 }
 
 TEST(ReadConfigFromTextTest, RoundTripString) {

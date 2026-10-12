@@ -502,9 +502,58 @@ Depends on: CL4.
   and with incomplete hex escapes, comment starts that prefix another, and
   duplicate rule names, in a program and in `ParserRules`.
 
-### CL15 [ ] config: audit gb_config
+### CL15 [x] config: audit gb_config
 
 Depends on: CL14.
+
+- `ReadConfigFromText()` cached its parser programs in a static map with no
+  lock, so reads on different threads raced when either created a program.
+- Floats were written to text with 6 significant digits, so saving and loading
+  a config changed them (1/3 read back as 0.333333), and a whole number was
+  written without a decimal point, so it read back as an int. They are now
+  written as the shortest text that reads back as the same value, with ".0"
+  added to a whole number. `Config::AsString()` of a float had the same loss
+  of precision, and now uses the same shortest text.
+- UTF-8 characters in strings were written as hex escapes (`char` is signed),
+  though the format says they are written as is, and hex escapes aren't JSON.
+- Non-compact arrays wrapped lines in the wrong places: after a value was moved
+  to a new line, the line length was measured from near its end, so the next
+  long value didn't wrap; and the length of a value that spans several lines
+  (a map) was measured to its end rather than its first line.
+- `Config::ResizeArray()` with a negative size threw `std::length_error`,
+  which Game Bits never catches; it is now treated as zero.
+- `Config::AsInt()` of a string out of range returned the largest or smallest
+  int rather than 0, and `AsInt()` and `AsFloat()` of a string stopped at an
+  embedded NUL. `AsFloat()` of a string depended on the C locale, so "1.5" was
+  0 after `setlocale()` to a locale with a decimal comma. Both now use
+  Abseil's parsing, which also ignores trailing whitespace as well as leading.
+- `Config::GetArray()` is const, but returned a mutable span by casting away
+  const, so a const Config could be changed through it. It now returns
+  `absl::Span<const Config>` (breaking any caller that changes the array
+  through it; no project does).
+- Optimizations: writing a map copied it (and all of its values, at every
+  level) into a sorted map; it now sorts pointers to the entries, as does
+  `Config::AsArray()` of a map, which also looked each key up again.
+  `AsBool()` of a string no longer lowercases a copy.
+- Doc fixes: the text format isn't rootless by default, and several typos.
+  Smaller cleanups: missing includes, a missing trailing newline, garbled
+  characters in the test section headings, and a `size_t` loop.
+- Left as is: infinities, NaNs, and subnormal floats are written as text that
+  can't be read back (as in JSON, which has no text for them); a non-compact
+  empty map is written as `{` and `}` on separate lines with a blank line
+  between; JSON output escapes control characters as `\xNN`, which JSON
+  doesn't support (noted in the format's docs); and deeply nested text
+  recurses once per level when read, so very deep nesting can overflow the
+  stack.
+
+**Verify**
+- Standard checks.
+- Unit tests: negative array sizes, strings out of range or with whitespace or
+  NUL as ints and floats, floats from strings under a decimal comma locale,
+  floats as strings and text (exact, shortest, whole numbers, exponents, and
+  round trips including -0.0), UTF-8 strings written as is and read back, array
+  wrapping of long values and after a multi-line value, keyword map keys, and
+  reading with every flag combination on several threads at once.
 
 ### CL16 [ ] collide: audit gb_collide
 

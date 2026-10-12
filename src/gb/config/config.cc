@@ -6,11 +6,15 @@
 #include "gb/config/config.h"
 
 #include <algorithm>
+#include <charconv>
 #include <cmath>
-#include <cstdlib>
+#include <iterator>
 #include <limits>
+#include <type_traits>
 
-#include "absl/strings/ascii.h"
+#include "absl/algorithm/container.h"
+#include "absl/strings/match.h"
+#include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
 
 namespace gb {
@@ -216,22 +220,22 @@ void Config::SetMap(MapValue value) { value_ = std::move(value); }
 
 // Array accessors
 
-absl::Span<Config> Config::GetArray() const {
+absl::Span<const Config> Config::GetArray() const {
   auto* arr = std::get_if<ArrayValue>(&value_);
   if (arr == nullptr) {
     return {};
   }
-  return absl::Span<Config>(const_cast<Config*>(arr->data()), arr->size());
+  return *arr;
 }
 
-absl::Span<Config> Config::GetArray(std::string_view key) const {
+absl::Span<const Config> Config::GetArray(std::string_view key) const {
   auto* config = Get(key);
-  return config != nullptr ? config->GetArray() : absl::Span<Config>();
+  return config != nullptr ? config->GetArray() : absl::Span<const Config>();
 }
 
-absl::Span<Config> Config::GetArray(int index) const {
+absl::Span<const Config> Config::GetArray(int index) const {
   auto* config = Get(index);
-  return config != nullptr ? config->GetArray() : absl::Span<Config>();
+  return config != nullptr ? config->GetArray() : absl::Span<const Config>();
 }
 
 void Config::SetArray(ArrayValue value) { value_ = std::move(value); }
@@ -273,6 +277,7 @@ bool Config::DeleteKey(std::string_view key) {
 void Config::ResizeArray(int new_size) { ResizeArray(new_size, Bool(false)); }
 
 void Config::ResizeArray(int new_size, const Config& value) {
+  new_size = std::max(new_size, 0);
   auto* arr = std::get_if<ArrayValue>(&value_);
   if (arr == nullptr) {
     ArrayValue new_arr(new_size, value);
@@ -319,8 +324,7 @@ bool Config::AsBool() const {
           if (val.empty() || val == "0" || val == "0.0") {
             return false;
           }
-          std::string lower = absl::AsciiStrToLower(val);
-          return lower != "false";
+          return !absl::EqualsIgnoreCase(val, "false");
         } else {
           return false;
         }
@@ -347,10 +351,8 @@ int64_t Config::AsInt() const {
         } else if constexpr (std::is_same_v<T, int64_t>) {
           return val;
         } else if constexpr (std::is_same_v<T, double>) {
-          if (std::isnan(val) || std::isinf(val)) {
-            if (std::isnan(val)) return 0;
-            return val > 0 ? std::numeric_limits<int64_t>::max()
-                           : std::numeric_limits<int64_t>::min();
+          if (std::isnan(val)) {
+            return 0;
           }
           if (val >= static_cast<double>(std::numeric_limits<int64_t>::max())) {
             return std::numeric_limits<int64_t>::max();
@@ -360,9 +362,8 @@ int64_t Config::AsInt() const {
           }
           return static_cast<int64_t>(val);
         } else if constexpr (std::is_same_v<T, std::string>) {
-          char* end = nullptr;
-          int64_t result = std::strtoll(val.c_str(), &end, 10);
-          return (end != val.c_str() && *end == '\0') ? result : 0;
+          int64_t result = 0;
+          return absl::SimpleAtoi(val, &result) ? result : 0;
         } else {
           return 0;
         }
@@ -391,9 +392,8 @@ double Config::AsFloat() const {
         } else if constexpr (std::is_same_v<T, double>) {
           return val;
         } else if constexpr (std::is_same_v<T, std::string>) {
-          char* end = nullptr;
-          double result = std::strtod(val.c_str(), &end);
-          return (end != val.c_str() && *end == '\0') ? result : 0.0;
+          double result = 0.0;
+          return absl::SimpleAtod(val, &result) ? result : 0.0;
         } else {
           return 0.0;
         }
@@ -420,7 +420,12 @@ std::string Config::AsString() const {
         } else if constexpr (std::is_same_v<T, int64_t>) {
           return absl::StrCat(val);
         } else if constexpr (std::is_same_v<T, double>) {
-          return absl::StrCat(val);
+          // Large enough for the longest shortest form of a double, such as
+          // "-2.2250738585072014e-308".
+          char buffer[32];
+          const std::to_chars_result result =
+              std::to_chars(std::begin(buffer), std::end(buffer), val);
+          return std::string(buffer, result.ptr);
         } else if constexpr (std::is_same_v<T, std::string>) {
           return val;
         } else {
@@ -450,7 +455,8 @@ Config::MapValue Config::AsMap() const {
           return val;
         } else if constexpr (std::is_same_v<T, ArrayValue>) {
           MapValue result;
-          for (size_t i = 0; i < val.size(); ++i) {
+          const int size = static_cast<int>(val.size());
+          for (int i = 0; i < size; ++i) {
             result.insert_or_assign(absl::StrCat(i), val[i]);
           }
           return result;
@@ -472,16 +478,19 @@ Config::ArrayValue Config::AsArray() const {
         } else if constexpr (std::is_same_v<T, ArrayValue>) {
           return val;
         } else if constexpr (std::is_same_v<T, MapValue>) {
-          std::vector<std::string> keys;
-          keys.reserve(val.size());
-          for (const auto& pair : val) {
-            keys.push_back(pair.first);
+          std::vector<const MapValue::value_type*> entries;
+          entries.reserve(val.size());
+          for (const auto& entry : val) {
+            entries.push_back(&entry);
           }
-          std::sort(keys.begin(), keys.end());
+          absl::c_sort(entries, [](const MapValue::value_type* a,
+                                   const MapValue::value_type* b) {
+            return a->first < b->first;
+          });
           ArrayValue result;
-          result.reserve(val.size());
-          for (const auto& key : keys) {
-            result.push_back(val.at(key));
+          result.reserve(entries.size());
+          for (const MapValue::value_type* entry : entries) {
+            result.push_back(entry->second);
           }
           return result;
         } else {

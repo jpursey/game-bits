@@ -5,8 +5,12 @@
 
 #include "gb/config/config.h"
 
+#include <clocale>
 #include <cmath>
 #include <limits>
+#include <string>
+#include <type_traits>
+#include <utility>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -17,6 +21,9 @@ namespace {
 using ::testing::ElementsAre;
 using ::testing::IsEmpty;
 using ::testing::UnorderedElementsAre;
+
+static_assert(std::is_same_v<decltype(std::declval<const Config&>().GetArray()),
+                             absl::Span<const Config>>);
 
 //==============================================================================
 // Factory functions and type accessors
@@ -149,7 +156,7 @@ TEST(ConfigTest, MoveAssign) {
 }
 
 //==============================================================================
-// Value accessors — wrong type returns default
+// Value accessors - wrong type returns default
 //==============================================================================
 
 TEST(ConfigTest, GetBoolWrongType) {
@@ -443,7 +450,7 @@ TEST(ConfigTest, GetArrayByKey) {
   inner.push_back(Config::Int(1));
   Config config = Config::Map();
   config.Set("arr", Config::Array(std::move(inner)));
-  absl::Span<Config> span = config.GetArray("arr");
+  absl::Span<const Config> span = config.GetArray("arr");
   EXPECT_EQ(span.size(), 1);
   EXPECT_TRUE(config.GetArray("missing").empty());
 }
@@ -454,7 +461,7 @@ TEST(ConfigTest, GetArrayByIndex) {
   Config::ArrayValue outer;
   outer.push_back(Config::Array(std::move(inner)));
   Config config = Config::Array(std::move(outer));
-  absl::Span<Config> span = config.GetArray(0);
+  absl::Span<const Config> span = config.GetArray(0);
   EXPECT_EQ(span.size(), 1);
   EXPECT_TRUE(config.GetArray(1).empty());
 }
@@ -585,6 +592,19 @@ TEST(ConfigTest, ResizeArrayWithValue) {
   EXPECT_EQ(config.GetInt(0), 99);
   EXPECT_EQ(config.GetInt(1), 99);
   EXPECT_EQ(config.GetInt(2), 99);
+}
+
+TEST(ConfigTest, ResizeArrayNegativeIsEmpty) {
+  Config config = Config::Array();
+  config.AppendInt(1);
+  config.ResizeArray(-1);
+  EXPECT_TRUE(config.IsArray());
+  EXPECT_EQ(config.GetArraySize(), 0);
+
+  config = Config::Int(42);
+  config.ResizeArray(-1, Config::Int(99));
+  EXPECT_TRUE(config.IsArray());
+  EXPECT_EQ(config.GetArraySize(), 0);
 }
 
 TEST(ConfigTest, PopBackOnArray) {
@@ -739,6 +759,25 @@ TEST(ConfigTest, AsIntFromString) {
   EXPECT_EQ(Config::String("").AsInt(), 0);
 }
 
+TEST(ConfigTest, AsIntFromStringOutOfRange) {
+  EXPECT_EQ(Config::String("9223372036854775807").AsInt(),
+            std::numeric_limits<int64_t>::max());
+  EXPECT_EQ(Config::String("-9223372036854775808").AsInt(),
+            std::numeric_limits<int64_t>::min());
+  EXPECT_EQ(Config::String("9223372036854775808").AsInt(), 0);
+  EXPECT_EQ(Config::String("-9223372036854775809").AsInt(), 0);
+}
+
+TEST(ConfigTest, AsIntFromStringWithWhitespace) {
+  EXPECT_EQ(Config::String(" 42").AsInt(), 42);
+  EXPECT_EQ(Config::String("42 ").AsInt(), 42);
+  EXPECT_EQ(Config::String("4 2").AsInt(), 0);
+}
+
+TEST(ConfigTest, AsIntFromStringWithNul) {
+  EXPECT_EQ(Config::String(std::string("42\0x", 4)).AsInt(), 0);
+}
+
 TEST(ConfigTest, AsIntFromMapArray) {
   EXPECT_EQ(Config::Map().AsInt(), 0);
   EXPECT_EQ(Config::Array().AsInt(), 0);
@@ -782,6 +821,26 @@ TEST(ConfigTest, AsFloatFromString) {
   EXPECT_EQ(Config::String("").AsFloat(), 0.0);
 }
 
+TEST(ConfigTest, AsFloatFromStringWithWhitespace) {
+  EXPECT_EQ(Config::String(" 1.5").AsFloat(), 1.5);
+  EXPECT_EQ(Config::String("1.5 ").AsFloat(), 1.5);
+  EXPECT_EQ(Config::String("1 .5").AsFloat(), 0.0);
+}
+
+TEST(ConfigTest, AsFloatFromStringWithNul) {
+  EXPECT_EQ(Config::String(std::string("1.5\0x", 5)).AsFloat(), 0.0);
+}
+
+TEST(ConfigTest, AsFloatFromStringIgnoresLocale) {
+  const std::string old_locale = std::setlocale(LC_NUMERIC, nullptr);
+  if (std::setlocale(LC_NUMERIC, "de-DE") == nullptr) {
+    GTEST_SKIP() << "No de-DE locale";
+  }
+  const double value = Config::String("1.5").AsFloat();
+  std::setlocale(LC_NUMERIC, old_locale.c_str());
+  EXPECT_EQ(value, 1.5);
+}
+
 TEST(ConfigTest, AsFloatFromMapArray) {
   EXPECT_EQ(Config::Map().AsFloat(), 0.0);
   EXPECT_EQ(Config::Array().AsFloat(), 0.0);
@@ -819,8 +878,15 @@ TEST(ConfigTest, AsStringFromInt) {
 }
 
 TEST(ConfigTest, AsStringFromFloat) {
-  std::string result = Config::Float(1.5).AsString();
-  EXPECT_FALSE(result.empty());
+  EXPECT_EQ(Config::Float(1.5).AsString(), "1.5");
+  EXPECT_EQ(Config::Float(0.1).AsString(), "0.1");
+  EXPECT_EQ(Config::Float(-2.0).AsString(), "-2");
+  EXPECT_EQ(Config::Float(1e300).AsString(), "1e+300");
+}
+
+TEST(ConfigTest, AsStringFromFloatIsExact) {
+  const double value = 1.0 / 3.0;
+  EXPECT_EQ(Config::String(Config::Float(value).AsString()).AsFloat(), value);
 }
 
 TEST(ConfigTest, AsStringFromString) {
@@ -998,7 +1064,7 @@ TEST(ConfigTest, GetArrayDirect) {
   arr.push_back(Config::Int(1));
   arr.push_back(Config::Int(2));
   Config config = Config::Array(std::move(arr));
-  absl::Span<Config> span = config.GetArray();
+  absl::Span<const Config> span = config.GetArray();
   EXPECT_EQ(span.size(), 2);
   EXPECT_EQ(span[0].GetInt(), 1);
   EXPECT_EQ(span[1].GetInt(), 2);

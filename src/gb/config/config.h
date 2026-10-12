@@ -9,8 +9,12 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <variant>
+#include <vector>
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/types/span.h"
 
 namespace gb {
 
@@ -127,7 +131,8 @@ class Config {
   //     an array.
   //----------------------------------------------------------------------------
 
-  // Returns the number of values in this array, or zero this is not an array.
+  // Returns the number of values in this array, or zero if this is not an
+  // array.
   int GetArraySize() const;
 
   // Returns the number of key/value pairs in this map, or zero if this is not a
@@ -214,9 +219,9 @@ class Config {
   }
 
   // Returns empty span if this is not an array.
-  absl::Span<Config> GetArray() const;
-  absl::Span<Config> GetArray(std::string_view key) const;
-  absl::Span<Config> GetArray(int index) const;
+  absl::Span<const Config> GetArray() const;
+  absl::Span<const Config> GetArray(std::string_view key) const;
+  absl::Span<const Config> GetArray(int index) const;
 
   // Sets the value of this config to an array.
   void SetArray(ArrayValue value);
@@ -249,10 +254,11 @@ class Config {
   // These functions provide additional functionality for array values.
   //----------------------------------------------------------------------------
 
-  // Resizes this array to the specified size. If the config is not currently
+  // Resizes this array to the specified size. If the config is not currently an
   // array, it becomes an array of the specified size replacing the existing
   // value. If the new size is greater than the current size, then new elements
-  // will be default initialized to Config::Bool(false) if not specified.
+  // will be default initialized to Config::Bool(false) if not specified. A
+  // negative size is treated as zero.
   void ResizeArray(int new_size);
   void ResizeArray(int new_size, const Config& value);
 
@@ -286,7 +292,7 @@ class Config {
   }
 
   //----------------------------------------------------------------------------
-  // Value coersion functions
+  // Value coercion functions
   //
   // These functions attempt to coerce the value to the specified type.
   //----------------------------------------------------------------------------
@@ -307,9 +313,10 @@ class Config {
   //   - none: 0
   //   - bool: 1 if true, 0 if false.
   //   - int: The int value.
-  //   - float: The truncated value of the float, clamped to the integer range.
-  //   - string: The int value of the string, or 0 if the string is not a valid
-  //     integer.
+  //   - float: The truncated value of the float, clamped to the integer range,
+  //     or 0 if it is NaN.
+  //   - string: The int value of the string ignoring surrounding whitespace,
+  //     or 0 if the string is not a valid decimal integer in range.
   //   - map / array: Zero
   int64_t AsInt() const;
   int64_t AsInt(std::string_view key) const;
@@ -319,10 +326,11 @@ class Config {
   //   - none: 0.0
   //   - bool: 1.0 if true, 0.0 if false.
   //   - int: The float value of the int. This is approximate for values beyond
-  //   the precision of the float.
+  //     the precision of the float.
   //   - float: The float value.
-  //   - string: The float value of the string, or 0.0 if the string is not a
-  //     valid float.
+  //   - string: The float value of the string ignoring surrounding whitespace,
+  //     or 0.0 if the string is not a valid float. The decimal point is always
+  //     '.', whatever the locale.
   //   - map / array: Zero
   double AsFloat() const;
   double AsFloat(std::string_view key) const;
@@ -332,7 +340,8 @@ class Config {
   //   - none: Empty string.
   //   - bool: "true" or "false".
   //   - int: The string value of the int.
-  //   - float: The string value of the float.
+  //   - float: The shortest string that AsFloat() reads back as the same value
+  //     ("0.1", "2", "1e+300").
   //   - string: The string value.
   //   - map / array: Empty string.
   std::string AsString() const;
@@ -341,10 +350,10 @@ class Config {
 
   // Returns the following based on the type:
   //   - none: Empty map.
-  //   - bool: Map of any empty key to the bool value.
-  //   - int: Map of any empty key to the int value.
-  //   - float: Map of any empty key to the float value.
-  //   - string: Map of any empty key to the string value.
+  //   - bool: Map of an empty key to the bool value.
+  //   - int: Map of an empty key to the int value.
+  //   - float: Map of an empty key to the float value.
+  //   - string: Map of an empty key to the string value.
   //   - map: The map value.
   //   - array: Map of the string value of each index to the value at that
   //     index. Note that the resulting keys cannot be sorted by string value to

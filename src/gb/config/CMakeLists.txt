@@ -12,6 +12,7 @@ set(gb_config_DEPS
   absl::status
   absl::statusor
   absl::strings
+  absl::synchronization
   gb_base
   gb_parse
 )
@@ -19,6 +20,10 @@ set(gb_config_DEPS
 set(gb_config_TEST_SOURCE
   config_test.cc
   text_config_test.cc
+)
+
+set(gb_config_TEST_DEPS
+  gb_test
 )
 
 gb_add_library(gb_config)

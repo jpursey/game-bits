@@ -5,11 +5,25 @@
 
 #include "gb/config/text_config.h"
 
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include "absl/algorithm/container.h"
 #include "absl/base/no_destructor.h"
-#include "absl/container/btree_map.h"
+#include "absl/base/thread_annotations.h"
 #include "absl/container/flat_hash_map.h"
+#include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "absl/strings/ascii.h"
+#include "absl/strings/str_cat.h"
+#include "absl/strings/str_format.h"
+#include "absl/synchronization/mutex.h"
+#include "absl/types/span.h"
 #include "gb/parse/lexer_config.h"
 #include "gb/parse/parser.h"
 #include "gb/parse/parser_program.h"
@@ -64,7 +78,7 @@ void WriteString(std::string& text, absl::string_view value,
         text.push_back(c);
         break;
       default:
-        if (c < 0x20) {
+        if (static_cast<unsigned char>(c) < 0x20) {
           absl::StrAppendFormat(&text, "\\x%02x",
                                 static_cast<unsigned char>(c));
         } else {
@@ -93,15 +107,28 @@ void WriteKey(std::string& text, absl::string_view key, TextConfigFlags flags) {
   }
 }
 
+using MapEntry = Config::MapValue::value_type;
+
+std::vector<const MapEntry*> GetSortedEntries(const Config::MapValue& map) {
+  std::vector<const MapEntry*> entries;
+  entries.reserve(map.size());
+  for (const MapEntry& entry : map) {
+    entries.push_back(&entry);
+  }
+  absl::c_sort(entries, [](const MapEntry* a, const MapEntry* b) {
+    return a->first < b->first;
+  });
+  return entries;
+}
+
 void WriteCompactMapValues(std::string& text, int child_indent,
                            const Config::MapValue& map, TextConfigFlags flags) {
   absl::string_view next_value;
-  absl::btree_map<std::string, Config> ordered_map(map.begin(), map.end());
-  for (const auto& [key, value] : ordered_map) {
+  for (const MapEntry* entry : GetSortedEntries(map)) {
     absl::StrAppend(&text, next_value);
-    WriteKey(text, key, flags);
+    WriteKey(text, entry->first, flags);
     text.push_back(':');
-    WriteConfig(text, child_indent, value, flags);
+    WriteConfig(text, child_indent, entry->second, flags);
     next_value = ",";
   }
 }
@@ -114,18 +141,17 @@ void WriteMapValues(std::string& text, int child_indent,
   }
   std::string indent(child_indent * kTextConfigIndentSize, ' ');
   absl::string_view next_value;
-  absl::btree_map<std::string, Config> ordered_map(map.begin(), map.end());
-  for (const auto& [key, value] : ordered_map) {
+  for (const MapEntry* entry : GetSortedEntries(map)) {
     absl::StrAppend(&text, next_value, indent);
-    WriteKey(text, key, flags);
+    WriteKey(text, entry->first, flags);
     absl::StrAppend(&text, ": ");
-    WriteConfig(text, child_indent, value, flags);
+    WriteConfig(text, child_indent, entry->second, flags);
     next_value = ",\n";
   }
 }
 
 void WriteCompactArrayValues(std::string& text, int child_indent,
-                             absl::Span<const Config>& array,
+                             absl::Span<const Config> array,
                              TextConfigFlags flags) {
   absl::string_view next_value;
   for (const auto& value : array) {
@@ -135,12 +161,10 @@ void WriteCompactArrayValues(std::string& text, int child_indent,
   }
 }
 
-std::string::size_type GetLastNewLine(const std::string& text) {
-  std::string::size_type line_start = text.rfind('\n');
-  if (line_start == std::string::npos) {
-    line_start = 0;
-  }
-  return line_start;
+// Returns the index of the first character on the last line of text.
+int GetLastLineStart(std::string_view text) {
+  const std::string_view::size_type newline = text.rfind('\n');
+  return newline == std::string_view::npos ? 0 : static_cast<int>(newline) + 1;
 }
 
 void WriteArrayValues(std::string& text, int child_indent,
@@ -149,21 +173,29 @@ void WriteArrayValues(std::string& text, int child_indent,
     WriteCompactArrayValues(text, child_indent, array, flags);
     return;
   }
-  std::string indent(child_indent * kTextConfigIndentSize + 1, ' ');
-  indent[0] = '\n';
-  int next_indent_size = indent.size() - 1;
-  std::string::size_type line_start = GetLastNewLine(text);
-  absl::string_view next_value;
-  for (const auto& value : array) {
-    std::string::size_type value_start = text.size() + next_value.size() / 2;
-    absl::StrAppend(&text, next_value);
-    WriteConfig(text, child_indent, value, flags);
-    if (text.size() - line_start >= kTextConfigMaxArrayLineLength) {
-      text.insert(value_start, indent);
-      line_start = text.size() - indent.size() + 1;
+  const std::string wrap = absl::StrCat(
+      "\n", std::string(child_indent * kTextConfigIndentSize, ' '));
+  int line_start = GetLastLineStart(text);
+  const int size = static_cast<int>(array.size());
+  for (int i = 0; i < size; ++i) {
+    // The space before a value becomes a new line when the value's first line
+    // would make the current line too long.
+    if (i > 0) {
+      text.push_back(',');
     }
-    next_value = ", ";
-    indent.resize(next_indent_size);
+    const int space_start = static_cast<int>(text.size());
+    const int space_size = (i > 0 ? 1 : 0);
+    text.append(space_size, ' ');
+    WriteConfig(text, child_indent, array[i], flags);
+    std::string::size_type line_end = text.find('\n', space_start);
+    if (line_end == std::string::npos) {
+      line_end = text.size();
+    }
+    if (static_cast<int>(line_end) - line_start >
+        kTextConfigMaxArrayLineLength) {
+      text.replace(space_start, space_size, wrap);
+    }
+    line_start = GetLastLineStart(text);
   }
 }
 
@@ -179,9 +211,17 @@ void WriteConfig(std::string& text, int child_indent, const Config& config,
     case Config::Type::kInt:
       absl::StrAppend(&text, config.GetInt());
       break;
-    case Config::Type::kFloat:
-      absl::StrAppend(&text, config.GetFloat());
+    case Config::Type::kFloat: {
+      // AsString() is the shortest text that reads back as the same value,
+      // but a whole number needs a decimal point to read back as a float.
+      const std::string value = config.AsString();
+      text.append(value);
+      if (std::isfinite(config.GetFloat()) &&
+          value.find_first_of(".e") == std::string::npos) {
+        text.append(".0");
+      }
       break;
+    }
     case Config::Type::kString:
       WriteString(text, config.GetString(), flags);
       break;
@@ -287,16 +327,22 @@ constexpr std::string_view kIdentKeyParserProgram = R"---(
   }
 )---";
 
+// Parser programs by the mask of the flags that affect reading.
+struct ParserPrograms {
+  absl::Mutex mutex;
+  absl::flat_hash_map<uint64_t, std::shared_ptr<ParserProgram>> programs
+      ABSL_GUARDED_BY(mutex);
+};
+
 std::shared_ptr<ParserProgram> GetParserProgram(TextConfigFlags flags) {
-  static absl::NoDestructor<
-      absl::flat_hash_map<uint64_t, std::shared_ptr<ParserProgram>>>
-      parser_programs;
+  static absl::NoDestructor<ParserPrograms> s_parser_programs;
 
   // Clear flags that only affect writing.
   flags.Clear({TextConfigFlag::kRootless, TextConfigFlag::kCompact});
 
-  if (auto it = parser_programs->find(flags.GetMask());
-      it != parser_programs->end()) {
+  absl::MutexLock lock(&s_parser_programs->mutex);
+  auto& programs = s_parser_programs->programs;
+  if (auto it = programs.find(flags.GetMask()); it != programs.end()) {
     return it->second;
   }
 
@@ -317,7 +363,7 @@ std::shared_ptr<ParserProgram> GetParserProgram(TextConfigFlags flags) {
   }
 
   std::string error_message;
-  auto& parser_program = (*parser_programs)[flags.GetMask()] =
+  auto& parser_program = programs[flags.GetMask()] =
       ParserProgram::Create(lexer_config, parser_program_text, &error_message);
   DCHECK_NE(parser_program, nullptr) << error_message;
   return parser_program;
