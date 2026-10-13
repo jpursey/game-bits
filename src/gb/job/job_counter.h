@@ -40,7 +40,13 @@ class JobCounter {
   // Internal
   //----------------------------------------------------------------------------
 
-  typedef absl::InlinedVector<void*, 1> Waiters;
+  using Waiters = absl::InlinedVector<void*, 1>;
+
+  // Returns true if the counter is zero.
+  bool IsDone(JobInternal) const {
+    absl::ReaderMutexLock lock(&mutex_);
+    return counter_ == 0;
+  }
 
   // Increments the counter.
   void Increment(JobInternal) {

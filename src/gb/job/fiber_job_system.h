@@ -6,14 +6,28 @@
 #ifndef GB_JOB_FIBER_JOB_SYSTEM_H_
 #define GB_JOB_FIBER_JOB_SYSTEM_H_
 
-#include "absl/container/flat_hash_map.h"
+#include <atomic>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include "absl/base/thread_annotations.h"
+#include "absl/container/flat_hash_set.h"
 #include "absl/functional/any_invocable.h"
+#include "absl/synchronization/mutex.h"
+#include "absl/time/time.h"
+#include "absl/types/span.h"
 #include "concurrentqueue.h"
 #include "gb/alloc/pool_allocator.h"
+#include "gb/base/clock.h"
 #include "gb/base/context.h"
 #include "gb/base/validated_context.h"
 #include "gb/job/job_system.h"
+#include "gb/job/job_types.h"
 #include "gb/thread/fiber.h"
+#include "gb/thread/thread.h"
+#include "lightweightsemaphore.h"
 
 namespace gb {
 
@@ -24,6 +38,9 @@ namespace gb {
 // DeleteFiber from/to a job system managed fiber), as that will break
 // internal management and a crash or hang is likely.
 //
+// Job threads that have no work spin briefly, and then sleep until a job is
+// ready to run.
+//
 // This class is thread-safe.
 class FiberJobSystem : public JobSystem {
  public:
@@ -32,14 +49,14 @@ class FiberJobSystem : public JobSystem {
   //----------------------------------------------------------------------------
 
   // OPTIONAL: This determines the number of threads the job system will run
-  // jobs on (max concurrency). The value is interpretted as follows:
+  // jobs on (max concurrency). The value is interpreted as follows:
   // - If set and positive, this is the number of threads created.
   // - If not set or is set to zero, the number of threads created is set to the
   //   number of available hardware threads. This does not implicitly pin job
   //   threads to hardware threads, see kConstraintPinThreads.
   // - If set and negative, the number of threads created is set to the
-  //   number of available hardware threads less this value (minimum of 1).
-  //   This does not implicitly pin job threads to hardware threads, see
+  //   number of available hardware threads reduced by its magnitude (minimum
+  //   of 1). This does not implicitly pin job threads to hardware threads, see
   //   kConstraintPinThreads.
   // This will never result in more than kMaxThreadCount threads.
   static inline constexpr int kMaxThreadCount = 64;
@@ -58,20 +75,42 @@ class FiberJobSystem : public JobSystem {
 
   // OPTIONAL: If set to true, thread and fiber names will be updated with the
   // name of the job they are running. If this is not set, then job names will
-  // be propagated only in debug builds.
+  // be propagated only in debug builds. Job names are only kept when they are
+  // propagated.
   static inline constexpr const char* kKeySetFiberNames = "set_fiber_names";
   static GB_CONTEXT_CONSTRAINT_NAMED(kConstraintSetFiberNames, kInOptional,
                                      bool, kKeySetFiberNames);
 
+  // OPTIONAL: The longest that destroying the job system waits for its jobs to
+  // finish (10 seconds by default). If they haven't all finished by then, the
+  // process is ended with a fatal error, which names them if job names are
+  // kept (see kConstraintSetFiberNames). Set this to absl::InfiniteDuration()
+  // to wait for as long as they take.
+  static inline constexpr const char* kKeyShutdownTimeout = "shutdown_timeout";
+  static inline constexpr absl::Duration kDefaultShutdownTimeout =
+      absl::Seconds(10);
+  static GB_CONTEXT_CONSTRAINT_NAMED_DEFAULT(kConstraintShutdownTimeout,
+                                             kInOptional, absl::Duration,
+                                             kKeyShutdownTimeout,
+                                             kDefaultShutdownTimeout);
+
+  // OPTIONAL: The clock used to time the shutdown timeout. If this is not set,
+  // the realtime clock is used. It must outlive the job system.
+  static GB_CONTEXT_CONSTRAINT(kConstraintClock, kInOptional, Clock);
+
   using CreateContract =
       ContextContract<kConstraintThreadCount, kConstraintPinThreads,
-                      kConstraintSetFiberNames>;
+                      kConstraintSetFiberNames, kConstraintShutdownTimeout,
+                      kConstraintClock>;
 
   //----------------------------------------------------------------------------
   // Construction / Destruction
   //----------------------------------------------------------------------------
 
-  virtual ~FiberJobSystem();
+  // Destroying the job system waits for every job to finish, including pending
+  // jobs, and any jobs that they run. Jobs may not be run from other threads
+  // once it is being destroyed.
+  ~FiberJobSystem() override;
 
   // Creates a new fiber-based job system.
   //
@@ -83,6 +122,10 @@ class FiberJobSystem : public JobSystem {
   // Debugging
   //----------------------------------------------------------------------------
 
+  // Sets whether all fiber job systems log what they do, at INFO level.
+  //
+  // This only has an effect if GB_BUILD_ENABLE_JOB_LOGGING is defined to be
+  // non-zero (by default, this is true in debug builds).
   static void SetVerboseLogging(bool enabled);
 
   //----------------------------------------------------------------------------
@@ -122,11 +165,6 @@ class FiberJobSystem : public JobSystem {
   };
 
   struct FiberState {
-    FiberState(FiberJobSystem* in_system) : system(in_system), idle(false) {}
-
-    // Job system for this fiber.
-    FiberJobSystem* const system;
-
     // Fiber the state was switch from. This is not null when switching to a
     // waiting fiber, which then must mark this fiber as unused.
     Fiber prev_fiber = nullptr;
@@ -139,9 +177,13 @@ class FiberJobSystem : public JobSystem {
 
     // Job this fiber is currently running.
     Job* job = nullptr;
+  };
 
-    // Set when the fiber becomes idle.
-    std::atomic<bool> idle;
+  // Work for a job thread: a job to run, or a waiting fiber to resume. Neither
+  // is set once the job system has stopped.
+  struct Work {
+    Job* job = nullptr;
+    FiberState* fiber = nullptr;
   };
 
   template <typename Type>
@@ -149,6 +191,21 @@ class FiberJobSystem : public JobSystem {
 
   FiberJobSystem();
   bool Init(ValidatedContext context);
+
+  // Queues a job to run, or the fiber states of jobs that are done waiting
+  // (from JobCounter::Decrement()) to resume, and wakes threads to run them.
+  void EnqueueJob(Job* job);
+  void EnqueueFibers(absl::Span<void* const> states);
+
+  // Waits for a job to run or a waiting fiber to resume, or for the job system
+  // to stop.
+  Work WaitForWork();
+
+  // Runs a job on this fiber, and then destroys it.
+  void RunJob(Fiber fiber, Job* job);
+
+  // Removes a finished job from the jobs the system is running.
+  void EndJob(Job* job);
 
   // Switches this fiber to the now-unblocked fiber in the specified state.
   void ResumeJobFiber(Fiber fiber, FiberState* state);
@@ -163,9 +220,8 @@ class FiberJobSystem : public JobSystem {
   static std::string_view GetJobName(Job* job);
 
   bool set_fiber_names_ = false;
-
-  // True if the the fiber system is running (not being destructed).
-  std::atomic<bool> running_;
+  absl::Duration shutdown_timeout_ = kDefaultShutdownTimeout;
+  Clock* clock_ = nullptr;
 
   // All threads used to run jobs.
   std::vector<Thread> threads_;
@@ -177,6 +233,24 @@ class FiberJobSystem : public JobSystem {
   // Allocates used for job and fiber state.
   TsPoolAllocator job_allocator_;
   TsPoolAllocator fiber_allocator_;
+
+  // The number of jobs that have been run and haven't yet finished.
+  std::atomic<int> job_count_ = 0;
+
+  // Set once the job system is being destroyed and all of its jobs have
+  // finished, so the job threads exit.
+  std::atomic<bool> stopped_ = false;
+
+  // Every job that has been run and hasn't yet finished, kept only when job
+  // names are, to name the jobs that keep the job system from being
+  // destroyed.
+  absl::Mutex named_jobs_mutex_;
+  absl::flat_hash_set<Job*> named_jobs_ ABSL_GUARDED_BY(named_jobs_mutex_);
+
+  // Signaled once for each job or fiber added to pending_jobs_ or
+  // pending_fibers_ (see EnqueueJob() and EnqueueFibers()), and once for each
+  // thread when the job system has stopped.
+  moodycamel::LightweightSemaphore work_semaphore_;
 
   // Pending jobs waiting for a fiber to become available.
   ConcurrentQueue<Job*> pending_jobs_;

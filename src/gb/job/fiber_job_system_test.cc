@@ -5,58 +5,61 @@
 
 #include "gb/job/fiber_job_system.h"
 
+#include <algorithm>
+#include <atomic>
+#include <memory>
+#include <vector>
+
+#include "absl/strings/str_format.h"
 #include "absl/synchronization/notification.h"
 #include "gb/base/context_builder.h"
+#include "gb/base/fake_clock.h"
+#include "gb/test/log_recorder.h"
 #include "gb/thread/thread.h"
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
 namespace gb {
 namespace {
 
+using ::testing::Contains;
+using ::testing::Field;
+using ::testing::HasSubstr;
+using ::testing::IsEmpty;
+using ::testing::Not;
 using ::testing::ValuesIn;
-
-#define CHECK_FIBER_SUPPORT() \
-  if (!SupportsFibers()) {    \
-    return;                   \
-  }
 
 struct TestParams {
   TestParams() = default;
   TestParams(int in_thread_count, bool in_pin_threads)
       : thread_count(in_thread_count), pin_threads(in_pin_threads) {}
 
+  template <typename Sink>
+  friend void AbslStringify(Sink& sink, const TestParams& params) {
+    absl::Format(&sink, "{thread_count=%d, pin_threads=%v}",
+                 params.thread_count, params.pin_threads);
+  }
+
   int thread_count = 0;
   bool pin_threads = false;
 };
 
-inline void PrintTo(const TestParams& value, std::ostream* out) {
-  *out << "{thread_count=" << value.thread_count
-       << ", pin_threads=" << (value.pin_threads ? "true" : "false") << "}";
-}
-
 class FiberJobSystemTest : public ::testing::TestWithParam<TestParams> {
  protected:
   void SetUp() override {
-    CHECK_FIBER_SUPPORT();
+    if (!SupportsFibers()) {
+      GTEST_SKIP() << "Fibers are not supported";
+    }
     // SetFiberVerboseLogging(true);  // Uncomment for more detailed logs
     FiberJobSystem::SetVerboseLogging(true);
-    job_system_ = FiberJobSystem::Create(
-        ContextBuilder()
-            .SetValue<int>(FiberJobSystem::kKeyThreadCount,
-                           GetParam().thread_count)
-            .SetValue<bool>(FiberJobSystem::kKeyPinThreads,
-                            GetParam().pin_threads)
-            .SetValue<bool>(FiberJobSystem::kKeySetFiberNames, true)
-            .Build());
+    job_system_ = CreateJobSystem();
     ASSERT_NE(job_system_, nullptr);
-    if (GetParam().thread_count > 0) {
-      ASSERT_EQ(job_system_->GetThreadCount(), GetParam().thread_count);
-    } else if (GetParam().thread_count == 0) {
-      ASSERT_EQ(job_system_->GetThreadCount(), GetMaxConcurrency());
-    } else {
-      ASSERT_EQ(job_system_->GetThreadCount(),
-                std::max(GetMaxConcurrency() + GetParam().thread_count, 1));
+    int thread_count = GetParam().thread_count;
+    if (thread_count <= 0) {
+      thread_count = std::max(GetMaxConcurrency() + thread_count, 1);
     }
+    ASSERT_EQ(job_system_->GetThreadCount(),
+              std::min(thread_count, FiberJobSystem::kMaxThreadCount));
   }
   void TearDown() override {
     job_system_.reset();
@@ -64,16 +67,25 @@ class FiberJobSystemTest : public ::testing::TestWithParam<TestParams> {
     SetFiberVerboseLogging(false);
   }
 
+  std::unique_ptr<FiberJobSystem> CreateJobSystem() {
+    return FiberJobSystem::Create(
+        ContextBuilder()
+            .SetValue<int>(FiberJobSystem::kKeyThreadCount,
+                           GetParam().thread_count)
+            .SetValue<bool>(FiberJobSystem::kKeyPinThreads,
+                            GetParam().pin_threads)
+            .SetValue<bool>(FiberJobSystem::kKeySetFiberNames, true)
+            .Build());
+  }
+
   std::unique_ptr<FiberJobSystem> job_system_;
 };
 
 TEST_P(FiberJobSystemTest, MainThreadIsNotJob) {
-  CHECK_FIBER_SUPPORT();
   EXPECT_EQ(JobSystem::Get(), nullptr);
 }
 
 TEST_P(FiberJobSystemTest, RunJob) {
-  CHECK_FIBER_SUPPORT();
   std::atomic<int> call_count = 0;
   absl::Notification notify;
   EXPECT_TRUE(job_system_->Run([this, &call_count, &notify] {
@@ -86,7 +98,6 @@ TEST_P(FiberJobSystemTest, RunJob) {
 }
 
 TEST_P(FiberJobSystemTest, RunJobWithName) {
-  CHECK_FIBER_SUPPORT();
   std::atomic<int> call_count = 0;
   absl::Notification notify;
   EXPECT_TRUE(job_system_->Run("TestJob", [this, &call_count, &notify] {
@@ -100,7 +111,6 @@ TEST_P(FiberJobSystemTest, RunJobWithName) {
 }
 
 TEST_P(FiberJobSystemTest, RunJobWithContext) {
-  CHECK_FIBER_SUPPORT();
   std::atomic<int> call_count = 0;
   absl::Notification notify;
   EXPECT_TRUE(job_system_->Run(
@@ -115,7 +125,6 @@ TEST_P(FiberJobSystemTest, RunJobWithContext) {
 }
 
 TEST_P(FiberJobSystemTest, RunJobWithNameAndContext) {
-  CHECK_FIBER_SUPPORT();
   std::atomic<int> call_count = 0;
   absl::Notification notify;
   EXPECT_TRUE(
@@ -132,7 +141,6 @@ TEST_P(FiberJobSystemTest, RunJobWithNameAndContext) {
 }
 
 TEST_P(FiberJobSystemTest, WaitOnJob) {
-  CHECK_FIBER_SUPPORT();
   JobCounter counter;
   std::atomic<int> call_count = 0;
   absl::Notification notify;
@@ -150,7 +158,6 @@ TEST_P(FiberJobSystemTest, WaitOnJob) {
 }
 
 TEST_P(FiberJobSystemTest, WaitOnCompletedJob) {
-  CHECK_FIBER_SUPPORT();
   JobCounter counter;
   std::atomic<int> call_count = 0;
 
@@ -173,7 +180,6 @@ TEST_P(FiberJobSystemTest, WaitOnCompletedJob) {
 }
 
 TEST_P(FiberJobSystemTest, WaitOnMultipleJobs) {
-  CHECK_FIBER_SUPPORT();
   JobCounter counter;
   std::atomic<int> call_count = 0;
   absl::Notification notify;
@@ -193,7 +199,6 @@ TEST_P(FiberJobSystemTest, WaitOnMultipleJobs) {
 }
 
 TEST_P(FiberJobSystemTest, MultipleJobsWaitOnOneCounter) {
-  CHECK_FIBER_SUPPORT();
   JobCounter counter;
   std::atomic<int> call_count = 0;
   absl::Notification notify_start;
@@ -214,7 +219,6 @@ TEST_P(FiberJobSystemTest, MultipleJobsWaitOnOneCounter) {
 }
 
 TEST_P(FiberJobSystemTest, ContextIsDestroyedAtJobEnd) {
-  CHECK_FIBER_SUPPORT();
   std::atomic<int> call_count = 0;
   absl::Notification notify;
   struct TestStruct {
@@ -232,8 +236,6 @@ TEST_P(FiberJobSystemTest, ContextIsDestroyedAtJobEnd) {
 }
 
 TEST_P(FiberJobSystemTest, SetData) {
-  CHECK_FIBER_SUPPORT();
-
   struct Counters {
     Counters() = default;
     std::atomic<int> create = 0;
@@ -301,8 +303,6 @@ TEST_P(FiberJobSystemTest, SetData) {
 }
 
 TEST_P(FiberJobSystemTest, SetDataWithCustomAlloc) {
-  CHECK_FIBER_SUPPORT();
-
   struct Counters {
     Counters() = default;
     std::atomic<int> create = 0;
@@ -347,7 +347,6 @@ TEST_P(FiberJobSystemTest, SetDataWithCustomAlloc) {
 }
 
 TEST_P(FiberJobSystemTest, JobHierarchy) {
-  CHECK_FIBER_SUPPORT();
   absl::Notification notify;
   std::atomic<uint32_t> count = 0;
   EXPECT_TRUE(job_system_->Run([&notify, &count] {
@@ -377,6 +376,98 @@ TEST_P(FiberJobSystemTest, JobHierarchy) {
   EXPECT_EQ(count, 0xFFFFFFFF);
 }
 
+TEST_P(FiberJobSystemTest, AllDataHandles) {
+  const int max_handles = static_cast<int>(kMaxJobDataHandles);
+  std::vector<JobDataHandle> handles;
+  for (int i = 0; i < max_handles; ++i) {
+    handles.push_back(job_system_->AllocDataHandle<int>());
+    EXPECT_NE(handles.back(), kInvalidJobDataHandle);
+  }
+  EXPECT_EQ(job_system_->AllocDataHandle<int>(), kInvalidJobDataHandle);
+
+  std::atomic<int> match_count = 0;
+  EXPECT_TRUE(job_system_->Run([&handles, &match_count] {
+    const int handle_count = static_cast<int>(handles.size());
+    for (int i = 0; i < handle_count; ++i) {
+      *JobSystem::GetData<int>(handles[i]) = i;
+    }
+    for (int i = 0; i < handle_count; ++i) {
+      if (*JobSystem::GetData<int>(handles[i]) == i) {
+        ++match_count;
+      }
+    }
+  }));
+  job_system_.reset();
+  EXPECT_EQ(match_count, max_handles);
+}
+
+TEST_P(FiberJobSystemTest, WaitOnCompletedJobUsesNoFiber) {
+  // A counter that no job was run with is already done.
+  JobCounter counter;
+  std::atomic<int> fiber_count = 0;
+  FiberJobSystem* const job_system = job_system_.get();
+  EXPECT_TRUE(job_system_->Run([job_system, &counter, &fiber_count] {
+    JobSystem::Wait(&counter);
+    fiber_count = job_system->GetFiberCount();
+  }));
+  const int thread_count = job_system_->GetThreadCount();
+  job_system_.reset();
+  EXPECT_EQ(fiber_count, thread_count);
+}
+
+TEST_P(FiberJobSystemTest, DestroyRunsPendingJobs) {
+  std::atomic<int> call_count = 0;
+  for (int i = 0; i < 1000; ++i) {
+    EXPECT_TRUE(job_system_->Run([&call_count] { ++call_count; }));
+  }
+  job_system_.reset();
+  EXPECT_EQ(call_count, 1000);
+}
+
+TEST_P(FiberJobSystemTest, DestroyResumesWaitingJobs) {
+  std::atomic<int> call_count = 0;
+  for (int i = 0; i < 10; ++i) {
+    EXPECT_TRUE(job_system_->Run([&call_count] {
+      JobCounter counter;
+      for (int j = 0; j < 10; ++j) {
+        EXPECT_TRUE(
+            JobSystem::Get()->Run(&counter, [&call_count] { ++call_count; }));
+      }
+      JobSystem::Wait(&counter);
+      ++call_count;
+    }));
+  }
+  job_system_.reset();
+  EXPECT_EQ(call_count, 110);
+}
+
+TEST_P(FiberJobSystemTest, VerboseLogging) {
+  LogRecorder log_recorder;
+  EXPECT_TRUE(job_system_->Run([] {}));
+  job_system_.reset();
+  const std::vector<LogRecorder::Message> messages =
+      log_recorder.TakeMessages();
+  if (GB_BUILD_ENABLE_JOB_LOGGING) {
+    EXPECT_THAT(messages, Contains(Field(&LogRecorder::Message::text,
+                                         HasSubstr("FiberJobSystem:"))));
+  } else {
+    EXPECT_THAT(messages, IsEmpty());
+  }
+}
+
+TEST_P(FiberJobSystemTest, VerboseLoggingDisabled) {
+  job_system_.reset();
+  FiberJobSystem::SetVerboseLogging(false);
+  LogRecorder log_recorder;
+  job_system_ = CreateJobSystem();
+  ASSERT_NE(job_system_, nullptr);
+  EXPECT_TRUE(job_system_->Run([] {}));
+  job_system_.reset();
+  EXPECT_THAT(log_recorder.TakeMessages(),
+              Not(Contains(Field(&LogRecorder::Message::text,
+                                 HasSubstr("FiberJobSystem:")))));
+}
+
 TestParams test_params[] = {
     {1, false},
     {2, true},
@@ -384,6 +475,28 @@ TestParams test_params[] = {
     {-1, true},
 };
 INSTANTIATE_TEST_SUITE_P(All, FiberJobSystemTest, ValuesIn(test_params));
+
+TEST(FiberJobSystemDeathTest, DestroyTimesOut) {
+  if (!SupportsFibers()) {
+    GTEST_SKIP();
+  }
+  EXPECT_DEATH(
+      {
+        FakeClock clock;
+        absl::Notification never_notified;
+        auto job_system = FiberJobSystem::Create(
+            ContextBuilder()
+                .SetPtr<Clock>(&clock)
+                .SetValue<int>(FiberJobSystem::kKeyThreadCount, 1)
+                .SetValue<bool>(FiberJobSystem::kKeySetFiberNames, true)
+                .Build());
+        job_system->Run("StuckJob", [&never_notified] {
+          never_notified.WaitForNotification();
+        });
+        job_system.reset();
+      },
+      "StuckJob");
+}
 
 }  // namespace
 }  // namespace gb

@@ -6,11 +6,16 @@
 #ifndef GB_JOB_JOB_SYSTEM_H_
 #define GB_JOB_JOB_SYSTEM_H_
 
+#include <cstddef>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 #include "absl/functional/any_invocable.h"
-#include "absl/log/log.h"
+#include "absl/log/check.h"
+#include "absl/synchronization/mutex.h"
 #include "gb/base/context.h"
+#include "gb/base/type_info.h"
 #include "gb/job/job_counter.h"
 #include "gb/job/job_types.h"
 
@@ -70,8 +75,9 @@ class JobSystem {
   // then AllocDataHandle() will return kInvalidJobDataHandle.
   //
   // An optional callback may be specified to do the per-job creation the data.
-  // If not specified, the default constructor and destructor for the Type will
-  // be invoked.
+  // If not specified, the default constructor for the Type will be invoked.
+  // The callback must return an object allocated with `new`, as the data is
+  // always destroyed with `delete`. It may be called from several jobs at once.
   //
   // Any data created for a job will be constructed within the context of the
   // job, so the job's context and other job data can be queried. However, job
@@ -244,7 +250,7 @@ inline Context& JobSystem::GetContext() { return Get()->DoGetContext(); }
 template <typename Type>
 Type* JobSystem::GetData(JobDataHandle handle) {
   JobSystem* self = Get();
-  DCHECK(handle > 0 && handle < kMaxJobDataHandles);
+  DCHECK(handle > 0 && handle <= kMaxJobDataHandles);
   const auto index = handle - 1;
   JobData& job_data = self->DoGetJobData();
   if (job_data.size() <= index) {

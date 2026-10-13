@@ -18,19 +18,24 @@ set(gb_job_TEST_SOURCE
   fiber_job_system_test.cc
 )
 
+set(gb_job_TEST_DEPS
+  absl::str_format
+  gb_test
+)
+
 set(gb_job_DEPS
   absl::any_invocable
+  absl::check
+  absl::flat_hash_set
+  absl::inlined_vector
+  absl::log
+  absl::memory
   absl::strings
-  absl::str_format
   absl::synchronization
+  absl::time
   gb_alloc
   gb_base
   gb_thread
-)
-
-set(gb_job_LIBS
-  absl::check
-  absl::log
 )
 
 gb_add_library(gb_job)

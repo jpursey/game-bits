@@ -716,9 +716,64 @@ Depends on: CL12.
   `LoadImage()` from a file system and a file (positioned anywhere), and of
   missing, empty, and invalid files, with the errors they log.
 
-### CL19 [ ] job: audit gb_job
+### CL19 [x] job: audit gb_job
 
 Depends on: CL5, CL7.
+
+- Destroying a `FiberJobSystem` dropped its pending jobs, so a job waiting on
+  one never resumed, leaking its fiber and state (and failing a debug check).
+  A job that waited during shutdown could also take a fiber that was exiting,
+  and switch to it (a debug check, and a crash in release builds). Destroying
+  the job system now waits for every job to finish, including pending jobs
+  and any they run. Past a timeout (the new optional `shutdown_timeout`, 10
+  seconds by default, timed by the context's `Clock`), the process ends with
+  a fatal error that names the unfinished jobs (when job names are kept),
+  rather than hanging. Jobs are counted with an atomic, and only tracked by
+  name (under a mutex) when names are kept, which they already cost a string
+  for.
+- Idle job threads spun on `std::this_thread::yield()`, so an idle job system
+  kept every job thread's core busy: 31.8 seconds of CPU per second with 32
+  threads. They now wait on a `moodycamel::LightweightSemaphore` (from the
+  already vendored concurrentqueue), which spins briefly and then sleeps,
+  signaled for each queued job or resumed fiber: 0 ms of CPU per second.
+- `SetVerboseLogging(false)` turned verbose logging on, as it ignored its
+  argument. The flag is now atomic, as every job thread reads it.
+- `GetData()` DCHECK failed for the last of the `kMaxJobDataHandles` handles.
+- A thread count of zero or less wasn't clamped to `kMaxThreadCount`, as
+  documented, on machines with more hardware threads than that. On Windows the
+  hardware threads come from one 64 bit affinity mask, so this only affects
+  other platforms, and isn't tested.
+- `Wait()` on a counter that was already done switched to another fiber and
+  back, creating a new fiber if none was unused. It now returns at once.
+- `CMakeLists.txt` listed `absl::check` and `absl::log` as libraries rather
+  than dependencies, named `absl::str_format`, which nothing used, and not
+  `absl::flat_hash_set`, `absl::inlined_vector`, `absl::memory`, or
+  `absl::time`. Removed the unused `<iostream>` include (the disabled log
+  macro now uses `LOG_IF(INFO, false)` rather than `std::cout`), and the
+  unused `flat_hash_map` include.
+- Docs: a data handle's create callback must return an object from `new`, and
+  may be called from several jobs at once; `SetVerboseLogging()` and what
+  destruction does. Smaller cleanups: unused `FiberState` members, missing
+  includes, `s_` for a function static, the job loop split into
+  `WaitForWork()` and `RunJob()`, and in the test, `GTEST_SKIP()` rather than
+  a check in every test, and `AbslStringify` rather than an iostream `PrintTo`.
+- Left as is: the tests sleep for a few milliseconds in some jobs so that
+  waits are likely to block, which nothing else can arrange; `JobDataHandle`
+  is a `size_t`, which is public API; destruction polls every millisecond
+  while jobs are unfinished (which can be about 15 ms on Windows), as waiting
+  on a notification can't use the context's `Clock`; and
+  `JobCounter::IsDone()` takes a reader lock, which is only on the `Wait()`
+  path.
+
+**Verify**
+- Standard checks.
+- Unit tests: destroying the job system with pending jobs and waiting jobs
+  (both ran, and the waiting ones resumed), the shutdown timeout (a death
+  test on a fake clock), verbose logging on and off, all
+  `kMaxJobDataHandles` handles, and `Wait()` on a done counter creating no
+  fiber. The job tests passed 25 runs each in Debug and Release.
+- Idle CPU, measured by hand with a temporary test: process CPU time over
+  one second with an idle 32 thread job system, before and after.
 
 ### CL20 [ ] message: audit gb_message
 
