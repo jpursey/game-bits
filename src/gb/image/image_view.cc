@@ -5,6 +5,10 @@
 
 #include "gb/image/image_view.h"
 
+#include <cstdint>
+#include <cstring>
+#include <utility>
+
 namespace gb {
 
 ImageView::ImageView(int width, int height, void* pixels)
@@ -26,6 +30,9 @@ void ImageView::ConstRegion::GetAll(void* pixels, size_t size_in_bytes) const {
   size_t copy_size = width_ * height_ * sizeof(uint32_t);
   if (copy_size > size_in_bytes) {
     copy_size = size_in_bytes;
+  }
+  if (copy_size == 0) {
+    return;
   }
 
   if (width_ == stride_) {
@@ -81,6 +88,9 @@ void ImageView::Region::SetAll(const void* pixels, size_t size_in_bytes) {
 }
 
 void ImageView::Region::Clear(Pixel pixel) {
+  if (width_ == 0 || height_ == 0) {
+    return;
+  }
   *modified_ = true;
   if (pixel.Packed() == 0) {
     if (width_ == stride_) {

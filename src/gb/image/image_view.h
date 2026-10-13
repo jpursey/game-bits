@@ -6,6 +6,8 @@
 #ifndef GB_IMAGE_IMAGE_VIEW_H_
 #define GB_IMAGE_IMAGE_VIEW_H_
 
+#include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include "absl/functional/any_invocable.h"
@@ -23,9 +25,9 @@ namespace gb {
 // the ImageView is destructed (indicating it no longer is using the pixel
 // data).
 //
-// An image view can also be used in a read-only fashion. If no Set, Remove, or
-// Modify functions are called, then this will notify the image data owner that
-// no modifications were made.
+// An image view can also be used in a read-only fashion. If no Modify
+// functions are called (on the view or its regions), and no region is set or
+// cleared, then the callback is told that no modifications were made.
 //
 // This class is thread-compatible.
 class ImageView {
@@ -59,7 +61,9 @@ class ImageView {
 
   // Returns the total number of bytes required to store the image
   // uncompressed.
-  int GetSizeInBytes() const { return width_ * height_ * sizeof(Pixel); }
+  int GetSizeInBytes() const {
+    return width_ * height_ * static_cast<int>(sizeof(Pixel));
+  }
 
   // Returns true if the view was modified.
   bool IsModified() const { return modified_; }
@@ -105,10 +109,7 @@ class ImageView {
   //
   // It is undefined behavior to specify coordinates that lie outside the
   // image width and height.
-  Pixel& Modify(int x, int y) {
-    modified_ = true;
-    return ModifyPixels()[y * width_ + x];
-  }
+  Pixel& Modify(int x, int y) { return ModifyPixels()[y * width_ + x]; }
 
   // Returns a read-only view onto a rectangular region of the image.
   //
@@ -178,6 +179,9 @@ class ImageView::ConstRegion {
 
   // Copies all pixels in the region to a contiguous array of region
   // width*height pixels.
+  //
+  // The vector overloads resize the vector to fit. If `size_in_bytes` is less
+  // than the region, only the pixels that fit are copied.
   void GetAll(std::vector<Pixel>* pixels) const;
   void GetAll(std::vector<uint32_t>* pixels) const;
   void GetAll(void* pixels, size_t size_in_bytes) const;
@@ -227,14 +231,17 @@ class ImageView::Region : public ImageView::ConstRegion {
 
   // Copies the contiguous array of pixels to the image region.
   //
-  // The provided array are expected to contain region width*height pixels. If
-  // there are less pixels provided, then the remainder of the region is left
-  // untouched.
+  // The provided array is expected to contain region width*height pixels. If
+  // fewer pixels are provided, then the remainder of the region is left
+  // untouched, and any pixels beyond the region are ignored.
   void SetAll(absl::Span<const Pixel> pixels);
   void SetAll(absl::Span<const uint32_t> pixels);
   void SetAll(const void* pixels, size_t size_in_bytes);
 
   // Clears the region with the specified color (transparent black, by default).
+  //
+  // Clearing an empty region does nothing, and does not mark the view
+  // modified.
   void Clear(Pixel pixel = {0, 0, 0, 0});
   void Clear(uint32_t pixel) { Clear(Pixel(pixel)); }
 
@@ -244,7 +251,7 @@ class ImageView::Region : public ImageView::ConstRegion {
 
 inline ImageView::ConstRegion::ConstRegion(const ImageView* view, int x, int y,
                                            int width, int height)
-    : pixels_(const_cast<Pixel*>(&view->Get(x, y))),
+    : pixels_(static_cast<Pixel*>(view->pixels_) + y * view->GetWidth() + x),
       stride_(view->GetWidth()),
       x_(x),
       y_(y),

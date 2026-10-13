@@ -5,6 +5,9 @@
 
 #include "gb/image/image.h"
 
+#include <algorithm>
+#include <utility>
+
 #include "gb/base/allocator.h"
 
 namespace gb {
@@ -18,10 +21,7 @@ Pixel* AllocPixels(int width, int height) {
 
 Pixel* NewPixels(int width, int height, Pixel clear_pixel) {
   Pixel* pixels = AllocPixels(width, height);
-  Pixel* end = pixels + (width * height);
-  for (Pixel* pixel = pixels; pixel != end; ++pixel) {
-    *pixel = clear_pixel;
-  }
+  std::fill_n(pixels, width * height, clear_pixel);
   return pixels;
 }
 

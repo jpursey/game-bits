@@ -13,6 +13,7 @@ namespace {
 
 using ::testing::Each;
 using ::testing::ElementsAreArray;
+using ::testing::IsEmpty;
 
 constexpr int kImageWidth = 16;
 constexpr int kImageHeight = 32;
@@ -338,6 +339,100 @@ TEST(ImageViewTest, RegionClear) {
               Each(0xFFFFFFFF));
 
   EXPECT_TRUE(view.IsModified());
+}
+
+TEST(ImageViewTest, EmptyRegions) {
+  TestImage image;
+  ImageView view(kImageWidth, kImageHeight, image.GetRawPixels());
+  EXPECT_THAT(view.GetRegion(0, kImageHeight, kImageWidth, 0).GetAll<Pixel>(),
+              IsEmpty());
+  EXPECT_THAT(view.GetRegion(kImageWidth, 0, 0, kImageHeight).GetAll<Pixel>(),
+              IsEmpty());
+  view.ModifyRegion(0, kImageHeight, kImageWidth, 0).Clear();
+  view.ModifyRegion(kImageWidth, 0, 0, kImageHeight).Clear();
+  EXPECT_THAT(image.GetPixels(), Each(PixelColor::kWhite));
+  EXPECT_FALSE(view.IsModified());
+
+  ImageView empty_view(0, 0, nullptr);
+  EXPECT_THAT(empty_view.GetRegion().GetAll<Pixel>(), IsEmpty());
+  EXPECT_THAT(empty_view.GetRegion().GetAll<uint32_t>(), IsEmpty());
+  empty_view.ModifyRegion().SetAll(absl::Span<const Pixel>());
+  empty_view.ModifyRegion().Clear();
+  empty_view.ModifyRegion().Clear(PixelColor::kRed);
+  EXPECT_FALSE(empty_view.IsModified());
+}
+
+// Records the modified flag that views are destroyed with.
+class ImageViewOnDeleteTest : public ::testing::Test {
+ protected:
+  ImageView MakeView() {
+    return ImageView(kImageWidth, kImageHeight, image_.GetRawPixels(),
+                     [this](bool modified) {
+                       ++delete_count_;
+                       modified_ = modified;
+                     });
+  }
+
+  TestImage image_;
+  int delete_count_ = 0;
+  bool modified_ = false;
+};
+
+TEST_F(ImageViewOnDeleteTest, NotModified) {
+  {
+    ImageView view = MakeView();
+    view.GetRegion().GetAll<Pixel>();
+    view.ModifyRegion().GetAll<Pixel>();
+    view.ModifyRegion().SetAll(absl::Span<const Pixel>());
+    EXPECT_EQ(delete_count_, 0);
+  }
+  EXPECT_EQ(delete_count_, 1);
+  EXPECT_FALSE(modified_);
+}
+
+TEST_F(ImageViewOnDeleteTest, Modify) {
+  {
+    ImageView view = MakeView();
+    view.Modify(1, 2) = PixelColor::kRed;
+  }
+  EXPECT_EQ(delete_count_, 1);
+  EXPECT_TRUE(modified_);
+}
+
+TEST_F(ImageViewOnDeleteTest, ModifyRawPixels) {
+  {
+    ImageView view = MakeView();
+    view.ModifyRawPixels();
+  }
+  EXPECT_EQ(delete_count_, 1);
+  EXPECT_TRUE(modified_);
+}
+
+TEST_F(ImageViewOnDeleteTest, RegionModify) {
+  {
+    ImageView view = MakeView();
+    view.ModifyRegion(1, 2, 3, 4).Modify(1, 1) = PixelColor::kRed;
+  }
+  EXPECT_EQ(delete_count_, 1);
+  EXPECT_TRUE(modified_);
+}
+
+TEST_F(ImageViewOnDeleteTest, RegionSetAll) {
+  {
+    ImageView view = MakeView();
+    view.ModifyRegion(1, 2, 1, 1).SetAll({PixelColor::kRed});
+  }
+  EXPECT_EQ(delete_count_, 1);
+  EXPECT_TRUE(modified_);
+}
+
+TEST_F(ImageViewOnDeleteTest, RegionClear) {
+  {
+    ImageView view = MakeView();
+    view.ModifyRegion(1, 2, 3, 4).Clear();
+  }
+  EXPECT_EQ(delete_count_, 1);
+  EXPECT_TRUE(modified_);
 }
 
 }  // namespace

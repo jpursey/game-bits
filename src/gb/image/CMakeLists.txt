@@ -13,6 +13,7 @@ set(gb_image_SOURCE
 
 set(gb_image_DEPS
   absl::any_invocable
+  absl::log
   absl::span
   gb_base
   gb_file
@@ -20,13 +21,18 @@ set(gb_image_DEPS
 )
 
 set(gb_image_LIBS
-  absl::check
-  absl::log
   glm
 )
 
 set(gb_image_TEST_SOURCE
+  image_file_test.cc
+  image_test.cc
   image_view_test.cc
+  pixel_test.cc
+)
+
+set(gb_image_TEST_DEPS
+  gb_test
 )
 
 gb_add_library(gb_image)

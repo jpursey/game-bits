@@ -17,7 +17,7 @@ std::unique_ptr<Image> LoadImage(File* file) {
     int64_t size;
     File* file;
   };
-  static stbi_io_callbacks io_callbacks = {
+  static constexpr stbi_io_callbacks kIoCallbacks = {
       // Read callback.
       [](void* user, char* data, int size) -> int {
         auto* state = static_cast<IoState*>(user);
@@ -45,7 +45,7 @@ std::unique_ptr<Image> LoadImage(File* file) {
   int width;
   int height;
   int channels;
-  void* pixels = stbi_load_from_callbacks(&io_callbacks, &state, &width,
+  void* pixels = stbi_load_from_callbacks(&kIoCallbacks, &state, &width,
                                           &height, &channels, STBI_rgb_alpha);
   if (pixels == nullptr) {
     LOG(ERROR) << "Failed to read image with error: " << stbi_failure_reason();

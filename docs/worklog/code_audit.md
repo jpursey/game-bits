@@ -670,9 +670,51 @@ Depends on: CL4.
   update, `ChangeState()` and `ExitState()` failing from an inactive state, and
   null trace handlers.
 
-### CL18 [ ] image: audit gb_image
+### CL18 [x] image: audit gb_image
 
 Depends on: CL12.
+
+- Only `ImageView` had tests; `Image`, `Pixel`, and `LoadImage()` now have them
+  too, loading a TGA file built in the test from a memory file system.
+- `Pixel` from a `glm::vec3` or `glm::vec4` color outside [0, 1] was undefined
+  behavior, and in practice wrapped (2.0 became 254, and -1.0 became 1). Each
+  channel is now clamped, as `ModAlpha()` and `operator*` already did. NaN was
+  undefined behavior for all of them, as clamping it leaves NaN; it now becomes
+  0. They all convert through one function.
+- A region's pixels were found by indexing the view, which asserts in debug
+  builds when the region starts past the last pixel: any region of an empty
+  image, or an empty region on the bottom edge. `GetAll()` and `Clear()` also
+  copied from or wrote to null pointers when there was nothing to do, as
+  `SetAll()` doesn't, and clearing an empty region no longer marks the view
+  modified, as setting one doesn't.
+- `Image::View()` wasn't const, so a const image had no view.
+- `Pixel::Packed()` read a `Pixel` as a `uint32_t` through a cast pointer,
+  which breaks strict aliasing. It and `Pixel(uint32_t)` now use
+  `std::bit_cast`, and so are also `constexpr`.
+- `CMakeLists.txt` listed `absl::check` and `absl::log` as libraries rather
+  than dependencies. `absl::log` is now a dependency, and `absl::check`, which
+  nothing used, is gone.
+- Docs: who frees the pixels an `Image` is given, that `LoadImage()` reads from
+  the start of the file, what a short buffer does to `GetAll()` and `SetAll()`,
+  the byte order of a packed pixel, and the modifications an `ImageView`'s
+  callback is told about (the docs named functions that don't exist). Smaller
+  cleanups: missing includes, `std::fill_n` to clear a new image, the stb
+  callbacks as a constant, and a redundant flag set in `ImageView::Modify()`.
+- Removed the unused `<algorithm>` include from `pixel.h`, so code that got it
+  from there may need its own include. `image_file.h` now includes
+  `image_types.h` directly, like the library's other headers.
+- Left as is: colors convert to pixels by truncating rather than rounding
+  (every 8-bit value still round trips), and image and region sizes aren't
+  checked.
+
+**Verify**
+- Standard checks.
+- Unit tests: `Pixel` from in-range, out-of-range, and NaN colors, packed values,
+  alpha and color scaling; `Image` construction, ownership of given pixels,
+  editing, and the view of a const image; empty regions on each edge and of an
+  empty image; the modified flag passed to an `ImageView`'s callback; and
+  `LoadImage()` from a file system and a file (positioned anywhere), and of
+  missing, empty, and invalid files, with the errors they log.
 
 ### CL19 [ ] job: audit gb_job
 
@@ -697,3 +739,17 @@ Depends on: CL22.
 ### CL24 [ ] imgui: audit gb_imgui and gb_imgui_sdl
 
 Depends on: CL22.
+
+### CL25 [ ] all: final pass
+
+Depends on: CL1 to CL24.
+
+A pass over every library for conventions that hold across all of them, which
+the earlier CLs didn't check consistently:
+- Every header in a library with a `*_types.h` includes it, even where nothing
+  in the header uses it, so a forward declaration that doesn't match its
+  definition is caught right away. Already known to be missing in `gb_file`:
+  `local_file_protocol.h`, `memory_file_protocol.h`, `path.h`, `raw_file.h`, and
+  `test_protocol.h`. Libraries that forward declare their types without one
+  (such as `gb_game`) are listed for the user to decide on.
+- No unused includes, other than a library's `*_types.h`.

@@ -6,10 +6,12 @@
 #ifndef GB_IMAGE_IMAGE_FILE_H_
 #define GB_IMAGE_IMAGE_FILE_H_
 
+#include <memory>
 #include <string_view>
 
 #include "gb/file/file_types.h"
 #include "gb/image/image.h"
+#include "gb/image/image_types.h"
 
 namespace gb {
 
@@ -19,8 +21,9 @@ namespace gb {
 // formats and limitations implied by it. See third_party/stb/stb_image.h for
 // details.
 //
-// If any error occurs while loading the file, this function will log an error
-// and return null.
+// The image is read from the start of the file, wherever the file is
+// positioned. If any error occurs while loading the file, this function will
+// log an error and return null.
 //
 // This function is thread-compatible (relative to the file passed in).
 std::unique_ptr<Image> LoadImage(File* file);

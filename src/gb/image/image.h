@@ -6,6 +6,8 @@
 #ifndef GB_IMAGE_IMAGE_H_
 #define GB_IMAGE_IMAGE_H_
 
+#include <cstdint>
+
 #include "absl/functional/any_invocable.h"
 #include "absl/types/span.h"
 #include "gb/image/image_types.h"
@@ -27,7 +29,12 @@ class Image final {
   // specified color.
   Image(int width, int height, Pixel pixel);
 
-  // Creates an image using an already allocated array of pixels.
+  // Creates an image that takes ownership of an already allocated array of
+  // width*height pixels.
+  //
+  // The image calls `free_pixels` with the pixels when it is destroyed. If
+  // `free_pixels` is null, the pixels must have been allocated by the default
+  // allocator (see GetDefaultAllocator()), and are freed to it.
   Image(int width, int height, void* pixels,
         absl::AnyInvocable<void(void*)> free_pixels);
 
@@ -69,7 +76,7 @@ class Image final {
   }
 
   // Returns a read-only view onto the image.
-  const ImageView& View() { return view_; }
+  const ImageView& View() const { return view_; }
 
  private:
   ImageView view_;
