@@ -6,12 +6,15 @@
 #ifndef GB_MESSAGE_MESSAGE_ENDPOINT_H_
 #define GB_MESSAGE_MESSAGE_ENDPOINT_H_
 
-#include <stdint.h>
-
+#include <cstdint>
+#include <memory>
+#include <string>
 #include <string_view>
 #include <thread>
+#include <utility>
 #include <vector>
 
+#include "absl/base/thread_annotations.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/functional/any_invocable.h"
 #include "absl/synchronization/mutex.h"
@@ -38,7 +41,7 @@ inline constexpr MessageEndpointId kNoMessageEndpointId = 0;
 
 // Endpoint ID of the global broadcast channel.
 //
-// All message endpoints are implicitly subscribed to the broadcase message
+// All message endpoints are implicitly subscribed to the broadcast message
 // endpoint. It is possible for an endpoint to unsubscribe (and resubscribe) to
 // this channel as desired.
 inline constexpr MessageEndpointId kBroadcastMessageEndpointId = 1;
@@ -68,7 +71,8 @@ class MessageEndpoint final {
 
   // Endpoint destructor. MessageEndpoints may not be deleted while any
   // registered handler of the endpoint is currently executing in the same
-  // thread.
+  // thread. This waits for messages being delivered to the endpoint on other
+  // threads.
   ~MessageEndpoint();
 
   // Returns the message system associated with this endpoint.
@@ -79,7 +83,7 @@ class MessageEndpoint final {
 
   // The unique MessageEndpointId for this endpoint.
   //
-  // No two endpoints in the same message system will will ever have the same
+  // No two endpoints in the same message system will ever have the same
   // ID, and IDs are never recycled after an endpoint is destroyed.
   MessageEndpointId GetId() const { return id_; }
 
@@ -100,7 +104,7 @@ class MessageEndpoint final {
   // valid but has no effect (it trivially succeeds).
   bool Subscribe(MessageEndpointId endpoint);
 
-  // Unsubscribes to messages seny to the specified endpoint (usually a
+  // Unsubscribes to messages sent to the specified endpoint (usually a
   // channel).
   //
   // Any messages sent to the corresponding endpoint will not be forwarded to
@@ -116,7 +120,8 @@ class MessageEndpoint final {
   // Sets or clears a message handler for a specific type of message.
   //
   // If no handler is registered for a message when it is received, then that
-  // message is dropped by the endpoint.
+  // message is dropped by the endpoint. Setting a null callback clears the
+  // handler. Handlers may set or clear handlers, including their own.
   template <typename Message>
   void SetHandler(MessageHandler<Message> callback);
   template <typename Message>
@@ -145,6 +150,12 @@ class MessageEndpoint final {
   MessageEndpoint(MessageInternal, MessageSystem* system, MessageEndpointId id,
                   std::string_view name);
 
+  // Returns a WeakPtr to this endpoint, which the message system locks while
+  // delivering a message to it.
+  WeakPtr<MessageEndpoint> GetWeakPtr(MessageInternal) {
+    return weak_scope_.GetWeakPtr();
+  }
+
   // Receives a message from the message system.
   void Receive(MessageInternal, MessageEndpointId from, TypeInfo* type,
                const void* message);
@@ -159,11 +170,20 @@ class MessageEndpoint final {
   };
   using GenericHandler =
       absl::AnyInvocable<void(MessageEndpointId from, const void* message)>;
-  using Handlers = absl::flat_hash_map<TypeKey*, GenericHandler>;
+
+  // Handlers are shared, so that one that is running stays alive if it is
+  // replaced or cleared.
+  using Handlers =
+      absl::flat_hash_map<TypeKey*, std::shared_ptr<GenericHandler>>;
   using QueuedMessages = std::vector<QueuedMessage>;
 
   bool DoSend(MessageEndpointId to, TypeInfo* type, const void* message);
 
+  // Calls the handler for the message, if there is one.
+  void CallHandler(MessageEndpointId from, TypeInfo* type, const void* message)
+      ABSL_EXCLUSIVE_LOCKS_REQUIRED(handler_mutex_);
+
+  WeakScope<MessageEndpoint> weak_scope_;
   mutable absl::Mutex handler_mutex_;  // Guards access to the handlers.
   WeakPtr<MessageSystem> system_;
   MessageEndpointId id_;
@@ -180,12 +200,16 @@ class MessageEndpoint final {
 
 template <typename Message>
 void MessageEndpoint::SetHandler(MessageHandler<Message> callback) {
+  if (callback == nullptr) {
+    ClearHandler<Message>();
+    return;
+  }
   absl::WriterMutexLock lock(&handler_mutex_);
-  handlers_[TypeKey::Get<Message>()] = [callback = std::move(callback)](
-                                           MessageEndpointId from,
-                                           const void* message) mutable {
-    callback(from, *static_cast<const Message*>(message));
-  };
+  handlers_[TypeKey::Get<Message>()] = std::make_shared<GenericHandler>(
+      [callback = std::move(callback)](MessageEndpointId from,
+                                       const void* message) mutable {
+        callback(from, *static_cast<const Message*>(message));
+      });
 }
 
 template <typename Message>

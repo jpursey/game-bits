@@ -3,14 +3,18 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef GB_BASE_MESSAGE_DISPATCHER_H_
-#define GB_BASE_MESSAGE_DISPATCHER_H_
+#ifndef GB_MESSAGE_MESSAGE_DISPATCHER_H_
+#define GB_MESSAGE_MESSAGE_DISPATCHER_H_
 
 #include <thread>
+#include <vector>
 
+#include "absl/base/thread_annotations.h"
 #include "absl/synchronization/mutex.h"
+#include "gb/base/type_info.h"
 #include "gb/base/weak_ptr.h"
 #include "gb/message/message_endpoint.h"
+#include "gb/message/message_types.h"
 
 namespace gb {
 
@@ -109,12 +113,12 @@ class PollingMessageDispatcher : public MessageDispatcher {
 // The ThreadMessageDispatcher processes messages as soon as they are ready from
 // a separate worker thread.
 //
-// Like the polling This dispatcher ensures that handlers are free to use
-// message system in any way they like (short of deleting the MessageSystem
-// instance or their own endpoint). Depending on scheduler pressure, it also may
-// be faster, as the worker thread is notified as soon as a new message arrives.
-// However, this dispatcher does require that all handlers that are called be
-// thread-safe.
+// Like the polling dispatcher, this dispatcher ensures that handlers are free
+// to use the message system in any way they like (short of deleting the
+// MessageSystem instance or their own endpoint). Depending on scheduler
+// pressure, it also may be faster, as the worker thread is notified as soon as
+// a new message arrives. However, this dispatcher does require that all
+// handlers that are called be thread-safe.
 class ThreadMessageDispatcher : public MessageDispatcher {
  public:
   ThreadMessageDispatcher();
@@ -142,4 +146,4 @@ class ThreadMessageDispatcher : public MessageDispatcher {
 
 }  // namespace gb
 
-#endif  // GB_BASE_MESSAGE_DISPATCHER_H_
+#endif  // GB_MESSAGE_MESSAGE_DISPATCHER_H_

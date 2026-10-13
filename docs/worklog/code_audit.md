@@ -775,9 +775,96 @@ Depends on: CL5, CL7.
 - Idle CPU, measured by hand with a temporary test: process CPU time over
   one second with an idle 32 thread job system, before and after.
 
-### CL20 [ ] message: audit gb_message
+### CL20 [x] message: audit gb_message
 
 Depends on: CL4.
+
+- `MessageSystem` walked subscriber sets with its mutex released, deferring
+  subscription changes and removals until a dispatch ended. That caused several
+  bugs:
+  - Removing an endpoint from one thread while another dispatched to it erased
+    a stale iterator after waiting, which broke if the map had grown in the
+    meantime.
+  - A finished dispatch erased removed subscribers while another thread was
+    still iterating the same set. That is a data race, and a crash if it was
+    the element being visited.
+  - An endpoint without its own dispatcher, reached through one that had one,
+    ran its handlers on that other dispatcher instead of the system dispatcher.
+  - A circular subscription between endpoints with different dispatchers
+    re-queued the message forever.
+  - A removed endpoint's ID stayed in the subscriber sets of channels that were
+    never sent to.
+
+  Sending now finds the receivers (the endpoint and everything subscribed to
+  it, once each) under the lock, and queues one copy of the message on each
+  dispatcher they use. Each dispatcher, or the send itself for receivers
+  without one, finds the receivers again and delivers to its own, one at a
+  time. Subscriptions are kept consistent in both directions, so removal cleans
+  them up.
+
+  This removes the deferred add and remove sets, `erase_after_dispatch`, the
+  set of dispatching threads, and the unused dispatcher reference counts. A
+  message that reaches no endpoints is no longer copied. Two side effects:
+  - Deleting an endpoint no longer waits for the handlers of the endpoints
+    subscribed to it.
+  - An endpoint that subscribes after a message is sent gets it only if its
+    dispatcher already had a copy queued.
+- Endpoints are tracked by a `WeakScope`, which is locked while a message is
+  delivered. Destroying an endpoint waits for deliveries on other threads, even
+  if its system is being destroyed, where the old code could deliver to an
+  endpoint that had been freed.
+- `MessageEndpoint`:
+  - A queued message with no handler stopped the queue. The messages after it
+    were never delivered, they were delivered twice by a later receive, and
+    they leaked.
+  - A handler that set a new handler for its own type was put back over the
+    new one.
+  - A null callback crashed when called; it now clears the handler.
+
+  Handlers are now shared, so one that is running isn't moved out of the map
+  and back, and one that replaced itself is destroyed outside the lock.
+  `MessageStackHandlers` had the same two handler bugs, fixed the same way.
+- `MessageStackEndpoint`:
+  - `Remove()` didn't clear the handlers' stack, so they could never be pushed
+    again (terradiem's and block-world's states remove theirs on exit).
+  - Pushing the same handlers onto two stacks at once could fail a CHECK.
+    `Push()` and `Remove()` now change the handlers' stack with a single
+    compare and set.
+  - Destroying the stack cleared its message types while a handler could
+    still be running on another thread, failing a DCHECK (or crashing in
+    release builds). It also destroyed its mutex and stack before its
+    endpoint, which a running handler still used. It now takes the handlers
+    off the stack, then destroys the endpoint (waiting for running handlers).
+- `CMakeLists.txt` set `gb_base_LIBS` instead of `gb_message`'s, so
+  `absl::check` and `absl::log` were only linked through `gb_base`. They and
+  the other Abseil libraries used are now dependencies. Include guards in
+  `message_system.h` and `message_dispatcher.h` were named for `gb_base`.
+  Missing includes were added, and each header includes `message_types.h`.
+- Two thread dispatcher tests slept to let pending messages arrive; they now
+  `Cancel()` the dispatcher, which joins its thread.
+- Left as is:
+  - `RemoveEndpointFromOtherThread` and the two thread dispatcher destruction
+    tests still sleep, to make the race they exercise likely. They pass
+    whatever the timing, and there is no hook to wait on instead.
+  - The concurrency fixes (the stale iterator, the concurrent erase, destroying
+    an endpoint or stack while delivering on another thread) have no
+    deterministic tests.
+  - Each dispatcher walks the subscription graph again when it delivers, so
+    that an endpoint unsubscribed by then doesn't receive the message.
+
+**Verify**
+- Standard checks.
+- Unit tests:
+  - An endpoint without its own dispatcher, subscribed to one with a
+    dispatcher, receives through the system dispatcher.
+  - A circular subscription across dispatchers delivers once to each endpoint.
+  - There is one copy per dispatcher, and none when there are no receivers.
+  - A handler can set its own handler from inside itself; a null handler
+    clears it; an unhandled queued message neither stops the queue nor leaks.
+  - Deleting an endpoint doesn't wait for its subscribers' handlers.
+  - Stack handlers can be pushed again after `Remove()`, can't be pushed onto
+    two stacks, and leave a destroyed stack. A stack handler can set itself,
+    and a null stack handler passes the message down the stack.
 
 ### CL21 [ ] resource: audit gb_resource
 

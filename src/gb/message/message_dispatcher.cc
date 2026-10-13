@@ -5,6 +5,10 @@
 
 #include "gb/message/message_dispatcher.h"
 
+#include <thread>
+#include <vector>
+
+#include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "gb/message/message_system.h"
 

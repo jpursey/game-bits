@@ -21,15 +21,16 @@ set(gb_message_TEST_DEPS
 )
 
 set(gb_message_DEPS
+  absl::algorithm_container
   absl::any_invocable
+  absl::check
   absl::flat_hash_map
   absl::flat_hash_set
-  gb_base
-)
-
-set(gb_base_LIBS
-  absl::check
+  absl::inlined_vector
   absl::log
+  absl::memory
+  absl::synchronization
+  gb_base
 )
 
 gb_add_library(gb_message)

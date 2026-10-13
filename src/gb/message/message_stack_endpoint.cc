@@ -5,18 +5,27 @@
 
 #include "gb/message/message_stack_endpoint.h"
 
+#include <algorithm>
+
+#include "absl/log/check.h"
+#include "absl/memory/memory.h"
+
 namespace gb {
 
-void MessageStackHandlers::SetStack(MessageInternal,
-                                    MessageStackEndpoint* stack) {
+bool MessageStackHandlers::SetStack(MessageInternal,
+                                    MessageStackEndpoint* old_stack,
+                                    MessageStackEndpoint* new_stack) {
   absl::MutexLock lock(&mutex_);
-  CHECK(stack_ == nullptr || stack == nullptr);
-  stack_ = stack;
+  if (stack_ != old_stack) {
+    return false;
+  }
+  stack_ = new_stack;
   if (stack_ != nullptr) {
     for (auto& handler_info : handlers_) {
       handler_info.second.register_message();
     }
   }
+  return true;
 }
 
 bool MessageStackHandlers::Receive(MessageInternal, MessageEndpointId from,
@@ -26,14 +35,15 @@ bool MessageStackHandlers::Receive(MessageInternal, MessageEndpointId from,
   if (it == handlers_.end()) {
     return false;
   }
-  auto callback = std::move(it->second.callback);
+
+  // The callback is called with the lock released, so it may set or clear
+  // handlers. If it replaced or cleared itself, it is destroyed before the
+  // lock is taken again.
+  std::shared_ptr<Callback> callback = it->second.callback;
   mutex_.Unlock();
-  bool result = callback(from, message);
+  bool result = (*callback)(from, message);
+  callback.reset();
   mutex_.Lock();
-  it = handlers_.find(key);
-  if (it != handlers_.end()) {
-    it->second.callback = std::move(callback);
-  }
   return result;
 }
 
@@ -62,16 +72,13 @@ MessageStackEndpoint::MessageStackEndpoint(
     : default_order_(default_order), endpoint_(std::move(endpoint)) {}
 
 MessageStackEndpoint::~MessageStackEndpoint() {
+  // The handlers are taken off the stack first, so they don't register any
+  // more message types with the endpoint.
   std::vector<StackNode> stack;
   {
     absl::MutexLock lock(&mutex_);
-    for (auto& message_info : messages_) {
-      message_info.second.clear_handler();
-    }
-    messages_.clear();
     stack.swap(stack_);
   }
-
   for (const auto& node : stack) {
     if (node.cached_handlers == nullptr) {
       continue;
@@ -80,22 +87,25 @@ MessageStackEndpoint::~MessageStackEndpoint() {
     if (handlers_lock == nullptr) {
       continue;
     }
-    handlers_lock->SetStack({}, nullptr);
+    handlers_lock->SetStack({}, this, nullptr);
   }
+
+  // This waits for any handler that is running on another thread, and no more
+  // messages are received after.
+  endpoint_.reset();
 }
 
 bool MessageStackEndpoint::Push(MessageStackHandlers* handlers) {
-  if (handlers == nullptr || handlers->GetStack() != nullptr) {
+  if (handlers == nullptr || !handlers->SetStack({}, nullptr, this)) {
     return false;
   }
-  handlers->SetStack({}, this);
   absl::MutexLock lock(&mutex_);
   stack_.emplace_back(handlers);
   return true;
 }
 
 bool MessageStackEndpoint::Remove(MessageStackHandlers* handlers) {
-  if (handlers == nullptr || handlers->GetStack() != this) {
+  if (handlers == nullptr || !handlers->SetStack({}, this, nullptr)) {
     return false;
   }
   absl::MutexLock lock(&mutex_);
@@ -116,8 +126,8 @@ MessageStackEndpoint::Handlers MessageStackEndpoint::GetHandlers(TypeKey* key) {
   DCHECK(message_it != messages_.end()) << "Unhandled message type";
 
   int begin, end, delta;
-  if (message_it->second.order == MessageStackOrder::kTopDown) {
-    begin = static_cast<int>(stack_.size() - 1);
+  if (message_it->second == MessageStackOrder::kTopDown) {
+    begin = static_cast<int>(stack_.size()) - 1;
     end = -1;
     delta = -1;
   } else {

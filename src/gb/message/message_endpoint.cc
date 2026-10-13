@@ -5,32 +5,31 @@
 
 #include "gb/message/message_endpoint.h"
 
-#include "absl/log/log.h"
+#include <memory>
+#include <thread>
+
+#include "absl/log/check.h"
 #include "gb/message/message_system.h"
 
 namespace gb {
 
 MessageEndpoint::MessageEndpoint(MessageInternal, MessageSystem* system,
                                  MessageEndpointId id, std::string_view name)
-    : system_(system), id_(id), name_(name) {}
+    : weak_scope_(this), system_(system), id_(id), name_(name) {}
 
 MessageEndpoint::~MessageEndpoint() {
   {
-    absl::WriterMutexLock lock(&handler_mutex_);
-    if (calling_handler_) {
-      CHECK(calling_thread_ != std::this_thread::get_id())
-          << "Deleting endpoint within its own handler.";
-      handler_mutex_.Await(absl::Condition(
-          +[](bool* calling_handler) { return !*calling_handler; },
-          &calling_handler_));
-    }
-    handlers_.clear();
+    absl::MutexLock lock(&handler_mutex_);
+    CHECK(!calling_handler_ || calling_thread_ != std::this_thread::get_id())
+        << "Deleting endpoint within its own handler.";
   }
-  {
-    WeakLock<MessageSystem> system(&system_);
-    if (system == nullptr) {
-      return;
-    }
+
+  // This waits for messages being delivered on other threads (including any
+  // handler that is running), and no more are delivered after.
+  weak_scope_.InvalidateWeakPtrs();
+
+  WeakLock<MessageSystem> system(&system_);
+  if (system != nullptr) {
     system->RemoveEndpoint({}, this);
   }
 }
@@ -61,53 +60,42 @@ bool MessageEndpoint::IsSubscribed(MessageEndpointId endpoint) const {
 
 void MessageEndpoint::Receive(MessageInternal, MessageEndpointId from,
                               TypeInfo* type, const void* message) {
-  auto key = type->Key();
-  int queue_index = 0;
-
-  // Find the handler.
   absl::WriterMutexLock lock(&handler_mutex_);
   if (calling_handler_) {
     queued_messages_.emplace_back(from, type, type->Clone(message));
     return;
   }
-  while (true) {
-    auto it = handlers_.find(key);
-    if (it == handlers_.end()) {
-      return;
-    }
+  calling_thread_ = std::this_thread::get_id();
+  CallHandler(from, type, message);
 
-    // In order to allow handlers to unregister themselves from within their
-    // callback, we need to temporarily move the handler out of the map and
-    // release the lock, to make the call.
-    GenericHandler handler = std::move(it->second);
-    calling_handler_ = true;
-    calling_thread_ = std::this_thread::get_id();
-    handler_mutex_.Unlock();
-    handler(from, message);
-    handler_mutex_.Lock();
-    calling_handler_ = false;
-
-    // Reset the handler in the map.
-    it = handlers_.find(key);
-    if (it != handlers_.end()) {
-      it->second = std::move(handler);
-    }
-
-    if (queue_index >= static_cast<int>(queued_messages_.size())) {
-      break;
-    }
-
-    const auto& queued_message = queued_messages_[queue_index++];
-    from = queued_message.from;
-    type = queued_message.type;
-    key = type->Key();
-    message = queued_message.message;
-  }
-
-  for (auto& queued_message : queued_messages_) {
+  // Messages received while a handler was running, on this thread or others.
+  // The queue may grow while each one is handled, so each is copied out.
+  for (int i = 0; i < static_cast<int>(queued_messages_.size()); ++i) {
+    const QueuedMessage queued_message = queued_messages_[i];
+    CallHandler(queued_message.from, queued_message.type,
+                queued_message.message);
     queued_message.type->Destroy(queued_message.message);
   }
   queued_messages_.clear();
+}
+
+void MessageEndpoint::CallHandler(MessageEndpointId from, TypeInfo* type,
+                                  const void* message) {
+  auto it = handlers_.find(type->Key());
+  if (it == handlers_.end()) {
+    return;
+  }
+
+  // The handler is called with the lock released, so it may set or clear
+  // handlers. If it replaced or cleared itself, it is destroyed before the
+  // lock is taken again.
+  std::shared_ptr<GenericHandler> handler = it->second;
+  calling_handler_ = true;
+  handler_mutex_.Unlock();
+  (*handler)(from, message);
+  handler.reset();
+  handler_mutex_.Lock();
+  calling_handler_ = false;
 }
 
 bool MessageEndpoint::DoSend(MessageEndpointId to, TypeInfo* type,

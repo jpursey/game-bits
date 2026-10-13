@@ -124,6 +124,65 @@ TEST(MessageStackTest, AddHandlersThenRemove) {
   EXPECT_EQ(count, 1);
 }
 
+TEST(MessageStackTest, PushAfterRemove) {
+  int count = 0;
+  MessageStackHandlers handlers;
+  handlers.SetHandler<int>(
+      [&count](MessageEndpointId from, const int& message) {
+        count += message;
+        return true;
+      });
+  auto message_system = MessageSystem::Create();
+  auto stack_endpoint = MessageStackEndpoint::Create(
+      message_system.get(), MessageStackOrder::kTopDown);
+  EXPECT_TRUE(stack_endpoint->Push(&handlers));
+  EXPECT_TRUE(stack_endpoint->Remove(&handlers));
+  EXPECT_EQ(handlers.GetStack(), nullptr);
+  EXPECT_FALSE(stack_endpoint->Remove(&handlers));
+  EXPECT_TRUE(stack_endpoint->Push(&handlers));
+  EXPECT_EQ(handlers.GetStack(), stack_endpoint.get());
+  message_system->Send(stack_endpoint->GetId(), 1);
+  EXPECT_EQ(count, 1);
+}
+
+TEST(MessageStackTest, PushOntoTwoStacks) {
+  MessageStackHandlers handlers;
+  auto message_system = MessageSystem::Create();
+  auto stack_endpoint_1 = MessageStackEndpoint::Create(
+      message_system.get(), MessageStackOrder::kTopDown);
+  auto stack_endpoint_2 = MessageStackEndpoint::Create(
+      message_system.get(), MessageStackOrder::kTopDown);
+  EXPECT_TRUE(stack_endpoint_1->Push(&handlers));
+  EXPECT_FALSE(stack_endpoint_2->Push(&handlers));
+  EXPECT_FALSE(stack_endpoint_1->Push(&handlers));
+  EXPECT_FALSE(stack_endpoint_2->Remove(&handlers));
+  EXPECT_EQ(handlers.GetStack(), stack_endpoint_1.get());
+  EXPECT_TRUE(stack_endpoint_1->Remove(&handlers));
+  EXPECT_TRUE(stack_endpoint_2->Push(&handlers));
+  EXPECT_EQ(handlers.GetStack(), stack_endpoint_2.get());
+}
+
+TEST(MessageStackTest, DestroyStack) {
+  int count = 0;
+  MessageStackHandlers handlers;
+  handlers.SetHandler<int>(
+      [&count](MessageEndpointId from, const int& message) {
+        count += message;
+        return true;
+      });
+  auto message_system = MessageSystem::Create();
+  auto stack_endpoint = MessageStackEndpoint::Create(
+      message_system.get(), MessageStackOrder::kTopDown);
+  EXPECT_TRUE(stack_endpoint->Push(&handlers));
+  stack_endpoint.reset();
+  EXPECT_EQ(handlers.GetStack(), nullptr);
+  stack_endpoint = MessageStackEndpoint::Create(message_system.get(),
+                                                MessageStackOrder::kTopDown);
+  EXPECT_TRUE(stack_endpoint->Push(&handlers));
+  message_system->Send(stack_endpoint->GetId(), 1);
+  EXPECT_EQ(count, 1);
+}
+
 TEST(MessageStackTest, HandlersProcessTopDown) {
   int count = 0;
   MessageStackHandlers handlers_1;
@@ -360,6 +419,53 @@ TEST(MessageStackTest, ClearHandlerInsideHandler) {
   EXPECT_EQ(count, 1);
   message_system->Send(stack_endpoint->GetId(), 1);
   EXPECT_EQ(count, 1);
+}
+
+TEST(MessageStackTest, SetHandlerInsideHandler) {
+  int count = 0;
+  MessageStackHandlers handlers;
+  handlers.SetHandler<int>(
+      [&count, &handlers](MessageEndpointId from, const int& message) {
+        count += 1;
+        handlers.SetHandler<int>(
+            [&count](MessageEndpointId from, const int& message) {
+              count += 10;
+              return true;
+            });
+        return true;
+      });
+  auto message_system = MessageSystem::Create();
+  auto stack_endpoint = MessageStackEndpoint::Create(
+      message_system.get(), MessageStackOrder::kTopDown);
+  stack_endpoint->Push(&handlers);
+  message_system->Send(stack_endpoint->GetId(), 1);
+  EXPECT_EQ(count, 1);
+  message_system->Send(stack_endpoint->GetId(), 1);
+  EXPECT_EQ(count, 11);
+}
+
+TEST(MessageStackTest, SetNullHandlerClearsHandler) {
+  int count = 0;
+  MessageStackHandlers handlers_1;
+  handlers_1.SetHandler<int>(
+      [&count](MessageEndpointId from, const int& message) {
+        count += 1;
+        return true;
+      });
+  MessageStackHandlers handlers_2;
+  handlers_2.SetHandler<int>(
+      [&count](MessageEndpointId from, const int& message) {
+        count += 2;
+        return true;
+      });
+  auto message_system = MessageSystem::Create();
+  auto stack_endpoint = MessageStackEndpoint::Create(
+      message_system.get(), MessageStackOrder::kTopDown);
+  stack_endpoint->Push(&handlers_2);
+  stack_endpoint->Push(&handlers_1);
+  handlers_1.SetHandler<int>(nullptr);
+  message_system->Send(stack_endpoint->GetId(), 1);
+  EXPECT_EQ(count, 2);
 }
 
 }  // namespace

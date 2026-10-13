@@ -399,7 +399,7 @@ TEST(MessageSystemTest, SwitchDispatchersInSubscription) {
   auto endpoint_2 = message_system->CreateEndpoint(&endpoint_2_dispatcher);
   endpoint_1->Subscribe(endpoint_2->GetId());
   message_system->Send(endpoint_2->GetId(), message);
-  EXPECT_EQ(counts.construct, 2);
+  EXPECT_EQ(counts.construct, 3);
   EXPECT_EQ(counts.destruct, 0);
   EXPECT_EQ(counts.counts[0], 0);
   endpoint_2_dispatcher.Update();
@@ -414,6 +414,91 @@ TEST(MessageSystemTest, SwitchDispatchersInSubscription) {
   EXPECT_EQ(counts.construct, 3);
   EXPECT_EQ(counts.destruct, 2);
   EXPECT_EQ(counts.counts[0], 1);
+}
+
+TEST(MessageSystemTest, SubscribedEndpointUsesSystemDispatcher) {
+  int count_1 = 0;
+  int count_2 = 0;
+  PollingMessageDispatcher system_dispatcher;
+  PollingMessageDispatcher endpoint_dispatcher;
+  auto message_system = MessageSystem::Create(&system_dispatcher);
+  auto endpoint_1 = message_system->CreateEndpoint(&endpoint_dispatcher);
+  endpoint_1->SetHandler<int>(
+      [&count_1](MessageEndpointId, const int&) { count_1 += 1; });
+  auto endpoint_2 = message_system->CreateEndpoint();
+  endpoint_2->SetHandler<int>(
+      [&count_2](MessageEndpointId, const int&) { count_2 += 1; });
+  EXPECT_TRUE(endpoint_2->Subscribe(endpoint_1->GetId()));
+  EXPECT_TRUE(message_system->Send(endpoint_1->GetId(), 1));
+  endpoint_dispatcher.Update();
+  EXPECT_EQ(count_1, 1);
+  EXPECT_EQ(count_2, 0);
+  system_dispatcher.Update();
+  EXPECT_EQ(count_1, 1);
+  EXPECT_EQ(count_2, 1);
+}
+
+TEST(MessageSystemTest, CircularSubscriptionAcrossDispatchers) {
+  int count_1 = 0;
+  int count_2 = 0;
+  PollingMessageDispatcher dispatcher_1;
+  PollingMessageDispatcher dispatcher_2;
+  auto message_system = MessageSystem::Create();
+  auto endpoint_1 = message_system->CreateEndpoint(&dispatcher_1);
+  endpoint_1->SetHandler<int>(
+      [&count_1](MessageEndpointId, const int&) { count_1 += 1; });
+  auto endpoint_2 = message_system->CreateEndpoint(&dispatcher_2);
+  endpoint_2->SetHandler<int>(
+      [&count_2](MessageEndpointId, const int&) { count_2 += 1; });
+  EXPECT_TRUE(endpoint_1->Subscribe(endpoint_2->GetId()));
+  EXPECT_TRUE(endpoint_2->Subscribe(endpoint_1->GetId()));
+  EXPECT_TRUE(message_system->Send(endpoint_1->GetId(), 1));
+  for (int i = 0; i < 3; ++i) {
+    dispatcher_1.Update();
+    dispatcher_2.Update();
+  }
+  EXPECT_EQ(count_1, 1);
+  EXPECT_EQ(count_2, 1);
+}
+
+TEST(MessageSystemTest, SendCopiesOncePerDispatcher) {
+  Counts counts;
+  TestMessage message(&counts);
+  PollingMessageDispatcher dispatcher_1;
+  PollingMessageDispatcher dispatcher_2;
+  auto message_system = MessageSystem::Create();
+  auto channel = message_system->AddChannel();
+  auto handler = [&counts](MessageEndpointId, const TestMessage&) {
+    counts.counts[0] += 1;
+  };
+  auto endpoint_1 = message_system->CreateEndpoint(&dispatcher_1);
+  endpoint_1->SetHandler<TestMessage>(handler);
+  auto endpoint_2 = message_system->CreateEndpoint(&dispatcher_1);
+  endpoint_2->SetHandler<TestMessage>(handler);
+  auto endpoint_3 = message_system->CreateEndpoint(&dispatcher_2);
+  endpoint_3->SetHandler<TestMessage>(handler);
+  EXPECT_TRUE(endpoint_1->Subscribe(channel));
+  EXPECT_TRUE(endpoint_2->Subscribe(channel));
+  EXPECT_TRUE(endpoint_3->Subscribe(channel));
+  EXPECT_TRUE(message_system->Send(channel, message));
+  EXPECT_EQ(counts.construct, 3);
+  dispatcher_1.Update();
+  dispatcher_2.Update();
+  EXPECT_EQ(counts.counts[0], 3);
+  EXPECT_EQ(counts.construct, 3);
+  EXPECT_EQ(counts.destruct, 2);
+}
+
+TEST(MessageSystemTest, SendWithoutReceiversDoesNotCopy) {
+  Counts counts;
+  TestMessage message(&counts);
+  PollingMessageDispatcher dispatcher;
+  auto message_system = MessageSystem::Create(&dispatcher);
+  auto channel = message_system->AddChannel();
+  EXPECT_TRUE(message_system->Send(channel, message));
+  EXPECT_EQ(counts.construct, 1);
+  dispatcher.Update();
+  EXPECT_EQ(counts.destruct, 0);
 }
 
 TEST(MessageSystemTest, EndpointSendMessageNoSystem) {
@@ -925,6 +1010,56 @@ TEST(MessageSystemTest, SendMessageInsideHandler) {
   EXPECT_EQ(counts.counts[1], 1);
 }
 
+TEST(MessageSystemTest, SetHandlerInsideHandler) {
+  int count_1 = 0;
+  int count_2 = 0;
+  auto message_system = MessageSystem::Create();
+  auto endpoint = message_system->CreateEndpoint();
+  endpoint->SetHandler<int>(
+      [&count_1, &count_2, &endpoint](MessageEndpointId, const int&) {
+        count_1 += 1;
+        endpoint->SetHandler<int>(
+            [&count_2](MessageEndpointId, const int&) { count_2 += 1; });
+      });
+  EXPECT_TRUE(message_system->Send(endpoint->GetId(), 1));
+  EXPECT_TRUE(message_system->Send(endpoint->GetId(), 1));
+  EXPECT_EQ(count_1, 1);
+  EXPECT_EQ(count_2, 1);
+}
+
+TEST(MessageSystemTest, SetNullHandlerClearsHandler) {
+  int count = 0;
+  auto message_system = MessageSystem::Create();
+  auto endpoint = message_system->CreateEndpoint();
+  endpoint->SetHandler<int>(
+      [&count](MessageEndpointId, const int&) { count += 1; });
+  endpoint->SetHandler<int>(nullptr);
+  EXPECT_TRUE(message_system->Send(endpoint->GetId(), 1));
+  EXPECT_EQ(count, 0);
+}
+
+TEST(MessageSystemTest, UnhandledMessageSentInsideHandler) {
+  Counts counts;
+  int count = 0;
+  auto message_system = MessageSystem::Create();
+  auto endpoint = message_system->CreateEndpoint();
+  endpoint->SetHandler<int>(
+      [&counts, &count, &endpoint](MessageEndpointId, const int& message) {
+        count += 1;
+        if (message == 1) {
+          // Both are queued until this handler returns, and there is no
+          // handler for TestMessage.
+          EXPECT_TRUE(endpoint->Send(endpoint->GetId(), TestMessage(&counts)));
+          EXPECT_TRUE(endpoint->Send(endpoint->GetId(), 2));
+        }
+      });
+  EXPECT_TRUE(message_system->Send(endpoint->GetId(), 1));
+  EXPECT_EQ(count, 2);
+  EXPECT_EQ(counts.construct, counts.destruct);
+  EXPECT_TRUE(message_system->Send(endpoint->GetId(), 3));
+  EXPECT_EQ(count, 3);
+}
+
 TEST(MessageSystemTest, CreateEndpointInsideHandlerWithPollingDispatcher) {
   Counts counts;
   PollingMessageDispatcher dispatcher;
@@ -1078,7 +1213,7 @@ TEST(MessageSystemTest, DestroyEndpointInsideHandlerWithThreadDispatcher) {
   });
   EXPECT_TRUE(message_system->Send(endpoint_1->GetId(), 1));
   tester.Wait(1);
-  absl::SleepFor(absl::Milliseconds(10));
+  dispatcher.Cancel();
   EXPECT_EQ(counts.counts[0], 1);
   EXPECT_EQ(counts.counts[1], 0);
   EXPECT_EQ(endpoint_2, nullptr);
@@ -1112,7 +1247,7 @@ TEST(MessageSystemTest, AddRemoveChannelInsideHandlerWithThreadDispatcher) {
   EXPECT_EQ(counts.counts[0], 1);
   EXPECT_EQ(counts.counts[1], 1);
   message_system->Send(channel, 1.0f);
-  absl::SleepFor(absl::Milliseconds(10));
+  dispatcher.Cancel();
   EXPECT_EQ(counts.counts[0], 1);
   EXPECT_EQ(counts.counts[1], 1);
   tester.Complete();
@@ -1197,23 +1332,24 @@ TEST(MessageSystemTest, RemoveEndpointOnThreadWhileDispatchingToSubscribers) {
         tester.Wait(2);
         value = 5;
       });
-  tester.Run("send", [&endpoint_1]() {
-    // Send on endpoint_1, but receive in endpoint_2 so that endpoint_1 is still
-    // being dispatched to, but it does not have a handler running currently.
-    return endpoint_1->Send(endpoint_1->GetId(), 1.0f);
+  tester.Run("send", [&message_system, endpoint_id = endpoint_1->GetId()]() {
+    // Send to endpoint_1, which has no handler, so that only endpoint_2's
+    // handler is running while endpoint_1 is deleted.
+    return message_system->Send(endpoint_id, 1.0f);
   });
   tester.RunThenSignal(3, "delete", [&tester, &value, &endpoint_1]() {
     tester.Wait(1);
     endpoint_1.reset();
-    EXPECT_EQ(value, 5);
+    EXPECT_EQ(value, 0);
     return true;
   });
-  tester.Wait(1);
-  absl::SleepFor(absl::Milliseconds(10));
-  tester.Signal(2);
+
+  // Deleting endpoint_1 doesn't wait for endpoint_2's handler.
   tester.Wait(3);
+  tester.Signal(2);
   EXPECT_TRUE(tester.Complete()) << tester.GetResultString();
   EXPECT_EQ(endpoint_1, nullptr);
+  EXPECT_EQ(value, 5);
 }
 
 TEST(MessageSystemTest, EndpointSubscriptionOnDeletedSystem) {

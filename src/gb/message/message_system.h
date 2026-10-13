@@ -3,18 +3,23 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef GB_BASE_MESSAGE_MESSAGE_SYSTEM_H_
-#define GB_BASE_MESSAGE_MESSAGE_SYSTEM_H_
+#ifndef GB_MESSAGE_MESSAGE_SYSTEM_H_
+#define GB_MESSAGE_MESSAGE_SYSTEM_H_
 
+#include <cstdint>
 #include <memory>
+#include <string>
 #include <string_view>
-#include <thread>
+#include <vector>
 
+#include "absl/base/thread_annotations.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
+#include "absl/synchronization/mutex.h"
 #include "gb/base/type_info.h"
 #include "gb/base/weak_ptr.h"
 #include "gb/message/message_endpoint.h"
+#include "gb/message/message_types.h"
 
 namespace gb {
 
@@ -105,6 +110,13 @@ class MessageSystem final : public WeakScope<MessageSystem> {
   // The resulting endpoint(s) that receive the message will have
   // kNoMessageEndpointId as the originator of the message.
   //
+  // The message is received by the endpoint, and every endpoint subscribed to
+  // it (directly, or through other subscriptions), once each. Each endpoint
+  // receives it through its own dispatcher, or the system dispatcher if it has
+  // none. An endpoint that is no longer subscribed by the time its dispatcher
+  // delivers the message doesn't receive it, and one that subscribes after the
+  // message is sent may or may not.
+  //
   // Messages are generally sent asynchronously, as determined by the
   // MessageDispatcher used for the receiving endpoint (see MessageDispatcher
   // for details). If the receiving endpoints do not have any dispatcher
@@ -156,35 +168,33 @@ class MessageSystem final : public WeakScope<MessageSystem> {
   bool DoSend(MessageInternal, MessageEndpointId from, MessageEndpointId to,
               TypeInfo* type, const void* message);
 
-  // Called from a dispatcher to actually propagate the message to the specified
-  // endpoint.
+  // Called from a dispatcher to deliver a message it was given to the
+  // endpoints that use it, and then destroy the message.
   void DoDispatch(MessageInternal, MessageDispatcher* dispatcher,
                   MessageEndpointId from, MessageEndpointId to, TypeInfo* type,
-                  void* message) {
-    EndpointIdSet visited;
-    DispatchImpl(&visited, dispatcher, from, to, type, message, true);
-  }
+                  void* message);
 
  private:
   using EndpointIdSet = absl::flat_hash_set<MessageEndpointId>;
   struct EndpointInfo {
     std::string name;
-    MessageEndpoint* endpoint = nullptr;
+
+    // True for a channel, which has no endpoint.
+    bool is_channel = true;
+
+    // The endpoint, which is invalidated as it is destroyed.
+    WeakPtr<MessageEndpoint> endpoint;
+
+    // The dispatcher that delivers messages to the endpoint: its own, or the
+    // system dispatcher. If this is null, messages are delivered immediately.
     MessageDispatcher* dispatcher = nullptr;
+
     EndpointIdSet subscribers;    // Endpoints subscribed to this endpoint.
     EndpointIdSet subscriptions;  // Endpoints this endpoint is subscribed to.
-
-    // While handlers are being dispatched, "subscribers" cannot be safely
-    // changed, so modifications are queued up and applied at the end of the
-    // dispatch.
-    absl::flat_hash_set<std::thread::id> dispatch_threads;
-    EndpointIdSet add_subscribers;
-    EndpointIdSet remove_subscribers;
-    bool erase_after_dispatch = false;
   };
   using Endpoints =
       absl::flat_hash_map<MessageEndpointId, std::unique_ptr<EndpointInfo>>;
-  using Dispatchers = absl::flat_hash_map<MessageDispatcher*, int64_t>;
+  using Receivers = std::vector<WeakPtr<MessageEndpoint>>;
 
   static std::unique_ptr<MessageSystem> DoCreate(
       std::unique_ptr<MessageDispatcher> owned_dispatcher,
@@ -192,10 +202,20 @@ class MessageSystem final : public WeakScope<MessageSystem> {
 
   MessageSystem();
 
-  // Returns false if the "to" endpoint no longer exists.
-  bool DispatchImpl(EndpointIdSet* visited, MessageDispatcher* dispatcher,
-                    MessageEndpointId from, MessageEndpointId to,
-                    TypeInfo* type, void* message, bool delete_message);
+  // Returns the endpoints (not channels) that receive a message sent to "to":
+  // "to" itself, and everything subscribed to it, directly or through other
+  // subscriptions.
+  std::vector<const EndpointInfo*> FindReceivers(MessageEndpointId to) const
+      ABSL_SHARED_LOCKS_REQUIRED(mutex_);
+
+  // Delivers a message to each receiver, in turn. Receivers that have been
+  // destroyed are skipped.
+  static void DeliverTo(const Receivers& receivers, MessageEndpointId from,
+                        TypeInfo* type, const void* message);
+
+  // Removes an endpoint or channel, and all subscriptions to or from it.
+  void EraseEndpoint(Endpoints::iterator it)
+      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   mutable absl::Mutex mutex_;
   std::unique_ptr<MessageDispatcher> owned_system_dispatcher_;
@@ -203,7 +223,6 @@ class MessageSystem final : public WeakScope<MessageSystem> {
   int64_t next_endpoint_id_ ABSL_GUARDED_BY(mutex_) =
       2;  // 0 and 1 are reserved.
   Endpoints endpoints_ ABSL_GUARDED_BY(mutex_);
-  Dispatchers dispatchers_ ABSL_GUARDED_BY(mutex_);
 };
 
 template <typename Message>
@@ -214,4 +233,4 @@ bool MessageSystem::Send(MessageEndpointId to, const Message& message) {
 
 }  // namespace gb
 
-#endif  // GB_BASE_MESSAGE_MESSAGE_SYSTEM_H_
+#endif  // GB_MESSAGE_MESSAGE_SYSTEM_H_

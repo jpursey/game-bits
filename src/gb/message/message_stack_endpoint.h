@@ -6,13 +6,22 @@
 #ifndef GB_MESSAGE_MESSAGE_STACK_ENDPOINT_H_
 #define GB_MESSAGE_MESSAGE_STACK_ENDPOINT_H_
 
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
+
+#include "absl/base/thread_annotations.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/functional/any_invocable.h"
 #include "absl/synchronization/mutex.h"
+#include "gb/base/type_info.h"
 #include "gb/base/weak_ptr.h"
 #include "gb/message/message_dispatcher.h"
 #include "gb/message/message_endpoint.h"
 #include "gb/message/message_system.h"
+#include "gb/message/message_types.h"
 
 namespace gb {
 
@@ -44,7 +53,9 @@ class MessageStackHandlers final : public WeakScope<MessageStackHandlers> {
   // Sets or clears a message handler for a specific type of message.
   //
   // If no handler is registered for a message when it is received, then that
-  // message is passed on to the next handlers in the stack.
+  // message is passed on to the next handlers in the stack. Setting a null
+  // callback clears the handler. Handlers may set or clear handlers, including
+  // their own.
   template <typename Message>
   void SetHandler(MessageStackHandler<Message> callback);
   template <typename Message>
@@ -53,14 +64,21 @@ class MessageStackHandlers final : public WeakScope<MessageStackHandlers> {
  public:
   // The following methods are internal to the message system, callable only by
   // other classes that are part of the system.
-  void SetStack(MessageInternal, MessageStackEndpoint* stack);
+
+  // Changes the stack the handlers are in (null if none) from "old_stack" to
+  // "new_stack". Returns false and does nothing if they aren't in "old_stack".
+  bool SetStack(MessageInternal, MessageStackEndpoint* old_stack,
+                MessageStackEndpoint* new_stack);
   bool Receive(MessageInternal, MessageEndpointId from, TypeKey* key,
                const void* message);
 
  private:
+  using Callback =
+      absl::AnyInvocable<bool(MessageEndpointId from, const void* message)>;
   struct HandlerInfo {
-    absl::AnyInvocable<bool(MessageEndpointId from, const void* message)>
-        callback;
+    // Shared, so that a callback that is running stays alive if it is
+    // replaced or cleared.
+    std::shared_ptr<Callback> callback;
     absl::AnyInvocable<void()> register_message;
   };
   using Handlers = absl::flat_hash_map<TypeKey*, HandlerInfo>;
@@ -134,11 +152,14 @@ class MessageStackEndpoint final {
   // Pushes the handlers onto the stack.
   //
   // If the handlers are deleted, they are automatically removed from the stack.
+  // Returns false if the handlers are null, or already in a stack (this one or
+  // another).
   bool Push(MessageStackHandlers* handlers);
 
   // Explicitly removes the handlers from the stack.
   //
-  // Handlers can be removed from anywhere in the stack.
+  // Handlers can be removed from anywhere in the stack, and may then be pushed
+  // onto a stack again. Returns false if the handlers are not in this stack.
   bool Remove(MessageStackHandlers* handlers);
 
  public:
@@ -159,12 +180,8 @@ class MessageStackEndpoint final {
   };
   using Stack = std::vector<StackNode>;
   using Handlers = std::vector<WeakPtr<MessageStackHandlers>>;
-  struct MessageInfo {
-    MessageInfo() = default;
-    MessageStackOrder order = MessageStackOrder::kTopDown;
-    absl::AnyInvocable<void()> clear_handler;
-  };
-  using Messages = absl::flat_hash_map<TypeKey*, MessageInfo>;
+  // The order of each message type the endpoint handles.
+  using Messages = absl::flat_hash_map<TypeKey*, MessageStackOrder>;
 
   MessageStackEndpoint(MessageStackOrder default_order,
                        std::unique_ptr<MessageEndpoint> endpoint);
@@ -177,7 +194,9 @@ class MessageStackEndpoint final {
       ABSL_LOCKS_EXCLUDED(mutex_);
 
   const MessageStackOrder default_order_ = MessageStackOrder::kTopDown;
-  const std::unique_ptr<MessageEndpoint> endpoint_;
+
+  // The endpoint, which is only null once the stack is being destroyed.
+  std::unique_ptr<MessageEndpoint> endpoint_;
   mutable absl::Mutex mutex_;
   Stack stack_ ABSL_GUARDED_BY(mutex_);
   Messages messages_ ABSL_GUARDED_BY(mutex_);
@@ -194,13 +213,17 @@ inline MessageStackEndpoint* MessageStackHandlers::GetStack() const {
 
 template <typename Message>
 void MessageStackHandlers::SetHandler(MessageStackHandler<Message> callback) {
+  if (callback == nullptr) {
+    ClearHandler<Message>();
+    return;
+  }
   absl::MutexLock lock(&mutex_);
   auto& handler_info = handlers_[TypeKey::Get<Message>()];
-  handler_info.callback = [callback = std::move(callback)](
-                              MessageEndpointId from,
-                              const void* message) mutable {
-    return callback(from, *static_cast<const Message*>(message));
-  };
+  handler_info.callback = std::make_shared<Callback>(
+      [callback = std::move(callback)](MessageEndpointId from,
+                                       const void* message) mutable {
+        return callback(from, *static_cast<const Message*>(message));
+      });
   handler_info.register_message = [this]() ABSL_NO_THREAD_SAFETY_ANALYSIS {
     stack_->RegisterMessage<Message>({});
   };
@@ -218,7 +241,7 @@ void MessageStackHandlers::ClearHandler() {
 template <typename Message>
 void MessageStackEndpoint::SetOrder(MessageStackOrder order) {
   absl::MutexLock lock(&mutex_);
-  GetMessageInfo<Message>()->second.order = order;
+  GetMessageInfo<Message>()->second = order;
 }
 
 template <typename Message>
@@ -235,10 +258,7 @@ MessageStackEndpoint::GetMessageInfo() {
         HandleMessage(from, key, &message);
       });
 
-  MessageInfo message_info;
-  message_info.order = default_order_;
-  message_info.clear_handler = [this]() { endpoint_->ClearHandler<Message>(); };
-  return messages_.insert({key, std::move(message_info)}).first;
+  return messages_.try_emplace(key, default_order_).first;
 }
 
 }  // namespace gb
