@@ -5,6 +5,9 @@
 
 #include "gb/resource/resource_manager.h"
 
+#include <string>
+#include <utility>
+
 #include "absl/log/log.h"
 #include "gb/resource/resource.h"
 #include "gb/resource/resource_system.h"
@@ -145,10 +148,11 @@ ResourceNameReservation ResourceManager::DoReserveResourceName(
     return {};
   }
   std::string resource_name(name.data(), name.size());
-  if (!system_->ReserveResourceName({}, type, id, resource_name)) {
+  bool added = false;
+  if (!system_->ReserveResourceName({}, type, id, resource_name, &added)) {
     return {};
   }
-  return ResourceNameReservation({}, system_, type, id, resource_name);
+  return ResourceNameReservation({}, system_, type, id, resource_name, added);
 }
 
 ResourceEntry ResourceManager::DoNewResourceEntry(TypeKey* type,

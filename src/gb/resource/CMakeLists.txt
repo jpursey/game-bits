@@ -21,8 +21,12 @@ set(gb_resource_DEPS
   absl::any_invocable
   absl::flat_hash_map
   absl::flat_hash_set
+  absl::inlined_vector
   absl::memory
+  absl::node_hash_map
+  absl::strings
   absl::synchronization
+  absl::time
   gb_base
   gb_file
 )

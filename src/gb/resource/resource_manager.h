@@ -6,14 +6,17 @@
 #ifndef GB_RESOURCE_RESOURCE_MANAGER_H_
 #define GB_RESOURCE_RESOURCE_MANAGER_H_
 
+#include <string_view>
+#include <type_traits>
+#include <utility>
+
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/functional/any_invocable.h"
-#include "absl/synchronization/mutex.h"
 #include "gb/base/context.h"
+#include "gb/base/type_info.h"
 #include "gb/resource/resource_entry.h"
 #include "gb/resource/resource_name_reservation.h"
-#include "gb/resource/resource_ptr.h"
 #include "gb/resource/resource_types.h"
 
 namespace gb {
@@ -39,7 +42,7 @@ namespace gb {
 // call the release handler).
 //
 // Similarly, resource types may have loaders registered, which are used by the
-// resource system to load a resource by type and resource name. If no londers
+// resource system to load a resource by type and resource name. If no loaders
 // are registered with a ResourceManager for a resource, then loading is not
 // supported for that resource type.
 //
@@ -96,7 +99,7 @@ class ResourceManager final {
   // error and be ignored.
   void InitGenericLoader(GenericLoader callback);
 
-  // Intializes a handler which will be called when the last reference to a
+  // Initializes a handler which will be called when the last reference to a
   // resource of the specified type is reached.
   //
   // If a type-specific release handler is not specified, then release handling

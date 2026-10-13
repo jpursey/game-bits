@@ -259,7 +259,7 @@ TEST(ResourceSetTest, GetByResourceName) {
   EXPECT_EQ(resource_set->Get<TestResource>("name"), resource);
 }
 
-TEST(ResourceTest, CopyConstructor) {
+TEST(ResourceSetTest, CopyConstructor) {
   TestResource::Counts counts;
   auto system = ResourceSystem::Create();
   ASSERT_NE(system, nullptr);
@@ -317,7 +317,7 @@ TEST(ResourceTest, CopyConstructor) {
   EXPECT_FALSE(sub_resources[1]->IsResourceReferenced());
 }
 
-TEST(ResourceTest, MoveConstructor) {
+TEST(ResourceSetTest, MoveConstructor) {
   TestResource::Counts counts;
   auto system = ResourceSystem::Create();
   ASSERT_NE(system, nullptr);
@@ -365,7 +365,7 @@ TEST(ResourceTest, MoveConstructor) {
   EXPECT_FALSE(sub_resources[1]->IsResourceReferenced());
 }
 
-TEST(ResourceTest, CopyAssignment) {
+TEST(ResourceSetTest, CopyAssignment) {
   TestResource::Counts counts;
   auto system = ResourceSystem::Create();
   ASSERT_NE(system, nullptr);
@@ -446,7 +446,7 @@ TEST(ResourceTest, CopyAssignment) {
   EXPECT_FALSE(sub_resources[1]->IsResourceReferenced());
 }
 
-TEST(ResourceTest, MoveAssignment) {
+TEST(ResourceSetTest, MoveAssignment) {
   TestResource::Counts counts;
   auto system = ResourceSystem::Create();
   ASSERT_NE(system, nullptr);
@@ -656,6 +656,27 @@ TEST(ResourceSetTest, RemoveResourceOnly) {
   EXPECT_TRUE(resource_2->IsResourceReferenced());
   EXPECT_EQ(resource_set->GetSystem(), system.get());
   EXPECT_FALSE(resource_set->IsEmpty());
+}
+
+TEST(ResourceSetTest, RemoveWithNullDependency) {
+  TestResource::Counts counts;
+  auto system = ResourceSystem::Create();
+  ASSERT_NE(system, nullptr);
+  ResourceManager manager;
+  EXPECT_TRUE(system->Register<TestResource>(&manager));
+
+  auto resource_set = std::make_unique<ResourceSet>();
+  auto* resource_1 =
+      new TestResource(&counts, manager.NewResourceEntry<TestResource>(), {});
+  auto* resource_2 =
+      new TestResource(&counts, manager.NewResourceEntry<TestResource>(), {});
+  resource_1->SetResourceDependencies({nullptr, resource_2});
+  resource_2->SetResourceDependencies({nullptr});
+  EXPECT_TRUE(resource_set->Add(resource_1));
+
+  EXPECT_FALSE(resource_set->Remove(resource_2, false));
+  EXPECT_TRUE(resource_set->Remove(resource_1));
+  EXPECT_TRUE(resource_set->IsEmpty());
 }
 
 TEST(ResourceSetTest, RemoveResourceById) {

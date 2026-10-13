@@ -6,13 +6,22 @@
 #ifndef GB_RESOURCE_RESOURCE_FILE_WRITER_H_
 #define GB_RESOURCE_RESOURCE_FILE_WRITER_H_
 
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <string_view>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/functional/any_invocable.h"
 #include "flatbuffers/flatbuffers.h"
+#include "gb/base/context.h"
+#include "gb/base/type_info.h"
 #include "gb/base/validated_context.h"
+#include "gb/file/chunk_types.h"
 #include "gb/file/chunk_writer.h"
 #include "gb/file/file_types.h"
 #include "gb/resource/resource.h"
@@ -31,7 +40,7 @@ namespace gb {
 //    Chunk "...."    <-- Zero or more generic or embedded resource chunks.
 //    Chunk "XXXX"    <-- Specified resource. This is the returned resource.
 //
-// To use this class, call Create and re4gister one or more resource writers.
+// To use this class, call Create and register one or more resource writers.
 // Call Write to write a resource out to a file.
 //
 // A context is passed in to all writers. This may be used as desired to store
@@ -40,7 +49,7 @@ namespace gb {
 class ResourceFileWriter final {
  public:
   // A resource writer must write the resource out to one or more chunks in
-  // out_chunks. These will be written to the same order.
+  // out_chunks. These will be written in the same order.
   template <typename ResourceType>
   using ResourceWriter =
       absl::AnyInvocable<bool(Context* context, ResourceType* resource,
@@ -142,7 +151,10 @@ class ResourceFileWriter final {
   // File writing
   //----------------------------------------------------------------------------
 
-  // Writes the specified to the name.
+  // Writes the resource to a file with the specified name, replacing any
+  // existing file. Returns false if it could not be written, in which case an
+  // existing file is left unchanged unless the failure was in writing the file
+  // itself. Null dependencies of the resource are not written.
   bool Write(std::string_view name, Resource* resource,
              WriteContract contract = Context());
 

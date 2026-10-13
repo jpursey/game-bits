@@ -5,6 +5,7 @@
 
 #include "gb/render/vulkan/vulkan_render_pipeline.h"
 
+#include "absl/log/log.h"
 #include "gb/render/material_config.h"
 #include "gb/render/vulkan/vulkan_backend.h"
 #include "gb/render/vulkan/vulkan_binding_data_factory.h"

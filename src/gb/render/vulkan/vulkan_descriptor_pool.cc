@@ -5,6 +5,7 @@
 
 #include "gb/render/vulkan/vulkan_descriptor_pool.h"
 
+#include "absl/log/log.h"
 #include "absl/memory/memory.h"
 #include "gb/render/vulkan/vulkan_backend.h"
 

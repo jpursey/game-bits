@@ -866,9 +866,110 @@ Depends on: CL4.
     two stacks, and leave a destroyed stack. A stack handler can set itself,
     and a null stack handler passes the message down the stack.
 
-### CL21 [ ] resource: audit gb_resource
+### CL21 [x] resource: audit gb_resource
 
 Depends on: CL12.
+
+- `ResourceSystem::Load()` deadlocked on a named resource that had never been
+  referenced, such as one just saved by `ResourceFileWriter`: it took the
+  returned reference with the system locked, and a first reference makes the
+  resource visible, which locked the system again to set its copy of the
+  flag. Visibility is now kept only on the resource (an atomic set under the
+  resource's own lock), so adding a reference never locks the system.
+- `Resource::GetResourceName()` returned a view into a `flat_hash_map`, which
+  moves its strings as it grows, so the view of a short name dangled once
+  other resources of the type were named. Names are now kept in an
+  `absl::node_hash_map`.
+- Two threads removing references at once could both decrement the count
+  without either seeing the last one, so an auto-release resource was never
+  released (it stayed loaded until its manager was destroyed). `RemoveRef()`
+  now decrements with a compare and swap, and releases if it holds the last
+  reference.
+- Move assigning a valid `ResourceEntry` or `ResourceNameReservation` leaked
+  the entry or name it replaced, which stayed in use for the life of the
+  system.
+- Reserving a name a resource already had reserved succeeded, and either
+  reservation released the name. So a failed `Write()` dropped the name its
+  caller had reserved, and a stale duplicate reservation could release
+  another resource's name. Only the reservation that added a name now
+  releases it, and releasing or applying checks the name is still the
+  resource's.
+- A loader that returned an existing resource with a different name left the
+  old name mapped, so once the resource was deleted, loading the old name
+  always failed.
+- `GetResourceType()` kept returning the types of removed managers, and
+  registering a type whose name another type had silently replaced it. A
+  duplicate name now fails registration.
+- Null dependencies, which `ResourceSet::Add()` already skipped, crashed
+  `ResourceSet::Remove()` and `ResourceFileWriter::Write()`. They are now
+  ignored everywhere, as the `GetResourceDependencies()` comment now says.
+- `ResourceFileWriter::Write()` opened (and so emptied) the file before
+  checking dependencies and running the writer, so a failed write destroyed
+  the existing file. It now opens the file last, so the registered writer runs
+  even when the file then can't be opened. A null resource crashed.
+- `ResourceFileReader::Read()`:
+  - Reading a file whose resource already existed but wasn't visible (such as
+    reading the same file twice) passed the reader an invalid entry, which
+    crashed when the resource was constructed. `ResourceSystem::Find()` now
+    finds resources that aren't visible, as the reader's comments assume, and
+    an ID in use without a resource fails the read.
+  - A missing dependency without a name crashed logging its null name.
+  - Chunks smaller than their struct (or the minimum flat buffer size) were
+    read past their end; the size constants were never checked.
+- `CMakeLists.txt` was missing several Abseil dependencies, the
+  `resource_system.h` include guard was misspelled, and `ResourcePtr` used
+  `nullptr_t` without `std::`. Missing includes were added; removing
+  `absl/log/log.h` from `resource.h` meant adding it to six `gb_render` files.
+  Loops in `~ResourceSystem()` and `RemoveManager()` copied every type's name
+  maps.
+- `ResourcePtr`s compared by converting both to `bool`, so any two non-null
+  pointers were equal. They now compare the resources they point to. The
+  implicit `operator bool` (also on `ResourceEntry` and
+  `ResourceNameReservation`) still lets other operators compile this way;
+  making it explicit may break callers, so it is the backlog item *Explicit
+  resource bool conversions*.
+- Chunk structs and flat buffers are still trusted past their size: offsets
+  inside them aren't checked. That belongs in `gb_file`, as the backlog item
+  *Validate chunk contents*.
+- `ThreadAbuse` slept in its loops and waited a second of real time; it now
+  waits for loop counts. Four `ResourceSet` tests were in the `ResourceTest`
+  suite.
+- Left as is:
+  - A reference added and removed while a release handler runs, after the
+    handler's delete failed because of it, leaves the resource unreferenced
+    and not released.
+  - Resources embedded in a file that is read without a `ResourceSet` are
+    never referenced, so they aren't released until their manager is
+    destroyed.
+  - Loading a name that another thread is loading fails, as its `TODO` says.
+  - A resource is in the system from its `Resource` base constructor on, so
+    two threads reading files that embed the same resource ID can find each
+    other's resource before it is fully constructed, or just before a failed
+    read deletes it. Before, the second reader crashed instead.
+  - The concurrency fixes other than the release race have no deterministic
+    tests.
+
+**Verify**
+- Standard checks.
+- Unit tests:
+  - `Load()` of a named resource that was never referenced returns it and
+    makes it visible.
+  - Short names stay valid as many more resources are named.
+  - Many threads releasing the last references at once delete the resource
+    (failed on the second of 200 iterations before the fix).
+  - Move assigning an entry or a reservation frees the old one; a stale
+    duplicate reservation keeps another resource's name; a failed write keeps
+    its caller's reservation.
+  - Loading a resource under a second name, then deleting it, loads both
+    names again.
+  - Type names are removed with their manager, and a duplicate type name fails
+    registration.
+  - `ResourceSet::Remove()` and `Write()` with null dependencies, and
+    `Write()` of a null resource.
+  - A failed write leaves the existing file.
+  - Reading a file twice, reading with the resource ID in use, a chunk too
+    small for its struct, and a missing unnamed dependency.
+  - `ResourcePtr` comparison.
 
 ### CL22 [ ] render: audit gb_render
 

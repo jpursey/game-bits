@@ -5,6 +5,9 @@
 
 #include "gb/resource/resource.h"
 
+#include <utility>
+
+#include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "gb/resource/resource_system.h"
 
@@ -24,14 +27,11 @@ Resource::~Resource() {
 }
 
 void Resource::SetResourceVisible(bool visible) {
-  if (visible) {
-    mutex_.Lock();
-    if (state_ == State::kNew) {
-      state_ = State::kActive;
-    }
-    mutex_.Unlock();
+  absl::MutexLock lock(&mutex_);
+  if (visible && state_ == State::kNew) {
+    state_ = State::kActive;
   }
-  entry_.GetSystem()->SetResourceVisible({}, this, visible);
+  visible_ = visible;
 }
 
 bool Resource::MaybeDelete(ResourceInternal) {
@@ -51,7 +51,7 @@ bool Resource::MaybeDelete(ResourceInternal) {
   entry_.GetSystem()->ResourceUnlock({});
 
   // If we are in a release method, we need to defer the deletion until this
-  // Resource is no longer in the callstack;
+  // Resource is no longer in the callstack.
   if (can_delete && !in_release) {
     delete this;
   }
@@ -60,17 +60,11 @@ bool Resource::MaybeDelete(ResourceInternal) {
 
 void Resource::DoAutoVisible() {
   ++ref_count_;
-  bool make_visible = false;
 
-  mutex_.Lock();
+  absl::MutexLock lock(&mutex_);
   if (state_ == State::kNew) {
-    make_visible = true;
     state_ = State::kActive;
-  }
-  mutex_.Unlock();
-
-  if (make_visible) {
-    entry_.GetSystem()->SetResourceVisible({}, this, true);
+    visible_ = true;
   }
 }
 
@@ -98,7 +92,7 @@ void Resource::Release() {
 
 void Resource::Delete() {
   mutex_.Lock();
-  CHECK(state_ == State::kNew) << "Resource was visibile in resource system "
+  CHECK(state_ == State::kNew) << "Resource was visible in resource system "
                                   "and cannot be force deleted.";
   int expected = 1;
   CHECK(ref_count_.compare_exchange_strong(expected, 0))

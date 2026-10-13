@@ -5,6 +5,12 @@
 
 #include "gb/resource/resource.h"
 
+#include <memory>
+#include <optional>
+#include <string_view>
+#include <vector>
+
+#include "absl/strings/str_cat.h"
 #include "gb/resource/resource_manager.h"
 #include "gb/resource/resource_ptr.h"
 #include "gb/resource/resource_set.h"
@@ -747,6 +753,142 @@ TEST(ResourceTest, ResourceTypeName) {
   EXPECT_EQ(system->GetResourceType(""), nullptr);
   EXPECT_EQ(system->GetResourceType("ResourceName"),
             TypeKey::Get<ResourceName>());
+}
+
+TEST(ResourceTest, ResourceTypeNameRemovedWithManager) {
+  struct RemovedName {
+    int x;
+  };
+  TypeKey::Get<RemovedName>()->SetTypeName("RemovedName");
+
+  auto system = ResourceSystem::Create();
+  ASSERT_NE(system, nullptr);
+  auto manager = std::make_unique<ResourceManager>();
+  EXPECT_TRUE(system->Register<RemovedName>(manager.get()));
+  EXPECT_EQ(system->GetResourceType("RemovedName"),
+            TypeKey::Get<RemovedName>());
+  manager.reset();
+  EXPECT_EQ(system->GetResourceType("RemovedName"), nullptr);
+}
+
+TEST(ResourceTest, RegisterDuplicateResourceTypeName) {
+  struct FirstType {
+    int x;
+  };
+  struct SecondType {
+    int x;
+  };
+  TypeKey::Get<FirstType>()->SetTypeName("DuplicateName");
+  TypeKey::Get<SecondType>()->SetTypeName("DuplicateName");
+
+  auto system = ResourceSystem::Create();
+  ASSERT_NE(system, nullptr);
+  ResourceManager manager_1;
+  ResourceManager manager_2;
+  EXPECT_FALSE((system->Register<FirstType, SecondType>(&manager_1)));
+  EXPECT_TRUE(system->Register<FirstType>(&manager_1));
+  EXPECT_FALSE(system->Register<SecondType>(&manager_2));
+  EXPECT_EQ(system->GetResourceType("DuplicateName"),
+            TypeKey::Get<FirstType>());
+}
+
+TEST(ResourceTest, ResourceEntryMoveAssignmentFreesEntry) {
+  auto system = ResourceSystem::Create();
+  ASSERT_NE(system, nullptr);
+  ResourceManager manager;
+  EXPECT_TRUE(system->Register<TestResource>(&manager));
+
+  ResourceEntry entry = manager.NewResourceEntryWithId<TestResource>(1);
+  ASSERT_TRUE(entry);
+  entry = manager.NewResourceEntryWithId<TestResource>(2);
+  ASSERT_TRUE(entry);
+  EXPECT_TRUE(manager.NewResourceEntryWithId<TestResource>(1));
+  EXPECT_FALSE(manager.NewResourceEntryWithId<TestResource>(2));
+}
+
+TEST(ResourceTest, ResourceNameReservationMoveAssignmentFreesReservation) {
+  auto system = ResourceSystem::Create();
+  ASSERT_NE(system, nullptr);
+  ResourceManager manager;
+  EXPECT_TRUE(system->Register<TestResource>(&manager));
+
+  auto reservation = manager.ReserveResourceName<TestResource>(1, "first");
+  ASSERT_TRUE(reservation);
+  reservation = manager.ReserveResourceName<TestResource>(1, "second");
+  ASSERT_TRUE(reservation);
+  EXPECT_TRUE(manager.ReserveResourceName<TestResource>(2, "first"));
+  EXPECT_FALSE(manager.ReserveResourceName<TestResource>(2, "second"));
+}
+
+TEST(ResourceTest, ReleasedReservationKeepsOtherResourceName) {
+  auto system = ResourceSystem::Create();
+  ASSERT_NE(system, nullptr);
+  ResourceManager manager;
+  EXPECT_TRUE(system->Register<TestResource>(&manager));
+
+  // A second reservation of the same name for the same resource succeeds, but
+  // only the first one releases the name.
+  std::optional<ResourceNameReservation> duplicate;
+  {
+    auto first = manager.ReserveResourceName<TestResource>(1, "name");
+    ASSERT_TRUE(first);
+    duplicate = manager.ReserveResourceName<TestResource>(1, "name");
+    ASSERT_TRUE(*duplicate);
+  }
+  auto other = manager.ReserveResourceName<TestResource>(2, "name");
+  ASSERT_TRUE(other);
+  duplicate.reset();
+  EXPECT_FALSE(manager.ReserveResourceName<TestResource>(3, "name"));
+}
+
+TEST(ResourceTest, ResourceNamesStayValid) {
+  auto system = ResourceSystem::Create();
+  ASSERT_NE(system, nullptr);
+  ResourceManager manager;
+  EXPECT_TRUE(system->Register<TestResource>(&manager));
+
+  // Names are short, so they are stored inline in their strings, and many are
+  // added so the names are stored again as they grow.
+  constexpr int kCount = 100;
+  std::vector<ResourcePtr<TestResource>> resources;
+  std::vector<std::string_view> names;
+  for (int i = 0; i < kCount; ++i) {
+    ResourcePtr<TestResource> resource =
+        new TestResource(manager.NewResourceEntry<TestResource>());
+    auto reservation = manager.ReserveResourceName<TestResource>(
+        resource->GetResourceId(), absl::StrCat(i));
+    ASSERT_TRUE(reservation);
+    reservation.Apply();
+    names.push_back(resource->GetResourceName());
+    resources.push_back(std::move(resource));
+  }
+  for (int i = 0; i < kCount; ++i) {
+    EXPECT_EQ(names[i], absl::StrCat(i));
+  }
+}
+
+TEST(ResourceTest, ResourcePtrComparison) {
+  auto system = ResourceSystem::Create();
+  ASSERT_NE(system, nullptr);
+  ResourceManager manager;
+  EXPECT_TRUE((system->Register<ResourceA, ResourceB>(&manager)));
+
+  ResourcePtr<ResourceA> a =
+      new ResourceA(manager.NewResourceEntry<ResourceA>());
+  ResourcePtr<ResourceA> a_copy = a;
+  ResourcePtr<ResourceB> b =
+      new ResourceB(manager.NewResourceEntry<ResourceB>());
+  ResourcePtr<TestResource> a_base = a;
+  ResourcePtr<TestResource> b_base = b;
+  ResourcePtr<TestResource> null_base;
+
+  EXPECT_TRUE(a == a_copy);
+  EXPECT_FALSE(a != a_copy);
+  EXPECT_TRUE(a == a_base);
+  EXPECT_TRUE(a_base == a);
+  EXPECT_FALSE(a_base == b_base);
+  EXPECT_TRUE(a_base != b_base);
+  EXPECT_FALSE(a == null_base);
 }
 
 }  // namespace

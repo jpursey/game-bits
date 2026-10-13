@@ -6,9 +6,12 @@
 #ifndef GB_RESOURCE_RESOURCE_PTR_H_
 #define GB_RESOURCE_RESOURCE_PTR_H_
 
+#include <cstddef>
+#include <type_traits>
 #include <utility>
 
 #include "gb/resource/resource.h"
+#include "gb/resource/resource_types.h"
 
 namespace gb {
 
@@ -92,7 +95,7 @@ class ResourcePtr final : public ResourcePtrBase {
   //----------------------------------------------------------------------------
 
   ResourcePtr() = default;
-  ResourcePtr(nullptr_t) {}
+  ResourcePtr(std::nullptr_t) {}
   ResourcePtr(Type* resource) : ResourcePtrBase(resource) {}
   ResourcePtr(const ResourcePtr<Type>& other) : ResourcePtrBase(other) {}
   template <typename OtherType>
@@ -154,23 +157,30 @@ class ResourcePtr final : public ResourcePtrBase {
   void Reset(Type* resource = nullptr) { DoReset(resource); }
 };
 
+// Resource pointers are equal if they refer to the same resource.
+template <typename Type, typename OtherType>
+inline bool operator==(const ResourcePtr<Type>& ptr,
+                       const ResourcePtr<OtherType>& other) {
+  return ptr.Get() == other.Get();
+}
+
 template <typename Type>
-inline bool operator==(const ResourcePtr<Type>& ptr, nullptr_t) {
+inline bool operator==(const ResourcePtr<Type>& ptr, std::nullptr_t) {
   return !ptr;
 }
 
 template <typename Type>
-inline bool operator==(nullptr_t, const ResourcePtr<Type>& ptr) {
+inline bool operator==(std::nullptr_t, const ResourcePtr<Type>& ptr) {
   return !ptr;
 }
 
 template <typename Type>
-inline bool operator!=(const ResourcePtr<Type>& ptr, nullptr_t) {
+inline bool operator!=(const ResourcePtr<Type>& ptr, std::nullptr_t) {
   return ptr;
 }
 
 template <typename Type>
-inline bool operator!=(nullptr_t, const ResourcePtr<Type>& ptr) {
+inline bool operator!=(std::nullptr_t, const ResourcePtr<Type>& ptr) {
   return ptr;
 }
 

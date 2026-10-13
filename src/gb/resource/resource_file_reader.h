@@ -72,7 +72,7 @@ class FileResources final {
 };
 
 //==============================================================================
-// FileResourceChunks
+// ResourceFileChunks
 //==============================================================================
 
 // Contains all chunks of registered chunk types loaded so far by the
@@ -99,7 +99,7 @@ class ResourceFileChunks final {
   // Accessors
   //----------------------------------------------------------------------------
 
-  // Returns the first chunk of the requested type, or null if is not loaded.
+  // Returns the first chunk of the requested type, or null if it is not loaded.
   //
   // If version is not null, the chunk version will also be returned.
   template <typename ChunkStruct>
@@ -113,7 +113,7 @@ class ResourceFileChunks final {
   ChunkStruct* GetChunk(int index, const ChunkType& type,
                         int* version = nullptr) const;
 
-  // Returns all chunks of the specified type, in the order they present in the
+  // Returns all chunks of the specified type, in the order they are in the
   // file.
   //
   // If version is not null, the chunk version will also be returned.
@@ -136,7 +136,7 @@ class ResourceFileChunks final {
 };
 
 //==============================================================================
-// FileResourceLoaader
+// ResourceFileReader
 //==============================================================================
 
 // This class supports loading resources from chunk files.
@@ -181,7 +181,8 @@ class ResourceFileReader final {
   // registration.
   //
   // If the chunk reader takes ownership of the chunk (calls ReleaseChunkData),
-  // then this chunk will not added to ResourceFileChunks; otherwise, it will.
+  // then this chunk will not be added to ResourceFileChunks; otherwise, it
+  // will.
   //
   // The provided ResourceEntry should be used to initialize the resource, and
   // it will be the same resource ID as is in the chunk. If a resource chunk was
@@ -197,8 +198,8 @@ class ResourceFileReader final {
   // type on success.
   //
   // When this is called, the chunk is valid and is of the
-  // version specified at registration. The chunk as already been converted into
-  // the specified FlatBufferType via flatbuffers::GetRoot<FlatBufferType>.
+  // version specified at registration. The chunk has already been converted
+  // into the specified FlatBufferType via flatbuffers::GetRoot<FlatBufferType>.
   //
   // Flat buffer resource chunks are never added to ResourceFileChunks, and the
   // passed in FlatBufferType instance will become invalid immediately after the
@@ -221,7 +222,8 @@ class ResourceFileReader final {
   // registration.
   //
   // If the chunk reader takes ownership of the chunk (calls ReleaseChunkData),
-  // then this chunk will not added to ResourceFileChunks; otherwise, it will.
+  // then this chunk will not be added to ResourceFileChunks; otherwise, it
+  // will.
   //
   // See class description above for details on the passed in context.
   using GenericChunkReader =
@@ -232,7 +234,7 @@ class ResourceFileReader final {
   // chunk readers).
   //
   // When this is called, the chunk is valid and is of the version specified at
-  // registration. The chunk as already been converted into the specified
+  // registration. The chunk has already been converted into the specified
   // FlatBufferType via flatbuffers::GetRoot<FlatBufferType>.
   //
   // Flat buffer chunks are never added to ResourceFileChunks, and the passed in
@@ -412,6 +414,10 @@ class ResourceFileReader final {
   };
 
   ResourceFileReader(ValidatedContext context);
+
+  // Returns true if the chunk has room for its count of entries of entry_size
+  // bytes each.
+  static bool HasChunkSize(const ChunkReader& chunk_reader, int entry_size);
 
   bool DoRegisterChunkReader(const ChunkType& chunk_type, int version,
                              TypeKey* resource_type, TypeKey* struct_type,

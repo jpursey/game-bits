@@ -5,6 +5,9 @@
 
 #include "gb/resource/resource_set.h"
 
+#include <utility>
+
+#include "absl/log/log.h"
 #include "gb/resource/resource_system.h"
 
 namespace gb {
@@ -143,7 +146,7 @@ bool ResourceSet::RemoveResourceOnly(Resource* resource) {
     }
   }
 
-  // Remove the resource, it it was in the set.
+  // Remove the resource, if it was in the set.
   if (resource_it != end_it) {
     resources_.erase(resource_it);
     resource->RemoveRef({});
@@ -156,7 +159,7 @@ bool ResourceSet::RemoveResourceOnly(Resource* resource) {
 
 bool ResourceSet::RemoveWithDependencies(Resource* resource) {
   // First determine the transitive closure of resource dependencies for this
-  // resource. These are the potential resources than may be removed, if there
+  // resource. These are the potential resources that may be removed, if there
   // are no other resources in set that are NOT in the transitive closure but
   // refer to one or more of these dependencies.
   absl::flat_hash_set<Resource*> to_remove;
@@ -211,7 +214,8 @@ void ResourceSet::AddAllDependencies(
   ResourceDependencyList dependencies;
   resource->GetResourceDependencies(&dependencies);
   for (Resource* resource : dependencies) {
-    if (!resources_.contains(
+    if (resource == nullptr ||
+        !resources_.contains(
             {resource->GetResourceType(), resource->GetResourceId()})) {
       continue;
     }

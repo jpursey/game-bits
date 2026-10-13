@@ -5,6 +5,8 @@
 
 #include "gb/render/local_binding_data.h"
 
+#include "absl/log/log.h"
+
 namespace gb {
 
 LocalBindingData::LocalBindingData(RenderInternal, BindingSet set,

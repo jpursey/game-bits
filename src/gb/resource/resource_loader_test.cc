@@ -14,7 +14,7 @@ namespace {
 
 using ::testing::IsEmpty;
 
-TEST(ResourceLoaderTest, LoadUnregisterdResourceType) {
+TEST(ResourceLoaderTest, LoadUnregisteredResourceType) {
   auto system = ResourceSystem::Create();
   ASSERT_NE(system, nullptr);
   auto resource_ptr = system->Load<TestResource>("name");
@@ -269,6 +269,65 @@ TEST(ResourceLoaderTest, SystemDestructEdgeConditions) {
   auto resource_ptr = system->Load<TestResource>("name");
   resource_ptr.Reset();
   system.reset();
+}
+
+TEST(ResourceLoaderTest, LoadNamedResourceThatWasNeverReferenced) {
+  auto system = ResourceSystem::Create();
+  ASSERT_NE(system, nullptr);
+  ResourceManager manager;
+  int load_count = 0;
+  manager.InitLoader<TestResource>(
+      [&load_count](Context* context, std::string_view name) -> TestResource* {
+        ++load_count;
+        return nullptr;
+      });
+  EXPECT_TRUE(system->Register<TestResource>(&manager));
+
+  auto* resource = new TestResource(manager.NewResourceEntry<TestResource>());
+  auto reservation = manager.ReserveResourceName<TestResource>(
+      resource->GetResourceId(), "name");
+  ASSERT_TRUE(reservation);
+  reservation.Apply();
+
+  auto resource_ptr = system->Load<TestResource>("name");
+  EXPECT_EQ(resource_ptr.Get(), resource);
+  EXPECT_EQ(load_count, 0);
+
+  // The first reference made it visible.
+  EXPECT_EQ(system->Get<TestResource>("name").Get(), resource);
+}
+
+TEST(ResourceLoaderTest, LoaderReturnsResourceWithAnotherName) {
+  auto system = ResourceSystem::Create();
+  ASSERT_NE(system, nullptr);
+  ResourceManager manager;
+  TestResource* existing = nullptr;
+  int load_count = 0;
+  manager.InitLoader<TestResource>(
+      [&](Context* context, std::string_view name) -> TestResource* {
+        ++load_count;
+        if (existing != nullptr) {
+          return existing;
+        }
+        return new TestResource(manager.NewResourceEntry<TestResource>());
+      });
+  EXPECT_TRUE(system->Register<TestResource>(&manager));
+
+  auto resource_a = system->Load<TestResource>("a");
+  ASSERT_NE(resource_a, nullptr);
+  existing = resource_a.Get();
+  auto resource_b = system->Load<TestResource>("b");
+  EXPECT_EQ(resource_b.Get(), existing);
+  EXPECT_EQ(existing->GetResourceName(), "b");
+
+  // Releasing the resource deletes it, after which either name loads a new
+  // one.
+  resource_a.Reset();
+  resource_b.Reset();
+  existing = nullptr;
+  EXPECT_NE(system->Load<TestResource>("a"), nullptr);
+  EXPECT_NE(system->Load<TestResource>("b"), nullptr);
+  EXPECT_EQ(load_count, 4);
 }
 
 }  // namespace

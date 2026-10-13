@@ -7,15 +7,17 @@
 #define GB_RESOURCE_RESOURCE_SET_H_
 
 #include <string_view>
-#include <tuple>
+#include <type_traits>
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
+#include "gb/base/type_info.h"
 #include "gb/resource/resource.h"
+#include "gb/resource/resource_types.h"
 
 namespace gb {
 
-// A resource set manages shared ownership over a set of render resources.
+// A resource set manages shared ownership over a set of resources.
 //
 // Resources can be added or removed from the set as desired. As long as this
 // resource set exists, its referenced resources will not be deleted by their
@@ -25,7 +27,7 @@ namespace gb {
 // This class is thread-compatible, although multiple ResourcePtr and
 // ResourceSet instances referring to the same resources are thread-safe
 // relative to each other. Further, querying the set from multiple threads is
-// safe as it is progammatically guaranteed that there are no races with
+// safe as it is programmatically guaranteed that there are no races with
 // modification functions. For instance, if a resource set is only modified at
 // game load time, it may be safely queried from multiple threads during
 // gameplay.

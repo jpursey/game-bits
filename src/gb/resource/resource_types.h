@@ -30,11 +30,11 @@ template <typename Type>
 class ResourcePtr;
 
 // A resource ID is used to represent a unique ID to a resource with a given
-// resource type. New resource IDs are minted by ResourceManager instance, and
-// they remain unique across runs (with an vanishingly low chance of collision).
+// resource type. New resource IDs are minted by ResourceManager instances, and
+// they remain unique across runs (with a vanishingly low chance of collision).
 using ResourceId = uint64_t;
 
-// A resource key is a fully unique reference to a resource. It is may be used
+// A resource key is a fully unique reference to a resource. It may be used
 // as a key for sets or maps of resources.
 using ResourceKey = std::tuple<TypeKey*, ResourceId>;
 

@@ -5,6 +5,8 @@
 
 #include "gb/render/texture_array.h"
 
+#include "absl/log/log.h"
+
 namespace gb {
 
 bool TextureArray::Clear(int index, Pixel pixel) {

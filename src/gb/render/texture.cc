@@ -5,6 +5,8 @@
 
 #include "gb/render/texture.h"
 
+#include "absl/log/log.h"
+
 namespace gb {
 
 bool Texture::Clip(int* x, int* y, int* width, int* height,

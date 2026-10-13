@@ -3,18 +3,26 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef GB_RESOURCE_RESSOURCE_SYSTEM_H_
-#define GB_RESOURCE_RESSOURCE_SYSTEM_H_
+#ifndef GB_RESOURCE_RESOURCE_SYSTEM_H_
+#define GB_RESOURCE_RESOURCE_SYSTEM_H_
 
+#include <cstdint>
+#include <initializer_list>
 #include <memory>
 #include <string>
 #include <string_view>
+#include <utility>
 
+#include "absl/base/thread_annotations.h"
 #include "absl/container/flat_hash_map.h"
+#include "absl/container/node_hash_map.h"
 #include "absl/functional/any_invocable.h"
 #include "absl/synchronization/mutex.h"
+#include "gb/base/context.h"
 #include "gb/base/type_info.h"
 #include "gb/base/validated_context.h"
+#include "gb/resource/resource.h"
+#include "gb/resource/resource_entry.h"
 #include "gb/resource/resource_ptr.h"
 #include "gb/resource/resource_set.h"
 #include "gb/resource/resource_types.h"
@@ -85,7 +93,8 @@ class ResourceSystem final {
   //
   // A single manager can handle multiple resource types, but a type may only be
   // registered against one manager. This returns true if the manager could be
-  // registered for ALL specified resource types. On failure, the resource
+  // registered for ALL specified resource types. On failure (including a type
+  // name that is already used, or a named type listed twice), the resource
   // manager will not be registered for any resource types.
   template <typename... Type>
   bool Register(ResourceManager* manager);
@@ -117,9 +126,9 @@ class ResourceSystem final {
   Type* Get(ResourceSet* set, std::string_view name,
             bool get_dependencies = true);
 
-  // Loads the requested resource by name, returning null it could not be
+  // Loads the requested resource by name, returning null if it could not be
   // loaded. If the resource is already loaded, the existing resource will be
-  // returned (a new copy will not be loaded).
+  // returned (a new copy will not be loaded), even if it is not visible.
   //
   // Load is thread-safe as long as the underlying manager for the type supports
   // thread-safe loading.
@@ -142,7 +151,6 @@ class ResourceSystem final {
   void AddResource(ResourceInternal, Resource* resource);
   void RemoveResource(ResourceInternal, TypeKey* type, ResourceId id);
   void ReleaseResource(ResourceInternal, Resource* resource);
-  void SetResourceVisible(ResourceInternal, Resource* resource, bool visibile);
   ResourceEntry NewResourceEntry(ResourceInternal, TypeKey* type,
                                  ResourceId id);
   std::string_view GetResourceName(ResourceInternal, TypeKey* type,
@@ -151,9 +159,17 @@ class ResourceSystem final {
                                    std::string_view name);
   void ResourceLock(ResourceInternal) ABSL_EXCLUSIVE_LOCK_FUNCTION(mutex_);
   void ResourceUnlock(ResourceInternal) ABSL_UNLOCK_FUNCTION(mutex_);
+
+  // Returns the resource, whether or not it is visible, or null if it doesn't
+  // exist or is being deleted.
   Resource* Find(ResourceInternal, TypeKey* type, ResourceId id);
+
+  // Reserves the name for the resource, returning false if another resource
+  // has it. Sets *added to whether this added the name, as opposed to the
+  // resource already having or reserving it. Only a reservation that added the
+  // name may release it.
   bool ReserveResourceName(ResourceInternal, TypeKey* type, ResourceId id,
-                           const std::string& name);
+                           const std::string& name, bool* added);
   void ReleaseResourceName(ResourceInternal, TypeKey* type, ResourceId id,
                            const std::string& name);
   void ApplyResourceName(ResourceInternal, TypeKey* type, ResourceId id,
@@ -168,24 +184,27 @@ class ResourceSystem final {
     ResourceTypeInfo() = default;
 
     ResourceManager* manager = nullptr;
-    Loader* loader;
-    ReleaseHandler* release_handler;
+    Loader* loader = nullptr;
+    ReleaseHandler* release_handler = nullptr;
 
     absl::flat_hash_map<std::string, ResourceId> name_to_id;
-    absl::flat_hash_map<ResourceId, std::string> id_to_name;
+
+    // Names are stored in nodes, as Resource::GetResourceName returns a view
+    // of them.
+    absl::node_hash_map<ResourceId, std::string> id_to_name;
   };
 
-  struct ResourceInfo {
-    ResourceInfo() = default;
-    Resource* resource = nullptr;
-    bool visible = false;
-  };
+  // Resources by key. A resource is null from when its entry is created until
+  // it is constructed.
+  using Resources = absl::flat_hash_map<ResourceKey, Resource*>;
 
   ResourceSystem();
 
   bool DoRegister(std::initializer_list<TypeKey*> types,
                   ResourceManager* manager) ABSL_LOCKS_EXCLUDED(mutex_);
   ResourceId DoGetResourceIdFromName(TypeKey* type, std::string_view name)
+      ABSL_SHARED_LOCKS_REQUIRED(mutex_);
+  Resource* DoFind(TypeKey* type, ResourceId id)
       ABSL_SHARED_LOCKS_REQUIRED(mutex_);
   Resource* DoGet(TypeKey* type, ResourceId id)
       ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
@@ -198,11 +217,11 @@ class ResourceSystem final {
       ABSL_LOCKS_EXCLUDED(mutex_);
 
   absl::Mutex mutex_;
-  absl::flat_hash_map<std::string, TypeKey*> type_names_;
+  absl::flat_hash_map<std::string, TypeKey*> type_names_
+      ABSL_GUARDED_BY(mutex_);
   absl::flat_hash_map<TypeKey*, ResourceTypeInfo> types_
       ABSL_GUARDED_BY(mutex_);
-  absl::flat_hash_map<ResourceKey, ResourceInfo> resources_
-      ABSL_GUARDED_BY(mutex_);
+  Resources resources_ ABSL_GUARDED_BY(mutex_);
   uint64_t next_resource_id_ ABSL_GUARDED_BY(mutex_);
 };
 
@@ -212,7 +231,7 @@ inline bool ResourceSystem::Register(ResourceManager* manager) {
 }
 
 inline TypeKey* ResourceSystem::GetResourceType(std::string_view type_name) {
-  absl::MutexLock lock(&mutex_);
+  absl::ReaderMutexLock lock(&mutex_);
   auto it = type_names_.find(type_name);
   return it != type_names_.end() ? it->second : nullptr;
 }
@@ -241,7 +260,7 @@ ResourcePtr<Type> ResourceSystem::Get(std::string_view name) {
   absl::MutexLock lock(&mutex_);
   TypeKey* type = TypeKey::Get<Type>();
   ResourceId id = DoGetResourceIdFromName(type, name);
-  Resource* resource = DoGet(TypeKey::Get<Type>(), id);
+  Resource* resource = DoGet(type, id);
   return static_cast<Type*>(resource);
 }
 
@@ -308,10 +327,10 @@ inline void ResourceSystem::ResourceUnlock(ResourceInternal) {
 
 inline Resource* ResourceSystem::Find(ResourceInternal, TypeKey* type,
                                       ResourceId id) {
-  absl::MutexLock lock(&mutex_);
-  return DoGet(type, id);
+  absl::ReaderMutexLock lock(&mutex_);
+  return DoFind(type, id);
 }
 
 }  // namespace gb
 
-#endif  // GB_RESOURCE_RESSOURCE_SYSTEM_H_
+#endif  // GB_RESOURCE_RESOURCE_SYSTEM_H_

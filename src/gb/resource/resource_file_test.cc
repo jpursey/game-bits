@@ -109,14 +109,11 @@ class ResourceC : public Resource {
   ResourceA* GetA() const { return a_; }
   ResourceB* GetB() const { return b_; }
 
+  // Missing dependencies are listed as null.
   void GetResourceDependencies(
       ResourceDependencyList* dependencies) const override {
-    if (a_ != nullptr) {
-      dependencies->push_back(a_);
-    }
-    if (b_ != nullptr) {
-      dependencies->push_back(b_);
-    }
+    dependencies->push_back(a_);
+    dependencies->push_back(b_);
   }
 
  private:
@@ -227,6 +224,15 @@ class ResourceFileTest : public ::testing::Test {
       EXPECT_EQ(entry.GetId(), chunk->id);
       chunk_reader->ConvertToPtr(&chunk->name);
       return new ResourceA(std::move(entry), chunk->name.ptr);
+    };
+  }
+  // Counts the times it is called, and fails each time.
+  ResourceFileReader::ResourceChunkReader<ResourceA> GetCountingResourceALoader(
+      int* count) {
+    return [count](Context* context, ChunkReader* chunk_reader,
+                   ResourceEntry entry) -> ResourceA* {
+      ++*count;
+      return nullptr;
     };
   }
   ResourceFileWriter::ResourceWriter<ResourceA> GetResourceAWriter() {
@@ -823,6 +829,93 @@ TEST_F(ResourceFileTest, WriteFlatBufferResourceDependencies) {
   EXPECT_EQ(chunk->b_id(), resource_b->GetResourceId());
 }
 
+TEST_F(ResourceFileTest, WriteNullResource) {
+  ASSERT_TRUE((writer_->RegisterResourceWriter<ResourceA>(
+      kChunkTypeResourceA, GetResourceAWriter())));
+  EXPECT_FALSE(writer_->Write("mem:/file", nullptr));
+}
+
+TEST_F(ResourceFileTest, WriteResourceWithNullDependency) {
+  ASSERT_TRUE((writer_->RegisterResourceWriter<ResourceC>(
+      kChunkTypeResourceC, GetResourceCWriter())));
+  ResourcePtr<ResourceB> resource_b =
+      new ResourceB(resource_manager_.NewResourceEntry<ResourceB>(), {}, {});
+  ResourcePtr<ResourceC> resource =
+      new ResourceC(resource_manager_.NewResourceEntry<ResourceC>(), nullptr,
+                    resource_b.Get());
+  EXPECT_TRUE(writer_->Write(
+      "mem:/file", resource.Get(),
+      ContextBuilder()
+          .SetValue<bool>(ResourceFileWriter::kKeyAllowUnnamedDependencies,
+                          true)
+          .Build()));
+
+  auto file = file_system_->OpenFile("mem:/file", kReadFileFlags);
+  ASSERT_NE(file, nullptr);
+  std::vector<ChunkReader> chunks;
+  ChunkType file_type;
+  EXPECT_TRUE(ReadChunkFile(file.get(), &file_type, &chunks));
+  ASSERT_EQ(chunks.size(), 2);
+  ASSERT_EQ(chunks[0].GetType(), kChunkTypeResourceLoad);
+  ASSERT_EQ(chunks[0].GetCount(), 1);
+  EXPECT_EQ(chunks[0].GetChunkData<ResourceLoadChunk>()->id,
+            resource_b->GetResourceId());
+}
+
+TEST_F(ResourceFileTest, FailedWriteKeepsExistingFile) {
+  ASSERT_TRUE((writer_->RegisterResourceWriter<ResourceC>(
+      kChunkTypeResourceC, GetResourceCWriter())));
+  ResourcePtr<ResourceC> resource = new ResourceC(
+      resource_manager_.NewResourceEntry<ResourceC>(), nullptr, nullptr);
+  ASSERT_TRUE(writer_->Write(
+      "mem:/file", resource.Get(),
+      ContextBuilder()
+          .SetValue<bool>(ResourceFileWriter::kKeySetResourceName, false)
+          .Build()));
+
+  // The unnamed dependency fails the write.
+  ResourcePtr<ResourceA> resource_a =
+      new ResourceA(resource_manager_.NewResourceEntry<ResourceA>(), "Name");
+  ResourcePtr<ResourceC> other_resource =
+      new ResourceC(resource_manager_.NewResourceEntry<ResourceC>(),
+                    resource_a.Get(), nullptr);
+  EXPECT_FALSE(writer_->Write(
+      "mem:/file", other_resource.Get(),
+      ContextBuilder()
+          .SetValue<bool>(ResourceFileWriter::kKeySetResourceName, false)
+          .Build()));
+
+  auto file = file_system_->OpenFile("mem:/file", kReadFileFlags);
+  ASSERT_NE(file, nullptr);
+  std::vector<ChunkReader> chunks;
+  ChunkType file_type;
+  EXPECT_TRUE(ReadChunkFile(file.get(), &file_type, &chunks));
+  EXPECT_EQ(file_type, kChunkTypeResourceC);
+  ASSERT_EQ(chunks.size(), 1);
+  EXPECT_EQ(chunks[0].GetChunkData<ResourceCChunk>()->id,
+            resource->GetResourceId());
+}
+
+TEST_F(ResourceFileTest, FailedWriteKeepsNameReservation) {
+  ASSERT_TRUE((writer_->RegisterResourceWriter<ResourceC>(
+      kChunkTypeResourceC, GetResourceCWriter())));
+  ResourcePtr<ResourceA> resource_a =
+      new ResourceA(resource_manager_.NewResourceEntry<ResourceA>(), "Name");
+  ResourcePtr<ResourceC> resource =
+      new ResourceC(resource_manager_.NewResourceEntry<ResourceC>(),
+                    resource_a.Get(), nullptr);
+  auto reservation = resource_manager_.ReserveResourceName<ResourceC>(
+      resource->GetResourceId(), "mem:/file");
+  ASSERT_TRUE(reservation);
+
+  // The unnamed dependency fails the write.
+  EXPECT_FALSE(writer_->Write("mem:/file", resource.Get()));
+  EXPECT_FALSE(resource_manager_.ReserveResourceName<ResourceC>(
+      resource->GetResourceId() + 1, "mem:/file"));
+  reservation.Apply();
+  EXPECT_EQ(resource->GetResourceName(), "mem:/file");
+}
+
 TEST_F(ResourceFileTest, InvalidLoaderCreateContext) {
   EXPECT_EQ(ResourceFileReader::Create(Context{}), nullptr);
 }
@@ -834,7 +927,7 @@ TEST_F(ResourceFileTest, DuplicateLoader) {
   // New version is ok
   EXPECT_TRUE((reader_->RegisterResourceChunk<ResourceA, ResourceAChunk>(
       kChunkTypeResourceA, 2, GetResourceALoader())));
-  // Duplicatate chunk and version is not.
+  // Duplicate chunk and version is not.
   EXPECT_FALSE((reader_->RegisterResourceChunk<ResourceA, ResourceAChunk>(
       kChunkTypeResourceA, 1, GetResourceALoader())));
 }
@@ -846,7 +939,7 @@ TEST_F(ResourceFileTest, DuplicateDifferentLoaders) {
   EXPECT_TRUE(
       (reader_->RegisterResourceFlatBufferChunk<ResourceA, fbs::ResourceAChunk>(
           kChunkTypeResourceA, 2, GetResourceAFlatBufferLoader())));
-  // Duplicatate chunk and version is not.
+  // Duplicate chunk and version is not.
   EXPECT_FALSE(
       (reader_->RegisterResourceFlatBufferChunk<ResourceA, fbs::ResourceAChunk>(
           kChunkTypeResourceA, 1, GetResourceAFlatBufferLoader())));
@@ -1253,6 +1346,88 @@ TEST_F(ResourceFileTest, ReadGenericChunkWithAcquire) {
   EXPECT_EQ(key_value_chunk_[0].value, 42.0f);
   EXPECT_STREQ(key_value_chunk_[1].key.ptr, "beta");
   EXPECT_EQ(key_value_chunk_[1].value, 24.0f);
+}
+
+TEST_F(ResourceFileTest, ReadResourceTwice) {
+  ASSERT_TRUE((writer_->RegisterResourceWriter<ResourceA>(
+      kChunkTypeResourceA, GetResourceAWriter())));
+  ResourcePtr<ResourceA> resource =
+      new ResourceA(resource_manager_.NewResourceEntry<ResourceA>(), "Name");
+  EXPECT_TRUE(writer_->Write("mem:/file", resource.Get()));
+  resource.Reset();
+
+  // The first resource is neither referenced nor visible, and the second read
+  // returns it.
+  ASSERT_TRUE((reader_->RegisterResourceChunk<ResourceA, ResourceAChunk>(
+      kChunkTypeResourceA, 1, GetResourceALoader())));
+  auto* loaded_resource = reader_->Read<ResourceA>("mem:/file");
+  ASSERT_NE(loaded_resource, nullptr);
+  EXPECT_EQ(reader_->Read<ResourceA>("mem:/file"), loaded_resource);
+  resource = loaded_resource;
+}
+
+TEST_F(ResourceFileTest, ReadResourceWithIdInUse) {
+  ASSERT_TRUE((writer_->RegisterResourceWriter<ResourceA>(
+      kChunkTypeResourceA, GetResourceAWriter())));
+  ResourcePtr<ResourceA> resource =
+      new ResourceA(resource_manager_.NewResourceEntry<ResourceA>(), "Name");
+  EXPECT_TRUE(writer_->Write("mem:/file", resource.Get()));
+  ResourceId resource_id = resource->GetResourceId();
+  resource.Reset();
+
+  // An entry with the ID exists, but no resource yet.
+  ResourceEntry entry =
+      resource_manager_.NewResourceEntryWithId<ResourceA>(resource_id);
+  ASSERT_TRUE(entry);
+  int read_count = 0;
+  ASSERT_TRUE((reader_->RegisterResourceChunk<ResourceA, ResourceAChunk>(
+      kChunkTypeResourceA, 1, GetCountingResourceALoader(&read_count))));
+  EXPECT_EQ(reader_->Read<ResourceA>("mem:/file"), nullptr);
+  EXPECT_EQ(read_count, 0);
+}
+
+TEST_F(ResourceFileTest, ReadResourceChunkTooSmall) {
+  // The chunk only has room for the ID, not the rest of ResourceAChunk.
+  std::vector<ChunkWriter> chunk_writers;
+  chunk_writers.emplace_back(
+      ChunkWriter::New<ResourceId>(kChunkTypeResourceA, 1));
+  *chunk_writers[0].GetChunkData<ResourceId>() = 1;
+  auto file = file_system_->OpenFile("mem:/file", kNewFileFlags);
+  ASSERT_NE(file, nullptr);
+  ASSERT_TRUE(WriteChunkFile(file.get(), kChunkTypeResourceA, chunk_writers));
+  file.reset();
+
+  int read_count = 0;
+  ASSERT_TRUE((reader_->RegisterResourceChunk<ResourceA, ResourceAChunk>(
+      kChunkTypeResourceA, 1, GetCountingResourceALoader(&read_count))));
+  EXPECT_EQ(reader_->Read<ResourceA>("mem:/file"), nullptr);
+  EXPECT_EQ(read_count, 0);
+}
+
+TEST_F(ResourceFileTest, ReadMissingUnnamedDependency) {
+  ASSERT_TRUE((writer_->RegisterResourceWriter<ResourceC>(
+      kChunkTypeResourceC, GetResourceCWriter())));
+  ResourcePtr<ResourceA> resource_a =
+      new ResourceA(resource_manager_.NewResourceEntry<ResourceA>(), "Name");
+  ResourcePtr<ResourceC> resource =
+      new ResourceC(resource_manager_.NewResourceEntry<ResourceC>(),
+                    resource_a.Get(), nullptr);
+  EXPECT_TRUE(writer_->Write(
+      "mem:/file", resource.Get(),
+      ContextBuilder()
+          .SetValue<bool>(ResourceFileWriter::kKeyAllowUnnamedDependencies,
+                          true)
+          .Build()));
+  resource.Reset();
+  resource_a.Reset();
+
+  ASSERT_TRUE((reader_->RegisterResourceChunk<ResourceC, ResourceCChunk>(
+      kChunkTypeResourceC, 1, GetResourceCLoader())));
+  ResourceSet resource_set;
+  EXPECT_EQ(reader_->Read<ResourceC>(
+                "mem:/file",
+                ContextBuilder().SetPtr<ResourceSet>(&resource_set).Build()),
+            nullptr);
 }
 
 TEST_F(ResourceFileTest, ReadResourceDependencies) {

@@ -10,7 +10,9 @@
 namespace gb {
 
 void ResourceNameReservation::Free() {
-  system_->ReleaseResourceName({}, type_, id_, name_);
+  if (system_ != nullptr && owns_name_) {
+    system_->ReleaseResourceName({}, type_, id_, name_);
+  }
 }
 
 void ResourceNameReservation::Apply() {
@@ -22,6 +24,7 @@ void ResourceNameReservation::Apply() {
   type_ = nullptr;
   id_ = 0;
   name_.clear();
+  owns_name_ = false;
 }
 
 }  // namespace gb

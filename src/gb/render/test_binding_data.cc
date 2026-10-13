@@ -5,6 +5,8 @@
 
 #include "gb/render/test_binding_data.h"
 
+#include "absl/log/log.h"
+
 namespace gb {
 
 TestBindingData::Value::Value(Binding binding) : binding_(binding) {

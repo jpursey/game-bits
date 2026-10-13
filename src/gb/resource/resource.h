@@ -7,10 +7,10 @@
 #define GB_RESOURCE_RESOURCE_H_
 
 #include <atomic>
-#include <string>
+#include <string_view>
 
+#include "absl/base/thread_annotations.h"
 #include "absl/container/inlined_vector.h"
-#include "absl/log/log.h"
 #include "absl/synchronization/mutex.h"
 #include "gb/base/flags.h"
 #include "gb/resource/resource_entry.h"
@@ -114,7 +114,8 @@ class Resource {
   //
   // Resource names are the name used to load the resource. Resources can be
   // anonymous (no name), but if the name is set, then it will be unique within
-  // its resource type.
+  // its resource type. The returned name is valid until the resource is renamed
+  // or deleted.
   //
   // Resource IDs should be preferred over resource names as a programmatic key
   // to another resource when a pointer is not possible or appropriate. For
@@ -129,7 +130,7 @@ class Resource {
   // becomes visible the first time it is referenced (held by a ResourcePtr or
   // ResourceSet). Specific resource types may leave resources hidden by
   // default, or their managers may make the resource visible prior to it being
-  // explicitiy referenced.
+  // explicitly referenced.
   //
   // Note that visibility has no effect on the ResourceSystem::Load
   // operation, which may retrieve an existing resource if it was already loaded
@@ -143,8 +144,9 @@ class Resource {
   // immediate dependencies, and not indirect dependencies. It is valid for the
   // implicit dependency graph to be circular.
   //
-  // This method must NOT remove, clear, or otherwise modifiy the passed in
+  // This method must NOT remove, clear, or otherwise modify the passed in
   // dependency list, as this method may be used to accumulate dependencies.
+  // Null dependencies are ignored.
   virtual void GetResourceDependencies(
       ResourceDependencyList* dependencies) const {}
 
@@ -156,6 +158,7 @@ class Resource {
   void AddRef(ResourceInternal);
   void RemoveRef(ResourceInternal);
   bool IsDeleting(ResourceInternal);
+  bool IsVisible(ResourceInternal) const { return visible_; }
 
  protected:
   // The resource entry passed to Resource binds this resource to a specific
@@ -208,6 +211,11 @@ class Resource {
   std::atomic<int> ref_count_ = 1;
   absl::Mutex mutex_;
   State state_ ABSL_GUARDED_BY(mutex_) = State::kNew;
+
+  // Whether the resource system returns the resource from lookups. This is
+  // written with mutex_ held, and read by the system with its own lock held, so
+  // references can be added while the system is locked.
+  std::atomic<bool> visible_ = false;
 };
 
 inline void Resource::AddRef(ResourceInternal) {
@@ -219,11 +227,20 @@ inline void Resource::AddRef(ResourceInternal) {
 }
 
 inline void Resource::RemoveRef(ResourceInternal) {
-  if (flags_.IsSet(ResourceFlag::kAutoRelease) && ref_count_ == 2) {
-    Release();
-  } else {
+  if (!flags_.IsSet(ResourceFlag::kAutoRelease)) {
     --ref_count_;
+    return;
   }
+
+  // The count only goes down here if this isn't the last reference (counting
+  // the manager's), which instead is removed by Release.
+  int count = ref_count_;
+  while (count != 2) {
+    if (ref_count_.compare_exchange_weak(count, count - 1)) {
+      return;
+    }
+  }
+  Release();
 }
 
 inline bool Resource::IsDeleting(ResourceInternal) { return ref_count_ == 0; }

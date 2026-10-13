@@ -6,6 +6,10 @@
 #ifndef GB_RESOURCE_RESOURCE_ENTRY_H_
 #define GB_RESOURCE_RESOURCE_ENTRY_H_
 
+#include <string_view>
+#include <utility>
+
+#include "gb/base/type_info.h"
 #include "gb/resource/resource_types.h"
 
 namespace gb {
@@ -36,6 +40,7 @@ class ResourceEntry {
         id_(std::exchange(other.id_, 0)) {}
   ResourceEntry& operator=(ResourceEntry&& other) {
     if (&other != this) {
+      Free();
       system_ = std::exchange(other.system_, nullptr);
       type_ = std::exchange(other.type_, nullptr);
       id_ = std::exchange(other.id_, 0);
@@ -44,11 +49,7 @@ class ResourceEntry {
   }
 
   // Removes the resource entry, allowing it to be allocated again.
-  ~ResourceEntry() {
-    if (system_ != nullptr) {
-      Free();
-    }
-  }
+  ~ResourceEntry() { Free(); }
 
   // Returns true if the resource entry is valid.
   bool IsValid() const { return system_ != nullptr; }

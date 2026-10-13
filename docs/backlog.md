@@ -158,3 +158,34 @@ identifiers to lower case parses a literal differently). Resolve token values
 per parser instead, such as in a table the `Parser` builds from its rules and
 lexer, so shared rules are never written. `ParserProgram` validates its rules
 once and is unaffected.
+
+## Validate chunk contents
+
+- **Layers:** file, resource
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Code audit](worklog/code_audit.md) CL7 and CL21
+
+A corrupt chunk file can make readers read out of bounds. `ResourceFileReader`
+now checks that a chunk is large enough for its count of structs, but
+`ChunkReader::ConvertToPtr()` trusts the offset in a `ChunkPtr` (and the string
+it points to is not checked for a terminator), and flat buffer chunks are
+passed to `flatbuffers::GetRoot()` without verifying them. Check `ChunkPtr`
+offsets and strings against the chunk size in `ChunkReader`, and run a
+`flatbuffers::Verifier` bounded by the chunk size before a flat buffer chunk
+reaches its reader, failing the read if either is invalid.
+
+## Explicit resource bool conversions
+
+- **Layers:** resource
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Code audit](worklog/code_audit.md) CL21
+
+`ResourcePtr`, `ResourceEntry`, and `ResourceNameReservation` have an implicit
+`operator bool`, so comparisons and arithmetic that have no meaning compile
+by converting to `bool` (`ResourcePtr` equality used to). Make the conversions
+`explicit`. This breaks callers that convert implicitly, such as returning one
+from a function that returns `bool`, which each project fixes as it updates.

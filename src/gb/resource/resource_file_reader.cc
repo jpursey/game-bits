@@ -5,18 +5,24 @@
 
 #include "gb/resource/resource_file_reader.h"
 
+#include <cstdint>
+#include <cstdlib>
+
 #include "absl/log/log.h"
 #include "absl/memory/memory.h"
+#include "absl/strings/string_view.h"
 #include "gb/base/scoped_call.h"
 #include "gb/file/file.h"
 #include "gb/file/file_system.h"
+#include "gb/resource/resource.h"
 #include "gb/resource/resource_chunks.h"
+#include "gb/resource/resource_set.h"
 #include "gb/resource/resource_system.h"
 
 namespace gb {
 
 //==============================================================================
-// FileResourceChunks
+// ResourceFileChunks
 //==============================================================================
 
 ResourceFileChunks::~ResourceFileChunks() {
@@ -55,7 +61,7 @@ void ResourceFileChunks::AddChunk(ResourceInternal, TypeKey* struct_type,
 }
 
 //==============================================================================
-// FileResourceLoaader
+// ResourceFileReader
 //==============================================================================
 
 std::unique_ptr<ResourceFileReader> ResourceFileReader::Create(
@@ -71,6 +77,12 @@ ResourceFileReader::ResourceFileReader(ValidatedContext context)
     : context_(std::move(context)) {}
 
 ResourceFileReader::~ResourceFileReader() {}
+
+bool ResourceFileReader::HasChunkSize(const ChunkReader& chunk_reader,
+                                      int entry_size) {
+  return int64_t{entry_size} * chunk_reader.GetCount() <=
+         chunk_reader.GetSize();
+}
 
 bool ResourceFileReader::DoRegisterChunkReader(
     const ChunkType& chunk_type, int version, TypeKey* resource_type,
@@ -172,7 +184,11 @@ Resource* ResourceFileReader::Read(TypeKey* type, std::string_view name,
                    << "\" in file: " << name;
         return nullptr;
       }
-      ResourceSystem* resource_system = context_.GetPtr<ResourceSystem>();
+      if (!HasChunkSize(*chunk_reader,
+                        static_cast<int>(sizeof(ResourceLoadChunk)))) {
+        LOG(ERROR) << "Resource load chunk is too small in file: " << name;
+        return nullptr;
+      }
       auto* chunks = chunk_reader->GetChunkData<ResourceLoadChunk>();
       for (int i = 0; i < chunk_reader->GetCount(); ++i) {
         auto& chunk = chunks[i];
@@ -186,7 +202,7 @@ Resource* ResourceFileReader::Read(TypeKey* type, std::string_view name,
         TypeKey* type = resource_system->GetResourceType(chunk.type.ptr);
         if (type == nullptr) {
           LOG(ERROR) << "Unknown resource type " << chunk.type.ptr
-                     << " in for resource system in file: " << name;
+                     << " for resource system in file: " << name;
           return nullptr;
         }
         Resource* resource = resource_system->Find({}, type, chunk.id);
@@ -198,7 +214,7 @@ Resource* ResourceFileReader::Read(TypeKey* type, std::string_view name,
           if (resource == nullptr) {
             LOG(ERROR) << "Could not load or find resource " << chunk.type.ptr
                        << " (ID: " << chunk.id << ") of name \""
-                       << chunk.name.ptr << "\"";
+                       << absl::NullSafeStringView(chunk.name.ptr) << "\"";
             return nullptr;
           }
         }
@@ -224,6 +240,11 @@ Resource* ResourceFileReader::Read(TypeKey* type, std::string_view name,
                  << "\" in file: " << name;
       return nullptr;
     }
+    if (!HasChunkSize(*chunk_reader, reader_info->struct_size)) {
+      LOG(ERROR) << "Chunk \"" << chunk_reader->GetType().ToString()
+                 << "\" is too small in file: " << name;
+      return nullptr;
+    }
 
     Resource* chunk_resource = nullptr;
     ResourceEntry chunk_resource_entry;
@@ -243,6 +264,12 @@ Resource* ResourceFileReader::Read(TypeKey* type, std::string_view name,
       if (chunk_resource == nullptr) {
         chunk_resource_entry = resource_system->NewResourceEntry(
             {}, reader_info->resource_type, chunk_resource_id);
+        if (!chunk_resource_entry) {
+          LOG(ERROR) << "Resource ID " << chunk_resource_id << " of chunk \""
+                     << chunk_reader->GetType().ToString()
+                     << "\" is already in use in file: " << name;
+          return nullptr;
+        }
         delete_chunk_resource = true;
       }
     }

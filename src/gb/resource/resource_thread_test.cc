@@ -3,7 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include <random>
+#include <atomic>
+#include <memory>
 #include <vector>
 
 #include "absl/strings/str_cat.h"
@@ -76,7 +77,6 @@ TEST(ResourceThreadTest, ThreadAbuse) {
         &loader_set, absl::StrCat(next_id.load(std::memory_order_relaxed)));
     system->Load<ResourceC>(
         &loader_set, absl::StrCat(next_id.load(std::memory_order_relaxed)));
-    absl::SleepFor(absl::Milliseconds(5));
     return true;
   };
   auto reader = [&] {
@@ -97,11 +97,7 @@ TEST(ResourceThreadTest, ThreadAbuse) {
       system->Get<ResourceC>(&set_2, absl::StrCat(i + 3));
     }
 
-    absl::SleepFor(absl::Milliseconds(1));
-
     set_1 = set_2;
-
-    absl::SleepFor(absl::Milliseconds(1));
 
     system->Get<ResourceA>(&set_2, global_resource_ids[0]);
     system->Get<ResourceB>(&set_2, global_resource_ids[1]);
@@ -112,10 +108,45 @@ TEST(ResourceThreadTest, ThreadAbuse) {
   tester.RunLoop(1, "id_incrementer", id_incrementer);
   tester.RunLoop(2, "loader", loader, ThreadTester::MaxConcurrency());
   tester.RunLoop(3, "reader", reader, ThreadTester::MaxConcurrency());
-  absl::SleepFor(absl::Milliseconds(500));
+  EXPECT_TRUE(tester.WaitForLoopCount("loader", 300));
+  EXPECT_TRUE(tester.WaitForLoopCount("reader", 300));
   global_set.reset();
-  absl::SleepFor(absl::Milliseconds(500));
+  EXPECT_TRUE(tester.WaitForLoopCount("loader", 600));
+  EXPECT_TRUE(tester.WaitForLoopCount("reader", 600));
   EXPECT_TRUE(tester.Complete()) << tester.GetResultString();
+}
+
+TEST(ResourceThreadTest, ReleaseLastReferencesConcurrently) {
+  TestResource::Counts counts;
+  auto system = ResourceSystem::Create();
+  ASSERT_NE(system, nullptr);
+  ResourceManager manager;
+  EXPECT_TRUE(system->Register<TestResource>(&manager));
+
+  // Each thread releases one reference at the same time, and the last one
+  // released deletes the resource. The threads spin rather than wait on a
+  // barrier, so they release as close together as possible.
+  const int thread_count = ThreadTester::MaxConcurrency();
+  constexpr int kIterations = 100;
+  for (int i = 0; i < kIterations; ++i) {
+    std::vector<ResourcePtr<TestResource>> resources(
+        thread_count,
+        new TestResource(&counts, manager.NewResourceEntry<TestResource>()));
+    std::atomic<int> ready_count = 0;
+    ThreadTester tester;
+    tester.Run(
+        "release",
+        [&] {
+          const int index = ready_count.fetch_add(1);
+          while (ready_count.load() < thread_count) {
+          }
+          resources[index].Reset();
+          return true;
+        },
+        thread_count);
+    ASSERT_TRUE(tester.Complete()) << tester.GetResultString();
+    ASSERT_EQ(counts.destruct, i + 1) << "Iteration " << i;
+  }
 }
 
 }  // namespace

@@ -5,6 +5,11 @@
 
 #include "gb/resource/resource_file_writer.h"
 
+#include <algorithm>
+#include <string>
+#include <utility>
+
+#include "absl/log/log.h"
 #include "absl/memory/memory.h"
 #include "gb/base/scoped_call.h"
 #include "gb/file/file.h"
@@ -43,6 +48,10 @@ bool ResourceFileWriter::Write(std::string_view name, Resource* resource,
                                WriteContract contract) {
   ValidatedContext context(std::move(contract));
 
+  if (resource == nullptr) {
+    LOG(ERROR) << "Null resource when writing file: " << name;
+    return false;
+  }
   auto writer_it = writers_.find(resource->GetResourceType());
   if (writer_it == writers_.end()) {
     LOG(ERROR) << "Resource is not a type registered with file writer when "
@@ -57,10 +66,11 @@ bool ResourceFileWriter::Write(std::string_view name, Resource* resource,
   auto* resource_system = context_.GetPtr<ResourceSystem>();
   const bool set_resource_name = (context.GetValue<bool>(kKeySetResourceName) &&
                                   name != resource->GetResourceName());
+  bool name_added = false;
   if (set_resource_name) {
     if (!resource_system->ReserveResourceName({}, resource->GetResourceType(),
                                               resource->GetResourceId(),
-                                              name_string)) {
+                                              name_string, &name_added)) {
       LOG(ERROR) << "Name already reserved for resource";
       return false;
     }
@@ -73,20 +83,13 @@ bool ResourceFileWriter::Write(std::string_view name, Resource* resource,
                                            resource->GetResourceId(),
                                            name_string);
 
-      } else {
+      } else if (name_added) {
         resource_system->ReleaseResourceName({}, resource->GetResourceType(),
                                              resource->GetResourceId(),
                                              name_string);
       }
     }
   });
-
-  auto* file_system = context_.GetPtr<FileSystem>();
-  auto file = file_system->OpenFile(name, kNewFileFlags);
-  if (file == nullptr) {
-    LOG(ERROR) << "Failed to open resource file for writing: " << name;
-    return false;
-  }
 
   FlatBuffers flat_buffers;
   std::vector<ChunkWriter> chunk_writers;
@@ -96,6 +99,9 @@ bool ResourceFileWriter::Write(std::string_view name, Resource* resource,
       context.GetValue<bool>(kKeyAllowUnnamedDependencies);
   ResourceDependencyList dependencies;
   resource->GetResourceDependencies(&dependencies);
+  dependencies.erase(
+      std::remove(dependencies.begin(), dependencies.end(), nullptr),
+      dependencies.end());
   if (!dependencies.empty()) {
     ChunkWriter chunk_writer = ChunkWriter::New<ResourceLoadChunk>(
         kChunkTypeResourceLoad, 1, static_cast<int32_t>(dependencies.size()));
@@ -126,6 +132,15 @@ bool ResourceFileWriter::Write(std::string_view name, Resource* resource,
 
   if (!writer_info.writer(context.GetContext(), resource, &chunk_writers,
                           &flat_buffers)) {
+    return false;
+  }
+
+  // The file is only opened (replacing any existing file) once everything to
+  // write is ready.
+  auto* file_system = context_.GetPtr<FileSystem>();
+  auto file = file_system->OpenFile(name, kNewFileFlags);
+  if (file == nullptr) {
+    LOG(ERROR) << "Failed to open resource file for writing: " << name;
     return false;
   }
   success = WriteChunkFile(file.get(), writer_info.chunk_type, chunk_writers);
