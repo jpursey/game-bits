@@ -119,6 +119,37 @@ or keep the capture's offset and size in the token's info. Test it with a lexer
 test that rewinds over a user token whose capture is shorter than its text, and
 a parser test that backtracks over one.
 
+## Number suffixes in either case, and hex numbers that start with a digit
+
+- **Layers:** parse
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Requested by:** OZ-3 *Program assembler*
+- **Background:** `CreateTokenPattern` in `lexer_program.cc`, and
+  `Lexer::ParseInt` in `lexer.cc`
+
+Assemblers of the Z80 and 8086 era write numbers with suffixes (`0FFh`,
+`1011b`), in either case (`0FFH`), and a hex number starts with a digit so it
+can't be read as a name (`FFh` is an identifier). The lexer can't do either:
+- A number's prefix and suffix (`LexerConfig::hex_suffix` and the others) are
+  matched exactly, as `RE2::QuoteMeta` text, so a config with `hex_suffix = "h"`
+  doesn't read `0FFH`.
+- A hex number is any run of hex digits with its prefix and suffix, so with a
+  suffix and no prefix, `FFh` is a hex number. It also wins a tie with the
+  identifier `FFh`, as integers come before identifiers in the lexer's tie
+  order, so a name like `BEh` can't be an identifier either.
+
+Add two `LexerFlag`s: one that matches number prefixes and suffixes ignoring
+case (for every integer format, and floats if they have them), and one that
+requires a hex number to start with a decimal digit (`[0-9][0-9A-Fa-f]*`,
+with the allowed letters still set by `kHexUpperIntegers` and
+`kHexLowerIntegers`). `ParseInt` already strips the prefix and suffix by
+length, so only the token pattern changes. Test both with suffixes and
+prefixes, including that `FFh` and `BEh` are identifiers, `0FFh` and `0FFH`
+are numbers, and `1011b` and `1011B` are binary rather than decimal followed by
+an identifier.
+
 ## Multithreaded profiles
 
 - **Layers:** profile
