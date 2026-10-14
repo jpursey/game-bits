@@ -55,6 +55,17 @@ TEST_F(MaterialTest, FailCreateWithNullResources) {
   EXPECT_EQ(state_.invalid_call_count, 0);
 }
 
+TEST_F(MaterialTest, FailCreateWithoutMaterialBindingData) {
+  CreateSystem();
+  auto material_type = CreateMaterialType({});
+  ASSERT_NE(material_type, nullptr);
+
+  state_.render_pipeline_config.fail_create_material_binding_data = true;
+  EXPECT_EQ(render_system_->CreateMaterial(material_type), nullptr);
+
+  EXPECT_EQ(state_.invalid_call_count, 0);
+}
+
 TEST_F(MaterialTest, Properties) {
   CreateSystem();
   auto material_type = CreateMaterialType({});

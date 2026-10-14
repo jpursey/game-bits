@@ -71,7 +71,10 @@ class Material final : public Resource {
   // Internal
   //----------------------------------------------------------------------------
 
-  Material(RenderInternal, ResourceEntry entry, MaterialType* material_type);
+  // "material_data" must be non-null, created by the material type's pipeline.
+  // It is initialized with the material type's default material binding data.
+  Material(RenderInternal, ResourceEntry entry, MaterialType* material_type,
+           std::unique_ptr<BindingData> material_data);
 
  private:
   ~Material() override;

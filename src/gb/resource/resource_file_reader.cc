@@ -278,6 +278,15 @@ Resource* ResourceFileReader::Read(TypeKey* type, std::string_view name,
       if (!reader_info->reader(load_context.GetContext(), &chunk_reader.value(),
                                std::move(chunk_resource_entry),
                                &chunk_resource)) {
+        // The reader may have created a resource with the entry before
+        // failing. Only this read can have added one with this ID.
+        if (delete_chunk_resource) {
+          Resource* rejected_resource = resource_system->Find(
+              {}, reader_info->resource_type, chunk_resource_id);
+          if (rejected_resource != nullptr) {
+            delete_resources.emplace_back(rejected_resource);
+          }
+        }
         return nullptr;
       }
     }

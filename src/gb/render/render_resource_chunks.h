@@ -62,6 +62,20 @@ inline gb::DepthMode FromFbs(fbs::DepthMode type) {
   return RenderEnumFromFbs<fbs::DepthMode, gb::DepthMode>(type);
 }
 
+inline fbs::DepthTest ToFbs(gb::DepthTest type) {
+  return RenderEnumToFbs<fbs::DepthTest, gb::DepthTest>(type);
+}
+inline gb::DepthTest FromFbs(fbs::DepthTest type) {
+  return RenderEnumFromFbs<fbs::DepthTest, gb::DepthTest>(type);
+}
+
+inline fbs::RasterMode ToFbs(gb::RasterMode type) {
+  return RenderEnumToFbs<fbs::RasterMode, gb::RasterMode>(type);
+}
+inline gb::RasterMode FromFbs(fbs::RasterMode type) {
+  return RenderEnumFromFbs<fbs::RasterMode, gb::RasterMode>(type);
+}
+
 inline fbs::CullMode ToFbs(gb::CullMode type) {
   return RenderEnumToFbs<fbs::CullMode, gb::CullMode>(type);
 }

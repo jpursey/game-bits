@@ -56,7 +56,7 @@ class RenderSceneType {
   //
   // Changing these defaults has no effect on existing RenderScenes,
   // MaterialTypes, or those loaded via the resource system. They only affect
-  // newly created MaterialType instances.
+  // RenderScenes and MaterialTypes created afterward.
   //
   // This is local cached data, and cannot be passed as binding data to
   // RenderSystem::Draw.

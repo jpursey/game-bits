@@ -1061,39 +1061,85 @@ buffers, bindings and binding data, materials, scene types, and the draw list.
   - `Binding` index range and `Combine()`, and texture arrays in binding data
     and their dependencies.
 
-### CL23 [ ] render: audit RenderSystem
+### CL23 [x] render: audit RenderSystem
 
 Depends on: CL22.
 
-`RenderSystem`'s create, load, and save paths. Found while auditing CL22:
-- `DoCreateMaterialType()` merges a binding shared by the scene and shaders
-  into `mapped_bindings`, but passes the unmerged `all_bindings` to the
-  pipeline and material type, losing shader stages and volatility.
-- `ReadBindingData()` matches constants by index only, ignoring the set (a
-  scene texture and material constants at the same index crash), and only
-  logs a size mismatch before copying the wrong size. `ReadBindings()` accepts
-  unresolved constants types and invalid bindings.
-- `MaterialTypeChunk` has no depth test or raster mode, so they reload as the
-  defaults. The flat buffer `ShaderValue` enum is missing most values.
-- Scene type defaults are never applied: `CreateScene()` doesn't copy them
-  (though `RenderBackend` says it does), and material types don't start from
-  them.
-- `CreateMaterial()` makes a material whose material binding data failed to
-  be created, which `Material::GetResourceDependencies()` dereferences.
-- Load paths that fail after creating a resource leave it in the system, so
-  a retry finds it. `LoadShaderChunk()` creates shader code without its data
-  in edit mode. `LoadTextureArrayChunk()` logs a bad count or pixel total but
-  continues, and its size math overflows. `LoadMeshChunk()` and
-  `LoadMaterialChunk()` don't validate their data. `LoadTextureFile()`
-  doesn't check the image size. `ValidateMaterialTypeArguments()` doesn't
-  reject a negative location.
-- `CreateMesh()` checks its own 65535 vertex limit rather than
-  `kMaxMeshVertices`.
-- `kMaxTextureWidth` and `kMaxTextureHeight` are 8096, a typo for 8192, and
-  two of the four checks reject the maximum itself. They are to be 8192,
-  inclusive.
-- `shader_test.cc` reuses moved-from shader code, so its invalid binding
-  tests fail for the wrong reason, and `FailCreate` never creates the system.
+`RenderSystem`'s create, load, and save paths, and one fix in
+`ResourceFileReader`.
+
+- Material type bindings:
+  - `DoCreateMaterialType()` combined a binding shared by the scene type and
+    a shader, but passed the uncombined list to the pipeline and material
+    type, losing the shader's stages and volatility. Creating and loading a
+    material type now share `GetMaterialTypeBindings()`.
+  - Loading a material type or material now takes its bindings from the scene
+    type and shaders, or the material type, as creating one does. The copies
+    saved in their chunks are no longer written, and the schema fields are
+    deprecated, so older files still load.
+- `ReadBindingData()` looked up constants by index alone, ignoring the set,
+  so a scene texture and material constants at the same index crashed. It
+  logged a constants size mismatch and then copied the wrong size, and wrote
+  an entry of any type into any slot. Each entry must now match the binding
+  at its set and index, in type and size.
+- Loading a shader accepted bindings that creating one rejects: an
+  unregistered constants type (which left a null type), an index out of
+  range, or a conflict. Shaders and scene types now share
+  `GetUniqueBindings()`. It also accepted an unknown shader type. A loaded
+  shader in edit mode had no code data, so it couldn't be saved again.
+- `MaterialTypeChunk` had no depth test or raster mode, so they reloaded as
+  the defaults. They are new fields at the end of the table, so older files
+  load as before. The schema's `ShaderValue` enum listed 5 of the 41 values;
+  `ShaderParam` round-tripped anyway, as it is copied as raw bytes.
+- Scene type defaults were never applied: `CreateScene()` didn't copy them,
+  though `RenderBackend` says it does, and material types didn't start from
+  them. `CreateScene()` also passed a null scene type to the backend.
+- `CreateMaterial()` made a material whose material binding data failed to
+  be created, which `GetResourceDependencies()` then dereferenced. `Material`
+  now takes the binding data from the render system, which fails first.
+- A resource chunk reader that created its resource and then failed left it
+  in the resource system under the file's ID, so a retry returned the
+  half-built resource. `ResourceFileReader` now deletes it: only that read
+  can have added a resource with the ID. The render system's chunk loads
+  also validate before creating. `LoadTextureFile()` doesn't use the reader,
+  so it deletes its own texture.
+- Chunk validation: a texture array with a bad count or too many pixels was
+  logged and loaded anyway. A mesh accepted a partial vertex, more than
+  `kMaxMeshVertices`, a partial triangle, and out of range indices. A texture
+  file larger than the maximum loaded. A vertex shader input at a negative
+  location read before the vertex type's attributes.
+- `kMaxTextureWidth` and `kMaxTextureHeight` were 8096 rather than 8192, and
+  the chunk loads rejected the maximum itself. The five size checks are now
+  `IsValidTextureSize()` and `IsValidTextureArraySize()`, with pixel totals
+  in `int64_t`. `CreateMesh()` now uses `kMaxMeshVertices`.
+- Tests: `shader_test.cc` reused moved-from shader code, so its invalid and
+  incompatible binding tests passed for the wrong reason, and `FailCreate`
+  never created the system. Malformed chunk tests write their files with a
+  `ResourceFileWriter` registered with the test's own chunk writer.
+- Left as is:
+  - The texture array pixel total check has no failing test: a fake array
+    over the limit allocates gigabytes.
+  - `WriteBindingData()` reads constants with `GetInternal()`, which returns
+    nothing for `kStaticWrite` bindings, as `SaveMaterial()` documents.
+
+**Verify**
+- Standard checks.
+- Unit tests:
+  - A material type combines a binding shared by its scene type and shaders,
+    and starts from the scene type's defaults, as a scene does.
+  - Creating a scene with a null scene type, or a material whose binding data
+    fails, returns null.
+  - Material types round trip their depth test and raster mode, and constants
+    at an index the scene set also uses. Wrong size constants fail to load.
+  - Shaders with an unknown type, constants type, or out of range index fail
+    to load, and a loaded shader in edit mode can be saved again.
+  - A file reads again after its chunk reader, plain or flat buffer, created
+    its resource and failed. Textures and texture arrays load after a failed
+    load of the same file.
+  - Textures and texture arrays round trip at the maximum size, and texture
+    files over it fail.
+  - Malformed meshes and texture arrays fail to load.
+  - A vertex shader input at a negative location fails.
 
 ### CL24 [ ] render: audit gb_render_vulkan and gb_render_vulkan_sdl
 

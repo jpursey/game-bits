@@ -315,8 +315,8 @@ inline constexpr int kMaxBindingIndex = 1023;
 inline constexpr int kMaxMeshVertices = 65535;
 
 // Maximum dimensions for a texture or texture array.
-inline constexpr int kMaxTextureWidth = 8096;
-inline constexpr int kMaxTextureHeight = 8096;
+inline constexpr int kMaxTextureWidth = 8192;
+inline constexpr int kMaxTextureHeight = 8192;
 
 // Maximum count and total pixel count for a texture array.
 inline constexpr int kMaxTextureArrayCount = 2048;

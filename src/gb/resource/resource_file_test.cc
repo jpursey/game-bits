@@ -1130,6 +1130,62 @@ TEST_F(ResourceFileTest, ReadResource) {
   EXPECT_EQ(resource->GetName(), "Name");
 }
 
+TEST_F(ResourceFileTest, ReadAfterReaderRejectsItsResource) {
+  ASSERT_TRUE((writer_->RegisterResourceWriter<ResourceA>(
+      kChunkTypeResourceA, GetResourceAWriter())));
+  ResourcePtr<ResourceA> resource =
+      new ResourceA(resource_manager_.NewResourceEntry<ResourceA>(), "Name");
+  EXPECT_TRUE(writer_->Write("mem:/file", resource.Get()));
+  resource.Reset();
+
+  // The reader creates its resource and then fails the first time.
+  int read_count = 0;
+  ASSERT_TRUE((reader_->RegisterResourceChunk<ResourceA, ResourceAChunk>(
+      kChunkTypeResourceA, 1,
+      [&read_count](Context* context, ChunkReader* chunk_reader,
+                    ResourceEntry entry) -> ResourceA* {
+        auto* chunk = chunk_reader->GetChunkData<ResourceAChunk>();
+        chunk_reader->ConvertToPtr(&chunk->name);
+        auto* resource = new ResourceA(std::move(entry), chunk->name.ptr);
+        ++read_count;
+        return (read_count == 1 ? nullptr : resource);
+      })));
+  EXPECT_EQ(reader_->Read<ResourceA>("mem:/file"), nullptr);
+  EXPECT_EQ(read_count, 1);
+
+  resource = reader_->Read<ResourceA>("mem:/file");
+  ASSERT_NE(resource, nullptr);
+  EXPECT_EQ(read_count, 2);
+}
+
+TEST_F(ResourceFileTest, ReadAfterFlatBufferReaderRejectsItsResource) {
+  ASSERT_TRUE((writer_->RegisterResourceFlatBufferWriter<ResourceA>(
+      kChunkTypeResourceA, 1, GetResourceAFlatBufferWriter())));
+  ResourcePtr<ResourceA> resource =
+      new ResourceA(resource_manager_.NewResourceEntry<ResourceA>(), "Name");
+  EXPECT_TRUE(writer_->Write("mem:/file", resource.Get()));
+  resource.Reset();
+
+  // The reader creates its resource and then fails the first time.
+  int read_count = 0;
+  ASSERT_TRUE(
+      (reader_->RegisterResourceFlatBufferChunk<ResourceA, fbs::ResourceAChunk>(
+          kChunkTypeResourceA, 1,
+          [&read_count](Context* context, const fbs::ResourceAChunk* chunk,
+                        ResourceEntry entry) -> ResourceA* {
+            auto* resource =
+                new ResourceA(std::move(entry), chunk->name()->c_str());
+            ++read_count;
+            return (read_count == 1 ? nullptr : resource);
+          })));
+  EXPECT_EQ(reader_->Read<ResourceA>("mem:/file"), nullptr);
+  EXPECT_EQ(read_count, 1);
+
+  resource = reader_->Read<ResourceA>("mem:/file");
+  ASSERT_NE(resource, nullptr);
+  EXPECT_EQ(read_count, 2);
+}
+
 TEST_F(ResourceFileTest, ReadFlatBufferResource) {
   ASSERT_TRUE((writer_->RegisterResourceFlatBufferWriter<ResourceA>(
       kChunkTypeResourceA, 1, GetResourceAFlatBufferWriter())));

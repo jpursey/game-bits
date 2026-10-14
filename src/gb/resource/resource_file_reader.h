@@ -187,7 +187,9 @@ class ResourceFileReader final {
   // The provided ResourceEntry should be used to initialize the resource, and
   // it will be the same resource ID as is in the chunk. If a resource chunk was
   // encountered, but resource already existed, the pre-existing resource will
-  // be returned instead of calling the resource chunk reader.
+  // be returned instead of calling the resource chunk reader. If the reader
+  // creates a resource with the entry and then returns null, the resource is
+  // deleted.
   //
   // See class description above for details on the passed in context.
   template <typename ResourceType>
@@ -208,7 +210,9 @@ class ResourceFileReader final {
   // The provided ResourceEntry should be used to initialize the resource, and
   // it will be the same resource ID as is in the chunk. If a resource chunk was
   // encountered, but resource already existed, the pre-existing resource will
-  // be returned instead of calling the resource chunk reader.
+  // be returned instead of calling the resource chunk reader. If the reader
+  // creates a resource with the entry and then returns null, the resource is
+  // deleted.
   //
   // See class description above for details on the passed in context.
   template <typename ResourceType, typename FlatBufferType>

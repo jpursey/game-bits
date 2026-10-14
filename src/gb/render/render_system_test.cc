@@ -5,8 +5,17 @@
 
 #include "gb/render/render_system.h"
 
+#include <cstdint>
+#include <string_view>
+#include <vector>
+
+#include "absl/types/span.h"
+#include "flatbuffers/flatbuffers.h"
 #include "gb/base/context_builder.h"
+#include "gb/render/render_resource_chunks.h"
 #include "gb/render/render_test.h"
+#include "gb/resource/resource_chunks.h"
+#include "gb/resource/resource_file_writer.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
@@ -19,6 +28,141 @@ using ::testing::UnorderedElementsAreArray;
 
 class RenderSystemTest : public RenderTest {
  protected:
+  // Writes "resource" to "name" with "writer" writing its chunk in place of
+  // the render system, to make files the render system wouldn't write.
+  template <typename Type>
+  bool WriteResource(
+      std::string_view name, Type* resource, const ChunkType& chunk_type,
+      ResourceFileWriter::ResourceFlatBufferWriter<Type> writer) {
+    auto resource_writer =
+        ResourceFileWriter::Create(ContextBuilder()
+                                       .SetPtr(resource_system_.get())
+                                       .SetPtr(file_system_.get())
+                                       .Build());
+    if (resource_writer == nullptr ||
+        !resource_writer->RegisterResourceFlatBufferWriter<Type>(
+            chunk_type, 1, std::move(writer))) {
+      return false;
+    }
+    return resource_writer->Write(name, resource);
+  }
+
+  // Writes a mesh chunk with the specified vertex data and indices to "name".
+  bool WriteMeshChunk(std::string_view name, const VertexType* vertex_type,
+                      absl::Span<const uint8_t> vertices,
+                      absl::Span<const uint16_t> indices) {
+    auto mesh = render_system_->CreateMesh(
+        vertex_type, DataVolatility::kStaticReadWrite, 3, 1);
+    if (mesh == nullptr) {
+      return false;
+    }
+    return WriteResource<Mesh>(
+        name, mesh.Get(), kChunkTypeMesh,
+        [vertex_type, vertices, indices](
+            Context*, Mesh*, flatbuffers::FlatBufferBuilder* builder) {
+          const auto fb_vertex_type_name =
+              builder->CreateString(vertex_type->GetName());
+          const auto fb_vertices =
+              builder->CreateVector(vertices.data(), vertices.size());
+          const auto fb_indices =
+              builder->CreateVector(indices.data(), indices.size());
+          fbs::MeshChunkBuilder chunk_builder(*builder);
+          chunk_builder.add_vertex_type_name(fb_vertex_type_name);
+          chunk_builder.add_volatility(fbs::DataVolatility_StaticWrite);
+          chunk_builder.add_vertex_size(vertex_type->GetSize());
+          chunk_builder.add_vertices(fb_vertices);
+          chunk_builder.add_indices(fb_indices);
+          builder->Finish(chunk_builder.Finish());
+          return true;
+        });
+  }
+
+  // Writes a vertex shader chunk to "name" with a single material binding at
+  // "index". The binding is a texture if "constants_name" is empty, and
+  // constants of that type otherwise.
+  bool WriteShaderChunk(std::string_view name, int index,
+                        std::string_view constants_name) {
+    auto shader = render_system_->CreateShader(
+        ShaderType::kVertex,
+        render_system_->CreateShaderCode(kVertexShaderCode.data(),
+                                         kVertexShaderCode.size()),
+        {}, {}, {});
+    if (shader == nullptr) {
+      return false;
+    }
+    return WriteResource<Shader>(
+        name, shader.Get(), kChunkTypeShader,
+        [index, constants_name](Context*, Shader*,
+                                flatbuffers::FlatBufferBuilder* builder) {
+          flatbuffers::Offset<flatbuffers::String> fb_constants_name;
+          if (!constants_name.empty()) {
+            fb_constants_name = builder->CreateString(constants_name);
+          }
+          const auto fb_binding = fbs::CreateBinding(
+              *builder,
+              static_cast<uint8_t>(ShaderTypes(ShaderType::kVertex).GetMask()),
+              fbs::BindingSet_Material, index,
+              (constants_name.empty() ? fbs::BindingType_Texture
+                                      : fbs::BindingType_Constants),
+              fbs::DataVolatility_StaticReadWrite, fb_constants_name);
+          const auto fb_bindings = builder->CreateVector(&fb_binding, 1);
+          const auto fb_code = builder->CreateVector(
+              reinterpret_cast<const uint8_t*>(kVertexShaderCode.data()),
+              kVertexShaderCode.size());
+          fbs::ShaderChunkBuilder chunk_builder(*builder);
+          chunk_builder.add_type(fbs::ShaderType_Vertex);
+          chunk_builder.add_bindings(fb_bindings);
+          chunk_builder.add_code(fb_code);
+          builder->Finish(chunk_builder.Finish());
+          return true;
+        });
+  }
+
+  // Writes "material_type" to "name" with "constants" as the data for its
+  // material constants at index 0. Its shaders must already be saved.
+  bool WriteMaterialTypeChunk(std::string_view name,
+                              MaterialType* material_type,
+                              absl::Span<const uint8_t> constants) {
+    return WriteResource<MaterialType>(
+        name, material_type, kChunkTypeMaterialType,
+        [constants](Context*, MaterialType* material_type,
+                    flatbuffers::FlatBufferBuilder* builder) {
+          const auto fb_scene_type_name =
+              builder->CreateString(material_type->GetSceneType()->GetName());
+          const auto fb_vertex_type_name =
+              builder->CreateString(material_type->GetVertexType()->GetName());
+          const auto fb_constants =
+              builder->CreateVector(constants.data(), constants.size());
+          const auto fb_entry = fbs::CreateBindingDataEntry(
+              *builder, 0, fbs::BindingType_Constants, 0, 0, fb_constants);
+          const auto fb_material_data = builder->CreateVector(&fb_entry, 1);
+          fbs::MaterialTypeChunkBuilder chunk_builder(*builder);
+          chunk_builder.add_vertex_shader_id(
+              material_type->GetVertexShader()->GetResourceId());
+          chunk_builder.add_fragment_shader_id(
+              material_type->GetFragmentShader()->GetResourceId());
+          chunk_builder.add_scene_type_name(fb_scene_type_name);
+          chunk_builder.add_vertex_type_name(fb_vertex_type_name);
+          chunk_builder.add_material_data(fb_material_data);
+          builder->Finish(chunk_builder.Finish());
+          return true;
+        });
+  }
+
+  // Returns an uncompressed 32 bit TGA image of the specified size, with all
+  // pixels zero.
+  std::vector<uint8_t> MakeTgaImage(int width, int height) {
+    std::vector<uint8_t> image(18 + width * height * 4, 0);
+    image[2] = 2;  // Uncompressed true color.
+    image[12] = static_cast<uint8_t>(width & 0xff);
+    image[13] = static_cast<uint8_t>(width >> 8);
+    image[14] = static_cast<uint8_t>(height & 0xff);
+    image[15] = static_cast<uint8_t>(height >> 8);
+    image[16] = 32;    // Bits per pixel.
+    image[17] = 0x28;  // 8 alpha bits, with the origin at the top left.
+    return image;
+  }
+
   // 16x16 test image as follows:
   // - Upper Left 8x8: Pure red
   // - Upper right 8x8: Pure green
@@ -249,6 +393,20 @@ TEST_F(RenderSystemTest, LoadPngTextureInEditMode) {
   EXPECT_EQ(texture->GetVolatility(), DataVolatility::kStaticReadWrite);
 }
 
+TEST_F(RenderSystemTest, LoadTextureFileAtMaxSize) {
+  CreateSystem();
+  ASSERT_TRUE(file_system_->WriteFile("mem:/wide.tga",
+                                      MakeTgaImage(kMaxTextureWidth, 1)));
+  ASSERT_TRUE(file_system_->WriteFile("mem:/too_wide.tga",
+                                      MakeTgaImage(kMaxTextureWidth + 1, 1)));
+
+  ResourcePtr<Texture> texture =
+      resource_system_->Load<Texture>("mem:/wide.tga");
+  ASSERT_NE(texture, nullptr);
+  EXPECT_EQ(texture->GetWidth(), kMaxTextureWidth);
+  EXPECT_EQ(resource_system_->Load<Texture>("mem:/too_wide.tga"), nullptr);
+}
+
 TEST_F(RenderSystemTest, SaveLoadTexture) {
   CreateSystem();
   const SamplerOptions expected_options;
@@ -379,6 +537,45 @@ TEST_F(RenderSystemTest, SaveLoadTextureInEditMode) {
   EXPECT_EQ(texture->GetVolatility(), DataVolatility::kStaticReadWrite);
   EXPECT_EQ(texture->GetWidth(), 16);
   EXPECT_EQ(texture->GetHeight(), 16);
+  auto* test_texture = static_cast<TestTexture*>(texture.Get());
+  EXPECT_THAT(test_texture->GetPixels(), ElementsAreArray(expected_pixels));
+}
+
+TEST_F(RenderSystemTest, SaveLoadTextureAtMaxSize) {
+  CreateSystem();
+  auto texture = render_system_->CreateTexture(DataVolatility::kStaticReadWrite,
+                                               kMaxTextureWidth, 1);
+  ASSERT_NE(texture, nullptr);
+  ASSERT_TRUE(render_system_->SaveTexture("mem:/wide.gbtx", texture.Get()));
+  texture = render_system_->CreateTexture(DataVolatility::kStaticReadWrite, 1,
+                                          kMaxTextureHeight);
+  ASSERT_NE(texture, nullptr);
+  ASSERT_TRUE(render_system_->SaveTexture("mem:/tall.gbtx", texture.Get()));
+  texture.Reset();
+
+  texture = resource_system_->Load<Texture>("mem:/wide.gbtx");
+  ASSERT_NE(texture, nullptr);
+  EXPECT_EQ(texture->GetWidth(), kMaxTextureWidth);
+  texture = resource_system_->Load<Texture>("mem:/tall.gbtx");
+  ASSERT_NE(texture, nullptr);
+  EXPECT_EQ(texture->GetHeight(), kMaxTextureHeight);
+}
+
+TEST_F(RenderSystemTest, LoadTextureAfterFailedLoad) {
+  CreateSystem();
+  auto expected_pixels = MakeImageData();
+  auto texture =
+      render_system_->CreateTexture(DataVolatility::kStaticReadWrite, 16, 16);
+  ASSERT_NE(texture, nullptr);
+  ASSERT_TRUE(texture->Set(expected_pixels));
+  ASSERT_TRUE(render_system_->SaveTexture("mem:/image.gbtx", texture.Get()));
+  texture.Reset();
+
+  state_.texture_config.fail_set = true;
+  EXPECT_EQ(resource_system_->Load<Texture>("mem:/image.gbtx"), nullptr);
+  state_.texture_config.fail_set = false;
+  texture = resource_system_->Load<Texture>("mem:/image.gbtx");
+  ASSERT_NE(texture, nullptr);
   auto* test_texture = static_cast<TestTexture*>(texture.Get());
   EXPECT_THAT(test_texture->GetPixels(), ElementsAreArray(expected_pixels));
 }
@@ -537,6 +734,75 @@ TEST_F(RenderSystemTest, SaveLoadTextureArrayWithVolatility) {
               ElementsAreArray(expected_pixels[1]));
 }
 
+TEST_F(RenderSystemTest, SaveLoadTextureArrayAtMaxSize) {
+  CreateSystem();
+  auto texture_array = render_system_->CreateTextureArray(
+      DataVolatility::kStaticReadWrite, 1, kMaxTextureWidth, 1);
+  ASSERT_NE(texture_array, nullptr);
+  ASSERT_TRUE(
+      render_system_->SaveTextureArray("mem:/wide.gbta", texture_array.Get()));
+  texture_array = render_system_->CreateTextureArray(
+      DataVolatility::kStaticReadWrite, 1, 1, kMaxTextureHeight);
+  ASSERT_NE(texture_array, nullptr);
+  ASSERT_TRUE(
+      render_system_->SaveTextureArray("mem:/tall.gbta", texture_array.Get()));
+  texture_array.Reset();
+
+  texture_array = resource_system_->Load<TextureArray>("mem:/wide.gbta");
+  ASSERT_NE(texture_array, nullptr);
+  EXPECT_EQ(texture_array->GetWidth(), kMaxTextureWidth);
+  texture_array = resource_system_->Load<TextureArray>("mem:/tall.gbta");
+  ASSERT_NE(texture_array, nullptr);
+  EXPECT_EQ(texture_array->GetHeight(), kMaxTextureHeight);
+}
+
+TEST_F(RenderSystemTest, LoadTextureArrayAfterFailedLoad) {
+  CreateSystem();
+  auto expected_pixels = MakeImageData();
+  auto texture_array = render_system_->CreateTextureArray(
+      DataVolatility::kStaticReadWrite, 1, 16, 16);
+  ASSERT_NE(texture_array, nullptr);
+  ASSERT_TRUE(texture_array->Set(0, expected_pixels));
+  ASSERT_TRUE(render_system_->SaveTextureArray("mem:/texture_array.gbta",
+                                               texture_array.Get()));
+  texture_array.Reset();
+
+  state_.texture_array_config.fail_set = true;
+  EXPECT_EQ(resource_system_->Load<TextureArray>("mem:/texture_array.gbta"),
+            nullptr);
+  state_.texture_array_config.fail_set = false;
+  texture_array =
+      resource_system_->Load<TextureArray>("mem:/texture_array.gbta");
+  ASSERT_NE(texture_array, nullptr);
+  auto* test_texture_array =
+      static_cast<TestTextureArray*>(texture_array.Get());
+  EXPECT_THAT(test_texture_array->GetPixels(0),
+              ElementsAreArray(expected_pixels));
+}
+
+TEST_F(RenderSystemTest, LoadTextureArrayWithInvalidCount) {
+  CreateSystem();
+  auto texture_array = render_system_->CreateTextureArray(
+      DataVolatility::kStaticReadWrite, 1, 16, 16);
+  ASSERT_NE(texture_array, nullptr);
+  ASSERT_TRUE(WriteResource<TextureArray>(
+      "mem:/texture_array.gbta", texture_array.Get(), kChunkTypeTextureArray,
+      [](Context*, TextureArray*, flatbuffers::FlatBufferBuilder* builder) {
+        const auto fb_pixels = builder->CreateVector(std::vector<uint32_t>());
+        fbs::TextureArrayChunkBuilder chunk_builder(*builder);
+        chunk_builder.add_count(0);
+        chunk_builder.add_width(16);
+        chunk_builder.add_height(16);
+        chunk_builder.add_pixels(fb_pixels);
+        builder->Finish(chunk_builder.Finish());
+        return true;
+      }));
+  texture_array.Reset();
+
+  EXPECT_EQ(resource_system_->Load<TextureArray>("mem:/texture_array.gbta"),
+            nullptr);
+}
+
 TEST_F(RenderSystemTest, SaveShaderNotInEditMode) {
   CreateSystem();
   auto shader = render_system_->CreateShader(
@@ -561,7 +827,8 @@ TEST_F(RenderSystemTest, SaveLoadShaderInEditMode) {
           .SetTexture(),
   };
   std::vector<ShaderParam> inputs = {{ShaderValue::kVec3, 0},
-                                     {ShaderValue::kVec2, 1}};
+                                     {ShaderValue::kVec2, 1},
+                                     {ShaderValue::kU16Vec4, 2}};
   std::vector<ShaderParam> outputs = {{ShaderValue::kFloat, 0},
                                       {ShaderValue::kVec4, 1}};
   auto shader = render_system_->CreateShader(
@@ -583,6 +850,48 @@ TEST_F(RenderSystemTest, SaveLoadShaderInEditMode) {
   EXPECT_THAT(shader->GetBindings(), UnorderedElementsAreArray(bindings));
   EXPECT_THAT(shader->GetInputs(), UnorderedElementsAreArray(inputs));
   EXPECT_THAT(shader->GetOutputs(), UnorderedElementsAreArray(outputs));
+
+  // A loaded shader keeps its code in edit mode, so it can be saved again.
+  EXPECT_TRUE(render_system_->SaveShader("mem:/shader.gbsh", shader.Get()));
+}
+
+TEST_F(RenderSystemTest, LoadShaderWithInvalidType) {
+  CreateSystem();
+  auto shader = render_system_->CreateShader(
+      ShaderType::kVertex,
+      render_system_->CreateShaderCode(kVertexShaderCode.data(),
+                                       kVertexShaderCode.size()),
+      {}, {}, {});
+  ASSERT_NE(shader, nullptr);
+  ASSERT_TRUE(WriteResource<Shader>(
+      "mem:/shader.gbsh", shader.Get(), kChunkTypeShader,
+      [](Context*, Shader*, flatbuffers::FlatBufferBuilder* builder) {
+        const auto fb_code = builder->CreateVector(
+            reinterpret_cast<const uint8_t*>(kVertexShaderCode.data()),
+            kVertexShaderCode.size());
+        fbs::ShaderChunkBuilder chunk_builder(*builder);
+        chunk_builder.add_type(static_cast<fbs::ShaderType>(2));
+        chunk_builder.add_code(fb_code);
+        builder->Finish(chunk_builder.Finish());
+        return true;
+      }));
+  shader.Reset();
+
+  EXPECT_EQ(resource_system_->Load<Shader>("mem:/shader.gbsh"), nullptr);
+}
+
+TEST_F(RenderSystemTest, LoadShaderWithInvalidBindings) {
+  CreateSystem();
+  ASSERT_NE(render_system_->RegisterConstantsType<Vector2>("vec2"), nullptr);
+  ASSERT_TRUE(WriteShaderChunk("mem:/valid.gbsh", 0, "vec2"));
+  ASSERT_TRUE(WriteShaderChunk("mem:/unknown_constants.gbsh", 0, "unknown"));
+  ASSERT_TRUE(
+      WriteShaderChunk("mem:/invalid_index.gbsh", kMaxBindingIndex + 1, ""));
+
+  EXPECT_NE(resource_system_->Load<Shader>("mem:/valid.gbsh"), nullptr);
+  EXPECT_EQ(resource_system_->Load<Shader>("mem:/unknown_constants.gbsh"),
+            nullptr);
+  EXPECT_EQ(resource_system_->Load<Shader>("mem:/invalid_index.gbsh"), nullptr);
 }
 
 TEST_F(RenderSystemTest, SaveMaterialTypeWithUnsavedShader) {
@@ -614,10 +923,11 @@ TEST_F(RenderSystemTest, SaveLoadMaterialType) {
           .SetLocation(BindingSet::kInstance, 1)
           .SetTexture(),
   };
-  auto* material_type_ptr =
-      CreateMaterialType(bindings, MaterialConfig()
-                                       .SetCullMode(CullMode::kFront)
-                                       .SetDepthMode(DepthMode::kTest));
+  auto* material_type_ptr = CreateMaterialType(
+      bindings, MaterialConfig()
+                    .SetCullMode(CullMode::kFront)
+                    .SetDepthMode(DepthMode::kTest, DepthTest::kGreater)
+                    .SetRasterMode(RasterMode::kLine));
   auto material_type_id = material_type_ptr->GetResourceId();
   auto* vertex_shader = material_type_ptr->GetVertexShader();
   auto* fragment_shader = material_type_ptr->GetFragmentShader();
@@ -653,6 +963,8 @@ TEST_F(RenderSystemTest, SaveLoadMaterialType) {
   EXPECT_EQ(material_type->GetVertexType(), vertex_type);
   EXPECT_EQ(material_type->GetConfig().cull_mode, CullMode::kFront);
   EXPECT_EQ(material_type->GetConfig().depth_mode, DepthMode::kTest);
+  EXPECT_EQ(material_type->GetConfig().depth_test, DepthTest::kGreater);
+  EXPECT_EQ(material_type->GetConfig().raster_mode, RasterMode::kLine);
   Vector2 constants = {0, 0};
   material_type->GetDefaultMaterialBindingData()->GetConstants<Vector2>(
       0, &constants);
@@ -660,6 +972,64 @@ TEST_F(RenderSystemTest, SaveLoadMaterialType) {
   EXPECT_EQ(constants.y, 2);
   EXPECT_EQ(material_type->GetDefaultInstanceBindingData()->GetTexture(1),
             texture.Get());
+}
+
+TEST_F(RenderSystemTest, SaveLoadMaterialTypeWithSameIndexInOtherSet) {
+  CreateSystem(true);
+  auto* constants_type = render_system_->RegisterConstantsType<Vector2>("vec2");
+  ASSERT_NE(constants_type, nullptr);
+  auto* material_type_ptr = CreateMaterialType({
+      Binding()
+          .SetShaders(kAllShaderTypes)
+          .SetLocation(BindingSet::kScene, 0)
+          .SetTexture(),
+      Binding()
+          .SetShaders(kAllShaderTypes)
+          .SetLocation(BindingSet::kMaterial, 0)
+          .SetConstants(constants_type),
+  });
+  ASSERT_NE(material_type_ptr, nullptr);
+  material_type_ptr->GetDefaultMaterialBindingData()->SetConstants<Vector2>(
+      0, {1, 2});
+  ASSERT_TRUE(render_system_->SaveShader("mem:/vertex.gbsh",
+                                         material_type_ptr->GetVertexShader()));
+  ASSERT_TRUE(render_system_->SaveShader(
+      "mem:/fragment.gbsh", material_type_ptr->GetFragmentShader()));
+  ASSERT_TRUE(render_system_->SaveMaterialType("mem:/material_type.gbmt",
+                                               material_type_ptr));
+  temp_resource_set_.RemoveAll();
+
+  auto material_type = resource_system_->Load<MaterialType>(
+      &temp_resource_set_, "mem:/material_type.gbmt");
+  ASSERT_NE(material_type, nullptr);
+  Vector2 constants = {0, 0};
+  material_type->GetDefaultMaterialBindingData()->GetConstants<Vector2>(
+      0, &constants);
+  EXPECT_EQ(constants, Vector2({1, 2}));
+}
+
+TEST_F(RenderSystemTest, LoadMaterialTypeWithWrongConstantsSize) {
+  CreateSystem(true);
+  auto* constants_type = render_system_->RegisterConstantsType<Vector2>("vec2");
+  ASSERT_NE(constants_type, nullptr);
+  auto* material_type =
+      CreateMaterialType({Binding()
+                              .SetShaders(kAllShaderTypes)
+                              .SetLocation(BindingSet::kMaterial, 0)
+                              .SetConstants(constants_type)});
+  ASSERT_NE(material_type, nullptr);
+  ASSERT_TRUE(render_system_->SaveShader("mem:/vertex.gbsh",
+                                         material_type->GetVertexShader()));
+  ASSERT_TRUE(render_system_->SaveShader("mem:/fragment.gbsh",
+                                         material_type->GetFragmentShader()));
+  const uint8_t constants[sizeof(Vector2) / 2] = {};
+  ASSERT_TRUE(WriteMaterialTypeChunk("mem:/material_type.gbmt", material_type,
+                                     constants));
+  temp_resource_set_.RemoveAll();
+
+  EXPECT_EQ(resource_system_->Load<MaterialType>(&temp_resource_set_,
+                                                 "mem:/material_type.gbmt"),
+            nullptr);
 }
 
 TEST_F(RenderSystemTest, SaveLoadMaterialTypeAndDependencies) {
@@ -796,6 +1166,35 @@ TEST_F(RenderSystemTest, SaveLoadMeshAndDependencies) {
   for (int i = 0; i < triangle_count; ++i) {
     EXPECT_EQ(view->GetTriangle(i), kCubeTriangles[i]);
   }
+}
+
+TEST_F(RenderSystemTest, LoadMeshWithInvalidData) {
+  CreateSystem();
+  auto* vertex_type = render_system_->RegisterVertexType<Vector3>(
+      "vertex", {ShaderValue::kVec3});
+  ASSERT_NE(vertex_type, nullptr);
+  const std::vector<uint8_t> vertices(3 * sizeof(Vector3));
+  const std::vector<uint8_t> too_many_vertices((kMaxMeshVertices + 1) *
+                                               sizeof(Vector3));
+  ASSERT_TRUE(
+      WriteMeshChunk("mem:/valid.gbme", vertex_type, vertices, {0, 1, 2}));
+  ASSERT_TRUE(WriteMeshChunk("mem:/partial_vertex.gbme", vertex_type,
+                             absl::MakeConstSpan(vertices).subspan(1),
+                             {0, 1, 1}));
+  ASSERT_TRUE(WriteMeshChunk("mem:/too_many_vertices.gbme", vertex_type,
+                             too_many_vertices, {0, 1, 2}));
+  ASSERT_TRUE(WriteMeshChunk("mem:/partial_triangle.gbme", vertex_type,
+                             vertices, {0, 1, 2, 0}));
+  ASSERT_TRUE(WriteMeshChunk("mem:/invalid_index.gbme", vertex_type, vertices,
+                             {0, 1, 3}));
+
+  EXPECT_NE(resource_system_->Load<Mesh>("mem:/valid.gbme"), nullptr);
+  EXPECT_EQ(resource_system_->Load<Mesh>("mem:/partial_vertex.gbme"), nullptr);
+  EXPECT_EQ(resource_system_->Load<Mesh>("mem:/too_many_vertices.gbme"),
+            nullptr);
+  EXPECT_EQ(resource_system_->Load<Mesh>("mem:/partial_triangle.gbme"),
+            nullptr);
+  EXPECT_EQ(resource_system_->Load<Mesh>("mem:/invalid_index.gbme"), nullptr);
 }
 
 }  // namespace

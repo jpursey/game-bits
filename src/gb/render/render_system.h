@@ -187,7 +187,7 @@ class RenderSystem final {
   //----------------------------------------------------------------------------
 
   // Creates a render scene which must be used in order to draw any render
-  // resources.
+  // resources. Its scene binding data starts as the scene type's defaults.
   //
   // The scene order is used to define a global processing order across scenes.
   // See RenderScene for more details on how this is used.
@@ -243,9 +243,9 @@ class RenderSystem final {
   // shader and scene bindings, using the most permissive data volatility if
   // there is a difference.
   //
-  // Default material and instance binding data will be default (all zero or
-  // null), and the caller should initialize this before using the material
-  // type.
+  // Default material and instance binding data start as the scene type's
+  // defaults for the scene type's bindings, and zero or null for the rest. The
+  // caller should initialize these before using the material type.
   ResourcePtr<MaterialType> CreateMaterialType(
       RenderSceneType* scene_type, const VertexType* vertex_type,
       Shader* vertex_shader, Shader* fragment_shader,

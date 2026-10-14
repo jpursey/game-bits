@@ -47,5 +47,33 @@ TEST_F(RenderSceneTest, Properties) {
   EXPECT_EQ(state_.invalid_call_count, 0);
 }
 
+TEST_F(RenderSceneTest, CreateCopiesSceneTypeDefaults) {
+  CreateSystem();
+  auto* constants_type = render_system_->RegisterConstantsType<Vector2>("vec2");
+  ASSERT_NE(constants_type, nullptr);
+  auto* scene_type = render_system_->RegisterSceneType(
+      "scene", {Binding()
+                    .SetShaders(ShaderType::kVertex)
+                    .SetLocation(BindingSet::kScene, 0)
+                    .SetConstants(constants_type)});
+  ASSERT_NE(scene_type, nullptr);
+  scene_type->GetDefaultSceneBindingData()->SetConstants<Vector2>(0, {1, 2});
+
+  auto scene = render_system_->CreateScene(scene_type);
+  ASSERT_NE(scene, nullptr);
+  Vector2 constants = {0, 0};
+  scene->GetSceneBindingData()->GetConstants<Vector2>(0, &constants);
+  EXPECT_EQ(constants, Vector2({1, 2}));
+
+  EXPECT_EQ(state_.invalid_call_count, 0);
+}
+
+TEST_F(RenderSceneTest, FailCreateWithNullSceneType) {
+  CreateSystem();
+  EXPECT_EQ(render_system_->CreateScene(nullptr), nullptr);
+
+  EXPECT_EQ(state_.invalid_call_count, 0);
+}
+
 }  // namespace
 }  // namespace gb

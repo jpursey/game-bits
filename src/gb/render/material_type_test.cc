@@ -12,6 +12,8 @@
 namespace gb {
 namespace {
 
+using ::testing::ElementsAre;
+
 class MaterialTypeTest : public RenderTest {};
 
 TEST_F(MaterialTypeTest, CreateAsResourcePtr) {
@@ -163,6 +165,17 @@ TEST_F(MaterialTypeTest, FailCreateWithVertexMismatch) {
       render_system_->CreateShaderCode(kVertexShaderCode.data(),
                                        kVertexShaderCode.size()),
       {}, {{ShaderValue::kVec3, 0}, {ShaderValue::kVec2, 1}}, {});
+  ASSERT_NE(vertex_shader, nullptr);
+  EXPECT_EQ(
+      render_system_->CreateMaterialType(
+          scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get()),
+      nullptr);
+
+  vertex_shader = render_system_->CreateShader(
+      ShaderType::kVertex,
+      render_system_->CreateShaderCode(kVertexShaderCode.data(),
+                                       kVertexShaderCode.size()),
+      {}, {{ShaderValue::kVec3, -1}}, {});
   ASSERT_NE(vertex_shader, nullptr);
   EXPECT_EQ(
       render_system_->CreateMaterialType(
@@ -659,6 +672,101 @@ TEST_F(MaterialTypeTest, BindingData) {
   EXPECT_FALSE(material_type->GetDefaultInstanceBindingData()->IsTexture(1));
   EXPECT_TRUE(
       material_type->GetDefaultInstanceBindingData()->IsConstants<Vector2>(2));
+
+  EXPECT_EQ(state_.invalid_call_count, 0);
+}
+
+TEST_F(MaterialTypeTest, CombinesSharedBindings) {
+  CreateSystem();
+  auto* constants_type = render_system_->RegisterConstantsType<Vector2>("vec2");
+  ASSERT_NE(constants_type, nullptr);
+  const Binding scene_binding =
+      Binding()
+          .SetShaders(ShaderType::kVertex)
+          .SetLocation(BindingSet::kMaterial, 0)
+          .SetConstants(constants_type, DataVolatility::kStaticReadWrite);
+  auto* scene_type =
+      render_system_->RegisterSceneType("scene", {scene_binding});
+  ASSERT_NE(scene_type, nullptr);
+  auto* vertex_type = render_system_->RegisterVertexType<Vector3>(
+      "vertex", {ShaderValue::kVec3});
+  ASSERT_NE(vertex_type, nullptr);
+  auto vertex_shader = render_system_->CreateShader(
+      ShaderType::kVertex,
+      render_system_->CreateShaderCode(kVertexShaderCode.data(),
+                                       kVertexShaderCode.size()),
+      {scene_binding}, {}, {});
+  ASSERT_NE(vertex_shader, nullptr);
+  auto fragment_shader = render_system_->CreateShader(
+      ShaderType::kFragment,
+      render_system_->CreateShaderCode(kFragmentShaderCode.data(),
+                                       kFragmentShaderCode.size()),
+      {Binding(scene_binding)
+           .SetShaders(ShaderType::kFragment)
+           .SetConstants(constants_type, DataVolatility::kPerFrame)},
+      {}, {});
+  ASSERT_NE(fragment_shader, nullptr);
+
+  auto material_type = render_system_->CreateMaterialType(
+      scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get());
+  ASSERT_NE(material_type, nullptr);
+  const Binding expected_binding =
+      Binding()
+          .SetShaders(kAllShaderTypes)
+          .SetLocation(BindingSet::kMaterial, 0)
+          .SetConstants(constants_type, DataVolatility::kPerFrame);
+  EXPECT_THAT(material_type->GetBindings(), ElementsAre(expected_binding));
+  auto* test_pipeline = static_cast<TestRenderPipeline*>(
+      material_type->GetPipeline(GetAccessToken()));
+  EXPECT_THAT(test_pipeline->GetBindings(), ElementsAre(expected_binding));
+
+  EXPECT_EQ(state_.invalid_call_count, 0);
+}
+
+TEST_F(MaterialTypeTest, CreateCopiesSceneTypeDefaults) {
+  CreateSystem();
+  auto* constants_type = render_system_->RegisterConstantsType<Vector2>("vec2");
+  ASSERT_NE(constants_type, nullptr);
+  auto* scene_type = render_system_->RegisterSceneType(
+      "scene", {Binding()
+                    .SetShaders(ShaderType::kVertex)
+                    .SetLocation(BindingSet::kMaterial, 0)
+                    .SetConstants(constants_type),
+                Binding()
+                    .SetShaders(ShaderType::kFragment)
+                    .SetLocation(BindingSet::kInstance, 1)
+                    .SetTexture()});
+  ASSERT_NE(scene_type, nullptr);
+  auto texture =
+      render_system_->CreateTexture(DataVolatility::kStaticReadWrite, 4, 4);
+  ASSERT_NE(texture, nullptr);
+  scene_type->GetDefaultMaterialBindingData()->SetConstants<Vector2>(0, {1, 2});
+  scene_type->GetDefaultInstanceBindingData()->SetTexture(1, texture.Get());
+  auto* vertex_type = render_system_->RegisterVertexType<Vector3>(
+      "vertex", {ShaderValue::kVec3});
+  ASSERT_NE(vertex_type, nullptr);
+  auto vertex_shader = render_system_->CreateShader(
+      ShaderType::kVertex,
+      render_system_->CreateShaderCode(kVertexShaderCode.data(),
+                                       kVertexShaderCode.size()),
+      {}, {}, {});
+  ASSERT_NE(vertex_shader, nullptr);
+  auto fragment_shader = render_system_->CreateShader(
+      ShaderType::kFragment,
+      render_system_->CreateShaderCode(kFragmentShaderCode.data(),
+                                       kFragmentShaderCode.size()),
+      {}, {}, {});
+  ASSERT_NE(fragment_shader, nullptr);
+
+  auto material_type = render_system_->CreateMaterialType(
+      scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get());
+  ASSERT_NE(material_type, nullptr);
+  Vector2 constants = {0, 0};
+  material_type->GetDefaultMaterialBindingData()->GetConstants<Vector2>(
+      0, &constants);
+  EXPECT_EQ(constants, Vector2({1, 2}));
+  EXPECT_EQ(material_type->GetDefaultInstanceBindingData()->GetTexture(1),
+            texture.Get());
 
   EXPECT_EQ(state_.invalid_call_count, 0);
 }

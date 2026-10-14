@@ -42,6 +42,21 @@ enum DepthMode : uint8 {
   TestAndWrite,
 }
 
+// Must be kept in sync with gb::DepthTest
+enum DepthTest : uint8 {
+  Less,
+  LessOrEqual,
+  Equal,
+  GreaterOrEqual,
+  Greater,
+}
+
+// Must be kept in sync with gb::RasterMode
+enum RasterMode : uint8 {
+  Fill,
+  Line,
+}
+
 // Must be kept in sync with gb::CullMode
 enum CullMode : uint8 {
   None,
@@ -64,6 +79,42 @@ enum ShaderValue : int32 {
   Vec3,
   Vec4,
   Color,
+  I8Norm2,
+  I8Norm3,
+  I8Norm4,
+  I16Norm2,
+  I16Norm3,
+  I16Norm4,
+  U8Norm2,
+  U8Norm3,
+  U8Norm4,
+  U16Norm2,
+  U16Norm3,
+  U16Norm4,
+  Int8,
+  I8Vec2,
+  I8Vec3,
+  I8Vec4,
+  Int16,
+  I16Vec2,
+  I16Vec3,
+  I16Vec4,
+  Int,
+  IVec2,
+  IVec3,
+  IVec4,
+  Uint8,
+  U8Vec2,
+  U8Vec3,
+  U8Vec4,
+  Uint16,
+  U16Vec2,
+  U16Vec3,
+  U16Vec4,
+  Uint,
+  UVec2,
+  UVec3,
+  UVec4,
 }
 
 // Must match layout of gb::ShaderParam
@@ -103,7 +154,7 @@ table MeshChunk {
 // Chunk for material resource.
 table MaterialChunk {
   material_type_id : uint64;
-  bindings : [Binding];
+  bindings : [Binding] (deprecated);  // From the material type.
   material_data : [BindingDataEntry];
   instance_data : [BindingDataEntry];
 }
@@ -116,9 +167,11 @@ table MaterialTypeChunk {
   vertex_type_name : string;
   cull_mode : CullMode;
   depth_mode : DepthMode;
-  bindings : [Binding];
+  bindings : [Binding] (deprecated);  // From the scene type and shaders.
   material_data : [BindingDataEntry];
   instance_data : [BindingDataEntry];
+  depth_test : DepthTest;
+  raster_mode : RasterMode;
 }
 
 // Chunk for shader resource.

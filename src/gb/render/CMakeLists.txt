@@ -66,6 +66,10 @@ set(gb_render_TEST_SOURCE
   texture_array_test.cc
 )
 
+set(gb_render_TEST_DEPS
+  gb_render_fbs_generated
+)
+
 set(gb_render_DEPS
   absl::flat_hash_map
   absl::inlined_vector

@@ -42,6 +42,7 @@ TEST_F(ShaderTest, CreateInResourceSet) {
 }
 
 TEST_F(ShaderTest, FailCreate) {
+  CreateSystem();
   auto shader =
       render_system_->CreateShader(ShaderType::kVertex, nullptr, {}, {}, {});
   EXPECT_EQ(shader, nullptr);
@@ -107,11 +108,11 @@ TEST_F(ShaderTest, InputOutputBindingProperties) {
 
 TEST_F(ShaderTest, InvalidBindings) {
   CreateSystem();
-  auto shader_code = render_system_->CreateShaderCode(kVertexShaderCode.data(),
-                                                      kVertexShaderCode.size());
   auto shader = render_system_->CreateShader(
-      ShaderType::kVertex, std::move(shader_code), {Binding()}, {}, {});
-
+      ShaderType::kVertex,
+      render_system_->CreateShaderCode(kVertexShaderCode.data(),
+                                       kVertexShaderCode.size()),
+      {Binding()}, {}, {});
   EXPECT_EQ(shader, nullptr);
 
   Binding binding = Binding()
@@ -119,7 +120,10 @@ TEST_F(ShaderTest, InvalidBindings) {
                         .SetLocation(BindingSet::kMaterial, 1)
                         .SetTexture();
   shader = render_system_->CreateShader(
-      ShaderType::kVertex, std::move(shader_code), {binding}, {}, {});
+      ShaderType::kVertex,
+      render_system_->CreateShaderCode(kVertexShaderCode.data(),
+                                       kVertexShaderCode.size()),
+      {binding}, {}, {});
   EXPECT_EQ(shader, nullptr);
 
   EXPECT_EQ(state_.invalid_call_count, 0);
@@ -148,39 +152,27 @@ TEST_F(ShaderTest, IncompatibleBindings) {
       render_system_->RegisterConstantsType<Vector2>("constants_vec2");
   auto* constants_vec3 =
       render_system_->RegisterConstantsType<Vector3>("constants_vec3");
-  Binding binding =
+  const Binding binding =
       Binding()
           .SetShaders(ShaderType::kVertex)
           .SetLocation(BindingSet::kMaterial, 1)
           .SetConstants(constants_vec2, DataVolatility::kStaticWrite);
-  auto shader_code = render_system_->CreateShaderCode(kVertexShaderCode.data(),
-                                                      kVertexShaderCode.size());
-
-  auto shader =
-      render_system_->CreateShader(ShaderType::kVertex, std::move(shader_code),
-                                   {binding, binding.SetTexture()}, {}, {});
-  EXPECT_EQ(shader, nullptr);
-
-  shader = render_system_->CreateShader(
-      ShaderType::kVertex, std::move(shader_code),
-      {binding,
-       binding.SetConstants(constants_vec3, DataVolatility::kStaticWrite)},
-      {}, {});
-  EXPECT_EQ(shader, nullptr);
-
-  shader = render_system_->CreateShader(
-      ShaderType::kVertex, std::move(shader_code),
-      {binding,
-       binding.SetConstants(constants_vec2, DataVolatility::kStaticReadWrite)},
-      {}, {});
-  EXPECT_EQ(shader, nullptr);
-
-  shader = render_system_->CreateShader(
-      ShaderType::kVertex, std::move(shader_code),
-      {binding,
-       binding.SetConstants(constants_vec2, DataVolatility::kPerFrame)},
-      {}, {});
-  EXPECT_EQ(shader, nullptr);
+  const Binding incompatible_bindings[] = {
+      Binding(binding).SetTexture(),
+      Binding(binding).SetConstants(constants_vec3,
+                                    DataVolatility::kStaticWrite),
+      Binding(binding).SetConstants(constants_vec2,
+                                    DataVolatility::kStaticReadWrite),
+      Binding(binding).SetConstants(constants_vec2, DataVolatility::kPerFrame),
+  };
+  for (const Binding& incompatible_binding : incompatible_bindings) {
+    auto shader = render_system_->CreateShader(
+        ShaderType::kVertex,
+        render_system_->CreateShaderCode(kVertexShaderCode.data(),
+                                         kVertexShaderCode.size()),
+        {binding, incompatible_binding}, {}, {});
+    EXPECT_EQ(shader, nullptr);
+  }
 
   EXPECT_EQ(state_.invalid_call_count, 0);
 }

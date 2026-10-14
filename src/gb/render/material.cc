@@ -10,17 +10,14 @@
 namespace gb {
 
 Material::Material(RenderInternal internal, ResourceEntry entry,
-                   MaterialType* material_type)
-    : Resource(std::move(entry)), material_type_(material_type) {
-  std::unique_ptr<BindingData> material_binding_data =
-      material_type_->GetPipeline({})->CreateMaterialBindingData();
-  if (material_binding_data != nullptr) {
-    material_type_->GetDefaultMaterialBindingData()->CopyTo(
-        material_binding_data.get());
-  }
-  material_data_ = std::move(material_binding_data);
-  instance_defaults_ = std::make_unique<LocalBindingData>(
-      internal, *material_type_->GetDefaultInstanceBindingData());
+                   MaterialType* material_type,
+                   std::unique_ptr<BindingData> material_data)
+    : Resource(std::move(entry)),
+      material_type_(material_type),
+      material_data_(std::move(material_data)),
+      instance_defaults_(std::make_unique<LocalBindingData>(
+          internal, *material_type->GetDefaultInstanceBindingData())) {
+  material_type_->GetDefaultMaterialBindingData()->CopyTo(material_data_.get());
 }
 
 Material::~Material() {}

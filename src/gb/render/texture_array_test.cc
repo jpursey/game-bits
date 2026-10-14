@@ -77,6 +77,24 @@ TEST_F(TextureArrayTest, CreateInResourceSet) {
   EXPECT_EQ(test_texture_array->GetModifyCount(), 0);
 }
 
+TEST_F(TextureArrayTest, CreateAtMaxSize) {
+  CreateSystem();
+  EXPECT_NE(render_system_->CreateTextureArray(DataVolatility::kStaticWrite, 1,
+                                               kMaxTextureWidth, 1),
+            nullptr);
+  EXPECT_NE(render_system_->CreateTextureArray(DataVolatility::kStaticWrite, 1,
+                                               1, kMaxTextureHeight),
+            nullptr);
+  EXPECT_EQ(render_system_->CreateTextureArray(DataVolatility::kStaticWrite, 1,
+                                               kMaxTextureWidth + 1, 1),
+            nullptr);
+  EXPECT_EQ(render_system_->CreateTextureArray(DataVolatility::kStaticWrite, 1,
+                                               1, kMaxTextureHeight + 1),
+            nullptr);
+
+  EXPECT_EQ(state_.invalid_call_count, 0);
+}
+
 TEST_F(TextureArrayTest, Properties) {
   CreateSystem();
   auto texture_array = render_system_->CreateTextureArray(

@@ -5,16 +5,24 @@
 
 #include "gb/render/render_system.h"
 
-#include <limits>
+#include <algorithm>
+#include <cstring>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <vector>
 
+#include "absl/container/flat_hash_map.h"
+#include "absl/log/check.h"
+#include "absl/log/log.h"
 #include "absl/memory/memory.h"
 #include "absl/strings/str_cat.h"
 #include "gb/base/context_builder.h"
-#include "gb/base/scoped_call.h"
 #include "gb/file/file.h"
 #include "gb/file/file_system.h"
 #include "gb/image/image_file.h"
 #include "gb/render/render_backend.h"
+#include "gb/render/render_pipeline.h"
 #include "gb/render/render_resource_chunks.h"
 #include "gb/resource/resource_chunks.h"
 #include "gb/resource/resource_file_reader.h"
@@ -51,44 +59,54 @@ fb::Offset<fb::Vector<fb::Offset<fbs::Binding>>> WriteBindings(
       });
 }
 
-std::vector<Binding> ReadBindings(
-    RenderSystem* render_system,
-    const fb::Vector<fb::Offset<fbs::Binding>>* fb_bindings) {
+// Reads "fb_bindings" into "bindings", returning false if any binding has an
+// unknown type or constants type. The bindings are not otherwise validated.
+bool ReadBindings(RenderSystem* render_system,
+                  const fb::Vector<fb::Offset<fbs::Binding>>* fb_bindings,
+                  std::vector<Binding>* bindings) {
   if (fb_bindings == nullptr) {
-    return {};
+    return true;
   }
   const int count = static_cast<int>(fb_bindings->size());
-  std::vector<Binding> bindings(count);
+  bindings->resize(count);
   for (int i = 0; i < count; ++i) {
     auto* fb_binding = fb_bindings->Get(i);
     if (fb_binding == nullptr) {
       LOG(ERROR) << "Null binding at index " << i;
-      continue;
+      return false;
     }
-    bindings[i].SetShaders(ShaderTypes(fb_binding->shaders()));
-    bindings[i].SetLocation(FromFbs(fb_binding->set()), fb_binding->index());
+    Binding& binding = (*bindings)[i];
+    binding.SetShaders(ShaderTypes(fb_binding->shaders()));
+    binding.SetLocation(FromFbs(fb_binding->set()), fb_binding->index());
     switch (fb_binding->type()) {
       case fbs::BindingType_Texture:
-        bindings[i].SetTexture();
+        binding.SetTexture();
         break;
       case fbs::BindingType_TextureArray:
-        bindings[i].SetTextureArray();
+        binding.SetTextureArray();
         break;
-      case fbs::BindingType_Constants:
+      case fbs::BindingType_Constants: {
         if (fb_binding->constants_name() == nullptr) {
-          LOG(ERROR) << "Unspecified constants name for binding";
-        } else {
-          bindings[i].SetConstants(render_system->GetConstantsType(
-                                       fb_binding->constants_name()->c_str()),
-                                   FromFbs(fb_binding->volatility()));
+          LOG(ERROR) << "Unspecified constants name for binding at index " << i;
+          return false;
         }
-        break;
+        const char* constants_name = fb_binding->constants_name()->c_str();
+        const RenderDataType* constants_type =
+            render_system->GetConstantsType(constants_name);
+        if (constants_type == nullptr) {
+          LOG(ERROR) << "Constants type \"" << constants_name
+                     << "\" for binding at index " << i << " is not registered";
+          return false;
+        }
+        binding.SetConstants(constants_type, FromFbs(fb_binding->volatility()));
+      } break;
       default:
         LOG(ERROR) << "Unhandled binding type: "
                    << EnumNameBindingType(fb_binding->type());
+        return false;
     }
   }
-  return bindings;
+  return true;
 }
 
 fb::Offset<fb::Vector<fb::Offset<fbs::BindingDataEntry>>> WriteBindingData(
@@ -144,6 +162,9 @@ fb::Offset<fb::Vector<fb::Offset<fbs::BindingDataEntry>>> WriteBindingData(
   return builder->CreateVector(fb_binding_data);
 }
 
+// Reads "fb_binding_data" into "binding_data", which holds the bindings in
+// "bindings" for its set. Returns false if an entry doesn't match the binding
+// at its index, or references a resource that isn't loaded.
 bool ReadBindingData(
     RenderInternal access_token, const FileResources* file_resources,
     absl::Span<const Binding> bindings,
@@ -158,11 +179,26 @@ bool ReadBindingData(
     const auto* fb_binding_data_entry = fb_binding_data->Get(i);
     if (fb_binding_data_entry == nullptr) {
       LOG(ERROR) << "Null binding data entry at index " << i;
-      continue;
+      return false;
     }
-    const auto index = fb_binding_data_entry->index();
-    switch (fb_binding_data_entry->type()) {
-      case fbs::BindingType_Texture: {
+    const int index = fb_binding_data_entry->index();
+    const Binding* binding = nullptr;
+    for (const Binding& set_binding : bindings) {
+      if (set_binding.set == binding_data->GetSet() &&
+          set_binding.index == index) {
+        binding = &set_binding;
+        break;
+      }
+    }
+    if (binding == nullptr ||
+        binding->binding_type != FromFbs(fb_binding_data_entry->type())) {
+      LOG(ERROR) << "Binding data of type "
+                 << EnumNameBindingType(fb_binding_data_entry->type())
+                 << " at index " << index << " does not match a binding";
+      return false;
+    }
+    switch (binding->binding_type) {
+      case BindingType::kTexture: {
         const ResourceId texture_id = fb_binding_data_entry->texture_id();
         if (texture_id == 0) {
           // No texture is valid.
@@ -176,7 +212,7 @@ bool ReadBindingData(
         }
         binding_data->SetTexture(index, texture);
       } break;
-      case fbs::BindingType_TextureArray: {
+      case BindingType::kTextureArray: {
         const ResourceId texture_array_id =
             fb_binding_data_entry->texture_array_id();
         if (texture_array_id == 0) {
@@ -192,39 +228,141 @@ bool ReadBindingData(
         }
         binding_data->SetTextureArray(index, texture_array);
       } break;
-      case fbs::BindingType_Constants: {
+      case BindingType::kConstants: {
         const auto* fb_constants_data = fb_binding_data_entry->constants_data();
         if (fb_constants_data == nullptr) {
           // No constants data is valid. This results in default values.
           break;
         }
-        TypeKey* constants_type = nullptr;
-        for (const auto& binding : bindings) {
-          if (binding.index == index) {
-            if (binding.constants_type->GetSize() !=
-                fb_constants_data->size()) {
-              LOG(ERROR) << "Constants size " << fb_constants_data->size()
-                         << "does not match expected size "
-                         << binding.constants_type->GetSize() << " at index "
-                         << index << " for binding data";
-            }
-            constants_type = binding.constants_type->GetType();
-            break;
-          }
-        }
-        if (constants_type == nullptr) {
-          LOG(ERROR) << "Unknown constants type at index " << index
+        const RenderDataType* constants_type = binding->constants_type;
+        if (static_cast<int>(fb_constants_data->size()) !=
+            constants_type->GetSize()) {
+          LOG(ERROR) << "Constants size " << fb_constants_data->size()
+                     << " does not match expected size "
+                     << constants_type->GetSize() << " at index " << index
                      << " for binding data";
           return false;
         }
-        binding_data->SetInternal(access_token, index, constants_type,
+        binding_data->SetInternal(access_token, index,
+                                  constants_type->GetType(),
                                   fb_constants_data->data());
       } break;
       default:
         LOG(ERROR) << "Unhandled binding type "
-                   << EnumNameBindingType(fb_binding_data_entry->type())
+                   << static_cast<int>(binding->binding_type)
                    << " at binding data index " << i;
         return false;
+    }
+  }
+  return true;
+}
+
+// Adds "bindings" to "unique_bindings" with duplicates removed. Returns false
+// if any binding is invalid, or differs from another at the same location.
+bool GetUniqueBindings(absl::Span<const Binding> bindings,
+                       std::vector<Binding>* unique_bindings) {
+  absl::flat_hash_map<std::tuple<BindingSet, int>, int> binding_indices;
+  for (const Binding& binding : bindings) {
+    if (!binding.IsValid()) {
+      LOG(ERROR) << "Invalid binding: set=" << static_cast<int>(binding.set)
+                 << ", index=" << binding.index;
+      return false;
+    }
+    auto [it, added] =
+        binding_indices.try_emplace({binding.set, binding.index},
+                                    static_cast<int>(unique_bindings->size()));
+    if (added) {
+      unique_bindings->push_back(binding);
+      continue;
+    }
+    if (binding != (*unique_bindings)[it->second]) {
+      LOG(ERROR) << "Duplicate incompatible binding: set="
+                 << static_cast<int>(binding.set)
+                 << ", index=" << binding.index;
+      return false;
+    }
+  }
+  return true;
+}
+
+// Adds "bindings" to "shader_bindings" for a shader of type "type", with
+// duplicates removed. Returns false if any binding is invalid, isn't used by
+// the shader type, or differs from another at the same location.
+bool GetShaderBindings(ShaderType type, absl::Span<const Binding> bindings,
+                       std::vector<Binding>* shader_bindings) {
+  for (const Binding& binding : bindings) {
+    if (!binding.shader_types.IsSet(type)) {
+      LOG(ERROR) << "Invalid shader type for binding: set="
+                 << static_cast<int>(binding.set)
+                 << ", index=" << binding.index;
+      return false;
+    }
+  }
+  return GetUniqueBindings(bindings, shader_bindings);
+}
+
+// Returns true if a texture of the specified size is within the limits, and
+// logs an error naming "what" otherwise.
+bool IsValidTextureSize(std::string_view what, int width, int height) {
+  if (width <= 0 || width > kMaxTextureWidth || height <= 0 ||
+      height > kMaxTextureHeight) {
+    LOG(ERROR) << "Invalid " << what << " dimensions " << width << " by "
+               << height << ", which must be from 1 by 1 to "
+               << kMaxTextureWidth << " by " << kMaxTextureHeight;
+    return false;
+  }
+  return true;
+}
+
+// Returns true if a texture array of the specified size is within the limits,
+// and logs an error naming "what" otherwise.
+bool IsValidTextureArraySize(std::string_view what, int count, int width,
+                             int height) {
+  if (count <= 0 || count > kMaxTextureArrayCount) {
+    LOG(ERROR) << "Invalid " << what << " count " << count
+               << ", which must be from 1 to " << kMaxTextureArrayCount;
+    return false;
+  }
+  if (!IsValidTextureSize(what, width, height)) {
+    return false;
+  }
+  const int64_t total_pixel_count =
+      static_cast<int64_t>(count) * width * height;
+  if (total_pixel_count > kMaxTextureArrayPixels) {
+    LOG(ERROR) << "Invalid " << what << " with " << total_pixel_count
+               << " pixels, more than the maximum of "
+               << kMaxTextureArrayPixels;
+    return false;
+  }
+  return true;
+}
+
+// Adds the bindings for a material type to "bindings": the bindings of its
+// scene type and shaders. Bindings at the same location must be compatible, and
+// are combined into one. Returns false if any are not.
+bool GetMaterialTypeBindings(RenderSceneType* scene_type, Shader* vertex_shader,
+                             Shader* fragment_shader,
+                             std::vector<Binding>* bindings) {
+  const std::pair<std::string_view, absl::Span<const Binding>> sources[] = {
+      {"Scene type", scene_type->GetBindings()},
+      {"Vertex shader", vertex_shader->GetBindings()},
+      {"Fragment shader", fragment_shader->GetBindings()},
+  };
+  absl::flat_hash_map<std::tuple<BindingSet, int>, int> binding_indices;
+  for (const auto& [source, source_bindings] : sources) {
+    for (const Binding& binding : source_bindings) {
+      auto [it, added] = binding_indices.try_emplace(
+          {binding.set, binding.index}, static_cast<int>(bindings->size()));
+      if (added) {
+        bindings->push_back(binding);
+        continue;
+      }
+      if (!(*bindings)[it->second].Combine(binding)) {
+        LOG(ERROR) << source << " contains incompatible binding: set="
+                   << static_cast<int>(binding.set)
+                   << ", index=" << binding.index;
+        return false;
+      }
     }
   }
   return true;
@@ -521,7 +659,7 @@ const VertexType* RenderSystem::DoRegisterVertexType(
       absl::StrCat(name), std::make_unique<VertexType>(RenderInternal{}, name,
                                                        type, size, attributes));
   if (!added) {
-    LOG(ERROR) << "Constants type " << name << " is already registered.";
+    LOG(ERROR) << "Vertex type " << name << " is already registered.";
     return nullptr;
   }
   return it->second.get();
@@ -529,33 +667,12 @@ const VertexType* RenderSystem::DoRegisterVertexType(
 
 RenderSceneType* RenderSystem::RegisterSceneType(
     std::string_view name, absl::Span<const Binding> bindings) {
-  absl::flat_hash_map<std::tuple<BindingSet, int>, Binding> mapped_bindings;
-  std::vector<Binding> all_bindings;
-
-  // Verify the bindings.
-  for (const Binding& binding : bindings) {
-    if (!binding.IsValid()) {
-      LOG(ERROR) << "Invalid binding: set=" << static_cast<int>(binding.set)
-                 << ", index=" << binding.index;
-      return nullptr;
-    }
-
-    auto [it, added] =
-        mapped_bindings.try_emplace({binding.set, binding.index}, binding);
-    if (!added) {
-      if (binding == it->second) {
-        continue;
-      }
-      LOG(ERROR) << "Duplicate incompatible binding: set="
-                 << static_cast<int>(binding.set)
-                 << ", index=" << binding.index;
-      return nullptr;
-    }
-
-    all_bindings.push_back(binding);
+  std::vector<Binding> scene_bindings;
+  if (!GetUniqueBindings(bindings, &scene_bindings)) {
+    return nullptr;
   }
 
-  auto scene_type = backend_->CreateSceneType({}, all_bindings);
+  auto scene_type = backend_->CreateSceneType({}, scene_bindings);
   if (scene_type == nullptr) {
     return nullptr;
   }
@@ -604,7 +721,18 @@ void RenderSystem::SetClearColor(Pixel color) {
 
 std::unique_ptr<RenderScene> RenderSystem::CreateScene(
     RenderSceneType* scene_type, int scene_order) {
-  return backend_->CreateScene({}, scene_type, scene_order);
+  if (scene_type == nullptr) {
+    LOG(ERROR) << "Null scene type passed in to CreateScene";
+    return nullptr;
+  }
+  auto scene = backend_->CreateScene({}, scene_type, scene_order);
+  if (scene == nullptr) {
+    LOG(ERROR) << "Failed to create scene";
+    return nullptr;
+  }
+  scene_type->GetDefaultSceneBindingData()->CopyTo(
+      scene->GetSceneBindingData());
+  return scene;
 }
 
 Mesh* RenderSystem::DoCreateMesh(const VertexType* vertex_type,
@@ -616,10 +744,10 @@ Mesh* RenderSystem::DoCreateMesh(const VertexType* vertex_type,
   }
 
   // Space for at least one triangle is required!
-  if (max_vertices < 3 || max_vertices > std::numeric_limits<uint16_t>::max()) {
+  if (max_vertices < 3 || max_vertices > kMaxMeshVertices) {
     LOG(ERROR) << "Invalid max number of vertices, must be in the range [3, "
-                  "65535]. Value specified was: "
-               << max_vertices;
+               << kMaxMeshVertices
+               << "]. Value specified was: " << max_vertices;
     return nullptr;
   }
   if (max_triangles < 1) {
@@ -651,8 +779,6 @@ Mesh* RenderSystem::DoCreateMesh(const VertexType* vertex_type,
 
 Mesh* RenderSystem::LoadMeshChunk(Context* context, const fbs::MeshChunk* chunk,
                                   ResourceEntry entry) {
-  auto* resources = context->GetPtr<FileResources>();
-
   std::string_view vertex_type_name =
       (chunk->vertex_type_name() != nullptr ? chunk->vertex_type_name()->c_str()
                                             : "");
@@ -667,28 +793,47 @@ Mesh* RenderSystem::LoadMeshChunk(Context* context, const fbs::MeshChunk* chunk,
     LOG(ERROR) << "Mesh is empty";
     return nullptr;
   }
-  if (chunk->vertex_size() == 0 ||
-      chunk->vertex_size() != vertex_type->GetSize()) {
-    LOG(ERROR) << "Mesh has mismatched vertex size " << chunk->vertex_size()
+  const int vertex_size = chunk->vertex_size();
+  if (vertex_size <= 0 || vertex_size != vertex_type->GetSize()) {
+    LOG(ERROR) << "Mesh has mismatched vertex size " << vertex_size
                << " compared to material vertex size of "
                << vertex_type->GetSize();
     return nullptr;
   }
-  const int32_t vertex_count =
-      static_cast<int32_t>(chunk->vertices()->size()) / chunk->vertex_size();
+  const int64_t vertex_bytes = chunk->vertices()->size();
+  if (vertex_bytes % vertex_size != 0 ||
+      vertex_bytes / vertex_size > kMaxMeshVertices) {
+    LOG(ERROR) << "Mesh vertex data of " << vertex_bytes
+               << " bytes is not a whole number of vertices up to "
+               << kMaxMeshVertices;
+    return nullptr;
+  }
+  const int vertex_count = static_cast<int>(vertex_bytes / vertex_size);
+  const int index_count = static_cast<int>(chunk->indices()->size());
+  if (index_count % 3 != 0) {
+    LOG(ERROR) << "Mesh has " << index_count
+               << " indices, which is not a whole number of triangles";
+    return nullptr;
+  }
+  for (const uint16_t index : *chunk->indices()) {
+    if (index >= vertex_count) {
+      LOG(ERROR) << "Mesh index " << index << " is out of range for "
+                 << vertex_count << " vertices";
+      return nullptr;
+    }
+  }
 
   auto volatility = FromFbs(chunk->volatility());
   if (edit_ && volatility == DataVolatility::kStaticWrite) {
     volatility = DataVolatility::kStaticReadWrite;
   }
-  auto vertex_buffer = backend_->CreateVertexBuffer(
-      {}, volatility, chunk->vertex_size(), vertex_count);
+  auto vertex_buffer =
+      backend_->CreateVertexBuffer({}, volatility, vertex_size, vertex_count);
   if (vertex_buffer == nullptr ||
       !vertex_buffer->Set(chunk->vertices()->data(), vertex_count)) {
     LOG(ERROR) << "Failed to initialize vertex buffer when loading mesh";
     return nullptr;
   }
-  const int32_t index_count = static_cast<int32_t>(chunk->indices()->size());
   auto index_buffer = backend_->CreateIndexBuffer({}, volatility, index_count);
   if (index_buffer == nullptr ||
       !index_buffer->Set(chunk->indices()->data(), index_count)) {
@@ -746,15 +891,20 @@ Material* RenderSystem::DoCreateMaterial(MaterialType* material_type) {
     LOG(ERROR) << "Null material type passed to CreateMaterial";
     return nullptr;
   }
+  auto material_data =
+      material_type->GetPipeline({})->CreateMaterialBindingData();
+  if (material_data == nullptr) {
+    LOG(ERROR) << "Failed to create material binding data for material";
+    return nullptr;
+  }
 
   return new Material({}, resource_manager_->NewResourceEntry<Material>(),
-                      material_type);
+                      material_type, std::move(material_data));
 }
 
 Material* RenderSystem::LoadMaterialChunk(Context* context,
                                           const fbs::MaterialChunk* chunk,
                                           ResourceEntry entry) {
-  // Get the material type
   auto* resources = context->GetPtr<FileResources>();
   auto* material_type =
       resources->GetResource<MaterialType>(chunk->material_type_id());
@@ -763,29 +913,23 @@ Material* RenderSystem::LoadMaterialChunk(Context* context,
                << ") not found when loading material";
     return nullptr;
   }
-
-  // Validate all material bindings are compatible with the the material type.
-  absl::flat_hash_map<std::tuple<BindingSet, int>, Binding> mapped_bindings;
-  for (const auto& binding : material_type->GetBindings()) {
-    mapped_bindings[{binding.set, binding.index}] = binding;
-  }
-  auto bindings = ReadBindings(this, chunk->bindings());
-  for (const Binding& binding : bindings) {
-    if (!mapped_bindings.contains({binding.set, binding.index})) {
-      LOG(ERROR) << "Material binding not found in loaded material type";
-      return nullptr;
-    }
+  auto material_data =
+      material_type->GetPipeline({})->CreateMaterialBindingData();
+  if (material_data == nullptr) {
+    LOG(ERROR) << "Failed to create material binding data when loading "
+                  "material";
+    return nullptr;
   }
 
-  auto* material = new Material({}, std::move(entry), material_type);
-
+  auto* material = new Material({}, std::move(entry), material_type,
+                                std::move(material_data));
+  const auto bindings = material_type->GetBindings();
   if (!ReadBindingData({}, resources, bindings, chunk->material_data(),
                        material->GetMaterialBindingData()) ||
       !ReadBindingData({}, resources, bindings, chunk->instance_data(),
                        material->GetDefaultInstanceBindingData())) {
     return nullptr;
   }
-
   return material;
 }
 
@@ -797,7 +941,6 @@ bool RenderSystem::SaveMaterialChunk(Context* context, Material* material,
                                      FlatBufferBuilder* builder) {
   auto* material_type = material->GetType();
   const auto bindings = material_type->GetBindings();
-  const auto fb_bindings = WriteBindings(builder, bindings);
   const auto fb_material_data =
       WriteBindingData({}, builder, BindingSet::kMaterial, bindings,
                        material->GetMaterialBindingData());
@@ -807,7 +950,6 @@ bool RenderSystem::SaveMaterialChunk(Context* context, Material* material,
 
   fbs::MaterialChunkBuilder material_builder(*builder);
   material_builder.add_material_type_id(material_type->GetResourceId());
-  material_builder.add_bindings(fb_bindings);
   material_builder.add_material_data(fb_material_data);
   material_builder.add_instance_data(fb_instance_data);
   auto fb_material = material_builder.Finish();
@@ -832,6 +974,11 @@ bool RenderSystem::ValidateMaterialTypeArguments(RenderSceneType* scene_type,
   // Validate the vertex type matches the vertex shader inputs.
   auto attributes = vertex_type->GetAttributes();
   for (const ShaderParam& input : vertex_shader->GetInputs()) {
+    if (input.location < 0) {
+      LOG(ERROR) << "Vertex shader has negative input location "
+                 << input.location;
+      return false;
+    }
     if (input.location >= static_cast<int>(attributes.size())) {
       LOG(ERROR) << "Vertex shader requires input location " << input.location
                  << ", but vertex type only has " << attributes.size()
@@ -965,59 +1112,30 @@ MaterialType* RenderSystem::DoCreateMaterialType(RenderSceneType* scene_type,
                                      fragment_shader)) {
     return nullptr;
   }
-
-  // Validate all shader bindings are compatible with the the scene and
-  // each other.
-  absl::flat_hash_map<std::tuple<BindingSet, int>, Binding> mapped_bindings;
-  std::vector<Binding> all_bindings;
-  for (const Binding& binding : scene_type->GetBindings()) {
-    mapped_bindings.try_emplace({binding.set, binding.index}, binding);
-    all_bindings.push_back(binding);
-  }
-  for (const Binding& binding : vertex_shader->GetBindings()) {
-    auto [it, added] =
-        mapped_bindings.try_emplace({binding.set, binding.index}, binding);
-    if (!added) {
-      if (it->second.Combine(binding)) {
-        continue;
-      }
-      LOG(ERROR) << "Vertex shader contains incompatible binding with "
-                    "scene: set="
-                 << static_cast<int>(binding.set)
-                 << ", index=" << binding.index;
-      return nullptr;
-    }
-    all_bindings.push_back(binding);
-  }
-  for (const Binding& binding : fragment_shader->GetBindings()) {
-    auto [it, added] =
-        mapped_bindings.try_emplace({binding.set, binding.index}, binding);
-    if (!added) {
-      if (it->second.Combine(binding)) {
-        continue;
-      }
-      LOG(ERROR) << "Fragment shader contains incompatible binding with "
-                    "scene: set="
-                 << static_cast<int>(binding.set)
-                 << ", index=" << binding.index;
-      return nullptr;
-    }
-    all_bindings.push_back(binding);
+  std::vector<Binding> bindings;
+  if (!GetMaterialTypeBindings(scene_type, vertex_shader, fragment_shader,
+                               &bindings)) {
+    return nullptr;
   }
 
   // Create a pipeline for the material.
-  auto pipeline = backend_->CreatePipeline(
-      {}, scene_type, vertex_type, all_bindings, vertex_shader->GetCode(),
-      fragment_shader->GetCode(), config);
+  auto pipeline = backend_->CreatePipeline({}, scene_type, vertex_type,
+                                           bindings, vertex_shader->GetCode(),
+                                           fragment_shader->GetCode(), config);
   if (pipeline == nullptr) {
     LOG(ERROR) << "Failed to create pipeline for material type";
     return nullptr;
   }
 
-  return new MaterialType({},
-                          resource_manager_->NewResourceEntry<MaterialType>(),
-                          scene_type, all_bindings, std::move(pipeline),
-                          vertex_type, vertex_shader, fragment_shader, config);
+  auto* material_type =
+      new MaterialType({}, resource_manager_->NewResourceEntry<MaterialType>(),
+                       scene_type, bindings, std::move(pipeline), vertex_type,
+                       vertex_shader, fragment_shader, config);
+  scene_type->GetDefaultMaterialBindingData()->CopyTo(
+      material_type->GetDefaultMaterialBindingData());
+  scene_type->GetDefaultInstanceBindingData()->CopyTo(
+      material_type->GetDefaultInstanceBindingData());
+  return material_type;
 }
 
 MaterialType* RenderSystem::LoadMaterialTypeChunk(
@@ -1026,8 +1144,10 @@ MaterialType* RenderSystem::LoadMaterialTypeChunk(
   auto* resources = context->GetPtr<FileResources>();
 
   MaterialConfig config = {};
-  config.cull_mode = FromFbs(chunk->cull_mode());
   config.depth_mode = FromFbs(chunk->depth_mode());
+  config.depth_test = FromFbs(chunk->depth_test());
+  config.raster_mode = FromFbs(chunk->raster_mode());
+  config.cull_mode = FromFbs(chunk->cull_mode());
 
   std::string_view scene_type_name =
       (chunk->scene_type_name() != nullptr ? chunk->scene_type_name()->c_str()
@@ -1041,14 +1161,14 @@ MaterialType* RenderSystem::LoadMaterialTypeChunk(
   auto* vertex_shader =
       resources->GetResource<Shader>(chunk->vertex_shader_id());
   if (vertex_shader == nullptr) {
-    LOG(ERROR) << "Cannot load material type becayse vertex shader (ID: "
+    LOG(ERROR) << "Cannot load material type because vertex shader (ID: "
                << chunk->vertex_shader_id() << ") is not loaded";
     return nullptr;
   }
   auto* fragment_shader =
       resources->GetResource<Shader>(chunk->fragment_shader_id());
   if (fragment_shader == nullptr) {
-    LOG(ERROR) << "Cannot load material type becayse fragment shader (ID: "
+    LOG(ERROR) << "Cannot load material type because fragment shader (ID: "
                << chunk->fragment_shader_id() << ") is not loaded";
     return nullptr;
   }
@@ -1067,30 +1187,10 @@ MaterialType* RenderSystem::LoadMaterialTypeChunk(
     return nullptr;
   }
 
-  // Validate all shader bindings are compatible with the the scene and
-  // each other.
-  absl::flat_hash_map<std::tuple<BindingSet, int>, Binding> mapped_bindings;
-  auto bindings = ReadBindings(this, chunk->bindings());
-  for (const auto& binding : bindings) {
-    mapped_bindings[{binding.set, binding.index}] = binding;
-  }
-  for (const Binding& binding : scene_type->GetBindings()) {
-    if (!mapped_bindings.contains({binding.set, binding.index})) {
-      LOG(ERROR) << "Scene binding not found in loaded material type";
-      return nullptr;
-    }
-  }
-  for (const Binding& binding : vertex_shader->GetBindings()) {
-    if (!mapped_bindings.contains({binding.set, binding.index})) {
-      LOG(ERROR) << "Vertex shader binding not found in loaded material type";
-      return nullptr;
-    }
-  }
-  for (const Binding& binding : fragment_shader->GetBindings()) {
-    if (!mapped_bindings.contains({binding.set, binding.index})) {
-      LOG(ERROR) << "Fragment shader binding not found in loaded material type";
-      return nullptr;
-    }
+  std::vector<Binding> bindings;
+  if (!GetMaterialTypeBindings(scene_type, vertex_shader, fragment_shader,
+                               &bindings)) {
+    return nullptr;
   }
 
   // Create a pipeline for the material.
@@ -1123,7 +1223,6 @@ bool RenderSystem::SaveMaterialTypeChunk(Context* context,
                                          MaterialType* material_type,
                                          FlatBufferBuilder* builder) {
   const auto bindings = material_type->GetBindings();
-  const auto fb_bindings = WriteBindings(builder, bindings);
   const auto fb_material_data =
       WriteBindingData({}, builder, BindingSet::kMaterial, bindings,
                        material_type->GetDefaultMaterialBindingData());
@@ -1145,7 +1244,8 @@ bool RenderSystem::SaveMaterialTypeChunk(Context* context,
   const MaterialConfig& config = material_type->GetConfig();
   material_type_builder.add_cull_mode(ToFbs(config.cull_mode));
   material_type_builder.add_depth_mode(ToFbs(config.depth_mode));
-  material_type_builder.add_bindings(fb_bindings);
+  material_type_builder.add_depth_test(ToFbs(config.depth_test));
+  material_type_builder.add_raster_mode(ToFbs(config.raster_mode));
   material_type_builder.add_material_data(fb_material_data);
   material_type_builder.add_instance_data(fb_instance_data);
   const auto fb_material_type = material_type_builder.Finish();
@@ -1160,42 +1260,16 @@ Shader* RenderSystem::DoCreateShader(ShaderType type,
                                      absl::Span<const ShaderParam> inputs,
                                      absl::Span<const ShaderParam> outputs) {
   if (shader_code == nullptr) {
-    LOG(ERROR) << "Null shader code bassed to CreateShader";
+    LOG(ERROR) << "Null shader code passed to CreateShader";
+    return nullptr;
+  }
+  std::vector<Binding> shader_bindings;
+  if (!GetShaderBindings(type, bindings, &shader_bindings)) {
     return nullptr;
   }
 
-  absl::flat_hash_map<std::tuple<BindingSet, int>, Binding> mapped_bindings;
-  std::vector<Binding> all_bindings;
-  for (const Binding& binding : bindings) {
-    if (!binding.IsValid()) {
-      LOG(ERROR) << "Invalid binding: set=" << static_cast<int>(binding.set)
-                 << ", index=" << binding.index;
-      return nullptr;
-    }
-    if (!binding.shader_types.IsSet(type)) {
-      LOG(ERROR) << "Invalid shader type for binding: set="
-                 << static_cast<int>(binding.set)
-                 << ", index=" << binding.index;
-      return nullptr;
-    }
-
-    auto [it, added] =
-        mapped_bindings.try_emplace({binding.set, binding.index}, binding);
-    if (!added) {
-      if (binding == it->second) {
-        continue;
-      }
-      LOG(ERROR) << "Duplicate incompatible binding: set="
-                 << static_cast<int>(binding.set)
-                 << ", index=" << binding.index;
-      return nullptr;
-    }
-
-    all_bindings.push_back(binding);
-  }
-
   return new Shader({}, resource_manager_->NewResourceEntry<Shader>(), type,
-                    std::move(shader_code), all_bindings, inputs, outputs);
+                    std::move(shader_code), shader_bindings, inputs, outputs);
 }
 
 Shader* RenderSystem::LoadShaderChunk(Context* context,
@@ -1206,14 +1280,25 @@ Shader* RenderSystem::LoadShaderChunk(Context* context,
     return nullptr;
   }
 
-  auto shader_code = backend_->CreateShaderCode({}, chunk->code()->data(),
-                                                chunk->code()->size());
+  const ShaderType type = FromFbs(chunk->type());
+  if (type != ShaderType::kVertex && type != ShaderType::kFragment) {
+    LOG(ERROR) << "Unknown shader type " << static_cast<int>(chunk->type())
+               << " for shader";
+    return nullptr;
+  }
+  std::vector<Binding> bindings;
+  std::vector<Binding> shader_bindings;
+  if (!ReadBindings(this, chunk->bindings(), &bindings) ||
+      !GetShaderBindings(type, bindings, &shader_bindings)) {
+    return nullptr;
+  }
+
+  auto shader_code =
+      CreateShaderCode(chunk->code()->data(), chunk->code()->size());
   if (shader_code == nullptr) {
     LOG(ERROR) << "Failed to create shader code for shader";
     return nullptr;
   }
-
-  std::vector<Binding> all_bindings = ReadBindings(this, chunk->bindings());
 
   absl::Span<const ShaderParam> inputs;
   if (chunk->inputs() != nullptr && chunk->inputs()->size() > 0) {
@@ -1227,8 +1312,8 @@ Shader* RenderSystem::LoadShaderChunk(Context* context,
                                   chunk->outputs()->size());
   }
 
-  return new Shader({}, std::move(entry), FromFbs(chunk->type()),
-                    std::move(shader_code), all_bindings, inputs, outputs);
+  return new Shader({}, std::move(entry), type, std::move(shader_code),
+                    shader_bindings, inputs, outputs);
 }
 
 bool RenderSystem::SaveShader(std::string_view name, Shader* shader) {
@@ -1309,10 +1394,7 @@ std::unique_ptr<ShaderCode> RenderSystem::LoadShaderCode(
 Texture* RenderSystem::DoCreateTexture(DataVolatility volatility, int width,
                                        int height,
                                        const SamplerOptions& options) {
-  if (width <= 0 || width > kMaxTextureWidth || height <= 0 ||
-      height > kMaxTextureHeight) {
-    LOG(ERROR) << "Invalid texture dimensions in CreateTexture: " << width
-               << " by " << height;
+  if (!IsValidTextureSize("texture", width, height)) {
     return nullptr;
   }
   return backend_->CreateTexture({},
@@ -1347,12 +1429,17 @@ Texture* RenderSystem::LoadTexture(Context* context, std::string_view name) {
 Texture* RenderSystem::LoadTextureChunk(Context* context,
                                         const fbs::TextureChunk* chunk,
                                         ResourceEntry entry) {
-  const auto width = chunk->width();
-  const auto height = chunk->height();
-  if (width <= 0 || height <= 0 || width >= kMaxTextureWidth ||
-      height >= kMaxTextureHeight) {
-    LOG(ERROR) << "Invalid texture dimensions in texture file: " << width
-               << " by " << height;
+  const int width = chunk->width();
+  const int height = chunk->height();
+  if (!IsValidTextureSize("texture", width, height)) {
+    return nullptr;
+  }
+  const int pixel_count = width * height;
+  const auto* pixels = chunk->pixels();
+  if (pixels == nullptr || static_cast<int64_t>(pixels->size()) < pixel_count) {
+    LOG(ERROR) << "Failed to create texture as it contains "
+               << (pixels != nullptr ? pixels->size() : 0) << " pixels, but "
+               << pixel_count << " are required.";
     return nullptr;
   }
 
@@ -1381,14 +1468,7 @@ Texture* RenderSystem::LoadTextureChunk(Context* context,
                << height;
     return nullptr;
   }
-  const auto* pixels = chunk->pixels();
-  if (pixels == nullptr || static_cast<int>(pixels->size()) < width * height) {
-    LOG(ERROR) << "Failed to create texture as it contains "
-               << (pixels != nullptr ? pixels->size() : 0) << " pixels, but "
-               << width * height << " are required.";
-    return nullptr;
-  }
-  if (!texture->Set(pixels->data(), width * height * sizeof(Pixel))) {
+  if (!texture->Set(pixels->data(), pixel_count * sizeof(Pixel))) {
     LOG(ERROR) << "Failed to initialize texture with image data";
     return nullptr;
   }
@@ -1400,6 +1480,10 @@ Texture* RenderSystem::LoadTextureFile(TextureLoadContract contract,
   auto image = LoadImage(file);
   if (image == nullptr) {
     LOG(ERROR) << "Failed to read texture file";
+    return nullptr;
+  }
+  if (!IsValidTextureSize("texture file", image->GetWidth(),
+                          image->GetHeight())) {
     return nullptr;
   }
 
@@ -1419,6 +1503,7 @@ Texture* RenderSystem::LoadTextureFile(TextureLoadContract contract,
   }
   if (!texture->Set(image->GetPixels())) {
     LOG(ERROR) << "Failed to initialize texture with image data";
+    resource_manager_->MaybeDeleteResource(texture);
     return nullptr;
   }
   return texture;
@@ -1471,22 +1556,7 @@ bool RenderSystem::SaveTextureChunk(Context* context, Texture* texture,
 TextureArray* RenderSystem::DoCreateTextureArray(
     DataVolatility volatility, int count, int width, int height,
     const SamplerOptions& options) {
-  if (count <= 0 || count > kMaxTextureArrayCount) {
-    LOG(ERROR) << "Invalid texture array count in CreateTextureArray: "
-               << count;
-    return nullptr;
-  }
-  if (width <= 0 || width > kMaxTextureWidth || height <= 0 ||
-      height > kMaxTextureHeight) {
-    LOG(ERROR) << "Invalid texture dimensions in CreateTextureArray: " << width
-               << " by " << height;
-    return nullptr;
-  }
-  const uint64_t total_pixel_count =
-      static_cast<uint64_t>(count) * static_cast<uint64_t>(width * height);
-  if (total_pixel_count > static_cast<uint64_t>(kMaxTextureArrayPixels)) {
-    LOG(ERROR) << "Texture array is too large with " << total_pixel_count
-               << "pixels. Maximum is " << kMaxTextureArrayPixels << ".";
+  if (!IsValidTextureArraySize("texture array", count, width, height)) {
     return nullptr;
   }
   return backend_->CreateTextureArray(
@@ -1497,24 +1567,20 @@ TextureArray* RenderSystem::DoCreateTextureArray(
 TextureArray* RenderSystem::LoadTextureArrayChunk(
     Context* context, const fbs::TextureArrayChunk* chunk,
     ResourceEntry entry) {
-  const auto count = chunk->count();
-  if (count <= 0 || count > kMaxTextureArrayCount) {
-    LOG(ERROR) << "Invalid texture count in texture array: " << count;
-  }
-  const auto width = chunk->width();
-  const auto height = chunk->height();
-  if (width <= 0 || height <= 0 || width >= kMaxTextureWidth ||
-      height >= kMaxTextureHeight) {
-    LOG(ERROR) << "Invalid texture dimensions in texture array: " << width
-               << " by " << height;
+  const int count = chunk->count();
+  const int width = chunk->width();
+  const int height = chunk->height();
+  if (!IsValidTextureArraySize("texture array", count, width, height)) {
     return nullptr;
   }
-
-  const uint64_t total_pixel_count =
-      static_cast<uint64_t>(count) * static_cast<uint64_t>(width * height);
-  if (total_pixel_count > static_cast<uint64_t>(kMaxTextureArrayPixels)) {
-    LOG(ERROR) << "Texture array is too large with " << total_pixel_count
-               << "pixels. Maximum is " << kMaxTextureArrayPixels << ".";
+  const int total_pixel_count = count * width * height;
+  const auto* pixels = chunk->pixels();
+  if (pixels == nullptr ||
+      static_cast<int64_t>(pixels->size()) < total_pixel_count) {
+    LOG(ERROR) << "Failed to create texture array as it contains "
+               << (pixels != nullptr ? pixels->size() : 0) << " pixels, but "
+               << total_pixel_count << " are required.";
+    return nullptr;
   }
 
   gb::ValidatedContext validated_context = TextureLoadContract(context);
@@ -1542,15 +1608,7 @@ TextureArray* RenderSystem::LoadTextureArrayChunk(
                << " and dimensions " << width << "x" << height;
     return nullptr;
   }
-  const auto* pixels = chunk->pixels();
   const int image_pixel_count = width * height;
-  if (pixels == nullptr ||
-      static_cast<int>(pixels->size()) < count * image_pixel_count) {
-    LOG(ERROR) << "Failed to create texture array as it contains "
-               << (pixels != nullptr ? pixels->size() : 0) << " pixels, but "
-               << count * image_pixel_count << " are required.";
-    return nullptr;
-  }
   const uint32_t* pixel_data = pixels->data();
   for (int i = 0; i < count; ++i) {
     if (!texture_array->Set(i, pixel_data, image_pixel_count * sizeof(Pixel))) {
