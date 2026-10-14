@@ -6,8 +6,6 @@
 #ifndef GB_RENDER_VULKAN_VULKAN_TYPES_H_
 #define GB_RENDER_VULKAN_VULKAN_TYPES_H_
 
-#include <atomic>
-
 #include "gb/render/render_assert.h"
 
 // Must be after renderer/render_assert.h

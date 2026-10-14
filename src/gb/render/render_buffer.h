@@ -68,6 +68,10 @@ class RenderBuffer {
   //
   // If the size is increased, the new space will be filled with zero. If the
   // size is decreased, there is no change to the data in the buffer.
+  //
+  // Note: A kStaticWrite buffer's data may not be readable, so increasing its
+  // size may not be supported if it is currently being (or was recently)
+  // rendered, in which case this will return false.
   bool Resize(int size);
 
   // Explicitly set the data in the buffer.

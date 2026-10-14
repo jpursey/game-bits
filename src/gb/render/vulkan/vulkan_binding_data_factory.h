@@ -9,6 +9,7 @@
 #include <memory>
 #include <vector>
 
+#include "absl/synchronization/mutex.h"
 #include "absl/types/span.h"
 #include "gb/base/weak_ptr.h"
 #include "gb/render/binding.h"

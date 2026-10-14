@@ -1141,9 +1141,127 @@ Depends on: CL22.
   - Malformed meshes and texture arrays fail to load.
   - A vertex shader input at a negative location fails.
 
-### CL24 [ ] render: audit gb_render_vulkan and gb_render_vulkan_sdl
+### CL24 [x] render: audit gb_render_vulkan and gb_render_vulkan_sdl
 
 Depends on: CL23.
+
+None of this can be unit tested, so it was read for bugs only.
+- Frame loop (`VulkanBackend`):
+  - A failed or out of date present skipped the end of `EndFrame()`, after
+    the frame was submitted. The next frame drew the previous frame's draws
+    again, including resources deleted since. It also reused the in flight
+    frame's semaphores and per frame resources. The frame now always ends
+    once it is submitted.
+  - A suboptimal swap chain image was treated as a failure, leaving its
+    semaphore to be signaled. The next acquire waited on that same signaled
+    semaphore, which is invalid. The frame now renders, and the swap chain is
+    recreated next frame.
+  - The garbage collectors rotated on every `BeginFrame()`, even ones that
+    failed (such as each frame while minimized). Three failures in a row
+    destroyed resources the in flight frame still used. They now rotate only
+    when a frame begins.
+  - The window's size changed callback set a plain `bool` from the message
+    thread, and a resize during swap chain recreation was lost. It is now
+    atomic, and cleared before recreating.
+  - Image updates transitioned from `eUndefined`, which lets the driver
+    discard the image's contents, so a partial update could lose the rest of
+    the texture. `VulkanImage` now tracks each layer's layout, which partial
+    updates move from; full updates still use `eUndefined`.
+  - Sampler anisotropy wasn't clamped to the device limit, and validation
+    errors were logged as info. Unused: `scene_types_` (which also dangled),
+    `InitResources()`, and `physical_format_properties_`.
+- Binding data:
+  - `VulkanDescriptorPool` never reused a disposed descriptor set, because
+    the frame check was inverted. Every new binding data allocated new sets,
+    and the pools grew without bound.
+  - `VulkanBindingDataFactory::NewBindingData()` read its binding group after
+    releasing the lock, while another thread could add a group and move it.
+    It leaked a descriptor set when the second one failed, and creating a
+    binding group resized its buffer before checking it was created. A
+    constants type larger than the device's uniform buffer limit divided by
+    zero; creating the factory now fails.
+  - `VulkanBindingData::Validate()` accepted an index one past the end.
+    `GetBufferOffsets()` copied a vector on every draw call.
+- Buffers:
+  - Growing a `kStaticReadWrite` render buffer while its host buffer was in
+    use lost the existing values, and growing a `kStaticWrite` one copied
+    uninitialized memory over them. A `kStaticWrite` buffer now copies only
+    the new values, and fails to grow if it was recently rendered, as
+    `kStaticWrite` textures already do for partial updates (now documented on
+    `Resize()`). An empty buffer queued a zero size copy, which is invalid.
+  - `VulkanBuffer::MapData()` left a dangling pointer when invalidating
+    failed, and `UnmapData()` unmapped `VMA_MEMORY_USAGE_CPU_ONLY` buffers,
+    which it documents as doing nothing.
+- Textures:
+  - `CopyRegion()` copied a tightly packed region as one block even when it
+    was narrower than the texture, which corrupted the texture.
+  - Updating part of a `kStaticReadWrite` texture in use replaced its image,
+    but only uploaded the updated region, so the rest was lost. It now
+    uploads every pixel to a new image.
+  - Adding a `kStaticWrite` dirty region removed existing regions above it
+    that it didn't contain, so those pixels were never uploaded.
+  - A partial update of a mipmapped `kStaticWrite` texture generated its
+    mipmaps from uninitialized memory. It now fails, as a partial update of
+    one in use already did (now documented on `ClearRegion()` and
+    `SetRegion()`).
+- Texture arrays:
+  - Updating a texture in an array in use replaced the image, but only
+    uploaded the textures modified since, so the rest were lost. A
+    `kStaticReadWrite` array now uploads every texture, regenerating
+    mipmaps only for those modified. A `kStaticWrite` array can't, as its
+    other textures can't be read back, so it fails (now documented on
+    `Clear()` and `Set()`).
+  - `kStaticReadWrite` arrays wrote to a host buffer that an in flight frame
+    could still be copying from. They now copy it first, as textures do.
+  - `DoGet()` copied each texture's mipmaps too, overrunning the caller's
+    buffer.
+- Shader code that wasn't whole 32-bit words was passed to Vulkan, which
+  requires them. Code that isn't 32-bit aligned (such as `gb_imgui`'s embedded
+  `uint8_t` arrays) is copied to aligned memory first.
+- `SdlVulkanWindow` destroyed its callback and mutex before its message
+  endpoint, while a message could still be handled on another thread.
+- Conventions: the garbage collector's include guard, `vulkan_allocator.cc`'s
+  copyright and include path, and unused includes (including `glm`, no longer
+  a dependency).
+- Left as is:
+  - Drawing with an unset texture binding crashes in
+    `VulkanBindingData::OnRender()`. Skipping it would leave the descriptor
+    unwritten or pointing at a deleted image, which is worse; a default
+    texture would fix it.
+  - A `kPerFrame` texture's host buffers start uninitialized, so mipmaps
+    generated by a first partial update include garbage.
+  - If the command buffer fails to begin after an image is acquired, its
+    semaphore is left signaled.
+  - While `BeginFrame()` keeps failing (such as while minimized), nothing is
+    garbage collected, so resources deleted meanwhile are freed only when
+    rendering resumes.
+  - Growing a `kStaticWrite` buffer that was recently rendered could keep
+    working with a device to device copy from the old buffer, but nothing
+    grows one, so it fails instead. Partial updates of a mipmapped
+    `kStaticWrite` texture need mipmaps generated on the GPU.
+  - `NewBindingData()` builds the binding data while holding the factory's
+    lock. Copying the data out first would shorten it, at the cost of three
+    differently shaped return paths.
+
+A new example, `examples/render-check`, exercises these by hand. Its window
+events reach the backend on a `ThreadMessageDispatcher` thread, and it shows
+memory use and every logged warning and error, including the validation
+layer's.
+
+**Verify**
+- Standard checks.
+- By hand, in `examples/render-check` (which always enables validation), with
+  no errors logged:
+  - Resize, minimize, and restore the window.
+  - Recreate every instance each frame for a minute: memory stays flat, and
+    the grid stays whole.
+  - Paint the `kStaticReadWrite` and `kPerFrame` textures: the checkerboard
+    stays, and the squares are clean.
+  - The two region `kStaticWrite` texture shows both regions, and updating
+    the drawn one (or a mipmapped one) partially fails as expected.
+  - Changing a texture array's layer 0 each frame keeps layers 1 to 3, at
+    both sizes. Getting layer 1 returns 4096 pixels. Setting a layer of the
+    drawn `kStaticWrite` array fails as expected.
 
 ### CL25 [ ] imgui: audit gb_imgui and gb_imgui_sdl
 

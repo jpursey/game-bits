@@ -67,8 +67,8 @@ class Texture : public Resource {
   //
   // Note: A kStaticWrite texture data may not be readable, so calling
   // ClearRegion may not be supported for only a subset of the image if it is
-  // currently being (or was recently) rendered, in which case this will return
-  // false.
+  // currently being (or was recently) rendered, or is mipmapped, in which case
+  // this will return false.
   bool ClearRegion(int x, int y, int width, int height,
                    Pixel pixel = {0, 0, 0, 0});
   bool ClearRegion(int x, int y, int width, int height, uint32_t pixel);
@@ -82,7 +82,8 @@ class Texture : public Resource {
   //
   // Note: A kStaticWrite texture data may not be readable, so calling SetRegion
   // may not be supported for only a subset of the image if it is currently
-  // being (or was recently) rendered, in which case this will return false.
+  // being (or was recently) rendered, or is mipmapped, in which case this will
+  // return false.
   bool SetRegion(int x, int y, int width, int height,
                  absl::Span<const Pixel> pixels);
   bool SetRegion(int x, int y, int width, int height,

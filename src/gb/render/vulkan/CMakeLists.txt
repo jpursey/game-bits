@@ -46,7 +46,6 @@ set(gb_render_vulkan_DEPS
 )
 
 set(gb_render_vulkan_LIBS
-  glm
   absl::check
   absl::log
   Vulkan

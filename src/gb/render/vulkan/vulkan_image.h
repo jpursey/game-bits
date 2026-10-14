@@ -6,14 +6,15 @@
 #ifndef GB_RENDER_VULKAN_VULKAN_IMAGE_H_
 #define GB_RENDER_VULKAN_VULKAN_IMAGE_H_
 
-#include <optional>
+#include <memory>
 
+#include "absl/container/inlined_vector.h"
 #include "gb/render/vulkan/vulkan_allocator.h"
 #include "gb/render/vulkan/vulkan_types.h"
 
 namespace gb {
 
-// Managed a Vulkan image resource, and its view / memory.
+// Manages a Vulkan image resource, and its view / memory.
 //
 // This class is thread-safe.
 class VulkanImage final {
@@ -71,6 +72,25 @@ class VulkanImage final {
   vk::Image Get() const { return image_; }
   vk::ImageView GetView() const { return image_view_; }
 
+  //----------------------------------------------------------------------------
+  // Layout
+  //
+  // This tracks the layout of images updated through VulkanRenderState's image
+  // updates. Images used as render pass attachments are not tracked.
+  //
+  // Thread-safety: These are thread-compatible, and are only used while
+  // recording a frame's commands.
+  //----------------------------------------------------------------------------
+
+  // Returns the layout a layer is in once the commands recorded so far have
+  // run. This is vk::ImageLayout::eUndefined until the layer is first written.
+  vk::ImageLayout GetLayout(int layer) const { return layouts_[layer]; }
+
+  // Sets the layout a layer is in once the commands recorded so far have run.
+  void SetLayout(int layer, vk::ImageLayout layout) {
+    layouts_[layer] = layout;
+  }
+
  private:
   VulkanImage(VulkanBackend* backend, int width, int height, int layers,
               int mip_levels, vk::Format format)
@@ -79,7 +99,8 @@ class VulkanImage final {
         height_(height),
         layers_(layers),
         mip_levels_(mip_levels),
-        format_(format) {}
+        format_(format),
+        layouts_(layers, vk::ImageLayout::eUndefined) {}
 
   bool Init(vk::ImageUsageFlags usage, const Options& options);
 
@@ -92,6 +113,7 @@ class VulkanImage final {
   vk::Image image_;
   vk::ImageView image_view_ = {};
   VmaAllocation allocation_ = {};
+  absl::InlinedVector<vk::ImageLayout, 1> layouts_;
 };
 
 }  // namespace gb

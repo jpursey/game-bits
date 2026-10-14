@@ -6,11 +6,11 @@
 #include "gb/render/vulkan/vulkan_texture_array.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <cstring>
+#include <memory>
 
-#include "absl/container/inlined_vector.h"
 #include "absl/log/log.h"
-#include "absl/memory/memory.h"
-#include "gb/base/scoped_call.h"
 #include "gb/render/vulkan/vulkan_backend.h"
 #include "gb/render/vulkan/vulkan_buffer.h"
 #include "stb_image_resize.h"
@@ -32,7 +32,8 @@ VulkanTextureArray* VulkanTextureArray::Create(gb::ResourceEntry entry,
   texture_array =
       new VulkanTextureArray(std::move(entry), backend, sampler, volatility,
                              count, width, height, options);
-  if (!texture_array->CreateHostBuffer() || !texture_array->CreateImage()) {
+  texture_array->host_buffer_ = texture_array->CreateHostBuffer();
+  if (texture_array->host_buffer_ == nullptr || !texture_array->CreateImage()) {
     texture_array->Delete();
     return nullptr;
   }
@@ -82,37 +83,61 @@ bool VulkanTextureArray::CreateImage() {
   return true;
 }
 
-bool VulkanTextureArray::CreateHostBuffer() {
-  auto host_buffer =
-      VulkanBuffer::Create(backend_,
-                           vk::BufferCreateInfo()
-                               .setSize(host_layer_size_ * GetCount())
-                               .setUsage(vk::BufferUsageFlagBits::eTransferSrc)
-                               .setSharingMode(vk::SharingMode::eExclusive),
-                           VMA_MEMORY_USAGE_CPU_ONLY);
+std::unique_ptr<VulkanBuffer> VulkanTextureArray::CreateHostBuffer() {
+  return VulkanBuffer::Create(
+      backend_,
+      vk::BufferCreateInfo()
+          .setSize(host_layer_size_ * GetCount())
+          .setUsage(vk::BufferUsageFlagBits::eTransferSrc)
+          .setSharingMode(vk::SharingMode::eExclusive),
+      VMA_MEMORY_USAGE_CPU_ONLY);
+}
+
+bool VulkanTextureArray::EnsureHostBufferIsWritable() {
+  if (host_buffer_ == nullptr) {
+    host_buffer_ = CreateHostBuffer();
+    return host_buffer_ != nullptr;
+  }
+  if (!FrameInUse(transfer_frame_)) {
+    return true;
+  }
+
+  // The host buffer may still be copied from, so its contents move to a new
+  // one.
+  auto host_buffer = CreateHostBuffer();
   if (host_buffer == nullptr) {
     return false;
   }
+  std::memcpy(host_buffer->GetData(), host_buffer_->GetData(),
+              host_buffer_->GetSize());
   host_buffer_ = std::move(host_buffer);
+
+  // This host buffer has never been transferred.
+  transfer_frame_ = kNeverUsedFrame;
   return true;
 }
 
-void VulkanTextureArray::UpdateImage(VulkanRenderState* state, int index) {
-  state->image_updates.emplace_back(
-      host_buffer_->Get(), index * host_layer_size_, image_->Get(),
-      /*mip_level=*/0, GetWidth(), GetHeight(), index);
-  state->image_barriers.emplace_back(image_->Get(), mip_levels_, index);
-  if (mip_levels_ == 1) {
-    return;
+void VulkanTextureArray::UploadTexture(VulkanRenderState* state, int index) {
+  state->image_barriers.emplace_back(image_.get(), mip_levels_, index,
+                                     /*keep_contents=*/false);
+  uint32_t offset = index * host_layer_size_;
+  int width = GetWidth();
+  int height = GetHeight();
+  for (int mip = 0; mip < mip_levels_; ++mip) {
+    state->image_updates.emplace_back(host_buffer_->Get(), offset,
+                                      image_->Get(), mip, width, height, index);
+    offset += width * height * sizeof(Pixel);
+    width >>= 1;
+    height >>= 1;
   }
+}
 
+void VulkanTextureArray::GenerateMipmaps(int index) {
   int src_tile_size = GetSamplerOptions().tile_size;
   int src_width = GetWidth();
   int src_height = GetHeight();
-  uint32_t base_offset = index * host_layer_size_;
-  uint32_t offset = src_width * src_height * sizeof(Pixel) + base_offset;
-  unsigned char* src =
-      static_cast<unsigned char*>(host_buffer_->GetData()) + base_offset;
+  unsigned char* src = static_cast<unsigned char*>(host_buffer_->GetData()) +
+                       index * host_layer_size_;
   unsigned char* dst = src + (src_width * src_height * sizeof(Pixel));
   for (int mip = 1; mip < mip_levels_; ++mip) {
     int dst_width = src_width >> 1;
@@ -140,29 +165,33 @@ void VulkanTextureArray::UpdateImage(VulkanRenderState* state, int index) {
       src_tile_size = dst_tile_size;
     }
 
-    state->image_updates.emplace_back(host_buffer_->Get(), offset,
-                                      image_->Get(), mip, dst_width, dst_height,
-                                      index);
-
     src = dst;
     src_width = dst_width;
     src_height = dst_height;
-
-    offset += mip_byte_size;
     dst += mip_byte_size;
   }
 }
 
 void* VulkanTextureArray::ModifyHostData(int index) {
-  if (host_buffer_ == nullptr && !CreateHostBuffer()) {
+  // An image in use is replaced by a new one, which needs every texture. The
+  // textures of a kStaticWrite array can't be read back, so unless there is
+  // only the one being modified, it can't be replaced.
+  const bool image_in_use = FrameInUse(render_frame_);
+  if (image_in_use && GetVolatility() == DataVolatility::kStaticWrite &&
+      GetCount() > 1) {
     return nullptr;
   }
 
-  if (FrameInUse(render_frame_)) {
+  if (!EnsureHostBufferIsWritable()) {
+    return nullptr;
+  }
+
+  if (image_in_use) {
     if (!CreateImage()) {
       return nullptr;
     }
     render_frame_ = kNeverUsedFrame;
+    upload_all_ = true;
   }
 
   return static_cast<uint8_t*>(host_buffer_->GetData()) +
@@ -205,22 +234,37 @@ bool VulkanTextureArray::DoGet(int index, void* out_pixels) {
     return false;
   }
 
+  // The host data for each texture is followed by its mipmaps, which aren't
+  // returned.
   const void* host_data = static_cast<uint8_t*>(host_buffer_->GetData()) +
                           (host_layer_size_ * index);
-  std::memcpy(out_pixels, host_data, host_layer_size_);
+  std::memcpy(out_pixels, host_data, GetWidth() * GetHeight() * sizeof(Pixel));
   return true;
 }
 
 void VulkanTextureArray::OnRender(VulkanRenderState* state) {
   render_frame_ = state->frame;
-  if (updates_.empty()) {
+  if (updates_.empty() && !upload_all_) {
     return;
   }
 
+  // The mipmaps of textures that weren't modified are already in the host
+  // buffer.
   for (int index : updates_) {
-    UpdateImage(state, index);
+    GenerateMipmaps(index);
+  }
+  if (upload_all_) {
+    for (int index = 0; index < GetCount(); ++index) {
+      UploadTexture(state, index);
+    }
+  } else {
+    for (int index : updates_) {
+      UploadTexture(state, index);
+    }
   }
   updates_.clear();
+  upload_all_ = false;
+  transfer_frame_ = render_frame_;
 
   if (GetVolatility() == DataVolatility::kStaticWrite) {
     host_buffer_.reset();

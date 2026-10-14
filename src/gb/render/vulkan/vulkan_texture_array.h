@@ -6,15 +6,14 @@
 #ifndef GB_RENDER_VULKAN_VULKAN_TEXTURE_ARRAY_H_
 #define GB_RENDER_VULKAN_VULKAN_TEXTURE_ARRAY_H_
 
-#include <cstdint>
-#include <tuple>
+#include <memory>
 
 #include "absl/container/flat_hash_set.h"
-#include "gb/file/file_types.h"
 #include "gb/render/texture_array.h"
 #include "gb/render/vulkan/vulkan_backend.h"
 #include "gb/render/vulkan/vulkan_buffer.h"
 #include "gb/render/vulkan/vulkan_image.h"
+#include "gb/render/vulkan/vulkan_render_state.h"
 #include "gb/render/vulkan/vulkan_types.h"
 
 namespace gb {
@@ -61,10 +60,12 @@ class VulkanTextureArray : public TextureArray {
                      int width, int height, const SamplerOptions& options);
   ~VulkanTextureArray() override;
 
-  bool FrameInUse(int frame) const { return frame > backend_->GetFrame() - 2; }
+  bool FrameInUse(int frame) const { return backend_->IsFrameInUse(frame); }
   bool CreateImage();
-  bool CreateHostBuffer();
-  void UpdateImage(VulkanRenderState* state, int index);
+  std::unique_ptr<VulkanBuffer> CreateHostBuffer();
+  bool EnsureHostBufferIsWritable();
+  void GenerateMipmaps(int index);
+  void UploadTexture(VulkanRenderState* state, int index);
   void* ModifyHostData(int index);
 
   // TextureArray implementation.
@@ -82,9 +83,15 @@ class VulkanTextureArray : public TextureArray {
 
   ImageHandle image_handle_ = {};
   int render_frame_ = kNeverUsedFrame;
+  int transfer_frame_ = kNeverUsedFrame;
   std::unique_ptr<VulkanImage> image_;
   std::unique_ptr<VulkanBuffer> host_buffer_;
+
+  // Textures modified since the last upload.
   absl::flat_hash_set<int> updates_;
+
+  // Set when the image was replaced, so every texture must be uploaded.
+  bool upload_all_ = false;
 };
 
 }  // namespace gb

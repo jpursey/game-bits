@@ -5,6 +5,12 @@
 
 #include "gb/render/vulkan/vulkan_render_buffer.h"
 
+#include <algorithm>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <limits>
+
 #include "absl/log/log.h"
 #include "absl/memory/memory.h"
 #include "gb/render/vulkan/vulkan_render_state.h"
@@ -14,6 +20,7 @@ namespace gb {
 namespace {
 
 constexpr int kNeverUsedFrame = -1000;
+constexpr int kNotDirty = std::numeric_limits<int>::max();
 
 //==============================================================================
 // VulkanStaticWriteBuffer
@@ -43,11 +50,16 @@ class VulkanStaticWriteBuffer final : public VulkanRenderBuffer {
                            value_size, capacity, align_size) {}
 
   bool Init();
-  bool PrepForWrite();
+  bool PrepForWrite(int offset);
 
-  bool dirty_ = false;
+  // The first value written since the last transfer. Values before it are
+  // only on the device.
+  int dirty_offset_ = kNotDirty;
   int render_frame_ = kNeverUsedFrame;
   std::unique_ptr<VulkanBuffer> device_buffer_;
+
+  // Holds the values written since the last transfer, and is null if there
+  // are none.
   std::unique_ptr<VulkanBuffer> host_buffer_;
 };
 
@@ -73,15 +85,24 @@ bool VulkanStaticWriteBuffer::Init() {
 
 VulkanStaticWriteBuffer::~VulkanStaticWriteBuffer() {}
 
-bool VulkanStaticWriteBuffer::PrepForWrite() {
-  RENDER_ASSERT(!dirty_);
+bool VulkanStaticWriteBuffer::PrepForWrite(int offset) {
+  if (host_buffer_ != nullptr) {
+    return true;
+  }
+
+  // A device buffer in use is replaced, which loses the values before offset,
+  // as they can't be read back.
+  const bool in_use = FrameInUse(render_frame_);
+  if (in_use && offset > 0) {
+    return false;
+  }
 
   host_buffer_ = CreateHostBuffer();
   if (host_buffer_ == nullptr) {
     return false;
   }
 
-  if (FrameInUse(render_frame_)) {
+  if (in_use) {
     auto device_buffer = CreateDeviceBuffer();
     if (device_buffer == nullptr) {
       host_buffer_.reset();
@@ -96,37 +117,25 @@ bool VulkanStaticWriteBuffer::PrepForWrite() {
 
 bool VulkanStaticWriteBuffer::DoClear(int offset, int size) {
   RENDER_ASSERT(offset == 0 || GetValueSize() == GetAlignSize());
-  if (dirty_) {
-    std::memset(static_cast<uint8_t*>(host_buffer_->GetData()) +
-                    (offset * GetAlignSize()),
-                0, size * GetValueSize());
-    return true;
-  }
-
-  if (!PrepForWrite()) {
+  if (!PrepForWrite(offset)) {
     return false;
   }
+  dirty_offset_ = std::min(dirty_offset_, offset);
 
   std::memset(static_cast<uint8_t*>(host_buffer_->GetData()) +
                   (offset * GetAlignSize()),
               0, size * GetValueSize());
-  dirty_ = true;
   return true;
 }
 
 bool VulkanStaticWriteBuffer::DoSet(const void* data, int size) {
   RENDER_ASSERT(size == 1 || GetValueSize() == GetAlignSize());
-  if (dirty_) {
-    std::memcpy(host_buffer_->GetData(), data, size * GetValueSize());
-    return true;
-  }
-
-  if (!PrepForWrite()) {
+  if (!PrepForWrite(0)) {
     return false;
   }
+  dirty_offset_ = 0;
 
   std::memcpy(host_buffer_->GetData(), data, size * GetValueSize());
-  dirty_ = true;
   return true;
 }
 
@@ -136,13 +145,13 @@ void VulkanStaticWriteBuffer::OnEditEnd(bool modified) {}
 void VulkanStaticWriteBuffer::DoRender(VulkanRenderState* state) {
   render_frame_ = state->frame;
 
-  if (!dirty_) {
+  if (host_buffer_ == nullptr) {
     return;
   }
 
-  CopyBuffer(host_buffer_->Get(), device_buffer_->Get(), state);
+  CopyBuffer(host_buffer_->Get(), device_buffer_->Get(), state, dirty_offset_);
   host_buffer_.reset();
-  dirty_ = false;
+  dirty_offset_ = kNotDirty;
 }
 
 const void* VulkanStaticWriteBuffer::DoGetData() const { return nullptr; }
@@ -211,7 +220,8 @@ VulkanStaticReadWriteBuffer::~VulkanStaticReadWriteBuffer() {}
 bool VulkanStaticReadWriteBuffer::DoClear(int offset, int size) {
   RENDER_ASSERT(offset == 0 || GetValueSize() == GetAlignSize());
 
-  if (!EnsureHostBufferIsWritable(false)) {
+  // Values before the offset are kept.
+  if (!EnsureHostBufferIsWritable(/*copy_contents=*/offset > 0)) {
     return false;
   }
   std::memset(static_cast<uint8_t*>(host_buffer_->GetData()) +
@@ -524,7 +534,13 @@ std::unique_ptr<VulkanBuffer> VulkanRenderBuffer::CreateHostBuffer() {
 
 void VulkanRenderBuffer::CopyBuffer(vk::Buffer host_buffer,
                                     vk::Buffer device_buffer,
-                                    VulkanRenderState* state) {
+                                    VulkanRenderState* state, int offset) {
+  const vk::DeviceSize copy_offset = offset * align_size_;
+  const vk::DeviceSize copy_end = GetSize() * align_size_;
+  if (copy_end <= copy_offset) {
+    return;
+  }
+
   vk::AccessFlags dst_access;
   switch (type_) {
     case VulkanBufferType::kUniform:
@@ -539,9 +555,8 @@ void VulkanRenderBuffer::CopyBuffer(vk::Buffer host_buffer,
     default:
       LOG(FATAL) << "Unhandled buffer type for CopyBuffer";
   }
-  vk::DeviceSize copy_size = GetSize() * align_size_;
   state->buffer_updates.emplace_back(host_buffer, device_buffer, dst_access,
-                                     copy_size);
+                                     copy_offset, copy_end - copy_offset);
 }
 
 }  // namespace gb

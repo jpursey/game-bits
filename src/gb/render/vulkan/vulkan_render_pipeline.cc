@@ -5,10 +5,14 @@
 
 #include "gb/render/vulkan/vulkan_render_pipeline.h"
 
+#include <cstdint>
+#include <vector>
+
+#include "absl/base/macros.h"
 #include "absl/log/log.h"
+#include "absl/memory/memory.h"
 #include "gb/render/material_config.h"
 #include "gb/render/vulkan/vulkan_backend.h"
-#include "gb/render/vulkan/vulkan_binding_data_factory.h"
 #include "gb/render/vulkan/vulkan_scene_type.h"
 #include "gb/render/vulkan/vulkan_shader_code.h"
 

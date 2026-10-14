@@ -58,6 +58,11 @@ class TextureArray : public Resource {
   // Replaces a texture in the array with the specified colors.
   //
   // The pixels array must contain at least GetWidth() * GetHeight() pixels.
+  //
+  // Note: A kStaticWrite texture array's data may not be readable, so calling
+  // Clear or Set may not be supported for an array of more than one texture if
+  // it is currently being (or was recently) rendered, in which case this will
+  // return false.
   bool Set(int index, absl::Span<const Pixel> pixels);
   bool Set(int index, absl::Span<const uint32_t> pixels);
   bool Set(int index, const void* pixels, size_t size_in_bytes);

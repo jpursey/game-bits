@@ -5,6 +5,10 @@
 
 #include "gb/render/vulkan/vulkan_binding_data_factory.h"
 
+#include <algorithm>
+#include <array>
+#include <limits>
+
 #include "absl/log/log.h"
 #include "absl/memory/memory.h"
 #include "gb/render/vulkan/vulkan_backend.h"
@@ -13,11 +17,9 @@ namespace gb {
 
 namespace {
 
-inline int Align(int value, int alignment) {
-  const size_t unsigned_alignment = static_cast<size_t>(alignment);
-  return static_cast<int>(
-      (static_cast<size_t>(value) + unsigned_alignment - 1) &
-      ~(unsigned_alignment - 1));
+// Rounds value up to a multiple of alignment, which must be a power of two.
+int Align(int value, int alignment) {
+  return (value + alignment - 1) & ~(alignment - 1);
 }
 
 }  // namespace
@@ -34,6 +36,10 @@ std::unique_ptr<VulkanBindingDataFactory> VulkanBindingDataFactory::Create(
 
   auto factory = absl::WrapUnique(new VulkanBindingDataFactory(
       backend, max_buffer_slots, std::move(descriptor_pool), bindings));
+  if (factory->buffer_count_ > 0 && factory->buffer_slots_ == 0) {
+    LOG(ERROR) << "Constants are larger than the maximum uniform buffer size";
+    return nullptr;
+  }
   if (!factory->AddBindingGroup()) {
     return nullptr;
   }
@@ -82,33 +88,34 @@ VulkanBindingDataFactory::~VulkanBindingDataFactory() {
 
 std::unique_ptr<VulkanBindingData> VulkanBindingDataFactory::NewBindingData(
     RenderPipeline* pipeline, BindingSet set) {
-  mutex_.Lock();
+  // The lock is held while the binding data copies its binding group's data,
+  // as another call may add a binding group and move the existing ones.
+  absl::MutexLock lock(&mutex_);
   if (free_index_ == -1) {
     if (!AddBindingGroup()) {
-      mutex_.Unlock();
       return nullptr;
     }
   }
 
   if (binding_size_ == 0) {
     // Empty binding data.
-    mutex_.Unlock();
     return std::make_unique<VulkanBindingData>(VulkanInternal{}, this, pipeline,
                                                set);
   }
 
   std::array<vk::DescriptorSet, kMaxFramesInFlight> descriptor_sets;
-  for (auto& descriptor_set : descriptor_sets) {
-    descriptor_set = descriptor_pool_->NewSet();
-    if (!descriptor_set) {
-      mutex_.Unlock();
+  for (int i = 0; i < kMaxFramesInFlight; ++i) {
+    descriptor_sets[i] = descriptor_pool_->NewSet();
+    if (!descriptor_sets[i]) {
+      for (int j = 0; j < i; ++j) {
+        descriptor_pool_->DisposeSet(descriptor_sets[j]);
+      }
       return nullptr;
     }
   }
 
   if (buffer_count_ == 0) {
     // Bufferless binding data.
-    mutex_.Unlock();
     return std::make_unique<VulkanBindingData>(
         VulkanInternal{}, this, pipeline, set,
         binding_groups_.front().binding_data, descriptor_sets);
@@ -120,7 +127,6 @@ std::unique_ptr<VulkanBindingData> VulkanBindingDataFactory::NewBindingData(
   free_index_ = binding_group.buffer_free[index];
   binding_group.buffer_free[index] = -1;
 
-  mutex_.Unlock();
   return std::make_unique<VulkanBindingData>(
       VulkanInternal{}, this, pipeline, set, group, index,
       binding_group.binding_data, descriptor_sets);
@@ -166,8 +172,7 @@ bool VulkanBindingDataFactory::AddBindingGroup() {
           {}, backend_, VulkanBufferType::kUniform, binding.volatility,
           value_size, buffer_slots_,
           Align(value_size, buffer_value_alignment_));
-      buffer->Resize(buffer_slots_);
-      if (buffer == nullptr) {
+      if (buffer == nullptr || !buffer->Resize(buffer_slots_)) {
         LOG(ERROR)
             << "Failed to create binding group, due to buffer creation failure";
         return false;

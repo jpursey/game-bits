@@ -5,6 +5,7 @@
 
 #include "gb/render/vulkan/vulkan_descriptor_pool.h"
 
+#include "absl/container/inlined_vector.h"
 #include "absl/log/log.h"
 #include "absl/memory/memory.h"
 #include "gb/render/vulkan/vulkan_backend.h"
@@ -113,7 +114,7 @@ bool VulkanDescriptorPool::NewPool() {
 vk::DescriptorSet VulkanDescriptorPool::NewSet() {
   if (!available_sets_.empty()) {
     auto& available_set = available_sets_.front();
-    if (available_set.dispose_frame > backend_->GetFrame() + 1) {
+    if (!backend_->IsFrameInUse(available_set.dispose_frame)) {
       auto new_set = available_set.set;
       available_sets_.pop();
       return new_set;

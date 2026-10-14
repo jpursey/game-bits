@@ -8,13 +8,16 @@
 
 #include <array>
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
+#include "absl/container/flat_hash_map.h"
 #include "absl/functional/any_invocable.h"
 #include "absl/synchronization/mutex.h"
+#include "absl/types/span.h"
 #include "gb/base/callback_scope.h"
 #include "gb/base/validated_context.h"
 #include "gb/render/render_backend.h"
@@ -22,7 +25,6 @@
 #include "gb/render/vulkan/vulkan_garbage_collector.h"
 #include "gb/render/vulkan/vulkan_render_state.h"
 #include "gb/render/vulkan/vulkan_types.h"
-#include "glm/glm.hpp"
 
 namespace gb {
 
@@ -156,6 +158,12 @@ class VulkanBackend final : public RenderBackend {
     return frame_counter_.load(std::memory_order_acquire);
   }
 
+  // Returns true if a frame may still be rendering, so resources it used must
+  // not be modified or reused.
+  bool IsFrameInUse(int frame) const {
+    return frame > GetFrame() - kMaxFramesInFlight;
+  }
+
   //----------------------------------------------------------------------------
   // Helper methods
   //----------------------------------------------------------------------------
@@ -254,7 +262,6 @@ class VulkanBackend final : public RenderBackend {
   bool InitRenderPass();
   bool InitSwapChain();
   bool InitFrames();
-  bool InitResources();
   void CleanUp();
   void CleanUpSwap();
   bool RecreateSwap();
@@ -306,7 +313,6 @@ class VulkanBackend final : public RenderBackend {
   // Device
   vk::PhysicalDevice physical_device_;
   vk::PhysicalDeviceProperties physical_device_properties_;
-  vk::FormatProperties physical_format_properties_;
   vk::Device device_;
   Queues queues_;
   vk::Format depth_format_;
@@ -315,13 +321,6 @@ class VulkanBackend final : public RenderBackend {
 
   // Render pass
   vk::RenderPass render_pass_;
-
-  //----------------------------------------------------------------------------
-  // The following members may be updated during render system initialization,
-  // and so are externally synchronized.
-  //----------------------------------------------------------------------------
-
-  std::vector<VulkanSceneType*> scene_types_;
 
   //----------------------------------------------------------------------------
   // The following members may be changed and/or queried at any time, and so
@@ -337,8 +336,8 @@ class VulkanBackend final : public RenderBackend {
       ABSL_GUARDED_BY(samplers_mutex_);
 
   //----------------------------------------------------------------------------
-  // The following members are accessed only during rendering and initializtion
-  // only, except as noted.
+  // The following members are accessed only during rendering and
+  // initialization, except as noted.
   //----------------------------------------------------------------------------
 
   // Swap chain
@@ -347,7 +346,10 @@ class VulkanBackend final : public RenderBackend {
   std::vector<FrameBuffer> frame_buffers_;
   std::unique_ptr<VulkanImage> color_image_;
   std::unique_ptr<VulkanImage> depth_image_;
-  bool recreate_swap_ = false;
+
+  // Set by the window's size changed callback, which may be called on any
+  // thread.
+  std::atomic<bool> recreate_swap_ = false;
 
   // Frame management
   std::atomic<int> frame_counter_;

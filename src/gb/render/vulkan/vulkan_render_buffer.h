@@ -6,6 +6,8 @@
 #ifndef GB_RENDER_VULKAN_VULKAN_RENDER_BUFFER_H_
 #define GB_RENDER_VULKAN_VULKAN_RENDER_BUFFER_H_
 
+#include <memory>
+
 #include "gb/render/render_buffer.h"
 #include "gb/render/vulkan/vulkan_backend.h"
 #include "gb/render/vulkan/vulkan_buffer.h"
@@ -76,14 +78,16 @@ class VulkanRenderBuffer : public RenderBuffer {
         align_size_(align_size != 0 ? align_size : value_size) {}
 
   // Properties.
-  bool FrameInUse(int frame) const { return frame > backend_->GetFrame() - 2; }
+  bool FrameInUse(int frame) const { return backend_->IsFrameInUse(frame); }
 
   // Buffer operations.
   std::unique_ptr<VulkanBuffer> CreateDeviceBuffer(
       VmaMemoryUsage memory_usage = VMA_MEMORY_USAGE_GPU_ONLY);
   std::unique_ptr<VulkanBuffer> CreateHostBuffer();
+  // Copies the values from offset to GetSize() from the host buffer to the
+  // device buffer.
   void CopyBuffer(vk::Buffer host_buffer, vk::Buffer device_buffer,
-                  VulkanRenderState* state);
+                  VulkanRenderState* state, int offset = 0);
   void SetAllBufferHandles(vk::Buffer buffer) {
     for (BufferHandle& handle : buffer_handles_) {
       handle.version += 1;

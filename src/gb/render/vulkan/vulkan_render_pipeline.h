@@ -6,11 +6,11 @@
 #ifndef GB_RENDER_VULKAN_VULKAN_RENDER_PIPELINE_H_
 #define GB_RENDER_VULKAN_VULKAN_RENDER_PIPELINE_H_
 
-#include <vector>
+#include <memory>
 
+#include "absl/types/span.h"
 #include "gb/render/render_pipeline.h"
-#include "gb/render/vulkan/vulkan_descriptor_pool.h"
-#include "gb/render/vulkan/vulkan_render_buffer.h"
+#include "gb/render/vulkan/vulkan_binding_data_factory.h"
 #include "gb/render/vulkan/vulkan_types.h"
 
 namespace gb {

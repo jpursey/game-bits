@@ -280,6 +280,23 @@ it, you must first build the required shaders, by running the
 (it must be run from the `assets/shaders` directory, and requires `glslc` from
 the Vulkan SDK to be on the PATH).
 
+### Running the RenderCheck example
+
+The RenderCheck example exercises the Vulkan backend by hand: window resizing,
+binding data churn, and texture and texture array updates while they are
+drawn, with memory use and any logged errors (including the Vulkan validation
+layer's) shown on screen. It is built the same way as BlockWorld, and enables
+validation in every build, so a release build is the simplest to run (a Debug
+build also needs the debug runtime on the PATH; see [CLAUDE.md](CLAUDE.md)):
+
+```
+cmake -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -S examples/render-check -B examples/render-check/out/build/x64-Release
+cmake --build examples/render-check/out/build/x64-Release
+```
+
+The resulting executable is written to `bin/render_check.exe`. Its shaders are
+embedded, so it needs no assets.
+
 ## Using Game Bits CMake commands
 
 Game Bits has its own funny way of defining CMake targets and tests via various

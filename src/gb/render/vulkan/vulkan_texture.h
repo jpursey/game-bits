@@ -6,13 +6,14 @@
 #ifndef GB_RENDER_VULKAN_VULKAN_TEXTURE_H_
 #define GB_RENDER_VULKAN_VULKAN_TEXTURE_H_
 
-#include <cstdint>
-#include <tuple>
+#include <algorithm>
+#include <memory>
 
-#include "gb/file/file_types.h"
 #include "gb/render/texture.h"
 #include "gb/render/vulkan/vulkan_backend.h"
+#include "gb/render/vulkan/vulkan_buffer.h"
 #include "gb/render/vulkan/vulkan_image.h"
+#include "gb/render/vulkan/vulkan_render_state.h"
 #include "gb/render/vulkan/vulkan_types.h"
 
 namespace gb {
@@ -81,7 +82,7 @@ class VulkanTexture : public Texture {
   }
 
   int GetMipLevels() const { return mip_levels_; }
-  bool FrameInUse(int frame) const { return frame > backend_->GetFrame() - 2; }
+  bool FrameInUse(int frame) const { return backend_->IsFrameInUse(frame); }
   std::unique_ptr<VulkanBuffer> CreateHostBuffer();
   std::unique_ptr<VulkanImage> CreateImage();
   void ClearRegion(void* buffer, int x, int y, int width, int height,

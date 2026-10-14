@@ -6,11 +6,16 @@
 #ifndef GB_RENDER_VULKAN_VULKAN_BINDING_DATA_H_
 #define GB_RENDER_VULKAN_VULKAN_BINDING_DATA_H_
 
-#include <deque>
+#include <array>
+#include <cstdint>
+#include <cstring>
 #include <vector>
 
-#include "absl/container/flat_hash_set.h"
+#include "absl/types/span.h"
+#include "gb/base/weak_ptr.h"
+#include "gb/render/binding.h"
 #include "gb/render/binding_data.h"
+#include "gb/render/render_types.h"
 #include "gb/render/vulkan/vulkan_render_buffer.h"
 #include "gb/render/vulkan/vulkan_types.h"
 
@@ -81,7 +86,9 @@ class VulkanBindingData : public BindingData {
   ~VulkanBindingData() override;
 
   int GetBufferGroup() const { return buffer_group_; }
-  std::vector<uint32_t> GetBufferOffsets() const { return buffer_offsets_; }
+  const std::vector<uint32_t>& GetBufferOffsets() const {
+    return buffer_offsets_;
+  }
   vk::DescriptorSet GetDescriptorSet(int frame_index) const {
     return descriptor_sets_[frame_index];
   }

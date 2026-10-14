@@ -5,11 +5,16 @@
 
 #include "gb/render/vulkan/vulkan_backend.h"
 
+#include <algorithm>
+#include <limits>
+#include <set>
+#include <string_view>
+#include <tuple>
 #include <vector>
 
+#include "absl/base/log_severity.h"
 #include "absl/log/log.h"
 #include "absl/memory/memory.h"
-#include "gb/base/context_builder.h"
 #include "gb/render/vulkan/vulkan_binding_data.h"
 #include "gb/render/vulkan/vulkan_binding_data_factory.h"
 #include "gb/render/vulkan/vulkan_descriptor_pool.h"
@@ -105,8 +110,7 @@ VulkanBackend::~VulkanBackend() { CleanUp(); }
 bool VulkanBackend::Init() {
   std::vector<const char*> layers;
   if (!InitInstance(&layers) || !InitWindow() || !InitDevice(layers) ||
-      !InitRenderPass() || !InitSwapChain() || !InitFrames() ||
-      !InitResources()) {
+      !InitRenderPass() || !InitSwapChain() || !InitFrames()) {
     return false;
   }
   context_.SetPtr<VulkanBackend>(this);
@@ -567,8 +571,6 @@ bool VulkanBackend::InitFrames() {
   return true;
 }
 
-bool VulkanBackend::InitResources() { return true; }
-
 void VulkanBackend::CleanUp() {
   LOG_IF(ERROR, !context_.Complete())
       << "Failed to complete VulkanBackend context.";
@@ -660,7 +662,14 @@ void VulkanBackend::OnDebugMessage(
     vk::DebugUtilsMessageSeverityFlagBitsEXT message_severity,
     vk::DebugUtilsMessageTypeFlagsEXT message_type,
     const vk::DebugUtilsMessengerCallbackDataEXT& callback_data) {
-  LOG(INFO) << "Vulkan layer: " << callback_data.pMessage;
+  absl::LogSeverity severity = absl::LogSeverity::kInfo;
+  if (message_severity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eError) {
+    severity = absl::LogSeverity::kError;
+  } else if (message_severity &
+             vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning) {
+    severity = absl::LogSeverity::kWarning;
+  }
+  LOG(LEVEL(severity)) << "Vulkan layer: " << callback_data.pMessage;
 }
 
 bool VulkanBackend::CreateSemaphore(const vk::SemaphoreCreateInfo& create_info,
@@ -781,6 +790,8 @@ vk::Sampler VulkanBackend::GetSampler(SamplerOptions options, int width,
     }
   }
 
+  const float max_anisotropy =
+      std::min(16.0f, physical_device_properties_.limits.maxSamplerAnisotropy);
   auto [result, sampler] = device_.createSampler(
       vk::SamplerCreateInfo()
           .setMagFilter(filter)
@@ -789,7 +800,7 @@ vk::Sampler VulkanBackend::GetSampler(SamplerOptions options, int width,
           .setAddressModeV(address_mode)
           .setAddressModeW(address_mode)
           .setAnisotropyEnable(options.filter ? VK_TRUE : VK_FALSE)
-          .setMaxAnisotropy(options.filter ? 16.0f : 0.0f)
+          .setMaxAnisotropy(options.filter ? max_anisotropy : 0.0f)
           .setBorderColor(border_color)
           .setUnnormalizedCoordinates(VK_FALSE)
           .setCompareEnable(VK_FALSE)
@@ -885,12 +896,7 @@ std::unique_ptr<ShaderCode> VulkanBackend::CreateShaderCode(RenderInternal,
 
 std::unique_ptr<RenderSceneType> VulkanBackend::CreateSceneType(
     RenderInternal, absl::Span<const Binding> bindings) {
-  auto scene_type = VulkanSceneType::Create({}, this, bindings);
-  if (scene_type == nullptr) {
-    return nullptr;
-  }
-  scene_types_.push_back(scene_type.get());
-  return scene_type;
+  return VulkanSceneType::Create({}, this, bindings);
 }
 
 std::unique_ptr<RenderScene> VulkanBackend::CreateScene(
@@ -935,26 +941,19 @@ bool VulkanBackend::BeginFrame(RenderInternal) {
     return false;
   }
 
-  // Any data from this frame is now unused, so collect the next set of garbage.
-  // Note: memory_order_relaxed is used for the load, as this is the *only*
-  // place that the garbage_collector_index_ is updated, and the subsequent
-  // store will ensure proper ordering.
-  const int next_gc_index =
-      (garbage_collector_index_.load(std::memory_order_relaxed) + 1) %
-      (kMaxFramesInFlight + 1);
-  garbage_collectors_[next_gc_index].Collect(device_, allocator_);
-  garbage_collector_index_.store(next_gc_index, std::memory_order_release);
-
-  if (recreate_swap_) {
+  if (recreate_swap_.load(std::memory_order_acquire)) {
     auto size = window_->GetSize();
     if (size.width == 0 || size.height == 0) {
       // Cannot create a swapchain for a zero-sized window.
       return false;
     }
+
+    // Cleared first, so a size change during recreation isn't lost.
+    recreate_swap_.store(false, std::memory_order_release);
     if (!RecreateSwap()) {
+      recreate_swap_.store(true, std::memory_order_release);
       return false;
     }
-    recreate_swap_ = false;
   }
 
   // If the size is zero, then there is no point continuing.
@@ -965,12 +964,15 @@ bool VulkanBackend::BeginFrame(RenderInternal) {
   auto [acquire_result, image_index] = device_.acquireNextImageKHR(
       swap_chain_, std::numeric_limits<uint64_t>::max(),
       frame.image_available_semaphore, {});
-  if (acquire_result == vk::Result::eErrorOutOfDateKHR ||
-      acquire_result == vk::Result::eSuboptimalKHR) {
-    recreate_swap_ = true;
+  if (acquire_result == vk::Result::eErrorOutOfDateKHR) {
+    recreate_swap_.store(true, std::memory_order_release);
     return false;
   }
-  if (acquire_result != vk::Result::eSuccess) {
+  if (acquire_result == vk::Result::eSuboptimalKHR) {
+    // The image was still acquired, and the semaphore will be signaled, so
+    // this frame is rendered before the swap chain is recreated.
+    recreate_swap_.store(true, std::memory_order_release);
+  } else if (acquire_result != vk::Result::eSuccess) {
     LOG_EVERY_N(ERROR, 100) << "Failed to acquire image from swapchain";
     return false;
   }
@@ -983,6 +985,20 @@ bool VulkanBackend::BeginFrame(RenderInternal) {
     LOG_EVERY_N(ERROR, 100) << "Failed to begin command buffer";
     return false;
   }
+
+  // Any data from this frame is now unused, so collect the next set of garbage.
+  // This is only done once the frame has begun, as each collection must be
+  // matched by a submitted frame for the garbage of in flight frames to be
+  // kept.
+  //
+  // Note: memory_order_relaxed is used for the load, as this is the *only*
+  // place that the garbage_collector_index_ is updated, and the subsequent
+  // store will ensure proper ordering.
+  const int next_gc_index =
+      (garbage_collector_index_.load(std::memory_order_relaxed) + 1) %
+      (kMaxFramesInFlight + 1);
+  garbage_collectors_[next_gc_index].Collect(device_, allocator_);
+  garbage_collector_index_.store(next_gc_index, std::memory_order_release);
 
   CallFrameCallbacks(&begin_frame_callbacks_);
 
@@ -1088,15 +1104,17 @@ void VulkanBackend::EndFrameUpdateBuffers() {
   barriers.reserve(render_state_.buffer_updates.size());
 
   for (const auto& update : render_state_.buffer_updates) {
-    frame.commands.copyBuffer(update.src_buffer, update.dst_buffer,
-                              {vk::BufferCopy(0, 0, update.copy_size)});
+    frame.commands.copyBuffer(
+        update.src_buffer, update.dst_buffer,
+        {vk::BufferCopy(update.copy_offset, update.copy_offset,
+                        update.copy_size)});
     auto& barrier = barriers.emplace_back();
     barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
     barrier.dstAccessMask = update.dst_access;
     barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.buffer = update.dst_buffer;
-    barrier.offset = 0;
+    barrier.offset = update.copy_offset;
     barrier.size = update.copy_size;
   }
 
@@ -1114,15 +1132,19 @@ void VulkanBackend::EndFrameUpdateImages() {
   std::vector<vk::ImageMemoryBarrier> barriers;
   barriers.reserve(render_state_.image_barriers.size());
 
-  // Prep images for receiving new image data.
-  for (size_t i = 0; i < render_state_.image_barriers.size(); ++i) {
-    const auto& barrier = render_state_.image_barriers[i];
+  // Prep images for receiving new image data. Images are only updated when no
+  // frame in flight uses them, so there are no reads to wait for. Moving from
+  // an image's current layout keeps its contents, which a partial update
+  // needs, while eUndefined lets the driver discard them.
+  for (const auto& barrier : render_state_.image_barriers) {
+    VulkanImage* const image = barrier.image;
     barriers.emplace_back()
-        .setOldLayout(vk::ImageLayout::eUndefined)
+        .setOldLayout(barrier.keep_contents ? image->GetLayout(barrier.layer)
+                                            : vk::ImageLayout::eUndefined)
         .setNewLayout(vk::ImageLayout::eTransferDstOptimal)
         .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
         .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-        .setImage(barrier.image)
+        .setImage(image->Get())
         .setSubresourceRange(vk::ImageSubresourceRange()
                                  .setAspectMask(vk::ImageAspectFlagBits::eColor)
                                  .setBaseMipLevel(0)
@@ -1137,8 +1159,7 @@ void VulkanBackend::EndFrameUpdateImages() {
                                  {}, barriers);
 
   // Copy the new data to the images.
-  for (size_t i = 0; i < render_state_.image_updates.size(); ++i) {
-    const auto& update = render_state_.image_updates[i];
+  for (const auto& update : render_state_.image_updates) {
     const vk::DeviceSize buffer_offset =
         update.src_offset +
         (update.region_y * update.image_width + update.region_x) *
@@ -1163,11 +1184,16 @@ void VulkanBackend::EndFrameUpdateImages() {
   }
 
   // Prep the images for rendering.
-  for (auto& barrier : barriers) {
-    barrier.setOldLayout(vk::ImageLayout::eTransferDstOptimal)
+  const int barrier_count = static_cast<int>(barriers.size());
+  for (int i = 0; i < barrier_count; ++i) {
+    barriers[i]
+        .setOldLayout(vk::ImageLayout::eTransferDstOptimal)
         .setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
         .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
         .setDstAccessMask(vk::AccessFlagBits::eShaderRead);
+    const auto& image_barrier = render_state_.image_barriers[i];
+    image_barrier.image->SetLayout(image_barrier.layer,
+                                   vk::ImageLayout::eShaderReadOnlyOptimal);
   }
   frame.commands.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
                                  vk::PipelineStageFlagBits::eFragmentShader, {},
@@ -1175,8 +1201,9 @@ void VulkanBackend::EndFrameUpdateImages() {
 }
 
 void VulkanBackend::EndFrameUpdateDescriptorSets() {
-  const size_t update_count = render_state_.set_image_updates.size() +
-                              render_state_.set_buffer_updates.size();
+  const int update_count =
+      static_cast<int>(render_state_.set_image_updates.size() +
+                       render_state_.set_buffer_updates.size());
   if (update_count == 0) {
     return;
   }
@@ -1459,14 +1486,12 @@ void VulkanBackend::EndFramePresent() {
           .setPImageIndices(&frame_buffer_index_));
   if (present_result == vk::Result::eErrorOutOfDateKHR ||
       present_result == vk::Result::eSuboptimalKHR) {
-    recreate_swap_ = true;
-    return;
-  }
-  if (present_result != vk::Result::eSuccess) {
+    recreate_swap_.store(true, std::memory_order_release);
+  } else if (present_result != vk::Result::eSuccess) {
     LOG_EVERY_N(ERROR, 100) << "Failed to present";
-    return;
   }
 
+  // The frame was submitted, so it is done even if presenting failed.
   render_state_ = {};
   frame_index_ = (frame_index_ + 1) % kMaxFramesInFlight;
 

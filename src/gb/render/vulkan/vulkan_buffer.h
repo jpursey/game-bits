@@ -7,7 +7,6 @@
 #define GB_RENDER_VULKAN_VULKAN_BUFFER_H_
 
 #include <memory>
-#include <utility>
 
 #include "gb/render/vulkan/vulkan_allocator.h"
 #include "gb/render/vulkan/vulkan_types.h"
@@ -68,7 +67,7 @@ class VulkanBuffer final {
   //
   // If mapping fails, or it is not allowed (usage is
   // VMA_MEMORY_USAGE_GPU_ONLY), this will return false and GetData() will
-  // continue to return false. If the memory is already mapped, this trivially
+  // continue to return null. If the memory is already mapped, this trivially
   // succeeds.
   bool MapData();
 
@@ -84,10 +83,10 @@ class VulkanBuffer final {
   bool Init(VulkanBackend* backend, const vk::BufferCreateInfo& create_info,
             VmaMemoryUsage memory_usage);
 
-  VulkanBackend* backend_;
+  VulkanBackend* backend_ = nullptr;
   VmaMemoryUsage memory_usage_ = VMA_MEMORY_USAGE_UNKNOWN;
   vk::Buffer buffer_;
-  VmaAllocation allocation_;
+  VmaAllocation allocation_ = VK_NULL_HANDLE;
   vk::DeviceSize size_ = 0;
   void* data_ = nullptr;
 };

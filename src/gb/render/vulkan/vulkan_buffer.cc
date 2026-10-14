@@ -29,7 +29,9 @@ std::unique_ptr<VulkanBuffer> VulkanBuffer::Create(
 VulkanBuffer::VulkanBuffer() {}
 
 VulkanBuffer::~VulkanBuffer() {
-  UnmapData();
+  if (data_ != nullptr) {
+    vmaUnmapMemory(backend_->GetAllocator(), allocation_);
+  }
   auto* gc = backend_->GetGarbageCollector();
   gc->Dispose(buffer_, allocation_);
 }
@@ -72,22 +74,20 @@ bool VulkanBuffer::MapData() {
       VK_SUCCESS) {
     return false;
   }
-  if (memory_usage_ != VMA_MEMORY_USAGE_CPU_ONLY &&
-      vmaInvalidateAllocation(backend_->GetAllocator(), allocation_, 0,
+  if (vmaInvalidateAllocation(backend_->GetAllocator(), allocation_, 0,
                               VK_WHOLE_SIZE) != VK_SUCCESS) {
     vmaUnmapMemory(backend_->GetAllocator(), allocation_);
+    data_ = nullptr;
     return false;
   }
   return true;
 }
 
 void VulkanBuffer::UnmapData() {
-  if (data_ == nullptr) {
+  if (data_ == nullptr || memory_usage_ == VMA_MEMORY_USAGE_CPU_ONLY) {
     return;
   }
-  if (memory_usage_ != VMA_MEMORY_USAGE_CPU_ONLY) {
-    vmaFlushAllocation(backend_->GetAllocator(), allocation_, 0, VK_WHOLE_SIZE);
-  }
+  vmaFlushAllocation(backend_->GetAllocator(), allocation_, 0, VK_WHOLE_SIZE);
   vmaUnmapMemory(backend_->GetAllocator(), allocation_);
   data_ = nullptr;
 }

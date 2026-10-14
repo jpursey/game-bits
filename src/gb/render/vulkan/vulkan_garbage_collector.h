@@ -3,9 +3,10 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef VULKAN_GARBAGE_COLLECTOR_H_
-#define VULKAN_GARBAGE_COLLECTOR_H_
+#ifndef GB_RENDER_VULKAN_VULKAN_GARBAGE_COLLECTOR_H_
+#define GB_RENDER_VULKAN_VULKAN_GARBAGE_COLLECTOR_H_
 
+#include <cstdint>
 #include <type_traits>
 #include <vector>
 
@@ -118,4 +119,4 @@ inline void VulkanGarbageCollector::Dispose(VkShaderModule shader) {
 
 }  // namespace gb
 
-#endif  // VULKAN_GARBAGE_COLLECTOR_H_
+#endif  // GB_RENDER_VULKAN_VULKAN_GARBAGE_COLLECTOR_H_

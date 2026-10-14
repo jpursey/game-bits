@@ -6,7 +6,6 @@
 #ifndef GB_RENDER_VULKAN_VULKAN_FORMAT_H_
 #define GB_RENDER_VULKAN_VULKAN_FORMAT_H_
 
-#include "absl/types/span.h"
 #include "gb/render/vulkan/vulkan_types.h"
 
 namespace gb {

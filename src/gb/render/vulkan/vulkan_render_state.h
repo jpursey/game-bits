@@ -12,6 +12,7 @@
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "gb/render/draw_list.h"
+#include "gb/render/vulkan/vulkan_image.h"
 #include "gb/render/vulkan/vulkan_types.h"
 
 namespace gb {
@@ -35,12 +36,19 @@ struct VulkanRenderState {
   using SceneDraw = absl::flat_hash_map<VulkanScene*, PipelineDraw>;
   using SceneGroupDraw = std::map<int, SceneDraw>;
 
+  // Prepares a layer of an image for its updates. If keep_contents is false,
+  // the updates replace every pixel of every mip level.
   struct ImageBarrier {
-    ImageBarrier(vk::Image image, uint32_t mip_level_count, uint32_t layer = 0)
-        : image(image), mip_level_count(mip_level_count), layer(layer) {}
-    vk::Image image;
+    ImageBarrier(VulkanImage* image, uint32_t mip_level_count, uint32_t layer,
+                 bool keep_contents)
+        : image(image),
+          mip_level_count(mip_level_count),
+          layer(layer),
+          keep_contents(keep_contents) {}
+    VulkanImage* image;
     uint32_t mip_level_count;
     uint32_t layer;
+    bool keep_contents;
   };
 
   struct ImageUpdate {
@@ -86,16 +94,21 @@ struct VulkanRenderState {
     uint32_t region_height;
   };
 
+  // Copies copy_size bytes at copy_offset in src_buffer to the same offset in
+  // dst_buffer.
   struct BufferUpdate {
     BufferUpdate(vk::Buffer src_buffer, vk::Buffer dst_buffer,
-                 vk::AccessFlags dst_access, vk::DeviceSize copy_size)
+                 vk::AccessFlags dst_access, vk::DeviceSize copy_offset,
+                 vk::DeviceSize copy_size)
         : src_buffer(src_buffer),
           dst_buffer(dst_buffer),
           dst_access(dst_access),
+          copy_offset(copy_offset),
           copy_size(copy_size) {}
     vk::Buffer src_buffer;
     vk::Buffer dst_buffer;
     vk::AccessFlags dst_access;
+    vk::DeviceSize copy_offset;
     vk::DeviceSize copy_size;
   };
 

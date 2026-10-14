@@ -32,7 +32,8 @@ VulkanBindingData::VulkanBindingData(
     buffer_offsets_.push_back(buffer_offset_index_ *
                               item.constants.buffer->GetAlignSize());
   }
-  RENDER_ASSERT(buffer_offsets_.size() == factory->GetBufferCount());
+  RENDER_ASSERT(static_cast<int>(buffer_offsets_.size()) ==
+                factory->GetBufferCount());
 }
 
 VulkanBindingData::VulkanBindingData(
@@ -107,10 +108,11 @@ void VulkanBindingData::OnRender(VulkanRenderState* state) {
 
 bool VulkanBindingData::ValidateBindings(
     absl::Span<const Binding> bindings) const {
-  if (bindings.size() < data_.size()) {
+  const int data_count = static_cast<int>(data_.size());
+  if (static_cast<int>(bindings.size()) < data_count) {
     return false;
   }
-  for (int index = 0; index < data_.size(); ++index) {
+  for (int index = 0; index < data_count; ++index) {
     // Bindings are usually in order, so we test that first.
     const Binding* binding = &bindings[index];
     if (binding->index != index) {
@@ -141,7 +143,7 @@ bool VulkanBindingData::Validate(int index, gb::TypeKey* type) const {
   static gb::TypeKey* texture_type = gb::TypeKey::Get<Texture*>();
   static gb::TypeKey* texture_array_type = gb::TypeKey::Get<TextureArray*>();
 
-  if (index < 0 || index > static_cast<int>(data_.size())) {
+  if (index < 0 || index >= static_cast<int>(data_.size())) {
     return false;
   }
 

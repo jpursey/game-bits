@@ -7,6 +7,7 @@
 #define GB_RENDER_VULKAN_SDL_VULKAN_WINDOW_H_
 
 #include <memory>
+#include <vector>
 
 #include "SDL.h"
 #include "absl/functional/any_invocable.h"
@@ -71,11 +72,14 @@ class SdlVulkanWindow final : public VulkanWindow {
 
   void OnEvent(const SDL_Event& event);
 
-  SDL_Window* window_;
-  std::unique_ptr<gb::MessageEndpoint> endpoint_;
+  SDL_Window* const window_;
 
   absl::Mutex mutex_;
   absl::AnyInvocable<void()> size_changed_callback_ ABSL_GUARDED_BY(mutex_);
+
+  // Must be last, so it is destroyed first: destroying it waits for any
+  // message being handled on another thread, which uses the members above.
+  std::unique_ptr<gb::MessageEndpoint> endpoint_;
 };
 
 }  // namespace gb

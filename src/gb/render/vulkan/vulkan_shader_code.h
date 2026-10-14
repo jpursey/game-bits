@@ -6,6 +6,9 @@
 #ifndef GB_RENDER_VULKAN_VULKAN_SHADER_CODE_H_
 #define GB_RENDER_VULKAN_VULKAN_SHADER_CODE_H_
 
+#include <cstdint>
+#include <memory>
+
 #include "gb/render/shader.h"
 #include "gb/render/vulkan/vulkan_types.h"
 

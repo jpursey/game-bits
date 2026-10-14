@@ -6,11 +6,13 @@
 #include "gb/render/vulkan/vulkan_texture.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <memory>
 
 #include "absl/container/inlined_vector.h"
 #include "absl/log/log.h"
-#include "absl/memory/memory.h"
-#include "gb/base/scoped_call.h"
 #include "gb/render/vulkan/vulkan_backend.h"
 #include "gb/render/vulkan/vulkan_buffer.h"
 #include "stb_image_resize.h"
@@ -45,12 +47,15 @@ class VulkanStaticWriteTexture final : public VulkanTexture {
  private:
   ~VulkanStaticWriteTexture() override;
 
+  bool PrepForWrite(int x, int y, int width, int height);
   void AddDirtyRegion(int x, int y, int width, int height);
 
-  bool dirty_ = false;
   absl::InlinedVector<DirtyRegion, 1> dirty_regions_;
   int render_frame_ = kNeverUsedFrame;
   std::unique_ptr<VulkanImage> image_;
+
+  // Holds the pixels written since the last upload, and is null if there are
+  // none.
   std::unique_ptr<VulkanBuffer> host_buffer_;
 };
 
@@ -65,12 +70,20 @@ bool VulkanStaticWriteTexture::Init() {
   return true;
 }
 
-bool VulkanStaticWriteTexture::DoClear(int x, int y, int width, int height,
-                                       Pixel pixel) {
-  if (dirty_) {
-    ClearRegion(host_buffer_->GetData(), x, y, width, height, pixel);
-    AddDirtyRegion(x, y, width, height);
+bool VulkanStaticWriteTexture::PrepForWrite(int x, int y, int width,
+                                            int height) {
+  if (host_buffer_ != nullptr) {
     return true;
+  }
+
+  // The texture's pixels can't be read back, so a partial update can't be
+  // applied to a new image (which replaces one in use), or used to generate
+  // mipmaps from.
+  const bool in_use = FrameInUse(render_frame_);
+  const bool partial =
+      x != 0 || y != 0 || width != GetWidth() || height != GetHeight();
+  if (partial && (in_use || GetMipLevels() > 1)) {
+    return false;
   }
 
   host_buffer_ = CreateHostBuffer();
@@ -78,12 +91,7 @@ bool VulkanStaticWriteTexture::DoClear(int x, int y, int width, int height,
     return false;
   }
 
-  if (FrameInUse(render_frame_)) {
-    if (x != 0 || y != 0 || width != GetWidth() || height != GetHeight()) {
-      host_buffer_.reset();
-      return false;
-    }
-
+  if (in_use) {
     auto image = CreateImage();
     if (image == nullptr) {
       host_buffer_.reset();
@@ -93,45 +101,26 @@ bool VulkanStaticWriteTexture::DoClear(int x, int y, int width, int height,
     SetAllImageHandles(image_.get());
     render_frame_ = kNeverUsedFrame;
   }
+  return true;
+}
 
+bool VulkanStaticWriteTexture::DoClear(int x, int y, int width, int height,
+                                       Pixel pixel) {
+  if (!PrepForWrite(x, y, width, height)) {
+    return false;
+  }
   ClearRegion(host_buffer_->GetData(), x, y, width, height, pixel);
   AddDirtyRegion(x, y, width, height);
-  dirty_ = true;
   return true;
 }
 
 bool VulkanStaticWriteTexture::DoSet(int x, int y, int width, int height,
                                      const void* pixels, int stride) {
-  if (dirty_) {
-    CopyRegion(host_buffer_->GetData(), x, y, width, height, pixels, stride);
-    AddDirtyRegion(x, y, width, height);
-    return true;
-  }
-
-  host_buffer_ = CreateHostBuffer();
-  if (host_buffer_ == nullptr) {
+  if (!PrepForWrite(x, y, width, height)) {
     return false;
   }
-
-  if (FrameInUse(render_frame_)) {
-    if (x != 0 || y != 0 || width != GetWidth() || height != GetHeight()) {
-      host_buffer_.reset();
-      return false;
-    }
-
-    auto image = CreateImage();
-    if (image == nullptr) {
-      host_buffer_.reset();
-      return false;
-    }
-    image_ = std::move(image);
-    SetAllImageHandles(image_.get());
-    render_frame_ = kNeverUsedFrame;
-  }
-
   CopyRegion(host_buffer_->GetData(), x, y, width, height, pixels, stride);
   AddDirtyRegion(x, y, width, height);
-  dirty_ = true;
   return true;
 }
 
@@ -141,7 +130,7 @@ void VulkanStaticWriteTexture::OnEditEnd(bool modified) {}
 void VulkanStaticWriteTexture::DoRender(VulkanRenderState* state) {
   render_frame_ = state->frame;
 
-  if (!dirty_) {
+  if (host_buffer_ == nullptr) {
     return;
   }
 
@@ -152,7 +141,6 @@ void VulkanStaticWriteTexture::DoRender(VulkanRenderState* state) {
   }
   host_buffer_.reset();
   dirty_regions_.clear();
-  dirty_ = false;
 }
 
 void VulkanStaticWriteTexture::AddDirtyRegion(int x, int y, int width,
@@ -174,14 +162,11 @@ void VulkanStaticWriteTexture::AddDirtyRegion(int x, int y, int width,
   // Remove any regions fully contained in this region.
   auto end = std::remove_if(dirty_regions_.begin(), dirty_regions_.end(),
                             [x, y, width, height](const DirtyRegion& region) {
-                              return region.x >= x && region.y <= y &&
+                              return region.x >= x && region.y >= y &&
                                      region.x + region.width <= x + width &&
                                      region.y + region.height <= y + height;
                             });
-  if (end != dirty_regions_.end()) {
-    dirty_regions_.resize(end - dirty_regions_.begin());
-  }
-
+  dirty_regions_.erase(end, dirty_regions_.end());
   dirty_regions_.emplace_back(x, y, width, height);
 }
 
@@ -211,7 +196,10 @@ class VulkanStaticReadWriteTexture final : public VulkanTexture {
   ~VulkanStaticReadWriteTexture() override;
 
   bool EnsureHostBufferIsWritable(bool copy_contents);
-  bool EnsureImageIsWritable();
+
+  // Adds a region to upload. If the image is in use it is replaced, and every
+  // pixel is uploaded to the new one.
+  bool MarkDirty(int x, int y, int width, int height);
 
   bool was_dirty_ = false;
   bool dirty_ = false;
@@ -241,21 +229,10 @@ bool VulkanStaticReadWriteTexture::DoClear(int x, int y, int width, int height,
       !EnsureHostBufferIsWritable(copy_contents)) {
     return false;
   }
-  ClearRegion(host_buffer_->GetData(), x, y, width, height, pixel);
-
-  if (dirty_) {
-    // TODO: If performance warrants it, we could maintain a list of
-    //       non-intersecting regions to update instead of just unioning all
-    //       regions together.
-    UnionDirtyRegion(&dirty_region_, x, y, width, height);
-    return true;
-  }
-
-  if (!EnsureImageIsWritable()) {
+  if (!MarkDirty(x, y, width, height)) {
     return false;
   }
-  dirty_ = true;
-  dirty_region_ = {x, y, width, height};
+  ClearRegion(host_buffer_->GetData(), x, y, width, height, pixel);
   return true;
 }
 
@@ -266,21 +243,10 @@ bool VulkanStaticReadWriteTexture::DoSet(int x, int y, int width, int height,
       !EnsureHostBufferIsWritable(copy_contents)) {
     return false;
   }
-  CopyRegion(host_buffer_->GetData(), x, y, width, height, pixels, stride);
-
-  if (dirty_) {
-    // TODO: If performance warrants it, we could maintain a list of
-    //       non-intersecting regions to update instead of just unioning all
-    //       regions together.
-    UnionDirtyRegion(&dirty_region_, x, y, width, height);
-    return true;
-  }
-
-  if (!EnsureImageIsWritable()) {
+  if (!MarkDirty(x, y, width, height)) {
     return false;
   }
-  dirty_ = true;
-  dirty_region_ = {x, y, width, height};
+  CopyRegion(host_buffer_->GetData(), x, y, width, height, pixels, stride);
   return true;
 }
 
@@ -301,11 +267,7 @@ void VulkanStaticReadWriteTexture::OnEditEnd(bool modified) {
     dirty_ = was_dirty_;
     return;
   }
-  if (!EnsureImageIsWritable()) {
-    return;
-  }
-  dirty_ = true;
-  dirty_region_ = {0, 0, GetWidth(), GetHeight()};
+  MarkDirty(0, 0, GetWidth(), GetHeight());
 }
 
 void VulkanStaticReadWriteTexture::DoRender(VulkanRenderState* state) {
@@ -342,20 +304,33 @@ bool VulkanStaticReadWriteTexture::EnsureHostBufferIsWritable(
   return true;
 }
 
-bool VulkanStaticReadWriteTexture::EnsureImageIsWritable() {
-  if (!FrameInUse(render_frame_)) {
+bool VulkanStaticReadWriteTexture::MarkDirty(int x, int y, int width,
+                                             int height) {
+  if (dirty_) {
+    // TODO: If performance warrants it, we could maintain a list of
+    //       non-intersecting regions to update instead of just unioning all
+    //       regions together.
+    UnionDirtyRegion(&dirty_region_, x, y, width, height);
     return true;
   }
 
-  auto image = CreateImage();
-  if (image == nullptr) {
-    return false;
-  }
-  image_ = std::move(image);
-  SetAllImageHandles(image_.get());
+  if (FrameInUse(render_frame_)) {
+    auto image = CreateImage();
+    if (image == nullptr) {
+      return false;
+    }
+    image_ = std::move(image);
+    SetAllImageHandles(image_.get());
 
-  // This image has never been rendererd.
-  render_frame_ = kNeverUsedFrame;
+    // This image has never been rendered, and needs every pixel.
+    render_frame_ = kNeverUsedFrame;
+    x = 0;
+    y = 0;
+    width = GetWidth();
+    height = GetHeight();
+  }
+  dirty_ = true;
+  dirty_region_ = {x, y, width, height};
   return true;
 }
 
@@ -554,7 +529,13 @@ void VulkanTexture::UpdateImage(VulkanRenderState* state,
       GetWidth(), GetHeight(),
       /*image_layer=*/0, region.x, region.y, region.width, region.height);
   if (update_mips) {
-    state->image_barriers.emplace_back(image->Get(), mip_levels_);
+    // A texture updated in several regions has none that covers the whole
+    // texture, as that region would contain the others.
+    const bool keep_contents = region.x != 0 || region.y != 0 ||
+                               region.width != GetWidth() ||
+                               region.height != GetHeight();
+    state->image_barriers.emplace_back(image, mip_levels_, /*layer=*/0,
+                                       keep_contents);
   }
   if (!update_mips || mip_levels_ == 1) {
     return;
@@ -607,10 +588,8 @@ void VulkanTexture::UpdateImage(VulkanRenderState* state,
 void VulkanTexture::ClearRegion(void* buffer, int x, int y, int width,
                                 int height, Pixel pixel) {
   Pixel* dst = static_cast<Pixel*>(buffer) + (y * GetWidth() + x);
-  for (int y = 0; y < height; ++y) {
-    for (int x = 0; x < width; ++x) {
-      dst[x] = pixel;
-    }
+  for (int row = 0; row < height; ++row) {
+    std::fill_n(dst, width, pixel);
     dst += GetWidth();
   }
 }
@@ -619,7 +598,7 @@ void VulkanTexture::CopyRegion(void* buffer, int x, int y, int width,
                                int height, const void* pixels, int stride) {
   Pixel* dst = static_cast<Pixel*>(buffer) + (y * GetWidth() + x);
   const Pixel* src = static_cast<const Pixel*>(pixels);
-  if (stride == width) {
+  if (stride == width && width == GetWidth()) {
     std::memcpy(dst, src, width * height * sizeof(Pixel));
     return;
   }
