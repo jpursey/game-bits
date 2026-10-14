@@ -63,6 +63,35 @@ have `FileSystem::WriteFile()` check it. Fakes cover `File`
 (`TestProtocol::FileState::fail_write_after`); a real write failure can't be
 made in a unit test, so `LocalFile` is checked by hand.
 
+## Local file protocol rooted at a path
+
+- **Layers:** file
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Requested by:** JPRSurf *Write files through gb::FileSystem*
+- **Background:** `LocalFileProtocol::Create()` and `CreateTemp()` in
+  `local_file_protocol.h`
+
+Code that already has a folder as a `std::filesystem::path` roots a
+`LocalFileProtocol` there through a `Context`, converting the path to UTF-8
+itself:
+
+    LocalFileProtocol::Create(
+        ContextBuilder()
+            .SetValue<std::string>(LocalFileProtocol::kKeyRoot,
+                                   ToUtf8(folder.generic_u16string()))
+            .Build());
+
+Every caller repeats this, and it is easy to get subtly wrong: `ToUtf8()`
+returns an empty string for a path that isn't valid UTF-16, and an empty root
+is the current directory, so the files go there instead of the protocol failing
+to be created. Add a convenience `Create()` that takes the root as a
+`std::filesystem::path`, as `CreateTemp()` is a convenience for a temp folder.
+It converts the path the way the protocol already converts the paths it lists
+(the file-local `ToString()` in `local_file_protocol.cc`), and returns null for
+a path that doesn't convert, with a test of that case.
+
 ## Re-read user tokens keep their capture
 
 - **Layers:** parse
