@@ -6,8 +6,11 @@
 #ifndef GB_RENDER_SHADER_CODE_H_
 #define GB_RENDER_SHADER_CODE_H_
 
+#include <cstdint>
+#include <utility>
+#include <vector>
+
 #include "gb/render/render_types.h"
-#include "gb/resource/resource.h"
 
 namespace gb {
 

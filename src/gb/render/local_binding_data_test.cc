@@ -5,6 +5,9 @@
 
 #include "gb/render/local_binding_data.h"
 
+#include <memory>
+#include <vector>
+
 #include "gb/render/binding_data.h"
 #include "gb/render/render_test.h"
 #include "gb/render/test_binding_data.h"
@@ -15,6 +18,7 @@ namespace gb {
 namespace {
 
 using ::testing::Contains;
+using ::testing::ElementsAre;
 
 class LocalBindingDataTest : public RenderTest {};
 
@@ -213,6 +217,37 @@ TEST_F(LocalBindingDataTest, CopyConstruction) {
   src_binding_data.GetConstants(2, &constants);
   EXPECT_EQ(constants.x, 1.0f);
   EXPECT_EQ(constants.y, 2.0f);
+
+  // The copy has its own data.
+  dst_binding_data.SetConstants(2, Vector2{3.0f, 4.0f});
+  dst_binding_data.SetTexture(0, nullptr);
+  src_binding_data.GetConstants(2, &constants);
+  EXPECT_EQ(constants.x, 1.0f);
+  EXPECT_EQ(constants.y, 2.0f);
+  EXPECT_EQ(src_binding_data.GetTexture(0), texture_0.Get());
+}
+
+TEST_F(LocalBindingDataTest, CopyOutlivesSource) {
+  CreateSystem();
+  auto constant_type = render_system_->RegisterConstantsType<Vector2>("2");
+  ASSERT_NE(constant_type, nullptr);
+  auto src_binding_data = std::make_unique<LocalBindingData>(
+      GetAccessToken(), BindingSet::kScene,
+      std::vector<Binding>{Binding()
+                               .SetShaders(ShaderType::kVertex)
+                               .SetLocation(BindingSet::kScene, 0)
+                               .SetConstants(constant_type)});
+  src_binding_data->SetConstants(0, Vector2{1.0f, 2.0f});
+  LocalBindingData dst_binding_data(GetAccessToken(), *src_binding_data);
+
+  // Overwrite the source's memory before freeing it, so a copy that still
+  // used it reads something else.
+  src_binding_data->SetConstants(0, Vector2{5.0f, 5.0f});
+  src_binding_data.reset();
+  Vector2 constants = {};
+  dst_binding_data.GetConstants(0, &constants);
+  EXPECT_EQ(constants.x, 1.0f);
+  EXPECT_EQ(constants.y, 2.0f);
 }
 
 TEST_F(LocalBindingDataTest, CopyTo) {
@@ -271,6 +306,24 @@ TEST_F(LocalBindingDataTest, CopyTo) {
   dst_binding_data.GetConstants(2, &constants_2);
   EXPECT_EQ(constants_2.x, 1.0f);
   EXPECT_EQ(constants_2.y, 2.0f);
+}
+
+TEST_F(LocalBindingDataTest, TextureArrays) {
+  CreateSystem();
+  auto texture_array = render_system_->CreateTextureArray(
+      DataVolatility::kStaticWrite, 2, 16, 16);
+  ASSERT_NE(texture_array, nullptr);
+  LocalBindingData binding_data(GetAccessToken(), BindingSet::kScene,
+                                {Binding()
+                                     .SetShaders(ShaderType::kFragment)
+                                     .SetLocation(BindingSet::kScene, 1)
+                                     .SetTextureArray()});
+
+  binding_data.SetTextureArray(1, texture_array.Get());
+  EXPECT_EQ(binding_data.GetTextureArray(1), texture_array.Get());
+  ResourceDependencyList dependencies;
+  binding_data.GetDependencies(&dependencies);
+  EXPECT_THAT(dependencies, ElementsAre(texture_array.Get()));
 }
 
 }  // namespace

@@ -6,6 +6,7 @@
 #ifndef GB_RENDER_TEST_SHADER_CODE_H_
 #define GB_RENDER_TEST_SHADER_CODE_H_
 
+#include "gb/render/render_types.h"
 #include "gb/render/shader_code.h"
 
 namespace gb {

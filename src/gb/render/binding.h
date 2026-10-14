@@ -6,11 +6,6 @@
 #ifndef GB_RENDER_BINDING_H_
 #define GB_RENDER_BINDING_H_
 
-#include <tuple>
-#include <vector>
-
-#include "gb/base/type_info.h"
-#include "gb/render/render_assert.h"
 #include "gb/render/render_types.h"
 
 namespace gb {
@@ -52,9 +47,9 @@ struct Binding {
   // Sets the location within shaders that use this binding.
   //
   // The binding set is one of kScene, kMaterial, or kInstance which determines
-  // where the associated data can be modified and it scope.
+  // where the associated data can be modified and its scope.
   //
-  // The binding index is an arbtrary index that must be within the range [0,
+  // The binding index is an arbitrary index that must be within the range [0,
   // kMaxBindingIndex]. Binding indexes do *not* need to be sequential or
   // packed, but it is best to keep the indices near zero as some space may
   // still be required for unused indices less than the max index defined.
@@ -72,15 +67,15 @@ struct Binding {
   // binding if it is accessed by a shader.
   Binding& SetTextureArray();
 
-  // Sets the binding to be a constants structure/
+  // Sets the binding to be a constants structure.
   //
   // Constants are defined by registering a C++ type that conforms to the
   // underlying graphics API specifications with the RenderSystem via
   // RenderSystem::RegisterConstantsType.
   //
   // Volatility specifies whether the data is readable and how often it is
-  // likely to be updated by the application. Choosing this correctly may has an
-  // effect on both speed and space requirements. See DataVolatility for more
+  // likely to be updated by the application. Choosing this correctly may have
+  // an effect on both speed and space requirements. See DataVolatility for more
   // information on these.
   //
   // The actual constants in BindingData using this binding will by default be
@@ -115,8 +110,6 @@ struct Binding {
   int index = 0;
 
   // Defines the type of binding.
-  //
-  // Each binding type may have
   BindingType binding_type = BindingType::kNone;
 
   // If the type is kConstants, this must specify a previously registered
@@ -180,7 +173,7 @@ inline bool Binding::IsValid() const {
           volatility == DataVolatility::kStaticWrite) &&
          (set == BindingSet::kScene || set == BindingSet::kMaterial ||
           set == BindingSet::kInstance) &&
-         (index >= 0 && index < kMaxBindingIndex);
+         (index >= 0 && index <= kMaxBindingIndex);
 }
 
 inline bool Binding::IsCompatible(const Binding& other) const {

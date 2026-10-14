@@ -6,6 +6,8 @@
 #ifndef GB_RENDER_DRAW_LIST_H_
 #define GB_RENDER_DRAW_LIST_H_
 
+#include <cstdint>
+#include <limits>
 #include <vector>
 
 #include "gb/render/render_types.h"
@@ -57,7 +59,7 @@ struct DrawCommand {
   };
 };
 
-// This class defines an ordered list of drawing commands wich may be passed to
+// This class defines an ordered list of drawing commands which may be passed to
 // the render system.
 //
 // A draw list only remains valid if the mesh or resources added to it remain
@@ -127,7 +129,7 @@ class DrawList final {
 
   // Sets the scissor rectangle for subsequent draw commands.
   //
-  // These are in pixels and are clipped to the current frame dimensions.
+  // These are in pixels, and must be in the range [0, 65535].
   void SetScissor(int x, int y, int width, int height);
 
   //----------------------------------------------------------------------------
@@ -138,6 +140,9 @@ class DrawList final {
   void Draw();
 
   // Draws a partial mesh.
+  //
+  // "first_vertex" is added to each index, and must be in the range
+  // [0, 65535].
   void DrawPartial(int first_triangle, int triangle_count,
                    int first_vertex = 0);
 
@@ -153,6 +158,11 @@ class DrawList final {
   }
 
  private:
+  // Returns true if the value fits in the 16 bit fields of DrawCommand.
+  static bool FitsUint16(int value) {
+    return value >= 0 && value <= std::numeric_limits<uint16_t>::max();
+  }
+
   MaterialType* current_material_type_ = nullptr;
   BindingData* current_instance_data_ = nullptr;
   Mesh* current_mesh_ = nullptr;

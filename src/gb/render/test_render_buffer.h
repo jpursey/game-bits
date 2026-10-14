@@ -7,6 +7,7 @@
 #define GB_RENDER_TEST_RENDER_BUFFER_H_
 
 #include "gb/render/render_buffer.h"
+#include "gb/render/render_types.h"
 
 namespace gb {
 

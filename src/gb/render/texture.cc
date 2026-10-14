@@ -5,21 +5,33 @@
 
 #include "gb/render/texture.h"
 
+#include <cstdint>
+#include <memory>
+
+#include "absl/log/check.h"
 #include "absl/log/log.h"
 
 namespace gb {
 
+Texture::~Texture() {
+  CHECK(!editing_) << "Texture deleted while an ImageView is active";
+}
+
 bool Texture::Clip(int* x, int* y, int* width, int* height,
                    const void** pixels) {
+  // The ends are computed in 64 bits, as the region may be as large as an int
+  // allows.
+  const int64_t end_x = int64_t{*x} + *width;
+  const int64_t end_y = int64_t{*y} + *height;
   if (*x >= width_ || *y >= height_ || *width <= 0 || *height <= 0 ||
-      *x + *width <= 0 || *y + *height <= 0) {
+      end_x <= 0 || end_y <= 0) {
     return true;
   }
   const int stride = *width;
-  if (*x + *width > width_) {
+  if (end_x > width_) {
     *width = width_ - *x;
   }
-  if (*y + *height > height_) {
+  if (end_y > height_) {
     *height = height_ - *y;
   }
   if (*x < 0) {
@@ -31,7 +43,7 @@ bool Texture::Clip(int* x, int* y, int* width, int* height,
   }
   if (*y < 0) {
     if (pixels != nullptr) {
-      *pixels = static_cast<const Pixel*>(*pixels) - (*y * stride);
+      *pixels = static_cast<const Pixel*>(*pixels) - int64_t{*y} * stride;
     }
     *height += *y;
     *y = 0;
@@ -81,7 +93,8 @@ bool Texture::SetRegion(int x, int y, int width, int height, const void* pixels,
   if (width <= 0 || height <= 0) {
     return true;
   }
-  if (size_in_bytes < width * height * sizeof(Pixel)) {
+  if (static_cast<int64_t>(size_in_bytes) <
+      int64_t{width} * height * static_cast<int64_t>(sizeof(Pixel))) {
     LOG(ERROR) << "Failed to set pixels, as provided buffer is too small";
     return false;
   }

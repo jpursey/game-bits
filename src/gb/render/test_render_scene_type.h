@@ -7,6 +7,7 @@
 #define GB_RENDER_TEST_RENDER_SCENE_TYPE_H_
 
 #include "gb/render/render_scene_type.h"
+#include "gb/render/render_types.h"
 
 namespace gb {
 

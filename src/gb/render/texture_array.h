@@ -6,16 +6,24 @@
 #ifndef GB_RENDER_TEXTURE_ARRAY_H_
 #define GB_RENDER_TEXTURE_ARRAY_H_
 
+#include <cstddef>
+#include <cstdint>
+#include <utility>
+#include <vector>
+
 #include "absl/types/span.h"
+#include "gb/image/pixel.h"
+#include "gb/render/render_types.h"
 #include "gb/render/sampler_options.h"
 #include "gb/resource/resource.h"
 
 namespace gb {
 
-// A texture defines a 2D image of RGBA pixels accessible by the graphics card.
+// A texture array defines an array of 2D images of RGBA pixels, all the same
+// size, accessible by the graphics card.
 //
-// Textures are bound to shaders via binding data (see BindingData), and can
-// also be changed or edited depending on its data volatility.
+// Texture arrays are bound to shaders via binding data (see BindingData), and
+// can also be changed depending on their data volatility.
 //
 // This class and all derived classes must be thread-compatible.
 class TextureArray : public Resource {
@@ -24,19 +32,18 @@ class TextureArray : public Resource {
   // Properties
   //----------------------------------------------------------------------------
 
-  // Returns the data volatility for the vertices, specifying how often it is
+  // Returns the data volatility for the pixels, specifying how often they are
   // likely to be edited and the relative memory overhead of doing so.
   DataVolatility GetVolatility() const { return volatility_; }
 
   // Returns the number of textures in the array.
   int GetCount() const { return count_; }
 
-  // Returns the current width and height in pixels. This may be changed by
-  // calling Set.
+  // Returns the width and height in pixels.
   int GetWidth() const { return width_; }
   int GetHeight() const { return height_; }
 
-  // Returns the sampler options used with this texture.
+  // Returns the sampler options used with this texture array.
   const SamplerOptions& GetSamplerOptions() const { return options_; }
 
   //----------------------------------------------------------------------------
@@ -57,7 +64,8 @@ class TextureArray : public Resource {
 
   // Reads the entirety of a texture into a provided buffer.
   //
-  // This will always fail for texture arrays with kStaticWrite volatility.
+  // This will always fail for texture arrays with kStaticWrite volatility. A
+  // vector passed in is left unchanged for an invalid index or volatility.
   bool Get(int index, std::vector<Pixel>& out_pixels);
   bool Get(int index, std::vector<uint32_t>& out_pixels);
   bool Get(int index, void* out_pixels, size_t size_in_bytes);
@@ -102,6 +110,10 @@ class TextureArray : public Resource {
   virtual bool DoGet(int index, void* out_pixels) = 0;
 
  private:
+  // Returns true if the texture at the index can be read, logging why not if it
+  // can't.
+  bool CanGet(int index) const;
+
   const DataVolatility volatility_;
   const int count_;
   const int width_;
@@ -122,13 +134,19 @@ inline bool TextureArray::Set(int index, absl::Span<const uint32_t> pixels) {
 }
 
 inline bool TextureArray::Get(int index, std::vector<Pixel>& out_pixels) {
+  if (!CanGet(index)) {
+    return false;
+  }
   out_pixels.resize(width_ * height_);
-  return Get(index, out_pixels.data(), out_pixels.size() * sizeof(Pixel));
+  return DoGet(index, out_pixels.data());
 }
 
 inline bool TextureArray::Get(int index, std::vector<uint32_t>& out_pixels) {
+  if (!CanGet(index)) {
+    return false;
+  }
   out_pixels.resize(width_ * height_);
-  return Get(index, out_pixels.data(), out_pixels.size() * sizeof(uint32_t));
+  return DoGet(index, out_pixels.data());
 }
 
 }  // namespace gb

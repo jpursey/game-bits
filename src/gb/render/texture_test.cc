@@ -5,6 +5,9 @@
 
 #include "gb/render/texture.h"
 
+#include <limits>
+#include <vector>
+
 #include "gb/render/render_test.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -577,7 +580,7 @@ TEST_F(TextureTest, EditPreventsModification) {
   EXPECT_FALSE(
       texture->Set(MakePackedPixels(kTextureWidth * kTextureHeight, {})));
   auto pixels = MakePixels(kTextureWidth * kTextureHeight, {});
-  EXPECT_FALSE(texture->Set(pixels.data(), pixels.size()));
+  EXPECT_FALSE(texture->Set(pixels.data(), pixels.size() * sizeof(Pixel)));
   EXPECT_FALSE(texture->ClearRegion(0, 0, 1, 1));
   EXPECT_FALSE(texture->ClearRegion(0, 0, 1, 1, Pixel(1, 2, 3, 4)));
   EXPECT_FALSE(texture->ClearRegion(0, 0, 1, 1, 0xdeadbeef));
@@ -618,6 +621,113 @@ TEST_F(TextureTest, FailEdit) {
   EXPECT_EQ(state_.invalid_call_count, 0);
   EXPECT_EQ(test_texture->GetInvalidCallCount(), 0);
   EXPECT_EQ(test_texture->GetModifyCount(), 0);
+}
+
+TEST_F(TextureTest, Edit) {
+  CreateSystem();
+  auto texture = render_system_->CreateTexture(DataVolatility::kStaticReadWrite,
+                                               kTextureWidth, kTextureHeight);
+  ASSERT_NE(texture, nullptr);
+  auto* test_texture = static_cast<TestTexture*>(texture.Get());
+  ASSERT_TRUE(texture->Clear());
+  const int modify_count = test_texture->GetModifyCount();
+
+  auto texture_view = texture->Edit();
+  ASSERT_NE(texture_view, nullptr);
+  EXPECT_EQ(texture_view->GetWidth(), kTextureWidth);
+  EXPECT_EQ(texture_view->GetHeight(), kTextureHeight);
+  texture_view->Modify(3, 5) = Pixel(1, 2, 3, 4);
+  texture_view.reset();
+  EXPECT_EQ(test_texture->GetPixel(3, 5), Pixel(1, 2, 3, 4));
+  EXPECT_EQ(test_texture->GetModifyCount(), modify_count + 1);
+
+  // An unmodified view doesn't modify the texture, and once a view is gone the
+  // texture can be changed again.
+  texture_view = texture->Edit();
+  ASSERT_NE(texture_view, nullptr);
+  texture_view.reset();
+  EXPECT_EQ(test_texture->GetModifyCount(), modify_count + 1);
+  EXPECT_TRUE(texture->Clear());
+  EXPECT_EQ(test_texture->GetPixel(3, 5), Pixel(0, 0, 0, 0));
+
+  EXPECT_EQ(state_.invalid_call_count, 0);
+  EXPECT_EQ(test_texture->GetInvalidCallCount(), 0);
+}
+
+TEST_F(TextureTest, DeleteWhileEditing) {
+  EXPECT_DEATH(
+      {
+        CreateSystem();
+        auto texture = render_system_->CreateTexture(
+            DataVolatility::kStaticReadWrite, kTextureWidth, kTextureHeight);
+        auto texture_view = texture->Edit();
+        texture.Reset();
+      },
+      "ImageView is active");
+}
+
+TEST_F(TextureTest, ClearRegionWithLargeSize) {
+  CreateSystem();
+  auto texture = render_system_->CreateTexture(DataVolatility::kStaticReadWrite,
+                                               kTextureWidth, kTextureHeight);
+  ASSERT_NE(texture, nullptr);
+  auto* test_texture = static_cast<TestTexture*>(texture.Get());
+  ASSERT_TRUE(texture->Clear());
+
+  constexpr int kMaxInt = std::numeric_limits<int>::max();
+  EXPECT_TRUE(texture->ClearRegion(5, 2, kMaxInt, kMaxInt, Pixel(1, 2, 3, 4)));
+  EXPECT_THAT(
+      test_texture->GetPixelRegion(5, 2, kTextureWidth - 5, kTextureHeight - 2),
+      Each(Pixel(1, 2, 3, 4)));
+  EXPECT_THAT(test_texture->GetPixelRegion(0, 0, 5, kTextureHeight),
+              Each(Pixel(0, 0, 0, 0)));
+  EXPECT_THAT(test_texture->GetPixelRegion(0, 0, kTextureWidth, 2),
+              Each(Pixel(0, 0, 0, 0)));
+
+  EXPECT_EQ(state_.invalid_call_count, 0);
+  EXPECT_EQ(test_texture->GetInvalidCallCount(), 0);
+}
+
+TEST_F(TextureTest, SetRegionWithSizeTooLargeForBuffer) {
+  CreateSystem();
+  auto texture = render_system_->CreateTexture(DataVolatility::kStaticReadWrite,
+                                               kTextureWidth, kTextureHeight);
+  ASSERT_NE(texture, nullptr);
+  auto* test_texture = static_cast<TestTexture*>(texture.Get());
+  const int modify_count = test_texture->GetModifyCount();
+
+  // 65536 * 65536 pixels wraps to zero in 32 bits.
+  auto pixels = MakePixels(kTextureWidth * kTextureHeight, {});
+  EXPECT_FALSE(texture->SetRegion(0, 0, 65536, 65536, pixels.data(),
+                                  pixels.size() * sizeof(Pixel)));
+  EXPECT_EQ(test_texture->GetModifyCount(), modify_count);
+
+  EXPECT_EQ(state_.invalid_call_count, 0);
+  EXPECT_EQ(test_texture->GetInvalidCallCount(), 0);
+}
+
+TEST_F(TextureTest, SetRegionWithUnevenClipping) {
+  CreateSystem();
+  auto texture = render_system_->CreateTexture(DataVolatility::kStaticReadWrite,
+                                               kTextureWidth, kTextureHeight);
+  ASSERT_NE(texture, nullptr);
+  auto* test_texture = static_cast<TestTexture*>(texture.Get());
+  ASSERT_TRUE(texture->Clear());
+
+  // Only the bottom right 8x2 pixels of the 10x7 region are in the texture.
+  auto pixels = MakePixels(10 * 7, {0, 0, 0, 255}, {1, 0, 0, 0});
+  EXPECT_TRUE(texture->SetRegion(-2, -5, 10, 7, pixels));
+  for (int y = 0; y < 2; ++y) {
+    for (int x = 0; x < 8; ++x) {
+      EXPECT_EQ(test_texture->GetPixel(x, y), pixels[(y + 5) * 10 + x + 2])
+          << "x=" << x << ", y=" << y;
+    }
+  }
+  EXPECT_THAT(test_texture->GetPixelRegion(8, 0, kTextureWidth - 8, 2),
+              Each(Pixel(0, 0, 0, 0)));
+
+  EXPECT_EQ(state_.invalid_call_count, 0);
+  EXPECT_EQ(test_texture->GetInvalidCallCount(), 0);
 }
 
 }  // namespace

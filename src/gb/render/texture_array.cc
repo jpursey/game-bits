@@ -32,7 +32,7 @@ bool TextureArray::Set(int index, const void* pixels, size_t size_in_bytes) {
   return DoSet(index, pixels);
 }
 
-bool TextureArray::Get(int index, void* out_pixels, size_t size_in_bytes) {
+bool TextureArray::CanGet(int index) const {
   if (index < 0 || index >= count_) {
     LOG(ERROR) << "Invalid index for texture array Get: " << index
                << " (count is " << count_ << ").";
@@ -41,6 +41,13 @@ bool TextureArray::Get(int index, void* out_pixels, size_t size_in_bytes) {
   if (volatility_ == DataVolatility::kStaticWrite) {
     LOG(ERROR)
         << "Texture array cannot be read as its volatility is kStaticWrite";
+    return false;
+  }
+  return true;
+}
+
+bool TextureArray::Get(int index, void* out_pixels, size_t size_in_bytes) {
+  if (!CanGet(index)) {
     return false;
   }
   if (size_in_bytes < width_ * height_ * sizeof(Pixel)) {

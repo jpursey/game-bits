@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "absl/types/span.h"
+#include "gb/render/render_types.h"
 #include "gb/render/texture.h"
 
 namespace gb {

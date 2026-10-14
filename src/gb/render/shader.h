@@ -55,7 +55,7 @@ class Shader final : public Resource {
         inputs_(inputs.begin(), inputs.end()),
         outputs_(outputs.begin(), outputs.end()) {}
 
- protected:
+ private:
   ~Shader() override = default;
 
   const ShaderType type_;

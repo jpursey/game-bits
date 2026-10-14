@@ -971,21 +971,141 @@ Depends on: CL12.
     small for its struct, and a missing unnamed dependency.
   - `ResourcePtr` comparison.
 
-### CL22 [ ] render: audit gb_render
+### CL22 [x] render: audit the gb_render resource classes
 
 Depends on: CL21.
 
-### CL23 [ ] render: audit gb_render_vulkan and gb_render_vulkan_sdl
+Everything in `gb_render` except `RenderSystem`: textures, meshes, render
+buffers, bindings and binding data, materials, scene types, and the draw list.
+
+- `LocalBindingData` never recorded its buffer size, so a copy kept pointing
+  at its source's buffer. Every `Material` copies its material type's default
+  instance data this way, so setting one material's defaults changed its
+  type's and every other material's, and a copy that outlived its source read
+  freed memory. Values were also packed without alignment, so a texture after
+  a `Vector3` was read through a misaligned pointer. Each value is now stored
+  by its offset into a `std::vector<uint8_t>` rather than a pointer, so a copy
+  is a plain copy, and is only accessed with `memcpy`.
+- `MeshView`:
+  - The triangle `Set`, `Add`, and `Remove` functions returned index counts,
+    not the triangle counts their comments promise. They now count triangles
+    throughout, so indices that aren't a multiple of three (with render
+    asserts off) no longer leave a partial triangle.
+  - `RemoveVertices()` and `RemoveTriangles()` shifted the remaining data with
+    `memcpy` between overlapping ranges, which is undefined behavior (MSVC's
+    `memcpy` happens to handle it). They now use `memmove`.
+  - `AddTriangles()` of indices didn't assert a multiple of three, as
+    `SetTriangles()` does.
+- `Mesh::Set()` didn't apply the 65535 vertex limit that `CreateMesh` does
+  (indices are 16 bits). It is now `kMaxMeshVertices`, and `Set()` fails past
+  it.
+- `Texture`:
+  - `SetRegion()` checked the buffer size with `width * height` in `int`,
+    which wraps for large regions (65536 x 65536 is 0), so a small buffer
+    passed and was read far past its end.
+  - Clipping added the region's position and size in `int`, so a region as
+    large as an `int` allows (meaning "to the edge") overflowed and cleared or
+    set nothing. The source offset for clipped rows is also 64 bit now.
+- `TextureArray::Get()` into a vector resized the vector before checking the
+  index, leaving it resized on failure.
+- Deleting a texture or mesh while an `ImageView` or `MeshView` of it was
+  active left the view writing to freed memory when it was destroyed. The
+  texture and render buffer destructors now `CHECK` that no view is active.
+- `DrawList::SetMaterialData()` and `SetInstanceData()` asserted
+  `type != nullptr || type->...`, so with a material set they never checked
+  the pipeline, and without one they dereferenced null instead of failing the
+  assert. `SetScissor()` and `DrawPartial()` now assert their values fit the
+  16 bit fields they're stored in, and `SetScissor()`'s comment no longer
+  claims clipping.
+- `Binding::IsValid()` rejected `kMaxBindingIndex`, which its comment
+  includes.
+- `RENDER_ASSERT` used an `if` without braces, and its enabled flag was a plain
+  `bool` read from render threads; it is now atomic and named `g_`.
+- `render_backend.h`'s include guard was `GB_RENDER_GB_RENDER_BACKEND_H_`.
+  Every header now includes `render_types.h`, unused includes were removed
+  (`mesh.h` no longer includes `material.h` or `binding_data.h`), and missing
+  ones added. `Mesh` declared an undefined `DoEdit()`. `Shader`, a `final`
+  class, had `protected` members.
+- Comments: the texture classes described "vertices" and widths that "may be
+  changed by calling Set", `TextureArray`'s class comment was `Texture`'s, and
+  typos throughout.
+- Tests: `TestBindingData` couldn't hold texture arrays (it `LOG(FATAL)`ed),
+  a texture test passed a pixel count as a byte size, a render buffer test
+  used `sizeof(kValueSize)` for `kValueSize`, and texture clipping was only
+  tested symmetrically, so swapped x and y would pass.
+- Left as is:
+  - The `memmove`, misaligned read, and `DrawList` assert fixes have no failing
+    tests: MSVC's `memcpy` handles overlap, x64 handles misaligned reads, and
+    render asserts are off in tests (they `assert`). Making render asserts
+    testable is the backlog item *Testable render asserts*.
+  - `Texture` and `TextureArray` take sizes as `size_t`, and
+    `TextureArray::Get()` takes its vector by reference; changing either
+    changes their public API.
+  - `Binding::IsCompatible()` compares constants types by pointer, while
+    `operator==` compares their `TypeKey`.
+
+**Verify**
+- Standard checks.
+- Unit tests:
+  - A `LocalBindingData` copy has its own data and outlives its source, and a
+    material's default instance data is its own.
+  - Triangle `Set`, `Add`, and `Remove` return triangle counts, including when
+    clipped to the capacity.
+  - `Mesh::Set()` past `kMaxMeshVertices` fails.
+  - `SetRegion()` too large for its buffer fails, `ClearRegion()` with the
+    largest size clears to the edges, uneven clipping, and a full `Edit()`
+    round trip.
+  - `TextureArray` invalid indexes, leaving the vector unchanged.
+  - Deleting a texture or mesh while it is being edited fails a `CHECK`
+    (death tests).
+  - `Binding` index range and `Combine()`, and texture arrays in binding data
+    and their dependencies.
+
+### CL23 [ ] render: audit RenderSystem
 
 Depends on: CL22.
 
-### CL24 [ ] imgui: audit gb_imgui and gb_imgui_sdl
+`RenderSystem`'s create, load, and save paths. Found while auditing CL22:
+- `DoCreateMaterialType()` merges a binding shared by the scene and shaders
+  into `mapped_bindings`, but passes the unmerged `all_bindings` to the
+  pipeline and material type, losing shader stages and volatility.
+- `ReadBindingData()` matches constants by index only, ignoring the set (a
+  scene texture and material constants at the same index crash), and only
+  logs a size mismatch before copying the wrong size. `ReadBindings()` accepts
+  unresolved constants types and invalid bindings.
+- `MaterialTypeChunk` has no depth test or raster mode, so they reload as the
+  defaults. The flat buffer `ShaderValue` enum is missing most values.
+- Scene type defaults are never applied: `CreateScene()` doesn't copy them
+  (though `RenderBackend` says it does), and material types don't start from
+  them.
+- `CreateMaterial()` makes a material whose material binding data failed to
+  be created, which `Material::GetResourceDependencies()` dereferences.
+- Load paths that fail after creating a resource leave it in the system, so
+  a retry finds it. `LoadShaderChunk()` creates shader code without its data
+  in edit mode. `LoadTextureArrayChunk()` logs a bad count or pixel total but
+  continues, and its size math overflows. `LoadMeshChunk()` and
+  `LoadMaterialChunk()` don't validate their data. `LoadTextureFile()`
+  doesn't check the image size. `ValidateMaterialTypeArguments()` doesn't
+  reject a negative location.
+- `CreateMesh()` checks its own 65535 vertex limit rather than
+  `kMaxMeshVertices`.
+- `kMaxTextureWidth` and `kMaxTextureHeight` are 8096, a typo for 8192, and
+  two of the four checks reject the maximum itself. They are to be 8192,
+  inclusive.
+- `shader_test.cc` reuses moved-from shader code, so its invalid binding
+  tests fail for the wrong reason, and `FailCreate` never creates the system.
 
-Depends on: CL22.
+### CL24 [ ] render: audit gb_render_vulkan and gb_render_vulkan_sdl
 
-### CL25 [ ] all: final pass
+Depends on: CL23.
 
-Depends on: CL1 to CL24.
+### CL25 [ ] imgui: audit gb_imgui and gb_imgui_sdl
+
+Depends on: CL23.
+
+### CL26 [ ] all: final pass
+
+Depends on: CL1 to CL25.
 
 A pass over every library for conventions that hold across all of them, which
 the earlier CLs didn't check consistently:

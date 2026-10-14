@@ -7,16 +7,15 @@
 #define GB_RENDER_MESH_H_
 
 #include <algorithm>
+#include <cstdint>
 #include <memory>
 
 #include "absl/log/log.h"
 #include "absl/types/span.h"
-#include "gb/render/binding_data.h"
-#include "gb/render/material.h"
+#include "gb/base/type_info.h"
 #include "gb/render/mesh_view.h"
 #include "gb/render/render_assert.h"
 #include "gb/render/render_buffer.h"
-#include "gb/render/render_buffer_view.h"
 #include "gb/render/render_types.h"
 #include "gb/resource/resource.h"
 
@@ -34,7 +33,7 @@ namespace gb {
 class Mesh final : public Resource {
  public:
   //----------------------------------------------------------------------------
-  // Properies
+  // Properties
   //----------------------------------------------------------------------------
 
   // Returns the layout type for vertices in this mesh.
@@ -60,17 +59,18 @@ class Mesh final : public Resource {
   // Operations
   //----------------------------------------------------------------------------
 
-  // Sets vertices of the specified according to the vertex layout expected by
-  // the material.
+  // Replaces the vertices and triangles of the mesh. The vertices must be of
+  // the mesh's vertex type.
   //
   // If the number of vertices or indices or the associated minimum capacities
-  // exceeeds the current capacities of the mesh, they will be reallocated to
-  // accomodate the new sizes.
+  // exceed the current capacities of the mesh, they will be reallocated to
+  // accommodate the new sizes. The vertex capacity may not exceed
+  // kMaxMeshVertices.
   //
   // This returns false if the new mesh data could not be set, the vertex is the
-  // wrong type, or a MeshView is active. Under some circumscances, this may be
-  // an unrecoverable failure, in which case the vertex and triangle counts are
-  // reset to zero.
+  // wrong type, there are too many vertices, or a MeshView is active. Under
+  // some circumstances, this may be an unrecoverable failure, in which case the
+  // vertex and triangle counts are reset to zero.
   template <typename Vertex>
   bool Set(absl::Span<const Vertex> vertices,
            absl::Span<const uint16_t> indices, int min_vertex_capacity = 0,
@@ -88,9 +88,10 @@ class Mesh final : public Resource {
   // called.
   //
   // Only one MeshView may be active at any given time. If Edit is called again
-  // before the a previous MeshView is destructed, the resulting MeshView will
-  // be null. The MeshView will also be null if the mesh volatility is
-  // kStaticWrite.
+  // before a previous MeshView is destructed, the resulting MeshView will be
+  // null. The MeshView will also be null if the mesh volatility is
+  // kStaticWrite. The MeshView must be destroyed before the mesh is (deleting
+  // the mesh first is a CHECK failure).
   std::unique_ptr<MeshView> Edit();
 
   //----------------------------------------------------------------------------
@@ -114,7 +115,6 @@ class Mesh final : public Resource {
 
   bool DoSet(const void* vertex_data, int vertex_count, int vertex_capacity,
              const void* index_data, int index_count, int index_capacity);
-  bool DoEdit(std::unique_ptr<RenderBuffer>, std::unique_ptr<RenderBuffer>);
 
   RenderBackend* const backend_;
   const VertexType* const vertex_type_;

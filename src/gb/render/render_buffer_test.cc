@@ -143,21 +143,19 @@ TEST_F(RenderBufferTest, Set) {
 
   EXPECT_TRUE(render_buffer.Set(kData, 8));
   EXPECT_EQ(render_buffer.GetSize(), 8);
-  EXPECT_EQ(
-      std::memcmp(kData, test_render_buffer.GetData(), 8 * sizeof(kValueSize)),
-      0);
+  EXPECT_EQ(std::memcmp(kData, test_render_buffer.GetData(), 8 * kValueSize),
+            0);
   EXPECT_TRUE(test_render_buffer.CheckBytes(8 * kValueSize, kByteSize, 0xFF));
   EXPECT_EQ(test_render_buffer.GetModifyCount(), 1);
 
   EXPECT_TRUE(render_buffer.Set(kData + 8, 4));
   EXPECT_EQ(render_buffer.GetSize(), 4);
-  EXPECT_EQ(std::memcmp(kData + 8, test_render_buffer.GetData(),
-                        4 * sizeof(kValueSize)),
-            0);
+  EXPECT_EQ(
+      std::memcmp(kData + 8, test_render_buffer.GetData(), 4 * kValueSize), 0);
   EXPECT_EQ(
       std::memcmp(kData + 4,
                   static_cast<uint32_t*>(test_render_buffer.GetData()) + 4,
-                  4 * sizeof(kValueSize)),
+                  4 * kValueSize),
       0);
   EXPECT_TRUE(test_render_buffer.CheckBytes(8 * kValueSize, kByteSize, 0xFF));
   EXPECT_EQ(test_render_buffer.GetModifyCount(), 2);
@@ -165,13 +163,12 @@ TEST_F(RenderBufferTest, Set) {
   config.fail_set = true;
   EXPECT_FALSE(render_buffer.Set(kData, kCapacity));
   EXPECT_EQ(render_buffer.GetSize(), 4);
-  EXPECT_EQ(std::memcmp(kData + 8, test_render_buffer.GetData(),
-                        4 * sizeof(kValueSize)),
-            0);
+  EXPECT_EQ(
+      std::memcmp(kData + 8, test_render_buffer.GetData(), 4 * kValueSize), 0);
   EXPECT_EQ(
       std::memcmp(kData + 4,
                   static_cast<uint32_t*>(test_render_buffer.GetData()) + 4,
-                  4 * sizeof(kValueSize)),
+                  4 * kValueSize),
       0);
   EXPECT_TRUE(test_render_buffer.CheckBytes(8 * kValueSize, kByteSize, 0xFF));
   EXPECT_EQ(test_render_buffer.GetModifyCount(), 2);

@@ -6,7 +6,9 @@
 #ifndef GB_RENDER_BINDING_DATA_H_
 #define GB_RENDER_BINDING_DATA_H_
 
+#include "gb/base/type_info.h"
 #include "gb/render/binding.h"
+#include "gb/render/render_assert.h"
 #include "gb/render/render_types.h"
 #include "gb/render/texture.h"
 #include "gb/render/texture_array.h"
@@ -40,7 +42,7 @@ class BindingData {
   virtual ~BindingData() = default;
 
   //----------------------------------------------------------------------------
-  // Properies
+  // Properties
   //----------------------------------------------------------------------------
 
   // Returns the binding set this binding data is for.
@@ -117,6 +119,7 @@ class BindingData {
   // - BindingType::kConstants: "value" points to the actual constants type.
   // - BindingType::kTexture: "value" points to a Texture* (aka it is actually a
   //   Texture**).
+  // - BindingType::kTextureArray: "value" points to a TextureArray*.
   virtual void DoSet(int index, const void* value) = 0;
   virtual void DoGet(int index, void* value) const = 0;
 

@@ -6,14 +6,19 @@
 #ifndef GB_RENDER_RENDER_BUFFER_VIEW_H_
 #define GB_RENDER_RENDER_BUFFER_VIEW_H_
 
+#include <cstdint>
+
+#include "gb/render/render_assert.h"
 #include "gb/render/render_buffer.h"
+#include "gb/render/render_types.h"
 
 namespace gb {
 
 // This class implements an editable view on a render buffer.
 //
 // This is an internal class called by other render classes to access the
-// underlying graphics API and GPU.
+// underlying graphics API and GPU. The view must be destroyed before its
+// buffer is.
 //
 // This class is thread-compatible.
 class RenderBufferView final {
@@ -70,6 +75,7 @@ class RenderBufferView final {
   // The new size must not be larger than the buffer capacity. This does not
   // clear or alter the data in any way.
   void Resize(int new_size) {
+    RENDER_ASSERT(new_size >= 0 && new_size <= buffer_->capacity_);
     modified_ = modified_ || (new_size > size_);
     size_ = new_size;
   }

@@ -13,6 +13,7 @@
 #include "gb/file/file_system.h"
 #include "gb/render/material_config.h"
 #include "gb/render/render_system.h"
+#include "gb/render/render_types.h"
 #include "gb/render/sampler_options.h"
 #include "gb/render/test_render_backend.h"
 #include "gb/resource/resource_system.h"
@@ -108,7 +109,7 @@ inline void PrintTo(const Pixel& value, std::ostream* out) {
        << "}";
 }
 inline void PrintTo(const SamplerOptions& value, std::ostream* out) {
-  *out << "{ filter=" << value.filter << ", mimap=" << value.mipmap
+  *out << "{ filter=" << value.filter << ", mipmap=" << value.mipmap
        << ", addressing=";
   switch (value.address_mode) {
     case SamplerAddressMode::kRepeat:
@@ -124,7 +125,7 @@ inline void PrintTo(const SamplerOptions& value, std::ostream* out) {
       *out << "kClampBorder";
       break;
     default:
-      *out << static_cast<uint8_t>(value.address_mode);
+      *out << static_cast<int>(value.address_mode);
   }
   *out << ", border=";
   PrintTo(value.border, out);

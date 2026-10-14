@@ -5,6 +5,8 @@
 
 #include "gb/render/binding_data.h"
 
+#include <vector>
+
 #include "gb/render/render_test.h"
 #include "gb/render/test_binding_data.h"
 #include "gmock/gmock.h"
@@ -14,6 +16,7 @@ namespace gb {
 namespace {
 
 using ::testing::Contains;
+using ::testing::ElementsAre;
 
 class BindingDataTest : public RenderTest {};
 
@@ -122,6 +125,24 @@ TEST_F(BindingDataTest, GetDependencies) {
   EXPECT_EQ(dependencies.size(), 2);
   EXPECT_THAT(dependencies, Contains(texture_0.Get()));
   EXPECT_THAT(dependencies, Contains(texture_2.Get()));
+}
+
+TEST_F(BindingDataTest, TextureArrays) {
+  CreateSystem();
+  auto texture_array = render_system_->CreateTextureArray(
+      DataVolatility::kStaticWrite, 2, 16, 16);
+  ASSERT_NE(texture_array, nullptr);
+  const std::vector<Binding> bindings = {Binding()
+                                             .SetShaders(ShaderType::kFragment)
+                                             .SetLocation(BindingSet::kScene, 1)
+                                             .SetTextureArray()};
+  TestBindingData binding_data(nullptr, BindingSet::kScene, bindings);
+
+  binding_data.SetTextureArray(1, texture_array.Get());
+  EXPECT_EQ(binding_data.GetTextureArray(1), texture_array.Get());
+  ResourceDependencyList dependencies;
+  binding_data.GetDependencies(&dependencies);
+  EXPECT_THAT(dependencies, ElementsAre(texture_array.Get()));
 }
 
 }  // namespace

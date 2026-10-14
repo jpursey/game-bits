@@ -6,8 +6,15 @@
 #ifndef GB_RENDER_TEXTURE_H_
 #define GB_RENDER_TEXTURE_H_
 
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <utility>
+
 #include "absl/types/span.h"
 #include "gb/image/image_view.h"
+#include "gb/image/pixel.h"
+#include "gb/render/render_types.h"
 #include "gb/render/sampler_options.h"
 #include "gb/resource/resource.h"
 
@@ -25,12 +32,11 @@ class Texture : public Resource {
   // Properties
   //----------------------------------------------------------------------------
 
-  // Returns the data volatility for the vertices, specifying how often it is
+  // Returns the data volatility for the pixels, specifying how often they are
   // likely to be edited and the relative memory overhead of doing so.
   DataVolatility GetVolatility() const { return volatility_; }
 
-  // Returns the current width and height in pixels. This may be changed by
-  // calling Set.
+  // Returns the width and height in pixels.
   int GetWidth() const { return width_; }
   int GetHeight() const { return height_; }
 
@@ -98,9 +104,10 @@ class Texture : public Resource {
   // through an EditView, then this is not an issue.
   //
   // Only one ImageView may be active at any given time. If Edit is called
-  // again before the a previous ImageView is destructed, this will return
-  // null. The ImageView will also be null if the mesh volatility is
-  // kStaticWrite.
+  // again before a previous ImageView is destructed, this will return
+  // null. The ImageView will also be null if the texture volatility is
+  // kStaticWrite. The ImageView must be destroyed before the texture is
+  // (deleting the texture first is a CHECK failure).
   std::unique_ptr<ImageView> Edit();
 
  protected:
@@ -111,12 +118,12 @@ class Texture : public Resource {
         width_(width),
         height_(height),
         options_(options) {}
-  virtual ~Texture() = default;
+  virtual ~Texture();
 
   // Clear the texture with the specified color, returning true if the write was
   // begun successfully.
   //
-  // This will never be called if editing is process (DoEdit was called but
+  // This will never be called if editing is in progress (DoEdit was called but
   // OnEditEnd was not).
   //
   // If this returns true, and the texture is readable (it isn't kStaticWrite
@@ -129,7 +136,7 @@ class Texture : public Resource {
   // Write new data to the texture, returning true if the write was begun
   // successfully.
   //
-  // This will never be called if editing is process (DoEdit was called but
+  // This will never be called if editing is in progress (DoEdit was called but
   // OnEditEnd was not).
   //
   // If this returns true, and the texture is readable (it isn't kStaticWrite
@@ -143,7 +150,7 @@ class Texture : public Resource {
   // Return an editable pointer to the texture.
   //
   // This will never be called for kStaticWrite volatility textures, or if
-  // editing is already in process.
+  // editing is already in progress.
   //
   // This should return null on error. If this returns non-null, then the data
   // should be considered volatile and not be uploaded to the GPU until
@@ -159,7 +166,7 @@ class Texture : public Resource {
   virtual void OnEditEnd(bool modified) = 0;
 
  private:
-  // Returns true if the region is fully clipped, false width or height is
+  // Returns true if the region is fully clipped, false if width and height are
   // greater than zero after clipping.
   bool Clip(int* x, int* y, int* width, int* height,
             const void** pixels = nullptr);

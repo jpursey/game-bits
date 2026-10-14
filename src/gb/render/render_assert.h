@@ -8,6 +8,8 @@
 
 #include <cassert>
 
+#include "gb/render/render_types.h"
+
 namespace gb {
 
 // If this is a debug build, this will set the render assert to enabled.
@@ -20,9 +22,11 @@ bool IsRenderAssertEnabled();
 #ifdef NDEBUG
 #define RENDER_ASSERT(condition) ((void)0)
 #else  // NDEBUG
-#define RENDER_ASSERT(condition)                        \
-  do {                                                  \
-    if (gb::IsRenderAssertEnabled()) assert(condition); \
+#define RENDER_ASSERT(condition)       \
+  do {                                 \
+    if (gb::IsRenderAssertEnabled()) { \
+      assert(condition);               \
+    }                                  \
   } while (false)
 #endif  // NDEBUG
 

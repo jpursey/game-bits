@@ -40,6 +40,7 @@ set(gb_render_FBS
 
 set(gb_render_TEST_SOURCE
   binding_data_test.cc
+  binding_test.cc
   local_binding_data_test.cc
   material_test.cc
   material_type_test.cc

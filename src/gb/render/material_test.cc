@@ -132,6 +132,17 @@ TEST_F(MaterialTest, BindingData) {
   EXPECT_EQ(constants.x, 3.0f);
   EXPECT_EQ(constants.y, 4.0f);
 
+  // The material's defaults are its own, so the material type's are unchanged,
+  // as are those of a new material.
+  material_type->GetDefaultInstanceBindingData()->GetConstants(2, &constants);
+  EXPECT_EQ(constants.x, 1.0f);
+  EXPECT_EQ(constants.y, 2.0f);
+  auto other_material = render_system_->CreateMaterial(material_type);
+  ASSERT_NE(other_material, nullptr);
+  other_material->GetDefaultInstanceBindingData()->GetConstants(2, &constants);
+  EXPECT_EQ(constants.x, 1.0f);
+  EXPECT_EQ(constants.y, 2.0f);
+
   EXPECT_EQ(state_.invalid_call_count, 0);
 }
 

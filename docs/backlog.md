@@ -203,6 +203,21 @@ offsets and strings against the chunk size in `ChunkReader`, and run a
 `flatbuffers::Verifier` bounded by the chunk size before a flat buffer chunk
 reaches its reader, failing the read if either is invalid.
 
+## Testable render asserts
+
+- **Layers:** render
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Code audit](worklog/code_audit.md) CL22
+
+`RENDER_ASSERT` calls `assert`, and is off unless `SetRenderAssertEnabled()`
+turns it on, so tests can't check that misuse is caught: the `DrawList`
+argument checks, for instance, were inverted without any test noticing. Let a
+test install a handler that records failed render asserts instead of aborting
+(as the test backend counts invalid calls), and test the asserts that guard
+`DrawList`, `MeshView`, `RenderBufferView`, and `BindingData`.
+
 ## Explicit resource bool conversions
 
 - **Layers:** resource

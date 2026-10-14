@@ -6,6 +6,8 @@
 #ifndef GB_RENDER_MATERIAL_CONFIG_H_
 #define GB_RENDER_MATERIAL_CONFIG_H_
 
+#include "gb/render/render_types.h"
+
 namespace gb {
 
 // Determines how a material interacts with the depth buffer.

@@ -5,19 +5,23 @@
 
 #include "gb/render/render_assert.h"
 
+#include <atomic>
+
 namespace gb {
 
 namespace {
-bool assert_enabled = false;
+std::atomic<bool> g_assert_enabled = false;
 }  // namespace
 
-void SetRenderAssertEnabled(bool enabled) { assert_enabled = enabled; }
+void SetRenderAssertEnabled(bool enabled) {
+  g_assert_enabled.store(enabled, std::memory_order_relaxed);
+}
 
 bool IsRenderAssertEnabled() {
-#if NDEBUG
+#ifdef NDEBUG
   return false;
 #else
-  return assert_enabled;
+  return g_assert_enabled.load(std::memory_order_relaxed);
 #endif
 }
 

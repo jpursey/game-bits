@@ -8,6 +8,7 @@
 
 #include "gb/render/material_config.h"
 #include "gb/render/render_pipeline.h"
+#include "gb/render/render_types.h"
 #include "gb/render/test_render_scene_type.h"
 #include "gb/render/test_shader_code.h"
 

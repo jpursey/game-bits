@@ -6,6 +6,8 @@
 #ifndef GB_RENDER_RENDER_SCENE_H_
 #define GB_RENDER_RENDER_SCENE_H_
 
+#include <memory>
+
 #include "gb/render/binding_data.h"
 #include "gb/render/render_scene_type.h"
 #include "gb/render/render_types.h"
@@ -37,7 +39,7 @@ class RenderScene {
 
   // Returns the scene type for this scene.
   //
-  // The scene type is registered with the RenderSystem. It represents the how
+  // The scene type is registered with the RenderSystem. It represents how
   // the scene is handled by the RenderSystem, and what common bindings are
   // defined for all binding sets.
   RenderSceneType* GetType() const { return type_; }
@@ -49,7 +51,7 @@ class RenderScene {
   // order. Scenes that have the same scene order will still be ordered relative
   // to each other, but in an indeterminate way. Scene order does not imply any
   // sort of memory dependency, so for instance it is not possible for a later
-  // ordered scene to read the the results of a earlier ordered scene, but it
+  // ordered scene to read the results of an earlier ordered scene, but it
   // can be used to (for instance) ensure a UI scene is rendered on top of a 3D
   // scene.
   int GetOrder() const { return order_; }

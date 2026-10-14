@@ -5,6 +5,8 @@
 
 #include "gb/render/local_binding_data.h"
 
+#include <cstring>
+
 #include "absl/log/log.h"
 
 namespace gb {
@@ -21,69 +23,49 @@ LocalBindingData::LocalBindingData(RenderInternal, BindingSet set,
   if (binding_count == 0) {
     return;
   }
-  data_.resize(binding_count);
+  slots_.resize(binding_count);
 
   const RenderDataType* const texture_type = GetTextureDataType();
   const RenderDataType* const texture_array_type = GetTextureArrayDataType();
-  size_t size = 0;
   for (const auto& binding : bindings) {
-    const RenderDataType*& type =
-        std::get<const RenderDataType*>(data_[binding.index]);
-    if (type != nullptr) {
+    Slot& slot = slots_[binding.index];
+    if (slot.type != nullptr) {
       continue;
     }
     switch (binding.binding_type) {
       case BindingType::kConstants:
-        type = binding.constants_type;
+        slot.type = binding.constants_type;
         break;
       case BindingType::kTexture:
-        type = texture_type;
+        slot.type = texture_type;
         break;
       case BindingType::kTextureArray:
-        type = texture_array_type;
+        slot.type = texture_array_type;
         break;
       default:
         LOG(FATAL) << "Unhandled binding type in LocalBindingData constructor";
     }
-    size += type->GetSize();
   }
-  backing_buffer_ = new uint8_t[size];
-  std::memset(backing_buffer_, 0, size);
 
-  size_t offset = 0;
-  for (auto& value : data_) {
-    auto* type = std::get<const RenderDataType*>(value);
-    if (type == nullptr) {
-      continue;
+  // Values are only accessed with memcpy, so they are packed without
+  // alignment.
+  int size = 0;
+  for (Slot& slot : slots_) {
+    if (slot.type != nullptr) {
+      slot.offset = size;
+      size += slot.type->GetSize();
     }
-    std::get<void*>(value) = backing_buffer_ + offset;
-    offset += type->GetSize();
   }
+  buffer_.resize(size);
 }
 
 LocalBindingData::LocalBindingData(RenderInternal,
                                    const LocalBindingData& other)
     : BindingData(nullptr, other.GetSet()),
-      data_(other.data_),
-      backing_buffer_size_(other.backing_buffer_size_) {
-  if (backing_buffer_size_ == 0) {
-    return;
-  }
-  backing_buffer_ = new uint8_t[backing_buffer_size_];
-  std::memcpy(backing_buffer_, other.backing_buffer_, backing_buffer_size_);
+      slots_(other.slots_),
+      buffer_(other.buffer_) {}
 
-  size_t offset = 0;
-  for (auto& value : data_) {
-    auto* type = std::get<const RenderDataType*>(value);
-    if (type == nullptr) {
-      continue;
-    }
-    std::get<void*>(value) = backing_buffer_ + offset;
-    offset += type->GetSize();
-  }
-}
-
-LocalBindingData::~LocalBindingData() { delete[] backing_buffer_; }
+LocalBindingData::~LocalBindingData() = default;
 
 const RenderDataType* LocalBindingData::GetTextureDataType() {
   static RenderDataType type({}, "", TypeKey::Get<Texture*>(),
@@ -98,51 +80,52 @@ const RenderDataType* LocalBindingData::GetTextureArrayDataType() {
 }
 
 void LocalBindingData::CopyTo(BindingData* binding_data) const {
-  const int count = static_cast<int>(data_.size());
+  const int count = static_cast<int>(slots_.size());
   for (int i = 0; i < count; ++i) {
-    const auto* type = std::get<const RenderDataType*>(data_[i]);
-    if (type == nullptr) {
+    const Slot& slot = slots_[i];
+    if (slot.type == nullptr) {
       continue;
     }
-    binding_data->SetInternal({}, i, type->GetType(),
-                              std::get<void*>(data_[i]));
+    binding_data->SetInternal({}, i, slot.type->GetType(),
+                              buffer_.data() + slot.offset);
   }
 }
 
 bool LocalBindingData::Validate(int index, TypeKey* type) const {
-  if (index < 0 || index >= static_cast<int>(data_.size())) {
+  if (index < 0 || index >= static_cast<int>(slots_.size())) {
     return false;
   }
-  const auto* actual_type = std::get<const RenderDataType*>(data_[index]);
+  const auto* actual_type = slots_[index].type;
   return actual_type != nullptr && actual_type->GetType() == type;
 }
 
 void LocalBindingData::DoSet(int index, const void* value) {
-  const auto* type = std::get<const RenderDataType*>(data_[index]);
-  std::memcpy(std::get<void*>(data_[index]), value, type->GetSize());
+  const Slot& slot = slots_[index];
+  std::memcpy(buffer_.data() + slot.offset, value, slot.type->GetSize());
 }
 
 void LocalBindingData::DoGet(int index, void* value) const {
-  const auto* type = std::get<const RenderDataType*>(data_[index]);
-  std::memcpy(value, std::get<void*>(data_[index]), type->GetSize());
+  const Slot& slot = slots_[index];
+  std::memcpy(value, buffer_.data() + slot.offset, slot.type->GetSize());
 }
 
 void LocalBindingData::DoGetDependencies(
     ResourceDependencyList* dependencies) const {
   const RenderDataType* const texture_type = GetTextureDataType();
   const RenderDataType* const texture_array_type = GetTextureArrayDataType();
-  for (const auto& value : data_) {
-    const RenderDataType* const type = std::get<const RenderDataType*>(value);
-    if (type == texture_type) {
-      Texture** texture = static_cast<Texture**>(std::get<void*>(value));
-      if (*texture != nullptr) {
-        dependencies->push_back(*texture);
+  for (const Slot& slot : slots_) {
+    if (slot.type == texture_type) {
+      Texture* texture = nullptr;
+      std::memcpy(&texture, buffer_.data() + slot.offset, sizeof(texture));
+      if (texture != nullptr) {
+        dependencies->push_back(texture);
       }
-    } else if (type == texture_array_type) {
-      TextureArray** texture_array =
-          static_cast<TextureArray**>(std::get<void*>(value));
-      if (*texture_array != nullptr) {
-        dependencies->push_back(*texture_array);
+    } else if (slot.type == texture_array_type) {
+      TextureArray* texture_array = nullptr;
+      std::memcpy(&texture_array, buffer_.data() + slot.offset,
+                  sizeof(texture_array));
+      if (texture_array != nullptr) {
+        dependencies->push_back(texture_array);
       }
     }
   }

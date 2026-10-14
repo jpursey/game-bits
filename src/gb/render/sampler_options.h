@@ -6,6 +6,9 @@
 #ifndef GB_RENDER_SAMPLER_OPTIONS_H_
 #define GB_RENDER_SAMPLER_OPTIONS_H_
 
+#include <cstdint>
+#include <utility>
+
 #include "gb/image/pixel.h"
 #include "gb/render/render_types.h"
 

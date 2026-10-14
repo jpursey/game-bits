@@ -315,5 +315,30 @@ TEST_F(TextureArrayTest, CannotGetStaticWrite) {
   EXPECT_EQ(test_texture_array->GetModifyCount(), 0);
 }
 
+TEST_F(TextureArrayTest, InvalidIndex) {
+  CreateSystem();
+  auto texture_array = render_system_->CreateTextureArray(
+      DataVolatility::kStaticReadWrite, 2, kTextureWidth, kTextureHeight);
+  ASSERT_NE(texture_array, nullptr);
+  auto* test_texture_array =
+      static_cast<TestTextureArray*>(texture_array.Get());
+
+  EXPECT_FALSE(texture_array->Clear(-1));
+  EXPECT_FALSE(texture_array->Clear(2));
+
+  // A failed get leaves the vectors as they were.
+  std::vector<Pixel> pixels = {Pixel(1, 2, 3, 4)};
+  EXPECT_FALSE(texture_array->Get(-1, pixels));
+  EXPECT_FALSE(texture_array->Get(2, pixels));
+  EXPECT_EQ(pixels, std::vector<Pixel>{Pixel(1, 2, 3, 4)});
+  std::vector<uint32_t> packed_pixels = {0xdeadbeef};
+  EXPECT_FALSE(texture_array->Get(2, packed_pixels));
+  EXPECT_EQ(packed_pixels, std::vector<uint32_t>{0xdeadbeef});
+
+  EXPECT_EQ(state_.invalid_call_count, 0);
+  EXPECT_EQ(test_texture_array->GetInvalidCallCount(), 0);
+  EXPECT_EQ(test_texture_array->GetModifyCount(), 0);
+}
+
 }  // namespace
 }  // namespace gb

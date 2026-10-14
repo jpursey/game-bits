@@ -6,11 +6,14 @@
 #ifndef GB_RENDER_RENDER_PIPELINE_H_
 #define GB_RENDER_RENDER_PIPELINE_H_
 
+#include <memory>
+
 #include "gb/render/binding.h"
+#include "gb/render/render_types.h"
 
 namespace gb {
 
-// This class defines a a prebuilt render program that is used during
+// This class defines a prebuilt render program that is used during
 // rendering. This is the API-specific implementation of a MaterialType
 // resource.
 //
@@ -38,16 +41,15 @@ class RenderPipeline {
   // Derived class interface
   //----------------------------------------------------------------------------
 
-  // Creates binding data for the specified binding set.
+  // Creates binding data for the material or instance binding set.
   //
   // The data created here allows the game to change data for this pipeline. It
   // is passed back in RenderBackend::Draw.
-  //
-  // The binding set will be either kMaterial or kInstance.
   virtual std::unique_ptr<BindingData> CreateMaterialBindingData() = 0;
   virtual std::unique_ptr<BindingData> CreateInstanceBindingData() = 0;
 
-  // Validates binding data for the specified binding set.
+  // Returns true if the binding data is valid instance binding data for this
+  // pipeline.
   virtual bool ValidateInstanceBindingData(BindingData* binding_data) = 0;
 
  protected:

@@ -5,7 +5,13 @@
 
 #include "gb/render/draw_list.h"
 
+#include <cstdint>
+
+#include "gb/render/binding_data.h"
+#include "gb/render/material.h"
+#include "gb/render/material_type.h"
 #include "gb/render/mesh.h"
+#include "gb/render/render_assert.h"
 #include "gb/render/render_pipeline.h"
 
 namespace gb {
@@ -60,7 +66,7 @@ void DrawList::SetMaterial(Material* material, BindingData* material_data) {
 
 void DrawList::SetMaterialData(BindingData* material_data) {
   RENDER_ASSERT(material_data != nullptr);
-  RENDER_ASSERT(current_material_type_ != nullptr ||
+  RENDER_ASSERT(current_material_type_ != nullptr &&
                 current_material_type_->GetPipeline({}) ==
                     material_data->GetPipeline({}));
   commands_.emplace_back(DrawCommand::Type::kMaterialData, material_data);
@@ -69,7 +75,7 @@ void DrawList::SetMaterialData(BindingData* material_data) {
 void DrawList::SetInstanceData(BindingData* instance_data) {
   RENDER_ASSERT(instance_data != nullptr);
   RENDER_ASSERT(
-      current_material_type_ != nullptr ||
+      current_material_type_ != nullptr &&
       current_material_type_->GetPipeline({})->ValidateInstanceBindingData(
           instance_data));
   commands_.emplace_back(DrawCommand::Type::kInstanceData, instance_data);
@@ -77,7 +83,8 @@ void DrawList::SetInstanceData(BindingData* instance_data) {
 }
 
 void DrawList::SetScissor(int x, int y, int width, int height) {
-  RENDER_ASSERT(x >= 0 && y >= 0 && width >= 0 && height >= 0);
+  RENDER_ASSERT(FitsUint16(x) && FitsUint16(y) && FitsUint16(width) &&
+                FitsUint16(height));
   commands_.emplace_back(
       DrawCommand::Type::kScissor,
       DrawCommand::Rect{static_cast<uint16_t>(x), static_cast<uint16_t>(y),
@@ -98,7 +105,8 @@ void DrawList::Draw() {
 void DrawList::DrawPartial(int first_triangle, int triangle_count,
                            int first_vertex) {
   RENDER_ASSERT(current_mesh_ != nullptr && current_instance_data_ != nullptr &&
-                first_triangle >= 0 && triangle_count >= 0);
+                first_triangle >= 0 && triangle_count >= 0 &&
+                FitsUint16(first_vertex));
   commands_.emplace_back(
       DrawCommand::Type::kDraw,
       DrawCommand::Draw{static_cast<uint32_t>(first_triangle * 3),

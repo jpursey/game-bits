@@ -7,9 +7,9 @@
 #define GB_RENDER_MATERIAL_TYPE_H_
 
 #include <memory>
+#include <vector>
 
 #include "absl/types/span.h"
-#include "gb/render/binding_data.h"
 #include "gb/render/local_binding_data.h"
 #include "gb/render/material_config.h"
 #include "gb/render/render_types.h"
@@ -20,10 +20,10 @@ namespace gb {
 
 // This class represents a complete rendering pipeline, including shaders,
 // vertex descriptions, and any other parameters that affect how rendering is
-// peformed.
+// performed.
 //
 // Material types are required to create materials which are applied to mesh.
-// Theses materials and mesh conform to the properties defined by the material
+// These materials and meshes conform to the properties defined by the material
 // type.
 //
 // A material type is also explicitly compatible with a specific scene type

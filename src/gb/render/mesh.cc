@@ -5,6 +5,8 @@
 
 #include "gb/render/mesh.h"
 
+#include <utility>
+
 #include "absl/log/log.h"
 #include "gb/render/render_backend.h"
 
@@ -21,7 +23,7 @@ Mesh::Mesh(RenderInternal, ResourceEntry entry, RenderBackend* backend,
       vertex_buffer_(std::move(vertex_buffer)),
       index_buffer_(std::move(index_buffer)) {}
 
-Mesh::~Mesh() {}
+Mesh::~Mesh() = default;
 
 int Mesh::GetVertexCount() const { return vertex_buffer_->GetSize(); }
 
@@ -37,6 +39,11 @@ bool Mesh::DoSet(const void* vertex_data, int vertex_count, int vertex_capacity,
                  const void* index_data, int index_count, int index_capacity) {
   if (vertex_buffer_->IsEditing() || index_buffer_->IsEditing()) {
     LOG(ERROR) << "Failed to write new mesh, as a MeshView is currently active";
+    return false;
+  }
+  if (vertex_capacity > kMaxMeshVertices) {
+    LOG(ERROR) << "Failed to write new mesh, as " << vertex_capacity
+               << " vertices is more than the maximum of " << kMaxMeshVertices;
     return false;
   }
 

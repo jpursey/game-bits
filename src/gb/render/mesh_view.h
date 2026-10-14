@@ -6,8 +6,12 @@
 #ifndef GB_RENDER_MESH_VIEW_H_
 #define GB_RENDER_MESH_VIEW_H_
 
+#include <cstdint>
+#include <memory>
+
 #include "absl/types/span.h"
 #include "gb/base/type_info.h"
+#include "gb/render/render_assert.h"
 #include "gb/render/render_buffer_view.h"
 #include "gb/render/render_types.h"
 
@@ -15,7 +19,8 @@ namespace gb {
 
 // A mesh view provides an editable window onto a mesh.
 //
-// Only one mesh view may be active on a mesh at a time. While a mesh view is
+// Only one mesh view may be active on a mesh at a time, and it must be
+// destroyed before the mesh is. While a mesh view is
 // active, it can be edited freely although the vertex and index/triangle
 // capacity is fixed. As the edits are not applied to the underlying mesh on the
 // GPU until the mesh view is deleted, the resulting mesh only needs to be valid
@@ -54,11 +59,11 @@ class MeshView final {
   // Returns the current count and capacity of triangles in the mesh.
   //
   // The capacity is fixed, but the count may vary when calling
-  // Set/RemoveVertices.
+  // Set/RemoveTriangles.
   int GetTriangleCount() const;
   int GetTriangleCapacity() const;
 
-  // Returns true if a modifying function was called on the buffer view.
+  // Returns true if a modifying function was called on the mesh view.
   bool IsModified() const;
 
   //----------------------------------------------------------------------------
@@ -67,7 +72,7 @@ class MeshView final {
 
   // Returns a read-only reference to the specified vertex.
   //
-  // It is undefined behavior to request an index < 0 or > GetVertexCount();
+  // It is undefined behavior to request an index < 0 or >= GetVertexCount().
   template <typename Vertex>
   const Vertex& GetVertex(int index) const;
 
@@ -77,15 +82,15 @@ class MeshView final {
   // GPU, regardless of whether the vertex is actually changed or not. Prefer
   // calling GetVertex, if the vertex will not actually be modified.
   //
-  // It is undefined behavior to request an index < 0 or > GetVertexCount();
+  // It is undefined behavior to request an index < 0 or >= GetVertexCount().
   template <typename Vertex>
   Vertex& ModifyVertex(int index);
 
   // Replaces a set of vertices starting at the specified index.
   //
-  // Index must less than or equal to the vertex count, however if index +
+  // Index must be less than or equal to the vertex count, however if index +
   // vertices.size() is greater than the current vertex count, then the count
-  // will increase to accomodate the new vertices up to the limit of the vertex
+  // will increase to accommodate the new vertices up to the limit of the vertex
   // capacity of the mesh. If the new count would exceed the mesh capacity, only
   // the vertices up to the capacity will be set.
   //
@@ -103,9 +108,9 @@ class MeshView final {
 
   // Removes a range of vertices, shifting all later vertices back by 'count'.
   //
-  // Index must less than or equal to the vertex count, however if index + count
-  // is greater that the current vertex count, then all vertices after index
-  // will be removed.
+  // Index must be less than or equal to the vertex count, however if index +
+  // count is greater than the current vertex count, then all vertices after
+  // index will be removed.
   //
   // This returns the number of vertices actually removed.
   int RemoveVertices(int index, int count);
@@ -116,7 +121,7 @@ class MeshView final {
 
   // Returns a read-only reference to the specified triangle.
   //
-  // It is undefined behavior to request an index < 0 or > GetTriangleCount();
+  // It is undefined behavior to request an index < 0 or >= GetTriangleCount().
   const Triangle& GetTriangle(int index) const;
 
   // Returns a writable reference to the specified triangle.
@@ -125,14 +130,14 @@ class MeshView final {
   // GPU, regardless of whether the triangle is actually changed or not. Prefer
   // calling GetTriangle, if the triangle will not actually be modified.
   //
-  // It is undefined behavior to request an index < 0 or > GetTriangleCount();
+  // It is undefined behavior to request an index < 0 or >= GetTriangleCount().
   Triangle& ModifyTriangle(int index);
 
   // Replaces a set of triangles starting at the specified index.
   //
-  // Index must less than or equal to the triangle count, however if index +
+  // Index must be less than or equal to the triangle count, however if index +
   // triangles.size() is greater than the current triangle count, then the count
-  // will increase to accomodate the new triangles up to the limit of the
+  // will increase to accommodate the new triangles up to the limit of the
   // triangle capacity of the mesh. If the new count would exceed the mesh
   // capacity, only the triangles up to the capacity will be set.
   //
@@ -142,14 +147,15 @@ class MeshView final {
 
   // Replaces a set of triangles starting at the specified triangle index.
   //
-  // Index must less than or equal to the triangle count, however If index +
+  // Index must be less than or equal to the triangle count, however if index +
   // indices.size() / 3 is greater than the current triangle count, then the
-  // count will increase to accomodate the new triangles up to the limit of the
+  // count will increase to accommodate the new triangles up to the limit of the
   // triangle capacity of the mesh. If the new count would exceed the mesh
   // capacity, only the triangles up to the capacity will be set.
   //
   // This returns the number of triangles actually copied. This may be less than
-  // indices.size() / 3 if the capacity is too small.
+  // indices.size() / 3 if the capacity is too small. The number of indices must
+  // be a multiple of three, and any after the last whole triangle are ignored.
   int SetTriangles(int index, absl::Span<const Index> indices);
 
   // Adds triangles to the end.
@@ -161,13 +167,14 @@ class MeshView final {
   // Adds triangles to the end.
   //
   // Returns the number of triangles actually copied. This may be less than
-  // indices.size() / 3 if the capacity is too small.
+  // indices.size() / 3 if the capacity is too small. The number of indices must
+  // be a multiple of three, and any after the last whole triangle are ignored.
   int AddTriangles(absl::Span<const Index> indices);
 
   // Removes a range of triangles, shifting all later triangles back by 'count'.
   //
-  // Index must less than or equal to the triangle count, however if index +
-  // count is greater that the current triangle count, then all triangles after
+  // Index must be less than or equal to the triangle count, however if index +
+  // count is greater than the current triangle count, then all triangles after
   // index will be removed.
   //
   // This returns the number of triangles actually removed.
@@ -190,7 +197,8 @@ class MeshView final {
 
  private:
   int DoSetVertices(int index, const void* vertices, int count);
-  int DoSetIndices(int index, const void* indices, int count);
+  // Sets "count" triangles of indices starting at triangle "index".
+  int DoSetTriangles(int index, const void* indices, int count);
 
   TypeKey* vertex_type_;
   std::unique_ptr<RenderBufferView> vertex_view_;
@@ -265,23 +273,25 @@ inline Triangle& MeshView::ModifyTriangle(int index) {
 
 inline int MeshView::SetTriangles(int index,
                                   absl::Span<const Triangle> triangles) {
-  return DoSetIndices(index, triangles.data(),
-                      static_cast<int>(triangles.size() * 3));
+  return DoSetTriangles(index, triangles.data(),
+                        static_cast<int>(triangles.size()));
 }
 
 inline int MeshView::SetTriangles(int index, absl::Span<const Index> indices) {
   RENDER_ASSERT(indices.size() % 3 == 0);
-  return DoSetIndices(index, indices.data(), static_cast<int>(indices.size()));
+  return DoSetTriangles(index, indices.data(),
+                        static_cast<int>(indices.size() / 3));
 }
 
 inline int MeshView::AddTriangles(absl::Span<const Triangle> triangles) {
-  return DoSetIndices(GetTriangleCount(), triangles.data(),
-                      static_cast<int>(triangles.size() * 3));
+  return DoSetTriangles(GetTriangleCount(), triangles.data(),
+                        static_cast<int>(triangles.size()));
 }
 
 inline int MeshView::AddTriangles(absl::Span<const Index> indices) {
-  return DoSetIndices(GetTriangleCount(), indices.data(),
-                      static_cast<int>(indices.size()));
+  RENDER_ASSERT(indices.size() % 3 == 0);
+  return DoSetTriangles(GetTriangleCount(), indices.data(),
+                        static_cast<int>(indices.size() / 3));
 }
 
 }  // namespace gb

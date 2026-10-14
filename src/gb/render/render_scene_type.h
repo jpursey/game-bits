@@ -6,7 +6,13 @@
 #ifndef GB_RENDER_RENDER_SCENE_TYPE_H_
 #define GB_RENDER_RENDER_SCENE_TYPE_H_
 
+#include <memory>
+#include <string>
+#include <string_view>
+#include <vector>
+
 #include "absl/types/span.h"
+#include "gb/render/binding.h"
 #include "gb/render/local_binding_data.h"
 #include "gb/render/render_types.h"
 

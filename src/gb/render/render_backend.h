@@ -3,12 +3,14 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef GB_RENDER_GB_RENDER_BACKEND_H_
-#define GB_RENDER_GB_RENDER_BACKEND_H_
+#ifndef GB_RENDER_RENDER_BACKEND_H_
+#define GB_RENDER_RENDER_BACKEND_H_
 
+#include <cstdint>
 #include <memory>
 
-#include "gb/file/file.h"
+#include "absl/types/span.h"
+#include "gb/image/pixel.h"
 #include "gb/render/binding.h"
 #include "gb/render/binding_data.h"
 #include "gb/render/render_buffer.h"
@@ -114,14 +116,14 @@ class RenderBackend {
   // RenderScene after this returns, so derived classes do not (and should not)
   // do so.
   //
-  // If the RenderSceneType could not be created, this returns null.
+  // If the RenderScene could not be created, this returns null.
   virtual std::unique_ptr<RenderScene> CreateScene(RenderInternal,
                                                    RenderSceneType* scene_type,
                                                    int scene_order) = 0;
 
   // Creates a new RenderPipeline compatible with this backend.
   //
-  // The scene type and shader code are all instances previously create via
+  // The scene type and shader code are all instances previously created via
   // CreateSceneType and CreateShaderCode respectively. Bindings contain all
   // bindings the pipeline should support for all binding sets.
   //
@@ -154,7 +156,7 @@ class RenderBackend {
   //----------------------------------------------------------------------------
   // Rendering
   //
-  // Thread-safety: These functions need need only be thread-compatible with
+  // Thread-safety: These functions need only be thread-compatible with
   // each other, but must be thread-safe relative to other factory and property
   // methods in this interface. However by interface contract, backend resources
   // added via a Draw command will not be modified until EndFrame is called (so
@@ -171,7 +173,7 @@ class RenderBackend {
   // be called.
   virtual bool BeginFrame(RenderInternal) = 0;
 
-  // Queues mesh to be be drawn the next time EndFrame is called.
+  // Queues mesh to be drawn the next time EndFrame is called.
   //
   // This will only be called after BeginFrame is called and before EndFrame
   // is called.
@@ -198,4 +200,4 @@ class RenderBackend {
 
 }  // namespace gb
 
-#endif  // GB_RENDER_GB_RENDER_BACKEND_H_
+#endif  // GB_RENDER_RENDER_BACKEND_H_

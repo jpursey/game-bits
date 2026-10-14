@@ -5,6 +5,10 @@
 
 #include "gb/render/test_binding_data.h"
 
+#include <cstdlib>
+#include <cstring>
+#include <utility>
+
 #include "absl/log/log.h"
 
 namespace gb {
@@ -21,6 +25,11 @@ TestBindingData::Value::Value(Binding binding) : binding_(binding) {
     case BindingType::kTexture:
       type_ = TypeKey::Get<Texture*>();
       size_ = sizeof(Texture*);
+      value_ = std::calloc(size_, 1);
+      break;
+    case BindingType::kTextureArray:
+      type_ = TypeKey::Get<TextureArray*>();
+      size_ = sizeof(TextureArray*);
       value_ = std::calloc(size_, 1);
       break;
     default:
@@ -77,11 +86,18 @@ void TestBindingData::DoGet(int index, void* value) const {
 void TestBindingData::DoGetDependencies(
     ResourceDependencyList* dependencies) const {
   static TypeKey* const texture_type = TypeKey::Get<Texture*>();
+  static TypeKey* const texture_array_type = TypeKey::Get<TextureArray*>();
   for (const auto& value : values_) {
     if (value.GetType() == texture_type) {
       Texture* texture = *static_cast<Texture**>(value.GetValue());
       if (texture != nullptr) {
         dependencies->push_back(texture);
+      }
+    } else if (value.GetType() == texture_array_type) {
+      TextureArray* texture_array =
+          *static_cast<TextureArray**>(value.GetValue());
+      if (texture_array != nullptr) {
+        dependencies->push_back(texture_array);
       }
     }
   }

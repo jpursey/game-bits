@@ -5,9 +5,15 @@
 
 #include "gb/render/render_buffer.h"
 
+#include "absl/log/check.h"
+#include "gb/render/render_assert.h"
 #include "gb/render/render_buffer_view.h"
 
 namespace gb {
+
+RenderBuffer::~RenderBuffer() {
+  CHECK(view_ == nullptr) << "Render buffer deleted while a view is active";
+}
 
 bool RenderBuffer::Clear(int size) {
   RENDER_ASSERT(size >= 0 && size <= capacity_);

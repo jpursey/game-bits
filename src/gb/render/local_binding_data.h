@@ -14,6 +14,7 @@
 #include "gb/base/type_info.h"
 #include "gb/render/binding.h"
 #include "gb/render/binding_data.h"
+#include "gb/render/render_types.h"
 #include "gb/resource/resource.h"
 
 namespace gb {
@@ -55,12 +56,18 @@ class LocalBindingData : public BindingData {
   void DoGetDependencies(ResourceDependencyList* dependencies) const override;
 
  private:
+  // A binding index's value, at "offset" in buffer_. The type is null if there
+  // is no binding at the index.
+  struct Slot {
+    const RenderDataType* type = nullptr;
+    int offset = 0;
+  };
+
   static const RenderDataType* GetTextureDataType();
   static const RenderDataType* GetTextureArrayDataType();
 
-  std::vector<std::tuple<const RenderDataType*, void*>> data_;
-  size_t backing_buffer_size_ = 0;
-  uint8_t* backing_buffer_ = nullptr;
+  std::vector<Slot> slots_;
+  std::vector<uint8_t> buffer_;
 };
 
 }  // namespace gb

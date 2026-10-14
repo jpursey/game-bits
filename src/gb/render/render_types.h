@@ -6,7 +6,10 @@
 #ifndef GB_RENDER_RENDER_TYPES_H_
 #define GB_RENDER_RENDER_TYPES_H_
 
-#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <string>
+#include <string_view>
 #include <vector>
 
 #include "absl/types/span.h"
@@ -101,7 +104,7 @@ class RenderDataType final {
 // ShaderType
 //==============================================================================
 
-// A shader type specifies where in a in the render pipeline a shader is
+// A shader type specifies where in the render pipeline a shader is
 // executed.
 enum class ShaderType : int {
   kVertex,
@@ -307,6 +310,9 @@ inline constexpr bool operator!=(const Triangle& i, const Triangle& j) {
 
 // This defines the upper limit for a binding index for a Binding.
 inline constexpr int kMaxBindingIndex = 1023;
+
+// Maximum number of vertices in a mesh, as indices are 16 bits.
+inline constexpr int kMaxMeshVertices = 65535;
 
 // Maximum dimensions for a texture or texture array.
 inline constexpr int kMaxTextureWidth = 8096;

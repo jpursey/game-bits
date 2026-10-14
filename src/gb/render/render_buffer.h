@@ -10,7 +10,6 @@
 
 #include <memory>
 
-#include "gb/render/render_assert.h"
 #include "gb/render/render_types.h"
 
 namespace gb {
@@ -35,7 +34,7 @@ class RenderBuffer {
   RenderBuffer(RenderBuffer&&) = delete;
   RenderBuffer& operator=(const RenderBuffer&) = delete;
   RenderBuffer& operator=(RenderBuffer&&) = delete;
-  virtual ~RenderBuffer() = default;
+  virtual ~RenderBuffer();
 
   //----------------------------------------------------------------------------
   // Properties
@@ -85,7 +84,7 @@ class RenderBuffer {
   // volatility, this will always return null.
   //
   // Only one view may exist at any given time, and subsequent calls will result
-  // in a failure (this will return null). Similary, Set will fail if a
+  // in a failure (this will return null). Similarly, Set will fail if a
   // RenderBufferView is currently active.
   std::unique_ptr<RenderBufferView> Edit();
 
@@ -97,29 +96,29 @@ class RenderBuffer {
   // Derived class interface
   //----------------------------------------------------------------------------
 
-  // Implemenentation for Resize()
+  // Implementation for Clear() and Resize()
   //
-  // This will never be called if editing is process (DoEdit was called but
+  // This will never be called if editing is in progress (DoEdit was called but
   // OnEditEnd was not).
   virtual bool DoClear(int offset, int size) = 0;
 
   // Write new data to the buffer, returning true if the write was begun
   // successfully.
   //
-  // This will never be called if editing is process (DoEdit was called but
+  // This will never be called if editing is in progress (DoEdit was called but
   // OnEditEnd was not).
   //
   // If this returns true, and the buffer is readable (it isn't kStaticWrite
   // volatility), then it must reflect the data written. Returning true also
   // requires that the data will be transferred to the GPU before this buffer is
-  // used in rendering -- althouth it does not imply the transfer has happened
+  // used in rendering -- although it does not imply the transfer has happened
   // yet.
   virtual bool DoSet(const void* data, int size) = 0;
 
   // Return an editable pointer to the buffer.
   //
   // This will never be called for kStaticWrite volatility buffers, or if
-  // editing is already in process.
+  // editing is already in progress.
   //
   // This should return null on error. If this returns non-null, then the data
   // should be considered volatile and not be uploaded to the GPU until

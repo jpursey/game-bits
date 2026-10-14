@@ -9,6 +9,7 @@
 #include "absl/types/span.h"
 #include "gb/render/binding.h"
 #include "gb/render/binding_data.h"
+#include "gb/render/render_types.h"
 
 namespace gb {
 

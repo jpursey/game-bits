@@ -476,6 +476,44 @@ TEST_F(MeshTest, FailSet) {
   EXPECT_EQ(test_index_buffer->GetInvalidCallCount(), 0);
 }
 
+TEST_F(MeshTest, DeleteWhileEditing) {
+  EXPECT_DEATH(
+      {
+        CreateSystem();
+        auto material_type = CreateMaterialType({});
+        ResourcePtr<Mesh> mesh = render_system_->CreateMesh(
+            material_type->GetVertexType(), DataVolatility::kStaticReadWrite,
+            30, 60);
+        auto mesh_view = mesh->Edit();
+        mesh.Reset();
+      },
+      "view is active");
+}
+
+TEST_F(MeshTest, SetTooManyVertices) {
+  CreateSystem();
+  auto material_type = CreateMaterialType({});
+  EXPECT_NE(material_type, nullptr);
+  const VertexType* vertex_type = material_type->GetVertexType();
+  auto mesh = render_system_->CreateMesh(vertex_type,
+                                         DataVolatility::kStaticWrite, 30, 60);
+  ASSERT_NE(mesh, nullptr);
+  ASSERT_TRUE(mesh->Set<Vector3>(kCubeVertices, kCubeTriangles));
+
+  // Indices are 16 bits, so they can't refer to more vertices.
+  std::vector<Vector3> vertices(kMaxMeshVertices + 1);
+  EXPECT_FALSE(mesh->Set<Vector3>(vertices, kCubeTriangles));
+  EXPECT_FALSE(
+      mesh->Set<Vector3>(kCubeVertices, kCubeTriangles, kMaxMeshVertices + 1));
+  EXPECT_EQ(mesh->GetVertexCount(), kCubeVertices.size());
+  EXPECT_EQ(mesh->GetVertexCapacity(), 30);
+
+  vertices.resize(kMaxMeshVertices);
+  EXPECT_TRUE(mesh->Set<Vector3>(vertices, kCubeTriangles));
+  EXPECT_EQ(mesh->GetVertexCount(), kMaxMeshVertices);
+  EXPECT_EQ(state_.invalid_call_count, 0);
+}
+
 TEST_F(MeshTest, EditPreventsModification) {
   CreateSystem();
   auto material_type = CreateMaterialType({});
