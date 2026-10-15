@@ -241,6 +241,30 @@ per parser instead, such as in a table the `Parser` builds from its rules and
 lexer, so shared rules are never written. `ParserProgram` validates its rules
 once and is unaffected.
 
+## Parser groups merge their children's items
+
+- **Layers:** parse
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** `Parser::MatchGroup` and `Parser::MatchRuleItem` in
+  `parser.cc`
+
+`Parser::items_` tells each rule item where its named sub-items go: the
+enclosing group's items for an unnamed group or unscoped rule (`<rule>`), or
+null for one that keeps its own. `MatchGroup` sets it before each sub-item, and
+every match function must restore it before returning (`MatchGroup` does with
+an `absl::Cleanup`, `MatchRuleItem` by hand). One that doesn't sends the items
+of later sub-items to the wrong map.
+
+Remove the member and let the parent decide instead. Each group returns its own
+items, and when an unnamed sub-item matches, `MatchGroup` merges that match's
+items into its own if the sub-item inlines them: a group does, a rule name does
+unless it is scoped, and a token has none. That removes `items_`, the
+`scope_items` argument to `MatchRuleItem`, and the cleanup, and a failed match
+leaves nothing behind because it has no items to merge. The existing parser
+tests, including those for failed inline groups, cover the behavior.
+
 ## Validate chunk contents
 
 - **Layers:** file, resource
