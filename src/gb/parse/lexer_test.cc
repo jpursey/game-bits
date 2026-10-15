@@ -3094,6 +3094,60 @@ TEST(LexerTest, ParseUserTokens) {
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
+TEST(LexerTest, ReparseUserTokensKeepCapture) {
+  const LexerConfig::UserToken user_tokens[] = {
+      {.type = kTokenUser + 0, .regex = "\\$([a-z]+)"},
+      {.type = kTokenUser + 1, .regex = "([a-z]+)\\@"},
+  };
+  auto lexer = Lexer::Create({.user_tokens = user_tokens});
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("$abc def@");
+  const Token abc = lexer->NextToken(content);
+  EXPECT_EQ(abc.GetType(), kTokenUser + 0);
+  EXPECT_EQ(abc.GetString(), "abc");
+  const Token def = lexer->NextToken(content);
+  EXPECT_EQ(def.GetType(), kTokenUser + 1);
+  EXPECT_EQ(def.GetString(), "def");
+
+  lexer->RewindContent(content);
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token, abc);
+  EXPECT_EQ(token.GetString(), "abc");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token, def);
+  EXPECT_EQ(token.GetString(), "def");
+
+  token = lexer->ParseToken(abc.GetTokenIndex());
+  EXPECT_EQ(token, abc);
+  EXPECT_EQ(token.GetString(), "abc");
+  token = lexer->ParseToken(def.GetTokenIndex());
+  EXPECT_EQ(token, def);
+  EXPECT_EQ(token.GetString(), "def");
+}
+
+TEST(LexerTest, UserTokenWithEmptyCapture) {
+  const LexerConfig::UserToken user_tokens[] = {
+      {.type = kTokenUser, .regex = "\\$([a-z]*)"},
+  };
+  auto lexer = Lexer::Create({.user_tokens = user_tokens});
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("$ $a");
+  const Token empty = lexer->NextToken(content);
+  EXPECT_EQ(empty.GetType(), kTokenUser);
+  EXPECT_EQ(empty.GetString(), "");
+  EXPECT_EQ(lexer->GetTokenText(empty), "$");
+  const Token a = lexer->NextToken(content);
+  EXPECT_EQ(a.GetType(), kTokenUser);
+  EXPECT_EQ(a.GetString(), "a");
+
+  Token token = lexer->ParseToken(empty.GetTokenIndex());
+  EXPECT_EQ(token, empty);
+  EXPECT_EQ(token.GetString(), "");
+  token = lexer->ParseToken(a.GetTokenIndex());
+  EXPECT_EQ(token, a);
+  EXPECT_EQ(token.GetString(), "a");
+}
+
 TEST(LexerTest, ParseLineBreak) {
   auto lexer = Lexer::Create({
       .flags = {kLexerFlags_CIdentifiers, LexerFlag::kLineBreak},

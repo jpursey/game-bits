@@ -369,6 +369,23 @@ bool Lexer::SetNextToken(Token token) {
   return true;
 }
 
+const Lexer::TokenArg* Lexer::MatchToken(std::string_view* text) {
+  if (re_token_args_.empty() ||
+      !RE2::ConsumeN(text, *state_.re_token, re_token_args_.data(),
+                     re_token_args_.size())) {
+    return nullptr;
+  }
+
+  // RE2 sets an unmatched group to null data, which tells it apart from a
+  // matched user token capture that is empty.
+  for (const TokenArg& arg : re_args_) {
+    if (arg.text.data() != nullptr) {
+      return &arg;
+    }
+  }
+  return nullptr;
+}
+
 Token Lexer::ParseToken(TokenIndex index) {
   const Line* line = GetTokenLine(index);
   if (line == nullptr) {
@@ -393,19 +410,7 @@ Token Lexer::ParseToken(TokenIndex index) {
     case kTokenSymbol:
       return ReturnToken(Token::CreateSymbol(index, text));
     case kTokenInt: {
-      DCHECK(!re_token_args_.empty());
-      if (!RE2::ConsumeN(&text, *state_.re_token, re_token_args_.data(),
-                         re_token_args_.size())) {
-        LOG(DFATAL) << "Integer failed to be re-parsed";
-        return Token::CreateError(index, &kErrorInternal);
-      }
-      TokenArg* match = nullptr;
-      for (TokenArg& arg : re_args_) {
-        if (!arg.text.empty()) {
-          match = &arg;
-          break;
-        }
-      }
+      const TokenArg* match = MatchToken(&text);
       if (match == nullptr) {
         LOG(DFATAL) << "Integer failed to be re-parsed";
         return ReturnToken(Token::CreateError(index, &kErrorInternal));
@@ -426,7 +431,12 @@ Token Lexer::ParseToken(TokenIndex index) {
       return ReturnToken(Token::CreateLineBreak(index));
     default:
       if (token_info.type >= kTokenUser) {
-        return ReturnToken(ParseUserToken(index, token_info.type, text));
+        const TokenArg* match = MatchToken(&text);
+        if (match == nullptr) {
+          LOG(DFATAL) << "User token failed to be re-parsed";
+          return ReturnToken(Token::CreateError(index, &kErrorInternal));
+        }
+        return ReturnToken(ParseUserToken(index, token_info.type, match->text));
       }
       break;
   }
@@ -671,21 +681,9 @@ Token Lexer::ParseUserToken(TokenIndex token_index, TokenType token_type,
 Token Lexer::ParseNextToken(Content* content, Line* line, bool advance) {
   std::string_view remain = line->remain;
   std::string_view token_start = remain;
-  if (re_token_args_.empty() ||
-      !RE2::ConsumeN(&remain, *state_.re_token, re_token_args_.data(),
-                     re_token_args_.size())) {
-    return {};
-  }
-  TokenArg* match = nullptr;
-  for (TokenArg& arg : re_args_) {
-    if (!arg.text.empty()) {
-      match = &arg;
-      break;
-    }
-  }
+  const TokenArg* match = MatchToken(&remain);
   if (match == nullptr) {
-    LOG(DFATAL) << "Token found without a token type match";
-    return Token::CreateError(content->GetTokenIndex(), &kErrorInternal);
+    return {};
   }
 
   // See what the next text is. If it is not whitespace or a symol, then this
@@ -703,26 +701,24 @@ Token Lexer::ParseNextToken(Content* content, Line* line, bool advance) {
   if (advance) {
     ++content->token;
   }
-  std::string_view match_text = match->text;
-  match->text = {};
   line->tokens.emplace_back(token_start.data() - line->line.data(),
                             remain.data() - token_start.data(), match->type);
   switch (match->type) {
     case kTokenInt:
-      return ParseInt(token_index, match_text, match->int_parse_type);
+      return ParseInt(token_index, match->text, match->int_parse_type);
     case kTokenFloat:
-      return ParseFloat(token_index, match_text);
+      return ParseFloat(token_index, match->text);
     case kTokenChar:
-      return ParseChar(token_index, match_text);
+      return ParseChar(token_index, match->text);
     case kTokenString:
-      return ParseString(token_index, match_text);
+      return ParseString(token_index, match->text);
     case kTokenKeyword:
-      return ParseKeyword(token_index, match_text);
+      return ParseKeyword(token_index, match->text);
     case kTokenIdentifier:
-      return ParseIdent(token_index, match_text);
+      return ParseIdent(token_index, match->text);
     default:
       if (match->type >= kTokenUser) {
-        return ParseUserToken(token_index, match->type, match_text);
+        return ParseUserToken(token_index, match->type, match->text);
       }
       break;
   }

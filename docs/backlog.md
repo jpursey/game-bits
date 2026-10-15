@@ -145,33 +145,6 @@ It converts the path the way the protocol already converts the paths it lists
 (the file-local `ToString()` in `local_file_protocol.cc`), and returns null for
 a path that doesn't convert, with a test of that case.
 
-## Re-read user tokens keep their capture
-
-- **Layers:** parse
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Requested by:** OZ-3 *Instruction forms*
-- **Background:** `Lexer::ParseToken` and `Lexer::ParseNextToken` in
-  `lexer.cc`
-
-A user token's value depends on how it was read. The first time the lexer
-reads it (`ParseNextToken`), its value is its regex's capture group: `$v` for a
-token whose regex is `\$([a-z]+)` is `v`. Read again (`ParseToken`), after
-`RewindContent`, `RewindToken`, or a parser backtracking over it, its value is
-the whole token text, `$v`, unless it is the one token the lexer still caches.
-Integers already re-run their regex when read again, so they don't have this
-problem.
-
-So the same token can have two values, and which one a parser sees depends on
-how the parse went. A rule that tries one alternative and backtracks to a user
-token gets the wrong value only some of the time.
-
-Re-run the token regex for user tokens when reading one again, as integers do,
-or keep the capture's offset and size in the token's info. Test it with a lexer
-test that rewinds over a user token whose capture is shorter than its text, and
-a parser test that backtracks over one.
-
 ## Number suffixes in either case, and hex numbers that start with a digit
 
 - **Layers:** parse

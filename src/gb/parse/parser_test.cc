@@ -682,6 +682,41 @@ TEST(ParserTest, MatchAlternativesCommaList) {
       << result->GetToken();
 }
 
+TEST(ParserTest, BacktrackOverUserTokenKeepsCapture) {
+  const LexerConfig::UserToken user_tokens[] = {
+      {.name = "variable", .type = kTokenUser, .regex = "\\$([a-z]+)"},
+  };
+  LexerConfig config = kCStyleLexerConfig;
+  config.user_tokens = user_tokens;
+  auto rules = std::make_shared<ParserRules>();
+  auto rule = ParserRuleItem::CreateAlternatives();
+  // The user token isn't first in each alternative, as backtracking to the
+  // start of a group sets the lexer's next token to the one it read.
+  auto statement = ParserRuleItem::CreateSequence();
+  statement->AddSubItem(ParserRuleItem::CreateToken(kTokenIdentifier));
+  statement->AddSubItem("value", ParserRuleItem::CreateToken(kTokenUser));
+  statement->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, ";"));
+  rule->AddSubItem("statement", std::move(statement));
+  auto list = ParserRuleItem::CreateSequence();
+  list->AddSubItem(ParserRuleItem::CreateToken(kTokenIdentifier));
+  list->AddSubItem("value", ParserRuleItem::CreateToken(kTokenUser));
+  list->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, ","));
+  rule->AddSubItem("list", std::move(list));
+  rules->AddRule("rule", std::move(rule));
+  std::string error;
+  auto parser = Parser::Create(config, std::move(rules), &error);
+  ASSERT_NE(parser, nullptr) << "Error: " << error;
+  LexerContentId content = parser->GetLexer().AddContent("x $abc,");
+
+  ParseResult result = parser->Parse(content, "rule");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_THAT(result->GetItems("statement"), IsEmpty());
+  const ParsedItem* list_item = result->GetItem("list");
+  ASSERT_NE(list_item, nullptr);
+  EXPECT_THAT(list_item->GetItems("value"),
+              ElementsAre(IsToken(kTokenUser, "abc")));
+}
+
 TEST(ParserTest, InlineGroupsMergeNamedSubItems) {
   auto numbers = ParserRuleItem::CreateAlternatives();
   numbers->AddSubItem("value", ParserRuleItem::CreateToken(kTokenInt));

@@ -403,6 +403,11 @@ class Lexer final {
   // token parsed from this lexer's content nor the end of a content.
   const Line* GetTokenLine(TokenIndex index) const;
 
+  // Matches the token at the start of `text` and advances `text` past it.
+  // Returns the argument holding the token's type and capture, or null if no
+  // token matches.
+  const TokenArg* MatchToken(std::string_view* text);
+
   Token ParseInt(TokenIndex token_index, std::string_view text,
                  IntParseType int_parse_type) const;
   Token ParseFloat(TokenIndex token_index, std::string_view text) const;
