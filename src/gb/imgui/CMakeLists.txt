@@ -20,6 +20,20 @@ set(gb_imgui_SOURCE
   ${GB_THIRD_PARTY_DIR}/imgui/imstb_truetype.h
 )
 
+# Draws with gb_render's test backend.
+set(gb_imgui_RENDER_TEST_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../render)
+set(gb_imgui_TEST_SOURCE
+  imgui_instance_test.cc
+  ${gb_imgui_RENDER_TEST_DIR}/render_test.cc
+  ${gb_imgui_RENDER_TEST_DIR}/test_binding_data.cc
+  ${gb_imgui_RENDER_TEST_DIR}/test_render_backend.cc
+  ${gb_imgui_RENDER_TEST_DIR}/test_render_buffer.cc
+  ${gb_imgui_RENDER_TEST_DIR}/test_render_pipeline.cc
+  ${gb_imgui_RENDER_TEST_DIR}/test_shader_code.cc
+  ${gb_imgui_RENDER_TEST_DIR}/test_texture.cc
+  ${gb_imgui_RENDER_TEST_DIR}/test_texture_array.cc
+)
+
 set(gb_imgui_INCLUDES
   ${GB_THIRD_PARTY_DIR}/imgui
 )
@@ -30,6 +44,7 @@ set(gb_imgui_DEFINES
 )
 
 set(gb_imgui_DEPS
+  absl::flat_hash_map
   absl::memory
   gb_base
   gb_file

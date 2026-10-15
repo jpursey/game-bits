@@ -1263,9 +1263,86 @@ layer's.
     both sizes. Getting layer 1 returns 4096 pixels. Setting a layer of the
     drawn `kStaticWrite` array fails as expected.
 
-### CL25 [ ] imgui: audit gb_imgui and gb_imgui_sdl
+### CL25 [x] imgui: audit gb_imgui and gb_imgui_sdl
 
 Depends on: CL23.
+
+`gb_imgui` had no tests. `ImGuiInstanceTest` draws with `gb_render`'s test
+backend, which now records the commands of each `DrawList` it draws.
+`gb_imgui_sdl` only builds ImGui's SDL backend, so there was nothing of ours to
+audit.
+- Instances:
+  - A second instance on the same render system always failed to create, as
+    it registered the render types again. Instances now share them.
+  - `ImGui::CreateContext()` only makes the new context current if there is
+    none, so a second instance stored itself in the first one's context, and
+    the first was no longer active. `Create()` now makes the new instance
+    active as documented, and restores the previous one if it fails.
+  - `GetActive()` and `IsActive()` asserted when no context was current (such
+    as after the active instance was destroyed). `GetActive()` now returns
+    null.
+  - `Init()` crashed if the material type, default textures, or material
+    failed to create.
+  - `LoadFonts()` never set its "done" flag, so each call made another font
+    texture.
+  - Each `AddTexture()` call made a new material, so calling it every frame
+    (the natural way with ImGui) grew without bound. The same texture now
+    returns the same ID. A null texture, a texture array index out of range,
+    or a texture from another resource system (which the instance couldn't
+    keep loaded) returns null.
+- Drawing:
+  - The mesh grew to twice the vertices needed, so any GUI over half of
+    `kMaxMeshVertices` failed to make its mesh, and nothing was drawn again.
+    Growth is now capped at the limit, and grows the mesh in place with
+    `Mesh::Set()`, which keeps its buffers if larger ones can't be made. A GUI
+    over the limit skips the frame, logging an error at most once a second.
+  - A failed mesh `Edit()` also stopped all drawing; it now skips the frame.
+  - `ImDrawCallback_ResetRenderState` reset the draw list without setting the
+    material and mesh again, so the next draw had neither.
+  - Commands with an empty clip rectangle were drawn with an empty scissor.
+    They are now skipped, and a GUI with no display size isn't drawn.
+- ImGui file functions: `ImFileGetSize()` returned 0 on error rather than -1,
+  so a failed size read as an empty file. `ImFileRead()` and `ImFileWrite()`
+  returned bytes rather than items, as `fread()` does (ImGui only passes items
+  of one byte).
+- Conventions: `gb_imconfig.h`'s include guard, a missing `explicit`, and
+  missing includes.
+- Left as is:
+  - A GUI over `kMaxMeshVertices` could be drawn by splitting it across
+    meshes. Indices and `DrawList::DrawPartial()`'s vertex offset are 16 bits,
+    so one mesh can't hold more.
+  - The test compiles `gb_render`'s test backend from its sources, as nothing
+    outside `gb_render` used it before. A shared test library target would
+    avoid listing the files twice.
+  - `RenderSystem`'s `Register*` functions fail on a name already registered,
+    so `Init()` gets each type before registering it. Returning the existing
+    type when the definition matches would let callers just register, and
+    would catch a different type registered under the same name, which `Init()`
+    doesn't check.
+  - `GetActive()` assumes any current ImGui context belongs to an
+    `ImGuiInstance`, so a context made directly with `ImGui::CreateContext()`
+    must not be current while ImGui uses its file functions.
+
+`examples/render-check` has a new GUI section: extra rectangles to grow the
+GUI's mesh, a button that goes over the vertex limit for a second, and a
+render state reset in the middle of the panel.
+
+**Verify**
+- Standard checks.
+- Unit tests (`ImGuiInstanceTest`): two instances on one render system, the
+  active instance after creating, destroying, and failing to create, creation
+  failing for each render resource, fonts loaded once, `AddTexture()` IDs, mesh
+  growth past half the limit, frames over the limit and failed edits skipped,
+  render state resets, clipping, and saving and loading settings through the
+  file system.
+- By hand, in `examples/render-check`, with no errors logged other than those
+  expected:
+  - Drag "Extra rectangles" to the maximum and back: the block below the grid
+    grows and shrinks, and the panel keeps drawing.
+  - "Go over the vertex limit for a second": the GUI disappears for about a
+    second with a "GUI has ... vertices" error, then comes back.
+  - "Reset render state in this panel": the line after the reset, and the
+    sections below it, still draw.
 
 ### CL26 [ ] all: final pass
 

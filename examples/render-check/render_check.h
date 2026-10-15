@@ -107,7 +107,9 @@ class RenderCheck final {
   void DrawInstanceGui();
   void DrawTextureGui();
   void DrawTextureArrayGui();
+  void DrawGuiCheckGui();
   void DrawLogGui();
+  void DrawExtraRects();
   void DrawQuads();
 
   void CreateInstances();
@@ -163,6 +165,11 @@ class RenderCheck final {
   bool cycle_layer_ = false;
   std::string read_write_array_result_;
   std::string static_write_array_result_;
+
+  // GUI.
+  int extra_rects_ = 0;
+  int over_limit_frames_ = 0;
+  bool reset_render_state_ = false;
 };
 
 #endif  // RENDER_CHECK_H_

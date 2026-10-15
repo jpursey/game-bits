@@ -283,8 +283,8 @@ the Vulkan SDK to be on the PATH).
 ### Running the RenderCheck example
 
 The RenderCheck example exercises the Vulkan backend by hand: window resizing,
-binding data churn, and texture and texture array updates while they are
-drawn, with memory use and any logged errors (including the Vulkan validation
+binding data churn, texture and texture array updates while they are drawn,
+and GUI meshes up to and past their vertex limit, with memory use and any logged errors (including the Vulkan validation
 layer's) shown on screen. It is built the same way as BlockWorld, and enables
 validation in every build, so a release build is the simplest to run (a Debug
 build also needs the debug runtime on the PATH; see [CLAUDE.md](CLAUDE.md)):

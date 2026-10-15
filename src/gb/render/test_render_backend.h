@@ -6,7 +6,10 @@
 #ifndef GB_RENDER_TEST_RENDER_BACKEND_H_
 #define GB_RENDER_TEST_RENDER_BACKEND_H_
 
+#include <vector>
+
 #include "absl/log/check.h"
+#include "gb/render/draw_list.h"
 #include "gb/render/render_backend.h"
 #include "gb/render/render_types.h"
 #include "gb/render/test_binding_data.h"
@@ -43,6 +46,7 @@ class TestRenderBackend final : public RenderBackend {
     FrameDimensions frame_dimensions = {0, 0};
     bool rendering = false;
     std::vector<DrawItem> draw_list;
+    std::vector<DrawCommand> draw_commands;  // From every DrawList drawn.
     TestTexture::Config texture_config;
     TestTextureArray::Config texture_array_config;
     TestRenderPipeline::Config render_pipeline_config;
@@ -104,7 +108,7 @@ class TestRenderBackend final : public RenderBackend {
             BindingData* material_data, BindingData* instance_data,
             RenderBuffer* vertices, RenderBuffer* indices) override;
   void Draw(RenderInternal, RenderScene* scene,
-            absl::Span<const DrawCommand> commands) override {}
+            absl::Span<const DrawCommand> commands) override;
   void EndFrame(RenderInternal) override;
 
  private:

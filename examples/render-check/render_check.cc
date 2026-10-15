@@ -64,6 +64,15 @@ constexpr int kSquareSize = 16;
 constexpr int kArrayCount = 4;
 constexpr int kArraySize = 64;
 
+// Extra GUI rectangles (4 vertices each) are drawn in a block below the grid.
+// kOverLimitRects alone nearly reaches the mesh's vertex limit, so with the
+// panel the GUI is over it.
+constexpr int kMaxExtraRects = 8000;
+constexpr int kOverLimitRects = gb::kMaxMeshVertices / 4;
+constexpr int kOverLimitFrames = 60;
+constexpr int kExtraRectColumns = 128;
+constexpr float kExtraRectTop = kGridTop + kGridRows * kCellSize + 40.0f;
+
 // Converts a hue in [0, 1) to a fully saturated color.
 gb::Pixel HueColor(float hue) {
   hue = hue - std::floor(hue);
@@ -470,8 +479,10 @@ void RenderCheck::DrawGui() {
   DrawInstanceGui();
   DrawTextureGui();
   DrawTextureArrayGui();
+  DrawGuiCheckGui();
   DrawLogGui();
   ImGui::End();
+  DrawExtraRects();
 }
 
 void RenderCheck::DrawFrameGui() {
@@ -609,6 +620,38 @@ void RenderCheck::DrawTextureArrayGui() {
                                            /*expected=*/false));
   }
   ImGui::TextWrapped("%s", static_write_array_result_.c_str());
+}
+
+void RenderCheck::DrawGuiCheckGui() {
+  if (!ImGui::CollapsingHeader("GUI", ImGuiTreeNodeFlags_DefaultOpen)) {
+    return;
+  }
+  ImGui::SliderInt("Extra rectangles", &extra_rects_, 0, kMaxExtraRects);
+  if (ImGui::Button("Go over the vertex limit for a second")) {
+    over_limit_frames_ = kOverLimitFrames;
+  }
+  ImGui::Checkbox("Reset render state in this panel", &reset_render_state_);
+  if (reset_render_state_) {
+    ImGui::GetWindowDrawList()->AddCallback(ImDrawCallback_ResetRenderState,
+                                            nullptr);
+    ImGui::Text("This line is drawn after the reset.");
+  }
+}
+
+void RenderCheck::DrawExtraRects() {
+  int count = extra_rects_;
+  if (over_limit_frames_ > 0) {
+    count = kOverLimitRects;
+    --over_limit_frames_;
+  }
+  ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
+  for (int i = 0; i < count; ++i) {
+    const float x = kGridLeft + (i % kExtraRectColumns) * 2.0f;
+    const float y = kExtraRectTop + (i / kExtraRectColumns) * 2.0f;
+    const gb::Pixel color = HueColor(i / static_cast<float>(kMaxExtraRects));
+    draw_list->AddRectFilled({x, y}, {x + 2.0f, y + 2.0f},
+                             IM_COL32(color.r, color.g, color.b, 255));
+  }
 }
 
 void RenderCheck::DrawLogGui() {

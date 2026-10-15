@@ -127,6 +127,15 @@ void TestRenderBackend::Draw(RenderInternal, RenderScene* scene,
                                static_cast<TestRenderBuffer*>(indices)});
 }
 
+void TestRenderBackend::Draw(RenderInternal, RenderScene* scene,
+                             absl::Span<const DrawCommand> commands) {
+  if (!state_->rendering || scene == nullptr) {
+    state_->invalid_call_count += 1;
+  }
+  state_->draw_commands.insert(state_->draw_commands.end(), commands.begin(),
+                               commands.end());
+}
+
 void TestRenderBackend::EndFrame(RenderInternal) {
   if (!state_->rendering) {
     state_->invalid_call_count += 1;

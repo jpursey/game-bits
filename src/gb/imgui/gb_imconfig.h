@@ -3,10 +3,10 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef IMGUI_GB_IMCONFIG_H_
-#define IMGUI_GB_IMCONFIG_H_
+#ifndef GB_IMGUI_GB_IMCONFIG_H_
+#define GB_IMGUI_GB_IMCONFIG_H_
 
-#include <stdint.h>
+#include <cstdint>
 
 // This file is used to configure Dear ImGui for the Game Bits engine.
 // See third_party/imgui/imconfig.h for details on the various options.
@@ -22,4 +22,4 @@ uint64_t ImFileRead(void* data, uint64_t size, uint64_t count,
 uint64_t ImFileWrite(const void* data, uint64_t size, uint64_t count,
                      ImFileHandle handle);
 
-#endif  // IMGUI_GB_IMCONFIG_H_
+#endif  // GB_IMGUI_GB_IMCONFIG_H_

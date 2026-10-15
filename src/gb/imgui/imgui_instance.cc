@@ -5,12 +5,28 @@
 
 #include "gb/imgui/imgui_instance.h"
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <string_view>
+
+#include "absl/base/macros.h"
+#include "absl/log/log.h"
 #include "absl/memory/memory.h"
+#include "absl/types/span.h"
 #include "gb/file/file.h"
 #include "gb/file/file_system.h"
 #include "gb/render/binding.h"
+#include "gb/render/binding_data.h"
 #include "gb/render/draw_list.h"
+#include "gb/render/material.h"
+#include "gb/render/material_type.h"
+#include "gb/render/mesh.h"
+#include "gb/render/mesh_view.h"
+#include "gb/render/render_scene.h"
 #include "gb/render/render_system.h"
+#include "gb/render/texture.h"
+#include "gb/render/texture_array.h"
 
 ImFileHandle ImFileOpen(const char* filename, const char* mode) {
   auto* instance = gb::ImGuiInstance::GetActive();
@@ -41,39 +57,44 @@ bool ImFileClose(ImFileHandle handle) {
   return true;
 }
 
+// ImGui treats a size of -1 as an error.
 uint64_t ImFileGetSize(ImFileHandle handle) {
   auto* file = static_cast<gb::File*>(handle);
   if (file == nullptr) {
-    return 0;
+    return static_cast<uint64_t>(-1);
   }
   auto position = file->GetPosition();
   auto size = file->SeekEnd();
   position = file->SeekTo(position);
   if (position < 0 || size < 0) {
     LOG(ERROR) << "Error determining file size in ImGui.";
-    return 0;
+    return static_cast<uint64_t>(-1);
   }
   return static_cast<uint64_t>(size);
 }
 
+// Like fread() and fwrite(), these return the number of whole items read or
+// written.
 uint64_t ImFileRead(void* data, uint64_t size, uint64_t count,
                     ImFileHandle handle) {
   auto* file = static_cast<gb::File*>(handle);
-  if (file == nullptr) {
+  if (file == nullptr || size == 0) {
     return 0;
   }
   return static_cast<uint64_t>(
-      file->Read(data, static_cast<int64_t>(size * count)));
+             file->Read(data, static_cast<int64_t>(size * count))) /
+         size;
 }
 
 uint64_t ImFileWrite(const void* data, uint64_t size, uint64_t count,
                      ImFileHandle handle) {
   auto* file = static_cast<gb::File*>(handle);
-  if (file == nullptr) {
+  if (file == nullptr || size == 0) {
     return 0;
   }
   return static_cast<uint64_t>(
-      file->Write(data, static_cast<int64_t>(size * count)));
+             file->Write(data, static_cast<int64_t>(size * count))) /
+         size;
 }
 
 namespace gb {
@@ -85,11 +106,22 @@ struct ImGuiSceneConstants {
   float offset_x, offset_y;
 };
 
+// ImGui's vertices are copied directly into the mesh.
 struct ImGuiVertex {
   float x, y;
   float u, v;
   Pixel pixel;
 };
+static_assert(sizeof(ImGuiVertex) == sizeof(ImDrawVert) &&
+                  offsetof(ImGuiVertex, u) == offsetof(ImDrawVert, uv) &&
+                  offsetof(ImGuiVertex, pixel) == offsetof(ImDrawVert, col),
+              "ImGuiVertex must match ImDrawVert");
+
+// Render types, shared by every instance on a render system.
+constexpr std::string_view kSceneConstantsName = "ImGuiSceneConstants";
+constexpr std::string_view kSamplerInfoName = "ImGuiSamplerInfo";
+constexpr std::string_view kVertexName = "ImGuiVertex";
+constexpr std::string_view kSceneName = "ImGui";
 
 const uint8_t kImGuiVertexShaderData[] = {
     0x03, 0x02, 0x23, 0x07, 0x00, 0x00, 0x01, 0x00, 0x08, 0x00, 0x0d, 0x00,
@@ -359,9 +391,14 @@ std::unique_ptr<ImGuiInstance> ImGuiInstance::Create(CreateContract contract) {
     LOG(ERROR) << "Failed to create ImGuiInstance";
     return nullptr;
   }
-  context.SetPtr(ImGui::CreateContext());
+  ImGuiContext* previous_imgui_context = ImGui::GetCurrentContext();
+  ImGuiContext* imgui_context = ImGui::CreateContext();
+  ImGui::SetCurrentContext(imgui_context);
+  context.SetPtr(imgui_context);
   auto instance = absl::WrapUnique(new ImGuiInstance(std::move(context)));
   if (!instance->Init()) {
+    instance.reset();
+    ImGui::SetCurrentContext(previous_imgui_context);
     return nullptr;
   }
   return instance;
@@ -379,26 +416,45 @@ ImGuiInstance::~ImGuiInstance() {
 bool ImGuiInstance::Init() {
   auto* render_system = context_.GetPtr<RenderSystem>();
 
-  const auto* scene_constants_type =
-      render_system->RegisterConstantsType<ImGuiSceneConstants>(
-          "ImGuiSceneConstants");
+  const RenderDataType* scene_constants_type =
+      render_system->GetConstantsType(kSceneConstantsName);
+  if (scene_constants_type == nullptr) {
+    scene_constants_type =
+        render_system->RegisterConstantsType<ImGuiSceneConstants>(
+            kSceneConstantsName);
+  }
+  const RenderDataType* material_constants =
+      render_system->GetConstantsType(kSamplerInfoName);
+  if (material_constants == nullptr) {
+    material_constants =
+        render_system->RegisterConstantsType<float>(kSamplerInfoName);
+  }
+  const VertexType* vertex_type = render_system->GetVertexType(kVertexName);
+  if (vertex_type == nullptr) {
+    vertex_type = render_system->RegisterVertexType<ImGuiVertex>(
+        kVertexName,
+        {ShaderValue::kVec2, ShaderValue::kVec2, ShaderValue::kColor});
+  }
+  if (scene_constants_type == nullptr || material_constants == nullptr ||
+      vertex_type == nullptr) {
+    LOG(ERROR) << "Could not register ImGui render types";
+    return false;
+  }
   auto scene_binding =
       Binding()
           .SetShaders(ShaderType::kVertex)
           .SetLocation(BindingSet::kScene, 0)
           .SetConstants(scene_constants_type, DataVolatility::kPerFrame);
-  auto* material_constants =
-      render_system->RegisterConstantsType<float>("ImGuiSamplerInfo");
-  auto* scene_type = render_system->RegisterSceneType("ImGui", {scene_binding});
+  RenderSceneType* scene_type = render_system->GetSceneType(kSceneName);
+  if (scene_type == nullptr) {
+    scene_type = render_system->RegisterSceneType(kSceneName, {scene_binding});
+  }
   scene_ = render_system->CreateScene(scene_type,
                                       context_.GetValue<int>(kKeySceneOrder));
   if (scene_ == nullptr) {
     LOG(ERROR) << "Could not create ImGui render scene";
     return false;
   }
-  vertex_type_ = render_system->RegisterVertexType<ImGuiVertex>(
-      "ImGuiVertex",
-      {ShaderValue::kVec2, ShaderValue::kVec2, ShaderValue::kColor});
 
 // Enable to debug or change the shaders from source in the BlockWorld example.
 #if 0
@@ -443,31 +499,43 @@ bool ImGuiInstance::Init() {
       {ShaderParam(ShaderValue::kVec4, 0), ShaderParam(ShaderValue::kVec2, 1)},
       {});
   auto* material_type = render_system->CreateMaterialType(
-      &resources_, scene_type, vertex_type_, vertex_shader, fragment_shader,
+      &resources_, scene_type, vertex_type, vertex_shader, fragment_shader,
       MaterialConfig()
           .SetCullMode(CullMode::kNone)
           .SetDepthMode(DepthMode::kNone));
+  if (material_type == nullptr) {
+    LOG(ERROR) << "Failed to create ImGui material type";
+    return false;
+  }
 
   // Initialize the material type with default bindings.
   const Pixel default_pixel = PixelColor::kBlack;
   auto* default_texture = render_system->CreateTexture(
       &resources_, DataVolatility::kStaticWrite, 1, 1,
       SamplerOptions().SetFilter(false).SetMipmap(false));
-  default_texture->Set(&default_pixel, sizeof(default_pixel));
   auto* default_texture_array = render_system->CreateTextureArray(
       &resources_, DataVolatility::kStaticWrite, 1, 1, 1,
       SamplerOptions().SetFilter(false).SetMipmap(false));
-  default_texture_array->Set(0, &default_pixel, sizeof(default_pixel));
+  if (default_texture == nullptr || default_texture_array == nullptr ||
+      !default_texture->Set(&default_pixel, sizeof(default_pixel)) ||
+      !default_texture_array->Set(0, &default_pixel, sizeof(default_pixel))) {
+    LOG(ERROR) << "Failed to create ImGui default textures";
+    return false;
+  }
   auto* default_material_bindings =
       material_type->GetDefaultMaterialBindingData();
   default_material_bindings->SetTexture(0, default_texture);
   default_material_bindings->SetTextureArray(1, default_texture_array);
-  default_material_bindings->SetConstants<float>(
-      2, -1.0f);  // -1 indicates the texture should be used instead of the
-                  // texture array.
+
+  // -1 indicates the texture should be used instead of the texture array.
+  default_material_bindings->SetConstants<float>(2, -1.0f);
 
   material_ = render_system->CreateMaterial(&resources_, material_type);
-  mesh_ = render_system->CreateMesh(&resources_, vertex_type_,
+  if (material_ == nullptr) {
+    LOG(ERROR) << "Failed to create ImGui material";
+    return false;
+  }
+  mesh_ = render_system->CreateMesh(&resources_, vertex_type,
                                     DataVolatility::kPerFrame, 1000, 1000);
   if (mesh_ == nullptr) {
     LOG(ERROR) << "Failed to create ImGui render resources";
@@ -514,80 +582,125 @@ bool ImGuiInstance::LoadFonts() {
   resources_.Add(texture.Get());
   material_->GetMaterialBindingData()->SetTexture(0, texture.Get());
   io.Fonts->TexID = static_cast<ImTextureID>(material_);
+  fonts_initialized_ = true;
   return true;
 }
 
 ImTextureID ImGuiInstance::AddTexture(gb::Texture* texture) {
-  auto* render_system = context_.GetPtr<RenderSystem>();
-  auto* material =
-      render_system->CreateMaterial(&resources_, material_->GetType());
-  if (material == nullptr) {
-    LOG(ERROR) << "Failed to create GUI texture";
+  if (texture == nullptr) {
+    LOG(ERROR) << "Null texture added to the GUI";
     return nullptr;
   }
-  resources_.Add(texture);
+  const std::pair<const Resource*, int> key = {texture, -1};
+  auto it = texture_materials_.find(key);
+  if (it != texture_materials_.end()) {
+    return static_cast<ImTextureID>(it->second);
+  }
+  if (!resources_.Add(texture)) {
+    LOG(ERROR) << "Texture added to the GUI is from another resource system";
+    return nullptr;
+  }
+  Material* material = CreateTextureMaterial();
+  if (material == nullptr) {
+    return nullptr;
+  }
   material->GetMaterialBindingData()->SetTexture(0, texture);
+  texture_materials_[key] = material;
   return static_cast<ImTextureID>(material);
 }
 
 ImTextureID ImGuiInstance::AddTexture(gb::TextureArray* texture_array,
                                       int index) {
-  auto* render_system = context_.GetPtr<RenderSystem>();
-  auto* material =
-      render_system->CreateMaterial(&resources_, material_->GetType());
-  if (material == nullptr) {
-    LOG(ERROR) << "Failed to create GUI texture";
+  if (texture_array == nullptr || index < 0 ||
+      index >= texture_array->GetCount()) {
+    LOG(ERROR) << "Invalid texture array or index added to the GUI";
     return nullptr;
   }
-  resources_.Add(texture_array);
+  const std::pair<const Resource*, int> key = {texture_array, index};
+  auto it = texture_materials_.find(key);
+  if (it != texture_materials_.end()) {
+    return static_cast<ImTextureID>(it->second);
+  }
+  if (!resources_.Add(texture_array)) {
+    LOG(ERROR)
+        << "Texture array added to the GUI is from another resource system";
+    return nullptr;
+  }
+  Material* material = CreateTextureMaterial();
+  if (material == nullptr) {
+    return nullptr;
+  }
   material->GetMaterialBindingData()->SetTextureArray(1, texture_array);
   material->GetMaterialBindingData()->SetConstants<float>(
       2, static_cast<float>(index));
+  texture_materials_[key] = material;
   return static_cast<ImTextureID>(material);
 }
 
+Material* ImGuiInstance::CreateTextureMaterial() {
+  auto* material = context_.GetPtr<RenderSystem>()->CreateMaterial(
+      &resources_, material_->GetType());
+  if (material == nullptr) {
+    LOG(ERROR) << "Failed to create GUI texture";
+  }
+  return material;
+}
+
+ImTextureID ImGuiInstance::SetDrawDefaults(DrawList* draw) {
+  draw->SetMaterial(material_);
+  draw->SetMesh(mesh_, instance_data_.get());
+  return static_cast<ImTextureID>(material_);
+}
+
 void ImGuiInstance::Draw(ImDrawData* draw_data) {
-  if (!IsActive() || mesh_ == nullptr) {
+  if (!IsActive()) {
     return;
   }
   if (draw_data == nullptr) {
     ImGui::Render();
     draw_data = ImGui::GetDrawData();
   }
+  if (draw_data->DisplaySize.x <= 0.0f || draw_data->DisplaySize.y <= 0.0f) {
+    return;
+  }
+  if (draw_data->TotalVtxCount > kMaxMeshVertices) {
+    LOG_EVERY_N_SEC(ERROR, 1)
+        << "GUI has " << draw_data->TotalVtxCount
+        << " vertices, which is more than the maximum of " << kMaxMeshVertices;
+    return;
+  }
 
-  auto* render_system = context_.GetPtr<RenderSystem>();
+  // Mesh::Set() keeps the current buffers if larger ones can't be created, so
+  // a failure only skips this frame.
   if (draw_data->TotalVtxCount > mesh_->GetVertexCapacity() ||
       draw_data->TotalIdxCount > mesh_->GetTriangleCapacity() * 3) {
     const int max_vertices =
-        std::max(draw_data->TotalVtxCount * 2, mesh_->GetVertexCapacity());
+        std::clamp(draw_data->TotalVtxCount * 2, mesh_->GetVertexCapacity(),
+                   kMaxMeshVertices);
     const int max_indices = std::max(draw_data->TotalIdxCount * 2,
                                      mesh_->GetTriangleCapacity() * 3);
-    resources_.Remove(mesh_, false);
-    mesh_ = render_system->CreateMesh(&resources_, vertex_type_,
-                                      DataVolatility::kPerFrame, max_vertices,
-                                      max_indices / 3);
-    if (mesh_ == nullptr) {
-      LOG(ERROR) << "Failed to create mesh for GUI!";
+    if (!mesh_->Set(absl::Span<const ImGuiVertex>(),
+                    absl::Span<const Triangle>(), max_vertices,
+                    max_indices / 3)) {
+      LOG(ERROR) << "Failed to grow mesh for GUI!";
       return;
     }
   }
   auto mesh_view = mesh_->Edit();
   if (mesh_view == nullptr) {
-    LOG(ERROR) << "Failed to edit mesh for GUI!";
-    mesh_ = nullptr;
+    LOG_EVERY_N_SEC(ERROR, 1) << "Failed to edit mesh for GUI!";
     return;
   }
   mesh_view->RemoveVertices(0, mesh_view->GetVertexCount());
   mesh_view->RemoveTriangles(0, mesh_view->GetTriangleCount());
 
+  auto* render_system = context_.GetPtr<RenderSystem>();
   auto dimensions = render_system->GetFrameDimensions();
   float frame_width = static_cast<float>(dimensions.width);
   float frame_height = static_cast<float>(dimensions.height);
 
   DrawList draw;
-  draw.SetMaterial(material_);
-  draw.SetMesh(mesh_, instance_data_.get());
-  ImTextureID last_texture_id = static_cast<ImTextureID>(material_);
+  ImTextureID last_texture_id = SetDrawDefaults(&draw);
   ImVec2 clip_off = draw_data->DisplayPos;
   ImVec2 clip_scale = draw_data->FramebufferScale;
   int vertex_offset = 0;
@@ -602,47 +715,36 @@ void ImGuiInstance::Draw(ImDrawData* draw_data) {
                                                 cmd_list->IdxBuffer.Size));
     for (int i = 0; i < cmd_list->CmdBuffer.Size; i++) {
       const ImDrawCmd* cmd = &cmd_list->CmdBuffer[i];
-      if (cmd->UserCallback != NULL) {
-        if (cmd->UserCallback == ImDrawCallback_ResetRenderState) {
-          draw.Reset();
-        } else
-          cmd->UserCallback(cmd_list, cmd);
-      } else {
-        ImVec4 clip_rect;
-        clip_rect.x = (cmd->ClipRect.x - clip_off.x) * clip_scale.x;
-        clip_rect.y = (cmd->ClipRect.y - clip_off.y) * clip_scale.y;
-        clip_rect.z = (cmd->ClipRect.z - clip_off.x) * clip_scale.x;
-        clip_rect.w = (cmd->ClipRect.w - clip_off.y) * clip_scale.y;
-
-        if (clip_rect.x < frame_width && clip_rect.y < frame_height &&
-            clip_rect.z >= 0.0f && clip_rect.w >= 0.0f) {
-          if (clip_rect.x < 0.0f) {
-            clip_rect.x = 0.0f;
-          }
-          if (clip_rect.y < 0.0f) {
-            clip_rect.y = 0.0f;
-          }
-          if (clip_rect.z > 0.0f && clip_rect.w > 0.0f) {
-            if (clip_rect.z > frame_width) {
-              clip_rect.z = frame_width;
-            }
-            if (clip_rect.w > frame_height) {
-              clip_rect.w = frame_height;
-            }
-            draw.SetScissor(static_cast<int>(clip_rect.x),
-                            static_cast<int>(clip_rect.y),
-                            static_cast<int>(clip_rect.z - clip_rect.x),
-                            static_cast<int>(clip_rect.w - clip_rect.y));
-            if (cmd->TextureId != last_texture_id) {
-              last_texture_id = cmd->TextureId;
-              draw.SetMaterial(static_cast<gb::Material*>(cmd->TextureId));
-            }
-            draw.DrawPartial((cmd->IdxOffset + index_offset) / 3,
-                             cmd->ElemCount / 3,
-                             cmd->VtxOffset + vertex_offset);
-          }
-        }
+      if (cmd->UserCallback == ImDrawCallback_ResetRenderState) {
+        draw.Reset();
+        last_texture_id = SetDrawDefaults(&draw);
+        continue;
       }
+      if (cmd->UserCallback != nullptr) {
+        cmd->UserCallback(cmd_list, cmd);
+        continue;
+      }
+
+      const float min_x =
+          std::max((cmd->ClipRect.x - clip_off.x) * clip_scale.x, 0.0f);
+      const float min_y =
+          std::max((cmd->ClipRect.y - clip_off.y) * clip_scale.y, 0.0f);
+      const float max_x =
+          std::min((cmd->ClipRect.z - clip_off.x) * clip_scale.x, frame_width);
+      const float max_y =
+          std::min((cmd->ClipRect.w - clip_off.y) * clip_scale.y, frame_height);
+      if (max_x <= min_x || max_y <= min_y) {
+        continue;
+      }
+      draw.SetScissor(static_cast<int>(min_x), static_cast<int>(min_y),
+                      static_cast<int>(max_x - min_x),
+                      static_cast<int>(max_y - min_y));
+      if (cmd->TextureId != last_texture_id) {
+        last_texture_id = cmd->TextureId;
+        draw.SetMaterial(static_cast<gb::Material*>(cmd->TextureId));
+      }
+      draw.DrawPartial((cmd->IdxOffset + index_offset) / 3, cmd->ElemCount / 3,
+                       cmd->VtxOffset + vertex_offset);
     }
     index_offset += cmd_list->IdxBuffer.Size;
     vertex_offset += cmd_list->VtxBuffer.Size;
