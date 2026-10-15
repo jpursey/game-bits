@@ -8,7 +8,6 @@
 
 #include <type_traits>
 
-#include "gb/file/chunk_types.h"
 #include "gb/render/material_config.h"
 #include "gb/render/render_resource_generated.h"
 #include "gb/render/render_types.h"

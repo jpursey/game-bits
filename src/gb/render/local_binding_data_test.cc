@@ -8,7 +8,6 @@
 #include <memory>
 #include <vector>
 
-#include "gb/render/binding_data.h"
 #include "gb/render/render_test.h"
 #include "gb/render/test_binding_data.h"
 #include "gmock/gmock.h"

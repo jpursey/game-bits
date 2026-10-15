@@ -10,6 +10,7 @@
 #include <string_view>
 
 #include "gb/base/flags.h"
+#include "gb/file/file_types.h"
 
 namespace gb {
 

@@ -10,7 +10,6 @@
 
 #include "absl/log/check.h"
 #include "absl/log/log.h"
-#include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/synchronization/notification.h"
 #include "absl/types/span.h"
@@ -20,7 +19,6 @@
 
 // MUST be last, as windows pollutes the global namespace with many macros.
 #define WIN32_LEAN_AND_MEAN
-#include <process.h>
 #include <windows.h>
 
 namespace gb {

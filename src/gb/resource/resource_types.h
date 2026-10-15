@@ -8,7 +8,6 @@
 
 #include <stdint.h>
 
-#include <string_view>
 #include <tuple>
 
 #include "gb/base/access_token.h"

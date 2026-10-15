@@ -12,6 +12,7 @@
 #include "absl/synchronization/mutex.h"
 #include "gb/base/string_util.h"
 #include "gb/file/file_protocol.h"
+#include "gb/file/file_types.h"
 
 namespace gb {
 

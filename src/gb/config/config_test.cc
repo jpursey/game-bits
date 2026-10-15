@@ -6,7 +6,6 @@
 #include "gb/config/config.h"
 
 #include <clocale>
-#include <cmath>
 #include <limits>
 #include <string>
 #include <type_traits>

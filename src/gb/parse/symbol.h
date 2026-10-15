@@ -14,6 +14,7 @@
 
 #include "absl/strings/ascii.h"
 #include "absl/strings/str_format.h"
+#include "gb/parse/parse_types.h"
 
 namespace gb {
 

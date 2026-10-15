@@ -3,8 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef GB_BASE_WEAK_PTR_H
-#define GB_BASE_WEAK_PTR_H
+#ifndef GB_BASE_WEAK_PTR_H_
+#define GB_BASE_WEAK_PTR_H_
 
 #include <memory>
 #include <utility>
@@ -394,4 +394,4 @@ void WeakScope<Type>::InvalidateWeakPtrs() {
 
 }  // namespace gb
 
-#endif  // GB_BASE_WEAK_PTR_H
+#endif  // GB_BASE_WEAK_PTR_H_

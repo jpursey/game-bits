@@ -3,8 +3,12 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef GB_BASE_FILE_RAW_FILE_H_
-#define GB_BASE_FILE_RAW_FILE_H_
+#ifndef GB_FILE_RAW_FILE_H_
+#define GB_FILE_RAW_FILE_H_
+
+#include <stdint.h>
+
+#include "gb/file/file_types.h"
 
 namespace gb {
 
@@ -46,4 +50,4 @@ class RawFile {
 
 }  // namespace gb
 
-#endif  // GB_BASE_FILE_RAW_FILE_H_
+#endif  // GB_FILE_RAW_FILE_H_

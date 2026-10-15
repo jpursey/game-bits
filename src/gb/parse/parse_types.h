@@ -6,6 +6,9 @@
 #ifndef GB_PARSE_PARSE_TYPES_H_
 #define GB_PARSE_PARSE_TYPES_H_
 
+#include <cstdint>
+#include <string>
+
 #include "absl/strings/str_format.h"
 
 namespace gb {

@@ -8,7 +8,6 @@
 
 #include <cstdint>
 #include <string_view>
-#include <vector>
 
 #include "absl/types/span.h"
 #include "gb/thread/thread_types.h"

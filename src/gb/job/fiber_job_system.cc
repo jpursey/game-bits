@@ -13,6 +13,8 @@
 #include "absl/memory/memory.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
+#include "gb/thread/fiber.h"
+#include "gb/thread/thread.h"
 
 namespace gb {
 

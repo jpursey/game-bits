@@ -3,8 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef GB_THREAD_TYPES_H_
-#define GB_THREAD_TYPES_H_
+#ifndef GB_THREAD_THREAD_TYPES_H_
+#define GB_THREAD_THREAD_TYPES_H_
 
 namespace gb {
 
@@ -28,4 +28,4 @@ using Thread = ThreadType*;
 
 }  // namespace gb
 
-#endif  // GB_THREAD_TYPES_H_
+#endif  // GB_THREAD_THREAD_TYPES_H_

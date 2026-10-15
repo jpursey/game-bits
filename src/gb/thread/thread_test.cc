@@ -12,7 +12,6 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/synchronization/notification.h"
-#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
 namespace gb {

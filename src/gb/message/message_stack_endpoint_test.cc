@@ -5,7 +5,6 @@
 
 #include "gb/message/message_stack_endpoint.h"
 
-#include "gb/test/thread_tester.h"
 #include "gtest/gtest.h"
 
 namespace gb {

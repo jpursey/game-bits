@@ -3,8 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef GB_BASE_FILE_FILE_TYPES_H_
-#define GB_BASE_FILE_FILE_TYPES_H_
+#ifndef GB_FILE_FILE_TYPES_H_
+#define GB_FILE_FILE_TYPES_H_
 
 #include <stdint.h>
 
@@ -127,4 +127,4 @@ struct PathInfo {
 
 }  // namespace gb
 
-#endif  // GB_BASE_FILE_FILE_TYPES_H_
+#endif  // GB_FILE_FILE_TYPES_H_

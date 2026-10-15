@@ -8,7 +8,6 @@
 
 #include <memory>
 
-#include "gb/render/binding.h"
 #include "gb/render/render_types.h"
 
 namespace gb {

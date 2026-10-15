@@ -8,6 +8,7 @@
 
 #include "gb/render/render_scene_type.h"
 #include "gb/render/vulkan/vulkan_binding_data_factory.h"
+#include "gb/render/vulkan/vulkan_types.h"
 
 namespace gb {
 

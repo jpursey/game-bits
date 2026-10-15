@@ -7,7 +7,6 @@
 #define GB_PARSE_TOKEN_H_
 
 #include <cstdint>
-#include <optional>
 #include <string_view>
 #include <variant>
 

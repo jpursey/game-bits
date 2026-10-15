@@ -9,7 +9,6 @@
 #include <string>
 #include <vector>
 
-#include "absl/log/log.h"
 #include "gb/test/thread_tester.h"
 #include "gtest/gtest.h"
 

@@ -5,8 +5,6 @@
 
 #include "gb/file/file_system.h"
 
-#include <algorithm>
-
 #include "gb/file/memory_file_protocol.h"
 #include "gb/file/test_protocol.h"
 #include "gb/test/test_util.h"

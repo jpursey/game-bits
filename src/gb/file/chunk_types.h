@@ -8,10 +8,12 @@
 
 #include <stdint.h>
 
+#include <cstring>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
-#include "absl/hash/hash.h"
+#include "gb/file/file_types.h"
 
 namespace gb {
 

@@ -14,8 +14,8 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
-#include "absl/types/span.h"
 #include "gb/parse/lexer_config.h"
+#include "gb/parse/parse_types.h"
 #include "gb/parse/token.h"
 #include "re2/re2.h"
 

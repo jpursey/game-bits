@@ -7,7 +7,6 @@
 
 #include "absl/log/log.h"
 #include "gb/render/vulkan/vulkan_binding_data_factory.h"
-#include "gb/render/vulkan/vulkan_render_pipeline.h"
 #include "gb/render/vulkan/vulkan_texture.h"
 #include "gb/render/vulkan/vulkan_texture_array.h"
 

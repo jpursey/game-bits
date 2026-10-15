@@ -8,6 +8,9 @@
 
 #include <stdint.h>
 
+#include <optional>
+#include <vector>
+
 #include "gb/file/chunk_types.h"
 #include "gb/file/file_types.h"
 

@@ -5,7 +5,6 @@
 
 #include "gb/game/game_state_machine.h"
 
-#include "absl/log/log.h"
 #include "gb/test/thread_tester.h"
 #include "gtest/gtest.h"
 

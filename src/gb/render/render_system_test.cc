@@ -12,7 +12,7 @@
 #include "absl/types/span.h"
 #include "flatbuffers/flatbuffers.h"
 #include "gb/base/context_builder.h"
-#include "gb/render/render_resource_chunks.h"
+#include "gb/render/render_resource_generated.h"
 #include "gb/render/render_test.h"
 #include "gb/resource/resource_chunks.h"
 #include "gb/resource/resource_file_writer.h"

@@ -7,7 +7,6 @@
 #define GB_RENDER_BINDING_DATA_H_
 
 #include "gb/base/type_info.h"
-#include "gb/render/binding.h"
 #include "gb/render/render_assert.h"
 #include "gb/render/render_types.h"
 #include "gb/render/texture.h"

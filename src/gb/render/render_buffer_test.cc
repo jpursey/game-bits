@@ -5,9 +5,7 @@
 
 #include "gb/render/render_buffer.h"
 
-#include "gb/render/render_buffer_view.h"
 #include "gb/render/render_test.h"
-#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
 namespace gb {

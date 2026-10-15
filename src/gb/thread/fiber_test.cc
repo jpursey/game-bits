@@ -13,7 +13,6 @@
 #include <vector>
 
 #include "absl/cleanup/cleanup.h"
-#include "absl/log/log.h"
 #include "absl/synchronization/mutex.h"
 #include "absl/synchronization/notification.h"
 #include "absl/types/span.h"

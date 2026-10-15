@@ -6,8 +6,6 @@
 #ifndef GB_PROFILE_PROFILE_TIMER_H_
 #define GB_PROFILE_PROFILE_TIMER_H_
 
-#include <cstdint>
-
 #include "absl/log/check.h"
 #include "gb/profile/profile_point.h"
 #include "gb/profile/profiler.h"

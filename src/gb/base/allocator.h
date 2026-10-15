@@ -6,8 +6,8 @@
 #ifndef GB_BASE_ALLOCATOR_H_
 #define GB_BASE_ALLOCATOR_H_
 
-#include <memory>
 #include <type_traits>
+#include <utility>
 
 #include "absl/synchronization/mutex.h"
 

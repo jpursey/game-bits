@@ -16,8 +16,6 @@
 #include "gb/render/test_render_buffer.h"
 #include "gb/render/test_render_pipeline.h"
 #include "gb/render/test_render_scene.h"
-#include "gb/render/test_render_scene_type.h"
-#include "gb/render/test_shader_code.h"
 #include "gb/render/test_texture.h"
 #include "gb/render/test_texture_array.h"
 

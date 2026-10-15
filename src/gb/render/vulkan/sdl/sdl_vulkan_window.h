@@ -3,8 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef GB_RENDER_VULKAN_SDL_VULKAN_WINDOW_H_
-#define GB_RENDER_VULKAN_SDL_VULKAN_WINDOW_H_
+#ifndef GB_RENDER_VULKAN_SDL_SDL_VULKAN_WINDOW_H_
+#define GB_RENDER_VULKAN_SDL_SDL_VULKAN_WINDOW_H_
 
 #include <memory>
 #include <vector>
@@ -84,4 +84,4 @@ class SdlVulkanWindow final : public VulkanWindow {
 
 }  // namespace gb
 
-#endif  // GB_RENDER_VULKAN_SDL_VULKAN_WINDOW_H_
+#endif  // GB_RENDER_VULKAN_SDL_SDL_VULKAN_WINDOW_H_

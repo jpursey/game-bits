@@ -5,7 +5,7 @@
 
 #include "gb/parse/parser_rules.h"
 
-#include "absl/log/log.h"
+#include "absl/log/check.h"
 #include "absl/strings/str_cat.h"
 #include "gb/parse/parser.h"
 

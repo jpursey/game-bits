@@ -1344,16 +1344,73 @@ render state reset in the middle of the panel.
   - "Reset render state in this panel": the line after the reset, and the
     sections below it, still draw.
 
-### CL26 [ ] all: final pass
+### CL26 [x] all: final pass
 
 Depends on: CL1 to CL25.
 
 A pass over every library for conventions that hold across all of them, which
-the earlier CLs didn't check consistently:
-- Every header in a library with a `*_types.h` includes it, even where nothing
-  in the header uses it, so a forward declaration that doesn't match its
-  definition is caught right away. Already known to be missing in `gb_file`:
-  `local_file_protocol.h`, `memory_file_protocol.h`, `path.h`, `raw_file.h`, and
-  `test_protocol.h`. Libraries that forward declare their types without one
-  (such as `gb_game`) are listed for the user to decide on.
-- No unused includes, other than a library's `*_types.h`.
+the earlier CLs didn't check consistently. Unused includes were found with
+clang-tidy's `misc-include-cleaner` (Visual Studio's clang-tidy 19, run over
+every file in `src/gb` with the Debug build's compile commands), and each one
+was checked by hand.
+- Types headers: every header in a library with a `*_types.h` now includes it,
+  so a forward declaration that doesn't match its definition is caught right
+  away. It was missing from `chunk_types.h`, `common_protocol_test.h`,
+  `local_file_protocol.h`, `memory_file_protocol.h`, `path.h`, `raw_file.h`,
+  and `test_protocol.h` in `gb_file`, from `lexer_config.h`,
+  `lexer_program.h`, and `symbol.h` in `gb_parse`, from `vulkan_scene_type.h`,
+  and from `test_resources.h`. `gb_imconfig.h` is left out, as it is ImGui's
+  own configuration, included by ImGui itself.
+- Unused includes: removed in every library. Some were replaced with the
+  header actually used: `fiber_job_system.h` only needs `thread_types.h` (its
+  `.cc` and test now include `fiber.h` and `thread.h`), `vulkan_shader_code.h`
+  needs `shader_code.h` rather than `shader.h`, `render_system_test.cc` needs
+  the generated flatbuffers header rather than `render_resource_chunks.h`, and
+  `parser_rules.cc` and `render_test.cc` use `absl/log/check.h`, not `log.h`.
+  `chunk_reader.h` had relied on `chunk_types.h`'s unused `absl/hash/hash.h`
+  for `<optional>` and `<vector>`, and now includes them.
+- Missing includes, found along the way rather than by a sweep (the include
+  cleaner ran with missing includes off): `parse_types.h` used `uint32_t` and
+  `std::string`, `raw_file.h` used `int64_t`, `chunk_types.h` used `std::move`
+  and `std::strlen`, and `lexer.h` used `std::shared_ptr` without including
+  them, so each only compiled after something else.
+- Include guards: six didn't follow `GB_<DIR>_<FILE>_H_`: `file.h`,
+  `file_types.h`, and `raw_file.h` (still `GB_BASE_FILE_...`), `weak_ptr.h` (no
+  trailing `_`), `sdl_vulkan_window.h`, and `thread_types.h`.
+- Kept, although the include cleaner reports them:
+  - Umbrella headers, whose symbols are declared in headers they include:
+    `<windows.h>`, `<malloc.h>`, `<share.h>`, `<intrin.h>`, `glm/glm.hpp`,
+    `utf8.h`, `SDL.h`, and `flatbuffers/flatbuffers.h`.
+  - `<new>` for placement new.
+  - Headers needed for a complete type to destroy a `std::unique_ptr`:
+    `raw_file.h` in three `gb_file` tests, and `file.h` in the resource file
+    reader and writer.
+  - A test's own header, and each `*_types.h`.
+  - `vulkan_types.h`'s `<vulkan/vulkan.hpp>` and `render_assert.h`, which set
+    up Vulkan-Hpp's asserts for every Vulkan header.
+- Libraries without a `*_types.h`: `gb_alloc`, `gb_base`, `gb_collide`,
+  `gb_config`, `gb_container`, `gb_game`, `gb_profile`, `gb_sdl`, `gb_test`,
+  `gb_imgui_sdl`, and `gb_render_vulkan_sdl`. Not every library needs one; the
+  convention only applies to libraries that have one. Only `gb_game` forward
+  declares a type defined in another header (`game_state.h` declares
+  `GameStateInfo` and `GameStateMachine`, breaking the include cycle with
+  `game_state_machine.h`), and it is left without one for now.
+- Left as is:
+  - clang-cl. Game Bits is meant to build with clang-cl as well, but clang (as
+    run by clang-tidy) rejects some of it: `TokenIndex`'s defaulted
+    `operator<=>` on bit fields in `parse_types.h`, `using` declarations of
+    dependent types without `typename` and a protected `data` access in
+    `array.h`, and an unused lambda capture in `fiber_job_system_test.cc` (an
+    error with warnings as errors). A clang-cl build couldn't be checked here,
+    as Visual Studio's clang component isn't installed.
+  - The include check isn't repeatable: the clang-tidy run is not in the tree,
+    and the includes kept on purpose aren't marked `// IWYU pragma: keep`, so
+    each run reports them again. Whether to add a `.clang-tidy` and a script or
+    CMake option, and the pragmas, is a backlog item to decide on.
+
+**Verify**
+- Builds cleanly in Debug and Release, `ctest` passes in Debug, and touched
+  files pass the clang-format check.
+- The include cleaner over `src/gb` reports only the includes kept above.
+- `examples/render-check`, `examples/block-world`, `templates/cli`, and
+  `templates/sdl` build.

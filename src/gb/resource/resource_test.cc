@@ -13,7 +13,6 @@
 #include "absl/strings/str_cat.h"
 #include "gb/resource/resource_manager.h"
 #include "gb/resource/resource_ptr.h"
-#include "gb/resource/resource_set.h"
 #include "gb/resource/resource_system.h"
 #include "gb/resource/test_resources.h"
 #include "gmock/gmock.h"

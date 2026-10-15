@@ -8,7 +8,6 @@
 #include "gb/resource/resource_manager.h"
 #include "gb/resource/resource_system.h"
 #include "gb/resource/test_resources.h"
-#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
 namespace gb {

@@ -5,10 +5,7 @@
 
 #include "gb/file/path.h"
 
-#include <cctype>
-
 #include "absl/strings/ascii.h"
-#include "absl/strings/str_cat.h"
 #include "gtest/gtest.h"
 
 namespace gb {

@@ -3,8 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef GB_BASE_FILE_FILE_H_
-#define GB_BASE_FILE_FILE_H_
+#ifndef GB_FILE_FILE_H_
+#define GB_FILE_FILE_H_
 
 #include <memory>
 #include <string>
@@ -374,4 +374,4 @@ int64_t File::WriteLines(const Container& lines, std::string_view line_end) {
 
 }  // namespace gb
 
-#endif  // GB_BASE_FILE_FILE_H_
+#endif  // GB_FILE_FILE_H_

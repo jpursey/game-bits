@@ -9,7 +9,7 @@
 #include <cstdint>
 #include <memory>
 
-#include "gb/render/shader.h"
+#include "gb/render/shader_code.h"
 #include "gb/render/vulkan/vulkan_types.h"
 
 namespace gb {

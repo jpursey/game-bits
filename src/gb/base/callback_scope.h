@@ -6,12 +6,10 @@
 #ifndef GB_BASE_CALLBACK_SCOPE_H_
 #define GB_BASE_CALLBACK_SCOPE_H_
 
-#include <memory>
 #include <type_traits>
 #include <utility>
 
 #include "absl/functional/any_invocable.h"
-#include "absl/synchronization/mutex.h"
 #include "gb/base/weak_ptr.h"
 
 namespace gb {

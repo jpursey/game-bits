@@ -15,6 +15,7 @@
 #include "gb/base/context_builder.h"
 #include "gb/base/fake_clock.h"
 #include "gb/test/log_recorder.h"
+#include "gb/thread/fiber.h"
 #include "gb/thread/thread.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"

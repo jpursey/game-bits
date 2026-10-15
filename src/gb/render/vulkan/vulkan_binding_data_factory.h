@@ -13,7 +13,6 @@
 #include "absl/types/span.h"
 #include "gb/base/weak_ptr.h"
 #include "gb/render/binding.h"
-#include "gb/render/binding_data.h"
 #include "gb/render/vulkan/vulkan_binding_data.h"
 #include "gb/render/vulkan/vulkan_descriptor_pool.h"
 #include "gb/render/vulkan/vulkan_types.h"

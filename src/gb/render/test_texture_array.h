@@ -6,8 +6,6 @@
 #ifndef GB_RENDER_TEST_TEXTURE_ARRAY_H_
 #define GB_RENDER_TEST_TEXTURE_ARRAY_H_
 
-#include <vector>
-
 #include "absl/types/span.h"
 #include "gb/render/render_types.h"
 #include "gb/render/texture_array.h"

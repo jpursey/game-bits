@@ -9,6 +9,7 @@
 #include <memory>
 
 #include "gb/file/file_protocol.h"
+#include "gb/file/file_types.h"
 #include "gtest/gtest.h"
 
 namespace gb {

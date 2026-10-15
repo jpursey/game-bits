@@ -5,7 +5,6 @@
 
 #include "gb/parse/lexer_program.h"
 
-#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
 namespace gb {

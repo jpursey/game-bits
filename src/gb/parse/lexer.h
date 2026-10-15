@@ -7,15 +7,13 @@
 #define GB_PARSE_LEXER_H_
 
 #include <cstdint>
-#include <limits>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <tuple>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
-#include "absl/log/check.h"
-#include "gb/base/flags.h"
 #include "gb/parse/lexer_config.h"
 #include "gb/parse/lexer_program.h"
 #include "gb/parse/parse_types.h"

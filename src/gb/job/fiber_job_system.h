@@ -25,8 +25,7 @@
 #include "gb/base/validated_context.h"
 #include "gb/job/job_system.h"
 #include "gb/job/job_types.h"
-#include "gb/thread/fiber.h"
-#include "gb/thread/thread.h"
+#include "gb/thread/thread_types.h"
 #include "lightweightsemaphore.h"
 
 namespace gb {

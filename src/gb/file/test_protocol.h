@@ -12,6 +12,7 @@
 
 #include "absl/log/check.h"
 #include "gb/file/file_protocol.h"
+#include "gb/file/file_types.h"
 
 namespace gb {
 

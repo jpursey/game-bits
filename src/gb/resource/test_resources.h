@@ -10,6 +10,7 @@
 
 #include "absl/functional/any_invocable.h"
 #include "gb/resource/resource.h"
+#include "gb/resource/resource_types.h"
 
 namespace gb {
 

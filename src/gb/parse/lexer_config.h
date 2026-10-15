@@ -6,11 +6,11 @@
 #ifndef GB_PARSE_LEXER_CONFIG_H_
 #define GB_PARSE_LEXER_CONFIG_H_
 
-#include <cstdint>
 #include <string_view>
 
 #include "absl/types/span.h"
 #include "gb/base/flags.h"
+#include "gb/parse/parse_types.h"
 #include "gb/parse/symbol.h"
 #include "gb/parse/token.h"
 

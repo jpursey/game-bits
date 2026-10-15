@@ -8,7 +8,6 @@
 #include <vector>
 
 #include "absl/strings/str_cat.h"
-#include "gb/resource/resource.h"
 #include "gb/resource/resource_manager.h"
 #include "gb/resource/resource_ptr.h"
 #include "gb/resource/resource_set.h"

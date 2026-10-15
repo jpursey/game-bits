@@ -6,7 +6,6 @@
 #include "gb/render/material.h"
 
 #include "gb/render/render_test.h"
-#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
 namespace gb {

@@ -6,8 +6,6 @@
 #ifndef GB_RENDER_RENDER_BUFFER_H_
 #define GB_RENDER_RENDER_BUFFER_H_
 
-#include <stdint.h>
-
 #include <memory>
 
 #include "gb/render/render_types.h"
