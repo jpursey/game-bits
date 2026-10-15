@@ -35,6 +35,7 @@ enum class LexerFlag {
   kDecimalIntegers,   // Allow decimal format integers.
   kHexUpperIntegers,  // Allow hexadecimal format integers with upper case.
   kHexLowerIntegers,  // Allow hexadecimal format integers with lower case.
+  kHexLeadDigit,      // Hexadecimal digits start with a decimal digit.
 
   // Float parsing flags.
   // - Both a bit depth (32 or 64) and a format (decimal and/or exponent) must
@@ -47,6 +48,11 @@ enum class LexerFlag {
   kNegativeFloats,  // Allow negative floating point numbers.
   kDecimalFloats,   // Allow decimal format floating point (no exponent).
   kExponentFloats,  // Allow exponents in floating point numbers.
+
+  // Number prefix and suffix flags.
+  // - Prefixes and suffixes are set in LexerConfig for each integer format and
+  //   for floats, and match exactly unless kNumberAffixCaseInsensitive is set.
+  kNumberAffixCaseInsensitive,  // Number prefixes and suffixes ignore case.
 
   // String and character parsing flags.
   kDoubleQuoteString,     // "abc" (incompatible with kDoubleQuoteCharacter)

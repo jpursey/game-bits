@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "absl/container/flat_hash_set.h"
+#include "absl/strings/ascii.h"
 #include "absl/strings/str_cat.h"
 
 namespace gb {
@@ -38,6 +39,27 @@ const std::string_view LexerProgram::kErrorInvalidUserTokenRegex =
 
 namespace {
 
+// Returns the pattern for a number's prefix or suffix, which ignores case if
+// kNumberAffixCaseInsensitive is set.
+//
+// Only ASCII letters ignore case. RE2's (?i) would also match longer non-ASCII
+// characters (such as the Kelvin sign for 'k'), and the lexer strips a prefix
+// and suffix by their configured length.
+std::string NumberAffixPattern(std::string_view affix, LexerFlags flags) {
+  if (!flags.IsSet(LexerFlag::kNumberAffixCaseInsensitive)) {
+    return RE2::QuoteMeta(affix);
+  }
+  std::string pattern;
+  for (char ch : affix) {
+    if (absl::ascii_isalpha(ch)) {
+      pattern += {'[', absl::ascii_toupper(ch), absl::ascii_tolower(ch), ']'};
+    } else {
+      absl::StrAppend(&pattern, RE2::QuoteMeta(std::string_view(&ch, 1)));
+    }
+  }
+  return pattern;
+}
+
 bool CreateTokenPattern(std::string& token_pattern, const LexerConfig& config,
                         std::string& error) {
   const LexerFlags flags = config.flags;
@@ -47,16 +69,18 @@ bool CreateTokenPattern(std::string& token_pattern, const LexerConfig& config,
     if (flags.IsSet(LexerFlag::kBinaryIntegers)) {
       DCHECK(first);
       first = false;
-      absl::StrAppend(&token_pattern, "(", RE2::QuoteMeta(config.binary_prefix),
-                      "[01]+", RE2::QuoteMeta(config.binary_suffix), ")");
+      absl::StrAppend(&token_pattern, "(",
+                      NumberAffixPattern(config.binary_prefix, flags), "[01]+",
+                      NumberAffixPattern(config.binary_suffix, flags), ")");
     }
     if (flags.IsSet(LexerFlag::kOctalIntegers)) {
       if (!first) {
         absl::StrAppend(&token_pattern, "|");
       }
       first = false;
-      absl::StrAppend(&token_pattern, "(", RE2::QuoteMeta(config.octal_prefix),
-                      "[0-7]+", RE2::QuoteMeta(config.octal_suffix), ")");
+      absl::StrAppend(&token_pattern, "(",
+                      NumberAffixPattern(config.octal_prefix, flags), "[0-7]+",
+                      NumberAffixPattern(config.octal_suffix, flags), ")");
     }
     if (flags.IsSet(LexerFlag::kDecimalIntegers)) {
       if (!first) {
@@ -64,34 +88,42 @@ bool CreateTokenPattern(std::string& token_pattern, const LexerConfig& config,
       }
       first = false;
       absl::StrAppend(&token_pattern, "(",
-                      RE2::QuoteMeta(config.decimal_prefix));
+                      NumberAffixPattern(config.decimal_prefix, flags));
       if (flags.IsSet(LexerFlag::kNegativeIntegers)) {
         absl::StrAppend(&token_pattern, "-?");
       }
       absl::StrAppend(&token_pattern, "[0-9]+",
-                      RE2::QuoteMeta(config.decimal_suffix), ")");
+                      NumberAffixPattern(config.decimal_suffix, flags), ")");
     }
     if (flags.Intersects(
             {LexerFlag::kHexUpperIntegers, LexerFlag::kHexLowerIntegers})) {
       if (!first) {
         absl::StrAppend(&token_pattern, "|");
       }
-      absl::StrAppend(&token_pattern, "(", RE2::QuoteMeta(config.hex_prefix),
-                      "[0-9");
+      std::string hex_digit = "[0-9";
       if (flags.IsSet(LexerFlag::kHexUpperIntegers)) {
-        absl::StrAppend(&token_pattern, "A-F");
+        absl::StrAppend(&hex_digit, "A-F");
       }
       if (flags.IsSet(LexerFlag::kHexLowerIntegers)) {
-        absl::StrAppend(&token_pattern, "a-f");
+        absl::StrAppend(&hex_digit, "a-f");
       }
-      absl::StrAppend(&token_pattern, "]+", RE2::QuoteMeta(config.hex_suffix),
-                      ")");
+      absl::StrAppend(&hex_digit, "]");
+      absl::StrAppend(&token_pattern, "(",
+                      NumberAffixPattern(config.hex_prefix, flags));
+      if (flags.IsSet(LexerFlag::kHexLeadDigit)) {
+        absl::StrAppend(&token_pattern, "[0-9]", hex_digit, "*");
+      } else {
+        absl::StrAppend(&token_pattern, hex_digit, "+");
+      }
+      absl::StrAppend(&token_pattern,
+                      NumberAffixPattern(config.hex_suffix, flags), ")");
     }
     absl::StrAppend(&token_pattern, "|");
   }
 
   if (LexerSupportsFloats(flags)) {
-    absl::StrAppend(&token_pattern, "(", RE2::QuoteMeta(config.float_prefix));
+    absl::StrAppend(&token_pattern, "(",
+                    NumberAffixPattern(config.float_prefix, flags));
     if (flags.IsSet(LexerFlag::kNegativeFloats)) {
       absl::StrAppend(&token_pattern, "-?");
     }
@@ -102,7 +134,8 @@ bool CreateTokenPattern(std::string& token_pattern, const LexerConfig& config,
         absl::StrAppend(&token_pattern, "?");
       }
     }
-    absl::StrAppend(&token_pattern, RE2::QuoteMeta(config.float_suffix), ")|");
+    absl::StrAppend(&token_pattern,
+                    NumberAffixPattern(config.float_suffix, flags), ")|");
   }
 
   if (flags.IsSet(

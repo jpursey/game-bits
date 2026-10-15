@@ -1568,6 +1568,183 @@ TEST(LexerTest, IntegerSpecialCharacterPrefixAndSuffix) {
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
+TEST(LexerTest, IntegerPrefixAndSuffixIgnoreCase) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers,
+                LexerFlag::kHexUpperIntegers, LexerFlag::kOctalIntegers,
+                LexerFlag::kBinaryIntegers,
+                LexerFlag::kNumberAffixCaseInsensitive},
+      .binary_suffix = "b",
+      .octal_prefix = "0o",
+      .decimal_suffix = "d",
+      .hex_prefix = "0x",
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content =
+      lexer->AddContent("1011b 1011B 0o17 0O17 42d 42D 0x1F 0X1F 0x1f");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0b1011);
+  EXPECT_EQ(lexer->GetTokenText(token), "1011b");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0b1011);
+  EXPECT_EQ(lexer->GetTokenText(token), "1011B");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 017);
+  EXPECT_EQ(lexer->GetTokenText(token), "0o17");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 017);
+  EXPECT_EQ(lexer->GetTokenText(token), "0O17");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 42);
+  EXPECT_EQ(lexer->GetTokenText(token), "42d");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 42);
+  EXPECT_EQ(lexer->GetTokenText(token), "42D");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0x1F);
+  EXPECT_EQ(lexer->GetTokenText(token), "0x1F");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0x1F);
+  EXPECT_EQ(lexer->GetTokenText(token), "0X1F");
+
+  // Only the prefix and suffix ignore case, not the digits.
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
+  EXPECT_EQ(lexer->GetTokenText(token), "0x1f");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, IntegerSuffixMatchesCaseByDefault) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers,
+                LexerFlag::kHexUpperIntegers},
+      .hex_suffix = "h",
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("0FFh 0FFH");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0xFF);
+  EXPECT_EQ(lexer->GetTokenText(token), "0FFh");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
+  EXPECT_EQ(lexer->GetTokenText(token), "0FFH");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, NumberSuffixIgnoresCaseOfAsciiOnly) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt64, LexerFlag::kBinaryIntegers,
+                LexerFlag::kNumberAffixCaseInsensitive},
+      .binary_suffix = "k",
+  });
+  ASSERT_NE(lexer, nullptr);
+
+  // U+212A KELVIN SIGN, which is 'K' in Unicode case folding.
+  const LexerContentId content = lexer->AddContent("101K 101\xE2\x84\xAA");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0b101);
+  EXPECT_EQ(lexer->GetTokenText(token), "101K");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, HexLeadDigitWithPrefix) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers,
+                LexerFlag::kHexUpperIntegers, LexerFlag::kHexLeadDigit},
+      .hex_prefix = "0x",
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("0x0F 0xF");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0x0F);
+  EXPECT_EQ(lexer->GetTokenText(token), "0x0F");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenError);
+  EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
+  EXPECT_EQ(lexer->GetTokenText(token), "0xF");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, AssemblerStyleNumbers) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kInt64, LexerFlag::kDecimalIntegers,
+                LexerFlag::kBinaryIntegers, LexerFlag::kHexUpperIntegers,
+                LexerFlag::kHexLowerIntegers, LexerFlag::kHexLeadDigit,
+                LexerFlag::kNumberAffixCaseInsensitive,
+                kLexerFlags_CIdentifiers},
+      .binary_suffix = "b",
+      .hex_suffix = "h",
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content =
+      lexer->AddContent("0FFh 0FFH FFh BEh 0beh 12h 1011b 1011B 1011");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0xFF);
+  EXPECT_EQ(lexer->GetTokenText(token), "0FFh");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0xFF);
+  EXPECT_EQ(lexer->GetTokenText(token), "0FFH");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "FFh");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenIdentifier);
+  EXPECT_EQ(token.GetString(), "BEh");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0xBE);
+  EXPECT_EQ(lexer->GetTokenText(token), "0beh");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0x12);
+  EXPECT_EQ(lexer->GetTokenText(token), "12h");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0b1011);
+  EXPECT_EQ(lexer->GetTokenText(token), "1011b");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 0b1011);
+  EXPECT_EQ(lexer->GetTokenText(token), "1011B");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenInt);
+  EXPECT_EQ(token.GetInt(), 1011);
+  EXPECT_EQ(lexer->GetTokenText(token), "1011");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+
+  // Numbers read again have the same values.
+  lexer->RewindContent(content);
+  EXPECT_THAT(lexer->NextToken(content), IsToken(kTokenInt, int64_t(0xFF)));
+  EXPECT_THAT(lexer->NextToken(content), IsToken(kTokenInt, int64_t(0xFF)));
+  EXPECT_THAT(lexer->NextToken(content),
+              IsToken(kTokenIdentifier, std::string("FFh")));
+  EXPECT_THAT(lexer->NextToken(content),
+              IsToken(kTokenIdentifier, std::string("BEh")));
+  EXPECT_THAT(lexer->NextToken(content), IsToken(kTokenInt, int64_t(0xBE)));
+  EXPECT_THAT(lexer->NextToken(content), IsToken(kTokenInt, int64_t(0x12)));
+  EXPECT_THAT(lexer->NextToken(content), IsToken(kTokenInt, int64_t(0b1011)));
+  EXPECT_THAT(lexer->NextToken(content), IsToken(kTokenInt, int64_t(0b1011)));
+  EXPECT_THAT(lexer->NextToken(content), IsToken(kTokenInt, int64_t(1011)));
+}
+
 TEST(LexerTest, ParseFloatPositive) {
   auto lexer = Lexer::Create({
       .flags = {LexerFlag::kFloat64, LexerFlag::kDecimalFloats},
@@ -1749,6 +1926,26 @@ TEST(LexerTest, ParseFloatWithPrefixAndSuffix) {
   EXPECT_EQ(token.GetType(), kTokenError);
   EXPECT_EQ(token.GetString(), Lexer::kErrorInvalidToken);
   EXPECT_EQ(lexer->GetTokenText(token), "42f");
+  EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
+}
+
+TEST(LexerTest, FloatPrefixAndSuffixIgnoreCase) {
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kFloat64, LexerFlag::kDecimalFloats,
+                LexerFlag::kNumberAffixCaseInsensitive},
+      .float_prefix = "x",
+      .float_suffix = "f",
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("x1.25f X1.25F");
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenFloat);
+  EXPECT_EQ(token.GetFloat(), 1.25);
+  EXPECT_EQ(lexer->GetTokenText(token), "x1.25f");
+  token = lexer->NextToken(content);
+  EXPECT_EQ(token.GetType(), kTokenFloat);
+  EXPECT_EQ(token.GetFloat(), 1.25);
+  EXPECT_EQ(lexer->GetTokenText(token), "X1.25F");
   EXPECT_EQ(lexer->NextToken(content).GetType(), kTokenEnd);
 }
 
