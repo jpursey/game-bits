@@ -5,6 +5,8 @@
 
 #include "gb/parse/parser.h"
 
+#include <iterator>
+
 #include "absl/cleanup/cleanup.h"
 #include "absl/strings/str_cat.h"
 
@@ -198,21 +200,20 @@ parser_internal::ParseMatch Parser::MatchGroup(const ParserGroup& group) {
   const bool is_sequence = (group.GetType() == ParserGroup::Type::kSequence);
   const bool is_alternatives =
       (group.GetType() == ParserGroup::Type::kAlternatives);
+
+  // Named sub-items always go into this group's own result, so a group that
+  // fails partway leaves none behind. An inline group (one whose parent's items
+  // are set) adds them to its parent's items once it matches.
   ParsedItem result;
-  ParsedItems* old_items = items_;
-  if (items_ == nullptr) {
-    items_ = &result.items_;
-  }
-  absl::Cleanup cleanup = [this, old_items] { items_ = old_items; };
+  ParsedItems* const parent_items = items_;
+  absl::Cleanup cleanup = [this, parent_items] { items_ = parent_items; };
   bool has_match = false;
   for (const auto& sub_item : group.GetSubItems()) {
-    ParsedItems* current_items = items_;
-    if (!sub_item.name.empty()) {
-      items_ = nullptr;
-    }
+    // An unnamed sub-item adds its items to this group's, while a named one
+    // keeps its own.
+    items_ = (sub_item.name.empty() ? &result.items_ : nullptr);
     Token item_token = PeekToken();
     auto match = sub_item.item->Match(*this);
-    items_ = current_items;
     if (match.IsError()) {
       if (!match.IsAbort() && !sub_item.error.empty()) {
         SetError(item_token, sub_item.error);
@@ -229,7 +230,7 @@ parser_internal::ParseMatch Parser::MatchGroup(const ParserGroup& group) {
       result.token_ = group_token;
     }
     if (!sub_item.name.empty()) {
-      (*items_)[sub_item.name].push_back(*std::move(match));
+      result.items_[sub_item.name].push_back(*std::move(match));
     }
     if (!sub_item.repeat.IsSet(ParserRepeat::kAllowMany)) {
       if (is_alternatives) {
@@ -246,12 +247,8 @@ parser_internal::ParseMatch Parser::MatchGroup(const ParserGroup& group) {
           break;
         }
       }
-      if (!sub_item.name.empty()) {
-        items_ = nullptr;
-      }
       item_token = PeekToken();
       match = sub_item.item->Match(*this);
-      items_ = current_items;
       if (match.IsError()) {
         if (!match.IsAbort() && !sub_item.error.empty()) {
           SetError(item_token, sub_item.error);
@@ -266,7 +263,7 @@ parser_internal::ParseMatch Parser::MatchGroup(const ParserGroup& group) {
         break;
       }
       if (!sub_item.name.empty()) {
-        (*items_)[sub_item.name].push_back(*std::move(match));
+        result.items_[sub_item.name].push_back(*std::move(match));
       }
     }
     if (is_alternatives) {
@@ -275,6 +272,17 @@ parser_internal::ParseMatch Parser::MatchGroup(const ParserGroup& group) {
   }
   if (is_alternatives && !has_match) {
     return ParseMatch::Error();
+  }
+  if (parent_items != nullptr) {
+    // Merging moves across the names the parent doesn't have yet, leaving only
+    // the names both have, which are appended.
+    parent_items->merge(result.items_);
+    for (auto& [name, items] : result.items_) {
+      std::vector<ParsedItem>& to_items = (*parent_items)[name];
+      to_items.insert(to_items.end(), std::make_move_iterator(items.begin()),
+                      std::make_move_iterator(items.end()));
+    }
+    result.items_.clear();
   }
   return Match(std::move(result));
 }

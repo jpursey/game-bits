@@ -765,8 +765,167 @@ TEST(ParserTest, InlineGroupsMergeNamedSubItems) {
   EXPECT_EQ(parsed_statements[0].GetString("name"), "a");
   EXPECT_EQ(parsed_statements[0].GetInt("value"), 42);
   EXPECT_EQ(parsed_statements[1].GetString("function"), "fun");
+  EXPECT_THAT(parsed_statements[1].GetItems("name"), IsEmpty());
   EXPECT_EQ(parsed_statements[2].GetString("name"), "b");
   EXPECT_EQ(parsed_statements[2].GetFloat("value"), 3.14);
+}
+
+TEST(ParserTest, FailedInlineAlternativeDropsItsItems) {
+  auto label = ParserRuleItem::CreateSequence();
+  label->AddSubItem("label", ParserRuleItem::CreateToken(kTokenIdentifier));
+  label->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, ":"));
+  auto instruction = ParserRuleItem::CreateSequence();
+  instruction->AddSubItem("op", ParserRuleItem::CreateToken(kTokenIdentifier));
+  instruction->AddSubItem("arg", ParserRuleItem::CreateToken(kTokenIdentifier));
+  auto rule = ParserRuleItem::CreateAlternatives();
+  rule->AddSubItem(std::move(label));
+  rule->AddSubItem(std::move(instruction));
+  auto rules = std::make_shared<ParserRules>();
+  rules->AddRule("line", std::move(rule));
+  std::string error;
+  auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
+  ASSERT_NE(parser, nullptr) << "Error: " << error;
+  LexerContentId content = parser->GetLexer().AddContent("foo bar");
+
+  ParseResult result = parser->Parse(content, "line");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_THAT(result->GetItems("label"), IsEmpty());
+  EXPECT_THAT(result->GetItems("op"),
+              ElementsAre(IsToken(kTokenIdentifier, "foo")));
+  EXPECT_THAT(result->GetItems("arg"),
+              ElementsAre(IsToken(kTokenIdentifier, "bar")));
+}
+
+TEST(ParserTest, FailedInlineAlternativeDoesNotDuplicateItems) {
+  auto move_register = ParserRuleItem::CreateSequence();
+  move_register->AddSubItem("name",
+                            ParserRuleItem::CreateToken(kTokenIdentifier));
+  move_register->AddSubItem("dst",
+                            ParserRuleItem::CreateToken(kTokenIdentifier));
+  move_register->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, ","));
+  move_register->AddSubItem("src",
+                            ParserRuleItem::CreateToken(kTokenIdentifier));
+  auto move_value = ParserRuleItem::CreateSequence();
+  move_value->AddSubItem("name", ParserRuleItem::CreateToken(kTokenIdentifier));
+  move_value->AddSubItem("dst", ParserRuleItem::CreateToken(kTokenIdentifier));
+  move_value->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, ","));
+  move_value->AddSubItem("value", ParserRuleItem::CreateToken(kTokenInt));
+  auto rule = ParserRuleItem::CreateAlternatives();
+  rule->AddSubItem(std::move(move_register));
+  rule->AddSubItem(std::move(move_value));
+  auto rules = std::make_shared<ParserRules>();
+  rules->AddRule("instruction", std::move(rule));
+  std::string error;
+  auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
+  ASSERT_NE(parser, nullptr) << "Error: " << error;
+  LexerContentId content = parser->GetLexer().AddContent("mov a, 5");
+
+  ParseResult result = parser->Parse(content, "instruction");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_THAT(result->GetItems("name"),
+              ElementsAre(IsToken(kTokenIdentifier, "mov")));
+  EXPECT_THAT(result->GetItems("dst"),
+              ElementsAre(IsToken(kTokenIdentifier, "a")));
+  EXPECT_THAT(result->GetItems("src"), IsEmpty());
+  EXPECT_THAT(result->GetItems("value"), ElementsAre(IsToken(kTokenInt, "5")));
+}
+
+TEST(ParserTest, FailedInlineRepeatDropsItsItems) {
+  auto pair = ParserRuleItem::CreateSequence();
+  pair->AddSubItem("key", ParserRuleItem::CreateToken(kTokenIdentifier));
+  pair->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, "="));
+  pair->AddSubItem("value", ParserRuleItem::CreateToken(kTokenInt));
+  auto rule = ParserRuleItem::CreateSequence();
+  rule->AddSubItem(std::move(pair), kParserOneOrMore);
+  auto rules = std::make_shared<ParserRules>();
+  rules->AddRule("pairs", std::move(rule));
+  std::string error;
+  auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
+  ASSERT_NE(parser, nullptr) << "Error: " << error;
+  LexerContentId content = parser->GetLexer().AddContent("a=1 b=2 c");
+
+  ParseResult result = parser->Parse(content, "pairs");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_THAT(result->GetItems("key"),
+              ElementsAre(IsToken(kTokenIdentifier, "a"),
+                          IsToken(kTokenIdentifier, "b")));
+  EXPECT_THAT(result->GetItems("value"),
+              ElementsAre(IsToken(kTokenInt, "1"), IsToken(kTokenInt, "2")));
+  EXPECT_TRUE(parser->GetLexer().NextToken(content, false).IsIdent("c"));
+}
+
+TEST(ParserTest, FailedInlineCommaRepeatDropsItsItems) {
+  auto pair = ParserRuleItem::CreateSequence();
+  pair->AddSubItem("key", ParserRuleItem::CreateToken(kTokenIdentifier));
+  pair->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, "="));
+  pair->AddSubItem("value", ParserRuleItem::CreateToken(kTokenInt));
+  auto rule = ParserRuleItem::CreateSequence();
+  rule->AddSubItem(std::move(pair), kParserOneOrMoreWithComma);
+  auto rules = std::make_shared<ParserRules>();
+  rules->AddRule("pairs", std::move(rule));
+  std::string error;
+  auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
+  ASSERT_NE(parser, nullptr) << "Error: " << error;
+  LexerContentId content = parser->GetLexer().AddContent("a=1, b");
+
+  ParseResult result = parser->Parse(content, "pairs");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_THAT(result->GetItems("key"),
+              ElementsAre(IsToken(kTokenIdentifier, "a")));
+  EXPECT_THAT(result->GetItems("value"), ElementsAre(IsToken(kTokenInt, "1")));
+  EXPECT_TRUE(parser->GetLexer().NextToken(content, false).IsSymbol(','));
+}
+
+TEST(ParserTest, FailedOptionalInlineGroupDropsItsItems) {
+  auto assign = ParserRuleItem::CreateSequence();
+  assign->AddSubItem("key", ParserRuleItem::CreateToken(kTokenIdentifier));
+  assign->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, "="));
+  auto rule = ParserRuleItem::CreateSequence();
+  rule->AddSubItem(std::move(assign), kParserOptional);
+  rule->AddSubItem("name", ParserRuleItem::CreateToken(kTokenIdentifier));
+  auto rules = std::make_shared<ParserRules>();
+  rules->AddRule("rule", std::move(rule));
+  std::string error;
+  auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
+  ASSERT_NE(parser, nullptr) << "Error: " << error;
+  LexerContentId content = parser->GetLexer().AddContent("foo");
+
+  ParseResult result = parser->Parse(content, "rule");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_THAT(result->GetItems("key"), IsEmpty());
+  EXPECT_THAT(result->GetItems("name"),
+              ElementsAre(IsToken(kTokenIdentifier, "foo")));
+}
+
+TEST(ParserTest, FailedUnscopedRuleDropsItsItems) {
+  auto label = ParserRuleItem::CreateSequence();
+  label->AddSubItem("label", ParserRuleItem::CreateToken(kTokenIdentifier));
+  label->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, ":"));
+  auto instruction = ParserRuleItem::CreateSequence();
+  instruction->AddSubItem("op", ParserRuleItem::CreateToken(kTokenIdentifier));
+  instruction->AddSubItem("arg", ParserRuleItem::CreateToken(kTokenIdentifier));
+  auto rule = ParserRuleItem::CreateAlternatives();
+  rule->AddSubItem(ParserRuleItem::CreateRuleName("label", false));
+  rule->AddSubItem(std::move(instruction));
+  auto rules = std::make_shared<ParserRules>();
+  rules->AddRule("label", std::move(label));
+  rules->AddRule("line", std::move(rule));
+  std::string error;
+  auto parser = Parser::Create(kCStyleLexerConfig, std::move(rules), &error);
+  ASSERT_NE(parser, nullptr) << "Error: " << error;
+  LexerContentId content = parser->GetLexer().AddContent("foo: bar baz");
+
+  ParseResult result = parser->Parse(content, "line");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_THAT(result->GetItems("label"),
+              ElementsAre(IsToken(kTokenIdentifier, "foo")));
+  result = parser->Parse(content, "line");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_THAT(result->GetItems("label"), IsEmpty());
+  EXPECT_THAT(result->GetItems("op"),
+              ElementsAre(IsToken(kTokenIdentifier, "bar")));
+  EXPECT_THAT(result->GetItems("arg"),
+              ElementsAre(IsToken(kTokenIdentifier, "baz")));
 }
 
 TEST(ParserTest, ParserProgram) {
