@@ -511,36 +511,6 @@ from its source files, listed again in `gb_imgui`'s `CMakeLists.txt`. Make
 the test backend and `RenderTest` a library target that tests link instead,
 so the list is kept in one place.
 
-## FakeJobSystem
-
-- **Layers:** job
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Requested by:** Terra Diem *Use Game Bits' FakeJobSystem in World tests*
-- **Background:** none
-
-Code that does its work in jobs can only be tested on `FiberJobSystem`, which
-runs jobs whenever its threads get to them, so a test can't choose the order
-work finishes in, and a bug that depends on that order shows up only by chance.
-Add `FakeJobSystem` in `gb/job/fake_job_system.h`, a `JobSystem` that runs jobs
-only when the test says, as `FakeClock` moves time only when the test says:
-- `Run()` queues a job, and `RunPendingJobs()` runs the queued jobs, and the
-  jobs they queue, until none are left. They run one at a time, on a job thread
-  (one where `JobSystem::Get()` returns the fake).
-- Jobs with names the test lists run before `Run()` returns, as if a thread had
-  picked them up at once, so a test can have work finish while the code that
-  started it is part way through. Each runs on a job thread of its own, as its
-  caller may hold locks the job needs; a job that needs a lock its caller holds
-  deadlocks, which the API says.
-- Job counters, contexts, and job data work as they do in `FiberJobSystem`.
-  Each job has its own context and data, freed when it ends. Counting jobs
-  needs `FakeJobSystem` among `JobInternal`'s friends.
-- `Wait()` runs queued jobs until the counter is done, and fails, rather than
-  hanging, if none are left and it still isn't.
-
-Test each of these in `gb_job`'s tests.
-
 ## Deterministic concurrency tests
 
 - **Layers:** game, job, message, resource
@@ -710,3 +680,35 @@ includes that are needed (umbrella headers such as `<windows.h>` and
   `-D_CRT_USE_BUILTIN_OFFSETOF`.
 - `// IWYU pragma: keep` on the includes it reports wrongly.
 - A script that checks include guards and the `*_types.h` rule.
+
+## FakeJobSystem waits that depend on the waiting job
+
+- **Layers:** job
+- **Size:** medium
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** none
+
+`FakeJobSystem::Wait()` runs queued jobs inside the call, on the waiting job's
+thread, so the waiting job can't continue until each of them ends. A job it
+runs that waits on work the waiting job does after its own `Wait()` makes the
+fake fail, although `JobSystem` allows it: job A waits on counter 1 and then
+runs a job for counter 2, job B waits on counter 2, and A's `Wait()` runs B
+before counter 1 is done. Let a waiting job continue as soon as its counter is
+done (for example, by giving each job a thread of its own that blocks in
+`Wait()`, while still running one job at a time), and test this case.
+
+## Shared job teardown in JobSystem
+
+- **Layers:** job
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** none
+
+`FiberJobSystem` and `FakeJobSystem` each count jobs on their counters and end
+a job the way `JobSystem` requires (job data freed, then the context, before
+any waiting job resumes), so the rule is written out in each, and each is
+among `JobInternal`'s friends to do it. Give `JobSystem` protected functions
+that start and end a job's counting and free its data and context in order, so
+the rule lives in one place and the job systems no longer need to be friends.

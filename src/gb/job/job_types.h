@@ -20,10 +20,12 @@ namespace gb {
 
 class JobCounter;
 class JobSystem;
+class FakeJobSystem;
 class FiberJobSystem;
 
 GB_BEGIN_ACCESS_TOKEN(JobInternal)
 friend class JobSystem;
+friend class FakeJobSystem;
 friend class FiberJobSystem;
 GB_END_ACCESS_TOKEN()
 

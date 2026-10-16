@@ -4,6 +4,7 @@
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
 set(gb_job_SOURCE
+  fake_job_system.cc fake_job_system.h
   fiber_job_system.cc fiber_job_system.h
   job_counter.h
   job_system.cc job_system.h
@@ -15,6 +16,7 @@ set(gb_job_INCLUDES
 )
 
 set(gb_job_TEST_SOURCE
+  fake_job_system_test.cc
   fiber_job_system_test.cc
 )
 
