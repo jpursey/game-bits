@@ -328,6 +328,30 @@ TEST(LocalFileProtocolTest, PathsStayUnderRoot) {
   EXPECT_TRUE(fs::is_regular_file(parent_path / "root/host/file", error));
 }
 
+TEST(LocalFileProtocolTest, ReadWhatIsAppendedAfterTheEnd) {
+  auto protocol = LocalFileProtocol::CreateTemp("gbtest");
+  ASSERT_NE(protocol, nullptr);
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(std::move(protocol)));
+  ASSERT_TRUE(file_system.WriteFile("file:/file", "abc"));
+
+  auto file = file_system.OpenFile("file:/file", kReadFileFlags);
+  ASSERT_NE(file, nullptr);
+  EXPECT_EQ(file->ReadString(4), "abc");
+  EXPECT_EQ(file->ReadString(4), "");
+  EXPECT_TRUE(file->IsValid());
+
+  // Another file appends to it, as when reading a log as it is written.
+  auto append_file = file_system.OpenFile("file:/file", kWriteFileFlags);
+  ASSERT_NE(append_file, nullptr);
+  ASSERT_EQ(append_file->SeekEnd(), 3);
+  ASSERT_EQ(append_file->WriteString("def"), 3);
+  ASSERT_TRUE(append_file->Close());
+
+  EXPECT_EQ(file->ReadString(4), "def");
+  EXPECT_TRUE(file->IsValid());
+}
+
 TEST(LocalFileProtocolTest, CopyFileOntoItselfByAnotherName) {
   auto protocol = LocalFileProtocol::CreateTemp("gbtest");
   ASSERT_NE(protocol, nullptr);

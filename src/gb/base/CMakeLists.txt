@@ -7,6 +7,7 @@ if (WIN32)
   set(gb_base_internal_SOURCE
     win_local_time.cc
     win_platform.cc win_platform.h
+    win_stdio_file.cc
   )
   set(gb_base_internal_TEST_SOURCE
     win_platform_test.cc
@@ -14,6 +15,7 @@ if (WIN32)
 else()
   set(gb_base_internal_SOURCE
     gen_local_time.cc
+    gen_stdio_file.cc
   )
 endif()
 
@@ -32,6 +34,7 @@ set(gb_base_SOURCE
   log_file.cc log_file.h
   platform_requirements.cc platform_requirements.h
   scoped_call.h
+  stdio_file.h
   string_util.h
   type_info.h
   unicode.cc unicode.h

@@ -43,7 +43,6 @@ set(gb_file_DEPS
 )
 
 set(gb_file_TEST_DEPS
-  absl::cleanup
   gb_test
 )
 

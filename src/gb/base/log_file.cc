@@ -5,10 +5,6 @@
 
 #include "gb/base/log_file.h"
 
-#ifdef _WIN32
-#include <share.h>
-#endif  // _WIN32
-
 #include <cstdio>
 #include <filesystem>
 #include <memory>
@@ -23,22 +19,11 @@
 #include "absl/synchronization/mutex.h"
 #include "absl/time/time.h"
 #include "gb/base/local_time.h"
+#include "gb/base/stdio_file.h"
 #include "gb/base/unicode.h"
 
 namespace gb {
 namespace {
-
-// Creates the file at `path` for writing text, replacing it if it exists.
-// Returns null if it can't be created.
-std::FILE* CreateTextFile(const std::filesystem::path& path) {
-#ifdef _WIN32
-  // Unlike _wfopen_s(), this lets other programs read the file while it is
-  // open.
-  return _wfsopen(path.c_str(), L"w", _SH_DENYNO);
-#else
-  return std::fopen(path.c_str(), "w");
-#endif
-}
 
 class FileSink final : public absl::LogSink {
  public:
@@ -72,7 +57,7 @@ class FileSink final : public absl::LogSink {
 
 LogFile::LogFile(const std::filesystem::path& path,
                  absl::LogSeverityAtLeast min_level) {
-  std::FILE* file = CreateTextFile(path);
+  std::FILE* file = OpenStdioFile(path, "w");
   if (file == nullptr) {
     LOG(ERROR) << "Failed to create log file: " << ToUtf8(path.u16string());
     return;

@@ -108,24 +108,21 @@ thread without the hard limit of an affinity mask. Add:
 Tests check parsing against captured buffers, and placement against a fake
 topology: which hardware threads each job thread gets under each option.
 
-## Local files without iostreams
+## Platform checks in shared code
 
-- **Layers:** file
+- **Layers:** base, profile
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** nothing
-- **Background:** `LocalFile` in `local_file_protocol.cc`
+- **Background:** C++ style in [workflow.md](workflow.md)
 
-`LocalFile` reads and writes through `std::fstream`, against the Game Bits
-style, and the stream can't say what went wrong. MSVC's stream reports a failed
-read as reaching the end, so `LocalFile::Read()` checks that the stream stopped
-at the end of the file, which also fails a read when another program appends to
-the file between the read and the check (such as reading a log as it is
-written). A failed write doesn't report how much was written either. Read and
-write through C stdio (`ferror()` tells a failed read from the end of the file)
-or the operating system's own file handles instead.
-`win_local_file_protocol_test.cc` makes a real read fail by locking part of the
-file.
+Two files still choose their platform with `#ifdef` in the middle of portable
+code, against the workflow's C++ style. `gb/base/allocator.cc` aligns its
+allocations with `_aligned_malloc()` on Windows and `std::aligned_alloc()`
+elsewhere. `gb/profile/profiler.h` and `profiler.cc` check `_MSC_VER` to choose
+the header for `__rdtsc()` and the call that reads the CPU's tick rate. Move each
+behind a small interface with `win_` and `gen_` implementations, as
+`gb/base/stdio_file.h` does.
 
 ## Default texture for unset bindings
 

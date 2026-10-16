@@ -5,8 +5,8 @@
 
 #include "gb/file/local_file_protocol.h"
 
+#include <cstdio>
 #include <filesystem>
-#include <fstream>
 #include <optional>
 #include <random>
 
@@ -14,6 +14,7 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/strip.h"
 #include "gb/base/context_builder.h"
+#include "gb/base/stdio_file.h"
 #include "gb/base/unicode.h"
 #include "gb/file/path.h"
 #include "gb/file/raw_file.h"
@@ -26,8 +27,9 @@ namespace fs = std::filesystem;
 
 class LocalFile : public RawFile {
  public:
-  explicit LocalFile(std::fstream file) : file_(std::move(file)) {}
-  ~LocalFile() override {}
+  // Takes ownership of `file`.
+  explicit LocalFile(std::FILE* file) : file_(file) {}
+  ~LocalFile() override { std::fclose(file_); }
 
   int64_t SeekEnd() override;
   int64_t SeekTo(int64_t position) override;
@@ -38,92 +40,72 @@ class LocalFile : public RawFile {
  private:
   enum class Access { kRead, kWrite };
 
-  int64_t GetPosition();
-
   // Records the access about to be made, seeking first if the last access was
-  // the other kind: like C's FILE, the stream needs a seek between reading and
-  // writing.
-  void BeginAccess(Access access);
+  // the other kind, as C stdio requires between reading and writing. Returns
+  // false if the seek fails.
+  bool BeginAccess(Access access);
 
-  std::fstream file_;
-  int64_t position_ = 0;
+  std::FILE* const file_;
   Access last_access_ = Access::kRead;
 };
 
-void LocalFile::BeginAccess(Access access) {
+bool LocalFile::BeginAccess(Access access) {
   if (last_access_ != access) {
-    file_.seekg(static_cast<std::fstream::pos_type>(position_));
+    if (!SeekStdioFile(file_, 0, SEEK_CUR)) {
+      return false;
+    }
     last_access_ = access;
   }
-}
-
-inline int64_t LocalFile::GetPosition() {
-  auto pos = file_.tellg();
-  if (pos == std::fstream::pos_type(-1)) {
-    position_ = -1;
-  } else {
-    position_ = static_cast<int64_t>(pos);
-  }
-  return position_;
+  return true;
 }
 
 int64_t LocalFile::SeekEnd() {
-  file_.seekg(0, std::fstream::end);
-  return GetPosition();
+  if (!SeekStdioFile(file_, 0, SEEK_END)) {
+    return -1;
+  }
+  return TellStdioFile(file_);
 }
 
 int64_t LocalFile::SeekTo(int64_t position) {
-  file_.seekg(static_cast<std::fstream::pos_type>(position));
-  return GetPosition();
+  if (!SeekStdioFile(file_, position, SEEK_SET)) {
+    return -1;
+  }
+  return position;
 }
 
 int64_t LocalFile::Write(const void* buffer, int64_t size) {
-  BeginAccess(Access::kWrite);
-  file_.write(reinterpret_cast<const char*>(buffer),
-              static_cast<std::streamsize>(size));
-
-  // A failed stream doesn't report its position, so how much was written
-  // isn't known.
-  if (file_.fail()) {
-    position_ = -1;
+  if (!BeginAccess(Access::kWrite)) {
     return 0;
   }
-  position_ += size;
-  return size;
+  return static_cast<int64_t>(
+      std::fwrite(buffer, 1, static_cast<size_t>(size), file_));
 }
 
 bool LocalFile::Flush() {
-  file_.flush();
+  // Nothing is buffered to write after a read, and C doesn't define fflush()
+  // for a stream last read from.
+  if (last_access_ == Access::kWrite && std::fflush(file_) != 0) {
+    return false;
+  }
 
-  // A failed write leaves the stream failed, so this also reports the errors
-  // of earlier writes.
-  return !file_.fail();
+  // A failed write leaves the error indicator set, so this also reports the
+  // errors of earlier writes.
+  return !std::ferror(file_);
 }
 
 int64_t LocalFile::Read(void* buffer, int64_t size) {
-  BeginAccess(Access::kRead);
-  file_.read(reinterpret_cast<char*>(buffer),
-             static_cast<std::streamsize>(size));
-  const int64_t count = file_.gcount();
-  if (file_.eof() && !file_.bad()) {
-    // Reaching the end fails the stream, which must be cleared to read on.
-    // MSVC's stream also reports a failed read as reaching the end, so a read
-    // that stopped before the end failed. One that started past the end (after
-    // seeking there) reads nothing.
-    const int64_t stopped_at = position_ + count;
-    file_.clear();
-    const int64_t end = SeekEnd();
-    if (end < 0 || end > stopped_at) {
-      position_ = -1;
-      return -1;
-    }
-    return count;
-  }
-  if (file_.fail()) {
-    position_ = -1;
+  if (!BeginAccess(Access::kRead)) {
     return -1;
   }
-  position_ += count;
+  const int64_t count = static_cast<int64_t>(
+      std::fread(buffer, 1, static_cast<size_t>(size), file_));
+  if (std::ferror(file_)) {
+    return -1;
+  }
+
+  // Reaching the end sets the end-of-file indicator, which can stop later
+  // reads, so it is cleared to read anything appended to the file since.
+  std::clearerr(file_);
   return count;
 }
 
@@ -574,25 +556,21 @@ std::unique_ptr<RawFile> LocalFileProtocol::DoOpenFile(
     return nullptr;
   }
 
-  std::fstream::openmode mode = std::fstream::binary;
-  if (flags.IsSet(FileFlag::kRead)) {
-    mode |= std::fstream::in;
-  }
+  // C stdio's "w" modes create or empty the file, and its "r" modes need the
+  // file to exist. Only "r+" writes without emptying it.
+  const char* mode = "rb";
   if (flags.IsSet(FileFlag::kWrite)) {
-    mode |= std::fstream::out;
-    if (!flags.IsSet(FileFlag::kReset)) {
-      // Otherwise it will truncate even without std::fstream::trunc
-      mode |= std::fstream::in;
+    if (flags.IsSet(FileFlag::kReset) || !file_exists) {
+      mode = flags.IsSet(FileFlag::kRead) ? "w+b" : "wb";
+    } else {
+      mode = "r+b";
     }
   }
-  if (flags.IsSet(FileFlag::kReset) || !file_exists) {
-    mode |= std::fstream::trunc;
-  }
-  std::fstream file(*full_path, mode);
-  if (file.fail()) {
+  std::FILE* file = OpenStdioFile(*full_path, mode);
+  if (file == nullptr) {
     return nullptr;
   }
-  return std::make_unique<LocalFile>(std::move(file));
+  return std::make_unique<LocalFile>(file);
 }
 
 std::string LocalFileProtocol::DoGetCurrentPath(

@@ -15,6 +15,7 @@
 #include "absl/log/log.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_split.h"
+#include "gb/base/stdio_file.h"
 #include "gb/test/log_error_guard.h"
 #include "gb/test/log_recorder.h"
 #include "gb/test/thread_tester.h"
@@ -51,11 +52,7 @@ class LogFileTest : public ::testing::Test {
 
   // Returns the lines in the file at `path_`, or none if it doesn't exist.
   std::vector<std::string> ReadLines() {
-#ifdef _WIN32
-    std::FILE* file = _wfopen(path_.c_str(), L"r");
-#else
-    std::FILE* file = std::fopen(path_.c_str(), "r");
-#endif
+    std::FILE* file = OpenStdioFile(path_, "r");
     if (file == nullptr) {
       return {};
     }
