@@ -5,13 +5,10 @@
 
 #include "gb/base/allocator.h"
 
-#ifdef _WIN32
-#include <malloc.h>
-#endif  // _WIN32
-
-#include <cstdlib>
+#include <cstddef>
 
 #include "absl/log/log.h"
+#include "gb/base/aligned_memory.h"
 
 namespace gb {
 
@@ -30,20 +27,10 @@ class SystemAllocator : public Allocator {
     if (align == 0) {
       align = alignof(std::max_align_t);
     }
-#ifdef _WIN32
-    return _aligned_malloc(size, align);
-#else
-    return std::aligned_alloc(align, size);
-#endif
+    return internal::AllocAligned(size, align);
   }
 
-  void Free(void* ptr) override {
-#ifdef _WIN32
-    _aligned_free(ptr);
-#else
-    std::free(ptr);
-#endif
-  }
+  void Free(void* ptr) override { internal::FreeAligned(ptr); }
 };
 
 }  // namespace

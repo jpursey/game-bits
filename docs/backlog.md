@@ -108,22 +108,6 @@ thread without the hard limit of an affinity mask. Add:
 Tests check parsing against captured buffers, and placement against a fake
 topology: which hardware threads each job thread gets under each option.
 
-## Platform checks in shared code
-
-- **Layers:** base, profile
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** C++ style in [workflow.md](workflow.md)
-
-Two files still choose their platform with `#ifdef` in the middle of portable
-code, against the workflow's C++ style. `gb/base/allocator.cc` aligns its
-allocations with `_aligned_malloc()` on Windows and `std::aligned_alloc()`
-elsewhere. `gb/profile/profiler.h` and `profiler.cc` check `_MSC_VER` to choose
-the header for `__rdtsc()` and the call that reads the CPU's tick rate. Move each
-behind a small interface with `win_` and `gen_` implementations, as
-`gb/base/stdio_file.h` does.
-
 ## Default texture for unset bindings
 
 - **Layers:** render, render_vulkan

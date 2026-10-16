@@ -5,6 +5,7 @@
 
 if (WIN32)
   set(gb_base_internal_SOURCE
+    win_aligned_memory.cc
     win_local_time.cc
     win_platform.cc win_platform.h
     win_stdio_file.cc
@@ -14,6 +15,7 @@ if (WIN32)
   )
 else()
   set(gb_base_internal_SOURCE
+    gen_aligned_memory.cc
     gen_local_time.cc
     gen_stdio_file.cc
   )
@@ -21,6 +23,7 @@ endif()
 
 set(gb_base_SOURCE
   access_token.h
+  aligned_memory.h
   allocator.cc allocator.h
   callback_scope.h
   clock.h
