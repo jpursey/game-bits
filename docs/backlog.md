@@ -372,6 +372,36 @@ from its source files, listed again in `gb_imgui`'s `CMakeLists.txt`. Make
 the test backend and `RenderTest` a library target that tests link instead,
 so the list is kept in one place.
 
+## FakeJobSystem
+
+- **Layers:** job
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Requested by:** Terra Diem *Use Game Bits' FakeJobSystem in World tests*
+- **Background:** none
+
+Code that does its work in jobs can only be tested on `FiberJobSystem`, which
+runs jobs whenever its threads get to them, so a test can't choose the order
+work finishes in, and a bug that depends on that order shows up only by chance.
+Add `FakeJobSystem` in `gb/job/fake_job_system.h`, a `JobSystem` that runs jobs
+only when the test says, as `FakeClock` moves time only when the test says:
+- `Run()` queues a job, and `RunPendingJobs()` runs the queued jobs, and the
+  jobs they queue, until none are left. They run one at a time, on a job thread
+  (one where `JobSystem::Get()` returns the fake).
+- Jobs with names the test lists run before `Run()` returns, as if a thread had
+  picked them up at once, so a test can have work finish while the code that
+  started it is part way through. Each runs on a job thread of its own, as its
+  caller may hold locks the job needs; a job that needs a lock its caller holds
+  deadlocks, which the API says.
+- Job counters, contexts, and job data work as they do in `FiberJobSystem`.
+  Each job has its own context and data, freed when it ends. Counting jobs
+  needs `FakeJobSystem` among `JobInternal`'s friends.
+- `Wait()` runs queued jobs until the counter is done, and fails, rather than
+  hanging, if none are left and it still isn't.
+
+Test each of these in `gb_job`'s tests.
+
 ## Deterministic concurrency tests
 
 - **Layers:** game, job, message, resource
