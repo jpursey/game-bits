@@ -28,9 +28,10 @@ namespace gb {
 // Only directories and regular files are supported. Links (symbolic links and
 // junctions) are followed, so a link appears as the file or folder it links to,
 // except that recursive listing doesn't descend into a linked folder, and
-// deleting a link deletes only the link. Other types of files are skipped when
-// listing, and appear invalid when queried with GetPathInfo(). Links and other
-// types of files can interfere with folder copying and deletion.
+// deleting a link deletes only the link. Other types of files, and links whose
+// target is missing, are skipped when listing, and appear invalid when queried
+// with GetPathInfo(). Links and other types of files can interfere with folder
+// copying and deletion.
 //
 // This class is thread-safe.
 class LocalFileProtocol : public FileProtocol {

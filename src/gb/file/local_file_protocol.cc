@@ -176,9 +176,12 @@ std::vector<std::string> ListFolder(Iterator it, std::string_view root,
         !PathMatchesPattern(RemoveFolder(entry_path), pattern)) {
       continue;
     }
+
+    // An entry whose status can't be read, such as a link whose target is
+    // missing, is neither a file nor a folder.
     auto status = it->status(error);
     if (error) {
-      break;
+      continue;
     }
     if ((fs::is_directory(status) && types.IsSet(PathType::kFolder)) ||
         (fs::is_regular_file(status) && types.IsSet(PathType::kFile))) {

@@ -440,19 +440,6 @@ Text configs still don't round trip a few values:
 - Reading recurses once per nesting level, so very deeply nested text can
   overflow the stack. A nesting limit would fail it instead.
 
-## Local folder listings stop at unreadable entries
-
-- **Layers:** file
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** [Code audit](worklog/code_audit.md)
-
-`LocalFileProtocol`'s folder listing stops at an entry whose status can't be
-read (such as a dangling link), returning only the entries before it. Skip
-such entries, or list them with an invalid type, and check it by hand with a
-dangling junction.
-
 ## Collision precision and conversions
 
 - **Layers:** collide

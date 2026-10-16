@@ -361,6 +361,35 @@ TEST(LocalFileProtocolTest, RecursiveDeleteFolderFailure) {
   EXPECT_FALSE(file_system.IsValidPath("file:/folder"));
 }
 
+TEST(LocalFileProtocolTest, ListSkipsLinksToMissingFolders) {
+  auto protocol = LocalFileProtocol::CreateTemp("gbtest");
+  ASSERT_NE(protocol, nullptr);
+  const fs::path root_path = ToFsPath(protocol->GetRoot());
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(std::move(protocol)));
+  ASSERT_TRUE(file_system.CreateFolder("file:/a-folder"));
+  ASSERT_TRUE(file_system.WriteFile("file:/c-file", "12345"));
+
+  // Windows lists folders in name order, so the link is listed between the
+  // other entries.
+  std::error_code error;
+  ASSERT_TRUE(fs::create_directory(root_path / "target", error))
+      << error.message();
+  fs::create_directory_symlink(root_path / "target", root_path / "b-link",
+                               error);
+  if (error) {
+    GTEST_SKIP() << "Creating a symbolic link failed, which needs Windows "
+                    "developer mode: "
+                 << error.message();
+  }
+  ASSERT_TRUE(fs::remove(root_path / "target", error)) << error.message();
+
+  EXPECT_THAT(file_system.List("file:/"),
+              UnorderedElementsAre("file:/a-folder", "file:/c-file"));
+  EXPECT_THAT(file_system.List("file:/", FolderMode::kRecursive),
+              UnorderedElementsAre("file:/a-folder", "file:/c-file"));
+}
+
 TEST(LocalFileProtocolTest, CurrentFolder) {
   std::error_code error;
   fs::path original_path = fs::current_path(error);
