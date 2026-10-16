@@ -40,6 +40,74 @@ resumes on another thread can read the wrong value, with a test that does
 exactly that, and fix it if so: `/GT` on the affected code, or state that
 moves with the fiber.
 
+## Core-aware job threads
+
+- **Layers:** thread, job
+- **Size:** medium
+- **Feature workflow:** yes
+- **Depends on:** nothing
+- **Requested by:** Terra Diem *Job threads per physical core*
+- **Background:** *Multithreaded profiles*, `gb/profile/win_cpu_info.cc`
+
+`gb/thread` knows the hardware threads only as a flat list of affinities in
+processor order (`GetHardwareThreadAffinities()`, read from the process
+affinity mask, so it covers one processor group of at most 64), and
+`FiberJobSystem` defaults to one job thread per hardware thread, pinning job
+thread *i* to hardware thread *i*. Neither knows which hardware threads share a
+core, or which cores are faster. On an i9-14900KF, Windows numbers the 8
+performance cores' SMT pairs 0-15 and the 16 efficiency cores 16-31, so asking
+for 24 job threads (one per core) pins two to each performance core and leaves
+8 efficiency cores idle.
+
+Measured on that CPU with Terra Diem's chunk generation and lighting (16,384
+chunks of compute-bound jobs, 2026-10-15), with one per core set up by
+restricting the process affinity before creating the job system:
+
+| Job threads | Placement | Generation | Lighting |
+|---|---|---|---|
+| 24 | one per core | 0.38 s | 1.96 s |
+| 24 | in processor order | 0.45 s | 2.33 s |
+| 32 | every hardware thread | 0.35 s | 1.83 s |
+
+Placement mattered more than count: processor order took 17-19% longer than
+one per core, while using the SMT siblings as well gained only 7-9%. While
+jobs contended for the heap, every hardware thread took about 30% longer than
+one per core. A performance core did about 1.6 times the work of an efficiency
+core.
+
+Windows tells an ordinary program all of this.
+`GetLogicalProcessorInformationEx()` reports each core's hardware threads (in
+every processor group), whether it has SMT, and its efficiency class (higher is
+faster, as `gb/profile` already uses it), and with `RelationCache`, which cores
+share each cache. `GetSystemCpuSetInformation()` reports the same for each
+hardware thread, with an ID for `SetThreadSelectedCpuSets()`, which steers a
+thread without the hard limit of an affinity mask. Add:
+- A topology query in `gb/thread`: the cores, each with its hardware threads
+  (as affinities `CreateThread()` accepts), its class, and the caches it shares
+  (the last level, and the L2 that efficiency cores share in clusters of four).
+  The generic version reports one class-0 core per hardware thread. Parse
+  Windows' buffer in a function tests can feed captured buffers: a hybrid CPU
+  like this one, a uniform CPU with SMT, one without, and two processor groups.
+  `gb/profile`'s class table then comes from it, as *Multithreaded profiles*
+  expects.
+- Placement by core in `FiberJobSystem`: an option to count job threads in
+  cores, one per core, fastest class first, each pinned to its core's hardware
+  threads (or steered with CPU sets) rather than to one hardware thread. Its
+  contract says which is the default; changing the default changes every
+  project.
+- An option to leave the fastest core, or a given number of cores, without job
+  threads, for a program's main loop, and the topology a program needs to
+  place its main thread, and any pool for blocking work, on hardware threads
+  the job threads don't use.
+- A report of where each job thread went (core and class), for logs and
+  *Multithreaded profiles*.
+- Windows moves the threads of a background window onto efficiency cores
+  (*Multithreaded profiles*). Check whether opting job threads out of that
+  (`SetThreadInformation()` with `ThreadPowerThrottling`) is worth an option.
+
+Tests check parsing against captured buffers, and placement against a fake
+topology: which hardware threads each job thread gets under each option.
+
 ## Local files without iostreams
 
 - **Layers:** file
@@ -105,6 +173,7 @@ stays working.
 - **Size:** medium
 - **Feature workflow:** yes
 - **Depends on:** *Profiler module*
+- **Requested by:** Terra Diem *Profile the world's jobs*
 - **Background:** [Profiler module](worklog/profiler_module.md)
 
 Combine the profiles of several threads, each with its own `Profiler`, into
@@ -114,9 +183,22 @@ every Profiler's slots line up and combining them is a sum. Each thread adds a
 snapshot into a shared total at a safe point of its own (the end of its frame,
 or between jobs), or the slots become atomics written only by their own thread
 (plain moves on x64) and are read live. Overlap and critical paths need a
-timeline of events instead, which this is not. `Profiler::GetReport()` reads
-its own slots, so the combined view needs the report to format a snapshot of
-slots instead, which a combined total can also provide.
+timeline of events instead, which this is not (see *Profile timelines*).
+`Profiler::GetReport()` reads its own slots, so the combined view needs the
+report to format a snapshot of slots instead, which a combined total can also
+provide.
+
+Terra Diem would be its main user: its world loads, lights, meshes, and
+(later) simulates as thousands of short jobs on a `FiberJobSystem`. For that:
+- Job threads get their Profilers from the job system, which owns the threads
+  (*Profiled jobs*).
+- A job thread has no frames of its own, so its points count in the main
+  loop's frame whose interval they end in, on the shared timestamp counter.
+- Counters sum across threads (a job counting the chunks it lit), and a value
+  is the latest set on any thread.
+- The report shows each thread's busy time and class of core, and gives each
+  point's share of the frame alongside its total: a frame is wall time, while
+  the threads' points add up to CPU time, so the two can't be summed.
 
 The kind of core a thread runs on matters as much as what it runs. On an
 i9-14900KF (8 performance and 16 efficiency cores), frames on efficiency cores
@@ -129,7 +211,8 @@ needs the same per thread, since job threads spread across both kinds of core.
 Pinning threads to one kind would make profiles compare, but `gb/thread`'s
 affinities don't know which hardware threads are which kind. Only
 `gb/profile`'s `win_cpu_info.cc` builds that table, which would move to
-`gb/thread` for it.
+`gb/thread` for it. *Core-aware job threads* does that move, and pins each job
+thread to one core, which fixes each thread's class.
 
 ## Fiber-aware profiling
 
@@ -137,6 +220,7 @@ affinities don't know which hardware threads are which kind. Only
 - **Size:** medium
 - **Feature workflow:** yes
 - **Depends on:** *Profiler module*, *Fiber-safe thread locals*
+- **Requested by:** Terra Diem *Profile the world's jobs*
 - **Background:** [Profiler module](worklog/profiler_module.md)
 
 Let a timed point span a fiber switch, which is a CHECK failure today. When a
@@ -146,6 +230,81 @@ waits is charged only for the time it runs. Needs a hook in `gb/thread`'s fiber
 switch that the profiler can use without `gb/thread` depending on it. Most
 useful alongside *Multithreaded profiles*, since fiber jobs are the main
 multithreaded case.
+
+Terra Diem plans phases of work that wait on job counters inside jobs, so the
+timed points around them span fiber switches. Besides the time a timed point
+runs, record the time it spent switched out, as its wait time: a phase that
+mostly waits for other jobs needs a different fix from one that runs long.
+
+## Profiled jobs
+
+- **Layers:** profile, job
+- **Size:** medium
+- **Feature workflow:** yes
+- **Depends on:** *Multithreaded profiles*, *Fiber-safe thread locals*
+- **Requested by:** Terra Diem *Profile the world's jobs*
+- **Background:** *Multithreaded profiles*, *Fiber-aware profiling*
+
+Let `FiberJobSystem` profile the jobs it runs, so a program can see whether its
+job threads are kept busy and where their time goes, without timing every job
+itself:
+- An option that gives each job thread a `Profiler` for as long as the thread
+  runs, made with options the program passes (so tests can give a
+  `FakeTicks`), and combined through *Multithreaded profiles*.
+- Each job timed as a point named after the job: its count, run time, and
+  distribution (p50, p90, p99, and max, from the histogram frames already
+  use), since a phase that waits for many jobs finishes with the slowest.
+- How long each job waited to start, from `Run()` to running, and how long a
+  waiting job took to resume once its counter reached zero, per job name. That
+  shows whether a program's jobs need priorities, or more threads.
+- Each job thread's busy and idle time per frame of the main loop, idle being
+  the time it spends waiting for work.
+- Time blocked in the OS on a contended `absl::Mutex`. Abseil reports each
+  contended wait through `absl::RegisterMutexProfiler()`, in cycles that on
+  x86-64 are timestamp counter ticks, like the profiler's. A program can
+  register only one such hook, so Game Bits should own it, recording the waits
+  as a point of their own on the thread that waited (check which thread the
+  hook runs on).
+- Job names that cost nothing per run. Naming jobs today (`kKeySetFiberNames`)
+  copies each name into a `std::string`, adds the job to a set under a global
+  mutex, and sets the thread's description twice, a system call each time. A
+  job named by a `ProfileName` (a string literal as a template argument) or a
+  registered `ProfilePoint` would have a fixed name for profiles, the shutdown
+  report, and debuggers, with no allocation.
+
+Profiling is off unless asked for, and costs a few timestamp reads per job when
+on.
+
+## Profile timelines
+
+- **Layers:** profile, job
+- **Size:** medium
+- **Feature workflow:** yes
+- **Depends on:** *Multithreaded profiles*, *Fiber-aware profiling*,
+  *Profiled jobs*
+- **Requested by:** Terra Diem *Profile the world's jobs*
+- **Background:** *Multithreaded profiles*, which leaves timelines out
+
+Totals can't show overlap, idle gaps, or what a frame waited for, and on many
+threads those are what decide frame times. Record each timed point as an event
+(its point, start and end ticks, thread, and job) in a fixed-size buffer per
+thread, cheap enough to leave on, and write a captured stretch as a trace in
+Chrome's trace event format (JSON), which Perfetto's viewer (ui.perfetto.dev)
+and `chrome://tracing` open, with no new dependency:
+- Capture the last few frames on request, and a slow frame automatically:
+  `on_slow_frame` can save the slow frame's trace beside its breakdown, so an
+  occasional hitch can be examined afterwards.
+- Jobs from *Profiled jobs*: queued, started, waiting, resumed, and finished,
+  linked from where each was queued to where it ran, so a frame's critical
+  path through its jobs can be followed.
+- Fiber switches from *Fiber-aware profiling*, so a job that moves between
+  threads stays one track.
+- Counters and values as plotted tracks.
+
+Tracy (a third-party profiler) already does all of this, with a live viewer,
+fibers, locks, and plots. It would be a new dependency, with its own
+instrumentation alongside `gb/profile`'s points, so decide between it and this
+before starting.
 
 ## Allocator overrides
 
