@@ -13,6 +13,7 @@
 #include "gb/file/file.h"
 #include "gb/file/file_system.h"
 #include "gb/file/memory_file_protocol.h"
+#include "gb/file/test_protocol.h"
 #include "gb/test/log_error_guard.h"
 #include "gb/test/log_recorder.h"
 #include "gmock/gmock.h"
@@ -63,9 +64,11 @@ class ImageFileTest : public ::testing::Test {
  protected:
   ImageFileTest() {
     file_system_.Register(std::make_unique<MemoryFileProtocol>());
+    file_system_.Register(std::make_unique<TestProtocol>(&test_state_), "test");
   }
 
   LogErrorGuard log_error_guard_;
+  TestProtocol::State test_state_;
   FileSystem file_system_;
 };
 
@@ -111,6 +114,37 @@ TEST_F(ImageFileTest, LoadEmptyImage) {
   EXPECT_THAT(log_error_guard_.TakeMessages(),
               ElementsAre(Field(&LogRecorder::Message::text,
                                 HasSubstr("Failed to read image"))));
+}
+
+TEST_F(ImageFileTest, LoadImageWithFailedRead) {
+  test_state_.paths["/image.tga"] =
+      TestProtocol::PathState::NewFile(MakeTgaFile());
+
+  // stb_image reads 128 bytes at a time, which is the header and most of the
+  // ID, then skips the rest of the ID. The read of the pixels fails.
+  TestProtocol::FileState* file_state =
+      test_state_.paths["/image.tga"].GetFile();
+  file_state->fail_read_after = 128;
+  EXPECT_EQ(LoadImage(&file_system_, "test:/image.tga"), nullptr);
+  EXPECT_THAT(log_error_guard_.TakeMessages(),
+              ElementsAre(Field(&LogRecorder::Message::text,
+                                HasSubstr("reading the file failed"))));
+
+  // The read failed part way through the image.
+  EXPECT_GT(file_state->bytes_read, static_cast<int64_t>(sizeof(kTgaHeader)));
+}
+
+TEST_F(ImageFileTest, LoadImageWithFailedFirstRead) {
+  test_state_.paths["/image.tga"] =
+      TestProtocol::PathState::NewFile(MakeTgaFile());
+
+  // The error is the failed read, rather than the unknown format stb_image
+  // finds in what it read.
+  test_state_.paths["/image.tga"].GetFile()->fail_read_after = 0;
+  EXPECT_EQ(LoadImage(&file_system_, "test:/image.tga"), nullptr);
+  EXPECT_THAT(log_error_guard_.TakeMessages(),
+              ElementsAre(Field(&LogRecorder::Message::text,
+                                HasSubstr("reading the file failed"))));
 }
 
 }  // namespace

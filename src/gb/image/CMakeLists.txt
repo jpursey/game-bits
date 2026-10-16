@@ -24,11 +24,14 @@ set(gb_image_LIBS
   glm
 )
 
+# Reads files with gb_file's test protocol.
+set(gb_image_FILE_TEST_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../file)
 set(gb_image_TEST_SOURCE
   image_file_test.cc
   image_test.cc
   image_view_test.cc
   pixel_test.cc
+  ${gb_image_FILE_TEST_DIR}/test_protocol.cc
 )
 
 set(gb_image_TEST_DEPS

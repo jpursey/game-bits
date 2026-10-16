@@ -47,6 +47,14 @@ std::unique_ptr<Image> LoadImage(File* file) {
   int channels;
   void* pixels = stbi_load_from_callbacks(&kIoCallbacks, &state, &width,
                                           &height, &channels, STBI_rgb_alpha);
+
+  // stb_image takes a failed read as the end of the file, so it may still
+  // return an image, with what it couldn't read as zeros.
+  if (!file->IsValid()) {
+    stbi_image_free(pixels);
+    LOG(ERROR) << "Failed to read image, as reading the file failed.";
+    return nullptr;
+  }
   if (pixels == nullptr) {
     LOG(ERROR) << "Failed to read image with error: " << stbi_failure_reason();
     return nullptr;

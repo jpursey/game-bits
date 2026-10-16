@@ -40,22 +40,6 @@ resumes on another thread can read the wrong value, with a test that does
 exactly that, and fix it if so: `/GT` on the affected code, or state that
 moves with the fiber.
 
-## Failed reads in image loading
-
-- **Layers:** image
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** `LoadImage()` in `image_file.cc`
-
-A read that fails part way through an image can still load it. stb_image takes
-a read that returns nothing as the end of the file and decodes the rest as
-zeros, so a JPEG, BMP, TGA or PNM loads as a partly blank image, and a PNG fails
-as if it were corrupt. `LoadImage()` never checks the file afterwards. Fail the
-load, with an error saying the read failed, if the file is invalid once stb
-returns. A test needs a protocol whose reads fail, which `gb_file`'s
-`TestProtocol` provides but `gb_image`'s tests can't use.
-
 ## Local files without iostreams
 
 - **Layers:** file
