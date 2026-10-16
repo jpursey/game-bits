@@ -174,6 +174,7 @@ If removal fails with "Permission denied", git has already unregistered the work
 - New source and test files must be added to their module's `CMakeLists.txt` (`<target>_SOURCE` and `<target>_TEST_SOURCE`) or they will not be compiled.
 - Defining `<target>_TEST_SOURCE` automatically creates a `<target>_test` executable that links GoogleTest/GoogleMock and registers a ctest test of the same name.
 - `<target>_DEPS` is for other CMake targets in the build (including `absl::*`); `<target>_LIBS` is for external libraries (Vulkan, SDL).
+- A module picks its platform implementations (see C++ style in the workflow) in an `if (WIN32) ... else() ... endif()` block at the top of its `CMakeLists.txt`, which sets `<target>_internal_SOURCE` and `<target>_internal_TEST_SOURCE` for the main lists to include, as in `src/gb/base/CMakeLists.txt`.
 - Library tiers are described in README.md. A library may depend freely on lower tiers, minimally within its own tier, and never on a higher tier.
 
 ## Conventions

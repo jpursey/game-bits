@@ -222,6 +222,15 @@ Beyond the Google C++ style guide
   utilities (`absl::StrCat`, `absl::StrAppend`, `absl::StrFormat`), and write
   files through Game Bits' `gb/file` when an abstraction over writing is
   needed.
+- Keep platform-specific code out of shared code: no `#ifdef _WIN32` (or other
+  platform or compiler check) around code in an otherwise portable file. Put
+  what differs behind a small platform independent interface in its own header,
+  and implement it once per platform, each in a file named for its platform:
+  `win_` for Windows, and `gen_` for a generic one on the standard library
+  alone, for any platform without its own. The build picks which file to
+  compile. Platform-specific tests are named the same way
+  (`win_thread_test.cc`). Game Bits' `gb/thread/thread.h` and
+  `gb/base/stdio_file.h` work this way.
 - Files in the working tree use CRLF line endings (git `core.autocrlf` is true);
   leave them that way. In Git Bash, `sed -i` rewrites files as LF-only, so
   prefer the Edit tool. If sed is used, restore CRLF afterwards (watch for files
