@@ -6,6 +6,7 @@
 #ifndef GB_FILE_LOCAL_FILE_PROTOCOL_H_
 #define GB_FILE_LOCAL_FILE_PROTOCOL_H_
 
+#include <filesystem>
 #include <string>
 
 #include "gb/base/validated_context.h"
@@ -80,6 +81,14 @@ class LocalFileProtocol : public FileProtocol {
   // This will fail if the contract is invalid, or if the requested root folder
   // could not be established.
   static std::unique_ptr<LocalFileProtocol> Create(Contract contract);
+
+  // Convenience method that creates a local file protocol rooted at a folder,
+  // as kConstraintRoot describes, with the defaults for everything else.
+  //
+  // This fails if the root path can't be converted to a UTF-8 path, as well as
+  // for the reasons Create(Contract) can.
+  static std::unique_ptr<LocalFileProtocol> Create(
+      const std::filesystem::path& root);
 
   // Convenience method that creates a local file protocol to a new folder in
   // the operating system specific temp directory.

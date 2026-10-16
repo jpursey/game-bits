@@ -326,6 +326,19 @@ std::unique_ptr<LocalFileProtocol> LocalFileProtocol::Create(
   return absl::WrapUnique(new LocalFileProtocol(root, context));
 }
 
+std::unique_ptr<LocalFileProtocol> LocalFileProtocol::Create(
+    const fs::path& root) {
+  // An empty root is the current directory, so a root that doesn't convert
+  // fails rather than becoming one.
+  const std::string root_string = ToString(root);
+  if (root_string.empty() && !root.empty()) {
+    LOG(ERROR) << "Requested root path could not be converted to a UTF-8 path";
+    return nullptr;
+  }
+  return Create(
+      ContextBuilder().SetValue<std::string>(kKeyRoot, root_string).Build());
+}
+
 std::unique_ptr<LocalFileProtocol> LocalFileProtocol::CreateTemp(
     std::string_view temp_prefix) {
   std::error_code error;

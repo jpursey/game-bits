@@ -29,6 +29,9 @@ using ::testing::ElementsAre;
 using ::testing::UnorderedElementsAre;
 using ::testing::Values;
 
+// U+65E5 U+672C in UTF-8, which most Windows code pages can't represent.
+constexpr std::string_view kNonAsciiName = "\xE6\x97\xA5\xE6\x9C\xAC";
+
 // Converts between UTF-8 paths used by LocalFileProtocol and std::filesystem
 // paths.
 fs::path ToFsPath(std::string_view path) {
@@ -282,6 +285,25 @@ TEST(LocalFileProtocolTest, RootIsNormalized) {
   EXPECT_THAT(file_system.List("file:/"), ElementsAre("file:/file"));
 }
 
+TEST(LocalFileProtocolTest, CreateWithRootPath) {
+  std::error_code error;
+  fs::path parent_path = GetUnusedTempPath();
+  ASSERT_TRUE(fs::create_directory(parent_path, error)) << error.message();
+  ScopedCall scoped([&] { fs::remove_all(parent_path, error); });
+
+  const fs::path root_path = parent_path / ToFsPath(kNonAsciiName);
+  auto protocol = LocalFileProtocol::Create(root_path);
+  ASSERT_NE(protocol, nullptr);
+  EXPECT_EQ(protocol->GetRoot(), ToGbPath(root_path));
+  EXPECT_TRUE(fs::is_directory(root_path, error));
+
+  // A path that isn't valid UTF-16 (a lone surrogate) fails, rather than
+  // rooting the protocol in the current directory.
+  EXPECT_EQ(
+      LocalFileProtocol::Create(parent_path / std::wstring(1, wchar_t{0xD800})),
+      nullptr);
+}
+
 TEST(LocalFileProtocolTest, PathsStayUnderRoot) {
   std::error_code error;
   fs::path parent_path = GetUnusedTempPath();
@@ -292,11 +314,7 @@ TEST(LocalFileProtocolTest, PathsStayUnderRoot) {
   ASSERT_TRUE(WriteFile(parent_path / "root/host/file", "inside"));
   ASSERT_TRUE(WriteFile(parent_path / "outside", "outside"));
 
-  auto protocol = LocalFileProtocol::Create(
-      ContextBuilder()
-          .SetValue<std::string>(LocalFileProtocol::kKeyRoot,
-                                 ToGbPath(parent_path / "root"))
-          .Build());
+  auto protocol = LocalFileProtocol::Create(parent_path / "root");
   ASSERT_NE(protocol, nullptr);
   for (std::string_view path :
        {"/../outside", "/..\\outside", "/host/../../outside", "//host/file"}) {
@@ -362,11 +380,8 @@ TEST(LocalFileProtocolTest, CurrentFolder) {
   ASSERT_TRUE(fs::create_directory(parent_path / "root-sibling", error))
       << error.message();
   FileSystem file_system;
-  ASSERT_TRUE(file_system.Register(LocalFileProtocol::Create(
-      ContextBuilder()
-          .SetValue<std::string>(LocalFileProtocol::kKeyRoot,
-                                 ToGbPath(parent_path / "root"))
-          .Build())));
+  ASSERT_TRUE(
+      file_system.Register(LocalFileProtocol::Create(parent_path / "root")));
   ASSERT_TRUE(file_system.CreateFolder("file:/folder"));
 
   EXPECT_TRUE(file_system.SetCurrentFolder("file:/folder"));
@@ -382,9 +397,6 @@ TEST(LocalFileProtocolTest, CurrentFolder) {
 }
 
 TEST(LocalFileProtocolTest, NonAsciiNames) {
-  // U+65E5 U+672C in UTF-8, which most Windows code pages can't represent.
-  static constexpr std::string_view kName = "\xE6\x97\xA5\xE6\x9C\xAC";
-
   auto protocol = LocalFileProtocol::CreateTemp("gbtest");
   ASSERT_NE(protocol, nullptr);
   const fs::path root_path = ToFsPath(protocol->GetRoot());
@@ -392,13 +404,13 @@ TEST(LocalFileProtocolTest, NonAsciiNames) {
   ASSERT_TRUE(file_system.Register(std::move(protocol)));
 
   // Paths are UTF-8, and name the same file in the operating system.
-  const std::string folder = absl::StrCat("file:/", kName);
-  const std::string file = JoinPath(folder, kName);
+  const std::string folder = absl::StrCat("file:/", kNonAsciiName);
+  const std::string file = JoinPath(folder, kNonAsciiName);
   ASSERT_TRUE(file_system.CreateFolder(folder));
   ASSERT_TRUE(file_system.WriteFile(file, "12345"));
   std::error_code error;
-  EXPECT_TRUE(fs::is_regular_file(root_path / ToFsPath(kName) / ToFsPath(kName),
-                                  error));
+  EXPECT_TRUE(fs::is_regular_file(
+      root_path / ToFsPath(kNonAsciiName) / ToFsPath(kNonAsciiName), error));
   EXPECT_EQ(file_system.GetPathInfo(file).size, 5);
 
   // A path that isn't UTF-8 is invalid.
@@ -406,7 +418,7 @@ TEST(LocalFileProtocolTest, NonAsciiNames) {
   EXPECT_FALSE(file_system.WriteFile("file:/\xFF", "12345"));
 
   // Names from the operating system are listed as UTF-8.
-  const std::string other_name = absl::StrCat(kName, "-2");
+  const std::string other_name = absl::StrCat(kNonAsciiName, "-2");
   ASSERT_TRUE(WriteFile(root_path / ToFsPath(other_name), "2"));
   EXPECT_THAT(
       file_system.List("file:/", FolderMode::kRecursive),
