@@ -9,6 +9,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
@@ -221,7 +222,7 @@ class FileSystem final {
   // These are convenience wrappers for opening a file, writing the buffer, and
   // closing the file. If a file already exists, it will be overwritten.
   //
-  // Returns true if the file was written successfullt, or false if any part of
+  // Returns true if the whole buffer reached the file, or false if any part of
   // the process failed. This may result in a partially created file.
   bool WriteFile(std::string_view path, std::string_view buffer);
   template <typename Type>
@@ -263,21 +264,16 @@ class FileSystem final {
 
 inline bool FileSystem::WriteFile(std::string_view path,
                                   std::string_view buffer) {
-  auto file = OpenFile(path, kNewFileFlags);
-  if (file == nullptr) {
-    return false;
-  }
-  return file->WriteString(buffer) == static_cast<int64_t>(buffer.size());
+  return WriteFile(path, buffer.data(), static_cast<int64_t>(buffer.size()));
 }
 
 template <typename Type>
 inline bool FileSystem::WriteFile(std::string_view path,
                                   const std::vector<Type>& buffer) {
-  auto file = OpenFile(path, kNewFileFlags);
-  if (file == nullptr) {
-    return false;
-  }
-  return file->Write(buffer) == static_cast<int64_t>(buffer.size());
+  static_assert(std::is_trivially_copyable_v<Type>,
+                "Buffer cannot be written as raw bytes");
+  return WriteFile(path, buffer.data(),
+                   static_cast<int64_t>(buffer.size() * sizeof(Type)));
 }
 
 inline bool FileSystem::WriteFile(std::string_view path, const void* buffer,
@@ -286,7 +282,7 @@ inline bool FileSystem::WriteFile(std::string_view path, const void* buffer,
   if (file == nullptr) {
     return false;
   }
-  return file->Write(buffer, buffer_size) == buffer_size;
+  return file->Write(buffer, buffer_size) == buffer_size && file->Close();
 }
 
 inline bool FileSystem::ReadFile(std::string_view path, std::string* buffer) {

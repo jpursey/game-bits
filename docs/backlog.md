@@ -40,28 +40,25 @@ resumes on another thread can read the wrong value, with a test that does
 exactly that, and fix it if so: `/GT` on the affected code, or state that
 moves with the fiber.
 
-## Report buffered write errors
+## Report read errors
 
 - **Layers:** file
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** nothing
-- **Background:** [Code audit](worklog/code_audit.md)
+- **Background:** `RawFile::Read()` in `raw_file.h`, and the copy loops in
+  `FileSystem::GenericCopyFile()` and `FileProtocol::BasicCopyFile()`
 
-Most write errors are never reported. `LocalFileProtocol` writes through a
-buffered `std::fstream`, so `File::Write()` succeeds once the data is buffered,
-and the disk write happens later: an error from a full buffer comes back as a
-short count from a later `Write()` call, and an error when the file closes is
-lost, as the destructor can't report it. So `FileSystem::WriteFile()` of a
-small file on a full disk returns true and leaves a truncated file. When an
-error is reported, the count is 0 even if some bytes were written, as the
-failed stream reports no position.
-
-Add a `RawFile::Flush()` that every protocol implements, `File::Flush()` and a
-`File::Close()` that return whether everything written reached the file, and
-have `FileSystem::WriteFile()` check it. Fakes cover `File`
-(`TestProtocol::FileState::fail_write_after`); a real write failure can't be
-made in a unit test, so `LocalFile` is checked by hand.
+A read that fails looks the same as one that reaches the end of the file:
+`RawFile::Read()` returns a short count either way, and the `File` stays valid,
+so a caller can't tell a failed read from a short file. The copy loops stop at
+the first short read, so a copy whose source fails part way leaves a truncated
+file and reports success (copies within `LocalFileProtocol` use
+`std::filesystem::copy_file`, and are unaffected). Let a raw file report a
+failed read, have `File` become invalid on one as it does on a failed write,
+and have the copies check for it. The two copy loops are the same, so share
+them while there. `LocalFile::Read()` also tries to work out how much a failed
+read read, which a failed stream can't report.
 
 ## Default texture for unset bindings
 

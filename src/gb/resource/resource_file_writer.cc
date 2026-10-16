@@ -143,7 +143,8 @@ bool ResourceFileWriter::Write(std::string_view name, Resource* resource,
     LOG(ERROR) << "Failed to open resource file for writing: " << name;
     return false;
   }
-  success = WriteChunkFile(file.get(), writer_info.chunk_type, chunk_writers);
+  success = WriteChunkFile(file.get(), writer_info.chunk_type, chunk_writers) &&
+            file->Close();
   return success;
 }
 

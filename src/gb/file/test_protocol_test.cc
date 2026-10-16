@@ -1074,6 +1074,44 @@ TEST(TestProtocolTest, RawFileWrite) {
   file_state->ResetCounts();
 }
 
+TEST(TestProtocolTest, RawFileFlush) {
+  TestProtocol::State state;
+  state.name = "test";
+  state.paths["/file"] = TestProtocol::PathState::NewFile("1234567890");
+  TestProtocol protocol(&state);
+  auto file_state = state.paths["/file"].GetFile();
+  auto file = protocol.BasicOpenFile("test", "/file", kReadWriteFileFlags);
+
+  EXPECT_TRUE(file->Flush());
+  EXPECT_EQ(file_state->invalid_call_count, 0);
+  EXPECT_EQ(file_state->flush_count, 1);
+  EXPECT_EQ(file_state->position, 0);
+  file_state->ResetCounts();
+
+  file_state->flags -= FileFlag::kWrite;
+  EXPECT_FALSE(file->Flush());
+  EXPECT_EQ(file_state->invalid_call_count, 1);
+  EXPECT_EQ(file_state->flush_count, 1);
+  EXPECT_EQ(file_state->position, 0);
+  file_state->ResetCounts();
+  file_state->flags += FileFlag::kWrite;
+
+  file_state->fail_flush = true;
+  EXPECT_FALSE(file->Flush());
+  EXPECT_EQ(file_state->invalid_call_count, 0);
+  EXPECT_EQ(file_state->flush_count, 1);
+  EXPECT_EQ(file_state->position, -1);
+  file_state->ResetCounts();
+  file_state->fail_flush = false;
+
+  // The file stays invalid.
+  EXPECT_FALSE(file->Flush());
+  EXPECT_EQ(file_state->invalid_call_count, 0);
+  EXPECT_EQ(file_state->flush_count, 1);
+  EXPECT_EQ(file_state->position, -1);
+  file_state->ResetCounts();
+}
+
 TEST(TestProtocolTest, RawFileRead) {
   TestProtocol::State state;
   state.name = "test";

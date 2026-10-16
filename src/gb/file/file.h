@@ -24,7 +24,9 @@ class File final {
   File(const File&) = delete;
   File& operator=(const File&) = delete;
 
-  // Closes the file.
+  // Closes the file, if Close() wasn't called. An error writing what is still
+  // buffered can only be logged, so call Close() to check that what was
+  // written reached the file.
   ~File();
 
   //---------------------------------------------------------------------------
@@ -39,8 +41,24 @@ class File final {
   // errors as operations are performed on the file. If an error occurs, the
   // file will become invalid and all further operations will fail. In these
   // case, the file will need to be closed and a new one acquired from the file
-  // system.
+  // system. A file is also invalid once it is closed with Close().
   bool IsValid() const { return position_ >= 0; }
+
+  //---------------------------------------------------------------------------
+  // Flush and close
+
+  // Writes anything buffered to the file. Writes may be buffered, so a write
+  // that succeeded can still fail to reach the file.
+  //
+  // Returns true if the file is valid and everything written to it so far has
+  // reached the file. If this fails, the file becomes invalid.
+  bool Flush();
+
+  // Flushes and closes the file, after which it is invalid.
+  //
+  // Returns true if the file was valid and everything written to it reached the
+  // file.
+  bool Close();
 
   //---------------------------------------------------------------------------
   // Position in the file.
@@ -71,7 +89,9 @@ class File final {
 
   // Writes an untyped buffer of bytes into the file.
   //
-  // Returns the number of bytes actually written.
+  // Returns the number of bytes actually written, which is 0 if the file wasn't
+  // opened for writing. Otherwise, if this is less than 'count', the write
+  // failed and the file becomes invalid.
   int64_t Write(const void* buffer, int64_t count);
 
   //---------------------------------------------------------------------------
@@ -113,7 +133,9 @@ class File final {
 
   // Writes a buffer of trivially-copyable values to the file.
   //
-  // Returns the number of values actually written.
+  // Returns the number of values actually written, which is 0 if the file
+  // wasn't opened for writing. Otherwise, if this is less than 'count', the
+  // write failed and the file becomes invalid.
   template <typename Type>
   int64_t Write(const Type* buffer, int64_t count = 1);
   template <typename Type>
@@ -239,7 +261,7 @@ class File final {
   int64_t DoRead(void* buffer, int64_t size);
   bool DoReadLine(ReadLineState* state, std::string* line);
 
-  const std::unique_ptr<RawFile> file_;
+  std::unique_ptr<RawFile> file_;  // Null once the file is closed.
   const FileFlags flags_;
   int64_t position_ = 0;
 };

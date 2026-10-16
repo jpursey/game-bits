@@ -82,6 +82,19 @@ class TestFile : public RawFile {
     return size;
   }
 
+  bool Flush() override {
+    state_->flush_count += 1;
+    if (!state_->flags.IsSet(FileFlag::kWrite)) {
+      state_->invalid_call_count += 1;
+      return false;
+    }
+    if (state_->position < 0 || state_->fail_flush) {
+      state_->position = -1;
+      return false;
+    }
+    return true;
+  }
+
   int64_t Read(void* buffer, int64_t size) override {
     state_->read_count += 1;
     state_->request_bytes_read += size;
@@ -128,6 +141,7 @@ void TestProtocol::FileState::ResetCounts() {
   seek_end_count = 0;
   seek_to_count = 0;
   write_count = 0;
+  flush_count = 0;
   read_count = 0;
   request_bytes_written = 0;
   bytes_written = 0;

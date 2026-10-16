@@ -429,7 +429,7 @@ bool FileSystem::GenericCopyFile(std::string_view from_protocol_name,
     }
   } while (buffer_size == kCopyBufferSize);
 
-  return true;
+  return to_file->Flush();
 }
 
 }  // namespace gb

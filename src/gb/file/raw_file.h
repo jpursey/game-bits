@@ -14,9 +14,9 @@ namespace gb {
 
 // Raw file to underlying file protocol file.
 //
-// A raw file is closed when it is destructed. A raw file may or may not be
-// buffered. If it is buffered, then all remaining contents should be flushed
-// when the RawFile is destroyed.
+// A raw file is closed when it is destructed. A raw file may buffer what is
+// written, as long as Flush() writes it, and destroying the RawFile writes any
+// that remains.
 //
 // Derived class of RawFile must be thread-compatible.
 class RawFile {
@@ -38,6 +38,11 @@ class RawFile {
   // number of bytes actually written. This is only called if the file was
   // opened for writing.
   virtual int64_t Write(const void* buffer, int64_t size) = 0;
+
+  // Writes anything buffered to the file, returning true if everything written
+  // so far has reached the file. This is only called if the file was opened
+  // for writing.
+  virtual bool Flush() = 0;
 
   // Reads the requested number of bytes from the file, returning the total
   // number of bytes actually read. This is only called if the file was open for

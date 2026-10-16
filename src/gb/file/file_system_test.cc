@@ -641,6 +641,14 @@ TEST(FileSystemTest, CopyFilesAcrossProtocols) {
   state[0].ResetCounts();
   state[1].ResetCounts();
 
+  auto* to_file_state = state[1].paths["/file"].GetFile();
+  to_file_state->fail_flush = true;
+  EXPECT_FALSE(file_system.CopyFile("test0:/file", "test1:/file"));
+  EXPECT_EQ(to_file_state->flush_count, 1);
+  to_file_state->fail_flush = false;
+  state[0].ResetCounts();
+  state[1].ResetCounts();
+
   EXPECT_TRUE(file_system.CopyFile("test0:/file", "test1:/file"));
   EXPECT_EQ(state[1].paths["/file"].GetType(), PathType::kFile);
   EXPECT_EQ(state[1].paths["/file"].GetContents(),
@@ -731,6 +739,46 @@ TEST(FileSystemTest, OpenFile) {
       file_system.OpenFile("test:/file", {FileFlag::kCreate, FileFlag::kReset,
                                           FileFlag::kWrite}),
       nullptr);
+}
+
+TEST(FileSystemTest, WriteFile) {
+  TestProtocol::State state;
+  FileSystem file_system;
+  file_system.Register(std::make_unique<TestProtocol>(&state), "test");
+
+  EXPECT_TRUE(file_system.WriteFile("test:/file", "12345"));
+  auto* file_state = state.paths["/file"].GetFile();
+  ASSERT_NE(file_state, nullptr);
+  EXPECT_EQ(file_state->contents, "12345");
+  EXPECT_EQ(file_state->flush_count, 1);
+  EXPECT_EQ(file_state->file, nullptr);
+
+  EXPECT_TRUE(file_system.WriteFile("test:/file", std::vector<char>{'a', 'b'}));
+  EXPECT_EQ(file_state->contents, "ab");
+  EXPECT_EQ(file_state->flush_count, 1);
+
+  EXPECT_TRUE(file_system.WriteFile("test:/file", "abc", 3));
+  EXPECT_EQ(file_state->contents, "abc");
+  EXPECT_EQ(file_state->flush_count, 1);
+
+  file_state->fail_write_after = 3;
+  EXPECT_FALSE(file_system.WriteFile("test:/file", "12345"));
+  EXPECT_EQ(file_state->contents, "123");
+  EXPECT_EQ(file_state->flush_count, 0);
+  file_state->fail_write_after = -1;
+
+  // Every write succeeds, but doesn't reach the file, as when it was buffered.
+  file_state->fail_flush = true;
+  EXPECT_FALSE(file_system.WriteFile("test:/file", "12345"));
+  EXPECT_EQ(file_state->flush_count, 1);
+  EXPECT_FALSE(file_system.WriteFile("test:/file", std::vector<char>{'a'}));
+  EXPECT_EQ(file_state->flush_count, 1);
+  EXPECT_FALSE(file_system.WriteFile("test:/file", "abc", 3));
+  EXPECT_EQ(file_state->flush_count, 1);
+  file_state->fail_flush = false;
+
+  EXPECT_EQ(state.invalid_call_count, 0);
+  EXPECT_EQ(file_state->invalid_call_count, 0);
 }
 
 }  // namespace

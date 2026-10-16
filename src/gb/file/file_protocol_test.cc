@@ -627,6 +627,19 @@ TEST(FileProtocolTest, BasicCopyFile) {
   EXPECT_EQ(state.paths["/new-file"].GetContents(), "");
   state.ResetCounts();
   state.fail_path.clear();
+
+  auto* new_file_state = state.paths["/new-file"].GetFile();
+  new_file_state->fail_flush = true;
+  EXPECT_FALSE(protocol.BasicCopyFile("test", "/file", "/new-file"));
+  EXPECT_EQ(state.invalid_call_count, 0);
+  EXPECT_EQ(new_file_state->flush_count, 1);
+  state.ResetCounts();
+  new_file_state->fail_flush = false;
+
+  EXPECT_TRUE(protocol.BasicCopyFile("test", "/file", "/new-file"));
+  EXPECT_EQ(state.invalid_call_count, 0);
+  EXPECT_EQ(new_file_state->flush_count, 1);
+  EXPECT_EQ(state.paths["/new-file"].GetContents(), "12345");
 }
 
 }  // namespace

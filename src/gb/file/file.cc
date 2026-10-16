@@ -7,6 +7,7 @@
 
 #include <string_view>
 
+#include "absl/log/log.h"
 #include "absl/strings/str_split.h"
 #include "gb/file/raw_file.h"
 
@@ -36,7 +37,30 @@ class ByLineEnding {
 File::File(std::unique_ptr<RawFile> file, FileFlags flags)
     : file_(std::move(file)), flags_(flags) {}
 
-File::~File() {}
+File::~File() {
+  if (IsValid() && !Flush()) {
+    LOG(ERROR) << "What was written to a file failed to reach it when the file "
+                  "was destroyed. Call File::Close() to check for this.";
+  }
+}
+
+bool File::Flush() {
+  if (position_ < 0) {
+    return false;
+  }
+  if (flags_.IsSet(FileFlag::kWrite) && !file_->Flush()) {
+    position_ = -1;
+    return false;
+  }
+  return true;
+}
+
+bool File::Close() {
+  const bool flushed = Flush();
+  file_.reset();
+  position_ = -1;
+  return flushed;
+}
 
 int64_t File::SeekEnd() {
   if (position_ < 0) {
@@ -151,7 +175,14 @@ int64_t File::DoWrite(const void* buffer, int64_t size) {
     return 0;
   }
   const int64_t actual_size = file_->Write(buffer, size);
-  position_ += actual_size;
+
+  // Unlike a short read, which reached the end of the file, a short write is
+  // always an error.
+  if (actual_size < size) {
+    position_ = -1;
+  } else {
+    position_ += actual_size;
+  }
   return actual_size;
 }
 

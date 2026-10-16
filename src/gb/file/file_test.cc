@@ -13,6 +13,7 @@
 #include "absl/strings/str_join.h"
 #include "gb/file/file_system.h"
 #include "gb/file/test_protocol.h"
+#include "gb/test/log_recorder.h"
 #include "gb/test/test_util.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -23,6 +24,7 @@ namespace {
 using ::testing::ElementsAre;
 using ::testing::ElementsAreArray;
 using ::testing::IsEmpty;
+using ::testing::SizeIs;
 using ::testing::TestWithParam;
 using ::testing::ValuesIn;
 
@@ -660,7 +662,7 @@ TEST(FileTest, WriteLineFails) {
   file_state->fail_write_after = 5;
   EXPECT_FALSE(file->WriteLine("1234567890"));
   EXPECT_EQ(file_state->contents, "12345");
-  EXPECT_EQ(file->GetPosition(), 5);
+  EXPECT_FALSE(file->IsValid());
   file_state->fail_write_after = -1;
   file.reset();
 
@@ -668,7 +670,7 @@ TEST(FileTest, WriteLineFails) {
   file_state->fail_write_after = 5;
   EXPECT_EQ(file->WriteLines(std::vector<const char*>{"1234567890"}), 0);
   EXPECT_EQ(file_state->contents, "12345");
-  EXPECT_EQ(file->GetPosition(), 5);
+  EXPECT_FALSE(file->IsValid());
   file_state->fail_write_after = -1;
   file.reset();
 
@@ -676,7 +678,7 @@ TEST(FileTest, WriteLineFails) {
   file_state->fail_write_after = 10;
   EXPECT_FALSE(file->WriteLine("1234567890"));
   EXPECT_EQ(file_state->contents, "1234567890");
-  EXPECT_EQ(file->GetPosition(), 10);
+  EXPECT_FALSE(file->IsValid());
   file_state->fail_write_after = -1;
   file.reset();
 
@@ -684,7 +686,7 @@ TEST(FileTest, WriteLineFails) {
   file_state->fail_write_after = 10;
   EXPECT_EQ(file->WriteLines(std::vector<const char*>{"1234567890"}), 0);
   EXPECT_EQ(file_state->contents, "1234567890");
-  EXPECT_EQ(file->GetPosition(), 10);
+  EXPECT_FALSE(file->IsValid());
   file_state->fail_write_after = -1;
   file.reset();
 
@@ -694,9 +696,136 @@ TEST(FileTest, WriteLineFails) {
       file->WriteLines(std::vector<const char*>{"1234567890", "abcdefghij"}),
       1);
   EXPECT_EQ(file_state->contents, "1234567890\nabcd");
-  EXPECT_EQ(file->GetPosition(), 15);
+  EXPECT_FALSE(file->IsValid());
   file_state->fail_write_after = -1;
   file.reset();
+}
+
+TEST(FileTest, FlushAndClose) {
+  TestProtocol::State state;
+  FileSystem file_system;
+  file_system.Register(std::make_unique<TestProtocol>(&state), "test");
+
+  state.paths["/file"] = TestProtocol::PathState::NewFile();
+  auto* file_state = state.paths["/file"].GetFile();
+
+  auto file = file_system.OpenFile("test:/file", FileFlag::kWrite);
+  EXPECT_EQ(file->WriteString("12345"), 5);
+  EXPECT_TRUE(file->Flush());
+  EXPECT_EQ(file_state->flush_count, 1);
+  EXPECT_TRUE(file->IsValid());
+  EXPECT_EQ(file->GetPosition(), 5);
+  EXPECT_EQ(file->WriteString("67890"), 5);
+  EXPECT_TRUE(file->Close());
+  EXPECT_EQ(file_state->flush_count, 2);
+  EXPECT_EQ(file_state->file, nullptr);
+  EXPECT_EQ(file_state->contents, "1234567890");
+
+  // A closed file is invalid.
+  EXPECT_FALSE(file->IsValid());
+  EXPECT_EQ(file->GetPosition(), -1);
+  EXPECT_EQ(file->WriteString("abc"), 0);
+  EXPECT_EQ(file->SeekBegin(), -1);
+  EXPECT_FALSE(file->Flush());
+  EXPECT_FALSE(file->Close());
+  file.reset();
+  EXPECT_EQ(file_state->contents, "1234567890");
+
+  // Nothing is written to a file opened only for reading, so there is nothing
+  // to flush.
+  file = file_system.OpenFile("test:/file", FileFlag::kRead);
+  EXPECT_TRUE(file->Flush());
+  EXPECT_EQ(file->ReadString(5), "12345");
+  EXPECT_TRUE(file->Close());
+  EXPECT_EQ(file_state->flush_count, 0);
+  EXPECT_EQ(file_state->file, nullptr);
+  EXPECT_EQ(file_state->invalid_call_count, 0);
+}
+
+TEST(FileTest, FlushAndCloseFail) {
+  TestProtocol::State state;
+  FileSystem file_system;
+  file_system.Register(std::make_unique<TestProtocol>(&state), "test");
+
+  state.paths["/file"] = TestProtocol::PathState::NewFile();
+  auto* file_state = state.paths["/file"].GetFile();
+
+  // Every write succeeds, but doesn't reach the file, as when it was buffered.
+  auto file = file_system.OpenFile("test:/file", FileFlag::kWrite);
+  file_state->fail_flush = true;
+  EXPECT_EQ(file->WriteString("12345"), 5);
+  EXPECT_FALSE(file->Flush());
+  EXPECT_FALSE(file->IsValid());
+  EXPECT_EQ(file->WriteString("67890"), 0);
+  EXPECT_FALSE(file->Close());
+  EXPECT_EQ(file_state->flush_count, 1);
+  EXPECT_EQ(file_state->file, nullptr);
+  file.reset();
+
+  file = file_system.OpenFile("test:/file", FileFlag::kWrite);
+  EXPECT_EQ(file->WriteString("12345"), 5);
+  EXPECT_FALSE(file->Close());
+  EXPECT_EQ(file_state->flush_count, 1);
+  EXPECT_EQ(file_state->file, nullptr);
+  file_state->fail_flush = false;
+  file.reset();
+
+  // A failed write makes the file invalid, so it is reported without needing
+  // to flush.
+  file = file_system.OpenFile("test:/file", FileFlag::kWrite);
+  file_state->fail_write_after = 3;
+  EXPECT_EQ(file->WriteString("12345"), 3);
+  EXPECT_FALSE(file->IsValid());
+  EXPECT_FALSE(file->Flush());
+  EXPECT_FALSE(file->Close());
+  EXPECT_EQ(file_state->flush_count, 0);
+  file_state->fail_write_after = -1;
+  file.reset();
+
+  // A file that becomes invalid any other way also can't report that what was
+  // written reached the file.
+  file = file_system.OpenFile("test:/file", FileFlag::kWrite);
+  EXPECT_EQ(file->WriteString("12345"), 5);
+  file_state->fail_seek = true;
+  EXPECT_EQ(file->SeekBegin(), -1);
+  EXPECT_FALSE(file->Close());
+  EXPECT_EQ(file_state->flush_count, 0);
+  file_state->fail_seek = false;
+  file.reset();
+
+  EXPECT_EQ(file_state->invalid_call_count, 0);
+}
+
+TEST(FileTest, DestroyLogsLostWrites) {
+  TestProtocol::State state;
+  FileSystem file_system;
+  file_system.Register(std::make_unique<TestProtocol>(&state), "test");
+
+  state.paths["/file"] = TestProtocol::PathState::NewFile();
+  auto* file_state = state.paths["/file"].GetFile();
+  LogRecorder log_recorder(absl::LogSeverityAtLeast::kError);
+
+  auto file = file_system.OpenFile("test:/file", FileFlag::kWrite);
+  EXPECT_EQ(file->WriteString("12345"), 5);
+  file.reset();
+  EXPECT_EQ(file_state->flush_count, 1);
+  EXPECT_THAT(log_recorder.TakeMessages(), IsEmpty());
+
+  file = file_system.OpenFile("test:/file", FileFlag::kWrite);
+  EXPECT_EQ(file->WriteString("12345"), 5);
+  file_state->fail_flush = true;
+  file.reset();
+  EXPECT_EQ(file_state->flush_count, 1);
+  EXPECT_THAT(log_recorder.TakeMessages(), SizeIs(1));
+
+  // A closed file already reported the error.
+  file = file_system.OpenFile("test:/file", FileFlag::kWrite);
+  EXPECT_EQ(file->WriteString("12345"), 5);
+  EXPECT_FALSE(file->Close());
+  file.reset();
+  EXPECT_EQ(file_state->flush_count, 1);
+  EXPECT_THAT(log_recorder.TakeMessages(), IsEmpty());
+  file_state->fail_flush = false;
 }
 
 struct ReadLineParam {

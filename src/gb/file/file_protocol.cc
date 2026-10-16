@@ -406,7 +406,7 @@ bool FileProtocol::BasicCopyFile(std::string_view protocol_name,
     }
   } while (buffer_size == kBasicCopyBufferSize);
 
-  return true;
+  return to_file->Flush();
 }
 
 bool FileProtocol::BasicDeleteFile(std::string_view protocol_name,

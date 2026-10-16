@@ -33,6 +33,7 @@ class LocalFile : public RawFile {
   int64_t SeekEnd() override;
   int64_t SeekTo(int64_t position) override;
   int64_t Write(const void* buffer, int64_t size) override;
+  bool Flush() override;
   int64_t Read(void* buffer, int64_t size) override;
 
  private:
@@ -81,15 +82,23 @@ int64_t LocalFile::Write(const void* buffer, int64_t size) {
   BeginAccess(Access::kWrite);
   file_.write(reinterpret_cast<const char*>(buffer),
               static_cast<std::streamsize>(size));
+
+  // A failed stream doesn't report its position, so how much was written
+  // isn't known.
   if (file_.fail()) {
-    int64_t position = position_;
-    if (GetPosition() < 0) {
-      return 0;
-    }
-    size = std::max<int64_t>(position_ - position, 0);
+    position_ = -1;
+    return 0;
   }
   position_ += size;
   return size;
+}
+
+bool LocalFile::Flush() {
+  file_.flush();
+
+  // A failed write leaves the stream failed, so this also reports the errors
+  // of earlier writes.
+  return !file_.fail();
 }
 
 int64_t LocalFile::Read(void* buffer, int64_t size) {

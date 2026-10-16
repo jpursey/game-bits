@@ -26,7 +26,7 @@ std::unique_ptr<FileProtocol> CommonProtocolTestInit::DefaultInit(
       return {};
     }
     const int64_t size = static_cast<int64_t>(contents.size());
-    if (file->Write(contents.data(), size) != size) {
+    if (file->Write(contents.data(), size) != size || !file->Flush()) {
       return {};
     }
   }
@@ -729,6 +729,34 @@ TEST_P(CommonProtocolTest, ReadAndWriteFile) {
   EXPECT_EQ(file->GetPosition(), 12);
   file.reset();
   EXPECT_TRUE(CheckContents(file_system, "test:/file", "12ab56cd90ef"));
+}
+
+TEST_P(CommonProtocolTest, FlushAndCloseFile) {
+  CommonProtocolTestInit init;
+  init.files = {{"/file", "1234567890"}};
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(NewProtocol(init), "test"));
+  if (!file_system.GetFlags("test").IsSet(
+          {FileProtocolFlag::kFileRead, FileProtocolFlag::kFileWrite})) {
+    return;
+  }
+
+  // Flushing after a read or a write keeps the position, and what was written.
+  std::unique_ptr<File> file =
+      file_system.OpenFile("test:/file", kReadWriteFileFlags);
+  ASSERT_NE(file, nullptr);
+  EXPECT_EQ(file->ReadString(2), "12");
+  EXPECT_TRUE(file->Flush());
+  EXPECT_EQ(file->ReadString(2), "34");
+  EXPECT_EQ(file->WriteString("ab"), 2);
+  EXPECT_TRUE(file->Flush());
+  EXPECT_EQ(file->GetPosition(), 6);
+  EXPECT_EQ(file->ReadString(2), "78");
+  EXPECT_EQ(file->WriteString("cd"), 2);
+  EXPECT_TRUE(file->Close());
+  EXPECT_FALSE(file->IsValid());
+  file.reset();
+  EXPECT_TRUE(CheckContents(file_system, "test:/file", "1234ab78cd"));
 }
 
 }  // namespace

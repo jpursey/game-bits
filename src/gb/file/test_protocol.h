@@ -46,6 +46,9 @@ class TestProtocol : public FileProtocol {
     // requested to be written.
     int64_t fail_write_after = -1;
 
+    // Flush will fail, as when buffered writes fail to reach the file.
+    bool fail_flush = false;
+
     // If non-negative, read will fail after this many total bytes are requested
     // to be read.
     int64_t fail_read_after = -1;
@@ -56,6 +59,7 @@ class TestProtocol : public FileProtocol {
     int seek_end_count = 0;             // Counts calls to SeekEnd.
     int seek_to_count = 0;              // Counts calls to SeekTo.
     int write_count = 0;                // Counts calls to Write.
+    int flush_count = 0;                // Counts calls to Flush.
     int read_count = 0;                 // Counts calls to Read.
     int64_t request_bytes_written = 0;  // Total bytes requested from Write.
     int64_t bytes_written = 0;          // Total bytes actually written.

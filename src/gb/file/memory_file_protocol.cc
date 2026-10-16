@@ -35,6 +35,7 @@ class MemoryFileProtocol::MemoryFile : public RawFile {
   int64_t SeekEnd() override;
   int64_t SeekTo(int64_t position) override;
   int64_t Write(const void* buffer, int64_t size) override;
+  bool Flush() override;
   int64_t Read(void* buffer, int64_t size) override;
 
  private:
@@ -92,6 +93,16 @@ int64_t MemoryFileProtocol::MemoryFile::Write(const void* buffer,
   std::memcpy(node->contents.data() + position_, buffer, size);
   position_ += size;
   return size;
+}
+
+// Writes go straight to the node, so this only checks that it still exists.
+bool MemoryFileProtocol::MemoryFile::Flush() {
+  WeakLock<Node> lock(&node_);
+  if (lock.Get() == nullptr) {
+    position_ = -1;
+    return false;
+  }
+  return true;
 }
 
 int64_t MemoryFileProtocol::MemoryFile::Read(void* buffer, int64_t size) {
