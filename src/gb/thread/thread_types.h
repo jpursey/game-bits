@@ -6,6 +6,8 @@
 #ifndef GB_THREAD_THREAD_TYPES_H_
 #define GB_THREAD_THREAD_TYPES_H_
 
+#include "gb/base/flags.h"
+
 namespace gb {
 
 #ifndef GB_BUILD_ENABLE_THREAD_LOGGING
@@ -25,6 +27,12 @@ using Fiber = FiberType*;
 // invalid/non-existant thread.
 struct ThreadType;
 using Thread = ThreadType*;
+
+// Defines which optional thread features the current platform supports.
+enum class ThreadCapability {
+  kCycles,  // GetThisThreadCycles() counts the cycles a thread has run for.
+};
+using ThreadCapabilities = Flags<ThreadCapability>;
 
 }  // namespace gb
 

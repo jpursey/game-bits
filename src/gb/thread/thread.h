@@ -17,7 +17,8 @@ namespace gb {
 //==============================================================================
 // This file defines a low level platform independent interface to threads,
 // beyond what is available from the standard library. It provides functionality
-// for specifying hardware thread affinity and specifying thread names.
+// for specifying hardware thread affinity, specifying thread names, and
+// measuring how long a thread has run for.
 //==============================================================================
 
 // Signature for the main function of a thread.
@@ -125,6 +126,31 @@ void SetThreadName(Thread thread, std::string_view name);
 //
 // This function is thread-safe.
 Thread GetThisThread();
+
+// Returns the optional thread features the current platform supports.
+//
+// This function is thread-safe.
+ThreadCapabilities GetThreadCapabilities();
+
+// Returns how many cycles the calling thread has run for.
+//
+// This always returns zero unless GetThreadCapabilities() includes
+// ThreadCapability::kCycles.
+//
+// This counts only the time the thread spent running, not the time it waited
+// or was switched out, and includes everything run on the thread (not just
+// code from Game Bits). The difference between two calls on the same thread is
+// how much work the thread did in between.
+//
+// On modern processors, cycles are usually in the same units as the
+// processor's timestamp counter, so a difference converts to time at the
+// timestamp counter's rate. This may not be true on older processors or in
+// virtual machines.
+//
+// Any thread may call this, including threads not created by CreateThread.
+//
+// This function is thread-safe.
+int64_t GetThisThreadCycles();
 
 // Returns the number of threads still active.
 //

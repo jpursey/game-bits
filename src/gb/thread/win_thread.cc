@@ -274,6 +274,15 @@ void SetThreadName(Thread thread, std::string_view name) {
 
 Thread GetThisThread() { return tls_this_thread; }
 
+ThreadCapabilities GetThreadCapabilities() { return ThreadCapability::kCycles; }
+
+int64_t GetThisThreadCycles() {
+  // This cannot fail, as the current thread's pseudo handle is always valid.
+  ULONG64 cycles = 0;
+  QueryThreadCycleTime(GetCurrentThread(), &cycles);
+  return static_cast<int64_t>(cycles);
+}
+
 int GetActiveThreadCount() { return g_active_thread_count; }
 
 }  // namespace gb

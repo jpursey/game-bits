@@ -6,6 +6,7 @@
 #include "gb/thread/thread.h"
 
 #include <atomic>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -196,6 +197,43 @@ TEST_F(ThreadTest, ThreadNameIsOnlyTheGivenText) {
 TEST_F(ThreadTest, AccessNullThreadName) {
   SetThreadName(nullptr, "Test");
   EXPECT_EQ(GetThreadName(nullptr), "null");
+}
+
+// Enough work that the busy loop runs far longer than it takes to start and
+// join a thread.
+inline constexpr int kBusyIterations = 100'000'000;
+
+// Runs a busy loop, and sets the int64_t at `user_data` to the cycles it took.
+void RunBusyLoop(void* user_data) {
+  const int64_t start = GetThisThreadCycles();
+  volatile int counter = 0;
+  for (int i = 0; i < kBusyIterations; ++i) {
+    counter = counter + 1;
+  }
+  *static_cast<int64_t*>(user_data) = GetThisThreadCycles() - start;
+}
+
+TEST_F(ThreadTest, ThisThreadCyclesAreZeroWhenUnsupported) {
+  if (GetThreadCapabilities().IsSet(ThreadCapability::kCycles)) {
+    GTEST_SKIP() << "Thread cycles are supported on this platform";
+  }
+  EXPECT_EQ(GetThisThreadCycles(), 0);
+}
+
+TEST_F(ThreadTest, ThisThreadCyclesCountWorkButNotWaiting) {
+  if (!GetThreadCapabilities().IsSet(ThreadCapability::kCycles)) {
+    GTEST_SKIP() << "Thread cycles are not supported on this platform";
+  }
+
+  const int64_t start = GetThisThreadCycles();
+  int64_t busy_cycles = 0;
+  Thread thread = CreateThread(0, 0, &busy_cycles, RunBusyLoop);
+  ASSERT_NE(thread, nullptr);
+  JoinThread(thread);
+  const int64_t waiting_cycles = GetThisThreadCycles() - start;
+
+  EXPECT_GT(busy_cycles, 0);
+  EXPECT_LT(waiting_cycles, busy_cycles / 10);
 }
 
 }  // namespace
