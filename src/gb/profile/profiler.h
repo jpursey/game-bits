@@ -6,12 +6,6 @@
 #ifndef GB_PROFILE_PROFILER_H_
 #define GB_PROFILE_PROFILER_H_
 
-#ifdef _MSC_VER
-#include <intrin.h>
-#else
-#include <x86intrin.h>
-#endif
-
 #include <array>
 #include <cstdint>
 #include <memory>
@@ -23,8 +17,9 @@
 #include "absl/log/check.h"
 #include "absl/time/time.h"
 #include "absl/types/span.h"
-#include "gb/profile/fake_ticks.h"
+#include "gb/profile/fake_profiler_cpu.h"
 #include "gb/profile/profile_point.h"
+#include "gb/thread/cpu_ticks.h"
 
 namespace gb {
 
@@ -45,8 +40,8 @@ namespace gb {
 // outside any frame are included in the totals, but in no frame's breakdown.
 //
 // Time is read from the CPU's timestamp counter, which must be invariant (true
-// of any x86-64 CPU in the last decade), unless a FakeTicks is given in the
-// options.
+// of any x86-64 CPU in the last decade), unless a FakeProfilerCpu is given in
+// the options.
 //
 // The counter counts time, not work, so the same code takes longer on a slower
 // core. On a CPU with more than one kind of core (such as Intel's performance
@@ -61,7 +56,7 @@ class Profiler final {
   struct Options {
     // Replaces the CPU's timestamp counter, for tests. It must outlive the
     // Profiler.
-    FakeTicks* fake_ticks = nullptr;
+    FakeProfilerCpu* fake_cpu = nullptr;
 
     // The profiler's own budget per frame is the larger of these: a fixed
     // time, and a fraction of the average frame. With neither set, there is
@@ -79,8 +74,9 @@ class Profiler final {
   // Makes this the Profiler for points on the calling thread.
   //
   // This measures what a timed point costs, which takes a few microseconds.
-  // Without a FakeTicks, the first Profiler in a program also takes about a
-  // millisecond to measure how fast the timestamp counter runs.
+  // Without a FakeProfilerCpu, the first Profiler in a program may also take
+  // about a millisecond, for GetCpuTicksPerSecond() (see
+  // gb/thread/cpu_ticks.h).
   Profiler();
   explicit Profiler(Options options);
   Profiler(const Profiler&) = delete;
@@ -132,9 +128,8 @@ class Profiler final {
   // whose total is zero counts as not recorded). Points are grouped by kind
   // and sorted by name, so two reports of the same program diff cleanly.
   //
-  // The tick rate is the one measured, which converts ticks to time, and the
-  // one the CPU reports, where it does. Two that differ, or a measured rate
-  // that changes between runs, make every time wrong by the same factor.
+  // The tick rate converts ticks to time. A rate that changes between runs
+  // makes every time wrong by the same factor.
   //
   // A frame's class of core is the one it started and ended on, or "mixed" if
   // those differ. The report warns when frames ran on more than one class, as
@@ -339,10 +334,10 @@ class Profiler final {
   int64_t GetFramePercentileTicks(double fraction) const;
 
   int64_t ReadTicks() const {
-    if (fake_ticks_ != nullptr) {
-      return fake_ticks_->Now();
+    if (fake_cpu_ != nullptr) {
+      return fake_cpu_->ReadCpuTicks();
     }
-    return static_cast<int64_t>(__rdtsc());
+    return ReadCpuTicks();
   }
 
   // Returns the class of core the thread is on, below kCoreClasses.
@@ -356,7 +351,7 @@ class Profiler final {
   static inline constinit thread_local Profiler* s_current = nullptr;
 
   // What every timed point uses comes first, to share a cache line.
-  FakeTicks* const fake_ticks_;
+  FakeProfilerCpu* const fake_cpu_;
   const std::unique_ptr<Slot[]> slots_;
 
   // The innermost timing on this thread, or null.
@@ -374,9 +369,6 @@ class Profiler final {
   int current_frame_start_core_ = 0;
 
   const double ticks_per_second_;
-
-  // The rate the CPU reports for its timestamp counter, or 0 if none.
-  const double cpu_ticks_per_second_;
 
   const absl::Duration budget_per_frame_;
   const double budget_fraction_;

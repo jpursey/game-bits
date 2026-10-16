@@ -9,7 +9,7 @@
 #include <string>
 
 #include "absl/strings/str_cat.h"
-#include "gb/profile/fake_ticks.h"
+#include "gb/profile/fake_profiler_cpu.h"
 #include "gb/profile/profiler.h"
 #include "gtest/gtest.h"
 
@@ -81,8 +81,8 @@ TEST(ProfilePointTest, SameNameWithAnotherKindDies) {
 // Tests that record points in a Profiler.
 class ProfilePointRecordTest : public ::testing::Test {
  protected:
-  FakeTicks ticks_;
-  Profiler profiler_{{.fake_ticks = &ticks_}};
+  FakeProfilerCpu ticks_;
+  Profiler profiler_{{.fake_cpu = &ticks_}};
 };
 
 TEST_F(ProfilePointRecordTest, CountAdds) {
@@ -113,8 +113,8 @@ TEST(ProfilePointTest, IgnoredWithoutProfiler) {
   ProfileCount<"PointTest/NoProfilerCount">(2);
   ProfileSetValue<"PointTest/NoProfilerValue">(3);
 
-  FakeTicks ticks;
-  Profiler profiler({.fake_ticks = &ticks});
+  FakeProfilerCpu ticks;
+  Profiler profiler({.fake_cpu = &ticks});
   EXPECT_EQ(profiler.GetCount("PointTest/NoProfilerCount"), 0);
   EXPECT_EQ(profiler.GetValue("PointTest/NoProfilerValue"), 0);
 }

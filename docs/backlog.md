@@ -47,7 +47,8 @@ moves with the fiber.
 - **Feature workflow:** yes
 - **Depends on:** nothing
 - **Requested by:** Terra Diem *Job threads per physical core*
-- **Background:** *Multithreaded profiles*, `gb/profile/win_cpu_info.cc`
+- **Background:** *Multithreaded profiles*, `GetThisThreadCoreClass()` in
+  `gb/thread/win_thread.cc`
 
 `gb/thread` knows the hardware threads only as a flat list of affinities in
 processor order (`GetHardwareThreadAffinities()`, read from the process
@@ -88,8 +89,8 @@ thread without the hard limit of an affinity mask. Add:
   The generic version reports one class-0 core per hardware thread. Parse
   Windows' buffer in a function tests can feed captured buffers: a hybrid CPU
   like this one, a uniform CPU with SMT, one without, and two processor groups.
-  `gb/profile`'s class table then comes from it, as *Multithreaded profiles*
-  expects.
+  The class table behind `GetThisThreadCoreClass()` then comes from it, as
+  *Multithreaded profiles* expects.
 - Placement by core in `FiberJobSystem`: an option to count job threads in
   cores, one per core, fastest class first, each pinned to its core's hardware
   threads (or steered with CPU sets) rather than to one hardware thread. Its
@@ -190,10 +191,10 @@ in every session, matching what CPUID reports. The single-thread report
 already splits frames by core class and warns when they mix; a combined view
 needs the same per thread, since job threads spread across both kinds of core.
 Pinning threads to one kind would make profiles compare, but `gb/thread`'s
-affinities don't know which hardware threads are which kind. Only
-`gb/profile`'s `win_cpu_info.cc` builds that table, which would move to
-`gb/thread` for it. *Core-aware job threads* does that move, and pins each job
-thread to one core, which fixes each thread's class.
+affinities don't know which hardware threads are which kind; only the class
+table behind `GetThisThreadCoreClass()` does. *Core-aware job threads* builds
+a topology from that table, and pins each job thread to one core, which fixes
+each thread's class.
 
 ## Fiber-aware profiling
 
@@ -231,7 +232,7 @@ job threads are kept busy and where their time goes, without timing every job
 itself:
 - An option that gives each job thread a `Profiler` for as long as the thread
   runs, made with options the program passes (so tests can give a
-  `FakeTicks`), and combined through *Multithreaded profiles*.
+  `FakeProfilerCpu`), and combined through *Multithreaded profiles*.
 - Each job timed as a point named after the job: its count, run time, and
   distribution (p50, p90, p99, and max, from the histogram frames already
   use), since a phase that waits for many jobs finishes with the slowest.

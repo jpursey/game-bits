@@ -13,7 +13,7 @@
 
 #include "absl/log/log.h"
 #include "absl/time/time.h"
-#include "gb/profile/fake_ticks.h"
+#include "gb/profile/fake_profiler_cpu.h"
 #include "gb/profile/profile_point.h"
 #include "gb/profile/profile_timer.h"
 #include "gtest/gtest.h"
@@ -34,12 +34,12 @@ class ProfilerTest : public ::testing::Test {
     }
   }
 
-  FakeTicks ticks_;
-  Profiler profiler_{{.fake_ticks = &ticks_}};
+  FakeProfilerCpu ticks_;
+  Profiler profiler_{{.fake_cpu = &ticks_}};
 };
 
 TEST_F(ProfilerTest, OnePerThread) {
-  EXPECT_DEATH(Profiler({.fake_ticks = &ticks_}),
+  EXPECT_DEATH(Profiler({.fake_cpu = &ticks_}),
                "Only one Profiler may exist per thread");
 }
 
@@ -48,8 +48,8 @@ TEST_F(ProfilerTest, EachThreadRecordsItsOwn) {
 
   int64_t other_count = 0;
   std::thread thread([&other_count] {
-    FakeTicks other_ticks;
-    Profiler other_profiler({.fake_ticks = &other_ticks});
+    FakeProfilerCpu other_ticks;
+    Profiler other_profiler({.fake_cpu = &other_ticks});
     ProfileCount<"ProfilerTest/EachThread">(2);
     other_count = other_profiler.GetCount("ProfilerTest/EachThread");
   });
@@ -278,7 +278,7 @@ TEST_F(ProfilerTest, ReadingValueAsSlowestFrameDies) {
 constexpr int64_t kReadTicks = 100;
 
 // Records a frame of `ticks`, with `scopes` scopes inside it.
-void RecordFrame(FakeTicks& ticks, int64_t frame_ticks, int scopes) {
+void RecordFrame(FakeProfilerCpu& ticks, int64_t frame_ticks, int scopes) {
   ProfileFrame<"ProfilerCostTest/Frame"> frame;
   for (int i = 0; i < scopes; ++i) {
     ProfileScope<"ProfilerCostTest/Scope"> scope;
@@ -291,10 +291,10 @@ class ProfilerCostTest : public ::testing::Test {
  protected:
   ProfilerCostTest() {
     ticks_.SetAutoAdvance(kReadTicks);
-    profiler_.emplace(Profiler::Options{.fake_ticks = &ticks_});
+    profiler_.emplace(Profiler::Options{.fake_cpu = &ticks_});
   }
 
-  FakeTicks ticks_;
+  FakeProfilerCpu ticks_;
   std::optional<Profiler> profiler_;
 };
 
@@ -326,22 +326,22 @@ TEST_F(ProfilerCostTest, ResetClearsCostPerFrame) {
 }
 
 TEST(ProfilerBudgetTest, NoBudgetIsInfinite) {
-  FakeTicks ticks;
-  Profiler profiler({.fake_ticks = &ticks});
+  FakeProfilerCpu ticks;
+  Profiler profiler({.fake_cpu = &ticks});
   RecordFrame(ticks, 1000, 0);
   EXPECT_EQ(profiler.GetFrameSummary().budget, absl::InfiniteDuration());
 }
 
 TEST(ProfilerBudgetTest, FractionAlone) {
-  FakeTicks ticks;
-  Profiler profiler({.fake_ticks = &ticks, .budget_fraction = 0.25});
+  FakeProfilerCpu ticks;
+  Profiler profiler({.fake_cpu = &ticks, .budget_fraction = 0.25});
   RecordFrame(ticks, 1000, 0);
   EXPECT_EQ(profiler.GetFrameSummary().budget, absl::Nanoseconds(250));
 }
 
 TEST(ProfilerBudgetTest, LargerOfFixedAndFraction) {
-  FakeTicks ticks;
-  Profiler profiler({.fake_ticks = &ticks,
+  FakeProfilerCpu ticks;
+  Profiler profiler({.fake_cpu = &ticks,
                      .budget_per_frame = absl::Microseconds(500),
                      .budget_fraction = 0.25});
 
@@ -399,7 +399,7 @@ P99         2.18us
 Max         2.30us
 Profiler    0 per frame, budget none
 Point cost  0
-Tick rate   1.00GHz measured, 1.00GHz reported
+Tick rate   1.00GHz
 
 Core     Frames  Average     Max
 class 0       2   1.30us  2.30us
@@ -433,7 +433,7 @@ TEST_F(ProfilerTest, ReportWithNoFrames) {
   EXPECT_EQ(profiler_.GetReport(),
             R"(Frames      0
 Point cost  0
-Tick rate   1.00GHz measured, 1.00GHz reported
+Tick rate   1.00GHz
 
 Point                Kind   Count  Count/frame    Self  Self/call  Self/frame
 ReportTest/NoFrames  scope      1            -  10.0ns     10.0ns           -
@@ -465,10 +465,10 @@ TEST_F(ProfilerTest, ReportOrderIgnoresRegistration) {
 }
 
 TEST(ProfilerReportTest, ProfilerCostAndBudget) {
-  FakeTicks ticks;
+  FakeProfilerCpu ticks;
   ticks.SetAutoAdvance(kReadTicks);
   Profiler profiler(
-      {.fake_ticks = &ticks, .budget_per_frame = absl::Nanoseconds(300)});
+      {.fake_cpu = &ticks, .budget_per_frame = absl::Nanoseconds(300)});
   ticks.SetAutoAdvance(0);
   RecordFrame(ticks, 10'000, 1);
 
@@ -488,24 +488,11 @@ TEST(ProfilerReportTest, ProfilerCostAndBudget) {
 // Tick rates and cores
 //------------------------------------------------------------------------------
 
-TEST(ProfilerTickRateTest, MeasuredAndReportedRates) {
-  FakeTicks ticks(3'187'200'000);
-  ticks.SetCpuTicksPerSecond(3'000'000'000);
-  Profiler profiler({.fake_ticks = &ticks});
+TEST(ProfilerTickRateTest, ReportsTickRate) {
+  FakeProfilerCpu ticks(3'187'200'000);
+  Profiler profiler({.fake_cpu = &ticks});
   const std::string report = profiler.GetReport();
-  EXPECT_NE(report.find("Tick rate   3.19GHz measured, 3.00GHz reported\n"),
-            std::string::npos)
-      << report;
-}
-
-TEST(ProfilerTickRateTest, NoReportedRate) {
-  FakeTicks ticks;
-  ticks.SetCpuTicksPerSecond(0);
-  Profiler profiler({.fake_ticks = &ticks});
-  const std::string report = profiler.GetReport();
-  EXPECT_NE(report.find("Tick rate   1.00GHz measured, none reported\n"),
-            std::string::npos)
-      << report;
+  EXPECT_NE(report.find("Tick rate   3.19GHz\n"), std::string::npos) << report;
 }
 
 TEST_F(ProfilerTest, FramesByCoreClass) {
@@ -563,9 +550,9 @@ TEST_F(ProfilerTest, ResetClearsCoreClasses) {
 
 class ProfilerSlowFrameTest : public ::testing::Test {
  protected:
-  FakeTicks ticks_;
+  FakeProfilerCpu ticks_;
   std::vector<std::string> reports_;
-  Profiler profiler_{{.fake_ticks = &ticks_,
+  Profiler profiler_{{.fake_cpu = &ticks_,
                       .slow_frame = absl::Microseconds(1),
                       .on_slow_frame = [this](std::string_view report) {
                         reports_.emplace_back(report);
@@ -643,10 +630,10 @@ TEST_F(ProfilerSlowFrameTest, CallbackIsOutsideFrame) {
 
 // A slow frame time with more ticks than an int64_t holds is never reached.
 TEST(ProfilerLongSlowFrameTest, IsNeverReached) {
-  FakeTicks ticks;
+  FakeProfilerCpu ticks;
   int reports = 0;
   Profiler profiler(
-      {.fake_ticks = &ticks,
+      {.fake_cpu = &ticks,
        .slow_frame = absl::Hours(24 * 365 * 1000),
        .on_slow_frame = [&reports](std::string_view report) { ++reports; }});
   {
@@ -659,24 +646,24 @@ TEST(ProfilerLongSlowFrameTest, IsNeverReached) {
 // Tests that set up their own Profiler.
 
 TEST(ProfilerSetupTest, NewProfilerStartsEmpty) {
-  FakeTicks ticks;
+  FakeProfilerCpu ticks;
   {
-    Profiler profiler({.fake_ticks = &ticks});
+    Profiler profiler({.fake_cpu = &ticks});
     ProfileCount<"ProfilerTest/StartsEmpty">(1);
   }
-  Profiler profiler({.fake_ticks = &ticks});
+  Profiler profiler({.fake_cpu = &ticks});
   EXPECT_EQ(profiler.GetCount("ProfilerTest/StartsEmpty"), 0);
 }
 
 TEST(ProfilerSetupTest, FreeReadsCostNothing) {
-  FakeTicks ticks;
-  Profiler profiler({.fake_ticks = &ticks});
+  FakeProfilerCpu ticks;
+  Profiler profiler({.fake_cpu = &ticks});
   EXPECT_EQ(profiler.GetPointCost(), absl::ZeroDuration());
 }
 
 TEST(ProfilerSetupTest, OtherTicksPerSecond) {
-  FakeTicks ticks(1'000);
-  Profiler profiler({.fake_ticks = &ticks});
+  FakeProfilerCpu ticks(1'000);
+  Profiler profiler({.fake_cpu = &ticks});
   {
     ProfileScope<"ProfilerTest/Milliseconds"> scope;
     ticks.Advance(3);

@@ -199,6 +199,10 @@ TEST_F(ThreadTest, AccessNullThreadName) {
   EXPECT_EQ(GetThreadName(nullptr), "null");
 }
 
+TEST_F(ThreadTest, CoreClassIsNotNegative) {
+  EXPECT_GE(GetThisThreadCoreClass(), 0);
+}
+
 // Enough work that the busy loop runs far longer than it takes to start and
 // join a thread.
 inline constexpr int kBusyIterations = 100'000'000;

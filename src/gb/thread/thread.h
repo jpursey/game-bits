@@ -143,14 +143,24 @@ ThreadCapabilities GetThreadCapabilities();
 // how much work the thread did in between.
 //
 // On modern processors, cycles are usually in the same units as the
-// processor's timestamp counter, so a difference converts to time at the
-// timestamp counter's rate. This may not be true on older processors or in
-// virtual machines.
+// processor's timestamp counter, so a difference converts to time with
+// GetCpuTicksPerSecond() (see cpu_ticks.h). This may not be true on older
+// processors or in virtual machines.
 //
 // Any thread may call this, including threads not created by CreateThread.
 //
 // This function is thread-safe.
 int64_t GetThisThreadCycles();
+
+// Returns the class of the core the calling thread is running on, where a
+// higher class is faster. Every core is class 0 on a CPU with one kind of core,
+// or if the current platform cannot tell them apart.
+//
+// The thread may move to another core as soon as this returns. The first call
+// finds every core's class, and later calls are fast.
+//
+// This function is thread-safe.
+int GetThisThreadCoreClass();
 
 // Returns the number of threads still active.
 //

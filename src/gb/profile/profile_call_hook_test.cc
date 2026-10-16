@@ -7,7 +7,7 @@
 
 #include "absl/time/time.h"
 #include "gb/base/function_hook.h"
-#include "gb/profile/fake_ticks.h"
+#include "gb/profile/fake_profiler_cpu.h"
 #include "gb/profile/profile_timer.h"
 #include "gb/profile/profiler.h"
 #include "gtest/gtest.h"
@@ -20,7 +20,7 @@ namespace {
 
 // The ticks the functions below advance, as the other system's work. Tests
 // only check how far they advance.
-FakeTicks g_ticks;
+FakeProfilerCpu g_ticks;
 
 int Add(int a, int b) {
   g_ticks.Advance(10);
@@ -43,7 +43,7 @@ int& (*g_get_value)() = &GetValue;
 
 class ProfileCallHookTest : public ::testing::Test {
  protected:
-  Profiler profiler_{{.fake_ticks = &g_ticks}};
+  Profiler profiler_{{.fake_cpu = &g_ticks}};
 };
 
 TEST_F(ProfileCallHookTest, TimesCallsThroughPointer) {

@@ -174,6 +174,8 @@ ThreadCapabilities GetThreadCapabilities() { return {}; }
 
 int64_t GetThisThreadCycles() { return 0; }
 
+int GetThisThreadCoreClass() { return 0; }
+
 int GetActiveThreadCount() { return g_active_thread_count; }
 
 }  // namespace gb

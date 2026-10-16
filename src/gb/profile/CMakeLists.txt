@@ -3,24 +3,12 @@
 ## Use of this source code is governed by an MIT-style License that can be found
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-if (WIN32)
-  set(gb_profile_internal_SOURCE
-    win_cpu_info.cc
-  )
-else()
-  set(gb_profile_internal_SOURCE
-    gen_cpu_info.cc
-  )
-endif()
-
 set(gb_profile_SOURCE
-  cpu_info.h
-  fake_ticks.h
+  fake_profiler_cpu.h
   profile_call_hook.h
   profile_point.cc profile_point.h
   profile_timer.h
   profiler.cc profiler.h
-  ${gb_profile_internal_SOURCE}
 )
 
 set(gb_profile_TEST_SOURCE
@@ -41,6 +29,7 @@ set(gb_profile_DEPS
   absl::synchronization
   absl::time
   gb_base
+  gb_thread
 )
 
 set(gb_profile_LIBS

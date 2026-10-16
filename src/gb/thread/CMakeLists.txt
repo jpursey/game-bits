@@ -9,6 +9,7 @@ if (WIN32)
     win_thread.cc
   )
   set(gb_thread_internal_DEPS
+    absl::no_destructor
     absl::strings
     absl::str_format
     absl::synchronization
@@ -39,6 +40,8 @@ else()
 endif()
 
 set(gb_thread_SOURCE
+  cpu_ticks.cc cpu_ticks.h
+  cpu_ticks_internal.cc cpu_ticks_internal.h
   fiber.h
   thread.h
   thread_types.h
@@ -55,6 +58,7 @@ set(gb_thread_LIBS
 )
 
 set(gb_thread_TEST_SOURCE
+  cpu_ticks_test.cc
   fiber_test.cc
   thread_test.cc
   ${gb_thread_internal_TEST_SOURCE}

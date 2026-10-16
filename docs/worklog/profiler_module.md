@@ -73,14 +73,13 @@ std::string report = profiler.GetReport();
   and `budget_fraction` of the average frame, or infinite if neither is set.
 - **Tick rate and cores:** the timestamp counter counts time, not work, so a
   profile can be slower because the code ran on a slower core, or because the
-  rate that converts ticks to time is wrong. The report shows the rate measured
-  and the rate the CPU reports (CPUID leaf 0x15), where it does. Each frame
-  records the efficiency class of the core it started and ended on (higher is
-  faster, and every core is class 0 on a CPU with one kind), or "mixed" if
-  those differ, and the report gives each class's frame count, average, and
-  max, warning when there is more than one.
+  rate that converts ticks to time is wrong. The report shows the rate. Each
+  frame records the efficiency class of the core it started and ended on
+  (higher is faster, and every core is class 0 on a CPU with one kind), or
+  "mixed" if those differ, and the report gives each class's frame count,
+  average, and max, warning when there is more than one.
 - **Report:** `GetReport()` returns the values, the frame summary (with the
-  profiler's cost against its budget, and the tick rates), the frames by class
+  profiler's cost against its budget, and the tick rate), the frames by class
   of core, one line per point with its count and self time in total, per frame,
   and per call, and the slowest frame's breakdown. Only points the Profiler recorded appear (a counter whose total is
   zero counts as not recorded), grouped by kind and sorted by name, with aligned
@@ -95,9 +94,9 @@ std::string report = profiler.GetReport();
   reaches are outside the frame.
 - **For tests:** `GetCount()`, `GetSelfTime()`, `GetValue()`,
   `GetSlowestFrameCount()`, and `GetSlowestFrameSelfTime()` read a point by
-  name, and `Reset()` clears everything recorded. A `FakeTicks` in the options
-  replaces the CPU's timestamp counter, so no test reads real time. It also
-  sets the rate the CPU reports and the class of core it is read on.
+  name, and `Reset()` clears everything recorded. A `FakeProfilerCpu` in the
+  options replaces the CPU's timestamp counter, so no test reads real time. It
+  also sets the counter's rate and the class of core it is read on.
 - **Platforms:** x86-64 only, where `__rdtsc` exists, which is every platform
   Game Bits builds on. The timestamp counter must be invariant. Off Windows,
   every core is class 0.
@@ -110,8 +109,11 @@ std::string report = profiler.GetReport();
 | `profile_timer.h`     | `ProfileTimer`, `ProfileScope`, `ProfileCall`, and `ProfileFrame`                     |
 | `profiler.h`          | `Profiler`: recording, frames, cost, and the report                                   |
 | `profile_call_hook.h` | `ProfileCallHook`, a Hook for `gb/base/function_hook.h`                               |
-| `fake_ticks.h`        | `FakeTicks`, the timestamp counter for tests                                          |
-| `cpu_info.h`          | The class of the current core (`win_cpu_info.cc`)                                     |
+| `fake_profiler_cpu.h` | `FakeProfilerCpu`, what a Profiler reads about the CPU, for tests                     |
+
+The timestamp counter and its rate (`gb/thread/cpu_ticks.h`), and the class of
+the current core (`GetThisThreadCoreClass()` in `gb/thread/thread.h`), are in
+`gb/thread`.
 
 - **Registry:** global and mutex protected, touched only when a point is
   registered. Points live in a fixed array, so names stay at fixed addresses,
@@ -137,21 +139,21 @@ std::string report = profiler.GetReport();
   registered points) when it is the slowest so far or slow.
 - **Cores:** a frame reads its core's class just before it starts timing and
   just after it ends, from `GetCurrentProcessorNumberEx()` and a table of
-  classes by processor built once, by the first Profiler without a FakeTicks,
-  from
-  `GetLogicalProcessorInformationEx()`.
+  classes by processor built once, by the first Profiler without a
+  `FakeProfilerCpu`, from `GetLogicalProcessorInformationEx()`.
 - **Cost:** the constructor times 5 rounds of 100 points inside an outer
   timing, keeps the fastest round, then clears everything with `Reset()`.
-- **Calibration:** ticks are converted to time with a rate measured once per
-  program against `std::chrono::steady_clock` over 1ms. Each end reads the
-  clock between two counter reads, five times, keeping the tightest, so a
-  thread switch between the paired reads can't skew it.
+- **Tick rate:** ticks are converted to time with `GetCpuTicksPerSecond()`:
+  the rate the CPU reports (CPUID leaf 0x15), or where it reports none, a rate
+  measured once per program against `std::chrono::steady_clock` over 1ms. Each
+  end of the measurement reads the clock between two counter reads, five
+  times, keeping the tightest, so a thread switch between the paired reads
+  can't skew it.
 - **Report:** built in a `std::string` with Abseil's string utilities.
 
-Reusable pieces, should anything else need them: `FakeTicks` (a fake
-timestamp counter with auto advance, like `FakeClock`), `ProfileName` (a string
-literal as a template argument), and the bracketed calibration of the
-timestamp counter in `profiler.cc`.
+Reusable pieces, should anything else need them: `ProfileName` (a string
+literal as a template argument), and the timestamp counter and its rate in
+`gb/thread/cpu_ticks.h`.
 
 ## Measurements
 

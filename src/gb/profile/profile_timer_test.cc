@@ -9,7 +9,7 @@
 #include <thread>
 
 #include "absl/time/time.h"
-#include "gb/profile/fake_ticks.h"
+#include "gb/profile/fake_profiler_cpu.h"
 #include "gb/profile/profile_point.h"
 #include "gb/profile/profiler.h"
 #include "gtest/gtest.h"
@@ -22,8 +22,8 @@ namespace {
 
 class ProfileTimerTest : public ::testing::Test {
  protected:
-  FakeTicks ticks_;
-  Profiler profiler_{{.fake_ticks = &ticks_}};
+  FakeProfilerCpu ticks_;
+  Profiler profiler_{{.fake_cpu = &ticks_}};
 };
 
 TEST_F(ProfileTimerTest, ScopeRecordsCallsAndTime) {
@@ -112,15 +112,15 @@ TEST(ProfileTimerNoProfilerTest, IgnoredWithoutProfiler) {
   {
     ProfileScope<"TimerTest/NoProfiler"> scope;
   }
-  FakeTicks ticks;
-  Profiler profiler({.fake_ticks = &ticks});
+  FakeProfilerCpu ticks;
+  Profiler profiler({.fake_cpu = &ticks});
   EXPECT_EQ(profiler.GetCount("TimerTest/NoProfiler"), 0);
 }
 
 TEST(ProfileTimerNoProfilerTest, TimerStartedWithoutProfilerIsIgnored) {
   ProfileScope<"TimerTest/StartedWithout"> scope;
-  FakeTicks ticks;
-  Profiler profiler({.fake_ticks = &ticks});
+  FakeProfilerCpu ticks;
+  Profiler profiler({.fake_cpu = &ticks});
   EXPECT_EQ(profiler.GetCount("TimerTest/StartedWithout"), 0);
 }
 

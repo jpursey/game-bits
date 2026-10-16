@@ -5,13 +5,8 @@
 
 #include "gb/profile/profiler.h"
 
-#ifndef _MSC_VER
-#include <cpuid.h>
-#endif
-
 #include <algorithm>
 #include <bit>
-#include <chrono>
 #include <cmath>
 #include <limits>
 #include <optional>
@@ -24,90 +19,12 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/types/span.h"
-#include "gb/profile/cpu_info.h"
+#include "gb/thread/cpu_ticks.h"
+#include "gb/thread/thread.h"
 
 namespace gb {
 
 namespace {
-
-using SteadyClock = std::chrono::steady_clock;
-
-// Long enough that the steady clock's resolution (100ns on Windows) is at most
-// 0.01% of it.
-constexpr SteadyClock::duration kCalibrationTime = std::chrono::milliseconds(1);
-
-// How many times to read each end of the calibration, keeping the best.
-constexpr int kClockPairReads = 5;
-
-// The timestamp counter and the steady clock, read at the same moment.
-struct ClockPair {
-  int64_t ticks;
-  SteadyClock::time_point time;
-};
-
-// Reads the steady clock between two reads of the timestamp counter, several
-// times, and keeps the read with the least time between the two. A thread
-// switch between the reads would pair the clock with the wrong ticks, so this
-// discards any read that one landed in.
-ClockPair ReadClockPair() {
-  ClockPair best = {};
-  int64_t best_spread = std::numeric_limits<int64_t>::max();
-  for (int i = 0; i < kClockPairReads; ++i) {
-    const int64_t before = static_cast<int64_t>(__rdtsc());
-    const SteadyClock::time_point time = SteadyClock::now();
-    const int64_t after = static_cast<int64_t>(__rdtsc());
-    if (after - before < best_spread) {
-      best_spread = after - before;
-      best = {before + (after - before) / 2, time};
-    }
-  }
-  return best;
-}
-
-// Measures how fast the CPU's timestamp counter runs, against the steady clock
-// (which, unlike the wall clock, is never adjusted).
-double MeasureTicksPerSecond() {
-  const ClockPair start = ReadClockPair();
-  ClockPair end;
-  do {
-    end = ReadClockPair();
-  } while (end.time - start.time < kCalibrationTime);
-  return static_cast<double>(end.ticks - start.ticks) /
-         std::chrono::duration<double>(end.time - start.time).count();
-}
-
-// Returns how fast the CPU's timestamp counter runs, which is the same for the
-// whole program as the counter is invariant.
-double GetTicksPerSecond() {
-  static const double s_ticks_per_second = MeasureTicksPerSecond();
-  return s_ticks_per_second;
-}
-
-// Returns how fast the CPU says its timestamp counter runs, or 0 if it doesn't
-// say. CPUID leaf 0x15 gives the rate as a ratio (EBX / EAX) of the core
-// crystal clock (ECX, in Hz), each 0 if the CPU doesn't report it.
-double GetCpuTicksPerSecond() {
-  uint32_t eax = 0;
-  uint32_t ebx = 0;
-  uint32_t ecx = 0;
-#ifdef _MSC_VER
-  int registers[4];
-  __cpuid(registers, 0);
-  if (registers[0] >= 0x15) {
-    __cpuid(registers, 0x15);
-    eax = static_cast<uint32_t>(registers[0]);
-    ebx = static_cast<uint32_t>(registers[1]);
-    ecx = static_cast<uint32_t>(registers[2]);
-  }
-#else
-  uint32_t edx = 0;
-  __get_cpuid(0x15, &eax, &ebx, &ecx, &edx);
-#endif
-  if (eax == 0 || ebx == 0 || ecx == 0) {
-    return 0;
-  }
-  return static_cast<double>(ecx) * ebx / eax;
-}
 
 // Returns `time` in ticks, limited to what an int64_t holds (so an infinite
 // time is the most ticks there can be).
@@ -262,16 +179,10 @@ void AppendTable(std::string& report, const Table& table, int left_columns) {
 Profiler::Profiler() : Profiler(Options()) {}
 
 Profiler::Profiler(Options options)
-    : fake_ticks_(options.fake_ticks),
+    : fake_cpu_(options.fake_cpu),
       slots_(std::make_unique<Slot[]>(kMaxProfilePoints)),
-      ticks_per_second_(
-          fake_ticks_ != nullptr
-              ? static_cast<double>(fake_ticks_->GetTicksPerSecond())
-              : GetTicksPerSecond()),
-      cpu_ticks_per_second_(
-          fake_ticks_ != nullptr
-              ? static_cast<double>(fake_ticks_->GetCpuTicksPerSecond())
-              : GetCpuTicksPerSecond()),
+      ticks_per_second_(fake_cpu_ != nullptr ? fake_cpu_->GetCpuTicksPerSecond()
+                                             : GetCpuTicksPerSecond()),
       budget_per_frame_(options.budget_per_frame),
       budget_fraction_(options.budget_fraction),
       slow_frame_ticks_(ToTicks(options.slow_frame, ticks_per_second_)),
@@ -281,8 +192,8 @@ Profiler::Profiler(Options options)
 
   // The first read of the core's class finds every core's class, which is
   // done here rather than in the first frame.
-  if (fake_ticks_ == nullptr) {
-    internal::GetCoreClass();
+  if (fake_cpu_ == nullptr) {
+    GetThisThreadCoreClass();
   }
 
   // Measuring times points into the slots, which are then cleared.
@@ -495,13 +406,7 @@ void Profiler::AppendFrameSummary(std::string& report) const {
     table.push_back({"Profiler", std::move(profiler)});
   }
   table.push_back({"Point cost", FormatTime(GetPointCost())});
-  table.push_back(
-      {"Tick rate",
-       absl::StrCat(FormatTickRate(ticks_per_second_), " measured, ",
-                    cpu_ticks_per_second_ > 0
-                        ? FormatTickRate(cpu_ticks_per_second_)
-                        : std::string("none"),
-                    " reported")});
+  table.push_back({"Tick rate", FormatTickRate(ticks_per_second_)});
   AppendTable(report, table, 2);
 }
 
@@ -648,8 +553,9 @@ int64_t Profiler::GetFramePercentileTicks(double fraction) const {
 }
 
 int Profiler::ReadCoreClass() const {
-  const int core_class = fake_ticks_ != nullptr ? fake_ticks_->GetCoreClass()
-                                                : internal::GetCoreClass();
+  const int core_class = fake_cpu_ != nullptr
+                             ? fake_cpu_->GetThisThreadCoreClass()
+                             : GetThisThreadCoreClass();
   return std::clamp(core_class, 0, kCoreClasses - 1);
 }
 
