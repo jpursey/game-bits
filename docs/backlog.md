@@ -75,19 +75,6 @@ backend a default texture (one opaque pixel, say) that every texture binding
 starts with and falls back to, and check it by hand in `examples/render-check`
 with a material whose texture is never set.
 
-## Empty chunks of unowned data
-
-- **Layers:** file
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** [Code audit](worklog/code_audit.md)
-
-`ChunkWriter` writes a zero-byte chunk of data it doesn't own with a count of
-1, which `ChunkReader` rejects as corrupt (a chunk's count can't be larger
-than its size), so a file with an empty unowned chunk can't be read back.
-Write it with a count of 0, with a round trip test.
-
 ## clang-cl build
 
 - **Layers:** container, parse, job

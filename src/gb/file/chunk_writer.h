@@ -241,7 +241,8 @@ inline ChunkWriter ChunkWriter::New(const ChunkType& type, int32_t version,
 
 inline ChunkWriter ChunkWriter::New(const ChunkType& type, int32_t version,
                                     void* data, int32_t data_size) {
-  return ChunkWriter(type, version, 1, data_size, data);
+  // A chunk's count can't be larger than its size, so empty data has none.
+  return ChunkWriter(type, version, data_size > 0 ? 1 : 0, data_size, data);
 }
 
 template <typename Type>

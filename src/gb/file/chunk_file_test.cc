@@ -318,6 +318,28 @@ TEST_F(ChunkFileTest, ChunkWriterNewUnalignedUnownedData) {
   }
 }
 
+TEST_F(ChunkFileTest, ChunkWriterNewEmptyUnownedData) {
+  char data = 0;
+  auto chunk_writer = ChunkWriter::New(kChunkTypeBar, 1, &data, 0);
+  EXPECT_EQ(chunk_writer.GetSize(), 0);
+  EXPECT_EQ(chunk_writer.GetCount(), 0);
+
+  auto file = file_system_->OpenFile("mem:/test", kNewFileFlags);
+  ASSERT_NE(file, nullptr);
+  ASSERT_TRUE(chunk_writer.Write(file.get()));
+  file.reset();
+
+  file = file_system_->OpenFile("mem:/test", kReadFileFlags);
+  ASSERT_NE(file, nullptr);
+  bool has_error = false;
+  auto chunk_reader = ChunkReader::Read(file.get(), &has_error);
+  EXPECT_FALSE(has_error);
+  ASSERT_TRUE(chunk_reader);
+  EXPECT_EQ(chunk_reader->GetType(), kChunkTypeBar);
+  EXPECT_EQ(chunk_reader->GetSize(), 0);
+  EXPECT_EQ(chunk_reader->GetCount(), 0);
+}
+
 TEST_F(ChunkFileTest, ChunkWriterAddData) {
   auto chunk_writer = ChunkWriter::New<StringExample>(kChunkTypeExample, 1);
   auto* chunk = chunk_writer.GetChunkData<StringExample>();
