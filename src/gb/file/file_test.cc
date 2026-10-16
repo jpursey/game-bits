@@ -419,8 +419,10 @@ TEST(FileTest, ReadRemainingString) {
   file = file_system.OpenFile("test:/file", FileFlag::kRead);
   ASSERT_NE(file, nullptr);
   file_state->fail_read_after = 5;
+  buffer = "not empty";
   file->ReadRemainingString(&buffer);
-  EXPECT_EQ(buffer, "12345");
+  EXPECT_THAT(buffer, IsEmpty());
+  EXPECT_FALSE(file->IsValid());
   file_state->fail_read_after = -1;
 
   file.reset();
@@ -435,7 +437,8 @@ TEST(FileTest, ReadRemainingString) {
   ASSERT_NE(file, nullptr);
   file_state->fail_read_after = 5;
   buffer = file->ReadRemainingString();
-  EXPECT_EQ(buffer, "12345");
+  EXPECT_THAT(buffer, IsEmpty());
+  EXPECT_FALSE(file->IsValid());
   file_state->fail_read_after = -1;
 
   file.reset();
@@ -509,8 +512,10 @@ TEST(FileTest, ReadRemainingVector) {
   file = file_system.OpenFile("test:/file", FileFlag::kRead);
   ASSERT_NE(file, nullptr);
   file_state->fail_read_after = sizeof(Item) * 2;
+  buffer.push_back(items[0]);
   file->ReadRemaining(&buffer);
-  EXPECT_THAT(buffer, ElementsAre(items[0], items[1]));
+  EXPECT_THAT(buffer, IsEmpty());
+  EXPECT_FALSE(file->IsValid());
   file_state->fail_read_after = -1;
 
   file.reset();
@@ -533,7 +538,8 @@ TEST(FileTest, ReadRemainingVector) {
   ASSERT_NE(file, nullptr);
   file_state->fail_read_after = sizeof(Item) * 2;
   buffer = file->ReadRemaining<Item>();
-  EXPECT_THAT(buffer, ElementsAre(items[0], items[1]));
+  EXPECT_THAT(buffer, IsEmpty());
+  EXPECT_FALSE(file->IsValid());
   file_state->fail_read_after = -1;
 
   file.reset();
@@ -593,44 +599,51 @@ TEST(FileTest, ReadLineFails) {
   file_state->fail_seek = false;
   file.reset();
 
-  file = file_system.OpenFile("test:/file", FileFlag::kRead);
+  // A failed read reads no line, and makes the file invalid.
   file_state->fail_read_after = 5;
+  file = file_system.OpenFile("test:/file", FileFlag::kRead);
   line = "not_empty";
-  EXPECT_TRUE(file->ReadLine(&line));
-  EXPECT_EQ(line, "12345");
-  file_state->fail_read_after = -1;
+  EXPECT_FALSE(file->ReadLine(&line));
+  EXPECT_THAT(line, IsEmpty());
+  EXPECT_FALSE(file->IsValid());
   file.reset();
 
   file = file_system.OpenFile("test:/file", FileFlag::kRead);
-  file_state->fail_read_after = 5;
-  EXPECT_EQ(file->ReadLines(1, &lines), 1);
-  EXPECT_THAT(lines, ElementsAre("12345"));
-  file_state->fail_read_after = -1;
+  EXPECT_EQ(file->ReadLines(1, &lines), 0);
+  EXPECT_THAT(lines, IsEmpty());
+  EXPECT_FALSE(file->IsValid());
   file.reset();
 
   file = file_system.OpenFile("test:/file", FileFlag::kRead);
-  file_state->fail_read_after = 5;
-  EXPECT_EQ(file->ReadRemainingLines(&lines), 1);
-  EXPECT_THAT(lines, ElementsAre("12345"));
-  file_state->fail_read_after = -1;
+  EXPECT_EQ(file->ReadRemainingLines(&lines), 0);
+  EXPECT_THAT(lines, IsEmpty());
+  EXPECT_FALSE(file->IsValid());
   file.reset();
 
   file = file_system.OpenFile("test:/file", FileFlag::kRead);
-  file_state->fail_read_after = 5;
-  line = "not_empty";
-  EXPECT_EQ(file->ReadLine(), "12345");
-  file_state->fail_read_after = -1;
+  EXPECT_THAT(file->ReadLine(), IsEmpty());
+  EXPECT_FALSE(file->IsValid());
   file.reset();
 
   file = file_system.OpenFile("test:/file", FileFlag::kRead);
-  file_state->fail_read_after = 5;
-  EXPECT_THAT(file->ReadLines(1), ElementsAre("12345"));
-  file_state->fail_read_after = -1;
+  EXPECT_THAT(file->ReadLines(1), IsEmpty());
+  EXPECT_FALSE(file->IsValid());
   file.reset();
 
   file = file_system.OpenFile("test:/file", FileFlag::kRead);
-  file_state->fail_read_after = 5;
-  EXPECT_THAT(file->ReadRemainingLines(), ElementsAre("12345"));
+  EXPECT_THAT(file->ReadRemainingLines(), IsEmpty());
+  EXPECT_FALSE(file->IsValid());
+  file.reset();
+
+  // Lines read before the failed read are kept, but not the line it was
+  // reading.
+  file_state->contents =
+      absl::StrCat(std::string(File::kLineBufferSize - 2, 'a'), "\nbc\nde\n");
+  file_state->fail_read_after = File::kLineBufferSize;
+  file = file_system.OpenFile("test:/file", FileFlag::kRead);
+  EXPECT_EQ(file->ReadLines(3, &lines), 1);
+  EXPECT_THAT(lines, ElementsAre(std::string(File::kLineBufferSize - 2, 'a')));
+  EXPECT_FALSE(file->IsValid());
   file_state->fail_read_after = -1;
   file.reset();
 }

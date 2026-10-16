@@ -231,12 +231,11 @@ class FileSystem final {
                  int64_t buffer_size);
 
   // Reads a file into a string or vector of trivially copyable types.
+  //
+  // Returns false if the file couldn't be opened or read.
   bool ReadFile(std::string_view path, std::string* buffer);
   template <typename Type>
   bool ReadFile(std::string_view path, std::vector<Type>* buffer);
-
-  // Number of bytes copied at a time when copying files across protocols.
-  inline static constexpr int64_t kCopyBufferSize = 32 * 1024;
 
  private:
   using Protocols = std::vector<std::unique_ptr<FileProtocol>>;
@@ -291,7 +290,7 @@ inline bool FileSystem::ReadFile(std::string_view path, std::string* buffer) {
     return false;
   }
   file->ReadRemainingString(buffer);
-  return true;
+  return file->IsValid();
 }
 
 template <typename Type>
@@ -302,7 +301,7 @@ inline bool FileSystem::ReadFile(std::string_view path,
     return false;
   }
   file->ReadRemaining(buffer);
-  return true;
+  return file->IsValid();
 }
 
 }  // namespace gb

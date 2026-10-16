@@ -16,6 +16,7 @@
 #include "gb/file/chunk_writer.h"
 #include "gb/file/file_system.h"
 #include "gb/file/memory_file_protocol.h"
+#include "gb/file/test_protocol.h"
 #include "gtest/gtest.h"
 
 namespace gb {
@@ -879,6 +880,35 @@ TEST_F(ChunkFileTest, ReadWriteMultiChunkFile) {
   EXPECT_EQ(example_chunk->foos.ptr[1].x, 4);
   EXPECT_EQ(example_chunk->foos.ptr[1].y, 5);
   EXPECT_EQ(example_chunk->foos.ptr[1].z, 6);
+}
+
+TEST_F(ChunkFileTest, ReadChunkFileWithFailedRead) {
+  std::vector<ChunkWriter> write_chunks;
+  write_chunks.emplace_back(ChunkWriter::New<Bar>(kChunkTypeBar, 1, 3));
+  write_chunks.emplace_back(ChunkWriter::New<Bar>(kChunkTypeBar, 1, 2));
+  auto file = file_system_->OpenFile("mem:/test", kNewFileFlags);
+  ASSERT_NE(file, nullptr);
+  ASSERT_TRUE(WriteChunkFile(file.get(), kChunkTypeExample, write_chunks));
+  file.reset();
+  std::string contents;
+  ASSERT_TRUE(file_system_->ReadFile("mem:/test", &contents));
+
+  // The protocol deletes the state, so it outlives the protocol's files.
+  auto* state = new TestProtocol::State;
+  state->delete_state = true;
+  ASSERT_TRUE(
+      file_system_->Register(std::make_unique<TestProtocol>(state), "test"));
+  state->paths["/test"] = TestProtocol::PathState::NewFile(contents);
+
+  // A read that fails where the second chunk starts is an error, rather than
+  // the end of the file.
+  state->paths["/test"].GetFile()->fail_read_after =
+      sizeof(ChunkHeader) * 2 + write_chunks[0].GetSize();
+  std::vector<ChunkReader> read_chunks;
+  file = file_system_->OpenFile("test:/test", kReadFileFlags);
+  ASSERT_NE(file, nullptr);
+  EXPECT_FALSE(ReadChunkFile(file.get(), nullptr, &read_chunks));
+  file.reset();
 }
 
 TEST_F(ChunkFileTest, UnownedUnalignedDataWithExtraData) {

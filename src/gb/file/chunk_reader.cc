@@ -27,8 +27,9 @@ std::optional<ChunkReader> ChunkReader::Read(File* file, bool* has_error) {
   int64_t read_size =
       file->Read(static_cast<void*>(&chunk_header), sizeof(chunk_header));
   if (read_size != sizeof(chunk_header)) {
+    // Reading nothing is the end of the file, unless the read failed.
     if (has_error != nullptr) {
-      *has_error = (read_size != 0);
+      *has_error = (read_size != 0 || !file->IsValid());
     }
     return {};
   }

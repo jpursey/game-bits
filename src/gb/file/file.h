@@ -83,8 +83,9 @@ class File final {
 
   // Reads the requested number of bytes into a pre-allocated untyped buffer.
   //
-  // Returns the number of bytes actually read. If the number of bytes read is
-  // less than 'count', it usually means end-of-file was reached.
+  // Returns the number of bytes actually read. If this is less than 'count',
+  // either the end of the file was reached, or the read failed, which reads
+  // nothing and makes the file invalid.
   int64_t Read(void* buffer, int64_t count);
 
   // Writes an untyped buffer of bytes into the file.
@@ -99,8 +100,9 @@ class File final {
 
   // Reads the requested number of trivially-copyable values from the file.
   //
-  // Returns the number of values actually read. If the number of values read is
-  // less than 'count', it usually means the end-of-file was reached.
+  // Returns the number of values actually read. If this is less than 'count',
+  // either the end of the file was reached, or the read failed, which reads
+  // nothing and makes the file invalid.
   template <typename Type>
   int64_t Read(Type* buffer, int64_t count = 1);
   template <typename Type>
@@ -108,8 +110,9 @@ class File final {
 
   // Reads the requested number of trivially-copyable values from the file.
   //
-  // Returns the values actually read. If the number of values read is
-  // less than 'count', it usually means the end-of-file was reached.
+  // Returns the values actually read. If there are fewer than 'count', either
+  // the end of the file was reached, or the read failed, which reads nothing
+  // and makes the file invalid.
   template <typename Type>
   std::vector<Type> Read(int64_t count);
 
@@ -117,7 +120,7 @@ class File final {
   //
   // Only whole values are read, so if the file contains a partial value at the
   // end, it will not be read and the position will not be at the end of the
-  // file.
+  // file. If the read fails, it reads nothing and the file becomes invalid.
   template <typename Type>
   void ReadRemaining(std::vector<Type>* buffer);
 
@@ -125,7 +128,7 @@ class File final {
   //
   // Only whole values are read, so if the file contains a partial value at the
   // end, it will not be read and the position will not be at the end of the
-  // file.
+  // file. If the read fails, it reads nothing and the file becomes invalid.
   //
   // Returns the buffer of values successfully read.
   template <typename Type>
@@ -149,8 +152,9 @@ class File final {
   // This reads raw bytes into the string and does not perform line ending
   // conversion. Use ReadLine to read lines.
   //
-  // This returns the number of bytes actually read. If the number of bytes
-  // read is less than 'count', it usually means the end-of-file was reached.
+  // This returns the number of bytes actually read. If this is less than
+  // 'count', either the end of the file was reached, or the read failed, which
+  // reads nothing and makes the file invalid.
   int64_t ReadString(std::string* buffer, int64_t count);
 
   // Reads a string of test of the specified max length from the file.
@@ -159,19 +163,22 @@ class File final {
   // conversion. Use ReadLine to read lines.
   //
   // This returns the string actually read. If the size of the string is less
-  // than 'count', it usually means the end-of-file was reached.
+  // than 'count', either the end of the file was reached, or the read failed,
+  // which reads nothing and makes the file invalid.
   std::string ReadString(int64_t count);
 
   // Reads the remaining bytes in the file to the provided string.
   //
   // This reads raw bytes into the string and does not perform line ending
-  // conversion. Use ReadRemainingLines to read lines.
+  // conversion. Use ReadRemainingLines to read lines. If the read fails, it
+  // reads nothing and the file becomes invalid.
   void ReadRemainingString(std::string* buffer);
 
   // Reads the remaining bytes of the file into a string and returns it.
   //
   // This reads raw bytes into the string and does not perform line ending
-  // conversion. Use ReadRemainingLines to read lines.
+  // conversion. Use ReadRemainingLines to read lines. If the read fails, it
+  // reads nothing and the file becomes invalid.
   std::string ReadRemainingString();
 
   // Writes a string of text to the file.
@@ -199,8 +206,8 @@ class File final {
   // Reads a line of ASCII or UTF-8 text from the file into the provided string.
   //
   // This will return true if a line was successfully read. If this returns
-  // false, then no bytes were read into the string, and most likely the
-  // end-of-file was reached.
+  // false, then no bytes were read into the string, and either the end of the
+  // file was reached, or the read failed and the file became invalid.
   bool ReadLine(std::string* line);
 
   // Reads a line of ASCII or UTF-8 text from the file and returns it.
@@ -208,22 +215,26 @@ class File final {
 
   // Reads up to 'count' lines of ASCII or UTF-8 text from the file.
   //
-  // This returns the number of lines actually read.
+  // This returns the number of lines actually read. If a read fails, the lines
+  // read before it are kept, and the file becomes invalid.
   int64_t ReadLines(int64_t count, std::vector<std::string>* lines);
 
   // Reads up to 'count' lines of ASCII or UTF-8 text from the file.
   //
-  // Returns the lines read.
+  // Returns the lines read. If a read fails, the lines read before it are
+  // kept, and the file becomes invalid.
   std::vector<std::string> ReadLines(int64_t count);
 
   // Reads the remaining lines of ASCII or UTF-8 text from the file.
   //
-  // This returns the number of lines read.
+  // This returns the number of lines read. If the read fails, it reads nothing
+  // and the file becomes invalid.
   int64_t ReadRemainingLines(std::vector<std::string>* lines);
 
   // Reads the remaining lines of ASCII or UTF-8 text from the file.
   //
-  // This returns the lines read.
+  // This returns the lines read. If the read fails, it reads nothing and the
+  // file becomes invalid.
   std::vector<std::string> ReadRemainingLines();
 
   // Writes a line to the file with the specified line ending.

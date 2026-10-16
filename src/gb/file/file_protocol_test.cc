@@ -636,6 +636,14 @@ TEST(FileProtocolTest, BasicCopyFile) {
   state.ResetCounts();
   new_file_state->fail_flush = false;
 
+  auto* file_state = state.paths["/file"].GetFile();
+  file_state->fail_read_after = 3;
+  EXPECT_FALSE(protocol.BasicCopyFile("test", "/file", "/new-file"));
+  EXPECT_EQ(state.invalid_call_count, 0);
+  EXPECT_EQ(file_state->read_count, 1);
+  state.ResetCounts();
+  file_state->fail_read_after = -1;
+
   EXPECT_TRUE(protocol.BasicCopyFile("test", "/file", "/new-file"));
   EXPECT_EQ(state.invalid_call_count, 0);
   EXPECT_EQ(new_file_state->flush_count, 1);

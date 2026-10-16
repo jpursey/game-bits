@@ -45,13 +45,23 @@ class RawFile {
   virtual bool Flush() = 0;
 
   // Reads the requested number of bytes from the file, returning the total
-  // number of bytes actually read. This is only called if the file was open for
-  // reading.
+  // number of bytes actually read, which is less only at the end of the file.
+  // If the read fails, this returns -1, and what it put in the buffer is
+  // undefined. This is only called if the file was open for reading.
   virtual int64_t Read(void* buffer, int64_t size) = 0;
 
  protected:
   RawFile() = default;
 };
+
+// Number of bytes CopyRawFile() copies at a time.
+inline constexpr int64_t kRawFileCopyBufferSize = 32 * 1024;
+
+// Copies the rest of `from`, from its position, to `to` at its position, and
+// flushes `to`. `from` must be open for reading, and `to` for writing.
+//
+// Returns true if all of `from` was read and reached `to`.
+bool CopyRawFile(RawFile* from, RawFile* to);
 
 }  // namespace gb
 

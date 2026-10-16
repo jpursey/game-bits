@@ -191,6 +191,10 @@ int64_t File::DoRead(void* buffer, int64_t size) {
     return 0;
   }
   const int64_t actual_size = file_->Read(buffer, size);
+  if (actual_size < 0) {
+    position_ = -1;
+    return 0;
+  }
   position_ += actual_size;
   return actual_size;
 }
@@ -202,6 +206,11 @@ bool File::DoReadLine(ReadLineState* state, std::string* line) {
     if (state->pos >= state->buffer.size()) {
       state->buffer.resize(kLineBufferSize);
       int64_t read_bytes = DoRead(&state->buffer[0], kLineBufferSize);
+
+      // A failed read loses the rest of the line.
+      if (!IsValid()) {
+        return false;
+      }
       if (read_bytes > 0 && skip_linefeed && state->buffer[0] == '\n') {
         state->pos = 1;
       } else {

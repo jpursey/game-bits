@@ -1184,7 +1184,7 @@ TEST(TestProtocolTest, RawFileRead) {
 
   file_state->flags -= FileFlag::kRead;
   std::memset(buffer, 0, sizeof(buffer));
-  EXPECT_EQ(file->Read(buffer, 2), 0);
+  EXPECT_EQ(file->Read(buffer, 2), -1);
   EXPECT_EQ(file_state->invalid_call_count, 1);
   EXPECT_EQ(file_state->read_count, 1);
   EXPECT_EQ(file_state->request_bytes_read, 2);
@@ -1196,7 +1196,7 @@ TEST(TestProtocolTest, RawFileRead) {
 
   file_state->position = -1;
   std::memset(buffer, 0, sizeof(buffer));
-  EXPECT_EQ(file->Read(buffer, 2), 0);
+  EXPECT_EQ(file->Read(buffer, 2), -1);
   EXPECT_EQ(file_state->invalid_call_count, 0);
   EXPECT_EQ(file_state->read_count, 1);
   EXPECT_EQ(file_state->request_bytes_read, 2);
@@ -1204,6 +1204,18 @@ TEST(TestProtocolTest, RawFileRead) {
   EXPECT_EQ(file_state->position, -1);
   EXPECT_STREQ(buffer, "");
   file_state->ResetCounts();
+
+  file_state->position = 0;
+  file_state->fail_read_after = 3;
+  EXPECT_EQ(file->Read(buffer, 3), 3);
+  EXPECT_EQ(file->Read(buffer, 1), -1);
+  EXPECT_EQ(file_state->invalid_call_count, 0);
+  EXPECT_EQ(file_state->read_count, 2);
+  EXPECT_EQ(file_state->request_bytes_read, 4);
+  EXPECT_EQ(file_state->bytes_read, 3);
+  EXPECT_EQ(file_state->position, -1);
+  file_state->ResetCounts();
+  file_state->fail_read_after = -1;
 }
 
 }  // namespace

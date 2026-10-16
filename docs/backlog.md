@@ -40,25 +40,40 @@ resumes on another thread can read the wrong value, with a test that does
 exactly that, and fix it if so: `/GT` on the affected code, or state that
 moves with the fiber.
 
-## Report read errors
+## Failed reads in image loading
+
+- **Layers:** image
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** `LoadImage()` in `image_file.cc`
+
+A read that fails part way through an image can still load it. stb_image takes
+a read that returns nothing as the end of the file and decodes the rest as
+zeros, so a JPEG, BMP, TGA or PNM loads as a partly blank image, and a PNG fails
+as if it were corrupt. `LoadImage()` never checks the file afterwards. Fail the
+load, with an error saying the read failed, if the file is invalid once stb
+returns. A test needs a protocol whose reads fail, which `gb_file`'s
+`TestProtocol` provides but `gb_image`'s tests can't use.
+
+## Local files without iostreams
 
 - **Layers:** file
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** nothing
-- **Background:** `RawFile::Read()` in `raw_file.h`, and the copy loops in
-  `FileSystem::GenericCopyFile()` and `FileProtocol::BasicCopyFile()`
+- **Background:** `LocalFile` in `local_file_protocol.cc`
 
-A read that fails looks the same as one that reaches the end of the file:
-`RawFile::Read()` returns a short count either way, and the `File` stays valid,
-so a caller can't tell a failed read from a short file. The copy loops stop at
-the first short read, so a copy whose source fails part way leaves a truncated
-file and reports success (copies within `LocalFileProtocol` use
-`std::filesystem::copy_file`, and are unaffected). Let a raw file report a
-failed read, have `File` become invalid on one as it does on a failed write,
-and have the copies check for it. The two copy loops are the same, so share
-them while there. `LocalFile::Read()` also tries to work out how much a failed
-read read, which a failed stream can't report.
+`LocalFile` reads and writes through `std::fstream`, against the Game Bits
+style, and the stream can't say what went wrong. MSVC's stream reports a failed
+read as reaching the end, so `LocalFile::Read()` checks that the stream stopped
+at the end of the file, which also fails a read when another program appends to
+the file between the read and the check (such as reading a log as it is
+written). A failed write doesn't report how much was written either. Read and
+write through C stdio (`ferror()` tells a failed read from the end of the file)
+or the operating system's own file handles instead.
+`win_local_file_protocol_test.cc` makes a real read fail by locking part of the
+file.
 
 ## Default texture for unset bindings
 

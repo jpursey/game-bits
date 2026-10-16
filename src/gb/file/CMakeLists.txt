@@ -3,6 +3,12 @@
 ## Use of this source code is governed by an MIT-style License that can be found
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
+if (WIN32)
+  set(gb_file_internal_TEST_SOURCE
+    win_local_file_protocol_test.cc
+  )
+endif()
+
 set(gb_file_SOURCE
   chunk_reader.cc chunk_reader.h
   chunk_types.h
@@ -14,7 +20,7 @@ set(gb_file_SOURCE
   local_file_protocol.cc local_file_protocol.h
   memory_file_protocol.cc memory_file_protocol.h
   path.cc path.h
-  raw_file.h
+  raw_file.cc raw_file.h
 )
 
 set(gb_file_TEST_SOURCE
@@ -28,6 +34,7 @@ set(gb_file_TEST_SOURCE
   memory_file_protocol_test.cc
   test_protocol.cc test_protocol.h
   test_protocol_test.cc
+  ${gb_file_internal_TEST_SOURCE}
 )
 
 set(gb_file_DEPS
@@ -36,6 +43,7 @@ set(gb_file_DEPS
 )
 
 set(gb_file_TEST_DEPS
+  absl::cleanup
   gb_test
 )
 

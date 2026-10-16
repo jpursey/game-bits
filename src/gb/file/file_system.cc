@@ -417,19 +417,7 @@ bool FileSystem::GenericCopyFile(std::string_view from_protocol_name,
   if (to_file == nullptr) {
     return false;
   }
-
-  uint8_t buffer[kCopyBufferSize];
-  int64_t buffer_size = 0;
-  do {
-    buffer_size = from_file->Read(buffer, kCopyBufferSize);
-    if (buffer_size > 0) {
-      if (to_file->Write(buffer, buffer_size) != buffer_size) {
-        return false;
-      }
-    }
-  } while (buffer_size == kCopyBufferSize);
-
-  return to_file->Flush();
+  return CopyRawFile(from_file.get(), to_file.get());
 }
 
 }  // namespace gb

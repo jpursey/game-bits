@@ -100,29 +100,22 @@ class TestFile : public RawFile {
     state_->request_bytes_read += size;
     if (!state_->flags.IsSet(FileFlag::kRead)) {
       state_->invalid_call_count += 1;
-      return 0;
+      return -1;
     }
     if (state_->position < 0) {
-      return 0;
+      return -1;
     }
-    const int64_t read_position = state_->position;
     if (state_->fail_read_after >= 0 &&
         state_->request_bytes_read > state_->fail_read_after) {
       state_->position = -1;
-      if (state_->request_bytes_read - size < state_->fail_read_after) {
-        size -= state_->request_bytes_read - state_->fail_read_after;
-      } else {
-        return 0;
-      }
+      return -1;
     }
-    if (read_position + size > GetSize()) {
-      size = GetSize() - read_position;
+    if (state_->position + size > GetSize()) {
+      size = GetSize() - state_->position;
     }
     state_->bytes_read += size;
-    std::memcpy(buffer, &state_->contents[read_position], size);
-    if (state_->position >= 0) {
-      state_->position += size;
-    }
+    std::memcpy(buffer, &state_->contents[state_->position], size);
+    state_->position += size;
     return size;
   }
 

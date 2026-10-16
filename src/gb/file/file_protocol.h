@@ -42,9 +42,6 @@ namespace gb {
 // preconditions cannot be guaranteed for Basic* functions in this case).
 class FileProtocol {
  public:
-  // Copy buffer size used to implement BasicCopyFile.
-  inline static constexpr int64_t kBasicCopyBufferSize = 32 * 1024;
-
   FileProtocol(const FileProtocol&) = delete;
   FileProtocol& operator=(const FileProtocol&) = delete;
   virtual ~FileProtocol() = default;

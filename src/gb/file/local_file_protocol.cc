@@ -5,7 +5,6 @@
 
 #include "gb/file/local_file_protocol.h"
 
-#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <optional>
@@ -105,22 +104,27 @@ int64_t LocalFile::Read(void* buffer, int64_t size) {
   BeginAccess(Access::kRead);
   file_.read(reinterpret_cast<char*>(buffer),
              static_cast<std::streamsize>(size));
-  if (file_.eof()) {
-    size = file_.gcount();
+  const int64_t count = file_.gcount();
+  if (file_.eof() && !file_.bad()) {
+    // Reaching the end fails the stream, which must be cleared to read on.
+    // MSVC's stream also reports a failed read as reaching the end, so a read
+    // that stopped before the end failed. One that started past the end (after
+    // seeking there) reads nothing.
+    const int64_t stopped_at = position_ + count;
     file_.clear();
-    SeekEnd();
-    return size;
+    const int64_t end = SeekEnd();
+    if (end < 0 || end > stopped_at) {
+      position_ = -1;
+      return -1;
+    }
+    return count;
   }
   if (file_.fail()) {
-    int64_t position = position_;
-    if (GetPosition() < 0) {
-      size = 0;
-    } else {
-      size = std::max<int64_t>(position_ - position, 0);
-    }
+    position_ = -1;
+    return -1;
   }
-  position_ += size;
-  return size;
+  position_ += count;
+  return count;
 }
 
 // Paths are UTF-8, which std::filesystem doesn't assume for char strings, and

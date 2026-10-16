@@ -655,6 +655,12 @@ TEST_P(CommonProtocolTest, ReadFilePastEnd) {
   contents = file->ReadString(kFileSize);
   EXPECT_EQ(contents, file_contents.substr(kFileSize / 2));
   EXPECT_EQ(file->GetPosition(), kFileSize);
+
+  // A protocol may seek past the end, and reading there reads nothing.
+  EXPECT_GE(file->SeekTo(kFileSize * 2), kFileSize);
+  contents = file->ReadString(1);
+  EXPECT_THAT(contents, IsEmpty());
+  EXPECT_TRUE(file->IsValid());
 }
 
 TEST_P(CommonProtocolTest, WriteFile) {

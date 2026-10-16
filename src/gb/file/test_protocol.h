@@ -49,8 +49,8 @@ class TestProtocol : public FileProtocol {
     // Flush will fail, as when buffered writes fail to reach the file.
     bool fail_flush = false;
 
-    // If non-negative, read will fail after this many total bytes are requested
-    // to be read.
+    // If non-negative, the read that requests more than this many total bytes
+    // fails, as does every read after it.
     int64_t fail_read_after = -1;
 
     // The following counts are reset with ResetCounts().

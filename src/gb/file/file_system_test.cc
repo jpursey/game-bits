@@ -6,6 +6,7 @@
 #include "gb/file/file_system.h"
 
 #include "gb/file/memory_file_protocol.h"
+#include "gb/file/raw_file.h"
 #include "gb/file/test_protocol.h"
 #include "gb/test/test_util.h"
 #include "gmock/gmock.h"
@@ -649,6 +650,16 @@ TEST(FileSystemTest, CopyFilesAcrossProtocols) {
   state[0].ResetCounts();
   state[1].ResetCounts();
 
+  // A failed read fails the copy, rather than ending it as if the whole file
+  // was copied.
+  auto* from_file_state = state[0].paths["/file"].GetFile();
+  from_file_state->fail_read_after = 5;
+  EXPECT_FALSE(file_system.CopyFile("test0:/file", "test1:/file"));
+  EXPECT_EQ(from_file_state->read_count, 1);
+  from_file_state->fail_read_after = -1;
+  state[0].ResetCounts();
+  state[1].ResetCounts();
+
   EXPECT_TRUE(file_system.CopyFile("test0:/file", "test1:/file"));
   EXPECT_EQ(state[1].paths["/file"].GetType(), PathType::kFile);
   EXPECT_EQ(state[1].paths["/file"].GetContents(),
@@ -657,30 +668,30 @@ TEST(FileSystemTest, CopyFilesAcrossProtocols) {
   // Generate a random string long enough to require multiple read/write
   // operations. True randomness is unimportant here, but we make sure that no
   // two adjacent characters are equal to better detect off-by-one errors.
-  std::string text = GenerateTestString(FileSystem::kCopyBufferSize * 3);
-  state[0].paths["/file"] = TestProtocol::PathState::NewFile(
-      text.substr(0, FileSystem::kCopyBufferSize));
+  std::string text = GenerateTestString(kRawFileCopyBufferSize * 3);
+  state[0].paths["/file"] =
+      TestProtocol::PathState::NewFile(text.substr(0, kRawFileCopyBufferSize));
   state[1].paths.clear();
   EXPECT_TRUE(file_system.CopyFile("test0:/file", "test1:/file"));
   EXPECT_EQ(state[1].paths["/file"].GetContents(),
             state[0].paths["/file"].GetContents());
 
   state[0].paths["/file"] = TestProtocol::PathState::NewFile(
-      text.substr(0, FileSystem::kCopyBufferSize + 1));
+      text.substr(0, kRawFileCopyBufferSize + 1));
   state[1].paths.clear();
   EXPECT_TRUE(file_system.CopyFile("test0:/file", "test1:/file"));
   EXPECT_EQ(state[1].paths["/file"].GetContents(),
             state[0].paths["/file"].GetContents());
 
   state[0].paths["/file"] = TestProtocol::PathState::NewFile(
-      text.substr(0, FileSystem::kCopyBufferSize * 2));
+      text.substr(0, kRawFileCopyBufferSize * 2));
   state[1].paths.clear();
   EXPECT_TRUE(file_system.CopyFile("test0:/file", "test1:/file"));
   EXPECT_EQ(state[1].paths["/file"].GetContents(),
             state[0].paths["/file"].GetContents());
 
   state[0].paths["/file"] = TestProtocol::PathState::NewFile(
-      text.substr(0, FileSystem::kCopyBufferSize * 2 + 1));
+      text.substr(0, kRawFileCopyBufferSize * 2 + 1));
   state[1].paths.clear();
   EXPECT_TRUE(file_system.CopyFile("test0:/file", "test1:/file"));
   EXPECT_EQ(state[1].paths["/file"].GetContents(),
@@ -776,6 +787,35 @@ TEST(FileSystemTest, WriteFile) {
   EXPECT_FALSE(file_system.WriteFile("test:/file", "abc", 3));
   EXPECT_EQ(file_state->flush_count, 1);
   file_state->fail_flush = false;
+
+  EXPECT_EQ(state.invalid_call_count, 0);
+  EXPECT_EQ(file_state->invalid_call_count, 0);
+}
+
+TEST(FileSystemTest, ReadFile) {
+  TestProtocol::State state;
+  FileSystem file_system;
+  file_system.Register(std::make_unique<TestProtocol>(&state), "test");
+
+  state.paths["/file"] = TestProtocol::PathState::NewFile("12345");
+  auto* file_state = state.paths["/file"].GetFile();
+  std::string contents;
+  std::vector<char> vector_contents;
+
+  EXPECT_TRUE(file_system.ReadFile("test:/file", &contents));
+  EXPECT_EQ(contents, "12345");
+  EXPECT_TRUE(file_system.ReadFile("test:/file", &vector_contents));
+  EXPECT_THAT(vector_contents, ElementsAre('1', '2', '3', '4', '5'));
+
+  EXPECT_FALSE(file_system.ReadFile("test:/missing", &contents));
+  EXPECT_FALSE(file_system.ReadFile("test:/missing", &vector_contents));
+
+  file_state->fail_read_after = 3;
+  EXPECT_FALSE(file_system.ReadFile("test:/file", &contents));
+  EXPECT_THAT(contents, IsEmpty());
+  EXPECT_FALSE(file_system.ReadFile("test:/file", &vector_contents));
+  EXPECT_THAT(vector_contents, IsEmpty());
+  file_state->fail_read_after = -1;
 
   EXPECT_EQ(state.invalid_call_count, 0);
   EXPECT_EQ(file_state->invalid_call_count, 0);

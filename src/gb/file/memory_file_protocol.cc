@@ -110,7 +110,7 @@ int64_t MemoryFileProtocol::MemoryFile::Read(void* buffer, int64_t size) {
   Node* node = lock.Get();
   if (node == nullptr) {
     position_ = -1;
-    return 0;
+    return -1;
   }
   if (position_ + size > static_cast<int64_t>(node->contents.size())) {
     size = static_cast<int64_t>(node->contents.size()) - position_;

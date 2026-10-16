@@ -394,19 +394,7 @@ bool FileProtocol::BasicCopyFile(std::string_view protocol_name,
   if (to_file == nullptr) {
     return false;
   }
-
-  uint8_t buffer[kBasicCopyBufferSize];
-  int64_t buffer_size = 0;
-  do {
-    buffer_size = from_file->Read(buffer, kBasicCopyBufferSize);
-    if (buffer_size > 0) {
-      if (to_file->Write(buffer, buffer_size) != buffer_size) {
-        return false;
-      }
-    }
-  } while (buffer_size == kBasicCopyBufferSize);
-
-  return to_file->Flush();
+  return CopyRawFile(from_file.get(), to_file.get());
 }
 
 bool FileProtocol::BasicDeleteFile(std::string_view protocol_name,
