@@ -22,6 +22,29 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
+## Thread cycles
+
+- **Layers:** thread
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Requested by:** JPRSurf *Measure REAPER's costs*
+- **Background:** none
+
+How many cycles the calling thread has run for: the time it actually spent
+working, without the time it waited or was switched out. Reading it at two
+points and subtracting shows how much work a thread did in between, including
+work done outside the caller's own code, such as another library's message
+loop running on the same thread. Wall time can't show that when the thread
+spends most of its time waiting on a timer.
+
+On Windows it is `QueryThreadCycleTime()`, which counts in the timestamp
+counter's ticks, so a difference converts to time at the same tick rate the
+profiler measures. A platform without a way to read it says so (a `gen_`
+version returning that it is unsupported, as with thread affinities), rather
+than a wall time that means something else. A test checks that a busy loop
+counts and a sleep barely does.
+
 ## Fiber-safe thread locals
 
 - **Layers:** thread, job
