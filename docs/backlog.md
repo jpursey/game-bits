@@ -288,6 +288,160 @@ fibers, locks, and plots. It would be a new dependency, with its own
 instrumentation alongside `gb/profile`'s points, so decide between it and this
 before starting.
 
+## Pipeline state per material
+
+- **Layers:** render, render_vulkan
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Requested by:** Terra Diem *Water refraction and reflections*, *Sun and
+  moon shadows*
+- **Background:** `vulkan_render_pipeline.cc`, where blending is set
+
+`MaterialConfig` chooses the depth, raster, and cull modes, but every pipeline
+blends source alpha over what's there (`vulkan_render_pipeline.cc`), so opaque
+materials pay for blending they don't use, and nothing can draw additively,
+with premultiplied alpha, or without writing color. Add to `MaterialConfig`:
+- A blend mode: none, alpha, premultiplied alpha, and additive. The default
+  stays alpha, so existing materials don't change.
+- A color write mask, so a material can write only depth (a depth pre-pass,
+  which lets only the nearest of several transparent surfaces be shaded).
+- Depth bias, constant and slope-scaled, for shadow maps and decals.
+
+Each goes through the resource chunks that save material types, and the test
+backend records it. Check by hand in `examples/render-check`, with a material
+of each blend mode over the same background.
+
+## Volume textures and storage buffers
+
+- **Layers:** render, render_vulkan
+- **Size:** medium
+- **Feature workflow:** yes
+- **Depends on:** nothing
+- **Requested by:** Terra Diem *Chunk light volumes*
+- **Background:** Terra Diem's meshing assessment
+  (`docs/tech/meshing-assessment.md` there)
+
+Shaders can read only constants, 2D textures, and texture arrays
+(`BindingType`), and every texture is RGBA at 8 bits per channel. Data that
+varies through a volume, or is an array too large or too variable for a
+constants type, has nowhere to go. Add:
+- **3D textures**, with width, height, and depth, the usual sampler options
+  (filtering, wrap or clamp), and updates of a box at a time, so a program can
+  update part of a large volume or keep many small ones, for every
+  `DataVolatility`.
+- **Texel formats** for every kind of texture: at least one, two, and four
+  8-bit channels, and a packed 16-bit format of four 4-bit channels, besides
+  today's RGBA8. Small volumes are often one or two bytes per texel. The
+  backend reports which formats it can filter.
+- **Storage buffers:** arrays of structured data that shaders read (writing
+  can come later), bound in any binding set like constants, but sized when
+  created rather than by a constants type, and updated in ranges. Data for
+  each of thousands of draws (see *Shared mesh buffers and indirect draws*)
+  lives in one, indexed in the shader.
+- A binding type for each, checked against a shader's bindings as today's are,
+  with support in the test backend so `gb_render`'s tests cover them.
+
+Check by hand in `examples/render-check`: a 3D texture sampled with filtering
+by a quad that moves through it, and a storage buffer giving each of several
+draws its color.
+
+Terra Diem would keep a small volume of light for each chunk of its world
+(18^3 texels of one or two bytes), sample it with filtering in its block
+shaders, and update it when light changes, instead of rebuilding meshes with
+light in their vertices.
+
+## Shared mesh buffers and indirect draws
+
+- **Layers:** render, render_vulkan
+- **Size:** large
+- **Feature workflow:** yes
+- **Depends on:** *Volume textures and storage buffers*
+- **Requested by:** Terra Diem *Chunk meshes in shared buffers*
+- **Background:** Terra Diem's meshing assessment
+  (`docs/tech/meshing-assessment.md` there)
+
+Every `Mesh` owns a vertex buffer and an index buffer (two GPU allocations),
+its indices are 16 bits (`kMaxMeshVertices` is 65,535), and every draw is a
+command of its own, with instance binding data of its own. A voxel world draws
+thousands of small meshes (Terra Diem had 4,212 chunk meshes within its default
+view distance) and rebuilds them often, from job threads, so the cost per mesh
+and per draw dominates. Add:
+- **Mesh pools:** large vertex and index buffers for one vertex type, from which
+  meshes allocate and free ranges. Allocating is cheap and safe from any
+  thread, with no lock the render loop also needs, and uploads are batched
+  through staging buffers. A pool reports how fragmented it is, and can grow
+  or compact.
+- **32-bit indices**, as an option per pool, so large meshes needn't be split.
+- **Drawing ranges** of a mesh (first index, count, and base vertex), so a mesh
+  can hold groups (by direction, or material) drawn or skipped separately.
+  `DrawPartial()` does part of this.
+- **Indirect draws:** draws whose ranges come from a buffer, many in one call
+  (multi-draw), each able to find its own data in a storage buffer by its draw
+  index. A program fills the buffer, or later a compute pass.
+- A fallback in the backend for GPUs without multi-draw, and the test backend
+  recording what was drawn.
+
+Check in `examples/block-world` by drawing all of its chunks from one pool with
+an indirect draw, and compare its frame time with drawing them one by one.
+
+Terra Diem would allocate each chunk's mesh from a pool, as ranges grouped by
+face direction, and draw every visible chunk in a few indirect draws, skipping
+the directions that face away from the camera.
+
+## Render passes and targets
+
+- **Layers:** render, render_vulkan
+- **Size:** large
+- **Feature workflow:** yes
+- **Depends on:** nothing
+- **Requested by:** Terra Diem *Water refraction and reflections*, *Sun and
+  moon shadows*
+- **Background:** Terra Diem's meshing assessment
+  (`docs/tech/meshing-assessment.md` there)
+
+Everything is drawn in one render pass, to the window, with scenes in
+`scene_order`. Effects that read what was already drawn (refraction and
+reflections on water, fog by depth, soft particles) or draw from somewhere
+else (shadow maps, mirrors, maps) need more than one pass. Add:
+- **Render targets:** color textures, in the formats of *Volume textures and
+  storage buffers* if that's done, and depth textures, sized in pixels or
+  relative to the frame, following the window as it resizes.
+- **Passes:** each draws scenes into a set of targets (or the frame), clearing
+  them or keeping what's there, with its own scene constants (a camera of its
+  own). A later pass can sample an earlier pass's color and depth as textures.
+  Passes are declared up front, in order, so the backend can place the
+  synchronization between them: a small frame graph rather than commands
+  issued as they come.
+- **Depth-only passes**, for shadow maps.
+- The test backend recording passes, so tests can check their order and what
+  each reads.
+
+Check by hand in `examples/render-check`: a scene drawn to a target, then shown
+distorted, beside its depth shown as gray.
+
+Terra Diem would draw its opaque world first, then its water, sampling the
+world's color (offset by the water's moving normals, to distort what's below)
+and depth (for color by depth, and foam at the shore), with reflections in
+screen space. Later, optionally, it would draw shadow maps.
+
+## Instanced draws
+
+- **Layers:** render, render_vulkan
+- **Size:** medium
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Requested by:** Terra Diem *Detail blocks*
+- **Background:** none
+
+Drawing one mesh many times (grass, flowers, rocks, props) takes a draw per
+copy today, each with instance binding data of its own. Add draws of a mesh
+many times in one call, with per-instance attributes from a second vertex
+stream (a vertex type read once per instance), so a program can draw thousands
+of small decorations at once. Once *Shared mesh buffers and indirect draws* is
+done, its indirect draws take an instance count too. Check by hand in
+`examples/render-check` with a field of instanced quads.
+
 ## Allocator overrides
 
 - **Layers:** base, alloc
