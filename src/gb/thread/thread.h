@@ -154,8 +154,9 @@ ThreadCapabilities GetThreadCapabilities();
 int64_t GetThisThreadCycles();
 
 // Returns the class of the core the calling thread is running on, where a
-// higher class is faster. Every core is class 0 on a CPU with one kind of core,
-// or if the current platform cannot tell them apart.
+// higher class is faster. Classes count up from 0 for the slowest kind of core,
+// so on a CPU with one kind of core (or a platform that cannot tell them apart)
+// every core is class 0 (see CpuCore in cpu_topology.h).
 //
 // The thread may move to another core as soon as this returns. The first call
 // finds every core's class, and later calls are fast.

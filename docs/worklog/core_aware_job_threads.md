@@ -3,8 +3,9 @@
 `gb/thread` knows the hardware threads only as a flat list of affinities in
 processor order, and `FiberJobSystem` pins job thread *i* to hardware thread
 *i*. Neither knows which hardware threads share a core, or which cores are
-faster. On an i9-14900KF, Windows numbers the 8 performance cores' SMT pairs
-0-15 and the 16 efficiency cores 16-31, so 24 job threads (one per core) end up
+faster. On an i9-14900KF, Windows numbers the 8 performance cores' pairs of
+simultaneous multithreading (SMT) hardware threads 0-15 and the 16 efficiency
+cores 16-31, so 24 job threads (one per core) end up
 two to each performance core, leaving 8 efficiency cores idle.
 
 This adds a CPU topology to `gb/thread` (the cores, their hardware threads,
@@ -106,9 +107,10 @@ struct CpuCache {
   int64_t size_bytes = 0;
 };
 
-// A core, with its hardware threads (more than one with SMT).
+// A core, with its hardware threads: the threads it can run at the same time.
 struct CpuCore {
-  // Higher is faster. Every core is class 0 on a CPU with one kind of core.
+  // Higher is faster, counting up from 0 for the slowest kind of core, so every
+  // core is class 0 on a CPU with one kind of core.
   int core_class = 0;
 
   // An affinity for CreateThread() covering all of the core's hardware
@@ -135,21 +137,25 @@ const CpuTopology& GetCpuTopology();
 ```
 
 - `cpu_topology.h`, with `win_cpu_topology.cc` and `gen_cpu_topology.cc`
-  chosen by the build.
+  chosen by the build. Each also defines `GetThisThreadCoreClass()`, which
+  reads its topology.
 - Windows reads `GetLogicalProcessorInformationEx(RelationAll)`: cores from
   `RelationProcessorCore` (`EfficiencyClass` and `GroupMask`), and data or
   unified caches at level 2 and above from `RelationCache`. Records are walked
   by their `Size`, and a cache's `GroupCount` of 0 (Windows 10) means one mask.
-- Like `GetHardwareThreadAffinities()`, it covers only the processor group the
-  process runs in, and only the hardware threads in the process's affinity
-  mask. A core with none of its hardware threads left is dropped, and one with
-  one of two SMT siblings left keeps just that one. If the process spans
-  processor groups (Windows 11 on more than 64 hardware threads), or Windows'
-  call fails, it falls back to the generic topology.
+- It covers exactly the hardware threads in `GetHardwareThreadAffinities()`
+  (the process's affinity mask, in the processor group it runs in). A core with
+  none of its hardware threads left is dropped, and one with one of two SMT
+  siblings left keeps just that one. If the process spans processor groups
+  (Windows 11 on more than 64 hardware threads), or Windows' call fails, it
+  falls back to the hardware thread topology.
 - The parsing is a function of the buffer, the group, and the mask, declared in
   `win_cpu_topology.h` so tests can call it with buffers of their own.
-- The generic topology has one class-0 core for each of `GetMaxConcurrency()`,
-  each with one hardware thread whose affinity is zero, and no caches.
+- The hardware thread topology, in `cpu_topology_internal.cc` for both
+  platforms, has a class 0 core for each hardware thread and no caches. Each
+  core is pinned to its hardware thread if `GetHardwareThreadAffinities()` has
+  affinities, as it does on Windows when only the topology can't be read, and
+  otherwise (on generic platforms) has an affinity of zero.
 - `GetThisThreadCoreClass()`'s table of classes by processor is built from the
   topology. Processors outside it (other processor groups) are class 0. Today
   it covers every group, but every CPU so far with more than one class of core
@@ -324,7 +330,7 @@ that Windows throttles a background window's threads the same way.
 
 ### Limits
 
-- Processes that span processor groups get the generic topology, as they get no
+- Processes that span processor groups get one unpinned core, as they get no
   affinities today (backlog: *Threads across processor groups*).
 - Pinning uses affinity masks, which Windows always honors. CPU sets
   (`SetThreadSelectedCpuSets()`) are softer: threads run elsewhere while their
@@ -341,14 +347,15 @@ that Windows throttles a background window's threads the same way.
 
 ## CLs
 
-### CL1 [ ] thread: CPU topology
+### CL1 [x] thread: CPU topology
 
 Depends on: nothing.
 
-- `cpu_topology.h`, `win_cpu_topology.h`, `win_cpu_topology.cc`,
-  `gen_cpu_topology.cc`, as above.
-- `win_thread.cc`: `GetThisThreadCoreClass()` reads its classes from the
-  topology.
+- `cpu_topology.h`, `cpu_topology_internal.h`, `cpu_topology_internal.cc`,
+  `win_cpu_topology.h`, `win_cpu_topology.cc`, `gen_cpu_topology.cc`, as
+  above.
+- `GetThisThreadCoreClass()` moves from `win_thread.cc` and `gen_thread.cc` to
+  the topology files, and reads its classes from the topology.
 - Unused, apart from `GetThisThreadCoreClass()`, which behaves the same.
 
 **Verify**
@@ -360,11 +367,14 @@ Depends on: nothing.
   - Uniform with SMT, and uniform without.
   - Two processor groups: only the given group's cores, with their masks.
   - Process masks that drop one SMT sibling, and a whole core.
-  - Records of unknown relationships, and a cache with `GroupCount` 0, are
-    handled.
+  - Package and module records are skipped, and a cache with `GroupCount` 0
+    is read.
+  - Records that run past the end, are too small for their size, or have more
+    group masks than fit stop or are skipped.
 - `cpu_topology_test.cc`, on the real machine: every hardware thread from
-  `GetHardwareThreadAffinities()` is in exactly one core, and a thread pinned
-  to each core reads that core's class from `GetThisThreadCoreClass()`.
+  `GetHardwareThreadAffinities()` is in exactly one core, a thread pinned to
+  each core reads that core's class from `GetThisThreadCoreClass()`, and the
+  hardware thread topology has a core for each hardware thread.
 
 ### CL2 [ ] thread: Thread placement
 
