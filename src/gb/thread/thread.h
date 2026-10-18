@@ -122,7 +122,8 @@ std::string_view GetThreadName(Thread thread);
 void SetThreadName(Thread thread, std::string_view name);
 
 // Returns the thread currently running, or null if this thread was not created
-// by CreateThread.
+// by CreateThread. On a fiber, this is the thread running the fiber now, which
+// may change whenever the fiber switches away and back.
 //
 // This function is thread-safe.
 Thread GetThisThread();

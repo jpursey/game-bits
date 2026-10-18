@@ -187,5 +187,5 @@ Each is a backlog item:
 - **Multithreaded profiles:** each thread's Profiler is separate, and the
   report reads a Profiler's own slots.
 - **Fiber-aware profiling:** a timed point can't span a fiber switch.
-- **Fiber-safe thread locals:** whether Game Bits' own thread locals are safe
-  across fiber moves.
+- **Fiber profile timers:** a timer created after a fiber resumes on another
+  thread may find the old thread's Profiler.

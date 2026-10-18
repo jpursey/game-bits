@@ -36,7 +36,12 @@ std::atomic<bool> g_enable_thread_logging = false;
 #define GB_THREAD_LOG LOG_IF(INFO, false)
 #endif  // GB_BUILD_ENABLE_THREAD_LOGGING
 
+// This is only read by GetThisThread(), which is never inlined. Inlined into a
+// function that switches fibers, the compiler may reuse the address of the
+// thread's value from before the switch, so a fiber that resumed on another
+// thread would read the thread it left.
 thread_local Thread tls_this_thread = nullptr;
+
 inline constexpr int kMaxThreadNameSize = 128;
 std::atomic<int> g_thread_index = 0;
 std::atomic<int> g_active_thread_count = 0;
@@ -310,7 +315,7 @@ void SetThreadName(Thread thread, std::string_view name) {
   }
 }
 
-Thread GetThisThread() { return tls_this_thread; }
+__declspec(noinline) Thread GetThisThread() { return tls_this_thread; }
 
 ThreadCapabilities GetThreadCapabilities() { return ThreadCapability::kCycles; }
 

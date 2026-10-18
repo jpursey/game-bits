@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <atomic>
 #include <memory>
+#include <thread>
 #include <vector>
 
 #include "absl/strings/str_format.h"
@@ -217,6 +218,60 @@ TEST_P(FiberJobSystemTest, MultipleJobsWaitOnOneCounter) {
   notify_start.Notify();
   notify_complete.WaitForNotificationWithTimeout(absl::Seconds(10));
   EXPECT_EQ(call_count, 10);
+}
+
+TEST_P(FiberJobSystemTest, WaitResumesOnAnotherThread) {
+  const int thread_count = job_system_->GetThreadCount();
+  if (thread_count < 2) {
+    GTEST_SKIP() << "A job can only resume on another thread with two threads";
+  }
+
+  // The waiting job starts on one thread, and the job it waits on runs on a
+  // second. Every other thread, including the first, is then blocked, so the
+  // waiting job can only resume on the second.
+  JobCounter counter;
+  absl::Notification counted_started;
+  absl::Notification release_counted;
+  std::thread::id counted_id;
+  Thread counted_thread = nullptr;
+  std::atomic<int> blocked_count = 0;
+  absl::Notification all_blocked;
+  absl::Notification release_blocked;
+  absl::Notification done;
+  EXPECT_TRUE(job_system_->Run([&] {
+    EXPECT_TRUE(JobSystem::Get()->Run(&counter, [&] {
+      counted_id = std::this_thread::get_id();
+      counted_thread = GetThisThread();
+      counted_started.Notify();
+      release_counted.WaitForNotification();
+    }));
+
+    // This blocks the thread, rather than waiting the job, so the counted job
+    // starts on another thread.
+    counted_started.WaitForNotification();
+    for (int i = 0; i < thread_count - 1; ++i) {
+      EXPECT_TRUE(JobSystem::Get()->Run([&] {
+        if (++blocked_count == thread_count - 1) {
+          all_blocked.Notify();
+        }
+        release_blocked.WaitForNotification();
+      }));
+    }
+    const Thread start_thread = GetThisThread();
+    JobSystem::Wait(&counter);
+    EXPECT_EQ(std::this_thread::get_id(), counted_id);
+    EXPECT_NE(GetThisThread(), start_thread);
+    EXPECT_EQ(GetThisThread(), counted_thread);
+    EXPECT_EQ(JobSystem::Get(), job_system_.get());
+    done.Notify();
+  }));
+  all_blocked.WaitForNotificationWithTimeout(absl::Seconds(10));
+  release_counted.Notify();
+  done.WaitForNotificationWithTimeout(absl::Seconds(10));
+  release_blocked.Notify();
+
+  // Destroying the job system waits for the jobs, which use these locals.
+  job_system_.reset();
 }
 
 TEST_P(FiberJobSystemTest, ContextIsDestroyedAtJobEnd) {

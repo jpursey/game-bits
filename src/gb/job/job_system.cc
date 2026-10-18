@@ -9,6 +9,9 @@ namespace gb {
 
 namespace {
 
+// Every thread of a job system holds the same value, and outlives the job
+// system's jobs, so a job that resumes on another thread reads the right value,
+// even through an address the compiler kept from before the switch.
 thread_local JobSystem* tls_job_system = nullptr;
 
 }  // namespace

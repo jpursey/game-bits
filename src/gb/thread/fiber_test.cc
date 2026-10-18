@@ -334,6 +334,66 @@ TEST_F(FiberTest, SwapThreadsAndExit) {
   EXPECT_EQ(state.counter, 31);
 }
 
+TEST_F(FiberTest, GetThisThreadAfterFiberMovesThreads) {
+  CHECK_FIBER_SUPPORT();
+  struct State {
+    State() = default;
+    Fiber moving_fiber = nullptr;
+    Fiber return_fiber = nullptr;
+    absl::Notification first_visit_done;
+    absl::Notification second_visit_done;
+    Thread seen_threads[2] = {};
+  } state;
+
+  // The moving fiber reads its thread on the first thread, and then in the same
+  // function after resuming on the second. The first thread stays alive until
+  // then, so a thread local address kept from before the switch would read it.
+  state.moving_fiber = CreateFiber(
+      {}, 0, &state, +[](void* user_data) {
+        auto& state = *static_cast<State*>(user_data);
+        state.seen_threads[0] = GetThisThread();
+        SwitchToFiber(state.return_fiber);
+        state.seen_threads[1] = GetThisThread();
+        SwitchToFiber(state.return_fiber);
+      });
+  ASSERT_NE(state.moving_fiber, nullptr);
+  absl::Cleanup delete_moving_fiber = [&state] {
+    DeleteFiber(state.moving_fiber);
+  };
+  auto fiber_1 = CreateFiberThreads(
+      1, {}, 0, &state, +[](void* user_data) {
+        auto& state = *static_cast<State*>(user_data);
+        state.return_fiber = GetThisFiber();
+        EXPECT_TRUE(SwitchToFiber(state.moving_fiber));
+        state.first_visit_done.Notify();
+        state.second_visit_done.WaitForNotification();
+      });
+  ASSERT_EQ(fiber_1.size(), 1);
+
+  // The first thread waits for the second to finish, so if the second can't be
+  // created, this releases the first before it is joined.
+  absl::Cleanup end_fiber_1 = [&state, &fiber_1] {
+    if (!state.second_visit_done.HasBeenNotified()) {
+      state.second_visit_done.Notify();
+    }
+    WaitAndDeleteFibers(fiber_1);
+  };
+  auto fiber_2 = CreateFiberThreads(
+      1, {}, 0, &state, +[](void* user_data) {
+        auto& state = *static_cast<State*>(user_data);
+        state.first_visit_done.WaitForNotification();
+        state.return_fiber = GetThisFiber();
+        EXPECT_TRUE(SwitchToFiber(state.moving_fiber));
+        state.second_visit_done.Notify();
+      });
+  ASSERT_EQ(fiber_2.size(), 1);
+  const Thread thread_1 = fiber_1[0].thread;
+  const Thread thread_2 = fiber_2[0].thread;
+  WaitAndDeleteFibers(fiber_2);
+  EXPECT_EQ(state.seen_threads[0], thread_1);
+  EXPECT_EQ(state.seen_threads[1], thread_2);
+}
+
 TEST_F(FiberTest, FiberName) {
   CHECK_FIBER_SUPPORT();
   Fiber fiber = CreateFiber({}, 0, nullptr, +[](void* user_data) {});
