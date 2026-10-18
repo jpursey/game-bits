@@ -450,6 +450,88 @@ unless it is scoped, and a token has none. That removes `items_`, the
 leaves nothing behind because it has no items to merge. The existing parser
 tests, including those for failed inline groups, cover the behavior.
 
+## Negated rule items and position markers
+
+- **Layers:** parse
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Requested by:** OZ-3 *Program assembler*
+- **Background:** the rule syntax in `parser_program.h`, and
+  `Parser::MatchGroup` in `parser.cc`
+
+Two rule items that a grammar can't write today:
+- **Negation**, such as `!item`, matches one token wherever `item` doesn't
+  match: "anything but this". It tries `item` at the current token and discards
+  the result. If `item` matches, the negation fails, consuming nothing, with an
+  error for the unexpected token. If not, it consumes that one token, which is
+  its parsed item's token. `item` can be any rule item, so a negated token,
+  rule, group, or set of alternatives all work, and named items inside it are
+  dropped either way. It never consumes the end of the content. It takes a name
+  and a repeat like any other item, and binds tighter than the repeat, so
+  `$tokens=!(%linebreak | ')')*` is every token up to the end of the line or a
+  `)`. That covers "any token but these" without listing every token the lexer
+  can produce. For example, the arguments of a statement with balanced
+  brackets:
+
+      Arg {
+        '(' Arg* ')';
+        '[' Arg* ']';
+        !(%linebreak | %end | ')' | ']');
+      }
+
+  Consuming exactly one token is what keeps it well defined: a negated item
+  that spans several tokens still only says what can't start here.
+- **A position marker**, such as `%here`, matches without consuming anything.
+  Its parsed item's token is the next token: the one the item after it starts
+  with, or the end of the content. Named, it marks a place, which a repeated
+  item can't do when it matches nothing. Combined with negation it bounds a
+  range of tokens, `$start=%here $tokens=!%linebreak* $end=%here`, whose end
+  is the token after the range, and whose start is the end when the range is
+  empty.
+
+The rule syntax comment in `parser_program.h` documents both. Tests: a negated
+token, rule, group, and set of alternatives; negation failing with its error,
+and at the end of the content; a repeated and a named negation; named items
+inside a negation dropped; a marker before and after an empty repeat, at the
+end of the content, and named in a group that fails (leaving no item, as any
+other item would).
+
+## Adjacent rule items
+
+- **Layers:** parse
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Requested by:** OZ-3 *Program assembler*
+- **Background:** the rule syntax in `parser_program.h`, and
+  `Parser::MatchGroup` in `parser.cc`
+
+A rule can't say that two tokens must touch, with no space or comment between
+them, as in a name with a dotted extension (`ADD.W`, not `ADD . W`), or a
+directive's `.` and its name (`.DW`). A caller has to check it after the parse,
+by comparing token locations and text sizes, and the parse error it would want
+is lost, as the rule has already matched (or a backtracking alternative has
+matched something else).
+
+Add a prefix, such as `^item`, that matches `item` only if its first token
+starts exactly where the previous token the parse consumed ends, on the same
+line. Otherwise the item fails, consuming nothing, with an error for the space
+before the token. So `$name=%ident [^'.' ^$extension=%ident]` reads a dotted
+name only when it is written without spaces, and `'.' ^$name=%ident` reports
+`. DW` as a space before `DW`. It takes a name and a repeat like any other item,
+and applies to each repetition, so `^%ident*` is a run of identifiers that each
+touch the one before. At the start of a parse, with no token consumed yet, it
+always holds.
+
+The lexer knows whether a token followed a space or comment when it reads it,
+so it could record that on the token, or the parser can compare the previous
+token's end with the next one's start, as callers do today. Either way it is
+the parser's syntax, so the lexer needs no new token types. The rule syntax
+comment in `parser_program.h` documents it. Tests: adjacent and spaced tokens,
+a comment between them, a line break between them, at the start of a parse, a
+named and a repeated adjacent item, and the error for a space.
+
 ## Validate chunk contents
 
 - **Layers:** file, resource
