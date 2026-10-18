@@ -22,75 +22,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Core-aware job threads
-
-- **Layers:** thread, job
-- **Size:** medium
-- **Feature workflow:** yes
-- **Depends on:** nothing
-- **Requested by:** Terra Diem *Job threads per physical core*
-- **Background:** *Multithreaded profiles*, `GetThisThreadCoreClass()` in
-  `gb/thread/win_thread.cc`
-
-`gb/thread` knows the hardware threads only as a flat list of affinities in
-processor order (`GetHardwareThreadAffinities()`, read from the process
-affinity mask, so it covers one processor group of at most 64), and
-`FiberJobSystem` defaults to one job thread per hardware thread, pinning job
-thread *i* to hardware thread *i*. Neither knows which hardware threads share a
-core, or which cores are faster. On an i9-14900KF, Windows numbers the 8
-performance cores' SMT pairs 0-15 and the 16 efficiency cores 16-31, so asking
-for 24 job threads (one per core) pins two to each performance core and leaves
-8 efficiency cores idle.
-
-Measured on that CPU with Terra Diem's chunk generation and lighting (16,384
-chunks of compute-bound jobs, 2026-10-15), with one per core set up by
-restricting the process affinity before creating the job system:
-
-| Job threads | Placement | Generation | Lighting |
-|---|---|---|---|
-| 24 | one per core | 0.38 s | 1.96 s |
-| 24 | in processor order | 0.45 s | 2.33 s |
-| 32 | every hardware thread | 0.35 s | 1.83 s |
-
-Placement mattered more than count: processor order took 17-19% longer than
-one per core, while using the SMT siblings as well gained only 7-9%. While
-jobs contended for the heap, every hardware thread took about 30% longer than
-one per core. A performance core did about 1.6 times the work of an efficiency
-core.
-
-Windows tells an ordinary program all of this.
-`GetLogicalProcessorInformationEx()` reports each core's hardware threads (in
-every processor group), whether it has SMT, and its efficiency class (higher is
-faster, as `gb/profile` already uses it), and with `RelationCache`, which cores
-share each cache. `GetSystemCpuSetInformation()` reports the same for each
-hardware thread, with an ID for `SetThreadSelectedCpuSets()`, which steers a
-thread without the hard limit of an affinity mask. Add:
-- A topology query in `gb/thread`: the cores, each with its hardware threads
-  (as affinities `CreateThread()` accepts), its class, and the caches it shares
-  (the last level, and the L2 that efficiency cores share in clusters of four).
-  The generic version reports one class-0 core per hardware thread. Parse
-  Windows' buffer in a function tests can feed captured buffers: a hybrid CPU
-  like this one, a uniform CPU with SMT, one without, and two processor groups.
-  The class table behind `GetThisThreadCoreClass()` then comes from it, as
-  *Multithreaded profiles* expects.
-- Placement by core in `FiberJobSystem`: an option to count job threads in
-  cores, one per core, fastest class first, each pinned to its core's hardware
-  threads (or steered with CPU sets) rather than to one hardware thread. Its
-  contract says which is the default; changing the default changes every
-  project.
-- An option to leave the fastest core, or a given number of cores, without job
-  threads, for a program's main loop, and the topology a program needs to
-  place its main thread, and any pool for blocking work, on hardware threads
-  the job threads don't use.
-- A report of where each job thread went (core and class), for logs and
-  *Multithreaded profiles*.
-- Windows moves the threads of a background window onto efficiency cores
-  (*Multithreaded profiles*). Check whether opting job threads out of that
-  (`SetThreadInformation()` with `ThreadPowerThrottling`) is worth an option.
-
-Tests check parsing against captured buffers, and placement against a fake
-topology: which hardware threads each job thread gets under each option.
-
 ## Default texture for unset bindings
 
 - **Layers:** render, render_vulkan
@@ -174,9 +105,9 @@ already splits frames by core class and warns when they mix; a combined view
 needs the same per thread, since job threads spread across both kinds of core.
 Pinning threads to one kind would make profiles compare, but `gb/thread`'s
 affinities don't know which hardware threads are which kind; only the class
-table behind `GetThisThreadCoreClass()` does. *Core-aware job threads* builds
-a topology from that table, and pins each job thread to one core, which fixes
-each thread's class.
+table behind `GetThisThreadCoreClass()` does. [Core-aware job
+threads](worklog/core_aware_job_threads.md) builds a topology from that table,
+and can pin each job thread to one core, which fixes each thread's class.
 
 ## Fiber profile timers
 
@@ -872,3 +803,39 @@ any waiting job resumes), so the rule is written out in each, and each is
 among `JobInternal`'s friends to do it. Give `JobSystem` protected functions
 that start and end a job's counting and free its data and context in order, so
 the rule lives in one place and the job systems no longer need to be friends.
+
+## Threads across processor groups
+
+- **Layers:** thread, job
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** *Core-aware job threads*
+- **Background:** [Core-aware job threads](worklog/core_aware_job_threads.md)
+
+An affinity is a mask of hardware threads in one processor group of up to 64,
+so `GetHardwareThreadAffinities()` and `GetCpuTopology()` cover only the group
+the process runs in. On Windows 11, a process on a machine with more than 64
+hardware threads can have threads in more than one group, and then
+`GetProcessAffinityMask()` returns zero: there are no affinities,
+`GetMaxConcurrency()` returns 1 (so a default `FiberJobSystem` runs one job
+thread), and the topology falls back to the generic one. Give affinities a
+group (a small struct rather than a `uint64_t`, set with
+`SetThreadGroupAffinity()`), so the topology covers every group. This changes
+`CreateThread()` and everything else that takes an affinity. No consumer CPU
+has more than 64 hardware threads; workstation ones do.
+
+## Favored cores
+
+- **Layers:** thread
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** *Core-aware job threads*
+- **Background:** [Core-aware job threads](worklog/core_aware_job_threads.md)
+
+Within a class of core, `PlaceThreads()` takes cores in processor order, so the
+fastest core it leaves for a main loop is the first. On an i9-14900KF,
+`GetSystemCpuSetInformation()` reports a `SchedulingClass` of 2 for two
+performance cores (8 and 10, the ones Intel lets boost highest) and 1 for the
+other six. The field is in the Windows SDK headers but undocumented. Check what
+it means, and what other CPUs (AMD's in particular) report, and if it is
+reliable, order cores by it within a class.
