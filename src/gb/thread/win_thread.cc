@@ -112,7 +112,10 @@ struct ThreadType {
 
   void* user_data = nullptr;
   ThreadMain thread_main = nullptr;
-  uint64_t affinity = 0;
+
+  // Set by the thread itself in SetThisThreadAffinity(), while others may read
+  // it.
+  std::atomic<uint64_t> affinity = 0;
 
   absl::Mutex mutex;
 
@@ -254,6 +257,18 @@ void DetachThread(Thread thread) {
 }
 
 uint64_t GetThreadAffinity(Thread thread) { return thread->affinity; }
+
+bool SetThisThreadAffinity(uint64_t affinity) {
+  if (affinity == 0 ||
+      SetThreadAffinityMask(GetCurrentThread(), affinity) == 0) {
+    return false;
+  }
+  Thread thread = GetThisThread();
+  if (thread != nullptr) {
+    thread->affinity = affinity;
+  }
+  return true;
+}
 
 std::string_view GetThreadName(Thread thread) {
   if (thread == nullptr) {

@@ -4,6 +4,7 @@
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
 #include "absl/synchronization/notification.h"
+#include "gb/thread/cpu_topology.h"
 #include "gb/thread/thread.h"
 #include "gtest/gtest.h"
 
@@ -60,6 +61,34 @@ TEST(WinThreadTest, DetachExitedThreadClosesItsHandle) {
   DetachThread(CreateExitedThread());
   EXPECT_EQ(GetHandleCount(), handle_count);
   EXPECT_EQ(GetActiveThreadCount(), 0);
+}
+
+struct OsAffinityState {
+  uint64_t affinity = 0;
+  bool set = false;
+  uint64_t os_mask = 0;
+};
+
+// Pins the thread to the affinity in the OsAffinityState at `user_data`, and
+// records the mask Windows then reports for the thread.
+void SetAndReadOsAffinity(void* user_data) {
+  auto* state = static_cast<OsAffinityState*>(user_data);
+  state->set = SetThisThreadAffinity(state->affinity);
+  GROUP_AFFINITY group_affinity = {};
+  ::GetThreadGroupAffinity(::GetCurrentThread(), &group_affinity);
+  state->os_mask = group_affinity.Mask;
+}
+
+TEST(WinThreadTest, SetThisThreadAffinityPinsToAWholeCore) {
+  for (const CpuCore& core : GetCpuTopology().cores) {
+    SCOPED_TRACE(core.affinity);
+    OsAffinityState state = {.affinity = core.affinity};
+    Thread thread = CreateThread(0, 0, &state, SetAndReadOsAffinity);
+    ASSERT_NE(thread, nullptr);
+    JoinThread(thread);
+    EXPECT_TRUE(state.set);
+    EXPECT_EQ(state.os_mask, core.affinity);
+  }
 }
 
 }  // namespace

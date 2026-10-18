@@ -149,6 +149,8 @@ void DetachThread(Thread thread) {
 
 uint64_t GetThreadAffinity(Thread thread) { return 0; }
 
+bool SetThisThreadAffinity(uint64_t affinity) { return false; }
+
 std::string_view GetThreadName(Thread thread) {
   if (thread == nullptr) {
     return "null";

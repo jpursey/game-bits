@@ -47,10 +47,16 @@ core.
   than a count and `FiberOption::kPinThreads`, which is removed. This breaks
   callers, but no project calls it.
 - `FiberJobSystem`:
-  - A new `one_per_core` option counts job threads in cores, one per core, each
-    pinned to all of its core's hardware threads. It is off by default.
+  - A new `thread_pinning` option, replacing `pin_threads`, pins each job
+    thread to a hardware thread (the default), to a whole core, or not at all.
+    Pinned to cores, a `thread_count` of zero runs one job thread per core.
   - A new `reserved_cores` option leaves that many of the fastest cores without
     job threads.
+  - `thread_count` is an exact number of job threads, or zero for one per
+    hardware thread (or core) that isn't reserved. Negative counts, which left
+    out the slowest hardware threads, are no longer supported. `reserved_cores`
+    leaves out the fastest instead, which is what a program's main thread
+    wants.
   - `GetPlacement()` reports where each job thread went.
   - By default it still runs one job thread per hardware thread, but pins them
     in a new order: fastest cores first, and the first hardware thread of every
@@ -69,13 +75,13 @@ fastest core:
 ```
 auto job_system = gb::FiberJobSystem::Create(
     gb::Context()
-        .SetValue<bool>(gb::FiberJobSystem::kKeyOnePerCore, true)
+        .SetValue<gb::ThreadPinning>(gb::FiberJobSystem::kKeyThreadPinning,
+                                     gb::ThreadPinning::kCore)
         .SetValue<int>(gb::FiberJobSystem::kKeyReservedCores, 1));
-const gb::CpuTopology& topology = gb::GetCpuTopology();
 const gb::ThreadPlacement& placement = job_system->GetPlacement();
-LOG(INFO) << "Job threads: " << gb::DescribeThreadPlacement(topology, placement);
+LOG(INFO) << "Job threads: " << gb::DescribeThreadPlacement(placement);
 gb::SetThisThreadAffinity(
-    topology.cores[placement.reserved_cores[0]].affinity);
+    gb::GetCpuTopology().cores[placement.reserved_cores[0]].affinity);
 ```
 
 ## Design
@@ -88,11 +94,16 @@ gb::SetThisThreadAffinity(
   not a description of the hardware.
 - `core_class` matches `GetThisThreadCoreClass()`, and `hardware_threads`
   matches `GetHardwareThreadAffinities()`.
+- `PlacedThread`, where one thread runs: alternatives were `ThreadSlot` and
+  `ThreadSite`, and `ThreadPlacement::Thread` would collide with `gb::Thread`.
 - `PlaceThreads()`, `ThreadPlacement`, `ThreadPlacementOptions`: "placement"
   is the backlog item's word. Alternatives were `AssignThreads()` and
   `ChooseAffinities()`.
-- `one_per_core` (`kConstraintOnePerCore`): says both what is counted and the
-  limit. Alternatives were `count_cores` and `per_core`.
+- `ThreadPinning` (`kNone`, `kHardwareThread`, `kCore`), and `thread_pinning`
+  (`kConstraintThreadPinning`) in `FiberJobSystem`: says what each thread is
+  pinned to, which also says what a count of zero counts. It replaces the
+  `pin_threads` bool and the `one_per_core` bool first planned, which
+  overlapped.
 - `reserved_cores` (`kConstraintReservedCores`): alternatives were
   `spare_cores` and `free_cores`, and "free" reads as releasing memory.
 - `SetThisThreadAffinity()` follows `GetThisThread()` and
@@ -171,45 +182,45 @@ later change to the process affinity isn't seen.
 ### Thread placement (gb/thread)
 
 ```
-struct ThreadPlacementOptions {
-  // The number of threads. Zero places one on every core (with one_per_core)
-  // or hardware thread, and a negative number that many fewer, but at least
-  // one.
-  int thread_count = 0;
+enum class ThreadPinning {
+  kNone,            // Not pinned, so they may run anywhere.
+  kHardwareThread,  // A hardware thread each.
+  kCore,            // A whole core each.
+};
 
-  // Places at most one thread on each core, with an affinity for all of the
-  // core's hardware threads, and counts thread_count in cores. Otherwise each
-  // thread gets one hardware thread.
-  bool one_per_core = false;
+struct ThreadPlacementOptions {
+  ThreadPinning pinning = ThreadPinning::kHardwareThread;
 
   // The number of cores, fastest first, left without threads. At least one
   // core is always left for threads.
   int reserved_cores = 0;
 
-  // If false, the count is the same, but no thread is pinned.
-  bool pin = true;
+  // The number of threads, or zero for one on each core (with kCore) or
+  // hardware thread that isn't reserved.
+  int thread_count = 0;
+};
+
+struct PlacedThread {
+  uint64_t affinity = 0;  // For CreateThread(), or zero if not pinned.
+  int core = -1;          // The core's index in the topology, or -1.
 };
 
 struct ThreadPlacement {
-  // For each thread, its affinity for CreateThread(), or zero if it isn't
-  // pinned.
-  std::vector<uint64_t> affinities;
+  std::vector<PlacedThread> threads;
 
-  // For each thread, the index of its core in the topology, or -1 if it isn't
-  // pinned.
-  std::vector<int> cores;
-
-  // The cores left without threads by reserved_cores, fastest first.
+  // Cores kept free of these threads for other work, such as a program's main
+  // thread.
   std::vector<int> reserved_cores;
 };
 
-ThreadPlacement PlaceThreads(const CpuTopology& topology,
-                             const ThreadPlacementOptions& options);
+// Both use GetCpuTopology() if `topology` is null.
+ThreadPlacement PlaceThreads(const ThreadPlacementOptions& options,
+                             const CpuTopology* topology = nullptr);
 
-// Such as "24 threads: cores 0-7 (class 1, 2 hardware threads each), cores
-// 8-23 (class 0); reserved: none".
-std::string DescribeThreadPlacement(const CpuTopology& topology,
-                                    const ThreadPlacement& placement);
+// Such as "30 threads: cores 1-7 (class 1, 2 threads each), cores 8-23
+// (class 0); reserved: core 0 (class 1)".
+std::string DescribeThreadPlacement(const ThreadPlacement& placement,
+                                    const CpuTopology* topology = nullptr);
 
 // Pins the calling thread to an affinity from the topology, returning false if
 // it can't be.
@@ -220,29 +231,31 @@ bool SetThisThreadAffinity(uint64_t affinity);
   `thread.h` with its platform implementations.
 - Cores are ordered fastest class first, and in processor order within a
   class. The first `reserved_cores` of them are left out.
-- With `one_per_core`, each thread gets the next core. Otherwise each gets the
-  next hardware thread, taking the first of every core before the second of
-  any.
+- With `kCore`, each thread gets the next core. Otherwise each gets the next
+  hardware thread, taking the first of every core before the second of any.
 - More threads than cores (or hardware threads) pins none, as `FiberJobSystem`
   does today.
-- On an i9-14900KF:
+- On an i9-14900KF, where P cores are performance cores and E cores are
+  efficiency cores:
 
   | Options | Threads | Placement |
   |---|---|---|
   | default | 32 | 8 P cores' first threads, 16 E cores, 8 P cores' second threads |
   | `thread_count` 24 | 24 | 8 P cores' first threads, 16 E cores |
-  | `one_per_core` | 24 | 8 P cores (both threads each), 16 E cores |
-  | `one_per_core`, `reserved_cores` 1 | 23 | P cores 1-7, 16 E cores; P core 0 reserved |
+  | `kCore` | 24 | 8 P cores (both threads each), 16 E cores |
+  | `kCore`, `reserved_cores` 1 | 23 | P cores 1-7, 16 E cores; P core 0 reserved |
 
-- `PlaceThreads()` is a function of the topology, so tests give it fake ones.
+- `PlaceThreads()` and `DescribeThreadPlacement()` take an optional topology,
+  so tests give them fake ones, while every other caller uses the process's.
 - Within a class, the fastest core is the first in processor order. Windows
   also reports a `SchedulingClass` for each CPU set
   (`GetSystemCpuSetInformation()`), which on this CPU marks the two "favored"
   performance cores (8 and 10) that boost highest, but it is undocumented, so
   this leaves it out (see the backlog's *Favored cores*).
 
-**Brittleness:** with `pin` false, reserved cores only reduce the count, as an
-unpinned thread may run anywhere. `FiberJobSystem`'s contract says so.
+**Brittleness:** with `kNone`, reserved cores only reduce the count, as an
+unpinned thread may run anywhere. `ThreadPinning` and `FiberJobSystem`'s
+contract say so.
 
 ### Fiber threads (gb/thread)
 
@@ -259,14 +272,19 @@ std::vector<FiberThread> CreateFiberThreads(
 
 ### FiberJobSystem (gb/job)
 
-- `kConstraintOnePerCore` (bool, default false) and `kConstraintReservedCores`
-  (int, default 0) pass through to `PlaceThreads()` with `thread_count` and
-  `pin_threads`, from `GetCpuTopology()`.
+- `kConstraintThreadPinning` (`ThreadPinning`, default `kHardwareThread`)
+  replaces `kConstraintPinThreads`, and `kConstraintReservedCores` (int,
+  default 0) is new. They pass through to `PlaceThreads()` with
+  `thread_count`, from `GetCpuTopology()`. Replacing `pin_threads` breaks
+  callers that set it, but no project does.
+- `thread_count` no longer takes negative values. Only the job system's own
+  tests use them.
 - `const ThreadPlacement& GetPlacement() const` reports the placement, trimmed
   to the threads actually created.
-- `one_per_core` stays off by default, so projects keep their thread count: on
+- `kHardwareThread` stays the default, so projects keep their thread count: on
   compute-bound work every hardware thread was 7-9% faster than one per core.
-  A project opts in, as Terra Diem plans to (*Job threads per physical core*).
+  A project opts in to `kCore`, as Terra Diem plans to (*Job threads per
+  physical core*).
 
 ### Waking idle job threads (gb/job)
 
@@ -301,8 +319,8 @@ stays on a few threads, leaving the rest asleep.
   microseconds) to start, where a thread spinning on an efficiency core would
   start at once. That loses only for jobs shorter than a wake. Measured before
   and after, with many small jobs and with single jobs on an idle job system.
-- With `pin_threads` false, the order says nothing about speed, but a light
-  load still stays on a few threads.
+- With `kNone`, the order says nothing about speed, but a light load still
+  stays on a few threads.
 
 **Brittleness:** the mask and semaphores are private, set in one place when a
 thread goes idle and cleared in one place when work wakes it.
@@ -376,25 +394,28 @@ Depends on: nothing.
   each core reads that core's class from `GetThisThreadCoreClass()`, and the
   hardware thread topology has a core for each hardware thread.
 
-### CL2 [ ] thread: Thread placement
+### CL2 [x] thread: Thread placement
 
 Depends on: CL1.
 
-- `thread_placement.h` and `thread_placement.cc`: `ThreadPlacementOptions`,
-  `ThreadPlacement`, `PlaceThreads()`, and `DescribeThreadPlacement()`.
+- `thread_placement.h` and `thread_placement.cc`: `ThreadPinning`,
+  `ThreadPlacementOptions`, `PlacedThread`, `ThreadPlacement`, `PlaceThreads()`,
+  and `DescribeThreadPlacement()`.
 - `thread.h`: `SetThisThreadAffinity()`, in `win_thread.cc` and
   `gen_thread.cc`.
 - Unused, so no visible change.
 
 **Verify**
 - Standard checks.
-- `thread_placement_test.cc`, on fake topologies (hybrid, uniform with SMT,
-  uniform without, one core): the affinities and cores each option gives
-  (default, positive, zero, and negative counts, more threads than slots,
-  `one_per_core`, `reserved_cores` including more than there are cores, and
-  `pin` false), and the description.
-- `thread_test.cc`: a thread pinned with `SetThisThreadAffinity()` runs only on
-  that core's hardware threads.
+- `thread_placement_test.cc`, on fake topologies (hybrid, uniform with two
+  threads per core and with one, one that cannot pin, and one with classes out
+  of processor order): the affinities and cores each option gives (each
+  `ThreadPinning`, zero and positive counts, more threads than slots, and
+  `reserved_cores` including more than there are cores and negative), and the
+  description.
+- `thread_test.cc`: `SetThisThreadAffinity()` updates `GetThreadAffinity()`,
+  and fails for zero. `win_thread_test.cc`: Windows then reports the thread's
+  affinity as the whole core it was pinned to.
 
 ### CL3 [ ] thread, job: Fiber threads take affinities
 
@@ -402,30 +423,33 @@ Depends on: CL2.
 
 - `fiber.h`, `win_fiber.cc`, `gen_fiber.cc`: `CreateFiberThreads()` takes
   affinities, and `FiberOption::kPinThreads` goes.
-- `FiberJobSystem` places its threads with `PlaceThreads()` from
-  `thread_count` and `pin_threads`, and adds `GetPlacement()`. Its threads are
-  pinned in the new order.
-- Breaks callers of `CreateFiberThreads()`, but no project calls it.
+- `FiberJobSystem` places its threads with `PlaceThreads()`, passing each
+  thread's affinity to `CreateFiberThreads()`, adds `GetPlacement()`, and
+  replaces `kConstraintPinThreads` with
+  `kConstraintThreadPinning`. `thread_count` no longer takes negative values.
+  Its threads are pinned in the new order.
+- Breaks callers of `CreateFiberThreads()`, and of `FiberJobSystem` that set
+  `pin_threads` or a negative `thread_count`, but no project does.
 
 **Verify**
 - Standard checks.
 - `fiber_test.cc`: tests of thread counts move to `thread_placement_test.cc`,
   and the rest create threads from affinities, pinned and not.
-- `fiber_job_system_test.cc`: `GetPlacement()` matches `PlaceThreads()` on the
-  real topology, and each job thread's affinity is the one placed.
+- `fiber_job_system_test.cc`: each `ThreadPinning`, with `GetPlacement()`
+  matching `PlaceThreads()` on the real topology, and each job thread's
+  affinity the one placed.
 
-### CL4 [ ] job: Placement by core
+### CL4 [ ] job: Reserved cores
 
 Depends on: CL3.
 
-- `FiberJobSystem`: `kConstraintOnePerCore` and `kConstraintReservedCores`.
+- `FiberJobSystem`: `kConstraintReservedCores`.
 
 **Verify**
 - Standard checks.
 - `fiber_job_system_test.cc`, on the real topology (skipped where it has too
-  few cores): `one_per_core` creates one job thread per core, each pinned to
-  its whole core, and `reserved_cores` leaves the fastest cores without job
-  threads, reporting them in `GetPlacement()`.
+  few cores): `reserved_cores` leaves the fastest cores without job threads,
+  with each `ThreadPinning`, and reports them in `GetPlacement()`.
 
 ### CL5 [ ] job: Wake the fastest idle job thread
 

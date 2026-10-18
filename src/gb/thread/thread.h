@@ -99,14 +99,26 @@ void JoinThread(Thread thread);
 // same thread, and thread-safe otherwise.
 void DetachThread(Thread thread);
 
-// Returns the affinity for the thread.
+// Returns the affinity for the thread, from CreateThread() or a later
+// SetThisThreadAffinity() on the thread.
 //
 // If the thread does not have an assigned hardware thread affinity this will
 // return zero.
 //
-// This function is thread-compatible with other functions that operate on the
+// This function is thread-compatible with JoinThread and DetachThread on the
 // same thread, and thread-safe otherwise.
 uint64_t GetThreadAffinity(Thread thread);
+
+// Pins the calling thread to `affinity`, which is one from
+// GetHardwareThreadAffinities() or GetCpuTopology() (see cpu_topology.h).
+//
+// This works on any thread, including the program's main thread, which
+// CreateThread() did not create. It returns false, leaving the thread as it
+// was, if `affinity` is zero or the thread cannot be pinned to it, which is
+// always the case if the current platform cannot pin threads.
+//
+// This function is thread-safe.
+bool SetThisThreadAffinity(uint64_t affinity);
 
 // Gets or sets the name of a thread.
 //

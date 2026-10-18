@@ -114,6 +114,42 @@ TEST_F(ThreadTest, CreateThreadWithAffinityWithStackSize) {
   EXPECT_EQ(state.counter, 1);
 }
 
+struct SetAffinityState {
+  uint64_t affinity = 0;
+  bool set = false;
+  uint64_t thread_affinity = 0;
+};
+
+// Pins the thread to the affinity in the SetAffinityState at `user_data`, and
+// records the result.
+void SetAffinity(void* user_data) {
+  auto* state = static_cast<SetAffinityState*>(user_data);
+  state->set = SetThisThreadAffinity(state->affinity);
+  state->thread_affinity = GetThreadAffinity(GetThisThread());
+}
+
+TEST_F(ThreadTest, SetThisThreadAffinityPinsTheThread) {
+  auto affinities = GetHardwareThreadAffinities();
+  if (affinities.empty()) {
+    GTEST_SKIP() << "Threads cannot be pinned on this platform";
+  }
+  SetAffinityState state = {.affinity = affinities.back()};
+  Thread thread = CreateThread(0, 0, &state, SetAffinity);
+  ASSERT_NE(thread, nullptr);
+  JoinThread(thread);
+  EXPECT_TRUE(state.set);
+  EXPECT_EQ(state.thread_affinity, affinities.back());
+}
+
+TEST_F(ThreadTest, SetThisThreadAffinityFailsForZero) {
+  SetAffinityState state;
+  Thread thread = CreateThread(0, 0, &state, SetAffinity);
+  ASSERT_NE(thread, nullptr);
+  JoinThread(thread);
+  EXPECT_FALSE(state.set);
+  EXPECT_EQ(state.thread_affinity, 0);
+}
+
 TEST_F(ThreadTest, ThreadIsActiveUntilJoined) {
   Thread thread = CreateThread(0, 0, nullptr, +[](void* user_data) {});
   ASSERT_NE(thread, nullptr);

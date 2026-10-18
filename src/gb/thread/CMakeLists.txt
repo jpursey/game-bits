@@ -51,11 +51,15 @@ set(gb_thread_SOURCE
   cpu_topology_internal.cc cpu_topology_internal.h
   fiber.h
   thread.h
+  thread_placement.cc thread_placement.h
   thread_types.h
   ${gb_thread_internal_SOURCE}
 )
 
 set(gb_thread_DEPS
+  absl::algorithm_container
+  absl::span
+  absl::strings
   gb_base
   ${gb_thread_internal_DEPS}
 )
@@ -68,6 +72,7 @@ set(gb_thread_TEST_SOURCE
   cpu_ticks_test.cc
   cpu_topology_test.cc
   fiber_test.cc
+  thread_placement_test.cc
   thread_test.cc
   ${gb_thread_internal_TEST_SOURCE}
 )
