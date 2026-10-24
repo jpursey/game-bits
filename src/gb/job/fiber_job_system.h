@@ -7,15 +7,18 @@
 #define GB_JOB_FIBER_JOB_SYSTEM_H_
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include "absl/base/optimization.h"
 #include "absl/base/thread_annotations.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/functional/any_invocable.h"
 #include "absl/synchronization/mutex.h"
+#include "absl/synchronization/notification.h"
 #include "absl/time/time.h"
 #include "absl/types/span.h"
 #include "concurrentqueue.h"
@@ -39,7 +42,9 @@ namespace gb {
 // internal management and a crash or hang is likely.
 //
 // Job threads that have no work spin briefly, and then sleep until a job is
-// ready to run.
+// ready to run. A job ready to run wakes the idle job thread that is first in
+// GetPlacement(), so while job threads are pinned, jobs start on the fastest
+// idle core.
 //
 // This class is thread-safe.
 class FiberJobSystem : public JobSystem {
@@ -144,6 +149,11 @@ class FiberJobSystem : public JobSystem {
   // it).
   const ThreadPlacement& GetPlacement() const;
 
+  // Returns the number of job threads waiting for work. Once it equals
+  // GetThreadCount(), every job thread is idle, so the next job runs on the
+  // first job thread in GetPlacement().
+  int GetIdleThreadCount() const;
+
  protected:
   bool DoRun(std::string_view name, JobCounter* counter, Context* context,
              absl::AnyInvocable<void()> callback) override;
@@ -195,6 +205,19 @@ class FiberJobSystem : public JobSystem {
     FiberState* fiber = nullptr;
   };
 
+  // A thread that runs jobs. Each is on its own cache line, as other threads
+  // signal its semaphore while it waits on it.
+  struct alignas(ABSL_CACHELINE_SIZE) JobThread {
+    Thread thread = nullptr;
+
+    // Signaled to wake the thread when it is idle (see idle_threads_), and
+    // when the job system stops.
+    moodycamel::LightweightSemaphore wake;
+
+    // Set while the thread waits on `wake`, past its last check for work.
+    std::atomic<bool> waiting = false;
+  };
+
   template <typename Type>
   using ConcurrentQueue = moodycamel::ConcurrentQueue<Type>;
 
@@ -205,6 +228,21 @@ class FiberJobSystem : public JobSystem {
   // (from JobCounter::Decrement()) to resume, and wakes threads to run them.
   void EnqueueJob(Job* job);
   void EnqueueFibers(absl::Span<void* const> states);
+
+  // Counts `count` jobs or fibers just queued, and wakes up to that many idle
+  // job threads to run them.
+  void WakeThreadsForWork(int count);
+
+  // Wakes the idle job thread that is first in placement order, returning
+  // false if no job thread is idle.
+  bool WakeIdleThread();
+
+  // Claims one of the jobs or fibers that are queued, returning false if there
+  // are none.
+  bool ClaimWork();
+
+  // Returns the index in job_threads_ of the job thread this is running on.
+  int GetThisThreadIndex() const;
 
   // Waits for a job to run or a waiting fiber to resume, or for the job system
   // to stop.
@@ -232,9 +270,13 @@ class FiberJobSystem : public JobSystem {
   absl::Duration shutdown_timeout_ = kDefaultShutdownTimeout;
   Clock* clock_ = nullptr;
 
-  // All threads used to run jobs, and where each runs.
-  std::vector<Thread> threads_;
+  // All threads used to run jobs, and where each runs, in placement order.
+  std::vector<JobThread> job_threads_;
   ThreadPlacement placement_;
+
+  // Notified once job_threads_ holds every job thread, which the job threads
+  // wait for before they run jobs, so they can find their own index.
+  absl::Notification threads_created_;
 
   // Total number of fibers created. This only increases, as fibers are
   // recycled.
@@ -257,13 +299,17 @@ class FiberJobSystem : public JobSystem {
   absl::Mutex named_jobs_mutex_;
   absl::flat_hash_set<Job*> named_jobs_ ABSL_GUARDED_BY(named_jobs_mutex_);
 
-  // Signaled once for each job or fiber added to pending_jobs_ or
-  // pending_fibers_ (see EnqueueJob() and EnqueueFibers()), and once for each
-  // thread when the job system has stopped.
-  moodycamel::LightweightSemaphore work_semaphore_;
+  // The number of jobs and fibers in pending_jobs_ and pending_fibers_ that no
+  // job thread has claimed yet, and a bit for each idle job thread, by its
+  // index in job_threads_ (see WaitForWork()). Every queuer and idle thread
+  // uses both, so they share a cache line of their own, which pending_jobs_
+  // ends.
+  alignas(ABSL_CACHELINE_SIZE) std::atomic<int> queued_work_ = 0;
+  static_assert(kMaxThreadCount <= 64);
+  std::atomic<uint64_t> idle_threads_ = 0;
 
   // Pending jobs waiting for a fiber to become available.
-  ConcurrentQueue<Job*> pending_jobs_;
+  alignas(ABSL_CACHELINE_SIZE) ConcurrentQueue<Job*> pending_jobs_;
 
   // Pending fibers with an active job that are waiting for a thread to become
   // available.

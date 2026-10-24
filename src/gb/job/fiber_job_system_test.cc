@@ -5,6 +5,7 @@
 
 #include "gb/job/fiber_job_system.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -122,6 +123,13 @@ class FiberJobSystemTest : public ::testing::TestWithParam<TestParams> {
                          .thread_count = GetParam().thread_count});
   }
 
+  // Waits until every job thread is idle.
+  void WaitUntilIdle() {
+    while (job_system_->GetIdleThreadCount() < job_system_->GetThreadCount()) {
+      std::this_thread::yield();
+    }
+  }
+
   std::unique_ptr<FiberJobSystem> job_system_;
 };
 
@@ -161,6 +169,56 @@ TEST_P(FiberJobSystemTest, JobThreadsHaveTheirPlacedAffinities) {
   job_system_.reset();
   EXPECT_THAT(affinities,
               UnorderedElementsAreArray(GetAffinities(GetExpectedPlacement())));
+}
+
+TEST_P(FiberJobSystemTest, JobsOnAnIdleJobSystemRunOnTheFirstJobThread) {
+  const ThreadPlacement& placement = job_system_->GetPlacement();
+  if (placement.threads[0].affinity == 0) {
+    GTEST_SKIP() << "Job threads are not pinned, so can't be told apart";
+  }
+  for (int i = 0; i < 10; ++i) {
+    WaitUntilIdle();
+    uint64_t affinity = 0;
+    absl::Notification done;
+    EXPECT_TRUE(job_system_->Run([&affinity, &done] {
+      affinity = GetThreadAffinity(GetThisThread());
+      done.Notify();
+    }));
+    done.WaitForNotification();
+    EXPECT_EQ(affinity, placement.threads[0].affinity) << "Job " << i;
+  }
+}
+
+TEST_P(FiberJobSystemTest, JobsRunOnTheFirstIdleJobThread) {
+  const ThreadPlacement placement = job_system_->GetPlacement();
+  if (placement.threads[0].affinity == 0) {
+    GTEST_SKIP() << "Job threads are not pinned, so can't be told apart";
+  }
+
+  // Each job holds its job thread until the end, so the next job runs on the
+  // next job thread.
+  const int job_count = std::min(job_system_->GetThreadCount(), 4);
+  std::vector<uint64_t> affinities(job_count, 0);
+  std::atomic<int> started_count = 0;
+  absl::Notification release;
+  WaitUntilIdle();
+  for (int i = 0; i < job_count; ++i) {
+    EXPECT_TRUE(job_system_->Run([&affinities, &started_count, &release, i] {
+      affinities[i] = GetThreadAffinity(GetThisThread());
+      ++started_count;
+      release.WaitForNotification();
+    }));
+    while (started_count < i + 1) {
+      std::this_thread::yield();
+    }
+  }
+  release.Notify();
+
+  // Destroying the job system waits for the jobs, which use these locals.
+  job_system_.reset();
+  std::vector<uint64_t> expected = GetAffinities(placement);
+  expected.resize(job_count);
+  EXPECT_EQ(affinities, expected);
 }
 
 TEST_P(FiberJobSystemTest, RunJob) {

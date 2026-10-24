@@ -10,6 +10,7 @@
 #include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "absl/memory/memory.h"
+#include "absl/numeric/bits.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
 #include "gb/thread/fiber.h"
@@ -101,6 +102,7 @@ bool FiberJobSystem::Init(ValidatedContext context) {
   auto fiber_threads = CreateFiberThreads(
       placement_.threads, options, 0, this, +[](void* user_data) {
         auto* const job_system = static_cast<FiberJobSystem*>(user_data);
+        job_system->threads_created_.WaitForNotification();
         const Fiber fiber = GetThisFiber();
         GB_FIBER_JOB_SYSTEM_LOG << fiber << ": Starting fiber";
         job_system->SetThreadState();
@@ -112,13 +114,14 @@ bool FiberJobSystem::Init(ValidatedContext context) {
     return false;
   }
 
-  threads_.reserve(fiber_threads.size());
-  for (const auto& fiber_thread : fiber_threads) {
-    threads_.push_back(fiber_thread.thread);
+  const int thread_count = static_cast<int>(fiber_threads.size());
+  job_threads_ = std::vector<JobThread>(thread_count);
+  for (int i = 0; i < thread_count; ++i) {
+    job_threads_[i].thread = fiber_threads[i].thread;
   }
-  placement_.threads.resize(fiber_threads.size());
-  total_fiber_count_.store(static_cast<int>(fiber_threads.size()),
-                           std::memory_order_release);
+  placement_.threads.resize(thread_count);
+  total_fiber_count_.store(thread_count, std::memory_order_release);
+  threads_created_.Notify();
   GB_FIBER_JOB_SYSTEM_LOG << "Job threads: "
                           << DescribeThreadPlacement(placement_);
   return true;
@@ -148,10 +151,11 @@ FiberJobSystem::~FiberJobSystem() {
     clock_->SleepFor(absl::Milliseconds(1));
   }
   stopped_.store(true, std::memory_order_release);
-  work_semaphore_.signal(static_cast<int>(threads_.size()));
-
-  for (auto thread : threads_) {
-    JoinThread(thread);
+  for (JobThread& job_thread : job_threads_) {
+    job_thread.wake.signal();
+  }
+  for (JobThread& job_thread : job_threads_) {
+    JoinThread(job_thread.thread);
   }
   GB_JOB_CHECK(unused_fibers_.size_approx() ==
                total_fiber_count_.load(std::memory_order_acquire));
@@ -176,7 +180,7 @@ std::string_view FiberJobSystem::GetJobName(Job* job) {
 }
 
 int FiberJobSystem::GetThreadCount() const {
-  return static_cast<int>(threads_.size());
+  return static_cast<int>(job_threads_.size());
 }
 
 int FiberJobSystem::GetFiberCount() const {
@@ -187,9 +191,29 @@ const ThreadPlacement& FiberJobSystem::GetPlacement() const {
   return placement_;
 }
 
+int FiberJobSystem::GetIdleThreadCount() const {
+  int count = 0;
+  for (const JobThread& job_thread : job_threads_) {
+    if (job_thread.waiting.load(std::memory_order_acquire)) {
+      ++count;
+    }
+  }
+  return count;
+}
+
+//------------------------------------------------------------------------------
+// Queued work wakes the idle job thread that is first in placement order. A job
+// thread that runs out of work sets its bit in idle_threads_ before checking
+// queued_work_ once more, and whoever queues work increments queued_work_
+// before reading idle_threads_. Every one of these is sequentially consistent,
+// so either the job thread sees the work or the queuer sees the idle thread.
+// Only the job thread sets its bit, and only whoever then clears it signals
+// the thread's semaphore, so the thread's next wait takes every signal.
+//------------------------------------------------------------------------------
+
 void FiberJobSystem::EnqueueJob(Job* job) {
   pending_jobs_.enqueue(job);
-  work_semaphore_.signal();
+  WakeThreadsForWork(1);
 }
 
 void FiberJobSystem::EnqueueFibers(absl::Span<void* const> states) {
@@ -198,20 +222,79 @@ void FiberJobSystem::EnqueueFibers(absl::Span<void* const> states) {
     state->wait_counter = nullptr;
     pending_fibers_.enqueue(state);
   }
-  work_semaphore_.signal(static_cast<int>(states.size()));
+  WakeThreadsForWork(static_cast<int>(states.size()));
+}
+
+void FiberJobSystem::WakeThreadsForWork(int count) {
+  queued_work_.fetch_add(count, std::memory_order_seq_cst);
+  for (int i = 0; i < count; ++i) {
+    if (!WakeIdleThread()) {
+      break;
+    }
+  }
+}
+
+bool FiberJobSystem::WakeIdleThread() {
+  uint64_t idle = idle_threads_.load(std::memory_order_seq_cst);
+  while (idle != 0) {
+    // Clear the lowest set bit, which is the first idle thread's.
+    if (idle_threads_.compare_exchange_weak(idle, idle & (idle - 1),
+                                            std::memory_order_seq_cst)) {
+      job_threads_[absl::countr_zero(idle)].wake.signal();
+      return true;
+    }
+  }
+  return false;
+}
+
+bool FiberJobSystem::ClaimWork() {
+  int count = queued_work_.load(std::memory_order_relaxed);
+  while (count > 0) {
+    if (queued_work_.compare_exchange_weak(count, count - 1,
+                                           std::memory_order_acquire,
+                                           std::memory_order_relaxed)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+int FiberJobSystem::GetThisThreadIndex() const {
+  const Thread thread = GetThisThread();
+  const int thread_count = static_cast<int>(job_threads_.size());
+  int index = 0;
+  while (index < thread_count && job_threads_[index].thread != thread) {
+    ++index;
+  }
+  CHECK(index < thread_count)
+      << "FiberJobSystem: " << GetThreadName(thread) << " is not a job thread";
+  return index;
 }
 
 FiberJobSystem::Work FiberJobSystem::WaitForWork() {
-  // Each signal is for one queued fiber or job, unless the job system has
-  // stopped. The queue may not show a new entry right away, so this retries
-  // until it does.
-  work_semaphore_.wait();
   Work work;
   while (!stopped_.load(std::memory_order_acquire)) {
-    if (pending_fibers_.try_dequeue(work.fiber) ||
-        pending_jobs_.try_dequeue(work.job)) {
-      break;
+    if (ClaimWork()) {
+      // The queue may not show the claimed job or fiber right away, so this
+      // retries until it does.
+      while (!pending_fibers_.try_dequeue(work.fiber) &&
+             !pending_jobs_.try_dequeue(work.job)) {
+      }
+      return work;
     }
+
+    // If work was queued before this thread was marked idle, this wakes the
+    // first idle thread to run it, which may be this one, rather than taking
+    // it, so work always goes to the first idle thread.
+    const int index = GetThisThreadIndex();
+    JobThread& job_thread = job_threads_[index];
+    idle_threads_.fetch_or(uint64_t{1} << index, std::memory_order_seq_cst);
+    if (queued_work_.load(std::memory_order_seq_cst) > 0) {
+      WakeIdleThread();
+    }
+    job_thread.waiting.store(true, std::memory_order_release);
+    job_thread.wake.wait();
+    job_thread.waiting.store(false, std::memory_order_relaxed);
   }
   return work;
 }

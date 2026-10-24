@@ -27,7 +27,9 @@ set(gb_job_TEST_DEPS
 
 set(gb_job_DEPS
   absl::any_invocable
+  absl::bits
   absl::check
+  absl::core_headers
   absl::flat_hash_set
   absl::inlined_vector
   absl::log

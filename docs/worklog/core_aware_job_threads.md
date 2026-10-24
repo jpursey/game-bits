@@ -305,30 +305,58 @@ on an efficiency core, and take 1.6-2 times as long, as on a performance core.
 Instead, each job thread gets its own semaphore, and the idle threads are a
 64-bit mask indexed in placement order, which is fastest first
 (`kMaxThreadCount` is 64):
-- A thread with no work sets its bit, checks the queues once more, and then
-  waits on its own semaphore, spinning briefly first as now.
+- A count of queued work stands in for the shared semaphore's count. A thread
+  claims one before taking a job or fiber from the queues, and retries the
+  queues until it gets one, as `ConcurrentQueue` may not show an entry another
+  thread just queued.
+- A thread with no work to claim sets its bit, and checks the count once more.
+  If there is work, it wakes the first idle thread (which may be itself) rather
+  than taking it, so work always goes to the first idle thread. Then it waits
+  on its own semaphore, spinning briefly first as now.
 - Queuing a job, or a waiting job's fiber to resume, clears the lowest set bit
   and signals that thread. If no bit is set, every thread is busy, and the
-  first to finish takes the work from the queue.
+  first to finish takes the work.
 - Stopping signals every thread.
+- A job thread finds its bit by looking itself up in the job system's threads
+  (`GetThisThread()` is safe on fibers, which move between threads), so job
+  threads wait at start until the job system has them all.
+- Each job thread's handle, semaphore, and a flag it sets while waiting share
+  a cache line of their own, and the count and mask share another.
+  `GetIdleThreadCount()` counts the flags rather than the mask's bits: a thread
+  sets its flag only after its last check for work, so once every flag is set,
+  a queued job wakes only the first thread, which tests rely on.
 
 So while threads are idle, work goes to the performance cores first, then the
 efficiency cores, then (one per hardware thread) the performance cores' second
 SMT threads, which would slow the job already on that core. A light load also
 stays on a few threads, leaving the rest asleep.
 
-- Correctness: a thread sets its bit before its last check of the queues, and a
-  queuer pushes before reading the mask, with a full fence in each, so either
-  the queuer sees the bit or the thread sees the work. A thread that finds work
-  after setting its bit clears its bit if it is still set. If a queuer cleared
-  it first, the thread's semaphore was signaled, and it takes that signal
-  before running the work, so none is left over.
+- Correctness: a thread sets its bit before its last check of the count, and a
+  queuer increments the count before reading the mask, all sequentially
+  consistent, so either the queuer sees the bit or the thread sees the work.
+  Only the thread sets its bit, and only whoever then clears it signals its
+  semaphore, so every signal is taken by the wait that follows.
 - Performance: a sleeping thread on a performance core takes an OS wake (some
   microseconds) to start, where a thread spinning on an efficiency core would
-  start at once. That loses only for jobs shorter than a wake. Measured before
-  and after, with many small jobs and with single jobs on an idle job system.
+  start at once. That loses only for jobs shorter than a wake.
 - With `kNone`, the order says nothing about speed, but a light load still
   stays on a few threads.
+
+Measured on the i9-14900KF (2026-10-24) with 32 job threads (the default) in
+Release, with a scratch benchmark:
+
+| | Before | After |
+|---|---|---|
+| 200,000 empty jobs run from the main thread | 284 ms | 102-113 ms |
+| 200,000 empty jobs run from a job, which waits for them | 270-370 ms | 84-91 ms |
+| A single job on an idle job system, until it starts (median, 90th percentile) | 27-29 µs, 62 µs | 17-21 µs, 35-38 µs |
+| A single job right after the last one finished | 5-6 µs | 0.2-0.4 µs |
+| Light load (1, 4 or 8 jobs of 100 µs at a time): share on performance cores | 50% | 100% |
+
+Before, Windows woke the threads waiting on the shared semaphore in turn, so a
+light load cycled through all 32 job threads, half of them on performance
+cores. Throughput improved as well, as a job queued while every thread is busy
+signals nothing, where before each signaled the shared semaphore.
 
 **Brittleness:** the mask and semaphores are private, set in one place when a
 thread goes idle and cleared in one place when work wakes it.
@@ -465,7 +493,7 @@ Depends on: CL3.
   with a core reserved. `thread_placement_test.cc` already covers which cores
   are reserved.
 
-### CL5 [ ] job: Wake the fastest idle job thread
+### CL5 [x] job: Wake the fastest idle job thread
 
 Depends on: CL3.
 
@@ -483,4 +511,4 @@ Depends on: CL3.
 - Performance, with a scratch benchmark before and after: throughput of many
   small jobs, the time for a single job to start on an idle job system, and on
   the i9-14900KF, the share of a light load's jobs that run on performance
-  cores.
+  cores (results under *Waking idle job threads*).
