@@ -65,17 +65,22 @@ std::vector<int> GetCores(const ThreadPlacement& placement) {
 
 struct TestParams {
   TestParams() = default;
-  TestParams(int in_thread_count, ThreadPinning in_pinning)
-      : thread_count(in_thread_count), pinning(in_pinning) {}
+  TestParams(int in_thread_count, ThreadPinning in_pinning,
+             int in_reserved_cores = 0)
+      : thread_count(in_thread_count),
+        pinning(in_pinning),
+        reserved_cores(in_reserved_cores) {}
 
   template <typename Sink>
   friend void AbslStringify(Sink& sink, const TestParams& params) {
-    absl::Format(&sink, "{thread_count=%d, pinning=%s}", params.thread_count,
-                 GetPinningName(params.pinning));
+    absl::Format(&sink, "{thread_count=%d, pinning=%s, reserved_cores=%d}",
+                 params.thread_count, GetPinningName(params.pinning),
+                 params.reserved_cores);
   }
 
   int thread_count = 0;
   ThreadPinning pinning = ThreadPinning::kHardwareThread;
+  int reserved_cores = 0;
 };
 
 class FiberJobSystemTest : public ::testing::TestWithParam<TestParams> {
@@ -104,6 +109,8 @@ class FiberJobSystemTest : public ::testing::TestWithParam<TestParams> {
                            GetParam().thread_count)
             .SetValue<ThreadPinning>(FiberJobSystem::kKeyThreadPinning,
                                      GetParam().pinning)
+            .SetValue<int>(FiberJobSystem::kKeyReservedCores,
+                           GetParam().reserved_cores)
             .SetValue<bool>(FiberJobSystem::kKeySetFiberNames, true)
             .Build());
   }
@@ -111,6 +118,7 @@ class FiberJobSystemTest : public ::testing::TestWithParam<TestParams> {
   // Returns where a job system made by CreateJobSystem() places its threads.
   ThreadPlacement GetExpectedPlacement() const {
     return PlaceThreads({.pinning = GetParam().pinning,
+                         .reserved_cores = GetParam().reserved_cores,
                          .thread_count = GetParam().thread_count});
   }
 
@@ -593,9 +601,14 @@ TEST_P(FiberJobSystemTest, VerboseLoggingDisabled) {
 }
 
 TestParams test_params[] = {
-    {1, ThreadPinning::kNone}, {2, ThreadPinning::kHardwareThread},
-    {0, ThreadPinning::kNone}, {0, ThreadPinning::kHardwareThread},
+    {1, ThreadPinning::kNone},
+    {2, ThreadPinning::kHardwareThread},
+    {0, ThreadPinning::kNone},
+    {0, ThreadPinning::kHardwareThread},
     {0, ThreadPinning::kCore},
+    {0, ThreadPinning::kNone, 1},
+    {0, ThreadPinning::kHardwareThread, 1},
+    {0, ThreadPinning::kCore, 1},
 };
 INSTANTIATE_TEST_SUITE_P(All, FiberJobSystemTest, ValuesIn(test_params));
 

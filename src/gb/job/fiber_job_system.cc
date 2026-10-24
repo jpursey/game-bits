@@ -77,6 +77,7 @@ bool FiberJobSystem::Init(ValidatedContext context) {
 
   ThreadPlacementOptions placement_options = {
       .pinning = context.GetValue<ThreadPinning>(kKeyThreadPinning),
+      .reserved_cores = context.GetValue<int>(kKeyReservedCores),
       .thread_count = context.GetValue<int>(kKeyThreadCount),
   };
   if (placement_options.thread_count < 0) {

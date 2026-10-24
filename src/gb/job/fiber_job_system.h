@@ -50,8 +50,9 @@ class FiberJobSystem : public JobSystem {
 
   // OPTIONAL: The number of threads the job system runs jobs on (max
   // concurrency), or zero (the default) for one on each hardware thread, or on
-  // each core if they are pinned to cores (see kConstraintThreadPinning). It
-  // is never more than kMaxThreadCount. If it is negative, Create() fails.
+  // each core if they are pinned to cores (see kConstraintThreadPinning), that
+  // isn't reserved (see kConstraintReservedCores). It is never more than
+  // kMaxThreadCount. If it is negative, Create() fails.
   static inline constexpr int kMaxThreadCount = 64;
   static inline constexpr const char* kKeyThreadCount = "thread_count";
   static GB_CONTEXT_CONSTRAINT_NAMED(kConstraintThreadCount, kInOptional, int,
@@ -66,6 +67,16 @@ class FiberJobSystem : public JobSystem {
                                              kInOptional, ThreadPinning,
                                              kKeyThreadPinning,
                                              ThreadPinning::kHardwareThread);
+
+  // OPTIONAL: The number of the fastest cores to leave without job threads, for
+  // other work such as a program's main thread (zero by default). At least one
+  // core is always left for job threads, and GetPlacement() reports which
+  // cores are reserved. Job threads that aren't pinned (ThreadPinning::kNone)
+  // may still run on reserved cores, so then this only reduces their number.
+  static inline constexpr const char* kKeyReservedCores = "reserved_cores";
+  static GB_CONTEXT_CONSTRAINT_NAMED_DEFAULT(kConstraintReservedCores,
+                                             kInOptional, int,
+                                             kKeyReservedCores, 0);
 
   // OPTIONAL: If set to true, thread and fiber names will be updated with the
   // name of the job they are running. If this is not set, then job names will
@@ -94,8 +105,8 @@ class FiberJobSystem : public JobSystem {
 
   using CreateContract =
       ContextContract<kConstraintThreadCount, kConstraintThreadPinning,
-                      kConstraintSetFiberNames, kConstraintShutdownTimeout,
-                      kConstraintClock>;
+                      kConstraintReservedCores, kConstraintSetFiberNames,
+                      kConstraintShutdownTimeout, kConstraintClock>;
 
   //----------------------------------------------------------------------------
   // Construction / Destruction

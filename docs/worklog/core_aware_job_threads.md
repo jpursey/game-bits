@@ -450,7 +450,7 @@ Depends on: CL2.
   affinity the one placed. The default pins to hardware threads, and a negative
   `thread_count` fails.
 
-### CL4 [ ] job: Reserved cores
+### CL4 [x] job: Reserved cores
 
 Depends on: CL3.
 
@@ -458,9 +458,12 @@ Depends on: CL3.
 
 **Verify**
 - Standard checks.
-- `fiber_job_system_test.cc`, on the real topology (skipped where it has too
-  few cores): `reserved_cores` leaves the fastest cores without job threads,
-  with each `ThreadPinning`, and reports them in `GetPlacement()`.
+- `fiber_job_system_test.cc`: the parameterized suite also runs with one
+  reserved core for each `ThreadPinning`, so `GetPlacement()` matches
+  `PlaceThreads()` on the real topology (reserved cores included), each job
+  thread's affinity is the one placed, and every other job system test passes
+  with a core reserved. `thread_placement_test.cc` already covers which cores
+  are reserved.
 
 ### CL5 [ ] job: Wake the fastest idle job thread
 
