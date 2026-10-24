@@ -532,6 +532,32 @@ comment in `parser_program.h` documents it. Tests: adjacent and spaced tokens,
 a comment between them, a line break between them, at the start of a parse, a
 named and a repeated adjacent item, and the error for a space.
 
+## Case of user tokens
+
+- **Layers:** parse
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Requested by:** OZ-3 *Program assembler*
+- **Background:** `LexerConfig::UserToken` in `lexer_config.h`, and
+  `Lexer::ParseIdent` and `Lexer::ParseUserToken` in `lexer.cc`
+
+A lexer can force identifiers to upper or lower case (`kIdentForceUpper` and
+`kIdentForceLower`), but a user token's value is always its text as written.
+OZ-3's local labels (`@loop`) are a user token, in a lexer that forces
+identifiers to upper case so that names are case-insensitive. So every place
+that reads a local label turns it to upper case itself, and one that forgets
+makes `@Loop` and `@loop` different labels.
+
+Add a case option to `UserToken`, so each user token says how its value is
+cased: as written (the default), upper, or lower. It is per token rather than a
+`LexerFlag`, as one user token may want upper case and another lower, or one as
+written. `ParseUserToken` applies it as `ParseIdent` does, through
+`modified_text_`, and the token's raw text (`GetTokenText`) stays as written. A
+new field with a default at the end of `UserToken` keeps existing
+configurations as they are. Tests: each case, two user tokens with different
+cases in one lexer, the raw text unchanged, and the default.
+
 ## Validate chunk contents
 
 - **Layers:** file, resource
