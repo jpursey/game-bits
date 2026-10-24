@@ -12,6 +12,7 @@
 
 #include "absl/types/span.h"
 #include "gb/thread/cpu_topology.h"
+#include "gb/thread/thread.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
@@ -23,6 +24,7 @@ using ::testing::ElementsAre;
 using ::testing::ElementsAreArray;
 using ::testing::IsEmpty;
 using ::testing::UnorderedElementsAre;
+using ::testing::UnorderedElementsAreArray;
 
 uint64_t Bit(int processor) { return uint64_t{1} << processor; }
 
@@ -295,6 +297,18 @@ TEST(ThreadPlacementTest, NoTopologyUsesTheProcessTopology) {
   EXPECT_EQ(GetCores(placement), GetCores(process_placement));
   EXPECT_EQ(DescribeThreadPlacement(placement),
             DescribeThreadPlacement(placement, &GetCpuTopology()));
+}
+
+TEST(ThreadPlacementTest, DefaultPlacesEveryHardwareThreadOfTheProcess) {
+  const ThreadPlacement placement = PlaceThreads({});
+
+  EXPECT_EQ(placement.threads.size(), GetMaxConcurrency());
+  const absl::Span<const uint64_t> hardware_threads =
+      GetHardwareThreadAffinities();
+  if (!hardware_threads.empty()) {
+    EXPECT_THAT(GetAffinities(placement),
+                UnorderedElementsAreArray(hardware_threads));
+  }
 }
 
 }  // namespace

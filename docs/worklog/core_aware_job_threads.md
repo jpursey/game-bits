@@ -43,9 +43,9 @@ core.
   `DescribeThreadPlacement()` writes a placement as one line for logs.
 - `SetThisThreadAffinity()` pins the calling thread, so a program can place its
   main thread, which `CreateThread()` didn't make.
-- `CreateFiberThreads()` takes the affinity of each thread to create, rather
-  than a count and `FiberOption::kPinThreads`, which is removed. This breaks
-  callers, but no project calls it.
+- `CreateFiberThreads()` takes where each thread to create runs, as the
+  `threads` of a placement, rather than a count and `FiberOption::kPinThreads`,
+  which is removed. This breaks callers, but no project calls it.
 - `FiberJobSystem`:
   - A new `thread_pinning` option, replacing `pin_threads`, pins each job
     thread to a hardware thread (the default), to a whole core, or not at all.
@@ -54,9 +54,9 @@ core.
     job threads.
   - `thread_count` is an exact number of job threads, or zero for one per
     hardware thread (or core) that isn't reserved. Negative counts, which left
-    out the slowest hardware threads, are no longer supported. `reserved_cores`
-    leaves out the fastest instead, which is what a program's main thread
-    wants.
+    out the slowest hardware threads, are no longer supported, and make
+    `Create()` fail. `reserved_cores` leaves out the fastest instead, which is
+    what a program's main thread wants.
   - `GetPlacement()` reports where each job thread went.
   - By default it still runs one job thread per hardware thread, but pins them
     in a new order: fastest cores first, and the first hardware thread of every
@@ -260,15 +260,22 @@ contract say so.
 ### Fiber threads (gb/thread)
 
 ```
-// Creates a fiber running on a new thread for each affinity (zero for a
-// thread that isn't pinned).
+// Creates a fiber running on a new thread for each of `threads`, pinned to its
+// affinity (or not pinned if that is zero).
 std::vector<FiberThread> CreateFiberThreads(
-    absl::Span<const uint64_t> affinities, FiberOptions options,
+    absl::Span<const PlacedThread> threads, FiberOptions options,
     uint32_t stack_size, void* user_data, FiberMain fiber_main);
 ```
 
 - Counting threads and pinning them moves to `PlaceThreads()`, so
   `FiberOption::kPinThreads` goes.
+- It takes `PlacedThread`s rather than bare affinities, so a placement passes
+  straight through (`PlaceThreads(options).threads`), and a default
+  `PlacedThread` isn't pinned, so `std::vector<PlacedThread>(count)` makes
+  `count` unpinned threads without a list of zeros. It ignores each thread's
+  `core`. An overload taking `ThreadPlacementOptions` was set aside: the job
+  system keeps its placement (for `GetPlacement()`, and to order idle threads),
+  so only tests would use it.
 
 ### FiberJobSystem (gb/job)
 
@@ -277,8 +284,9 @@ std::vector<FiberThread> CreateFiberThreads(
   default 0) is new. They pass through to `PlaceThreads()` with
   `thread_count`, from `GetCpuTopology()`. Replacing `pin_threads` breaks
   callers that set it, but no project does.
-- `thread_count` no longer takes negative values. Only the job system's own
-  tests use them.
+- `thread_count` no longer takes negative values: `Create()` logs an error and
+  returns null, so a caller relying on the old meaning finds out at once. Only
+  the job system's own tests use them.
 - `const ThreadPlacement& GetPlacement() const` reports the placement, trimmed
   to the threads actually created.
 - `kHardwareThread` stays the default, so projects keep their thread count: on
@@ -417,14 +425,14 @@ Depends on: CL1.
   and fails for zero. `win_thread_test.cc`: Windows then reports the thread's
   affinity as the whole core it was pinned to.
 
-### CL3 [ ] thread, job: Fiber threads take affinities
+### CL3 [x] thread, job: Fiber threads take affinities
 
 Depends on: CL2.
 
 - `fiber.h`, `win_fiber.cc`, `gen_fiber.cc`: `CreateFiberThreads()` takes
-  affinities, and `FiberOption::kPinThreads` goes.
-- `FiberJobSystem` places its threads with `PlaceThreads()`, passing each
-  thread's affinity to `CreateFiberThreads()`, adds `GetPlacement()`, and
+  placed threads, and `FiberOption::kPinThreads` goes.
+- `FiberJobSystem` places its threads with `PlaceThreads()`, passing the
+  placement's threads to `CreateFiberThreads()`, adds `GetPlacement()`, and
   replaces `kConstraintPinThreads` with
   `kConstraintThreadPinning`. `thread_count` no longer takes negative values.
   Its threads are pinned in the new order.
@@ -433,11 +441,14 @@ Depends on: CL2.
 
 **Verify**
 - Standard checks.
-- `fiber_test.cc`: tests of thread counts move to `thread_placement_test.cc`,
-  and the rest create threads from affinities, pinned and not.
+- `fiber_test.cc`: tests of thread counts move to `thread_placement_test.cc`
+  (with one that the default placement of the real topology has a thread on
+  every hardware thread), and the rest create threads from placed threads:
+  none, unpinned, pinned to each hardware thread, and pinned to each core.
 - `fiber_job_system_test.cc`: each `ThreadPinning`, with `GetPlacement()`
   matching `PlaceThreads()` on the real topology, and each job thread's
-  affinity the one placed.
+  affinity the one placed. The default pins to hardware threads, and a negative
+  `thread_count` fails.
 
 ### CL4 [ ] job: Reserved cores
 

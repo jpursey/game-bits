@@ -216,27 +216,12 @@ void SetFiberVerboseLogging(bool enabled) {
 #endif  // GB_BUILD_ENABLE_THREAD_LOGGING
 }
 
-std::vector<FiberThread> CreateFiberThreads(int thread_count,
-                                            FiberOptions options,
-                                            uint32_t stack_size,
-                                            void* user_data,
-                                            FiberMain fiber_main) {
-  auto affinities = GetHardwareThreadAffinities();
-  const int max_concurrency = static_cast<int>(affinities.size());
-  if (thread_count <= 0) {
-    thread_count = max_concurrency + thread_count;
-    if (thread_count <= 0) {
-      thread_count = 1;
-    }
-  }
-  if (options.IsSet(FiberOption::kPinThreads) &&
-      thread_count > max_concurrency) {
-    options.Clear(FiberOption::kPinThreads);
-  }
+std::vector<FiberThread> CreateFiberThreads(
+    absl::Span<const PlacedThread> threads, FiberOptions options,
+    uint32_t stack_size, void* user_data, FiberMain fiber_main) {
+  const int thread_count = static_cast<int>(threads.size());
   GB_FIBER_LOG << "Creating " << thread_count << " fiber threads of stack size "
-               << stack_size << " that are "
-               << (options.IsSet(FiberOption::kPinThreads) ? "pinned"
-                                                           : "not pinned");
+               << stack_size;
 
   std::vector<FiberThread> fiber_threads;
   fiber_threads.reserve(thread_count);
@@ -256,10 +241,8 @@ std::vector<FiberThread> CreateFiberThreads(int thread_count,
     if (start_info.fiber == nullptr) {
       break;
     }
-    const uint64_t affinity =
-        (options.IsSet(FiberOption::kPinThreads) ? affinities[i] : 0);
-    start_info.win_thread =
-        gb::CreateThread(affinity, 4096, &start_info, FiberThreadStartRoutine);
+    start_info.win_thread = gb::CreateThread(
+        threads[i].affinity, 4096, &start_info, FiberThreadStartRoutine);
     if (start_info.win_thread == nullptr) {
       LOG(ERROR) << "Failed to create fiber thread " << i;
       gb::DeleteFiber(start_info.fiber);

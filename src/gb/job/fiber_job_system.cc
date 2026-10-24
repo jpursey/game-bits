@@ -5,7 +5,6 @@
 
 #include "gb/job/fiber_job_system.h"
 
-#include <algorithm>
 #include <utility>
 
 #include "absl/log/check.h"
@@ -76,26 +75,30 @@ bool FiberJobSystem::Init(ValidatedContext context) {
     clock_ = RealtimeClock::GetClock();
   }
 
-  int thread_count = context.GetValue<int>(kKeyThreadCount);
-  if (thread_count <= 0) {
-    thread_count = std::max(GetMaxConcurrency() + thread_count, 1);
+  ThreadPlacementOptions placement_options = {
+      .pinning = context.GetValue<ThreadPinning>(kKeyThreadPinning),
+      .thread_count = context.GetValue<int>(kKeyThreadCount),
+  };
+  if (placement_options.thread_count < 0) {
+    LOG(ERROR) << "FiberJobSystem thread count cannot be negative ("
+               << placement_options.thread_count << ").";
+    return false;
   }
-  if (thread_count > kMaxThreadCount) {
-    LOG(WARNING) << "Too many threads (" << thread_count
+  placement_ = PlaceThreads(placement_options);
+  if (static_cast<int>(placement_.threads.size()) > kMaxThreadCount) {
+    LOG(WARNING) << "Too many threads (" << placement_.threads.size()
                  << ") for FiberJobSystem. Clamping to " << kMaxThreadCount
                  << " threads.";
-    thread_count = kMaxThreadCount;
+    placement_options.thread_count = kMaxThreadCount;
+    placement_ = PlaceThreads(placement_options);
   }
 
   FiberOptions options;
-  if (context.GetValue<bool>(kKeyPinThreads)) {
-    options += FiberOption::kPinThreads;
-  }
   if (set_fiber_names_) {
     options += FiberOption::kSetThreadName;
   }
   auto fiber_threads = CreateFiberThreads(
-      thread_count, options, 0, this, +[](void* user_data) {
+      placement_.threads, options, 0, this, +[](void* user_data) {
         auto* const job_system = static_cast<FiberJobSystem*>(user_data);
         const Fiber fiber = GetThisFiber();
         GB_FIBER_JOB_SYSTEM_LOG << fiber << ": Starting fiber";
@@ -112,8 +115,11 @@ bool FiberJobSystem::Init(ValidatedContext context) {
   for (const auto& fiber_thread : fiber_threads) {
     threads_.push_back(fiber_thread.thread);
   }
+  placement_.threads.resize(fiber_threads.size());
   total_fiber_count_.store(static_cast<int>(fiber_threads.size()),
                            std::memory_order_release);
+  GB_FIBER_JOB_SYSTEM_LOG << "Job threads: "
+                          << DescribeThreadPlacement(placement_);
   return true;
 }
 
@@ -174,6 +180,10 @@ int FiberJobSystem::GetThreadCount() const {
 
 int FiberJobSystem::GetFiberCount() const {
   return total_fiber_count_.load(std::memory_order_acquire);
+}
+
+const ThreadPlacement& FiberJobSystem::GetPlacement() const {
+  return placement_;
 }
 
 void FiberJobSystem::EnqueueJob(Job* job) {

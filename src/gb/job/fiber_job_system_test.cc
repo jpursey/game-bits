@@ -5,19 +5,22 @@
 
 #include "gb/job/fiber_job_system.h"
 
-#include <algorithm>
 #include <atomic>
+#include <cstdint>
 #include <memory>
+#include <string_view>
 #include <thread>
 #include <vector>
 
 #include "absl/strings/str_format.h"
+#include "absl/synchronization/mutex.h"
 #include "absl/synchronization/notification.h"
 #include "gb/base/context_builder.h"
 #include "gb/base/fake_clock.h"
 #include "gb/test/log_recorder.h"
 #include "gb/thread/fiber.h"
 #include "gb/thread/thread.h"
+#include "gb/thread/thread_placement.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
@@ -29,21 +32,50 @@ using ::testing::Field;
 using ::testing::HasSubstr;
 using ::testing::IsEmpty;
 using ::testing::Not;
+using ::testing::UnorderedElementsAreArray;
 using ::testing::ValuesIn;
+
+std::string_view GetPinningName(ThreadPinning pinning) {
+  switch (pinning) {
+    case ThreadPinning::kNone:
+      return "kNone";
+    case ThreadPinning::kHardwareThread:
+      return "kHardwareThread";
+    case ThreadPinning::kCore:
+      return "kCore";
+  }
+  return "unknown";
+}
+
+std::vector<uint64_t> GetAffinities(const ThreadPlacement& placement) {
+  std::vector<uint64_t> affinities;
+  for (const PlacedThread& thread : placement.threads) {
+    affinities.push_back(thread.affinity);
+  }
+  return affinities;
+}
+
+std::vector<int> GetCores(const ThreadPlacement& placement) {
+  std::vector<int> cores;
+  for (const PlacedThread& thread : placement.threads) {
+    cores.push_back(thread.core);
+  }
+  return cores;
+}
 
 struct TestParams {
   TestParams() = default;
-  TestParams(int in_thread_count, bool in_pin_threads)
-      : thread_count(in_thread_count), pin_threads(in_pin_threads) {}
+  TestParams(int in_thread_count, ThreadPinning in_pinning)
+      : thread_count(in_thread_count), pinning(in_pinning) {}
 
   template <typename Sink>
   friend void AbslStringify(Sink& sink, const TestParams& params) {
-    absl::Format(&sink, "{thread_count=%d, pin_threads=%v}",
-                 params.thread_count, params.pin_threads);
+    absl::Format(&sink, "{thread_count=%d, pinning=%s}", params.thread_count,
+                 GetPinningName(params.pinning));
   }
 
   int thread_count = 0;
-  bool pin_threads = false;
+  ThreadPinning pinning = ThreadPinning::kHardwareThread;
 };
 
 class FiberJobSystemTest : public ::testing::TestWithParam<TestParams> {
@@ -56,12 +88,8 @@ class FiberJobSystemTest : public ::testing::TestWithParam<TestParams> {
     FiberJobSystem::SetVerboseLogging(true);
     job_system_ = CreateJobSystem();
     ASSERT_NE(job_system_, nullptr);
-    int thread_count = GetParam().thread_count;
-    if (thread_count <= 0) {
-      thread_count = std::max(GetMaxConcurrency() + thread_count, 1);
-    }
     ASSERT_EQ(job_system_->GetThreadCount(),
-              std::min(thread_count, FiberJobSystem::kMaxThreadCount));
+              GetExpectedPlacement().threads.size());
   }
   void TearDown() override {
     job_system_.reset();
@@ -74,10 +102,16 @@ class FiberJobSystemTest : public ::testing::TestWithParam<TestParams> {
         ContextBuilder()
             .SetValue<int>(FiberJobSystem::kKeyThreadCount,
                            GetParam().thread_count)
-            .SetValue<bool>(FiberJobSystem::kKeyPinThreads,
-                            GetParam().pin_threads)
+            .SetValue<ThreadPinning>(FiberJobSystem::kKeyThreadPinning,
+                                     GetParam().pinning)
             .SetValue<bool>(FiberJobSystem::kKeySetFiberNames, true)
             .Build());
+  }
+
+  // Returns where a job system made by CreateJobSystem() places its threads.
+  ThreadPlacement GetExpectedPlacement() const {
+    return PlaceThreads({.pinning = GetParam().pinning,
+                         .thread_count = GetParam().thread_count});
   }
 
   std::unique_ptr<FiberJobSystem> job_system_;
@@ -85,6 +119,40 @@ class FiberJobSystemTest : public ::testing::TestWithParam<TestParams> {
 
 TEST_P(FiberJobSystemTest, MainThreadIsNotJob) {
   EXPECT_EQ(JobSystem::Get(), nullptr);
+}
+
+TEST_P(FiberJobSystemTest, PlacementIsFromPlaceThreads) {
+  const ThreadPlacement expected = GetExpectedPlacement();
+  const ThreadPlacement& placement = job_system_->GetPlacement();
+  EXPECT_EQ(GetAffinities(placement), GetAffinities(expected));
+  EXPECT_EQ(GetCores(placement), GetCores(expected));
+  EXPECT_EQ(placement.reserved_cores, expected.reserved_cores);
+}
+
+TEST_P(FiberJobSystemTest, JobThreadsHaveTheirPlacedAffinities) {
+  // Each job blocks its thread until every thread has a job, so each job runs
+  // on a different job thread.
+  const int thread_count = job_system_->GetThreadCount();
+  absl::Mutex mutex;
+  std::vector<uint64_t> affinities;
+  absl::Notification all_started;
+  for (int i = 0; i < thread_count; ++i) {
+    EXPECT_TRUE(job_system_->Run([&] {
+      {
+        absl::MutexLock lock(&mutex);
+        affinities.push_back(GetThreadAffinity(GetThisThread()));
+        if (static_cast<int>(affinities.size()) == thread_count) {
+          all_started.Notify();
+        }
+      }
+      all_started.WaitForNotificationWithTimeout(absl::Seconds(10));
+    }));
+  }
+
+  // Destroying the job system waits for the jobs, which use these locals.
+  job_system_.reset();
+  EXPECT_THAT(affinities,
+              UnorderedElementsAreArray(GetAffinities(GetExpectedPlacement())));
 }
 
 TEST_P(FiberJobSystemTest, RunJob) {
@@ -525,12 +593,34 @@ TEST_P(FiberJobSystemTest, VerboseLoggingDisabled) {
 }
 
 TestParams test_params[] = {
-    {1, false},
-    {2, true},
-    {0, false},
-    {-1, true},
+    {1, ThreadPinning::kNone}, {2, ThreadPinning::kHardwareThread},
+    {0, ThreadPinning::kNone}, {0, ThreadPinning::kHardwareThread},
+    {0, ThreadPinning::kCore},
 };
 INSTANTIATE_TEST_SUITE_P(All, FiberJobSystemTest, ValuesIn(test_params));
+
+TEST(FiberJobSystemCreateTest, ThreadsArePinnedToHardwareThreadsByDefault) {
+  if (!SupportsFibers()) {
+    GTEST_SKIP();
+  }
+  auto job_system = FiberJobSystem::Create(ContextBuilder().Build());
+  ASSERT_NE(job_system, nullptr);
+  const ThreadPlacement& placement = job_system->GetPlacement();
+  const ThreadPlacement expected = PlaceThreads({});
+  EXPECT_EQ(GetAffinities(placement), GetAffinities(expected));
+  EXPECT_EQ(GetCores(placement), GetCores(expected));
+}
+
+TEST(FiberJobSystemCreateTest, NegativeThreadCountFails) {
+  if (!SupportsFibers()) {
+    GTEST_SKIP();
+  }
+  EXPECT_EQ(FiberJobSystem::Create(
+                ContextBuilder()
+                    .SetValue<int>(FiberJobSystem::kKeyThreadCount, -1)
+                    .Build()),
+            nullptr);
+}
 
 TEST(FiberJobSystemDeathTest, DestroyTimesOut) {
   if (!SupportsFibers()) {

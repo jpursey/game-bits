@@ -18,6 +18,7 @@
 #include "absl/types/span.h"
 #include "gb/container/queue.h"
 #include "gb/thread/thread.h"
+#include "gb/thread/thread_placement.h"
 #include "gtest/gtest.h"
 
 namespace gb {
@@ -37,139 +38,68 @@ void WaitAndDeleteFibers(absl::Span<const FiberThread> fiber_threads) {
   }
 }
 
+// Fiber main that counts the fibers run, in the std::atomic<int> it is given.
+void CountFiber(void* user_data) {
+  ++*static_cast<std::atomic<int>*>(user_data);
+}
+
+// Creates a fiber thread for each of `threads`, and expects each to run, with
+// its own affinity.
+void ExpectCreatesThreads(absl::Span<const PlacedThread> threads) {
+  std::atomic<int> counter = 0;
+  auto fibers = CreateFiberThreads(threads, {}, 0, &counter, CountFiber);
+  ASSERT_EQ(fibers.size(), threads.size());
+  for (int i = 0; i < static_cast<int>(fibers.size()); ++i) {
+    EXPECT_EQ(GetThreadAffinity(fibers[i].thread), threads[i].affinity) << i;
+  }
+  WaitAndDeleteFibers(fibers);
+  EXPECT_EQ(counter, static_cast<int>(fibers.size()));
+}
+
 class FiberTest : public ::testing::Test {
  public:
   FiberTest() { SetFiberVerboseLogging(true); }
   ~FiberTest() override { SetFiberVerboseLogging(false); }
 };
 
-TEST_F(FiberTest, CreateMaxConcurrencyThreadCount) {
+TEST_F(FiberTest, CreateNoThreads) {
   CHECK_FIBER_SUPPORT();
-  struct State {
-    State() = default;
-    std::atomic<int> counter = 0;
-  } state;
-  auto fibers = CreateFiberThreads(
-      0, {}, 0, &state, +[](void* user_data) {
-        auto& state = *static_cast<State*>(user_data);
-        ++state.counter;
-      });
-  EXPECT_EQ(fibers.size(), GetMaxConcurrency());
-  WaitAndDeleteFibers(fibers);
-  EXPECT_EQ(state.counter, static_cast<int>(fibers.size()));
+  ExpectCreatesThreads({});
 }
 
-TEST_F(FiberTest, CreateMaxConcurrencyMinusOneThreadCount) {
+TEST_F(FiberTest, CreateUnpinnedThreads) {
   CHECK_FIBER_SUPPORT();
-  struct State {
-    State() = default;
-    std::atomic<int> counter = 0;
-  } state;
-  auto fibers = CreateFiberThreads(
-      -1, {}, 0, &state, +[](void* user_data) {
-        auto& state = *static_cast<State*>(user_data);
-        ++state.counter;
-      });
-  EXPECT_EQ(fibers.size(), std::max(GetMaxConcurrency() - 1, 1));
-  WaitAndDeleteFibers(fibers);
-  EXPECT_EQ(state.counter, static_cast<int>(fibers.size()));
+  ExpectCreatesThreads(std::vector<PlacedThread>(3));
 }
 
-TEST_F(FiberTest, CreateMaxConcurrencyMinusAllThreadCount) {
+TEST_F(FiberTest, CreateThreadsPinnedToHardwareThreads) {
   CHECK_FIBER_SUPPORT();
-  struct State {
-    State() = default;
-    std::atomic<int> counter = 0;
-  } state;
-  auto fibers = CreateFiberThreads(
-      -GetMaxConcurrency(), {}, 0, &state, +[](void* user_data) {
-        auto& state = *static_cast<State*>(user_data);
-        ++state.counter;
-      });
-  EXPECT_EQ(fibers.size(), 1);
-  WaitAndDeleteFibers(fibers);
-  EXPECT_EQ(state.counter, static_cast<int>(fibers.size()));
+  const ThreadPlacement placement = PlaceThreads({});
+  if (placement.threads[0].affinity == 0) {
+    GTEST_SKIP() << "Threads cannot be pinned";
+  }
+  ExpectCreatesThreads(placement.threads);
 }
 
-TEST_F(FiberTest, CreateOneThreadCount) {
+TEST_F(FiberTest, CreateThreadsPinnedToCores) {
   CHECK_FIBER_SUPPORT();
-  struct State {
-    State() = default;
-    std::atomic<int> counter = 0;
-  } state;
-  auto fibers = CreateFiberThreads(
-      1, {}, 0, &state, +[](void* user_data) {
-        auto& state = *static_cast<State*>(user_data);
-        ++state.counter;
-      });
-  EXPECT_EQ(fibers.size(), 1);
-  WaitAndDeleteFibers(fibers);
-  EXPECT_EQ(state.counter, static_cast<int>(fibers.size()));
-}
-
-TEST_F(FiberTest, CreateMaxConcurrencyPlusOneThreadCount) {
-  CHECK_FIBER_SUPPORT();
-  struct State {
-    State() = default;
-    std::atomic<int> counter = 0;
-  } state;
-  auto fibers = CreateFiberThreads(
-      GetMaxConcurrency() + 1, {}, 0, &state, +[](void* user_data) {
-        auto& state = *static_cast<State*>(user_data);
-        ++state.counter;
-      });
-  EXPECT_EQ(fibers.size(), GetMaxConcurrency() + 1);
-  WaitAndDeleteFibers(fibers);
-  EXPECT_EQ(state.counter, static_cast<int>(fibers.size()));
-}
-
-TEST_F(FiberTest, CreateMaxConcurrencyThreadCountPinned) {
-  CHECK_FIBER_SUPPORT();
-  struct State {
-    State() = default;
-    std::atomic<int> counter = 0;
-  } state;
-  auto fibers = CreateFiberThreads(
-      0, FiberOption::kPinThreads, 0, &state, +[](void* user_data) {
-        auto& state = *static_cast<State*>(user_data);
-        ++state.counter;
-      });
-  EXPECT_EQ(fibers.size(), GetMaxConcurrency());
-  WaitAndDeleteFibers(fibers);
-  EXPECT_EQ(state.counter, static_cast<int>(fibers.size()));
-}
-
-TEST_F(FiberTest, CreateMaxConcurrencyPlusOneThreadCountPinned) {
-  CHECK_FIBER_SUPPORT();
-  struct State {
-    State() = default;
-    std::atomic<int> counter = 0;
-  } state;
-  auto fibers = CreateFiberThreads(
-      GetMaxConcurrency() + 1, FiberOption::kPinThreads, 0, &state,
-      +[](void* user_data) {
-        auto& state = *static_cast<State*>(user_data);
-        ++state.counter;
-      });
-  EXPECT_EQ(fibers.size(), GetMaxConcurrency() + 1);
-  WaitAndDeleteFibers(fibers);
-  EXPECT_EQ(state.counter, static_cast<int>(fibers.size()));
+  const ThreadPlacement placement =
+      PlaceThreads({.pinning = ThreadPinning::kCore});
+  if (placement.threads[0].affinity == 0) {
+    GTEST_SKIP() << "Threads cannot be pinned";
+  }
+  ExpectCreatesThreads(placement.threads);
 }
 
 TEST_F(FiberTest, CreateThreadsWithExplicitStackSize) {
   CHECK_FIBER_SUPPORT();
-  struct State {
-    State() = default;
-    std::atomic<int> counter = 0;
-  } state;
-  auto fibers = CreateFiberThreads(
-      0, {}, 32 * 1024, &state, +[](void* user_data) {
-        auto& state = *static_cast<State*>(user_data);
-        ++state.counter;
-      });
+  std::atomic<int> counter = 0;
+  auto fibers =
+      CreateFiberThreads(std::vector<PlacedThread>(GetMaxConcurrency()), {},
+                         32 * 1024, &counter, CountFiber);
   EXPECT_EQ(fibers.size(), GetMaxConcurrency());
   WaitAndDeleteFibers(fibers);
-  EXPECT_EQ(state.counter, static_cast<int>(fibers.size()));
+  EXPECT_EQ(counter, static_cast<int>(fibers.size()));
 }
 
 TEST_F(FiberTest, GetThisFiber) {
@@ -179,7 +109,7 @@ TEST_F(FiberTest, GetThisFiber) {
     std::atomic<Fiber> fiber = nullptr;
   } state;
   auto fibers = CreateFiberThreads(
-      1, {}, 0, &state, +[](void* user_data) {
+      std::vector<PlacedThread>(1), {}, 0, &state, +[](void* user_data) {
         auto& state = *static_cast<State*>(user_data);
         while (state.fiber == nullptr) {
           std::this_thread::yield();
@@ -231,7 +161,7 @@ TEST_F(FiberTest, SwitchToFiberAndExit) {
     std::atomic<Fiber> fiber = nullptr;
   } state;
   auto fibers = CreateFiberThreads(
-      1, {}, 0, &state, +[](void* user_data) {
+      std::vector<PlacedThread>(1), {}, 0, &state, +[](void* user_data) {
         auto& state = *static_cast<State*>(user_data);
         while (state.fiber == nullptr) {
           std::this_thread::yield();
@@ -258,7 +188,7 @@ TEST_F(FiberTest, SwitchToFiberAndBackThenExit) {
     std::atomic<Fiber> fiber = nullptr;
   } state;
   auto fibers = CreateFiberThreads(
-      1, {}, 0, &state, +[](void* user_data) {
+      std::vector<PlacedThread>(1), {}, 0, &state, +[](void* user_data) {
         auto& state = *static_cast<State*>(user_data);
         while (state.fiber == nullptr) {
           std::this_thread::yield();
@@ -291,7 +221,7 @@ TEST_F(FiberTest, SwapThreadsAndExit) {
     std::atomic<Fiber> fiber_3 = nullptr;
   } state;
   auto fiber_1 = CreateFiberThreads(
-      1, {}, 0, &state, +[](void* user_data) {
+      std::vector<PlacedThread>(1), {}, 0, &state, +[](void* user_data) {
         auto& state = *static_cast<State*>(user_data);
         while (state.fiber_1 == nullptr) {
           std::this_thread::yield();
@@ -305,7 +235,7 @@ TEST_F(FiberTest, SwapThreadsAndExit) {
       });
   ASSERT_EQ(fiber_1.size(), 1);
   auto fiber_2 = CreateFiberThreads(
-      1, {}, 0, &state, +[](void* user_data) {
+      std::vector<PlacedThread>(1), {}, 0, &state, +[](void* user_data) {
         auto& state = *static_cast<State*>(user_data);
         while (state.fiber_2 == nullptr) {
           std::this_thread::yield();
@@ -361,7 +291,7 @@ TEST_F(FiberTest, GetThisThreadAfterFiberMovesThreads) {
     DeleteFiber(state.moving_fiber);
   };
   auto fiber_1 = CreateFiberThreads(
-      1, {}, 0, &state, +[](void* user_data) {
+      std::vector<PlacedThread>(1), {}, 0, &state, +[](void* user_data) {
         auto& state = *static_cast<State*>(user_data);
         state.return_fiber = GetThisFiber();
         EXPECT_TRUE(SwitchToFiber(state.moving_fiber));
@@ -379,7 +309,7 @@ TEST_F(FiberTest, GetThisThreadAfterFiberMovesThreads) {
     WaitAndDeleteFibers(fiber_1);
   };
   auto fiber_2 = CreateFiberThreads(
-      1, {}, 0, &state, +[](void* user_data) {
+      std::vector<PlacedThread>(1), {}, 0, &state, +[](void* user_data) {
         auto& state = *static_cast<State*>(user_data);
         state.first_visit_done.WaitForNotification();
         state.return_fiber = GetThisFiber();
@@ -462,7 +392,8 @@ TEST_F(FiberTest, IsFiberRunningNotStarted) {
 TEST_F(FiberTest, IsFiberRunningWithinFiber) {
   CHECK_FIBER_SUPPORT();
   auto fiber_threads = CreateFiberThreads(
-      1, FiberOption::kSetThreadName, 4096, nullptr, +[](void* user_data) {
+      std::vector<PlacedThread>(1), FiberOption::kSetThreadName, 4096, nullptr,
+      +[](void* user_data) {
         EXPECT_EQ(GetFiberState(GetThisFiber()), FiberState::kRunning);
       });
   ASSERT_EQ(fiber_threads.size(), 1);
@@ -485,7 +416,8 @@ TEST_F(FiberTest, IsFiberRunningAfterSwitch) {
         state.wait.WaitForNotification();
       });
   auto fiber_threads = CreateFiberThreads(
-      1, FiberOption::kSetThreadName, 4096, &state, +[](void* user_data) {
+      std::vector<PlacedThread>(1), FiberOption::kSetThreadName, 4096, &state,
+      +[](void* user_data) {
         auto& state = *static_cast<State*>(user_data);
         SwitchToFiber(state.next_fiber);
       });
@@ -565,11 +497,15 @@ TEST_F(FiberTest, ThreadAbuse) {
     }
   };
 
-  state.mutex.Lock();
+  // A thread pinned to each hardware thread, or four unpinned threads if there
+  // are fewer.
   const int num_threads = std::max(4, GetMaxConcurrency());
-  auto fiber_threads = CreateFiberThreads(
-      num_threads, {FiberOption::kPinThreads, FiberOption::kSetThreadName},
-      4096, &state, state.callback);
+  const ThreadPlacement placement = PlaceThreads({.thread_count = num_threads});
+
+  state.mutex.Lock();
+  auto fiber_threads =
+      CreateFiberThreads(placement.threads, FiberOption::kSetThreadName, 4096,
+                         &state, state.callback);
   for (const auto& fiber_thread : fiber_threads) {
     state.all_fibers.push_back(fiber_thread.fiber);
   }
@@ -650,8 +586,8 @@ TEST(FiberStressTest, SwitchFibersAcrossThreads) {
     ASSERT_NE(fiber, nullptr);
     state.fibers.push_back(fiber);
   }
-  auto fiber_threads =
-      CreateFiberThreads(kThreadCount, {}, 0, &state, fiber_main);
+  auto fiber_threads = CreateFiberThreads(
+      std::vector<PlacedThread>(kThreadCount), {}, 0, &state, fiber_main);
   ASSERT_EQ(fiber_threads.size(), kThreadCount);
   for (const auto& fiber_thread : fiber_threads) {
     state.fibers.push_back(fiber_thread.fiber);

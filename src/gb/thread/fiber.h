@@ -6,10 +6,13 @@
 #ifndef GB_THREAD_FIBER_H_
 #define GB_THREAD_FIBER_H_
 
+#include <cstdint>
 #include <string_view>
 #include <vector>
 
+#include "absl/types/span.h"
 #include "gb/base/flags.h"
+#include "gb/thread/thread_placement.h"
 #include "gb/thread/thread_types.h"
 
 namespace gb {
@@ -35,12 +38,8 @@ struct FiberThread {
   Thread thread = nullptr;
 };
 
-// Options when creating fiber threads.
+// Options when creating fibers.
 enum class FiberOption {
-  // Fibers created as part of a thread should be pinned to a core. This has no
-  // effect when creating a suspended fiber (CreateFiber).
-  kPinThreads,
-
   // When a fiber with this option becomes active, it will set the thread's name
   // to its own name.
   kSetThreadName,
@@ -79,15 +78,11 @@ void SetFiberVerboseLogging(bool enabled);
 
 // Creates a set of fibers, each running on a separate thread.
 //
-// 'thread_count' determines the number of threads to create as follows (where
-// max_concurrency is the number of available hardware threads for the running
-// process):
-//   - Positive value: Creates thread_count threads/fibers
-//   - Zero: Creates max_concurrency threads/fibers.
-//   - Negative: Creates max(max_concurrency + thread_count, 1) threads/fibers.
-// If 'FiberOption::kPinThreads' is set AND the number of threads created is
-// less than or equal to max_concurrency, then each thread will be bound to a
-// specific core.
+// 'threads' says where each thread to create runs, usually from PlaceThreads()
+// (see thread_placement.h). Each thread is pinned to its affinity, as for
+// CreateThread, or isn't pinned if that is zero. A default PlacedThread isn't
+// pinned, so std::vector<PlacedThread>(count) creates 'count' threads that
+// aren't pinned.
 //
 // 'stack_size' determines the minimum size of the stack for every thread. If
 // this is zero (or if setting the stack size is not supported by the running
@@ -99,18 +94,17 @@ void SetFiberVerboseLogging(bool enabled);
 // DeleteFiber.
 //
 // Returns the successfully created set of fibers, each running on their own
-// thread. If fibers are not supported or creation fails this may be less than
-// the requested number of fibers (potentially empty). Both the threads and
-// fibers returned must be managed by the caller. DeleteFiber must be called to
-// delete each fiber when it is not running in a thread, and either DetachThread
-// or JoinThread must eventually be called on each thread.
+// thread, in the order of 'threads'. If fibers are not supported or creation
+// fails, this stops at the first thread that fails, so it returns the fibers
+// for the threads before it (potentially none). Both the threads and fibers
+// returned must be managed by the caller. DeleteFiber must be called to delete
+// each fiber when it is not running in a thread, and either DetachThread or
+// JoinThread must eventually be called on each thread.
 //
 // This function is thread-safe.
-std::vector<FiberThread> CreateFiberThreads(int thread_count,
-                                            FiberOptions options,
-                                            uint32_t stack_size,
-                                            void* user_data,
-                                            FiberMain fiber_main);
+std::vector<FiberThread> CreateFiberThreads(
+    absl::Span<const PlacedThread> threads, FiberOptions options,
+    uint32_t stack_size, void* user_data, FiberMain fiber_main);
 
 // Creates a suspended fiber.
 //

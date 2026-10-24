@@ -25,6 +25,7 @@
 #include "gb/base/validated_context.h"
 #include "gb/job/job_system.h"
 #include "gb/job/job_types.h"
+#include "gb/thread/thread_placement.h"
 #include "gb/thread/thread_types.h"
 #include "lightweightsemaphore.h"
 
@@ -47,30 +48,24 @@ class FiberJobSystem : public JobSystem {
   // Contract constraints
   //----------------------------------------------------------------------------
 
-  // OPTIONAL: This determines the number of threads the job system will run
-  // jobs on (max concurrency). The value is interpreted as follows:
-  // - If set and positive, this is the number of threads created.
-  // - If not set or is set to zero, the number of threads created is set to the
-  //   number of available hardware threads. This does not implicitly pin job
-  //   threads to hardware threads, see kConstraintPinThreads.
-  // - If set and negative, the number of threads created is set to the
-  //   number of available hardware threads reduced by its magnitude (minimum
-  //   of 1). This does not implicitly pin job threads to hardware threads, see
-  //   kConstraintPinThreads.
-  // This will never result in more than kMaxThreadCount threads.
+  // OPTIONAL: The number of threads the job system runs jobs on (max
+  // concurrency), or zero (the default) for one on each hardware thread, or on
+  // each core if they are pinned to cores (see kConstraintThreadPinning). It
+  // is never more than kMaxThreadCount. If it is negative, Create() fails.
   static inline constexpr int kMaxThreadCount = 64;
   static inline constexpr const char* kKeyThreadCount = "thread_count";
   static GB_CONTEXT_CONSTRAINT_NAMED(kConstraintThreadCount, kInOptional, int,
                                      kKeyThreadCount);
 
-  // OPTIONAL: If set to true (the default value), job threads will
-  // preferentially be pinned to corresponding hardware threads. If
-  // the requested thread count is specified to be larger than the maximum
-  // hardware concurrency, then this constraint is ignored and threads will not
-  // be pinned.
-  static inline constexpr const char* kKeyPinThreads = "pin_threads";
-  static GB_CONTEXT_CONSTRAINT_NAMED_DEFAULT(kConstraintPinThreads, kInOptional,
-                                             bool, kKeyPinThreads, true);
+  // OPTIONAL: What each job thread is pinned to (see ThreadPinning): a hardware
+  // thread of its own (the default), a core of its own, or nothing. Pinned job
+  // threads take the fastest cores first. If there are more job threads than
+  // hardware threads (or cores), none of them are pinned.
+  static inline constexpr const char* kKeyThreadPinning = "thread_pinning";
+  static GB_CONTEXT_CONSTRAINT_NAMED_DEFAULT(kConstraintThreadPinning,
+                                             kInOptional, ThreadPinning,
+                                             kKeyThreadPinning,
+                                             ThreadPinning::kHardwareThread);
 
   // OPTIONAL: If set to true, thread and fiber names will be updated with the
   // name of the job they are running. If this is not set, then job names will
@@ -98,7 +93,7 @@ class FiberJobSystem : public JobSystem {
   static GB_CONTEXT_CONSTRAINT(kConstraintClock, kInOptional, Clock);
 
   using CreateContract =
-      ContextContract<kConstraintThreadCount, kConstraintPinThreads,
+      ContextContract<kConstraintThreadCount, kConstraintThreadPinning,
                       kConstraintSetFiberNames, kConstraintShutdownTimeout,
                       kConstraintClock>;
 
@@ -133,6 +128,10 @@ class FiberJobSystem : public JobSystem {
 
   int GetThreadCount() const;
   int GetFiberCount() const;
+
+  // Returns where each job thread runs (see DescribeThreadPlacement() to log
+  // it).
+  const ThreadPlacement& GetPlacement() const;
 
  protected:
   bool DoRun(std::string_view name, JobCounter* counter, Context* context,
@@ -222,8 +221,9 @@ class FiberJobSystem : public JobSystem {
   absl::Duration shutdown_timeout_ = kDefaultShutdownTimeout;
   Clock* clock_ = nullptr;
 
-  // All threads used to run jobs.
+  // All threads used to run jobs, and where each runs.
   std::vector<Thread> threads_;
+  ThreadPlacement placement_;
 
   // Total number of fibers created. This only increases, as fibers are
   // recycled.
