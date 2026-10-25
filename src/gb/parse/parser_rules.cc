@@ -5,6 +5,7 @@
 
 #include "gb/parse/parser_rules.h"
 
+#include "absl/log/check.h"
 #include "absl/strings/str_cat.h"
 #include "gb/parse/parser.h"
 
@@ -110,6 +111,12 @@ bool ParserRuleName::Validate(ValidateContext& context) const {
   return true;
 }
 
+bool ParserRuleName::MatchesEmpty(const ParserRules& rules) const {
+  const ParserRuleItem* rule = rules.GetRule(rule_name_);
+  DCHECK(rule != nullptr);  // Handled during rule validation.
+  return rule->MatchesEmpty(rules);
+}
+
 parser_internal::ParseMatch ParserRuleName::Match(Parser& parser) const {
   return parser.MatchRuleItem(*this);
 }
@@ -178,7 +185,11 @@ bool ParserGroup::Validate(ValidateContext& context) const {
     }
     if (repeat.IsSet(ParserRepeat::kRequireOne)) {
       requires_one = true;
-      if (type_ == Type::kSequence && is_first_token) {
+
+      // An item that can match without consuming anything leaves the item after
+      // it first as well.
+      if (type_ == Type::kSequence && is_first_token &&
+          !item->MatchesEmpty(context.rules)) {
         is_first_token = false;
         left_recursive_rules.swap(context.left_recursive_rules);
       }
@@ -194,8 +205,63 @@ bool ParserGroup::Validate(ValidateContext& context) const {
   return true;
 }
 
+bool ParserGroup::MatchesEmpty(const ParserRules& rules) const {
+  // A sequence matches empty if every required item can, and alternatives if
+  // any one can.
+  for (const auto& [name, item, repeat, error] : sub_items_) {
+    const bool item_matches_empty =
+        (!repeat.IsSet(ParserRepeat::kRequireOne) || item->MatchesEmpty(rules));
+    if (type_ == Type::kSequence && !item_matches_empty) {
+      return false;
+    }
+    if (type_ == Type::kAlternatives && item_matches_empty) {
+      return true;
+    }
+  }
+  return type_ == Type::kSequence;
+}
+
 parser_internal::ParseMatch ParserGroup::Match(Parser& parser) const {
   return parser.MatchGroup(*this);
+}
+
+std::string ParserNegation::ToString() const {
+  if (item_ == nullptr) {
+    return "!<null>";
+  }
+  if (item_->IsGroup()) {
+    return absl::StrCat("!(", item_->ToString(), ")");
+  }
+  return absl::StrCat("!", item_->ToString());
+}
+
+bool ParserNegation::Validate(ValidateContext& context) const {
+  if (item_ == nullptr) {
+    return ValidateError(context, "Negated item cannot be null");
+  }
+  if (!item_->Validate(context)) {
+    return false;
+  }
+
+  // An item that can match without consuming anything always matches, so its
+  // negation never could.
+  if (item_->MatchesEmpty(context.rules)) {
+    return ValidateError(context,
+                         "Negated item cannot match without consuming a token");
+  }
+  return true;
+}
+
+parser_internal::ParseMatch ParserNegation::Match(Parser& parser) const {
+  return parser.MatchNegation(*this);
+}
+
+std::string ParserMarker::ToString() const { return "%here"; }
+
+bool ParserMarker::Validate(ValidateContext&) const { return true; }
+
+parser_internal::ParseMatch ParserMarker::Match(Parser& parser) const {
+  return parser.MatchMarker();
 }
 
 bool ParserRules::Validate(const Lexer& lexer,

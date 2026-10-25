@@ -83,6 +83,29 @@ namespace gb {
 //   rule_name         Scopes all named sub-items of "rule_name".
 //   <rule_name>       Promotes named sub-items of "rule_name" to this rule.
 //
+// A rule_item can be negated with a leading '!', which matches any one token
+// where the rule_item doesn't match, but never the end of the content. The
+// rule_item is only tried, so any named sub-items within it are dropped. A name
+// and repeat specifier apply to the negation, as it binds tighter than either.
+// A rule_item that can match without consuming anything, such as an optional
+// item or %here (see below), can't be negated, as it always matches. For
+// example:
+//   !%int                     Matches any one token except an integer.
+//   !(%linebreak | ')')       Matches any one token except these two.
+//   $tokens=!(%linebreak | ')')*
+//                             Matches every token up to the end of the line or
+//                             a ')', as "tokens".
+//
+// A position marker, %here, matches without consuming anything. Its matched
+// token is the next token: the one the following rule_item starts with, or the
+// end of the content. Named, it marks a place in the content even when the
+// items around it match nothing. "here" is reserved, so it can't be a user
+// token type. For example:
+//   $start=%here $tokens=!%linebreak* $end=%here
+//                             Matches the rest of the line, with "end" set to
+//                             the token after it, and "start" set to the first
+//                             token in it (or the same as "end" if empty).
+//
 // Finally, rule_items can be combined with '|' to indicate alternatives, and
 // with ' ' to indicate sequence. The '|' is lower precedence than ' '. For
 // example:

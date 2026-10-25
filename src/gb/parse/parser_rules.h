@@ -62,9 +62,9 @@ constexpr ParserRepeatFlags kParserOneOrMoreWithComma = {
 // ParserRuleItems
 //
 // Parser rules are defined by a tree of ParserRuleItems rooted in a
-// ParserGroup, which are either tokens, rule names, or groups of other
-// ParserRuleItems. Together, this tree of rules defines the grammar that the
-// parser will use to parse tokens.
+// ParserGroup, which are either tokens, rule names, negations, position
+// markers, or groups of other ParserRuleItems. Together, this tree of rules
+// defines the grammar that the parser will use to parse tokens.
 //==============================================================================
 
 // Base class for all parser rule items.
@@ -103,6 +103,18 @@ class ParserRuleItem {
   static std::unique_ptr<ParserGroup> CreateSequence();
   static std::unique_ptr<ParserGroup> CreateAlternatives();
 
+  // Creates a negation rule item, which matches any one token where `item`
+  // doesn't match: "anything but this". It never matches the end of the
+  // content. `item` can be any rule item that can't match without consuming
+  // anything, and is only tried, so any named sub-items within it are dropped.
+  static std::unique_ptr<ParserNegation> CreateNegation(
+      std::unique_ptr<ParserRuleItem> item);
+
+  // Creates a position marker rule item, which always matches without
+  // consuming anything. Its parsed item's token is the next token: the one the
+  // following rule item starts with, or the end of the content.
+  static std::unique_ptr<ParserMarker> CreateMarker();
+
   // Converts to a string for debugging and testing purposes. The string is
   // in the style of the ParserProgram text format.
   virtual std::string ToString() const = 0;
@@ -112,6 +124,7 @@ class ParserRuleItem {
   friend class ParserRules;
   friend class ParserGroup;
   friend class ParserRuleName;
+  friend class ParserNegation;
 
   using ParseMatch = parser_internal::ParseMatch;
 
@@ -129,6 +142,10 @@ class ParserRuleItem {
   bool ValidateError(ValidateContext& context, std::string_view message) const;
 
   virtual bool IsGroup() const { return false; }
+
+  // Returns true if this item can match without consuming anything. It is only
+  // called on an item that has been validated.
+  virtual bool MatchesEmpty(const ParserRules& rules) const { return false; }
 
   // Returns true if, as an unnamed sub-item of a group, this item's named
   // sub-items are added to the group's own.
@@ -186,6 +203,7 @@ class ParserRuleName final : public ParserRuleItem {
 
  protected:
   bool InlinesItems() const override { return !scope_items_; }
+  bool MatchesEmpty(const ParserRules& rules) const override;
   bool Validate(ValidateContext& context) const override;
   ParseMatch Match(Parser& parser) const override;
 
@@ -263,12 +281,52 @@ class ParserGroup final : public ParserRuleItem {
  protected:
   bool IsGroup() const override { return true; }
   bool InlinesItems() const override { return true; }
+  bool MatchesEmpty(const ParserRules& rules) const override;
   bool Validate(ValidateContext& context) const override;
   ParseMatch Match(Parser& parser) const override;
 
  private:
   const Type type_;
   std::vector<SubItem> sub_items_;
+};
+
+// A negation rule item.
+//
+// This rule item matches any one token where its item doesn't match. See
+// ParserRuleItem::CreateNegation for more information.
+class ParserNegation final : public ParserRuleItem {
+ public:
+  // Creates a new negation rule item.
+  explicit ParserNegation(std::unique_ptr<ParserRuleItem> item)
+      : item_(std::move(item)) {}
+
+  const ParserRuleItem* GetItem() const { return item_.get(); }
+
+  std::string ToString() const override;
+
+ protected:
+  bool Validate(ValidateContext& context) const override;
+  ParseMatch Match(Parser& parser) const override;
+
+ private:
+  const std::unique_ptr<const ParserRuleItem> item_;
+};
+
+// A position marker rule item.
+//
+// This rule item matches without consuming anything. See
+// ParserRuleItem::CreateMarker for more information.
+class ParserMarker final : public ParserRuleItem {
+ public:
+  // Creates a new position marker rule item.
+  ParserMarker() = default;
+
+  std::string ToString() const override;
+
+ protected:
+  bool MatchesEmpty(const ParserRules&) const override { return true; }
+  bool Validate(ValidateContext& context) const override;
+  ParseMatch Match(Parser& parser) const override;
 };
 
 //==============================================================================
@@ -394,6 +452,15 @@ inline std::unique_ptr<ParserGroup> ParserRuleItem::CreateSequence() {
 
 inline std::unique_ptr<ParserGroup> ParserRuleItem::CreateAlternatives() {
   return std::make_unique<ParserGroup>(ParserGroup::Type::kAlternatives);
+}
+
+inline std::unique_ptr<ParserNegation> ParserRuleItem::CreateNegation(
+    std::unique_ptr<ParserRuleItem> item) {
+  return std::make_unique<ParserNegation>(std::move(item));
+}
+
+inline std::unique_ptr<ParserMarker> ParserRuleItem::CreateMarker() {
+  return std::make_unique<ParserMarker>();
 }
 
 }  // namespace gb

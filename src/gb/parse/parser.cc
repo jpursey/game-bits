@@ -100,7 +100,8 @@ parser_internal::ParseMatch Parser::MatchAbort(ParseError error) {
 
 parser_internal::ParseMatch Parser::MatchError(
     gb::Token token, TokenType expected_type, std::string_view expected_value) {
-  if (last_error_.has_value() && last_error_->token > token) {
+  if (suppress_errors_ > 0 ||
+      (last_error_.has_value() && last_error_->token > token)) {
     return ParseMatch::Error();
   }
   last_error_ =
@@ -151,7 +152,8 @@ parser_internal::ParseMatch Parser::MatchError(
 }
 
 void Parser::SetError(gb::Token token, std::string_view error_message) {
-  if (last_error_.has_value() && last_error_->token > token) {
+  if (suppress_errors_ > 0 ||
+      (last_error_.has_value() && last_error_->token > token)) {
     return;
   }
   last_error_ = ParseMatchError(token, [this, token, error_message] {
@@ -161,6 +163,12 @@ void Parser::SetError(gb::Token token, std::string_view error_message) {
 
 parser_internal::ParseMatch Parser::Match(ParsedItem item) {
   return ParseMatch::Item(std::move(item));
+}
+
+parser_internal::ParseMatch Parser::Match(Token token) {
+  ParsedItem parsed;
+  parsed.token_ = token;
+  return Match(std::move(parsed));
 }
 
 parser_internal::ParseMatch Parser::MatchTokenItem(
@@ -182,9 +190,7 @@ parser_internal::ParseMatch Parser::MatchTokenItem(
   }
 
   NextToken();
-  ParsedItem parsed;
-  parsed.token_ = token;
-  return Match(std::move(parsed));
+  return Match(token);
 }
 
 parser_internal::ParseMatch Parser::MatchRuleItem(
@@ -192,6 +198,43 @@ parser_internal::ParseMatch Parser::MatchRuleItem(
   const ParserRuleItem* rule = rules_->GetRule(parser_rule_name.GetRuleName());
   DCHECK(rule != nullptr);  // Handled during rule validation.
   return rule->Match(*this);
+}
+
+parser_internal::ParseMatch Parser::MatchNegation(
+    const ParserNegation& negation) {
+  Token token = PeekToken();
+  if (token.GetType() == kTokenError) {
+    return MatchAbort(Error(token, token.GetString()));
+  }
+  if (token.IsEnd()) {
+    SetError(token, "Unexpected end of content");
+    return ParseMatch::Error();
+  }
+
+  // The negated item is only tried, so it sets no errors, and whatever it
+  // matched is rewound. A failed match has already consumed nothing.
+  ++suppress_errors_;
+  ParseMatch match = negation.GetItem()->Match(*this);
+  --suppress_errors_;
+  if (match.IsAbort()) {
+    return match;
+  }
+  if (match.IsMatch()) {
+    SetNextToken(token);
+    SetError(token, "Unexpected token");
+    return ParseMatch::Error();
+  }
+
+  NextToken();
+  return Match(token);
+}
+
+parser_internal::ParseMatch Parser::MatchMarker() {
+  Token token = PeekToken();
+  if (token.GetType() == kTokenError) {
+    return MatchAbort(Error(token, token.GetString()));
+  }
+  return Match(token);
 }
 
 void Parser::AddSubItemMatch(const ParserGroup::SubItem& sub_item,
@@ -273,6 +316,10 @@ parser_internal::ParseMatch Parser::MatchGroup(const ParserGroup& group) {
         if (with_comma) {
           RewindToken();
         }
+        break;
+      }
+      if (!with_comma && PeekToken() == item_token) {
+        // A match that consumed nothing would repeat the same way forever.
         break;
       }
       AddSubItemMatch(sub_item, std::move(match), &result.items_);

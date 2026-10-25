@@ -21,6 +21,8 @@ class ParserRuleItem;
 class ParserToken;
 class ParserRuleName;
 class ParserGroup;
+class ParserNegation;
+class ParserMarker;
 
 // Unique ID of the LexerContent.
 using LexerContentId = uint32_t;

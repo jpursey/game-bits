@@ -19,6 +19,9 @@ namespace {
 constexpr TokenType kTokenTokenType = kTokenUser + 0;
 constexpr TokenType kTokenMatchName = kTokenUser + 1;
 
+// The token type name of a position marker, which is reserved.
+constexpr std::string_view kMarkerName = "here";
+
 constexpr LexerConfig::UserToken kProgramUserTokens[] = {
     {.name = "token type",
      .type = kTokenTokenType,
@@ -113,6 +116,7 @@ std::shared_ptr<const ParserRules> CreateProgramRules() {
 
   // group_item {
   //   [$match_name=%match_name "="]
+  //   $negate=["!"]
   //   $item=group_item_inner
   //   $repeat=["+" | "*" | ",+" | ",*"]
   //   [":" $error=%string];
@@ -123,6 +127,9 @@ std::shared_ptr<const ParserRules> CreateProgramRules() {
                                ParserRuleItem::CreateToken(kTokenMatchName));
   group_item_match->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, "="));
   group_item->AddSubItem(std::move(group_item_match), kParserOptional);
+  group_item->AddSubItem("negate",
+                         ParserRuleItem::CreateToken(kTokenSymbol, "!"),
+                         kParserOptional);
   group_item->AddSubItem("item",
                          ParserRuleItem::CreateRuleName("group_item_inner"));
   auto group_item_repeat = ParserRuleItem::CreateAlternatives();
@@ -280,16 +287,19 @@ std::unique_ptr<ParserGroup::SubItem> ParseGroupItem(
   const ParsedItem* parsed_inner = parsed_item.GetItem("item");
   DCHECK(parsed_inner != nullptr);
   std::string_view parsed_type = parsed_inner->GetMatchName();
+  std::unique_ptr<ParserRuleItem> item;
   if (parsed_type == "token") {
     std::string_view type_name = parsed_inner->GetString("token");
-    auto it = context.token_types.find(type_name);
-    if (it == context.token_types.end()) {
-      context.error = absl::StrCat("Unknown token type: %", type_name);
-      return nullptr;
+    if (type_name == kMarkerName) {
+      item = ParserRuleItem::CreateMarker();
+    } else {
+      auto it = context.token_types.find(type_name);
+      if (it == context.token_types.end()) {
+        context.error = absl::StrCat("Unknown token type: %", type_name);
+        return nullptr;
+      }
+      item = ParserRuleItem::CreateToken(it->second);
     }
-    return std::make_unique<ParserGroup::SubItem>(
-        match_name, ParserRuleItem::CreateToken(it->second), repeat,
-        parsed_error);
   } else if (parsed_type == "literal") {
     std::string_view literal = parsed_inner->GetString("literal");
     Token token = context.lexer.ParseTokenText(literal);
@@ -297,43 +307,40 @@ std::unique_ptr<ParserGroup::SubItem> ParseGroupItem(
       context.error = absl::StrCat("Invalid token literal: ", literal);
       return nullptr;
     }
-    return std::make_unique<ParserGroup::SubItem>(
-        match_name, ParserRuleItem::CreateToken(token.GetType(), literal),
-        repeat, parsed_error);
+    item = ParserRuleItem::CreateToken(token.GetType(), literal);
   } else if (parsed_type == "scoped_rule") {
-    return std::make_unique<ParserGroup::SubItem>(
-        match_name,
-        ParserRuleItem::CreateRuleName(parsed_inner->GetString("scoped_rule")),
-        repeat, parsed_error);
+    item =
+        ParserRuleItem::CreateRuleName(parsed_inner->GetString("scoped_rule"));
   } else if (parsed_type == "unscoped_rule") {
-    return std::make_unique<ParserGroup::SubItem>(
-        match_name,
-        ParserRuleItem::CreateRuleName(parsed_inner->GetString("unscoped_rule"),
-                                       false),
-        repeat, parsed_error);
-  } else if (parsed_type == "optional") {
-    const ParsedItem* sub_item = parsed_inner->GetItem("optional");
+    item = ParserRuleItem::CreateRuleName(
+        parsed_inner->GetString("unscoped_rule"), false);
+  } else if (parsed_type == "optional" || parsed_type == "group") {
+    const ParsedItem* sub_item = parsed_inner->GetItem(parsed_type);
     DCHECK(sub_item != nullptr);
-    auto optional_item = ParseAlternative(context, *sub_item);
-    if (optional_item == nullptr) {
+    item = ParseAlternative(context, *sub_item);
+    if (item == nullptr) {
       return nullptr;
     }
-    repeat.Clear(ParserRepeat::kRequireOne);
-    return std::make_unique<ParserGroup::SubItem>(
-        match_name, std::move(optional_item), repeat, parsed_error);
-  } else if (parsed_type == "group") {
-    const ParsedItem* sub_item = parsed_inner->GetItem("group");
-    DCHECK(sub_item != nullptr);
-    auto group_item = ParseAlternative(context, *sub_item);
-    if (group_item == nullptr) {
-      return nullptr;
+    if (parsed_type == "optional") {
+      repeat.Clear(ParserRepeat::kRequireOne);
     }
-    return std::make_unique<ParserGroup::SubItem>(
-        match_name, std::move(group_item), repeat, parsed_error);
+  } else {
+    context.error = absl::StrCat("Internal error, unhandled parse type: \"",
+                                 parsed_type, "\"");
+    return nullptr;
   }
-  context.error = absl::StrCat("Internal error, unhandled parse type: \"",
-                               parsed_type, "\"");
-  return nullptr;
+
+  if (parsed_item.GetItem("negate") != nullptr) {
+    // An optional item always matches, even if only by matching nothing, so
+    // its negation never could.
+    if (parsed_type == "optional") {
+      context.error = "An optional item cannot be negated";
+      return nullptr;
+    }
+    item = ParserRuleItem::CreateNegation(std::move(item));
+  }
+  return std::make_unique<ParserGroup::SubItem>(match_name, std::move(item),
+                                                repeat, parsed_error);
 }
 
 // Parses the rules in `program_text`, which the caller must validate.
@@ -378,6 +385,10 @@ std::unique_ptr<const ParserRules> ParseProgram(Lexer& lexer,
   for (const ParsedItem& parsed_token : parsed_tokens) {
     TokenType token_type = kTokenUser + parsed_token.GetInt("value");
     std::string_view token_name = parsed_token.GetString("name");
+    if (token_name == kMarkerName) {
+      context.error = absl::StrCat("Reserved token type: %", token_name);
+      return nullptr;
+    }
     if (!context.token_types.insert({token_name, token_type}).second) {
       context.error = absl::StrCat("Duplicate token type: %", token_name);
       return nullptr;

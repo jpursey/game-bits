@@ -12,6 +12,7 @@
 namespace gb {
 namespace {
 
+using ::testing::AllOf;
 using ::testing::ElementsAre;
 using ::testing::HasSubstr;
 using ::testing::IsEmpty;
@@ -1343,6 +1344,230 @@ TEST(ParserTest, ScopedItemNames) {
   EXPECT_THAT(result->GetItems("missing.name"), IsEmpty());
   EXPECT_THAT(result->GetItems("outer.name.more"), IsEmpty());
   EXPECT_EQ(result->GetItem("missing.name"), nullptr);
+}
+
+// Creates a parser for `program` with the C-style lexer, failing the test if
+// the program is invalid.
+std::unique_ptr<Parser> CreateProgramParser(std::string_view program) {
+  std::string error;
+  auto parser = Parser::Create(
+      ParserProgram::Create(kCStyleLexerConfig, program, &error));
+  EXPECT_NE(parser, nullptr) << "Error: " << error;
+  return parser;
+}
+
+TEST(ParserTest, NegatedTokenMatchesAnyOtherToken) {
+  auto parser = CreateProgramParser(R"(
+    Program { $tokens=!';'* ';' %end; }
+  )");
+  ASSERT_NE(parser, nullptr);
+  LexerContentId content = parser->GetLexer().AddContent("a 1 + ;");
+
+  ParseResult result = parser->Parse(content, "Program");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_THAT(result->GetItems("tokens"),
+              ElementsAre(IsToken(kTokenIdentifier, "a"),
+                          IsToken(kTokenInt, "1"), IsToken(kTokenSymbol, "+")));
+}
+
+TEST(ParserTest, NegatedRule) {
+  auto parser = CreateProgramParser(R"(
+    Program { $token=!Number; }
+    Number { %int; %float; }
+  )");
+  ASSERT_NE(parser, nullptr);
+  LexerContentId content = parser->GetLexer().AddContent("abc 42");
+
+  ParseResult result = parser->Parse(content, "Program");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_THAT(result->GetItems("token"),
+              ElementsAre(IsToken(kTokenIdentifier, "abc")));
+  result = parser->Parse(content, "Program");
+  EXPECT_FALSE(result.IsOk());
+  EXPECT_TRUE(parser->GetLexer().NextToken(content, false).IsInt(42));
+}
+
+TEST(ParserTest, NegatedGroupOnlySaysWhatCantStartHere) {
+  auto parser = CreateProgramParser(R"(
+    Program { $token=!('(' ')'); }
+  )");
+  ASSERT_NE(parser, nullptr);
+  LexerContentId content = parser->GetLexer().AddContent("( x ( )");
+
+  // The group doesn't match "( x", so the negation consumes just the "(".
+  ParseResult result = parser->Parse(content, "Program");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_THAT(result->GetItems("token"),
+              ElementsAre(IsToken(kTokenSymbol, "(")));
+  result = parser->Parse(content, "Program");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_THAT(result->GetItems("token"),
+              ElementsAre(IsToken(kTokenIdentifier, "x")));
+  result = parser->Parse(content, "Program");
+  EXPECT_FALSE(result.IsOk());
+  EXPECT_TRUE(parser->GetLexer().NextToken(content, false).IsSymbol('('));
+}
+
+TEST(ParserTest, NegatedAlternatives) {
+  auto parser = CreateProgramParser(R"(
+    Program { $tokens=!(';' | ')')* $last=(';' | ')'); }
+  )");
+  ASSERT_NE(parser, nullptr);
+  LexerContentId content = parser->GetLexer().AddContent("a ( b ) c ;");
+
+  ParseResult result = parser->Parse(content, "Program");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_THAT(
+      result->GetItems("tokens"),
+      ElementsAre(IsToken(kTokenIdentifier, "a"), IsToken(kTokenSymbol, "("),
+                  IsToken(kTokenIdentifier, "b")));
+  EXPECT_THAT(result->GetItems("last"),
+              ElementsAre(IsToken(kTokenSymbol, ")")));
+}
+
+TEST(ParserTest, NegationFailsOnItsItem) {
+  auto parser = CreateProgramParser(R"(
+    Program { !%int %end; }
+  )");
+  ASSERT_NE(parser, nullptr);
+  LexerContentId content = parser->GetLexer().AddContent("42");
+
+  ParseResult result = parser->Parse(content, "Program");
+  ASSERT_FALSE(result.IsOk());
+  EXPECT_THAT(result.GetError().FormatMessage(),
+              AllOf(HasSubstr("\"42\""), HasSubstr("Unexpected token")));
+  EXPECT_TRUE(parser->GetLexer().NextToken(content, false).IsInt(42));
+}
+
+TEST(ParserTest, NegationExplicitError) {
+  auto parser = CreateProgramParser(R"(
+    Program { !%int:"Not an integer" %end; }
+  )");
+  ASSERT_NE(parser, nullptr);
+  LexerContentId content = parser->GetLexer().AddContent("42");
+
+  ParseResult result = parser->Parse(content, "Program");
+  ASSERT_FALSE(result.IsOk());
+  EXPECT_THAT(result.GetError().FormatMessage(), HasSubstr("Not an integer"));
+}
+
+TEST(ParserTest, NegationNeverMatchesEnd) {
+  auto parser = CreateProgramParser(R"(
+    Single { !%int; }
+    Repeated { $tokens=!%int* %end; }
+  )");
+  ASSERT_NE(parser, nullptr);
+  LexerContentId content = parser->GetLexer().AddContent("");
+  ParseResult result = parser->Parse(content, "Single");
+  ASSERT_FALSE(result.IsOk());
+  EXPECT_THAT(result.GetError().FormatMessage(),
+              HasSubstr("Unexpected end of content"));
+
+  content = parser->GetLexer().AddContent("a b");
+  result = parser->Parse(content, "Repeated");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_THAT(result->GetItems("tokens"),
+              ElementsAre(IsToken(kTokenIdentifier, "a"),
+                          IsToken(kTokenIdentifier, "b")));
+}
+
+TEST(ParserTest, NegationDropsNamedItemsOfItsItem) {
+  auto parser = CreateProgramParser(R"(
+    Program { $token=!($name=%ident '=') <Named> %end; }
+    Named { $name=%ident; }
+  )");
+  ASSERT_NE(parser, nullptr);
+  LexerContentId content = parser->GetLexer().AddContent("x y");
+
+  // The negated group matches "x" as its name before failing on "y".
+  ParseResult result = parser->Parse(content, "Program");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_THAT(result->GetItems("name"),
+              ElementsAre(IsToken(kTokenIdentifier, "y")));
+  const ParsedItem* token = result->GetItem("token");
+  ASSERT_NE(token, nullptr);
+  EXPECT_EQ(token->GetToken().ToString(), "x");
+  EXPECT_THAT(token->GetItems("name"), IsEmpty());
+}
+
+TEST(ParserTest, NegationDropsErrorsOfItsItem) {
+  auto parser = CreateProgramParser(R"(
+    Program { !(%ident '=' %int) %ident %end; }
+  )");
+  ASSERT_NE(parser, nullptr);
+  LexerContentId content = parser->GetLexer().AddContent("x = y");
+
+  // The negated group fails at "y", which is further than where the program
+  // fails, so its error would be reported if it weren't dropped.
+  ParseResult result = parser->Parse(content, "Program");
+  ASSERT_FALSE(result.IsOk());
+  EXPECT_THAT(result.GetError().FormatMessage(),
+              AllOf(HasSubstr("\"=\""), HasSubstr("Expected identifier")));
+}
+
+TEST(ParserTest, MarkersAroundEmptyRepeat) {
+  auto parser = CreateProgramParser(R"(
+    Program { $start=%here $tokens=!';'* $end=%here ';'; }
+  )");
+  ASSERT_NE(parser, nullptr);
+  LexerContentId content = parser->GetLexer().AddContent("a b ; ;");
+
+  ParseResult result = parser->Parse(content, "Program");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_THAT(result->GetItems("start"),
+              ElementsAre(IsToken(kTokenIdentifier, "a")));
+  EXPECT_THAT(result->GetItems("end"), ElementsAre(IsToken(kTokenSymbol, ";")));
+
+  result = parser->Parse(content, "Program");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_THAT(result->GetItems("tokens"), IsEmpty());
+  const ParsedItem* start = result->GetItem("start");
+  const ParsedItem* end = result->GetItem("end");
+  ASSERT_NE(start, nullptr);
+  ASSERT_NE(end, nullptr);
+  EXPECT_TRUE(start->GetToken().IsSymbol(';'));
+  EXPECT_EQ(start->GetToken(), end->GetToken());
+}
+
+TEST(ParserTest, MarkerAtEnd) {
+  auto parser = CreateProgramParser(R"(
+    Program { %ident $end=%here %end; }
+  )");
+  ASSERT_NE(parser, nullptr);
+  LexerContentId content = parser->GetLexer().AddContent("a");
+
+  ParseResult result = parser->Parse(content, "Program");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  const ParsedItem* end = result->GetItem("end");
+  ASSERT_NE(end, nullptr);
+  EXPECT_TRUE(end->GetToken().IsEnd());
+}
+
+TEST(ParserTest, MarkerInFailedGroupLeavesNoItem) {
+  auto parser = CreateProgramParser(R"(
+    Program { [$mark=%here %int] %ident; }
+  )");
+  ASSERT_NE(parser, nullptr);
+  LexerContentId content = parser->GetLexer().AddContent("x");
+
+  ParseResult result = parser->Parse(content, "Program");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_THAT(result->GetItems("mark"), IsEmpty());
+}
+
+TEST(ParserTest, RepeatedMarkerMatchesOnce) {
+  auto parser = CreateProgramParser(R"(
+    Program { $marks=%here* $groups=(%here)+ %ident; }
+  )");
+  ASSERT_NE(parser, nullptr);
+  LexerContentId content = parser->GetLexer().AddContent("x");
+
+  ParseResult result = parser->Parse(content, "Program");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_THAT(result->GetItems("marks"),
+              ElementsAre(IsToken(kTokenIdentifier, "x")));
+  EXPECT_THAT(result->GetItems("groups"),
+              ElementsAre(IsToken(kTokenIdentifier, "x")));
 }
 
 }  // namespace

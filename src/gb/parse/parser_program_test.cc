@@ -369,6 +369,86 @@ TEST(ParserProgramTest, OptionalOverridesOneOrMore) {
   EXPECT_EQ(rules.GetRule("program")->ToString(), "(%int)* (%float),* %string");
 }
 
+TEST(ParserProgramTest, NegationsAndMarkers) {
+  std::string error;
+  std::string program_text = R"---(
+    program {
+      !%int !(%int %float) $tokens=!(";" | ")")* $end=%here;
+    }
+  )---";
+  auto program = ParserProgram::Create(kCStyleLexerConfig,
+                                       std::move(program_text), &error);
+  ASSERT_NE(program, nullptr) << "Error: " << error;
+  const auto& rules = program->GetRules();
+  EXPECT_EQ(rules.GetRule("program")->ToString(),
+            "!%int !(%int %float) $tokens=!(\";\" | \")\")* $end=%here");
+}
+
+TEST(ParserProgramTest, OptionalItemCannotBeNegated) {
+  std::string error;
+  auto program = ParserProgram::Create(kCStyleLexerConfig, R"(
+    program { ![%int] %end; }
+  )",
+                                       &error);
+  EXPECT_EQ(program, nullptr);
+  EXPECT_THAT(absl::AsciiStrToLower(error),
+              AllOf(HasSubstr("optional"), HasSubstr("negated")));
+}
+
+TEST(ParserProgramTest, ItemsThatMatchEmptyCannotBeNegated) {
+  const std::string_view kPrograms[] = {
+      "program { !%here %end; }",
+      "program { !(%here) %end; }",
+      "program { !(%int* %here) %end; }",
+      "program { !(%here | %int) %end; }",
+      "program { !<empty> %end; } empty { [%int] %here; }",
+  };
+  for (std::string_view program_text : kPrograms) {
+    std::string error;
+    auto program =
+        ParserProgram::Create(kCStyleLexerConfig, program_text, &error);
+    EXPECT_EQ(program, nullptr) << program_text;
+    EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("negated"))
+        << program_text;
+  }
+}
+
+TEST(ParserProgramTest, NegatedEndIsAnyToken) {
+  std::string error;
+  auto program = ParserProgram::Create(kCStyleLexerConfig, R"(
+    program { $tokens=!(%end | ';')* ';'; }
+  )",
+                                       &error);
+  EXPECT_NE(program, nullptr) << "Error: " << error;
+}
+
+TEST(ParserProgramTest, MarkerNameIsReserved) {
+  std::string error;
+  auto program = ParserProgram::Create(kCStyleLexerConfig, R"(
+    %here = 0;
+    program { %int; }
+  )",
+                                       &error);
+  EXPECT_EQ(program, nullptr);
+  EXPECT_THAT(error, AllOf(HasSubstr("Reserved"), HasSubstr("%here")));
+}
+
+TEST(ParserProgramTest, LeftRecursiveAfterItemsThatMatchEmpty) {
+  const std::string_view kPrograms[] = {
+      "program { $start=%here program %int; %int; }",
+      "program { (%here) program %int; %int; }",
+      "program { <empty> program %int; %int; } empty { %here; }",
+  };
+  for (std::string_view program_text : kPrograms) {
+    std::string error;
+    auto program =
+        ParserProgram::Create(kCStyleLexerConfig, program_text, &error);
+    EXPECT_EQ(program, nullptr) << program_text;
+    EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("left-recursive"))
+        << program_text;
+  }
+}
+
 TEST(ParserProgramTest, MultipleOptions) {
   std::string error;
   std::string program_text = R"(

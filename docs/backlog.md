@@ -408,53 +408,6 @@ which also has `Cancel()` and `Invoke()`. Switch Game Bits' own uses to
 Removing `ScopedCall` breaks every project that uses it, so each one switches
 first, and it is removed once they have.
 
-## Negated rule items and position markers
-
-- **Layers:** parse
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Requested by:** OZ-3 *Program assembler*
-- **Background:** the rule syntax in `parser_program.h`, and
-  `Parser::MatchGroup` in `parser.cc`
-
-Two rule items that a grammar can't write today:
-- **Negation**, such as `!item`, matches one token wherever `item` doesn't
-  match: "anything but this". It tries `item` at the current token and discards
-  the result. If `item` matches, the negation fails, consuming nothing, with an
-  error for the unexpected token. If not, it consumes that one token, which is
-  its parsed item's token. `item` can be any rule item, so a negated token,
-  rule, group, or set of alternatives all work, and named items inside it are
-  dropped either way. It never consumes the end of the content. It takes a name
-  and a repeat like any other item, and binds tighter than the repeat, so
-  `$tokens=!(%linebreak | ')')*` is every token up to the end of the line or a
-  `)`. That covers "any token but these" without listing every token the lexer
-  can produce. For example, the arguments of a statement with balanced
-  brackets:
-
-      Arg {
-        '(' Arg* ')';
-        '[' Arg* ']';
-        !(%linebreak | %end | ')' | ']');
-      }
-
-  Consuming exactly one token is what keeps it well defined: a negated item
-  that spans several tokens still only says what can't start here.
-- **A position marker**, such as `%here`, matches without consuming anything.
-  Its parsed item's token is the next token: the one the item after it starts
-  with, or the end of the content. Named, it marks a place, which a repeated
-  item can't do when it matches nothing. Combined with negation it bounds a
-  range of tokens, `$start=%here $tokens=!%linebreak* $end=%here`, whose end
-  is the token after the range, and whose start is the end when the range is
-  empty.
-
-The rule syntax comment in `parser_program.h` documents both. Tests: a negated
-token, rule, group, and set of alternatives; negation failing with its error,
-and at the end of the content; a repeated and a named negation; named items
-inside a negation dropped; a marker before and after an empty repeat, at the
-end of the content, and named in a group that fails (leaving no item, as any
-other item would).
-
 ## Adjacent rule items
 
 - **Layers:** parse
@@ -717,6 +670,24 @@ A `Symbol` holds up to 7 characters and silently truncates a longer one, so a
 lexer config with a long symbol gets a shorter one than it asked for. Reject a
 symbol that is too long where it is made, and in `LexerConfig` validation,
 with a test.
+
+## Parser consumes the end of the content
+
+- **Layers:** parse
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** `Parser::MatchTokenItem` in `parser.cc`, and
+  `Lexer::NextToken` in `lexer.cc`
+
+Logically, `%end` is a token at the end of the content, consumed like any
+other, so nothing can follow it. But the lexer stays at the end once it gets
+there, so after `%end` matches, a later `%end` matches the same token again.
+A rule that recurses after it, `R { %end R; }`, passes validation, as the
+recursion isn't the rule's first item, and then overflows the stack when
+parsed. Once the parser matches the end, any later token item should fail.
+Tests: `R { %end R; }` fails to parse rather than recursing, and `%end %end`
+doesn't match.
 
 ## Config text edge cases
 

@@ -90,6 +90,8 @@ class Parser final {
   friend class ParserToken;
   friend class ParserRuleName;
   friend class ParserGroup;
+  friend class ParserNegation;
+  friend class ParserMarker;
 
   using ParseMatch = parser_internal::ParseMatch;
 
@@ -115,6 +117,8 @@ class Parser final {
   ParseMatch MatchTokenItem(const ParserToken& item);
   ParseMatch MatchGroup(const ParserGroup& item);
   ParseMatch MatchRuleItem(const ParserRuleName& item);
+  ParseMatch MatchNegation(const ParserNegation& item);
+  ParseMatch MatchMarker();
 
   // Adds the match of a group's sub-item to the group's `items`: under the
   // sub-item's name if it has one, or else merged in if the sub-item inlines
@@ -132,12 +136,17 @@ class Parser final {
                         std::string_view expected_value);
   void SetError(gb::Token token, std::string_view error_message);
   ParseMatch Match(ParsedItem item);
+  ParseMatch Match(Token token);
 
   std::shared_ptr<Lexer> lexer_;
   std::shared_ptr<const ParserRules> rules_;
   std::shared_ptr<const parser_internal::TokenValues> token_values_;
   LexerContentId content_ = kNoLexerContent;
   std::optional<ParseMatchError> last_error_;
+
+  // While positive, matching errors aren't recorded, as the item being matched
+  // is only being tried by a negation.
+  int suppress_errors_ = 0;
 };
 
 }  // namespace gb
