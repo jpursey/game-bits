@@ -584,19 +584,6 @@ interleaving:
 Add test hooks (a callback at the point of interest, or a clock passed in)
 that let each test wait for the state it needs, rather than sleeping.
 
-## Lexer storage on re-parse
-
-- **Layers:** parse
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** [Code audit](worklog/code_audit.md)
-
-Decoded strings, escaped characters, and forced-case identifiers are stored
-again each time a token is parsed again after the parser backs up, so a
-lexer's memory grows with the parsing work done rather than the text. Cache
-them per token, which needs care where a block comment re-tokenizes a line.
-
 ## Symbols longer than 7 characters
 
 - **Layers:** parse

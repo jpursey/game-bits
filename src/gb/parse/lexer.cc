@@ -610,8 +610,7 @@ Token Lexer::ParseChar(TokenIndex token_index, std::string_view text) const {
   }
   if (StartsWithHexEscape(char_text, state_.escape_hex)) {
     const char hex = ToHex(char_text[2]) << 4 | ToHex(char_text[3]);
-    std::string& str =
-        *modified_text_.emplace_back(std::make_unique<std::string>(1, hex));
+    const std::string& str = *modified_text_.insert(std::string(1, hex)).first;
     return Token::CreateChar(token_index, str.data(), str.size());
   }
   DCHECK(char_text.size() == 2);
@@ -630,8 +629,7 @@ Token Lexer::ParseString(TokenIndex token_index, std::string_view text) const {
   if (pos == std::string_view::npos) {
     return Token::CreateString(token_index, char_text.data(), char_text.size());
   }
-  std::string& str =
-      *modified_text_.emplace_back(std::make_unique<std::string>());
+  std::string str;
   str.reserve(char_text.size());
   while (pos != std::string_view::npos) {
     absl::StrAppend(&str, char_text.substr(0, pos));
@@ -655,7 +653,8 @@ Token Lexer::ParseString(TokenIndex token_index, std::string_view text) const {
   }
   absl::StrAppend(&str, char_text);
   DCHECK(str.size() <= 0xFFFF);
-  return Token::CreateString(token_index, str.data(), str.size());
+  const std::string& stored = *modified_text_.insert(std::move(str)).first;
+  return Token::CreateString(token_index, stored.data(), stored.size());
 }
 
 Token Lexer::ParseKeyword(TokenIndex token_index, std::string_view text) const {
@@ -693,18 +692,14 @@ std::string_view Lexer::ApplyCase(std::string_view text,
       if (absl::c_none_of(text, absl::ascii_islower)) {
         return text;
       }
-      modified_text_.push_back(
-          std::make_unique<std::string>(absl::AsciiStrToUpper(text)));
-      break;
+      return *modified_text_.insert(absl::AsciiStrToUpper(text)).first;
     case LexerCase::kLower:
       if (absl::c_none_of(text, absl::ascii_isupper)) {
         return text;
       }
-      modified_text_.push_back(
-          std::make_unique<std::string>(absl::AsciiStrToLower(text)));
-      break;
+      return *modified_text_.insert(absl::AsciiStrToLower(text)).first;
   }
-  return *modified_text_.back();
+  return text;
 }
 
 Token Lexer::ParseNextToken(Content* content, Line* line, bool advance) {

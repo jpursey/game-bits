@@ -3411,6 +3411,46 @@ TEST(LexerTest, UserTokenCase) {
   EXPECT_EQ(lexer->ParseTokenText("#eF").GetString(), "ef");
 }
 
+TEST(LexerTest, ParsingAgainReusesModifiedText) {
+  const LexerConfig::UserToken user_tokens[] = {
+      {.type = kTokenUser,
+       .regex = "\\@([a-z]+)",
+       .value_case = LexerCase::kUpper},
+  };
+  auto lexer = Lexer::Create({
+      .flags = {LexerFlag::kSingleQuoteCharacter, LexerFlag::kDoubleQuoteString,
+                LexerFlag::kEscapeCharacter, LexerFlag::kDecodeEscape,
+                LexerFlag::kIdentLower, LexerFlag::kIdentForceUpper},
+      .escape = '$',
+      .escape_tab = 't',
+      .escape_hex = 'x',
+      .user_tokens = user_tokens,
+  });
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content =
+      lexer->AddContent(R"("a$tb" '$x41' abc @def "a$tb")");
+  const Token string = lexer->NextToken(content);
+  EXPECT_EQ(string.GetString(), "a\tb");
+  const Token hex_char = lexer->NextToken(content);
+  EXPECT_EQ(hex_char.GetString(), "A");
+  const Token ident = lexer->NextToken(content);
+  EXPECT_EQ(ident.GetString(), "ABC");
+  const Token user = lexer->NextToken(content);
+  EXPECT_EQ(user.GetString(), "DEF");
+
+  // The same modified text is stored once, whichever token it came from.
+  const Token same_string = lexer->NextToken(content);
+  EXPECT_EQ(same_string.GetString().data(), string.GetString().data());
+
+  // Parsing a token again finds the text it stored the first time.
+  for (const Token& token : {string, hex_char, ident, user}) {
+    const Token parsed = lexer->ParseToken(token.GetTokenIndex());
+    EXPECT_EQ(parsed, token);
+    EXPECT_EQ(parsed.GetString().data(), token.GetString().data())
+        << parsed.GetString();
+  }
+}
+
 TEST(LexerTest, ParseLineBreak) {
   auto lexer = Lexer::Create({
       .flags = {kLexerFlags_CIdentifiers, LexerFlag::kLineBreak},

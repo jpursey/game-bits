@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/container/node_hash_set.h"
 #include "gb/parse/lexer_config.h"
 #include "gb/parse/lexer_program.h"
 #include "gb/parse/parse_types.h"
@@ -444,9 +445,10 @@ class Lexer final {
   std::vector<Line> lines_;
   Token last_token_;
 
-  // Cache state for token content that differs from the original content
-  // (forced case, escaping, etc).
-  mutable std::vector<std::unique_ptr<std::string>> modified_text_;
+  // Token text that differs from the original content (forced case, decoded
+  // escapes), stored once per distinct value, so parsing a token again finds
+  // its text rather than storing another copy.
+  mutable absl::node_hash_set<std::string> modified_text_;
 };
 
 }  // namespace gb

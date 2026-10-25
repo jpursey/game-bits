@@ -19,6 +19,7 @@ set(gb_parse_SOURCE
 
 set(gb_parse_DEPS
   absl::any_invocable
+  absl::node_hash_set
   absl::strings
   gb_base
   re2
