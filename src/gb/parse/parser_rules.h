@@ -129,6 +129,11 @@ class ParserRuleItem {
   bool ValidateError(ValidateContext& context, std::string_view message) const;
 
   virtual bool IsGroup() const { return false; }
+
+  // Returns true if, as an unnamed sub-item of a group, this item's named
+  // sub-items are added to the group's own.
+  virtual bool InlinesItems() const { return false; }
+
   virtual bool Validate(ValidateContext& context) const = 0;
   virtual ParseMatch Match(Parser& parser) const = 0;
 };
@@ -180,6 +185,7 @@ class ParserRuleName final : public ParserRuleItem {
   std::string ToString() const override;
 
  protected:
+  bool InlinesItems() const override { return !scope_items_; }
   bool Validate(ValidateContext& context) const override;
   ParseMatch Match(Parser& parser) const override;
 
@@ -256,6 +262,7 @@ class ParserGroup final : public ParserRuleItem {
 
  protected:
   bool IsGroup() const override { return true; }
+  bool InlinesItems() const override { return true; }
   bool Validate(ValidateContext& context) const override;
   ParseMatch Match(Parser& parser) const override;
 

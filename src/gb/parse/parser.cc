@@ -7,7 +7,6 @@
 
 #include <iterator>
 
-#include "absl/cleanup/cleanup.h"
 #include "absl/log/check.h"
 #include "absl/strings/str_cat.h"
 
@@ -86,7 +85,6 @@ ParseResult Parser::Parse(LexerContentId content, std::string_view rule) {
   }
   content_ = content;
   last_error_.reset();
-  items_ = nullptr;
   auto match = root->Match(*this);
   if (match.IsError()) {
     DCHECK(last_error_.has_value() && last_error_->error_callback != nullptr);
@@ -190,16 +188,31 @@ parser_internal::ParseMatch Parser::MatchTokenItem(
 }
 
 parser_internal::ParseMatch Parser::MatchRuleItem(
-    const ParserRuleName& parser_rule_name, bool scope_items) {
+    const ParserRuleName& parser_rule_name) {
   const ParserRuleItem* rule = rules_->GetRule(parser_rule_name.GetRuleName());
   DCHECK(rule != nullptr);  // Handled during rule validation.
-  ParsedItems* old_items = items_;
-  if (scope_items) {
-    items_ = nullptr;
+  return rule->Match(*this);
+}
+
+void Parser::AddSubItemMatch(const ParserGroup::SubItem& sub_item,
+                             ParseMatch match, ParsedItems* items) {
+  if (!sub_item.name.empty()) {
+    (*items)[sub_item.name].push_back(*std::move(match));
+    return;
   }
-  ParseMatch match = rule->Match(*this);
-  items_ = old_items;
-  return match;
+  if (!sub_item.item->InlinesItems()) {
+    return;
+  }
+
+  // Merging moves across the names `items` doesn't have yet, leaving only the
+  // names both have, which are appended.
+  ParsedItems sub_items = (*std::move(match)).items_;
+  items->merge(sub_items);
+  for (auto& [name, name_items] : sub_items) {
+    std::vector<ParsedItem>& to_items = (*items)[name];
+    to_items.insert(to_items.end(), std::make_move_iterator(name_items.begin()),
+                    std::make_move_iterator(name_items.end()));
+  }
 }
 
 parser_internal::ParseMatch Parser::MatchGroup(const ParserGroup& group) {
@@ -211,17 +224,9 @@ parser_internal::ParseMatch Parser::MatchGroup(const ParserGroup& group) {
   const bool is_alternatives =
       (group.GetType() == ParserGroup::Type::kAlternatives);
 
-  // Named sub-items always go into this group's own result, so a group that
-  // fails partway leaves none behind. An inline group (one whose parent's items
-  // are set) adds them to its parent's items once it matches.
   ParsedItem result;
-  ParsedItems* const parent_items = items_;
-  absl::Cleanup cleanup = [this, parent_items] { items_ = parent_items; };
   bool has_match = false;
   for (const auto& sub_item : group.GetSubItems()) {
-    // An unnamed sub-item adds its items to this group's, while a named one
-    // keeps its own.
-    items_ = (sub_item.name.empty() ? &result.items_ : nullptr);
     Token item_token = PeekToken();
     auto match = sub_item.item->Match(*this);
     if (match.IsError()) {
@@ -239,9 +244,7 @@ parser_internal::ParseMatch Parser::MatchGroup(const ParserGroup& group) {
     if (result.token_.IsNone()) {
       result.token_ = group_token;
     }
-    if (!sub_item.name.empty()) {
-      result.items_[sub_item.name].push_back(*std::move(match));
-    }
+    AddSubItemMatch(sub_item, std::move(match), &result.items_);
     if (!sub_item.repeat.IsSet(ParserRepeat::kAllowMany)) {
       if (is_alternatives) {
         break;
@@ -272,9 +275,7 @@ parser_internal::ParseMatch Parser::MatchGroup(const ParserGroup& group) {
         }
         break;
       }
-      if (!sub_item.name.empty()) {
-        result.items_[sub_item.name].push_back(*std::move(match));
-      }
+      AddSubItemMatch(sub_item, std::move(match), &result.items_);
     }
     if (is_alternatives) {
       break;
@@ -282,17 +283,6 @@ parser_internal::ParseMatch Parser::MatchGroup(const ParserGroup& group) {
   }
   if (is_alternatives && !has_match) {
     return ParseMatch::Error();
-  }
-  if (parent_items != nullptr) {
-    // Merging moves across the names the parent doesn't have yet, leaving only
-    // the names both have, which are appended.
-    parent_items->merge(result.items_);
-    for (auto& [name, items] : result.items_) {
-      std::vector<ParsedItem>& to_items = (*parent_items)[name];
-      to_items.insert(to_items.end(), std::make_move_iterator(items.begin()),
-                      std::make_move_iterator(items.end()));
-    }
-    result.items_.clear();
   }
   return Match(std::move(result));
 }

@@ -114,7 +114,13 @@ class Parser final {
 
   ParseMatch MatchTokenItem(const ParserToken& item);
   ParseMatch MatchGroup(const ParserGroup& item);
-  ParseMatch MatchRuleItem(const ParserRuleName& item, bool scope_items);
+  ParseMatch MatchRuleItem(const ParserRuleName& item);
+
+  // Adds the match of a group's sub-item to the group's `items`: under the
+  // sub-item's name if it has one, or else merged in if the sub-item inlines
+  // its items.
+  static void AddSubItemMatch(const ParserGroup::SubItem& sub_item,
+                              ParseMatch match, ParsedItems* items);
 
   void RewindToken() { lexer_->RewindToken(content_); }
   Token NextToken() { return lexer_->NextToken(content_); }
@@ -132,7 +138,6 @@ class Parser final {
   std::shared_ptr<const parser_internal::TokenValues> token_values_;
   LexerContentId content_ = kNoLexerContent;
   std::optional<ParseMatchError> last_error_;
-  ParsedItems* items_ = nullptr;
 };
 
 }  // namespace gb
