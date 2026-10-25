@@ -308,6 +308,17 @@ std::string_view Lexer::GetTokenText(TokenIndex index) const {
   return line->line.substr(token_info.column, token_info.size);
 }
 
+bool Lexer::IsTokenAdjacent(const Token& token) const {
+  const TokenIndex index = token.token_index_;
+  const Line* line = GetTokenLine(index);
+  if (line == nullptr || index.token == kTokenIndexEndToken ||
+      index.token == 0) {
+    return false;
+  }
+  const TokenInfo previous = line->tokens[index.token - 1];
+  return previous.column + previous.size == line->tokens[index.token].column;
+}
+
 Token Lexer::ParseTokenText(std::string_view token_text) const {
   if (RE2::FullMatch(token_text, *state_.re_symbol)) {
     return Token::CreateSymbol(kInvalidTokenIndex, token_text);

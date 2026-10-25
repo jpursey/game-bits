@@ -287,6 +287,13 @@ class Lexer final {
   std::string_view GetTokenText(const Token& token) const;
   std::string_view GetTokenText(TokenIndex index) const;
 
+  // Returns true if the token starts exactly where the token before it ends,
+  // with no space or comment between them.
+  //
+  // Returns false for the first token on a line, as a line break comes before
+  // it, for an end token, which has no text to touch, and for an invalid token.
+  bool IsTokenAdjacent(const Token& token) const;
+
   //----------------------------------------------------------------------------
   // Token parsing
   //----------------------------------------------------------------------------

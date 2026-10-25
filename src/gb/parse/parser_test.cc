@@ -1555,6 +1555,90 @@ TEST(ParserTest, MarkerInFailedGroupLeavesNoItem) {
   EXPECT_THAT(result->GetItems("mark"), IsEmpty());
 }
 
+TEST(ParserTest, AdjacentTokens) {
+  auto parser = CreateProgramParser(R"(
+    Program { $name=%ident [^'.' $ext=^%ident]; }
+  )");
+  ASSERT_NE(parser, nullptr);
+
+  LexerContentId content = parser->GetLexer().AddContent("ADD.W");
+  ParseResult result = parser->Parse(content, "Program");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_EQ(result->GetString("name"), "ADD");
+  EXPECT_EQ(result->GetString("ext"), "W");
+
+  // Each of these has something between two of the tokens, so only the name
+  // matches.
+  for (std::string_view text :
+       {"ADD . W", "ADD .W", "ADD. W", "ADD/**/.W", "ADD./**/W", "ADD.\nW"}) {
+    content = parser->GetLexer().AddContent(std::string(text));
+    result = parser->Parse(content, "Program");
+    ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+    EXPECT_EQ(result->GetString("name"), "ADD") << text;
+    EXPECT_THAT(result->GetItems("ext"), IsEmpty()) << text;
+    EXPECT_TRUE(parser->GetLexer().NextToken(content, false).IsSymbol('.'))
+        << text;
+  }
+}
+
+TEST(ParserTest, AdjacentAtStartOfParse) {
+  auto parser = CreateProgramParser(R"(
+    Program { $name=^%ident; }
+  )");
+  ASSERT_NE(parser, nullptr);
+  LexerContentId content = parser->GetLexer().AddContent("  abc def");
+
+  ParseResult result = parser->Parse(content, "Program");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_EQ(result->GetString("name"), "abc");
+  result = parser->Parse(content, "Program");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_EQ(result->GetString("name"), "def");
+}
+
+TEST(ParserTest, AdjacentErrorForSpace) {
+  auto parser = CreateProgramParser(R"(
+    Program { '.' $name=^%ident; }
+  )");
+  ASSERT_NE(parser, nullptr);
+  LexerContentId content = parser->GetLexer().AddContent(". DW");
+
+  ParseResult result = parser->Parse(content, "Program");
+  ASSERT_FALSE(result.IsOk());
+  EXPECT_THAT(
+      result.GetError().FormatMessage(),
+      AllOf(HasSubstr("\"DW\""), HasSubstr("Unexpected gap before token")));
+  EXPECT_TRUE(parser->GetLexer().NextToken(content, false).IsSymbol('.'));
+}
+
+TEST(ParserTest, RepeatedAdjacentAppliesToEachRepetition) {
+  auto parser = CreateProgramParser(R"(
+    Program { $first=%ident $rest=^!';'*; }
+  )");
+  ASSERT_NE(parser, nullptr);
+  LexerContentId content = parser->GetLexer().AddContent("a.b+c d;");
+
+  ParseResult result = parser->Parse(content, "Program");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_THAT(
+      result->GetItems("rest"),
+      ElementsAre(IsToken(kTokenSymbol, "."), IsToken(kTokenIdentifier, "b"),
+                  IsToken(kTokenSymbol, "+"), IsToken(kTokenIdentifier, "c")));
+  EXPECT_TRUE(parser->GetLexer().NextToken(content, false).IsIdent("d"));
+}
+
+TEST(ParserTest, AdjacentGroupKeepsNamedItems) {
+  auto parser = CreateProgramParser(R"(
+    Program { '(' ^($inner=%ident) ')'; }
+  )");
+  ASSERT_NE(parser, nullptr);
+  LexerContentId content = parser->GetLexer().AddContent("(abc)");
+
+  ParseResult result = parser->Parse(content, "Program");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_EQ(result->GetString("inner"), "abc");
+}
+
 TEST(ParserTest, RepeatedMarkerMatchesOnce) {
   auto parser = CreateProgramParser(R"(
     Program { $marks=%here* $groups=(%here)+ %ident; }

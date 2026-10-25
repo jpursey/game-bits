@@ -408,41 +408,6 @@ which also has `Cancel()` and `Invoke()`. Switch Game Bits' own uses to
 Removing `ScopedCall` breaks every project that uses it, so each one switches
 first, and it is removed once they have.
 
-## Adjacent rule items
-
-- **Layers:** parse
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Requested by:** OZ-3 *Program assembler*
-- **Background:** the rule syntax in `parser_program.h`, and
-  `Parser::MatchGroup` in `parser.cc`
-
-A rule can't say that two tokens must touch, with no space or comment between
-them, as in a name with a dotted extension (`ADD.W`, not `ADD . W`), or a
-directive's `.` and its name (`.DW`). A caller has to check it after the parse,
-by comparing token locations and text sizes, and the parse error it would want
-is lost, as the rule has already matched (or a backtracking alternative has
-matched something else).
-
-Add a prefix, such as `^item`, that matches `item` only if its first token
-starts exactly where the previous token the parse consumed ends, on the same
-line. Otherwise the item fails, consuming nothing, with an error for the space
-before the token. So `$name=%ident [^'.' ^$extension=%ident]` reads a dotted
-name only when it is written without spaces, and `'.' ^$name=%ident` reports
-`. DW` as a space before `DW`. It takes a name and a repeat like any other item,
-and applies to each repetition, so `^%ident*` is a run of identifiers that each
-touch the one before. At the start of a parse, with no token consumed yet, it
-always holds.
-
-The lexer knows whether a token followed a space or comment when it reads it,
-so it could record that on the token, or the parser can compare the previous
-token's end with the next one's start, as callers do today. Either way it is
-the parser's syntax, so the lexer needs no new token types. The rule syntax
-comment in `parser_program.h` documents it. Tests: adjacent and spaced tokens,
-a comment between them, a line break between them, at the start of a parse, a
-named and a repeated adjacent item, and the error for a space.
-
 ## Case of user tokens
 
 - **Layers:** parse

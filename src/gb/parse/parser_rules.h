@@ -62,9 +62,9 @@ constexpr ParserRepeatFlags kParserOneOrMoreWithComma = {
 // ParserRuleItems
 //
 // Parser rules are defined by a tree of ParserRuleItems rooted in a
-// ParserGroup, which are either tokens, rule names, negations, position
-// markers, or groups of other ParserRuleItems. Together, this tree of rules
-// defines the grammar that the parser will use to parse tokens.
+// ParserGroup, which are either tokens, rule names, negations, adjacent items,
+// position markers, or groups of other ParserRuleItems. Together, this tree of
+// rules defines the grammar that the parser will use to parse tokens.
 //==============================================================================
 
 // Base class for all parser rule items.
@@ -110,6 +110,15 @@ class ParserRuleItem {
   static std::unique_ptr<ParserNegation> CreateNegation(
       std::unique_ptr<ParserRuleItem> item);
 
+  // Creates an adjacent rule item, which matches `item` only if its first
+  // token touches the last token the parse consumed, with no space, comment,
+  // or line break between them. Otherwise it fails, consuming nothing. At the
+  // start of a parse, with no token consumed yet, it always holds. Named
+  // sub-items within `item` are kept as they would be without it. `item` can't
+  // be a kTokenEnd token, as the end of the content has no text to touch.
+  static std::unique_ptr<ParserAdjacent> CreateAdjacent(
+      std::unique_ptr<ParserRuleItem> item);
+
   // Creates a position marker rule item, which always matches without
   // consuming anything. Its parsed item's token is the next token: the one the
   // following rule item starts with, or the end of the content.
@@ -125,6 +134,7 @@ class ParserRuleItem {
   friend class ParserGroup;
   friend class ParserRuleName;
   friend class ParserNegation;
+  friend class ParserAdjacent;
 
   using ParseMatch = parser_internal::ParseMatch;
 
@@ -142,6 +152,7 @@ class ParserRuleItem {
   bool ValidateError(ValidateContext& context, std::string_view message) const;
 
   virtual bool IsGroup() const { return false; }
+  virtual bool IsEndToken() const { return false; }
 
   // Returns true if this item can match without consuming anything. It is only
   // called on an item that has been validated.
@@ -172,6 +183,7 @@ class ParserToken final : public ParserRuleItem {
   std::string ToString() const override;
 
  protected:
+  bool IsEndToken() const override { return token_type_ == kTokenEnd; }
   bool Validate(ValidateContext& context) const override;
   ParseMatch Match(Parser& parser) const override;
 
@@ -305,6 +317,32 @@ class ParserNegation final : public ParserRuleItem {
   std::string ToString() const override;
 
  protected:
+  bool Validate(ValidateContext& context) const override;
+  ParseMatch Match(Parser& parser) const override;
+
+ private:
+  const std::unique_ptr<const ParserRuleItem> item_;
+};
+
+// An adjacent rule item.
+//
+// This rule item matches its item only if it touches the last token the parse
+// consumed. See ParserRuleItem::CreateAdjacent for more information.
+class ParserAdjacent final : public ParserRuleItem {
+ public:
+  // Creates a new adjacent rule item.
+  explicit ParserAdjacent(std::unique_ptr<ParserRuleItem> item)
+      : item_(std::move(item)) {}
+
+  const ParserRuleItem* GetItem() const { return item_.get(); }
+
+  std::string ToString() const override;
+
+ protected:
+  bool InlinesItems() const override { return item_->InlinesItems(); }
+  bool MatchesEmpty(const ParserRules& rules) const override {
+    return item_->MatchesEmpty(rules);
+  }
   bool Validate(ValidateContext& context) const override;
   ParseMatch Match(Parser& parser) const override;
 
@@ -457,6 +495,11 @@ inline std::unique_ptr<ParserGroup> ParserRuleItem::CreateAlternatives() {
 inline std::unique_ptr<ParserNegation> ParserRuleItem::CreateNegation(
     std::unique_ptr<ParserRuleItem> item) {
   return std::make_unique<ParserNegation>(std::move(item));
+}
+
+inline std::unique_ptr<ParserAdjacent> ParserRuleItem::CreateAdjacent(
+    std::unique_ptr<ParserRuleItem> item) {
+  return std::make_unique<ParserAdjacent>(std::move(item));
 }
 
 inline std::unique_ptr<ParserMarker> ParserRuleItem::CreateMarker() {

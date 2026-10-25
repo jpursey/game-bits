@@ -116,6 +116,7 @@ std::shared_ptr<const ParserRules> CreateProgramRules() {
 
   // group_item {
   //   [$match_name=%match_name "="]
+  //   $adjacent=["^"]
   //   $negate=["!"]
   //   $item=group_item_inner
   //   $repeat=["+" | "*" | ",+" | ",*"]
@@ -127,6 +128,9 @@ std::shared_ptr<const ParserRules> CreateProgramRules() {
                                ParserRuleItem::CreateToken(kTokenMatchName));
   group_item_match->AddSubItem(ParserRuleItem::CreateToken(kTokenSymbol, "="));
   group_item->AddSubItem(std::move(group_item_match), kParserOptional);
+  group_item->AddSubItem("adjacent",
+                         ParserRuleItem::CreateToken(kTokenSymbol, "^"),
+                         kParserOptional);
   group_item->AddSubItem("negate",
                          ParserRuleItem::CreateToken(kTokenSymbol, "!"),
                          kParserOptional);
@@ -338,6 +342,9 @@ std::unique_ptr<ParserGroup::SubItem> ParseGroupItem(
       return nullptr;
     }
     item = ParserRuleItem::CreateNegation(std::move(item));
+  }
+  if (parsed_item.GetItem("adjacent") != nullptr) {
+    item = ParserRuleItem::CreateAdjacent(std::move(item));
   }
   return std::make_unique<ParserGroup::SubItem>(match_name, std::move(item),
                                                 repeat, parsed_error);

@@ -91,6 +91,7 @@ class Parser final {
   friend class ParserRuleName;
   friend class ParserGroup;
   friend class ParserNegation;
+  friend class ParserAdjacent;
   friend class ParserMarker;
 
   using ParseMatch = parser_internal::ParseMatch;
@@ -118,6 +119,7 @@ class Parser final {
   ParseMatch MatchGroup(const ParserGroup& item);
   ParseMatch MatchRuleItem(const ParserRuleName& item);
   ParseMatch MatchNegation(const ParserNegation& item);
+  ParseMatch MatchAdjacent(const ParserAdjacent& item);
   ParseMatch MatchMarker();
 
   // Adds the match of a group's sub-item to the group's `items`: under the
@@ -142,6 +144,7 @@ class Parser final {
   std::shared_ptr<const ParserRules> rules_;
   std::shared_ptr<const parser_internal::TokenValues> token_values_;
   LexerContentId content_ = kNoLexerContent;
+  Token start_token_;  // The first token of the current parse.
   std::optional<ParseMatchError> last_error_;
 
   // While positive, matching errors aren't recorded, as the item being matched

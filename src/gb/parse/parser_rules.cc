@@ -256,6 +256,32 @@ parser_internal::ParseMatch ParserNegation::Match(Parser& parser) const {
   return parser.MatchNegation(*this);
 }
 
+std::string ParserAdjacent::ToString() const {
+  if (item_ == nullptr) {
+    return "^<null>";
+  }
+  if (item_->IsGroup()) {
+    return absl::StrCat("^(", item_->ToString(), ")");
+  }
+  return absl::StrCat("^", item_->ToString());
+}
+
+bool ParserAdjacent::Validate(ValidateContext& context) const {
+  if (item_ == nullptr) {
+    return ValidateError(context, "Adjacent item cannot be null");
+  }
+
+  // The end of the content has no text, so nothing touches it.
+  if (item_->IsEndToken()) {
+    return ValidateError(context, "The end of the content cannot be adjacent");
+  }
+  return item_->Validate(context);
+}
+
+parser_internal::ParseMatch ParserAdjacent::Match(Parser& parser) const {
+  return parser.MatchAdjacent(*this);
+}
+
 std::string ParserMarker::ToString() const { return "%here"; }
 
 bool ParserMarker::Validate(ValidateContext&) const { return true; }

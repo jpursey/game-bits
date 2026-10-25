@@ -77,6 +77,18 @@ TEST(ParserRulesTest, NullNegatedItem) {
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("null"));
 }
 
+TEST(ParserRulesTest, NullAdjacentItem) {
+  auto lexer = Lexer::Create(kCStyleLexerConfig);
+  ASSERT_NE(lexer, nullptr);
+  ParserRules rules;
+  auto rule = ParserRuleItem::CreateSequence();
+  rule->AddSubItem(ParserRuleItem::CreateAdjacent(nullptr));
+  rules.AddRule("rule", std::move(rule));
+  std::string error;
+  EXPECT_FALSE(rules.Validate(*lexer, &error));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("null"));
+}
+
 TEST(ParserRulesTest, SequenceAllOptional) {
   auto lexer = Lexer::Create(kCStyleLexerConfig);
   ASSERT_NE(lexer, nullptr);

@@ -384,6 +384,28 @@ TEST(ParserProgramTest, NegationsAndMarkers) {
             "!%int !(%int %float) $tokens=!(\";\" | \")\")* $end=%here");
 }
 
+TEST(ParserProgramTest, AdjacentItems) {
+  std::string error;
+  auto program = ParserProgram::Create(kCStyleLexerConfig, R"(
+    program { $a=^%int ^!%int ^(%int %float) [^%int] %end; }
+  )",
+                                       &error);
+  ASSERT_NE(program, nullptr) << "Error: " << error;
+  EXPECT_EQ(program->GetRules().GetRule("program")->ToString(),
+            "$a=^%int ^!%int ^(%int %float) [^%int] %end");
+}
+
+TEST(ParserProgramTest, EndCannotBeAdjacent) {
+  std::string error;
+  auto program = ParserProgram::Create(kCStyleLexerConfig, R"(
+    program { %ident ^%end; }
+  )",
+                                       &error);
+  EXPECT_EQ(program, nullptr);
+  EXPECT_THAT(absl::AsciiStrToLower(error),
+              AllOf(HasSubstr("end"), HasSubstr("adjacent")));
+}
+
 TEST(ParserProgramTest, OptionalItemCannotBeNegated) {
   std::string error;
   auto program = ParserProgram::Create(kCStyleLexerConfig, R"(

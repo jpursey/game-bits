@@ -9,6 +9,7 @@
 #include <limits>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "absl/strings/str_cat.h"
 #include "gmock/gmock.h"
@@ -17,6 +18,7 @@
 namespace gb {
 namespace {
 
+using ::testing::ElementsAre;
 using ::testing::Pair;
 using ::testing::UnorderedElementsAre;
 
@@ -332,6 +334,33 @@ TEST(LexerTest, GetTokenTextForDefaultToken) {
   ASSERT_NE(lexer, nullptr);
   Token token;
   EXPECT_EQ(lexer->GetTokenText(token), "");
+}
+
+TEST(LexerTest, IsTokenAdjacent) {
+  auto lexer = Lexer::Create(kCStyleLexerConfig);
+  ASSERT_NE(lexer, nullptr);
+  LexerContentId content = lexer->AddContent(
+      "a.b c /* x */d/**/e\n"
+      "f");
+  std::vector<bool> adjacent;
+  for (Token token = lexer->NextToken(content); !token.IsEnd();
+       token = lexer->NextToken(content)) {
+    adjacent.push_back(lexer->IsTokenAdjacent(token));
+  }
+  // a . b c d e f
+  EXPECT_THAT(adjacent,
+              ElementsAre(false, true, true, false, false, false, false));
+  EXPECT_FALSE(lexer->IsTokenAdjacent(Token()));
+}
+
+TEST(LexerTest, EndTokenIsNeverAdjacent) {
+  auto lexer = Lexer::Create(kCStyleLexerConfig);
+  ASSERT_NE(lexer, nullptr);
+  LexerContentId content = lexer->AddContent("a");
+  lexer->NextToken(content);
+  Token end = lexer->NextToken(content);
+  ASSERT_TRUE(end.IsEnd());
+  EXPECT_FALSE(lexer->IsTokenAdjacent(end));
 }
 
 TEST(LexerTest, ParseDefaultTokenIndex) {

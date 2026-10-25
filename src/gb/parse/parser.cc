@@ -84,6 +84,7 @@ ParseResult Parser::Parse(LexerContentId content, std::string_view rule) {
     return ParseError(absl::StrCat("Parser rule \"", rule, "\" not found"));
   }
   content_ = content;
+  start_token_ = PeekToken();
   last_error_.reset();
   auto match = root->Match(*this);
   if (match.IsError()) {
@@ -227,6 +228,22 @@ parser_internal::ParseMatch Parser::MatchNegation(
 
   NextToken();
   return Match(token);
+}
+
+parser_internal::ParseMatch Parser::MatchAdjacent(
+    const ParserAdjacent& adjacent) {
+  Token token = PeekToken();
+  if (token.GetType() == kTokenError) {
+    return MatchAbort(Error(token, token.GetString()));
+  }
+
+  // The parse consumes tokens in order, so unless nothing is consumed yet, the
+  // token before this one is the last one it consumed.
+  if (token != start_token_ && !lexer_->IsTokenAdjacent(token)) {
+    SetError(token, "Unexpected gap before token");
+    return ParseMatch::Error();
+  }
+  return adjacent.GetItem()->Match(*this);
 }
 
 parser_internal::ParseMatch Parser::MatchMarker() {

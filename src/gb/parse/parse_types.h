@@ -22,6 +22,7 @@ class ParserToken;
 class ParserRuleName;
 class ParserGroup;
 class ParserNegation;
+class ParserAdjacent;
 class ParserMarker;
 
 // Unique ID of the LexerContent.

@@ -96,6 +96,21 @@ namespace gb {
 //                             Matches every token up to the end of the line or
 //                             a ')', as "tokens".
 //
+// A rule_item can be marked adjacent with a leading '^', which matches it only
+// if its first token touches the last token the parse consumed, with no space,
+// comment, or line break between them. At the start of a parse, with no token
+// consumed yet, it always holds. Like '!', it binds tighter than a name or
+// repeat specifier, so it applies to each repetition, and it comes before any
+// '!'. %end can't be adjacent, as the end of the content has no text to touch.
+// For example:
+//   %ident [^'.' ^%ident]     Matches a dotted name like "ADD.W", but reads
+//                             "ADD . W" as just "ADD".
+//   '.' $name=^%ident         Matches a directive like ".DW", and reports
+//                             ". DW" as a gap before "DW".
+//   ^%ident*                  Matches identifiers that each touch the last.
+//   ^!';'                     Matches any one token except ';' that touches
+//                             the last.
+//
 // A position marker, %here, matches without consuming anything. Its matched
 // token is the next token: the one the following rule_item starts with, or the
 // end of the content. Named, it marks a place in the content even when the
