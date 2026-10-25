@@ -103,11 +103,10 @@ background (2026-10-05). The tick rate was not at fault: it measured the same
 in every session, matching what CPUID reports. The single-thread report
 already splits frames by core class and warns when they mix; a combined view
 needs the same per thread, since job threads spread across both kinds of core.
-Pinning threads to one kind would make profiles compare, but `gb/thread`'s
-affinities don't know which hardware threads are which kind; only the class
-table behind `GetThisThreadCoreClass()` does. [Core-aware job
-threads](worklog/core_aware_job_threads.md) builds a topology from that table,
-and can pin each job thread to one core, which fixes each thread's class.
+Pinning threads makes profiles compare: since [Core-aware job
+threads](worklog/core_aware_job_threads.md), `GetCpuTopology()` gives each
+core's class, and `FiberJobSystem` pins each job thread to a hardware thread or
+core of its own, which fixes each thread's class.
 
 ## Fiber profile timers
 
@@ -926,11 +925,13 @@ the process runs in. On Windows 11, a process on a machine with more than 64
 hardware threads can have threads in more than one group, and then
 `GetProcessAffinityMask()` returns zero: there are no affinities,
 `GetMaxConcurrency()` returns 1 (so a default `FiberJobSystem` runs one job
-thread), and the topology falls back to the generic one. Give affinities a
-group (a small struct rather than a `uint64_t`, set with
+thread), and the topology is a single core that can't be pinned. Give
+affinities a group (a small struct rather than a `uint64_t`, set with
 `SetThreadGroupAffinity()`), so the topology covers every group. This changes
-`CreateThread()` and everything else that takes an affinity. No consumer CPU
-has more than 64 hardware threads; workstation ones do.
+`CreateThread()` and everything else that takes an affinity. `FiberJobSystem`
+also runs at most `kMaxThreadCount` (64) job threads, which its 64-bit mask of
+idle job threads relies on. No consumer CPU has more than 64 hardware threads;
+workstation ones do.
 
 ## Favored cores
 
