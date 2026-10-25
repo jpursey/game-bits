@@ -6,6 +6,7 @@
 #include "gb/parse/parser_program.h"
 
 #include "absl/strings/ascii.h"
+#include "gb/parse/parser.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
@@ -194,6 +195,26 @@ TEST(ParserProgramTest, ValidTokenLiterals) {
             "\"0b10101\" \"3.125\" \"2e3\" "
             "'\"some string\"' \"'c'\" "
             "\"var_name\" \"while\"");
+}
+
+TEST(ParserProgramTest, ParsersMatchTokenLiterals) {
+  std::string error;
+  auto program = std::shared_ptr<const ParserProgram>(ParserProgram::Create(
+      kCStyleLexerConfig, R"(program { "15" "var_name" "while" %end; })",
+      &error));
+  ASSERT_NE(program, nullptr) << "Error: " << error;
+
+  // Each parser made from the program matches its literals.
+  for (int i = 0; i < 2; ++i) {
+    auto parser = Parser::Create(program);
+    ASSERT_NE(parser, nullptr);
+    ParseResult result = parser->Parse(
+        parser->GetLexer().AddContent("15 var_name while"), "program");
+    EXPECT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+    result = parser->Parse(parser->GetLexer().AddContent("15 other while"),
+                           "program");
+    EXPECT_FALSE(result.IsOk());
+  }
 }
 
 TEST(ParserProgramTest, InvalidTokenLiteral) {

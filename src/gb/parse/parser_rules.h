@@ -20,11 +20,17 @@
 #include "gb/base/flags.h"
 #include "gb/parse/parse_result.h"
 #include "gb/parse/parse_types.h"
+#include "gb/parse/token.h"
 
 namespace gb {
 
 namespace parser_internal {
 class ParseMatch;
+
+// The value of each token rule item that has token text, as parsed by the
+// lexer the rules were validated against. Token items without text have no
+// entry, as they match any value.
+using TokenValues = absl::flat_hash_map<const ParserToken*, TokenValue>;
 }  // namespace parser_internal
 
 //==============================================================================
@@ -112,6 +118,7 @@ class ParserRuleItem {
   struct ValidateContext {
     const ParserRules& rules;
     const Lexer& lexer;
+    parser_internal::TokenValues* const token_values;
     std::string error;
     absl::flat_hash_set<std::string_view> validated_rules;
     absl::flat_hash_set<std::string_view> left_recursive_rules;
@@ -139,7 +146,6 @@ class ParserToken final : public ParserRuleItem {
 
   TokenType GetTokenType() const { return token_type_; }
   std::string_view GetTokenText() const { return token_text_; }
-  const TokenValue& GetValue() const { return value_; }
 
   std::string ToString() const override;
 
@@ -155,7 +161,6 @@ class ParserToken final : public ParserRuleItem {
 
   const TokenType token_type_;
   const std::string token_text_;
-  mutable TokenValue value_;
 };
 
 // A rule name rule item.
@@ -264,6 +269,9 @@ class ParserGroup final : public ParserRuleItem {
 //==============================================================================
 
 // The full set of parser rules that define the grammar for a Parser.
+//
+// Validating and parsing only read the rules, so once they are added, the same
+// rules can be shared by parsers on any thread, each with its own lexer.
 class ParserRules final {
  public:
   ParserRules() = default;
@@ -295,9 +303,12 @@ class ParserRules final {
   // If this method returns false, then the error_message will be set to a
   // description of the error that occurred. Only valid rules can be used to
   // create a Parser.
-  bool Validate(Lexer& lexer, std::string* error_message = nullptr) const;
+  bool Validate(const Lexer& lexer, std::string* error_message = nullptr) const;
 
  private:
+  friend class Parser;
+  friend class ParserProgram;
+
   using Rules =
       absl::flat_hash_map<std::string, std::unique_ptr<const ParserRuleItem>>;
 
@@ -310,6 +321,11 @@ class ParserRules final {
                         absl::StrAppend(out, value.first);
                       }));
   }
+
+  // Validates the rules as Validate() does, returning the value of each token
+  // item as `lexer` parses its text, or null if the rules are invalid.
+  std::shared_ptr<const parser_internal::TokenValues> DoValidate(
+      const Lexer& lexer, std::string* error_message) const;
 
   Rules rules_;
   std::string duplicate_name_;  // The first name added twice, if any.

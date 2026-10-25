@@ -65,6 +65,32 @@ TEST(ParserTest, InvalidRulesWithSharedLexer) {
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("at least one"));
 }
 
+TEST(ParserTest, SharedRulesUseEachParsersLexer) {
+  auto rules = std::make_shared<ParserRules>();
+  auto rule = ParserRuleItem::CreateSequence();
+  rule->AddSubItem(ParserRuleItem::CreateToken(kTokenIdentifier, "Name"));
+  rules->AddRule("rule", std::move(rule));
+
+  // Each lexer forces the literal's case differently, so it only matches
+  // through the value its own lexer parses from it.
+  LexerConfig lower_config;
+  lower_config.flags = {LexerFlag::kIdentForceLower};
+  LexerConfig upper_config;
+  upper_config.flags = {LexerFlag::kIdentForceUpper};
+  std::string error;
+  auto lower_parser = Parser::Create(lower_config, rules, &error);
+  ASSERT_NE(lower_parser, nullptr) << "Error: " << error;
+  auto upper_parser = Parser::Create(upper_config, rules, &error);
+  ASSERT_NE(upper_parser, nullptr) << "Error: " << error;
+
+  ParseResult result =
+      lower_parser->Parse(lower_parser->GetLexer().AddContent("NAME"), "rule");
+  EXPECT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  result =
+      upper_parser->Parse(upper_parser->GetLexer().AddContent("name"), "rule");
+  EXPECT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+}
+
 TEST(ParserTest, NoContent) {
   auto rules = std::make_shared<ParserRules>();
   auto rule = ParserRuleItem::CreateSequence();

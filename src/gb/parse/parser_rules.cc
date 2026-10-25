@@ -5,7 +5,6 @@
 
 #include "gb/parse/parser_rules.h"
 
-#include "absl/log/check.h"
 #include "absl/strings/str_cat.h"
 #include "gb/parse/parser.h"
 
@@ -58,16 +57,12 @@ bool ParserToken::Validate(ValidateContext& context) const {
                               GetTokenTypeString(token_type_, &token_names)));
   }
   if (token_text_.empty()) {
-    DCHECK(std::holds_alternative<NoTokenValue>(value_));
     if (token_type_ == kTokenSymbol || token_type_ == kTokenKeyword) {
       return ValidateError(
           context,
           absl::StrCat("Token ", GetTokenTypeString(token_type_, &token_names),
                        " must have a value specified."));
     }
-    return true;
-  }
-  if (!std::holds_alternative<NoTokenValue>(value_)) {
     return true;
   }
   Token token = context.lexer.ParseTokenText(token_text_);
@@ -77,7 +72,7 @@ bool ParserToken::Validate(ValidateContext& context) const {
         absl::StrCat("Token text \"", token_text_, "\" is invalid token for ",
                      GetTokenTypeString(token_type_, &token_names)));
   }
-  value_ = token.GetValue();
+  (*context.token_values)[this] = token.GetValue();
   return true;
 }
 
@@ -203,21 +198,28 @@ parser_internal::ParseMatch ParserGroup::Match(Parser& parser) const {
   return parser.MatchGroup(*this);
 }
 
-bool ParserRules::Validate(Lexer& lexer, std::string* error_message) const {
+bool ParserRules::Validate(const Lexer& lexer,
+                           std::string* error_message) const {
+  return DoValidate(lexer, error_message) != nullptr;
+}
+
+std::shared_ptr<const parser_internal::TokenValues> ParserRules::DoValidate(
+    const Lexer& lexer, std::string* error_message) const {
   if (rules_.empty()) {
     if (error_message != nullptr) {
       *error_message = "No rules defined";
     }
-    return false;
+    return nullptr;
   }
   if (!duplicate_name_.empty()) {
     if (error_message != nullptr) {
       *error_message =
           absl::StrCat("Duplicate rule name: \"", duplicate_name_, "\"");
     }
-    return false;
+    return nullptr;
   }
-  ParserRuleItem::ValidateContext context = {*this, lexer};
+  auto token_values = std::make_shared<parser_internal::TokenValues>();
+  ParserRuleItem::ValidateContext context = {*this, lexer, token_values.get()};
   for (const auto& [name, rule] : rules_) {
     if (name.empty()) {
       context.error = absl::StrCat("Invalid rule name: \"", name, "\"");
@@ -234,7 +236,10 @@ bool ParserRules::Validate(Lexer& lexer, std::string* error_message) const {
   if (error_message != nullptr) {
     *error_message = context.error;
   }
-  return context.error.empty();
+  if (!context.error.empty()) {
+    return nullptr;
+  }
+  return token_values;
 }
 
 }  // namespace gb

@@ -111,12 +111,17 @@ class ParserProgram {
  private:
   friend class Parser;
 
-  ParserProgram(std::shared_ptr<const LexerProgram> lexer_program,
-                std::shared_ptr<const ParserRules> rules)
-      : lexer_program_(std::move(lexer_program)), rules_(std::move(rules)) {}
+  ParserProgram(
+      std::shared_ptr<const LexerProgram> lexer_program,
+      std::shared_ptr<const ParserRules> rules,
+      std::shared_ptr<const parser_internal::TokenValues> token_values)
+      : lexer_program_(std::move(lexer_program)),
+        rules_(std::move(rules)),
+        token_values_(std::move(token_values)) {}
 
   std::shared_ptr<const LexerProgram> lexer_program_;
   std::shared_ptr<const ParserRules> rules_;
+  std::shared_ptr<const parser_internal::TokenValues> token_values_;
 };
 
 }  // namespace gb

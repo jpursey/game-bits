@@ -8,6 +8,7 @@
 #include <iterator>
 
 #include "absl/cleanup/cleanup.h"
+#include "absl/log/check.h"
 #include "absl/strings/str_cat.h"
 
 namespace gb {
@@ -37,10 +38,12 @@ std::unique_ptr<Parser> Parser::Create(std::shared_ptr<Lexer> lexer,
     }
     return nullptr;
   }
-  if (!rules->Validate(*lexer, error_message)) {
+  auto token_values = rules->DoValidate(*lexer, error_message);
+  if (token_values == nullptr) {
     return nullptr;
   }
-  return absl::WrapUnique(new Parser(std::move(lexer), std::move(rules)));
+  return absl::WrapUnique(
+      new Parser(std::move(lexer), std::move(rules), std::move(token_values)));
 }
 
 std::unique_ptr<Parser> Parser::Create(
@@ -49,7 +52,8 @@ std::unique_ptr<Parser> Parser::Create(
     return nullptr;
   }
   auto lexer = Lexer::Create(program->lexer_program_);
-  return absl::WrapUnique(new Parser(std::move(lexer), program->rules_));
+  return absl::WrapUnique(
+      new Parser(std::move(lexer), program->rules_, program->token_values_));
 }
 
 std::unique_ptr<Parser> Parser::Create(
@@ -58,7 +62,8 @@ std::unique_ptr<Parser> Parser::Create(
   if (lexer == nullptr || program == nullptr) {
     return nullptr;
   }
-  return absl::WrapUnique(new Parser(std::move(lexer), program->rules_));
+  return absl::WrapUnique(
+      new Parser(std::move(lexer), program->rules_, program->token_values_));
 }
 
 ParseError Parser::Error(Token token, std::string_view message) {
@@ -168,8 +173,13 @@ parser_internal::ParseMatch Parser::MatchTokenItem(
   }
 
   TokenType expected_type = parser_token.GetTokenType();
-  if (token.GetType() != expected_type ||
-      !token.HasValue(parser_token.GetValue())) {
+  bool is_match = (token.GetType() == expected_type);
+  if (is_match && !parser_token.GetTokenText().empty()) {
+    auto it = token_values_->find(&parser_token);
+    DCHECK(it != token_values_->end());  // Set during rule validation.
+    is_match = token.HasValue(it->second);
+  }
+  if (!is_match) {
     return MatchError(token, expected_type, parser_token.GetTokenText());
   }
 

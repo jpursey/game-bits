@@ -60,6 +60,9 @@ class Parser final {
 
   // Creates a parser with the precompiled and validated ParserProgram. If the
   // program (or lexer) is null, then this will also return null.
+  //
+  // A lexer passed in must be created from the program's lexer program, as the
+  // program's token literals are parsed by it.
   static std::unique_ptr<Parser> Create(
       std::shared_ptr<const ParserProgram> program);
   static std::unique_ptr<Parser> Create(
@@ -101,8 +104,11 @@ class Parser final {
     absl::AnyInvocable<ParseError()> error_callback;
   };
 
-  Parser(std::shared_ptr<Lexer> lexer, std::shared_ptr<const ParserRules> rules)
-      : lexer_(std::move(lexer)), rules_(std::move(rules)) {}
+  Parser(std::shared_ptr<Lexer> lexer, std::shared_ptr<const ParserRules> rules,
+         std::shared_ptr<const parser_internal::TokenValues> token_values)
+      : lexer_(std::move(lexer)),
+        rules_(std::move(rules)),
+        token_values_(std::move(token_values)) {}
 
   ParseError Error(gb::Token token, std::string_view message);
 
@@ -123,6 +129,7 @@ class Parser final {
 
   std::shared_ptr<Lexer> lexer_;
   std::shared_ptr<const ParserRules> rules_;
+  std::shared_ptr<const parser_internal::TokenValues> token_values_;
   LexerContentId content_ = kNoLexerContent;
   std::optional<ParseMatchError> last_error_;
   ParsedItems* items_ = nullptr;

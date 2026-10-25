@@ -45,7 +45,7 @@ constexpr LexerConfig kProgramLexerConfig = {
     .user_tokens = kProgramUserTokens,
 };
 
-std::shared_ptr<const ParserRules> CreateProgramRules(Lexer& lexer) {
+std::shared_ptr<const ParserRules> CreateProgramRules() {
   auto rules = std::make_shared<ParserRules>();
 
   // %token_type = 0;
@@ -181,13 +181,6 @@ std::shared_ptr<const ParserRules> CreateProgramRules(Lexer& lexer) {
       ParserRuleItem::CreateToken(kTokenSymbol, ")"));
   group_item_inner->AddSubItem(std::move(group_item_inner_group));
   rules->AddRule("group_item_inner", std::move(group_item_inner));
-
-  // Validating rules sets their tokens' values, so it is done once here, and
-  // later validations by concurrent ParseProgram() calls only read them.
-  std::string error;
-  if (!rules->Validate(lexer, &error)) {
-    LOG(DFATAL) << "Internal error: " << error;
-  }
 
   return std::move(rules);
 }
@@ -343,6 +336,7 @@ std::unique_ptr<ParserGroup::SubItem> ParseGroupItem(
   return nullptr;
 }
 
+// Parses the rules in `program_text`, which the caller must validate.
 std::unique_ptr<const ParserRules> ParseProgram(Lexer& lexer,
                                                 std::string_view program_text,
                                                 std::string* error_message) {
@@ -365,7 +359,7 @@ std::unique_ptr<const ParserRules> ParseProgram(Lexer& lexer,
     return nullptr;
   }
   static const absl::NoDestructor<std::shared_ptr<const ParserRules>>
-      program_rules(CreateProgramRules(*Lexer::Create(*program_lexer)));
+      program_rules(CreateProgramRules());
   auto program_parser = Parser::Create(Lexer::Create(*program_lexer),
                                        *program_rules, &context.error);
   if (program_parser == nullptr) {
@@ -424,10 +418,6 @@ std::unique_ptr<const ParserRules> ParseProgram(Lexer& lexer,
       rules->AddRule(std::string(rule_name), std::move(rule));
     }
   }
-
-  if (!rules->Validate(lexer, &context.error)) {
-    return nullptr;
-  }
   return rules;
 }
 
@@ -458,8 +448,12 @@ std::unique_ptr<ParserProgram> ParserProgram::Create(
   if (rules == nullptr) {
     return nullptr;
   }
-  return absl::WrapUnique(
-      new ParserProgram(std::move(lexer_program), std::move(rules)));
+  auto token_values = rules->DoValidate(*lexer, error_message);
+  if (token_values == nullptr) {
+    return nullptr;
+  }
+  return absl::WrapUnique(new ParserProgram(
+      std::move(lexer_program), std::move(rules), std::move(token_values)));
 }
 
 }  // namespace gb
