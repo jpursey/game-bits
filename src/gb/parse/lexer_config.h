@@ -195,6 +195,13 @@ inline bool LexerSupportsIdentifiers(LexerFlags flags) {
 // Configuration for the lexer.
 //------------------------------------------------------------------------------
 
+// How the letters in a token's value are cased.
+enum class LexerCase {
+  kAsWritten,  // As written in the text.
+  kUpper,      // Forced to upper case.
+  kLower,      // Forced to lower case.
+};
+
 struct LexerConfig {
   // Overall flags that control lexer behavior.
   LexerFlags flags;
@@ -248,6 +255,10 @@ struct LexerConfig {
 
     // The regex must be RE2 syntax, and must have exactly one capturing group.
     std::string_view regex;
+
+    // How the token's value (its captured text) is cased. The token's raw text
+    // stays as written either way.
+    LexerCase value_case = LexerCase::kAsWritten;
   };
   absl::Span<const UserToken> user_tokens;
 };

@@ -389,6 +389,7 @@ class Lexer final {
     TokenArg() : arg(&text) {}
     TokenType type = kTokenNone;
     IntParseType int_parse_type = IntParseType::kDefault;
+    LexerCase value_case = LexerCase::kAsWritten;
     std::string_view text;
     RE2::Arg arg;
   };
@@ -422,8 +423,11 @@ class Lexer final {
   Token ParseString(TokenIndex token_index, std::string_view text) const;
   Token ParseKeyword(TokenIndex token_index, std::string_view text) const;
   Token ParseIdent(TokenIndex token_index, std::string_view text) const;
-  Token ParseUserToken(TokenIndex token_index, TokenType token_type,
-                       std::string_view text) const;
+  Token ParseUserToken(TokenIndex token_index, const TokenArg& match) const;
+
+  // Returns `text` cased as `value_case` says. If that changes it, the cased
+  // text is stored in `modified_text_`.
+  std::string_view ApplyCase(std::string_view text, LexerCase value_case) const;
 
   Token ParseNextSymbol(Content* content, Line* line, bool advance);
   Token ParseNextToken(Content* content, Line* line, bool advance);

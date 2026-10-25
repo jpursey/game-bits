@@ -7,6 +7,7 @@
 
 #include <cmath>
 
+#include "absl/algorithm/container.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/log/log.h"
 #include "absl/memory/memory.h"
@@ -45,6 +46,7 @@ Lexer::Lexer(std::shared_ptr<const LexerProgram> program)
   for (int i = 0; i < re_args_.size(); ++i) {
     re_args_[i].type = state_.re_args[i].type;
     re_args_[i].int_parse_type = state_.re_args[i].int_parse_type;
+    re_args_[i].value_case = state_.re_args[i].value_case;
     re_token_args_[i] = &re_args_[i].arg;
   }
 }
@@ -353,7 +355,7 @@ Token Lexer::ParseTokenText(std::string_view token_text) const {
       return ParseIdent(kInvalidTokenIndex, match->text);
     default:
       if (match->type >= kTokenUser) {
-        return ParseUserToken(kInvalidTokenIndex, match->type, match->text);
+        return ParseUserToken(kInvalidTokenIndex, *match);
       }
       break;
   }
@@ -447,7 +449,7 @@ Token Lexer::ParseToken(TokenIndex index) {
           LOG(DFATAL) << "User token failed to be re-parsed";
           return ReturnToken(Token::CreateError(index, &kErrorInternal));
         }
-        return ReturnToken(ParseUserToken(index, token_info.type, match->text));
+        return ReturnToken(ParseUserToken(index, *match));
       }
       break;
   }
@@ -672,21 +674,37 @@ Token Lexer::ParseKeyword(TokenIndex token_index, std::string_view text) const {
 Token Lexer::ParseIdent(TokenIndex token_index, std::string_view text) const {
   text = text.substr(state_.ident_config.prefix,
                      text.size() - state_.ident_config.size_offset);
-  if (state_.flags.IsSet(LexerFlag::kIdentForceLower)) {
-    modified_text_.push_back(
-        std::make_unique<std::string>(absl::AsciiStrToLower(text)));
-    text = *modified_text_.back();
-  } else if (state_.flags.IsSet(LexerFlag::kIdentForceUpper)) {
-    modified_text_.push_back(
-        std::make_unique<std::string>(absl::AsciiStrToUpper(text)));
-    text = *modified_text_.back();
-  }
+  text = ApplyCase(text, state_.ident_case);
   return Token::CreateIdentifier(token_index, text.data(), text.size());
 }
 
-Token Lexer::ParseUserToken(TokenIndex token_index, TokenType token_type,
-                            std::string_view text) const {
-  return Token::CreateUser(token_index, token_type, text.data(), text.size());
+Token Lexer::ParseUserToken(TokenIndex token_index,
+                            const TokenArg& match) const {
+  std::string_view text = ApplyCase(match.text, match.value_case);
+  return Token::CreateUser(token_index, match.type, text.data(), text.size());
+}
+
+std::string_view Lexer::ApplyCase(std::string_view text,
+                                  LexerCase value_case) const {
+  switch (value_case) {
+    case LexerCase::kAsWritten:
+      return text;
+    case LexerCase::kUpper:
+      if (absl::c_none_of(text, absl::ascii_islower)) {
+        return text;
+      }
+      modified_text_.push_back(
+          std::make_unique<std::string>(absl::AsciiStrToUpper(text)));
+      break;
+    case LexerCase::kLower:
+      if (absl::c_none_of(text, absl::ascii_isupper)) {
+        return text;
+      }
+      modified_text_.push_back(
+          std::make_unique<std::string>(absl::AsciiStrToLower(text)));
+      break;
+  }
+  return *modified_text_.back();
 }
 
 Token Lexer::ParseNextToken(Content* content, Line* line, bool advance) {
@@ -729,7 +747,7 @@ Token Lexer::ParseNextToken(Content* content, Line* line, bool advance) {
       return ParseIdent(token_index, match->text);
     default:
       if (match->type >= kTokenUser) {
-        return ParseUserToken(token_index, match->type, match->text);
+        return ParseUserToken(token_index, *match);
       }
       break;
   }

@@ -415,6 +415,11 @@ std::unique_ptr<const LexerProgram> LexerProgram::Create(
   error.clear();
 
   state.flags = config.flags;
+  if (config.flags.IsSet(LexerFlag::kIdentForceUpper)) {
+    state.ident_case = LexerCase::kUpper;
+  } else if (config.flags.IsSet(LexerFlag::kIdentForceLower)) {
+    state.ident_case = LexerCase::kLower;
+  }
 
   std::string token_pattern;
   if (!CreateTokenPattern(token_pattern, config, error)) {
@@ -558,6 +563,7 @@ std::unique_ptr<const LexerProgram> LexerProgram::Create(
       state.user_token_names[user_token.type] = user_token.name;
     }
     state.re_args[i].type = user_token.type;
+    state.re_args[i].value_case = user_token.value_case;
   }
   if (LexerSupportsIntegers(config.flags)) {
     if (config.flags.IsSet(LexerFlag::kInt64)) {

@@ -107,6 +107,7 @@ class LexerProgram final {
     TokenArgInfo() {}
     TokenType type = kTokenNone;
     IntParseType int_parse_type = IntParseType::kDefault;
+    LexerCase value_case = LexerCase::kAsWritten;  // Only for user tokens.
   };
 
   struct BlockComment {
@@ -128,6 +129,7 @@ class LexerProgram final {
     TokenConfig hex_config;
     TokenConfig float_config;
     TokenConfig ident_config;
+    LexerCase ident_case = LexerCase::kAsWritten;
     int64_t max_int = std::numeric_limits<int64_t>::max();
     int64_t min_int = std::numeric_limits<int64_t>::min();
     uint64_t int_sign_extend = 0;

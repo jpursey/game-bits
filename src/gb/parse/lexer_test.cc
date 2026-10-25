@@ -3374,6 +3374,43 @@ TEST(LexerTest, UserTokenWithEmptyCapture) {
   EXPECT_EQ(token.GetString(), "a");
 }
 
+TEST(LexerTest, UserTokenCase) {
+  const LexerConfig::UserToken user_tokens[] = {
+      {.type = kTokenUser + 0, .regex = "\\$([a-zA-Z]+)"},
+      {.type = kTokenUser + 1,
+       .regex = "\\@([a-zA-Z]+)",
+       .value_case = LexerCase::kUpper},
+      {.type = kTokenUser + 2,
+       .regex = "\\#([a-zA-Z]+)",
+       .value_case = LexerCase::kLower},
+      {.type = kTokenUser + 3,
+       .regex = "\\%([a-zA-Z]+)",
+       .value_case = LexerCase::kAsWritten},
+  };
+  auto lexer = Lexer::Create({.user_tokens = user_tokens});
+  ASSERT_NE(lexer, nullptr);
+  const LexerContentId content = lexer->AddContent("$aB @cD #eF %gH");
+  const Token default_case = lexer->NextToken(content);
+  EXPECT_EQ(default_case.GetString(), "aB");
+  EXPECT_EQ(lexer->GetTokenText(default_case), "$aB");
+  const Token upper = lexer->NextToken(content);
+  EXPECT_EQ(upper.GetString(), "CD");
+  EXPECT_EQ(lexer->GetTokenText(upper), "@cD");
+  const Token lower = lexer->NextToken(content);
+  EXPECT_EQ(lower.GetString(), "ef");
+  EXPECT_EQ(lexer->GetTokenText(lower), "#eF");
+  const Token as_written = lexer->NextToken(content);
+  EXPECT_EQ(as_written.GetString(), "gH");
+  EXPECT_EQ(lexer->GetTokenText(as_written), "%gH");
+
+  // Parsing a token again, or parsing its text alone, cases it the same way.
+  EXPECT_EQ(lexer->ParseToken(default_case.GetTokenIndex()).GetString(), "aB");
+  EXPECT_EQ(lexer->ParseToken(upper.GetTokenIndex()).GetString(), "CD");
+  EXPECT_EQ(lexer->ParseToken(lower.GetTokenIndex()).GetString(), "ef");
+  EXPECT_EQ(lexer->ParseTokenText("@cD").GetString(), "CD");
+  EXPECT_EQ(lexer->ParseTokenText("#eF").GetString(), "ef");
+}
+
 TEST(LexerTest, ParseLineBreak) {
   auto lexer = Lexer::Create({
       .flags = {kLexerFlags_CIdentifiers, LexerFlag::kLineBreak},
