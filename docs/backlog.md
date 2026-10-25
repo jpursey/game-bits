@@ -546,6 +546,7 @@ cases in one lexer, the raw text unchanged, and the default.
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** nothing
+- **Requested by:** OZ-3 *Corrupt program maps*
 - **Background:** [Code audit](worklog/code_audit.md)
 
 A corrupt chunk file can make readers read out of bounds. `ResourceFileReader`
