@@ -175,7 +175,9 @@ class ResourceFileTest : public ::testing::Test {
       }
       key_values_.clear();
       for (int i = 0; i < chunk_reader->GetCount(); ++i) {
-        chunk_reader->ConvertToPtr(&chunk[i].key);
+        if (!chunk_reader->ConvertToPtr(&chunk[i].key)) {
+          return false;
+        }
         key_values_[chunk[i].key.ptr] = chunk[i].value;
       }
       if (acquire_key_values_) {
@@ -222,7 +224,9 @@ class ResourceFileTest : public ::testing::Test {
       }
       EXPECT_EQ(entry.GetType(), TypeKey::Get<ResourceA>());
       EXPECT_EQ(entry.GetId(), chunk->id);
-      chunk_reader->ConvertToPtr(&chunk->name);
+      if (!chunk_reader->ConvertToPtr(&chunk->name)) {
+        return nullptr;
+      }
       return new ResourceA(std::move(entry), chunk->name.ptr);
     };
   }
@@ -258,7 +262,9 @@ class ResourceFileTest : public ::testing::Test {
       }
       EXPECT_EQ(entry.GetType(), TypeKey::Get<ResourceB>());
       EXPECT_EQ(entry.GetId(), chunk->id);
-      chunk_reader->ConvertToPtr(&chunk->points);
+      if (!chunk_reader->ConvertToPtr(&chunk->points, chunk->point_count)) {
+        return nullptr;
+      }
 
       auto* chunks = context->GetPtr<ResourceFileChunks>();
       KeyValueMap values;
@@ -356,7 +362,9 @@ class ResourceFileTest : public ::testing::Test {
       }
       EXPECT_EQ(entry.GetType(), TypeKey::Get<ResourceB>());
       EXPECT_EQ(entry.GetId(), chunk->id);
-      chunk_reader->ConvertToPtr(&chunk->points);
+      if (!chunk_reader->ConvertToPtr(&chunk->points, chunk->point_count)) {
+        return nullptr;
+      }
 
       auto values = context->GetValue<KeyValueMap>();
       return new ResourceB(
@@ -586,7 +594,7 @@ TEST_F(ResourceFileTest, WriteResource) {
   EXPECT_EQ(chunks[0].GetVersion(), 1);
   ASSERT_EQ(chunks[0].GetCount(), 1);
   auto* a_chunk = chunks[0].GetChunkData<ResourceAChunk>();
-  chunks[0].ConvertToPtr(&a_chunk->name);
+  ASSERT_TRUE(chunks[0].ConvertToPtr(&a_chunk->name));
   EXPECT_EQ(a_chunk->id, resource->GetResourceId());
   EXPECT_STREQ(a_chunk->name.ptr, "Name");
 }
@@ -637,8 +645,8 @@ TEST_F(ResourceFileTest, WriteGenericChunk) {
   EXPECT_EQ(chunks[0].GetVersion(), 1);
   ASSERT_EQ(chunks[0].GetCount(), 2);
   auto* key_value_chunks = chunks[0].GetChunkData<KeyValueChunk>();
-  chunks[0].ConvertToPtr(&key_value_chunks[0].key);
-  chunks[0].ConvertToPtr(&key_value_chunks[1].key);
+  ASSERT_TRUE(chunks[0].ConvertToPtr(&key_value_chunks[0].key));
+  ASSERT_TRUE(chunks[0].ConvertToPtr(&key_value_chunks[1].key));
   EXPECT_STREQ(key_value_chunks[0].key.ptr, "alpha");
   EXPECT_EQ(key_value_chunks[0].value, 42.0f);
   EXPECT_STREQ(key_value_chunks[1].key.ptr, "beta");
@@ -648,7 +656,7 @@ TEST_F(ResourceFileTest, WriteGenericChunk) {
   EXPECT_EQ(chunks[1].GetVersion(), 1);
   ASSERT_EQ(chunks[1].GetCount(), 1);
   auto* b_chunk = chunks[1].GetChunkData<ResourceBChunk>();
-  chunks[1].ConvertToPtr(&b_chunk->points);
+  ASSERT_TRUE(chunks[1].ConvertToPtr(&b_chunk->points, b_chunk->point_count));
   EXPECT_EQ(b_chunk->id, resource->GetResourceId());
   ASSERT_EQ(b_chunk->point_count, 3);
   ASSERT_EQ(b_chunk->points.ptr[0].x, 1);
@@ -699,7 +707,7 @@ TEST_F(ResourceFileTest, WriteGenericFlatBufferChunk) {
   EXPECT_EQ(chunks[1].GetVersion(), 1);
   ASSERT_EQ(chunks[1].GetCount(), 1);
   auto* b_chunk = chunks[1].GetChunkData<ResourceBChunk>();
-  chunks[1].ConvertToPtr(&b_chunk->points);
+  ASSERT_TRUE(chunks[1].ConvertToPtr(&b_chunk->points, b_chunk->point_count));
   EXPECT_EQ(b_chunk->id, resource->GetResourceId());
   ASSERT_EQ(b_chunk->point_count, 3);
   ASSERT_EQ(b_chunk->points.ptr[0].x, 1);
@@ -753,10 +761,10 @@ TEST_F(ResourceFileTest, WriteResourceDependencies) {
   EXPECT_EQ(chunks[0].GetVersion(), 1);
   ASSERT_EQ(chunks[0].GetCount(), 2);
   auto* resource_load_chunks = chunks[0].GetChunkData<ResourceLoadChunk>();
-  chunks[0].ConvertToPtr(&resource_load_chunks[0].type);
-  chunks[0].ConvertToPtr(&resource_load_chunks[0].name);
-  chunks[0].ConvertToPtr(&resource_load_chunks[1].type);
-  chunks[0].ConvertToPtr(&resource_load_chunks[1].name);
+  ASSERT_TRUE(chunks[0].ConvertToPtr(&resource_load_chunks[0].type));
+  ASSERT_TRUE(chunks[0].ConvertToPtr(&resource_load_chunks[0].name));
+  ASSERT_TRUE(chunks[0].ConvertToPtr(&resource_load_chunks[1].type));
+  ASSERT_TRUE(chunks[0].ConvertToPtr(&resource_load_chunks[1].name));
   EXPECT_EQ(resource_load_chunks[0].id, resource_a->GetResourceId());
   EXPECT_STREQ(resource_load_chunks[0].type.ptr,
                resource_a->GetResourceType()->GetTypeName());
@@ -804,10 +812,10 @@ TEST_F(ResourceFileTest, WriteFlatBufferResourceDependencies) {
   EXPECT_EQ(chunks[0].GetVersion(), 1);
   ASSERT_EQ(chunks[0].GetCount(), 2);
   auto* resource_load_chunks = chunks[0].GetChunkData<ResourceLoadChunk>();
-  chunks[0].ConvertToPtr(&resource_load_chunks[0].type);
-  chunks[0].ConvertToPtr(&resource_load_chunks[0].name);
-  chunks[0].ConvertToPtr(&resource_load_chunks[1].type);
-  chunks[0].ConvertToPtr(&resource_load_chunks[1].name);
+  ASSERT_TRUE(chunks[0].ConvertToPtr(&resource_load_chunks[0].type));
+  ASSERT_TRUE(chunks[0].ConvertToPtr(&resource_load_chunks[0].name));
+  ASSERT_TRUE(chunks[0].ConvertToPtr(&resource_load_chunks[1].type));
+  ASSERT_TRUE(chunks[0].ConvertToPtr(&resource_load_chunks[1].name));
   EXPECT_EQ(resource_load_chunks[0].id, resource_a->GetResourceId());
   EXPECT_STREQ(resource_load_chunks[0].type.ptr,
                resource_a->GetResourceType()->GetTypeName());
@@ -1145,7 +1153,7 @@ TEST_F(ResourceFileTest, ReadAfterReaderRejectsItsResource) {
       [&read_count](Context* context, ChunkReader* chunk_reader,
                     ResourceEntry entry) -> ResourceA* {
         auto* chunk = chunk_reader->GetChunkData<ResourceAChunk>();
-        chunk_reader->ConvertToPtr(&chunk->name);
+        EXPECT_TRUE(chunk_reader->ConvertToPtr(&chunk->name));
         auto* resource = new ResourceA(std::move(entry), chunk->name.ptr);
         ++read_count;
         return (read_count == 1 ? nullptr : resource);
@@ -1457,6 +1465,112 @@ TEST_F(ResourceFileTest, ReadResourceChunkTooSmall) {
   ASSERT_TRUE((reader_->RegisterResourceChunk<ResourceA, ResourceAChunk>(
       kChunkTypeResourceA, 1, GetCountingResourceALoader(&read_count))));
   EXPECT_EQ(reader_->Read<ResourceA>("mem:/file"), nullptr);
+  EXPECT_EQ(read_count, 0);
+}
+
+TEST_F(ResourceFileTest, ReadResourceLoadChunkTooSmall) {
+  // The chunk only has room for two IDs, not two ResourceLoadChunks.
+  std::vector<ChunkWriter> chunk_writers;
+  chunk_writers.emplace_back(
+      ChunkWriter::New<ResourceId>(kChunkTypeResourceLoad, 1, 2));
+  chunk_writers.emplace_back(
+      ChunkWriter::New<ResourceAChunk>(kChunkTypeResourceA, 1));
+  auto* a_chunk = chunk_writers[1].GetChunkData<ResourceAChunk>();
+  a_chunk->id = 1;
+  a_chunk->name = chunk_writers[1].AddString("Name");
+  auto file = file_system_->OpenFile("mem:/file", kNewFileFlags);
+  ASSERT_NE(file, nullptr);
+  ASSERT_TRUE(WriteChunkFile(file.get(), kChunkTypeResourceA, chunk_writers));
+  file.reset();
+
+  ASSERT_TRUE((reader_->RegisterResourceChunk<ResourceA, ResourceAChunk>(
+      kChunkTypeResourceA, 1, GetResourceALoader())));
+  EXPECT_EQ(reader_->Read<ResourceA>("mem:/file"), nullptr);
+}
+
+TEST_F(ResourceFileTest, ReadResourceLoadNameOutOfBounds) {
+  ResourcePtr<ResourceB> resource_b =
+      new ResourceB(resource_manager_.NewResourceEntry<ResourceB>(), {}, {});
+
+  std::vector<ChunkWriter> chunk_writers;
+  chunk_writers.emplace_back(
+      ChunkWriter::New<ResourceLoadChunk>(kChunkTypeResourceLoad, 1));
+  chunk_writers.emplace_back(
+      ChunkWriter::New<ResourceAChunk>(kChunkTypeResourceA, 1));
+  auto* load_chunk = chunk_writers[0].GetChunkData<ResourceLoadChunk>();
+  load_chunk->id = resource_b->GetResourceId();
+  load_chunk->type = chunk_writers[0].AddString("ResourceB");
+  load_chunk->name.offset = 1024;
+  auto* a_chunk = chunk_writers[1].GetChunkData<ResourceAChunk>();
+  a_chunk->id = 1;
+  a_chunk->name = chunk_writers[1].AddString("Name");
+  auto file = file_system_->OpenFile("mem:/file", kNewFileFlags);
+  ASSERT_NE(file, nullptr);
+  ASSERT_TRUE(WriteChunkFile(file.get(), kChunkTypeResourceA, chunk_writers));
+  file.reset();
+
+  ASSERT_TRUE((reader_->RegisterResourceChunk<ResourceA, ResourceAChunk>(
+      kChunkTypeResourceA, 1, GetResourceALoader())));
+  EXPECT_EQ(reader_->Read<ResourceA>("mem:/file"), nullptr);
+}
+
+TEST_F(ResourceFileTest, ReadInvalidFlatBufferResource) {
+  // The flat buffer's root offset is past the end of the chunk.
+  struct InvalidChunk {
+    ResourceId id;
+    uint32_t root_offset;
+    uint32_t padding;
+  };
+  std::vector<ChunkWriter> chunk_writers;
+  chunk_writers.emplace_back(
+      ChunkWriter::New<InvalidChunk>(kChunkTypeResourceA, 1));
+  *chunk_writers[0].GetChunkData<InvalidChunk>() = {1, 1024, 0};
+  auto file = file_system_->OpenFile("mem:/file", kNewFileFlags);
+  ASSERT_NE(file, nullptr);
+  ASSERT_TRUE(WriteChunkFile(file.get(), kChunkTypeResourceA, chunk_writers));
+  file.reset();
+
+  int read_count = 0;
+  ASSERT_TRUE(
+      (reader_->RegisterResourceFlatBufferChunk<ResourceA, fbs::ResourceAChunk>(
+          kChunkTypeResourceA, 1,
+          [&read_count](Context* context, const fbs::ResourceAChunk* chunk,
+                        ResourceEntry entry) -> ResourceA* {
+            ++read_count;
+            return nullptr;
+          })));
+  EXPECT_EQ(reader_->Read<ResourceA>("mem:/file"), nullptr);
+  EXPECT_EQ(read_count, 0);
+}
+
+TEST_F(ResourceFileTest, ReadInvalidGenericFlatBufferChunk) {
+  // The flat buffer's root offset is past the end of the chunk.
+  struct InvalidChunk {
+    uint32_t root_offset;
+    uint32_t padding;
+  };
+  std::vector<ChunkWriter> chunk_writers;
+  chunk_writers.emplace_back(
+      ChunkWriter::New<InvalidChunk>(kChunkTypeKeyValue, 1));
+  *chunk_writers[0].GetChunkData<InvalidChunk>() = {1024, 0};
+  chunk_writers.emplace_back(
+      ChunkWriter::New<ResourceBChunk>(kChunkTypeResourceB, 1));
+  chunk_writers[1].GetChunkData<ResourceBChunk>()->id = 1;
+  auto file = file_system_->OpenFile("mem:/file", kNewFileFlags);
+  ASSERT_NE(file, nullptr);
+  ASSERT_TRUE(WriteChunkFile(file.get(), kChunkTypeResourceB, chunk_writers));
+  file.reset();
+
+  int read_count = 0;
+  ASSERT_TRUE((reader_->RegisterResourceChunk<ResourceB, ResourceBChunk>(
+      kChunkTypeResourceB, 1, GetResourceBHybridLoader())));
+  ASSERT_TRUE((reader_->RegisterGenericFlatBufferChunk<fbs::KeyValueChunk>(
+      kChunkTypeKeyValue, 1,
+      [&read_count](Context* context, const fbs::KeyValueChunk* chunk) {
+        ++read_count;
+        return true;
+      })));
+  EXPECT_EQ(reader_->Read<ResourceB>("mem:/file"), nullptr);
   EXPECT_EQ(read_count, 0);
 }
 

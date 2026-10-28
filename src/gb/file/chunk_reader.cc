@@ -5,6 +5,8 @@
 
 #include "gb/file/chunk_reader.h"
 
+#include <cstring>
+
 #include "absl/log/log.h"
 #include "gb/file/file.h"
 
@@ -63,6 +65,29 @@ std::optional<ChunkReader> ChunkReader::Read(File* file, bool* has_error) {
     *has_error = false;
   }
   return ChunkReader(chunk_header, data);
+}
+
+bool ChunkReader::FitsEntriesOfSize(int32_t entry_size) const {
+  return entry_size > 0 && int64_t{entry_size} * header_.count <= header_.size;
+}
+
+bool ChunkReader::ConvertToPtr(ChunkPtr<const char>* str) {
+  // Converting overwrites the offset.
+  const int64_t offset = str->offset;
+  if (!ConvertToPtr<const char>(str, 1)) {
+    return false;
+  }
+  if (str->ptr != nullptr &&
+      std::memchr(str->ptr, 0, header_.size - offset) == nullptr) {
+    str->ptr = nullptr;
+    return false;
+  }
+  return true;
+}
+
+bool ChunkReader::HasData(int64_t offset, int64_t size) const {
+  return data_ != nullptr && offset > 0 && offset % 8 == 0 && size >= 0 &&
+         offset <= header_.size && size <= header_.size - offset;
 }
 
 bool ReadChunkFile(File* file, ChunkType* file_type,

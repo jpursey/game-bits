@@ -27,7 +27,8 @@ namespace gb {
 // chunk into memory directly, and validates the chunk header and size. Code
 // that wants to access the data must then call GetChunkData. If the chunk data
 // contains pointers to extra data, these will be in offset form initially and
-// must be converted to pointers by calling ConvertToPtr on each member.
+// must be converted to pointers by calling ConvertToPtr on each member. Both
+// fail if the chunk is corrupt.
 //
 // Example:
 //
@@ -71,26 +72,33 @@ namespace gb {
 //    std::free(bars);
 //  }
 //
-//  // Reads supported chunk from the file, ignoring all others.
-//  void ReadChunk(File* file) {
+//  // Reads supported chunk from the file, ignoring all others. Returns false
+//  // if the chunk is corrupt.
+//  bool ReadChunk(File* file) {
 //    auto chunk_reader = ChunkReader::Read(file);
-//    if (!chunk_reader) {
+//    if (!chunk_reader.has_value()) {
 //      // No chunk (pass in has_error to Read to detect errors).
-//      return;
+//      return true;
 //    }
 //    if (chunk_reader->GetType() == kChunkTypeExample) {
 //      if (chunk_reader->GetVersion() > 1) { /* handle unexpected version */ }
 //      auto* chunk = chunk_reader->GetChunkData<ExampleChunk>();
-//      chunk_reader->ConvertToPtr(&chunk->name);
-//      chunk_reader->ConvertToPtr(&chunk->foos);
+//      if (chunk == nullptr || !chunk_reader->ConvertToPtr(&chunk->name) ||
+//          !chunk_reader->ConvertToPtr(&chunk->foos, chunk->foo_count)) {
+//        return false;
+//      }
 //      HandleExampleChunk(chunk_reader->ReleaseChunkData<ExampleChunk>());
 //    }
 //    if (chunk_reader->GetType() == kChunkTypeBar) {
 //      if (chunk_reader->GetVersion() > 1) { /* handle unexpected version */ }
-//      HandleBarChunk(chunk_reader->ReleaseChunkData<Bar>(),
-//                     chunk_reader->GetCount());
+//      Bar* bars = chunk_reader->ReleaseChunkData<Bar>();
+//      if (bars == nullptr) {
+//        return false;
+//      }
+//      HandleBarChunk(bars, chunk_reader->GetCount());
 //    }
 //    // Unhandled chunk will just get ignored.
+//    return true;
 //  }
 // ```
 class ChunkReader final {
@@ -122,6 +130,10 @@ class ChunkReader final {
   int32_t GetSize() const { return header_.size; }
   int32_t GetCount() const { return header_.count; }
 
+  // Returns true if GetCount() entries of `entry_size` bytes each fit in the
+  // chunk. Returns false if `entry_size` is not positive.
+  bool FitsEntriesOfSize(int32_t entry_size) const;
+
   //----------------------------------------------------------------------------
   // Chunk data
   //----------------------------------------------------------------------------
@@ -132,8 +144,10 @@ class ChunkReader final {
   // ConvertToPtr on each. Note that all ownership of the chunk data and all
   // extra data is retained by ChunkReader until ReleaseChunkData is called.
   //
-  // It is up to the caller to ensure the type is correct! If this is cast to
-  // the wrong type, it is undefined behavior.
+  // This returns null if the chunk has no entries, or is too small for its
+  // entries of Type (see FitsEntriesOfSize). It is up to the caller to ensure
+  // the type is correct! If this is cast to the wrong type, it is undefined
+  // behavior.
   template <typename Type>
   Type* GetChunkData();
 
@@ -146,8 +160,10 @@ class ChunkReader final {
   // larger than sizeof(Type), which is where any data for ChunkPtr<> members is
   // stored.
   //
-  // It is up to the caller to ensure the type is correct! If this is cast to
-  // the wrong type, it is undefined behavior.
+  // If the chunk has no entries, or is too small for its entries of Type (see
+  // FitsEntriesOfSize), this returns null and the ChunkReader keeps the chunk
+  // data. It is up to the caller to ensure the type is correct! If this is cast
+  // to the wrong type, it is undefined behavior.
   template <typename Type>
   Type* ReleaseChunkData();
 
@@ -157,14 +173,30 @@ class ChunkReader final {
 
   // Converts the ChunkPtr from offset representation to pointer representation.
   //
-  // This must be a valid ChunkPtr within GetChunkData. If ReleaseChunkData was
-  // called, this will set the pointer to null.
+  // A null offset converts to a null pointer. Otherwise, the offset must refer
+  // to `count` entries of Type (or bytes, if Type is void) that lie within the
+  // chunk data. If it does not, the chunk is corrupt: this sets the pointer to
+  // null and returns false.
+  //
+  // This must be called before ReleaseChunkData, after which only a null offset
+  // converts successfully.
   template <typename Type>
-  void ConvertToPtr(ChunkPtr<Type>* ptr);
+  [[nodiscard]] bool ConvertToPtr(ChunkPtr<Type>* ptr, int32_t count = 1);
+
+  // Converts a string ChunkPtr (as written by ChunkWriter::AddString) from
+  // offset representation to pointer representation.
+  //
+  // This is the same as ConvertToPtr above, except that the string must also be
+  // null terminated within the chunk data.
+  [[nodiscard]] bool ConvertToPtr(ChunkPtr<const char>* str);
 
  private:
   ChunkReader(const ChunkHeader& header, uint64_t* data)
       : header_(header), data_(data) {}
+
+  // Returns true if `size` bytes at `offset` are within the chunk data, and
+  // start on an 8-byte boundary after the start of the chunk data.
+  bool HasData(int64_t offset, int64_t size) const;
 
   ChunkHeader header_;
   uint64_t* data_ = nullptr;
@@ -198,6 +230,9 @@ template <typename Type>
 inline Type* ChunkReader::GetChunkData() {
   static_assert(IsValidChunkType<Type>(),
                 "Chunk type must be trivially copyable or void");
+  if (header_.count == 0 || !FitsEntriesOfSize(GetChunkTypeSize<Type>())) {
+    return nullptr;
+  }
   return reinterpret_cast<Type*>(data_);
 }
 
@@ -205,16 +240,24 @@ template <typename Type>
 Type* ChunkReader::ReleaseChunkData() {
   static_assert(IsValidChunkType<Type>(),
                 "Chunk type must be trivially copyable or void");
+  if (header_.count == 0 || !FitsEntriesOfSize(GetChunkTypeSize<Type>())) {
+    return nullptr;
+  }
   return reinterpret_cast<Type*>(std::exchange(data_, nullptr));
 }
 
 template <typename Type>
-inline void ChunkReader::ConvertToPtr(ChunkPtr<Type>* ptr) {
-  if (data_ == nullptr || ptr->offset == 0) {
+inline bool ChunkReader::ConvertToPtr(ChunkPtr<Type>* ptr, int32_t count) {
+  if (ptr->offset == 0) {
     ptr->ptr = nullptr;
-  } else {
-    ptr->ptr = reinterpret_cast<Type*>(data_ + (ptr->offset / 8));
+    return true;
   }
+  if (!HasData(ptr->offset, int64_t{GetChunkTypeSize<Type>()} * count)) {
+    ptr->ptr = nullptr;
+    return false;
+  }
+  ptr->ptr = reinterpret_cast<Type*>(data_ + (ptr->offset / 8));
+  return true;
 }
 
 }  // namespace gb

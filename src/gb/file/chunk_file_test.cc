@@ -7,6 +7,8 @@
 #include <crtdbg.h>
 #endif
 
+#include <optional>
+#include <string_view>
 #include <unordered_set>
 #include <utility>
 
@@ -66,6 +68,37 @@ class ChunkFileTest : public ::testing::Test {
       return nullptr;
     }
     return reinterpret_cast<Type*>(header + 1);
+  }
+
+  // Writes the chunk to a file and reads it back.
+  std::optional<ChunkReader> WriteAndReadChunk(
+      const ChunkWriter& chunk_writer) {
+    auto file = file_system_->OpenFile("mem:/test", kNewFileFlags);
+    if (file == nullptr || !chunk_writer.Write(file.get())) {
+      ADD_FAILURE() << "Failed to write chunk";
+      return {};
+    }
+    file.reset();
+    file = file_system_->OpenFile("mem:/test", kReadFileFlags);
+    if (file == nullptr) {
+      ADD_FAILURE() << "Failed to open chunk for reading";
+      return {};
+    }
+    return ChunkReader::Read(file.get());
+  }
+
+  // Converts a ChunkPtr to `count` entries of Type at `offset`, and checks the
+  // pointer is null if the conversion fails.
+  template <typename Type>
+  static bool ConvertOffset(ChunkReader* chunk_reader, int64_t offset,
+                            int32_t count = 1) {
+    ChunkPtr<Type> ptr;
+    ptr.offset = offset;
+    const bool result = chunk_reader->ConvertToPtr(&ptr, count);
+    if (!result) {
+      EXPECT_EQ(ptr.ptr, nullptr);
+    }
+    return result;
   }
 
   std::unique_ptr<FileSystem> file_system_;
@@ -695,8 +728,8 @@ TEST_F(ChunkFileTest, ChunkReaderTwoFoosAndName) {
 
   auto* read_chunk = chunk_reader->GetChunkData<Example>();
   ASSERT_NE(read_chunk, nullptr);
-  chunk_reader->ConvertToPtr(&read_chunk->name);
-  chunk_reader->ConvertToPtr(&read_chunk->foos);
+  ASSERT_TRUE(chunk_reader->ConvertToPtr(&read_chunk->name));
+  ASSERT_TRUE(chunk_reader->ConvertToPtr(&read_chunk->foos, 2));
   EXPECT_STREQ(read_chunk->name.ptr, "1234");
   EXPECT_EQ(read_chunk->foos.ptr[0].x, 1);
   EXPECT_EQ(read_chunk->foos.ptr[0].y, 2);
@@ -723,8 +756,8 @@ TEST_F(ChunkFileTest, ChunkReaderNullPtrs) {
 
   auto* read_chunk = chunk_reader->GetChunkData<Example>();
   ASSERT_NE(read_chunk, nullptr);
-  chunk_reader->ConvertToPtr(&read_chunk->name);
-  chunk_reader->ConvertToPtr(&read_chunk->foos);
+  EXPECT_TRUE(chunk_reader->ConvertToPtr(&read_chunk->name));
+  EXPECT_TRUE(chunk_reader->ConvertToPtr(&read_chunk->foos));
   EXPECT_EQ(read_chunk->name.ptr, nullptr);
   EXPECT_EQ(read_chunk->foos.ptr, nullptr);
 }
@@ -766,6 +799,48 @@ TEST_F(ChunkFileTest, ChunkReaderListChunk) {
   EXPECT_EQ(read_chunks[2].c, 9);
 }
 
+TEST_F(ChunkFileTest, ChunkDataTooSmallForType) {
+  auto chunk_writer = ChunkWriter::New<Bar>(kChunkTypeBar, 1, 3);
+  auto chunk_reader = WriteAndReadChunk(chunk_writer);
+  ASSERT_TRUE(chunk_reader);
+  ASSERT_EQ(chunk_reader->GetCount(), 3);
+  ASSERT_EQ(chunk_reader->GetSize(), 40);
+
+  EXPECT_TRUE(chunk_reader->FitsEntriesOfSize(13));
+  EXPECT_FALSE(chunk_reader->FitsEntriesOfSize(14));
+  EXPECT_FALSE(chunk_reader->FitsEntriesOfSize(0));
+  EXPECT_FALSE(chunk_reader->FitsEntriesOfSize(-1));
+  EXPECT_EQ(chunk_reader->GetChunkData<Example>(), nullptr);
+  EXPECT_EQ(chunk_reader->ReleaseChunkData<Example>(), nullptr);
+
+  // The failed release leaves the data with the reader.
+  EXPECT_NE(chunk_reader->GetChunkData<Bar>(), nullptr);
+}
+
+TEST_F(ChunkFileTest, ChunkDataWithZeroCount) {
+  // A chunk with no entries has no chunk data to get, even if it has bytes.
+  struct ChunkContents {
+    ChunkHeader header;
+    int64_t value;
+  };
+  ChunkContents contents = {};
+  contents.header.type = kChunkTypeBar;
+  contents.header.size = sizeof(int64_t);
+  contents.header.version = 1;
+  contents.header.count = 0;
+  ASSERT_TRUE(
+      file_system_->WriteFile("mem:/test", &contents, sizeof(contents)));
+  auto file = file_system_->OpenFile("mem:/test", kReadFileFlags);
+  ASSERT_NE(file, nullptr);
+  auto chunk_reader = ChunkReader::Read(file.get());
+  ASSERT_TRUE(chunk_reader);
+
+  EXPECT_TRUE(chunk_reader->FitsEntriesOfSize(GetChunkTypeSize<Example>()));
+  EXPECT_EQ(chunk_reader->GetChunkData<int64_t>(), nullptr);
+  EXPECT_EQ(chunk_reader->GetChunkData<Example>(), nullptr);
+  EXPECT_EQ(chunk_reader->ReleaseChunkData<int64_t>(), nullptr);
+}
+
 TEST_F(ChunkFileTest, ChunkReaderRelease) {
   auto chunk_writer = ChunkWriter::New<Example>(kChunkTypeExample, 1);
   auto* chunk = chunk_writer.GetChunkData<Example>();
@@ -784,8 +859,8 @@ TEST_F(ChunkFileTest, ChunkReaderRelease) {
   ASSERT_TRUE(chunk_reader);
   auto* read_chunk = chunk_reader->GetChunkData<Example>();
   ASSERT_NE(read_chunk, nullptr);
-  chunk_reader->ConvertToPtr(&read_chunk->name);
-  chunk_reader->ConvertToPtr(&read_chunk->foos);
+  ASSERT_TRUE(chunk_reader->ConvertToPtr(&read_chunk->name));
+  ASSERT_TRUE(chunk_reader->ConvertToPtr(&read_chunk->foos, 2));
 
   auto* released_chunk = chunk_reader->ReleaseChunkData<Example>();
   ASSERT_EQ(released_chunk, read_chunk);
@@ -795,6 +870,10 @@ TEST_F(ChunkFileTest, ChunkReaderRelease) {
   EXPECT_EQ(chunk_reader->GetSize(), chunk_writer.GetSize());
   EXPECT_EQ(chunk_reader->GetVersion(), 1);
   EXPECT_EQ(chunk_reader->GetCount(), 1);
+
+  // Once released, only a null offset converts.
+  EXPECT_FALSE(ConvertOffset<const char>(&chunk_reader.value(), 8));
+  EXPECT_TRUE(ConvertOffset<const char>(&chunk_reader.value(), 0));
   chunk_reader = {};
 
   EXPECT_STREQ(released_chunk->name.ptr, "1234");
@@ -869,8 +948,9 @@ TEST_F(ChunkFileTest, ReadWriteMultiChunkFile) {
   EXPECT_EQ(read_chunks[1].GetCount(), write_chunks[1].GetCount());
   example_chunk = read_chunks[1].GetChunkData<Example>();
   ASSERT_NE(example_chunk, nullptr);
-  read_chunks[1].ConvertToPtr(&example_chunk->name);
-  read_chunks[1].ConvertToPtr(&example_chunk->foos);
+  ASSERT_TRUE(read_chunks[1].ConvertToPtr(&example_chunk->name));
+  ASSERT_TRUE(read_chunks[1].ConvertToPtr(&example_chunk->foos,
+                                          example_chunk->foo_count));
   EXPECT_STREQ(example_chunk->name.ptr, "1234");
   EXPECT_EQ(example_chunk->value, 42);
   EXPECT_EQ(example_chunk->foo_count, 2);
@@ -930,8 +1010,71 @@ TEST_F(ChunkFileTest, UnownedUnalignedDataWithExtraData) {
   EXPECT_EQ(chunk_reader->GetSize(), chunk_writer.GetSize());
   auto* read_name = chunk_reader->GetChunkData<ChunkPtr<const char>>();
   ASSERT_NE(read_name, nullptr);
-  chunk_reader->ConvertToPtr(read_name);
+  ASSERT_TRUE(chunk_reader->ConvertToPtr(read_name));
   EXPECT_STREQ(read_name->ptr, "name");
+}
+
+TEST_F(ChunkFileTest, ConvertToPtrChecksBounds) {
+  auto chunk_writer = ChunkWriter::New<Example>(kChunkTypeExample, 1);
+  auto* chunk = chunk_writer.GetChunkData<Example>();
+  ASSERT_NE(chunk, nullptr);
+  chunk->foos = chunk_writer.AddData<const Foo>({Foo{1, 2, 3}, Foo{4, 5, 6}});
+  const int64_t foos_offset = chunk->foos.offset;
+  const int32_t foos_size = 2 * GetChunkTypeSize<Foo>();
+  auto chunk_reader = WriteAndReadChunk(chunk_writer);
+  ASSERT_TRUE(chunk_reader);
+  const int64_t size = chunk_reader->GetSize();
+  ASSERT_EQ(size, foos_offset + foos_size);
+
+  ChunkReader* reader = &chunk_reader.value();
+  EXPECT_TRUE(ConvertOffset<const Foo>(reader, foos_offset, 2));
+  EXPECT_FALSE(ConvertOffset<const Foo>(reader, foos_offset, 3));
+  EXPECT_FALSE(ConvertOffset<const Foo>(reader, foos_offset, -1));
+  EXPECT_TRUE(ConvertOffset<const Foo>(reader, size, 0));
+  EXPECT_FALSE(ConvertOffset<const Foo>(reader, size, 1));
+  EXPECT_FALSE(ConvertOffset<const Foo>(reader, size + 8, 0));
+  EXPECT_FALSE(ConvertOffset<const Foo>(reader, foos_offset + 4));
+  EXPECT_FALSE(ConvertOffset<const Foo>(reader, -8));
+  EXPECT_FALSE(ConvertOffset<const Foo>(reader, int64_t{1} << 62));
+  EXPECT_TRUE(ConvertOffset<const void>(reader, foos_offset, foos_size));
+  EXPECT_FALSE(ConvertOffset<const void>(reader, foos_offset, foos_size + 1));
+}
+
+TEST_F(ChunkFileTest, ConvertToPtrChecksStringTerminator) {
+  auto chunk_writer = ChunkWriter::New<Example>(kChunkTypeExample, 1);
+  auto* chunk = chunk_writer.GetChunkData<Example>();
+  ASSERT_NE(chunk, nullptr);
+
+  // Eight characters fill their space exactly, so the chunk ends without a
+  // terminator.
+  chunk->name = chunk_writer.AddData<const char>("abcdefgh", 8);
+  auto chunk_reader = WriteAndReadChunk(chunk_writer);
+  ASSERT_TRUE(chunk_reader);
+  ASSERT_EQ(chunk_reader->GetSize(), GetChunkTypeSize<Example>() + 8);
+  auto* read_chunk = chunk_reader->GetChunkData<Example>();
+  ASSERT_NE(read_chunk, nullptr);
+  const int64_t name_offset = read_chunk->name.offset;
+
+  EXPECT_FALSE(chunk_reader->ConvertToPtr(&read_chunk->name));
+  EXPECT_EQ(read_chunk->name.ptr, nullptr);
+
+  // As an array of characters, it is valid.
+  read_chunk->name.offset = name_offset;
+  ASSERT_TRUE(chunk_reader->ConvertToPtr(&read_chunk->name, 8));
+  EXPECT_EQ(std::string_view(read_chunk->name.ptr, 8), "abcdefgh");
+}
+
+TEST_F(ChunkFileTest, ConvertToPtrChecksStringBounds) {
+  auto chunk_writer = ChunkWriter::New<Example>(kChunkTypeExample, 1);
+  auto* chunk = chunk_writer.GetChunkData<Example>();
+  ASSERT_NE(chunk, nullptr);
+  chunk->name.offset = 1024;
+  auto chunk_reader = WriteAndReadChunk(chunk_writer);
+  ASSERT_TRUE(chunk_reader);
+  auto* read_chunk = chunk_reader->GetChunkData<Example>();
+  ASSERT_NE(read_chunk, nullptr);
+  EXPECT_FALSE(chunk_reader->ConvertToPtr(&read_chunk->name));
+  EXPECT_EQ(read_chunk->name.ptr, nullptr);
 }
 
 #if defined(_MSC_VER) && defined(_DEBUG)

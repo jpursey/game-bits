@@ -6,11 +6,13 @@
 #ifndef GB_RESOURCE_RESOURCE_FILE_READER_H_
 #define GB_RESOURCE_RESOURCE_FILE_READER_H_
 
+#include <cstdint>
 #include <type_traits>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/functional/any_invocable.h"
+#include "absl/log/log.h"
 #include "flatbuffers/flatbuffers.h"
 #include "gb/base/validated_context.h"
 #include "gb/file/chunk_reader.h"
@@ -200,8 +202,9 @@ class ResourceFileReader final {
   // type on success.
   //
   // When this is called, the chunk is valid and is of the
-  // version specified at registration. The chunk has already been converted
-  // into the specified FlatBufferType via flatbuffers::GetRoot<FlatBufferType>.
+  // version specified at registration. The chunk has already been verified
+  // with flatbuffers::Verifier and converted into the specified FlatBufferType
+  // via flatbuffers::GetRoot<FlatBufferType>.
   //
   // Flat buffer resource chunks are never added to ResourceFileChunks, and the
   // passed in FlatBufferType instance will become invalid immediately after the
@@ -238,8 +241,9 @@ class ResourceFileReader final {
   // chunk readers).
   //
   // When this is called, the chunk is valid and is of the version specified at
-  // registration. The chunk has already been converted into the specified
-  // FlatBufferType via flatbuffers::GetRoot<FlatBufferType>.
+  // registration. The chunk has already been verified with
+  // flatbuffers::Verifier and converted into the specified FlatBufferType via
+  // flatbuffers::GetRoot<FlatBufferType>.
   //
   // Flat buffer chunks are never added to ResourceFileChunks, and the passed in
   // FlatBufferType instance will become invalid immediately after the reader
@@ -419,9 +423,11 @@ class ResourceFileReader final {
 
   ResourceFileReader(ValidatedContext context);
 
-  // Returns true if the chunk has room for its count of entries of entry_size
-  // bytes each.
-  static bool HasChunkSize(const ChunkReader& chunk_reader, int entry_size);
+  // Returns the root of the flat buffer that starts `offset` bytes into the
+  // chunk and runs to its end, or null if it is not a valid FlatBufferType.
+  template <typename FlatBufferType>
+  static const FlatBufferType* GetFlatBufferRoot(ChunkReader* chunk_reader,
+                                                 int offset);
 
   bool DoRegisterChunkReader(const ChunkType& chunk_type, int version,
                              TypeKey* resource_type, TypeKey* struct_type,
@@ -512,13 +518,12 @@ bool ResourceFileReader::RegisterResourceFlatBufferChunk(
       [reader = std::move(reader)](Context* context, ChunkReader* chunk_reader,
                                    ResourceEntry resource_entry,
                                    Resource** out_resource) mutable {
-        auto* id = chunk_reader->GetChunkData<ResourceId>();
-        if (id == nullptr) {
+        auto* chunk = GetFlatBufferRoot<FlatBufferType>(
+            chunk_reader, static_cast<int>(sizeof(ResourceId)));
+        if (chunk == nullptr) {
           return false;
         }
-        *out_resource =
-            reader(context, flatbuffers::GetRoot<FlatBufferType>(id + 1),
-                   std::move(resource_entry));
+        *out_resource = reader(context, chunk, std::move(resource_entry));
         return *out_resource != nullptr;
       });
 }
@@ -549,14 +554,31 @@ bool ResourceFileReader::RegisterGenericFlatBufferChunk(
       [reader = std::move(reader)](Context* context, ChunkReader* chunk_reader,
                                    ResourceEntry resource_entry,
                                    Resource** out_resource) mutable {
-        auto* chunk_data = chunk_reader->GetChunkData<void>();
-        if (chunk_data == nullptr) {
+        auto* chunk = GetFlatBufferRoot<FlatBufferType>(chunk_reader, 0);
+        if (chunk == nullptr) {
           return false;
         }
         *out_resource = nullptr;
-        return reader(context,
-                      flatbuffers::GetRoot<FlatBufferType>(chunk_data));
+        return reader(context, chunk);
       });
+}
+
+template <typename FlatBufferType>
+const FlatBufferType* ResourceFileReader::GetFlatBufferRoot(
+    ChunkReader* chunk_reader, int offset) {
+  auto* data = chunk_reader->GetChunkData<uint8_t>();
+  if (data == nullptr || offset > chunk_reader->GetSize()) {
+    return nullptr;
+  }
+  data += offset;
+  flatbuffers::Verifier verifier(
+      data, static_cast<size_t>(chunk_reader->GetSize() - offset));
+  if (!verifier.VerifyBuffer<FlatBufferType>()) {
+    LOG(ERROR) << "Flat buffer in chunk \""
+               << chunk_reader->GetType().ToString() << "\" is invalid";
+    return nullptr;
+  }
+  return flatbuffers::GetRoot<FlatBufferType>(data);
 }
 
 template <typename Type>

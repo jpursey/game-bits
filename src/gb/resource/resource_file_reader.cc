@@ -78,12 +78,6 @@ ResourceFileReader::ResourceFileReader(ValidatedContext context)
 
 ResourceFileReader::~ResourceFileReader() {}
 
-bool ResourceFileReader::HasChunkSize(const ChunkReader& chunk_reader,
-                                      int entry_size) {
-  return int64_t{entry_size} * chunk_reader.GetCount() <=
-         chunk_reader.GetSize();
-}
-
 bool ResourceFileReader::DoRegisterChunkReader(
     const ChunkType& chunk_type, int version, TypeKey* resource_type,
     TypeKey* struct_type, int struct_size, ChunkReaderCallback reader) {
@@ -184,17 +178,16 @@ Resource* ResourceFileReader::Read(TypeKey* type, std::string_view name,
                    << "\" in file: " << name;
         return nullptr;
       }
-      if (!HasChunkSize(*chunk_reader,
-                        static_cast<int>(sizeof(ResourceLoadChunk)))) {
+      auto* chunks = chunk_reader->GetChunkData<ResourceLoadChunk>();
+      if (chunks == nullptr) {
         LOG(ERROR) << "Resource load chunk is too small in file: " << name;
         return nullptr;
       }
-      auto* chunks = chunk_reader->GetChunkData<ResourceLoadChunk>();
       for (int i = 0; i < chunk_reader->GetCount(); ++i) {
         auto& chunk = chunks[i];
-        chunk_reader->ConvertToPtr(&chunk.type);
-        chunk_reader->ConvertToPtr(&chunk.name);
-        if (chunk.id == 0 || chunk.type.ptr == nullptr) {
+        if (!chunk_reader->ConvertToPtr(&chunk.type) ||
+            !chunk_reader->ConvertToPtr(&chunk.name) || chunk.id == 0 ||
+            chunk.type.ptr == nullptr) {
           LOG(ERROR) << "Invalid resource load chunk " << i
                      << " in file: " << name;
           return nullptr;
@@ -240,7 +233,7 @@ Resource* ResourceFileReader::Read(TypeKey* type, std::string_view name,
                  << "\" in file: " << name;
       return nullptr;
     }
-    if (!HasChunkSize(*chunk_reader, reader_info->struct_size)) {
+    if (!chunk_reader->FitsEntriesOfSize(reader_info->struct_size)) {
       LOG(ERROR) << "Chunk \"" << chunk_reader->GetType().ToString()
                  << "\" is too small in file: " << name;
       return nullptr;

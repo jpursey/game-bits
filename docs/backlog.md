@@ -408,24 +408,6 @@ which also has `Cancel()` and `Invoke()`. Switch Game Bits' own uses to
 Removing `ScopedCall` breaks every project that uses it, so each one switches
 first, and it is removed once they have.
 
-## Validate chunk contents
-
-- **Layers:** file, resource
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Requested by:** OZ-3 *Corrupt program maps*
-- **Background:** [Code audit](worklog/code_audit.md)
-
-A corrupt chunk file can make readers read out of bounds. `ResourceFileReader`
-now checks that a chunk is large enough for its count of structs, but
-`ChunkReader::ConvertToPtr()` trusts the offset in a `ChunkPtr` (and the string
-it points to is not checked for a terminator), and flat buffer chunks are
-passed to `flatbuffers::GetRoot()` without verifying them. Check `ChunkPtr`
-offsets and strings against the chunk size in `ChunkReader`, and run a
-`flatbuffers::Verifier` bounded by the chunk size before a flat buffer chunk
-reaches its reader, failing the read if either is invalid.
-
 ## Testable render asserts
 
 - **Layers:** render
