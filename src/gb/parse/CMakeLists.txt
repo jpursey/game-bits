@@ -36,6 +36,7 @@ set(gb_parse_TEST_SOURCE
   parser_program_test.cc
   parser_rules_test.cc
   parser_test.cc
+  symbol_test.cc
 )
 
 gb_add_library(gb_parse)

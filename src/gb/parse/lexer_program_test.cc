@@ -5,6 +5,7 @@
 
 #include "gb/parse/lexer_program.h"
 
+#include "absl/strings/ascii.h"
 #include "gtest/gtest.h"
 
 namespace gb {
@@ -45,6 +46,18 @@ TEST(LexerProgramTest, InvalidSymbolCharacters) {
     EXPECT_EQ(program, nullptr) << context;
     EXPECT_EQ(error, LexerProgram::kErrorInvalidSymbolSpec) << context;
   }
+}
+
+TEST(LexerProgramTest, SymbolTooLong) {
+  const std::string longest(kMaxSymbolSize, '+');
+  std::string error;
+  EXPECT_NE(LexerProgram::Create({.symbols = {longest}}, &error), nullptr);
+  EXPECT_EQ(error, "");
+
+  const std::string too_long(kMaxSymbolSize + 1, '+');
+  EXPECT_EQ(LexerProgram::Create({.symbols = {longest, too_long}}, &error),
+            nullptr);
+  EXPECT_EQ(error, LexerProgram::kErrorInvalidSymbolSpec);
 }
 
 TEST(LexerProgramTest, DuplicateSymbols) {

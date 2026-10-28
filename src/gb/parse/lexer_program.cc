@@ -17,7 +17,8 @@ namespace gb {
 const std::string_view LexerProgram::kErrorDuplicateSymbolSpec =
     "Duplicate symbol specification";
 const std::string_view LexerProgram::kErrorInvalidSymbolSpec =
-    "Symbol specification has non-ASCII or whitespace characters";
+    "Symbol specification is empty, too long, or has non-ASCII or whitespace "
+    "characters";
 const std::string_view LexerProgram::kErrorConflictingStringAndCharSpec =
     "Character and String specifications share the same quote type";
 const std::string_view LexerProgram::kErrorConflictingIdentifierSpec =

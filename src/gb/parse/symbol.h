@@ -6,13 +6,12 @@
 #ifndef GB_PARSE_SYMBOL_H_
 #define GB_PARSE_SYMBOL_H_
 
-#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <string>
 #include <string_view>
+#include <type_traits>
 
-#include "absl/strings/ascii.h"
 #include "absl/strings/str_format.h"
 #include "gb/parse/parse_types.h"
 
@@ -52,14 +51,19 @@ class Symbol {
   constexpr ~Symbol() = default;
 
   // Implicit constructors from a character or string literal.
+  //
+  // A string longer than kMaxSymbolSize makes an empty symbol, which is
+  // invalid. A symbol that must be a constant (such as in a constexpr array of
+  // symbols) fails to compile if it is invalid.
   Symbol(SymbolValue value) noexcept;
-  constexpr Symbol(char ch) noexcept : value_{ch} {}
+  constexpr Symbol(char ch) noexcept;
   constexpr Symbol(std::string_view str) noexcept;
   constexpr Symbol(const char* str) noexcept : Symbol(std::string_view(str)) {}
   Symbol(const std::string& str) noexcept : Symbol(std::string_view(str)) {}
 
   // Returns true if the symbol is valid (contains only ASCII characters between
-  // 33 and 126). The default symbol is invalid as it is empty.
+  // 33 and 126). The default symbol is invalid as it is empty, as is one made
+  // from a string that is too long.
   constexpr bool IsValid() const;
 
   // Returns the underlying symbol value.
@@ -103,9 +107,28 @@ inline Symbol::Symbol(SymbolValue value) noexcept {
   value_[kMaxSymbolSize] = 0;
 }
 
+namespace internal {
+
+// Not constexpr, so calling it fails constant evaluation.
+inline void SymbolIsInvalid() {}
+
+}  // namespace internal
+
+constexpr Symbol::Symbol(char ch) noexcept : value_{ch} {
+  if (std::is_constant_evaluated() && !IsValid()) {
+    internal::SymbolIsInvalid();
+  }
+}
+
 constexpr Symbol::Symbol(std::string_view str) noexcept {
-  for (int i = 0; i < std::min<int>(str.size(), kMaxSymbolSize); ++i) {
-    value_[i] = str[i];
+  const int size = static_cast<int>(str.size());
+  if (size <= kMaxSymbolSize) {
+    for (int i = 0; i < size; ++i) {
+      value_[i] = str[i];
+    }
+  }
+  if (std::is_constant_evaluated() && !IsValid()) {
+    internal::SymbolIsInvalid();
   }
 }
 
@@ -133,7 +156,9 @@ constexpr bool Symbol::IsValid() const {
     if (ch == 0) {
       return true;
     }
-    if (!absl::ascii_isgraph(ch)) {
+
+    // Written out, as absl::ascii_isgraph() isn't constexpr.
+    if (ch < 33 || ch > 126) {
       return false;
     }
   }

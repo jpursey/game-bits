@@ -584,19 +584,6 @@ interleaving:
 Add test hooks (a callback at the point of interest, or a clock passed in)
 that let each test wait for the state it needs, rather than sleeping.
 
-## Symbols longer than 7 characters
-
-- **Layers:** parse
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** [Code audit](worklog/code_audit.md)
-
-A `Symbol` holds up to 7 characters and silently truncates a longer one, so a
-lexer config with a long symbol gets a shorter one than it asked for. Reject a
-symbol that is too long where it is made, and in `LexerConfig` validation,
-with a test.
-
 ## Parser consumes the end of the content
 
 - **Layers:** parse

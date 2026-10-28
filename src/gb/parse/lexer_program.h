@@ -39,7 +39,8 @@ class LexerProgram final {
   // Duplicate symbol specification in LexerConfig.
   static const std::string_view kErrorDuplicateSymbolSpec;
 
-  // Invalid symbol specification in LexerConfig.
+  // Invalid symbol specification in LexerConfig: empty, longer than
+  // kMaxSymbolSize, or with characters that aren't printable ASCII.
   static const std::string_view kErrorInvalidSymbolSpec;
 
   // Conflicting configuration between strings and characters in LexerConfig
