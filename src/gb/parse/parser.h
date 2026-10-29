@@ -131,7 +131,13 @@ class Parser final {
   void RewindToken() { lexer_->RewindToken(content_); }
   Token NextToken() { return lexer_->NextToken(content_); }
   Token PeekToken() { return lexer_->NextToken(content_, false); }
-  void SetNextToken(Token token) { lexer_->SetNextToken(token); }
+
+  // Moves the parse back to `token`, from when `consumed_end_` was
+  // `consumed_end`.
+  void SetNextToken(Token token, bool consumed_end) {
+    lexer_->SetNextToken(token);
+    consumed_end_ = consumed_end;
+  }
 
   ParseMatch MatchAbort(ParseError error);
   ParseMatch MatchError(gb::Token token, TokenType expected_type,
@@ -146,6 +152,10 @@ class Parser final {
   LexerContentId content_ = kNoLexerContent;
   Token start_token_;  // The first token of the current parse.
   std::optional<ParseMatchError> last_error_;
+
+  // True once the current parse has matched the end of the content. The lexer
+  // stays at the end, so the next token alone can't tell.
+  bool consumed_end_ = false;
 
   // While positive, matching errors aren't recorded, as the item being matched
   // is only being tried by a negation.

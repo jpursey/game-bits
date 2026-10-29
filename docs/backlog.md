@@ -566,24 +566,6 @@ interleaving:
 Add test hooks (a callback at the point of interest, or a clock passed in)
 that let each test wait for the state it needs, rather than sleeping.
 
-## Parser consumes the end of the content
-
-- **Layers:** parse
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** `Parser::MatchTokenItem` in `parser.cc`, and
-  `Lexer::NextToken` in `lexer.cc`
-
-Logically, `%end` is a token at the end of the content, consumed like any
-other, so nothing can follow it. But the lexer stays at the end once it gets
-there, so after `%end` matches, a later `%end` matches the same token again.
-A rule that recurses after it, `R { %end R; }`, passes validation, as the
-recursion isn't the rule's first item, and then overflows the stack when
-parsed. Once the parser matches the end, any later token item should fail.
-Tests: `R { %end R; }` fails to parse rather than recursing, and `%end %end`
-doesn't match.
-
 ## Config text edge cases
 
 - **Layers:** config

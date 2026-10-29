@@ -85,6 +85,7 @@ ParseResult Parser::Parse(LexerContentId content, std::string_view rule) {
   }
   content_ = content;
   start_token_ = PeekToken();
+  consumed_end_ = false;
   last_error_.reset();
   auto match = root->Match(*this);
   if (match.IsError()) {
@@ -189,6 +190,13 @@ parser_internal::ParseMatch Parser::MatchTokenItem(
   if (!is_match) {
     return MatchError(token, expected_type, parser_token.GetTokenText());
   }
+  if (token.IsEnd()) {
+    if (consumed_end_) {
+      SetError(token, "Nothing can follow the end of the content");
+      return ParseMatch::Error();
+    }
+    consumed_end_ = true;
+  }
 
   NextToken();
   return Match(token);
@@ -214,6 +222,7 @@ parser_internal::ParseMatch Parser::MatchNegation(
 
   // The negated item is only tried, so it sets no errors, and whatever it
   // matched is rewound. A failed match has already consumed nothing.
+  const bool consumed_end = consumed_end_;
   ++suppress_errors_;
   ParseMatch match = negation.GetItem()->Match(*this);
   --suppress_errors_;
@@ -221,7 +230,7 @@ parser_internal::ParseMatch Parser::MatchNegation(
     return match;
   }
   if (match.IsMatch()) {
-    SetNextToken(token);
+    SetNextToken(token, consumed_end);
     SetError(token, "Unexpected token");
     return ParseMatch::Error();
   }
@@ -277,6 +286,7 @@ void Parser::AddSubItemMatch(const ParserGroup::SubItem& sub_item,
 
 parser_internal::ParseMatch Parser::MatchGroup(const ParserGroup& group) {
   Token group_token = PeekToken();
+  const bool group_consumed_end = consumed_end_;
   if (group_token.IsError()) {
     return MatchAbort(Error(group_token, group_token.GetString()));
   }
@@ -295,7 +305,7 @@ parser_internal::ParseMatch Parser::MatchGroup(const ParserGroup& group) {
       }
       if (match.IsAbort() ||
           (is_sequence && sub_item.repeat.IsSet(ParserRepeat::kRequireOne))) {
-        SetNextToken(group_token);
+        SetNextToken(group_token, group_consumed_end);
         return match;
       }
       continue;
@@ -327,7 +337,7 @@ parser_internal::ParseMatch Parser::MatchGroup(const ParserGroup& group) {
           SetError(item_token, sub_item.error);
         }
         if (match.IsAbort()) {
-          SetNextToken(group_token);
+          SetNextToken(group_token, group_consumed_end);
           return match;
         }
         if (with_comma) {

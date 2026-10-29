@@ -1654,5 +1654,77 @@ TEST(ParserTest, RepeatedMarkerMatchesOnce) {
               ElementsAre(IsToken(kTokenIdentifier, "x")));
 }
 
+TEST(ParserTest, EndMatchesOnce) {
+  auto parser = CreateProgramParser(R"(
+    Program { %end %end; }
+    Repeated { $ends=%end+; }
+    Optional { %end [%int] %end; }
+  )");
+  ASSERT_NE(parser, nullptr);
+  LexerContentId content = parser->GetLexer().AddContent("");
+
+  ParseResult result = parser->Parse(content, "Program");
+  ASSERT_FALSE(result.IsOk());
+  EXPECT_THAT(result.GetError().FormatMessage(),
+              HasSubstr("Nothing can follow the end of the content"));
+
+  result = parser->Parse(content, "Repeated");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_THAT(result->GetItems("ends"), ElementsAre(IsToken(kTokenEnd, "")));
+
+  // The optional group backs up to where it started, after the end was
+  // consumed.
+  result = parser->Parse(content, "Optional");
+  EXPECT_FALSE(result.IsOk());
+}
+
+TEST(ParserTest, RecursionAfterEndFails) {
+  auto parser = CreateProgramParser(R"(
+    Program { %end Program; }
+  )");
+  ASSERT_NE(parser, nullptr);
+  LexerContentId content = parser->GetLexer().AddContent("");
+
+  ParseResult result = parser->Parse(content, "Program");
+  ASSERT_FALSE(result.IsOk());
+  EXPECT_THAT(result.GetError().FormatMessage(),
+              HasSubstr("Nothing can follow the end of the content"));
+}
+
+TEST(ParserTest, BackingUpRestoresTheEnd) {
+  auto parser = CreateProgramParser(R"(
+    Group { [%end %int] %end; }
+    Negation { [!(%int %end)] %int %end; }
+  )");
+  ASSERT_NE(parser, nullptr);
+
+  // Each failed item matched the end before failing, so the end is matched
+  // again after it.
+  LexerContentId content = parser->GetLexer().AddContent("");
+  ParseResult result = parser->Parse(content, "Group");
+  EXPECT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  content = parser->GetLexer().AddContent("1");
+  result = parser->Parse(content, "Negation");
+  EXPECT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+}
+
+TEST(ParserTest, RewindingACommaRestoresTheEnd) {
+  auto parser = CreateProgramParser(R"(
+    Program { $items=Item,* ',' %end; }
+    Item {
+      %int;
+      %end %int;
+    }
+  )");
+  ASSERT_NE(parser, nullptr);
+  LexerContentId content = parser->GetLexer().AddContent("1,");
+
+  // After the comma, Item matches the end before failing, so the comma is
+  // rewound and the end is matched again after it.
+  ParseResult result = parser->Parse(content, "Program");
+  ASSERT_TRUE(result.IsOk()) << result.GetError().FormatMessage();
+  EXPECT_THAT(result->GetItems("items"), ElementsAre(IsToken(kTokenInt, "1")));
+}
+
 }  // namespace
 }  // namespace gb
