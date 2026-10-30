@@ -756,3 +756,28 @@ performance cores (8 and 10, the ones Intel lets boost highest) and 1 for the
 other six. The field is in the Windows SDK headers but undocumented. Check what
 it means, and what other CPUs (AMD's in particular) report, and if it is
 reliable, order cores by it within a class.
+
+## Command line library
+
+- **Layers:** a new library (such as `gb/cli`)
+- **Size:** medium
+- **Feature workflow:** yes
+- **Depends on:** nothing
+- **Requested by:** OZ-3 *Command lines on Game Bits*
+- **Background:** none
+
+A library for a program's command line, defined in one place rather than by
+flags declared throughout the code:
+- The interface is defined statically, as data: the program, its commands, its
+  flags, and its positional arguments.
+- A flag has a long form (`--name`) and an optional short form (`-n`), and is
+  either a switch (no value) or takes a value.
+- Values are strings, integers, floats, or names from a named enumeration.
+- A flag or argument can have validation functions, with common ones provided,
+  such as a number's minimum and maximum, or a path that exists.
+- Commands form a hierarchy. A command is a bare name, with no `-` or `--`, and
+  has its own flags and subcommands. A function can be bound to a command to
+  run it.
+- Everything carries documentation, including the program as a whole. A help
+  function, which can itself be a command, writes the help text for any command
+  or for the whole program.
