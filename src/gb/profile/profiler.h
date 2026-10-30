@@ -11,6 +11,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "absl/functional/any_invocable.h"
@@ -123,10 +124,11 @@ class Profiler final {
 
   // Returns the profile as plain text: the values, the frame summary, the tick
   // rate, the frames by class of core, one line for each point with its count
-  // and self time (in total, per frame, and per call), and the slowest frame's
-  // breakdown. Only points this Profiler has recorded are included (a counter
-  // whose total is zero counts as not recorded). Points are grouped by kind
-  // and sorted by name, so two reports of the same program diff cleanly.
+  // and self time (in total, per frame, per call, and as a share of the
+  // frames' time), and the slowest frame's breakdown. Only points this Profiler
+  // has recorded are included (a counter whose total is zero counts as not
+  // recorded). Points are grouped by kind and sorted by name, so two reports of
+  // the same program diff cleanly.
   //
   // The tick rate converts ticks to time. A rate that changes between runs
   // makes every time wrong by the same factor.
@@ -218,6 +220,13 @@ class Profiler final {
     int64_t frame_self_ticks = 0;
   };
 
+  // A point's totals, as the report and the test readers see them.
+  struct PointTotals {
+    int64_t count = 0;
+    int64_t self_ticks = 0;
+    int64_t value = 0;
+  };
+
   // A frame's time, and the part each point had in it.
   struct FrameBreakdown {
     struct Point {
@@ -303,15 +312,19 @@ class Profiler final {
     slot.value = value;
   }
 
+  // Returns the totals of every registered point, by index.
+  std::vector<PointTotals> GatherPointTotals() const;
+
   // Report sections, each appended to `report`. AppendValues() and
-  // AppendPoints() take every registered point, sorted for the report, and
-  // AppendFrame() takes them in index order.
+  // AppendPoints() take every registered point with its totals, sorted for the
+  // report, and AppendFrame() takes the registered points in index order.
+  using ReportPoint = std::pair<ProfilePoint, PointTotals>;
   void AppendValues(std::string& report,
-                    absl::Span<const ProfilePoint> points) const;
+                    absl::Span<const ReportPoint> points) const;
   void AppendFrameSummary(std::string& report) const;
   void AppendCoreFrames(std::string& report) const;
   void AppendPoints(std::string& report,
-                    absl::Span<const ProfilePoint> points) const;
+                    absl::Span<const ReportPoint> points) const;
   void AppendFrame(std::string& report, std::string_view title,
                    const FrameBreakdown& frame,
                    absl::Span<const ProfilePoint> registered) const;
@@ -321,9 +334,10 @@ class Profiler final {
   int FindIndex(std::string_view name,
                 absl::Span<const ProfilePoint::Kind> kinds) const;
 
-  // As FindIndex(), returning the point's slot, or null.
-  const Slot* FindSlot(std::string_view name,
-                       absl::Span<const ProfilePoint::Kind> kinds) const;
+  // As FindIndex(), returning the point's totals, which are zero if there is no
+  // such point.
+  PointTotals FindPointTotals(std::string_view name,
+                              absl::Span<const ProfilePoint::Kind> kinds) const;
 
   // As FindIndex(), returning the point's part in the slowest frame, or null
   // if it had none.

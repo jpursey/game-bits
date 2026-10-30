@@ -384,7 +384,8 @@ TEST_F(ProfilerTest, Report) {
   }
 
   // P50 and P90 are the middle of the buckets the frames are in. The scope
-  // between frames is in the totals, but not the slowest frame. The slowest
+  // between frames is in the totals, but not the slowest frame. Each timed
+  // point's share is its self time against the frames' total. The slowest
   // frame's points are slowest first, rather than in the report's order.
   EXPECT_EQ(profiler_.GetReport(),
             R"(Value              Latest
@@ -404,12 +405,12 @@ Tick rate   1.00GHz
 Core     Frames  Average     Max
 class 0       2   1.30us  2.30us
 
-Point                Kind     Count  Count/frame    Self  Self/call  Self/frame
-ReportTest/Run       frame        2         1.00  1.30us      650ns       650ns
-ReportTest/Outside   scope        1         0.50  50.0ns     50.0ns      25.0ns
-ReportTest/Refresh   scope        1         0.50   500ns      500ns       250ns
-ReportTest/GetTrack  call         2         1.00   800ns      400ns       400ns
-ReportTest/Messages  counter      4         2.00       -          -           -
+Point                Kind     Count  Count/frame    Self  Self/call  Self/frame  Share
+ReportTest/Run       frame        2         1.00  1.30us      650ns       650ns  50.0%
+ReportTest/Outside   scope        1         0.50  50.0ns     50.0ns      25.0ns  1.92%
+ReportTest/Refresh   scope        1         0.50   500ns      500ns       250ns  19.2%
+ReportTest/GetTrack  call         2         1.00   800ns      400ns       400ns  30.8%
+ReportTest/Messages  counter      4         2.00       -          -           -      -
 
 Slowest frame: 2.30us, core class 0, profiler 0
 Kind     Self
@@ -435,9 +436,20 @@ TEST_F(ProfilerTest, ReportWithNoFrames) {
 Point cost  0
 Tick rate   1.00GHz
 
-Point                Kind   Count  Count/frame    Self  Self/call  Self/frame
-ReportTest/NoFrames  scope      1            -  10.0ns     10.0ns           -
+Point                Kind   Count  Count/frame    Self  Self/call  Self/frame  Share
+ReportTest/NoFrames  scope      1            -  10.0ns     10.0ns           -      -
 )");
+}
+
+TEST_F(ProfilerTest, ReportWithNoFrameTime) {
+  {
+    ProfileFrame<"ReportTest/EmptyFrame"> frame;
+  }
+  const std::string report = profiler_.GetReport();
+  EXPECT_NE(report.find("ReportTest/EmptyFrame  frame      1         1.00     "
+                        "0          0           0      -\n"),
+            std::string::npos)
+      << report;
 }
 
 TEST_F(ProfilerTest, ReportOrderIgnoresRegistration) {

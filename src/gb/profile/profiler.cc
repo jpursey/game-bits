@@ -145,6 +145,19 @@ std::string FormatSelfTime(ProfilePoint::Kind kind, absl::Duration self_time) {
   return FormatTime(self_time);
 }
 
+// Formats a point's self time as a share of the frames' time, `frame_ticks`, as
+// a percentage with three significant digits, such as "19.2%". Only a timed
+// point has a share, and only once frames have taken time.
+std::string FormatShare(ProfilePoint::Kind kind, int64_t self_ticks,
+                        int64_t frame_ticks) {
+  if (!absl::c_linear_search(kTimedKinds, kind) || frame_ticks <= 0) {
+    return std::string(kNotApplicable);
+  }
+  return FormatNumber(static_cast<double>(self_ticks) * 100 /
+                      static_cast<double>(frame_ticks)) +
+         "%";
+}
+
 // Returns whether `a` comes before `b` in a report: grouped by kind, and
 // sorted by name.
 bool IsBeforeInReport(const ProfilePoint& a, const ProfilePoint& b) {
@@ -247,19 +260,15 @@ Profiler::FrameSummary Profiler::GetFrameSummary() const {
 }
 
 int64_t Profiler::GetCount(std::string_view name) const {
-  const Slot* slot = FindSlot(name, kCountedKinds);
-  return slot != nullptr ? slot->count : 0;
+  return FindPointTotals(name, kCountedKinds).count;
 }
 
 absl::Duration Profiler::GetSelfTime(std::string_view name) const {
-  const Slot* slot = FindSlot(name, kTimedKinds);
-  return slot != nullptr ? TicksToDuration(slot->self_ticks)
-                         : absl::ZeroDuration();
+  return TicksToDuration(FindPointTotals(name, kTimedKinds).self_ticks);
 }
 
 int64_t Profiler::GetValue(std::string_view name) const {
-  const Slot* slot = FindSlot(name, kValueKinds);
-  return slot != nullptr ? slot->value : 0;
+  return FindPointTotals(name, kValueKinds).value;
 }
 
 int64_t Profiler::GetSlowestFrameCount(std::string_view name) const {
@@ -365,8 +374,15 @@ Profiler::FrameBreakdown Profiler::CaptureFrame(int64_t ticks, int core) const {
 std::string Profiler::GetReport() const {
   const std::vector<ProfilePoint> registered =
       ProfilePoint::GetRegisteredPoints();
-  std::vector<ProfilePoint> points = registered;
-  absl::c_sort(points, IsBeforeInReport);
+  const std::vector<PointTotals> totals = GatherPointTotals();
+  std::vector<ReportPoint> points;
+  points.reserve(registered.size());
+  for (const ProfilePoint& point : registered) {
+    points.emplace_back(point, totals[point.GetIndex()]);
+  }
+  absl::c_sort(points, [](const ReportPoint& a, const ReportPoint& b) {
+    return IsBeforeInReport(a.first, b.first);
+  });
   std::string report;
   AppendValues(report, points);
   AppendFrameSummary(report);
@@ -380,12 +396,12 @@ std::string Profiler::GetReport() const {
 }
 
 void Profiler::AppendValues(std::string& report,
-                            absl::Span<const ProfilePoint> points) const {
+                            absl::Span<const ReportPoint> points) const {
   Table table = {{"Value", "Latest"}};
-  for (const ProfilePoint& point : points) {
-    const Slot& slot = slots_[point.GetIndex()];
-    if (point.GetKind() == ProfilePoint::Kind::kValue && slot.count > 0) {
-      table.push_back({std::string(point.GetName()), absl::StrCat(slot.value)});
+  for (const auto& [point, totals] : points) {
+    if (point.GetKind() == ProfilePoint::Kind::kValue && totals.count > 0) {
+      table.push_back(
+          {std::string(point.GetName()), absl::StrCat(totals.value)});
     }
   }
   if (table.size() > 1) {
@@ -446,26 +462,26 @@ void Profiler::AppendCoreFrames(std::string& report) const {
 }
 
 void Profiler::AppendPoints(std::string& report,
-                            absl::Span<const ProfilePoint> points) const {
+                            absl::Span<const ReportPoint> points) const {
   Table table = {{"Point", "Kind", "Count", "Count/frame", "Self", "Self/call",
-                  "Self/frame"}};
-  for (const ProfilePoint& point : points) {
-    const Slot& slot = slots_[point.GetIndex()];
-    if (point.GetKind() == ProfilePoint::Kind::kValue || slot.count == 0) {
+                  "Self/frame", "Share"}};
+  const bool has_frames = frames_ > 0;
+  for (const auto& [point, totals] : points) {
+    if (point.GetKind() == ProfilePoint::Kind::kValue || totals.count == 0) {
       continue;
     }
     const ProfilePoint::Kind kind = point.GetKind();
-    const absl::Duration self_time = TicksToDuration(slot.self_ticks);
-    const bool has_frames = frames_ > 0;
+    const absl::Duration self_time = TicksToDuration(totals.self_ticks);
     table.push_back(
         {std::string(point.GetName()), std::string(GetKindName(kind)),
-         absl::StrCat(slot.count),
-         has_frames ? FormatNumber(static_cast<double>(slot.count) / frames_)
+         absl::StrCat(totals.count),
+         has_frames ? FormatNumber(static_cast<double>(totals.count) / frames_)
                     : std::string(kNotApplicable),
          FormatSelfTime(kind, self_time),
-         FormatSelfTime(kind, self_time / slot.count),
+         FormatSelfTime(kind, self_time / totals.count),
          has_frames ? FormatSelfTime(kind, self_time / frames_)
-                    : std::string(kNotApplicable)});
+                    : std::string(kNotApplicable),
+         FormatShare(kind, totals.self_ticks, total_frame_ticks_)});
   }
   absl::StrAppend(&report, "\n");
   AppendTable(report, table, 2);
@@ -531,10 +547,21 @@ int Profiler::FindIndex(std::string_view name,
   return point->GetIndex();
 }
 
-const Profiler::Slot* Profiler::FindSlot(
+std::vector<Profiler::PointTotals> Profiler::GatherPointTotals() const {
+  std::vector<PointTotals> totals(ProfilePoint::GetRegisteredCount());
+  for (int i = 0; i < static_cast<int>(totals.size()); ++i) {
+    const Slot& slot = slots_[i];
+    totals[i] = {.count = slot.count,
+                 .self_ticks = slot.self_ticks,
+                 .value = slot.value};
+  }
+  return totals;
+}
+
+Profiler::PointTotals Profiler::FindPointTotals(
     std::string_view name, absl::Span<const ProfilePoint::Kind> kinds) const {
   const int index = FindIndex(name, kinds);
-  return index >= 0 ? &slots_[index] : nullptr;
+  return index >= 0 ? GatherPointTotals()[index] : PointTotals();
 }
 
 const Profiler::FrameBreakdown::Point* Profiler::FindSlowestFramePoint(

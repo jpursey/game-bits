@@ -133,8 +133,8 @@ struct JoinedThread {
   std::string name;
   // Its totals when it was destroyed, or when the main Profiler was last
   // reset, by point.
-  std::vector<SlotTotals> folded;
-  std::vector<SlotTotals> baseline;
+  std::vector<PointTotals> folded;
+  std::vector<PointTotals> baseline;
   // Busy time per frame, gathered by the main Profiler at each frame's end.
   BusyFrames busy;
 };
@@ -192,7 +192,7 @@ std::vector<JoinedThread> joined_threads_ ABSL_GUARDED_BY(joined_mutex_);
 
 ## CLs
 
-### CL1 [ ] profile: report from a snapshot of totals
+### CL1 [x] profile: report from a snapshot of totals
 
 Depends on: nothing.
 
