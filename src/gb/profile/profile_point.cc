@@ -94,7 +94,7 @@ std::vector<ProfilePoint> ProfilePoint::GetRegisteredPoints() {
 
 void ProfilePoint::Count(int64_t count) const {
   DCHECK(kind_ == Kind::kCounter) << name_ << " is not a counter";
-  Profiler* const profiler = Profiler::s_current;
+  Profiler* const profiler = Profiler::GetCurrent();
   if (profiler != nullptr) {
     profiler->AddCount(index_, count);
   }
@@ -102,7 +102,7 @@ void ProfilePoint::Count(int64_t count) const {
 
 void ProfilePoint::SetValue(int64_t value) const {
   DCHECK(kind_ == Kind::kValue) << name_ << " is not a value";
-  Profiler* const profiler = Profiler::s_current;
+  Profiler* const profiler = Profiler::GetCurrent();
   if (profiler != nullptr) {
     profiler->SetValue(index_, value);
   }

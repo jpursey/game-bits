@@ -64,6 +64,10 @@ class ProfilePoint final {
   int GetIndex() const { return index_; }
 
   // Adds `count` to a counter point, in the calling thread's Profiler, if any.
+  //
+  // Code on a fiber can count and set values freely: these always find the
+  // Profiler of the thread the fiber is on now, even after it resumed on
+  // another thread.
   void Count(int64_t count) const;
 
   // Sets a value point to `value`, in the calling thread's Profiler, if any.

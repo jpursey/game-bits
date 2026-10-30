@@ -85,7 +85,7 @@ class Profiler final {
 
   // Returns what one timed point costs, as measured when the Profiler was
   // created: the time a frame, scope, or call adds to the timed point around
-  // it. This leaves out finding the thread's Profiler, about a nanosecond.
+  // it. This leaves out finding the thread's Profiler, about two nanoseconds.
   absl::Duration GetPointCost() const;
 
   //----------------------------------------------------------------------------
@@ -347,6 +347,14 @@ class Profiler final {
   static std::string FormatCore(int core);
 
   absl::Duration TicksToDuration(double ticks) const;
+
+  // Returns the calling thread's Profiler, or null.
+  //
+  // This reads s_current through a call that is never inlined, so code on a
+  // fiber that resumed on another thread reads the Profiler of the thread it is
+  // on now. Read inline, the compiler may reuse the thread local's address from
+  // before the switch, and so read the old thread's Profiler.
+  static Profiler* GetCurrent();
 
   static inline constinit thread_local Profiler* s_current = nullptr;
 

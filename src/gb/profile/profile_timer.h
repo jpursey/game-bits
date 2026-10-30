@@ -32,12 +32,16 @@ class NamedProfileTimer;
 // reverse order they were created (as scoped variables are). Destroying a timer
 // that isn't the innermost on its thread CHECK-fails.
 //
+// Code on fibers, such as jobs, can use timers on each side of a wait: a timer
+// created after a fiber resumed on another thread times into that thread's
+// Profiler.
+//
 // Timing a point costs two reads of the CPU's timestamp counter, and a few
 // adds. With no Profiler on the thread, it costs about a nanosecond.
 class ProfileTimer final {
  public:
   [[nodiscard]] explicit ProfileTimer(const ProfilePoint& point)
-      : profiler_(Profiler::s_current), index_(point.GetIndex()) {
+      : profiler_(Profiler::GetCurrent()), index_(point.GetIndex()) {
     if (profiler_ == nullptr) {
       return;
     }
@@ -114,7 +118,7 @@ template <ProfileName kName>
 class ProfileFrame final {
  public:
   [[nodiscard]] ProfileFrame()
-      : profiler_(Profiler::s_current),
+      : profiler_(Profiler::GetCurrent()),
         index_(internal::GetNamedPoint<ProfilePoint::Kind::kFrame, kName>()
                    .GetIndex()) {
     if (profiler_ == nullptr) {

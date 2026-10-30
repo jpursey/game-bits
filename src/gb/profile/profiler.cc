@@ -22,6 +22,12 @@
 #include "gb/thread/cpu_ticks.h"
 #include "gb/thread/thread.h"
 
+#ifdef _MSC_VER
+#define GB_PROFILE_NOINLINE __declspec(noinline)
+#else
+#define GB_PROFILE_NOINLINE __attribute__((noinline))
+#endif
+
 namespace gb {
 
 namespace {
@@ -207,6 +213,9 @@ Profiler::~Profiler() {
   CHECK(top_ == nullptr) << "A Profiler must not be destroyed in a timed point";
   s_current = nullptr;
 }
+
+// Never inlined, even by link-time code generation.
+GB_PROFILE_NOINLINE Profiler* Profiler::GetCurrent() { return s_current; }
 
 absl::Duration Profiler::GetPointCost() const {
   return TicksToDuration(point_cost_ticks_);

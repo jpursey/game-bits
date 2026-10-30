@@ -62,6 +62,9 @@ std::string report = profiler.GetReport();
   fiber and thread it started on. Ending one that isn't the thread's innermost
   CHECK-fails, which catches a switch to another fiber that times points, and
   resuming on another thread.
+- **Fibers:** code that runs on fibers, such as jobs, can use any point on
+  each side of a wait. A point reached after the fiber resumed on another
+  thread is recorded in that thread's Profiler.
 - **Frames:** `GetFrameSummary()` gives the frame count, total, average, p50,
   p90, p99, and max, from a histogram with 8 buckets for each power of two
   (percentiles within 1/16th, exact below 16 ticks). The breakdown by point of
@@ -128,6 +131,12 @@ the current core (`GetThisThreadCoreClass()` in `gb/thread/thread.h`), are in
   the current frame's count and self ticks, tagged with the frame number; the
   first add in a new frame resets the frame's part, so nothing is cleared per
   frame.
+- **Fibers:** a function that switches fibers may reuse a thread local's
+  address from before the switch (MSVC can in Release, and `volatile` doesn't
+  stop it), so a fiber that resumed on another thread would read the thread it
+  left. Timers, counters, and values find the current Profiler through
+  `Profiler::GetCurrent()`, which is never inlined, and a timer ends in the
+  Profiler it started with.
 - **Timing:** each timer holds a `Profiler::Timing`, its entry in a stack of
   the timings on the thread, linked through the timers on the C++ stack.
   Ending one reads the counter, pops it, adds its elapsed ticks to its parent's
@@ -163,8 +172,11 @@ CPUID leaf 0x15 reports; QPC runs at 10MHz):
 
 - **A timed point:** 11.75ns to 12.25ns in a RelWithDebInfo build, as a
   Profiler measures it (17.75ns in Debug). That leaves out finding the thread's
-  Profiler, about 1ns. With no Profiler, a point costs about 1ns. A bare
-  `__rdtsc` is 5.3ns.
+  Profiler, about 2ns. With no Profiler, a point costs about 1ns. A bare
+  `__rdtsc` is 5.3ns. Finding the Profiler through a call that is never
+  inlined, so points work on fibers, costs 0.4ns more per point than reading
+  the thread local inline (a `ProfileScope` in a loop: 15.0ns against 14.6ns,
+  or 2.3ns against 1.9ns with no Profiler), and 0.35ns more per count.
 - **A frame:** an empty frame takes 24.8ns in a RelWithDebInfo build, 4.8ns of
   it reading the core's class at each end (`GetCurrentProcessorNumberEx()` is
   2.4ns), which falls outside the frame's own time. `__rdtscp`, which returns
@@ -187,5 +199,3 @@ Each is a backlog item:
 - **Multithreaded profiles:** each thread's Profiler is separate, and the
   report reads a Profiler's own slots.
 - **Fiber-aware profiling:** a timed point can't span a fiber switch.
-- **Fiber profile timers:** a timer created after a fiber resumes on another
-  thread may find the old thread's Profiler.

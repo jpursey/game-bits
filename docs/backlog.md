@@ -108,29 +108,6 @@ threads](worklog/core_aware_job_threads.md), `GetCpuTopology()` gives each
 core's class, and `FiberJobSystem` pins each job thread to a hardware thread or
 core of its own, which fixes each thread's class.
 
-## Fiber profile timers
-
-- **Layers:** profile
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** `ProfileTimer` in `gb/profile/profile_timer.h`
-
-A timer finds the thread's Profiler by reading `Profiler::s_current`, a
-`thread_local`, inline in its constructor. In a function that switches fibers
-between two timers, such as a job with a `ProfileScope` before a
-`JobSystem::Wait()` and another after it, the compiler may reuse the thread
-local's address from before the switch. MSVC does in Release, and making the
-variable `volatile` doesn't stop it. If the job resumed on another thread, the
-second timer then times into the old thread's Profiler, racing with that
-thread, or reads freed storage if that thread has exited.
-
-Add a `FiberProfileTimer`, with `FiberProfileScope` and `FiberProfileCall`
-wrappers, for code that runs on fibers. It reads the Profiler through a
-function that is never inlined, so the existing timers keep their inline read.
-Test it with a job that times a scope on each side of a wait that resumes on
-another thread, as `FiberJobSystemTest.WaitResumesOnAnotherThread` does.
-
 ## Fiber-aware profiling
 
 - **Layers:** thread, profile

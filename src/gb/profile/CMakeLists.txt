@@ -18,6 +18,10 @@ set(gb_profile_TEST_SOURCE
   profiler_test.cc
 )
 
+set(gb_profile_TEST_DEPS
+  absl::cleanup
+)
+
 set(gb_profile_DEPS
   absl::algorithm_container
   absl::any_invocable
