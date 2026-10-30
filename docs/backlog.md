@@ -781,3 +781,31 @@ flags declared throughout the code:
 - Everything carries documentation, including the program as a whole. A help
   function, which can itself be a command, writes the help text for any command
   or for the whole program.
+
+## Native file paths
+
+- **Layers:** file
+- **Size:** medium
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Requested by:** OZ-3 *Native paths in the command line tools*
+- **Background:** `gb/file/path.h` (`RemoveProtocol`), and
+  `gb/file/local_file_protocol.h`
+
+A command line tool takes paths as the operating system writes them
+(`C:\src\hello.oza`, `..\lib\a.oza`, `out/hello.oz3`), but a `FileSystem` only
+opens protocol paths. Tools today register a `LocalFileProtocol` rooted at `/`
+as the default protocol and pass the paths through. A relative path works, but
+an absolute one doesn't: a path reads anything before its `:` that is a valid
+protocol name as the protocol, so `e:/src/hello.oza` is a path in protocol `e`,
+and a path on another drive isn't under the root either way.
+
+Give tools a clean way to open native paths, such as a function that turns a
+native path into a protocol path that a local protocol can open, or a local
+protocol with no root that takes any absolute path. It must keep:
+- Paths UTF-8, and existing rooted protocols as they are, sandboxed in their
+  root.
+- Relative paths relative to the current directory.
+- Paths joined to an opened file's path, as a tool does for files one file
+  names relative to itself (an include), so a file opened by its native path
+  has a protocol path that a relative path can be joined to.
