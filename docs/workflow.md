@@ -28,6 +28,10 @@ from whichever project shows the need (see [Game Bits](#game-bits)).
   catch-alls ("building block", "manager", "helper").
 - "Add" creates something that the owner registers and keeps (`AddChild()`).
   "Create" is for factories that return a `unique_ptr` to the caller.
+- "Validate" names code that judges whether something is acceptable and fails
+  if it isn't (`ValidateChunk()`, "this validates that ..."), not "Check",
+  which only says something is looked at. Existing "Check" names change when
+  their code is otherwise changed.
 - A private helper behind a public function of the same meaning takes a `Do`
   prefix (`DoAddChild()` behind `AddChild()`), or an `Impl` suffix for a type.
 - Don't add symmetric APIs nothing needs, such as a `Remove` no caller uses.
@@ -197,6 +201,15 @@ Beyond the Google C++ style guide
 - Keep a returned pointer as a pointer. Don't dereference it into a reference
   (`T& x = *FindX(...)`) to show it can't be null: store it in a `T*` and use
   `->`, with a short comment if whether it can be null isn't clear.
+- Take a string input parameter as `std::string_view`, even when the function
+  keeps a copy. The parameter is part of the abstraction, so it doesn't follow
+  from how the implementation happens to work, and most strings are small
+  enough that the copy doesn't matter. Take a `std::string` by value, to
+  `std::move` it, only when the string can be arbitrarily big (such as text to
+  parse) or the copy is a real performance concern (many calls, or an inner
+  loop). Don't take `const std::string&`, which assumes the caller has a
+  `std::string`. Code wholly within one `.cc` knows both sides of the call, but
+  follows this too, for consistency.
 - Use member pointers, templates, and similar tricks to share code only when
   the shared logic is substantial. A few duplicated lines written out case by
   case are often easier to read and maintain.
