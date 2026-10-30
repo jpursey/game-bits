@@ -62,52 +62,6 @@ component, as the MSVC standard library rejects older clang versions. Fix them,
 build and test both clang configurations, and consider building one in CI so it
 stays working.
 
-## Multithreaded profiles
-
-- **Layers:** profile
-- **Size:** medium
-- **Feature workflow:** yes
-- **Depends on:** *Profiler module*
-- **Requested by:** Terra Diem *Profile the world's jobs*
-- **Background:** [Profiler module](worklog/profiler_module.md)
-
-Combine the profiles of several threads, each with its own `Profiler`, into
-one view: CPU time and calls per point across all threads, per frame of the
-main loop, and how busy each thread is per frame. Point indices are global, so
-every Profiler's slots line up and combining them is a sum. Each thread adds a
-snapshot into a shared total at a safe point of its own (the end of its frame,
-or between jobs), or the slots become atomics written only by their own thread
-(plain moves on x64) and are read live. Overlap and critical paths need a
-timeline of events instead, which this is not (see *Profile timelines*).
-`Profiler::GetReport()` reads its own slots, so the combined view needs the
-report to format a snapshot of slots instead, which a combined total can also
-provide.
-
-Terra Diem would be its main user: its world loads, lights, meshes, and
-(later) simulates as thousands of short jobs on a `FiberJobSystem`. For that:
-- Job threads get their Profilers from the job system, which owns the threads
-  (*Profiled jobs*).
-- A job thread has no frames of its own, so its points count in the main
-  loop's frame whose interval they end in, on the shared timestamp counter.
-- Counters sum across threads (a job counting the chunks it lit), and a value
-  is the latest set on any thread.
-- The report shows each thread's busy time and class of core, and gives each
-  point's share of the frame alongside its total: a frame is wall time, while
-  the threads' points add up to CPU time, so the two can't be summed.
-
-The kind of core a thread runs on matters as much as what it runs. On an
-i9-14900KF (8 performance and 16 efficiency cores), frames on efficiency cores
-took about 25-30% longer than the same frames on performance cores, and
-Windows moved a program's main thread onto them when its window was in the
-background (2026-10-05). The tick rate was not at fault: it measured the same
-in every session, matching what CPUID reports. The single-thread report
-already splits frames by core class and warns when they mix; a combined view
-needs the same per thread, since job threads spread across both kinds of core.
-Pinning threads makes profiles compare: since [Core-aware job
-threads](worklog/core_aware_job_threads.md), `GetCpuTopology()` gives each
-core's class, and `FiberJobSystem` pins each job thread to a hardware thread or
-core of its own, which fixes each thread's class.
-
 ## Fiber-aware profiling
 
 - **Layers:** thread, profile
@@ -137,7 +91,8 @@ mostly waits for other jobs needs a different fix from one that runs long.
 - **Feature workflow:** yes
 - **Depends on:** *Multithreaded profiles*, *Fiber profile timers*
 - **Requested by:** Terra Diem *Profile the world's jobs*
-- **Background:** *Multithreaded profiles*, *Fiber-aware profiling*
+- **Background:** [Multithreaded profiles](worklog/multithreaded_profiles.md),
+  *Fiber-aware profiling*
 
 Let `FiberJobSystem` profile the jobs it runs, so a program can see whether its
 job threads are kept busy and where their time goes, without timing every job
@@ -177,7 +132,8 @@ on.
 - **Depends on:** *Multithreaded profiles*, *Fiber-aware profiling*,
   *Profiled jobs*
 - **Requested by:** Terra Diem *Profile the world's jobs*
-- **Background:** *Multithreaded profiles*, which leaves timelines out
+- **Background:** [Multithreaded profiles](worklog/multithreaded_profiles.md),
+  which leaves timelines out
 
 Totals can't show overlap, idle gaps, or what a frame waited for, and on many
 threads those are what decide frame times. Record each timed point as an event
