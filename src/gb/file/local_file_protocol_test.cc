@@ -32,14 +32,17 @@ using ::testing::Values;
 // U+65E5 U+672C in UTF-8, which most Windows code pages can't represent.
 constexpr std::string_view kNonAsciiName = "\xE6\x97\xA5\xE6\x9C\xAC";
 
-// Converts between UTF-8 paths used by LocalFileProtocol and std::filesystem
-// paths.
+// Converts between UTF-8 paths and std::filesystem paths, either as the
+// operating system writes them or normalized as LocalFileProtocol does.
 fs::path ToFsPath(std::string_view path) {
   return fs::path(std::u8string(path.begin(), path.end()));
 }
+std::string ToNativeString(const fs::path& path) {
+  const std::u8string utf8_path = path.u8string();
+  return std::string(utf8_path.begin(), utf8_path.end());
+}
 std::string ToGbPath(const fs::path& path) {
-  const std::u8string utf8_path = path.generic_u8string();
-  return NormalizePath(std::string(utf8_path.begin(), utf8_path.end()));
+  return NormalizePath(ToNativeString(path));
 }
 
 std::unique_ptr<FileProtocol> LocalFileProtocolFactory(
@@ -476,6 +479,79 @@ TEST(LocalFileProtocolTest, NonAsciiNames) {
   EXPECT_THAT(
       file_system.List("file:/", FolderMode::kRecursive),
       UnorderedElementsAre(folder, file, absl::StrCat("file:/", other_name)));
+}
+
+TEST(LocalFileProtocolTest, OsRoot) {
+  std::error_code error;
+  fs::path original_path = fs::current_path(error);
+  ASSERT_FALSE(error) << error.message();
+  fs::path parent_path = GetUnusedTempPath();
+  ASSERT_TRUE(fs::create_directory(parent_path, error)) << error.message();
+
+  // The current directory is restored first, as Windows cannot remove a
+  // directory that is the current directory of a process.
+  ScopedCall scoped([&] {
+    fs::current_path(original_path, error);
+    fs::remove_all(parent_path, error);
+  });
+
+  ASSERT_TRUE(fs::create_directory(parent_path / "src", error))
+      << error.message();
+  ASSERT_TRUE(fs::create_directory(parent_path / "lib", error))
+      << error.message();
+  ASSERT_TRUE(WriteFile(parent_path / "src/main", "main"));
+  ASSERT_TRUE(WriteFile(parent_path / "lib/include", "include"));
+  ASSERT_TRUE(WriteFile(parent_path / "lib" / ToFsPath(kNonAsciiName), "name"));
+
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(LocalFileProtocol::CreateOsRoot()));
+  ASSERT_TRUE(file_system.SetDefaultProtocol("file"));
+
+  // A native path converts to an absolute, normalized path.
+  const std::string parent =
+      LocalFileProtocol::ToOsRootPath(ToNativeString(parent_path));
+  ASSERT_TRUE(IsPathAbsolute(parent)) << parent;
+  const std::string src = JoinPath(parent, "src");
+  const std::string lib = JoinPath(parent, "lib");
+  const std::string main = LocalFileProtocol::ToOsRootPath(
+      ToNativeString(parent_path / "src" / "." / "main"));
+  EXPECT_EQ(main, JoinPath(src, "main"));
+  std::string contents;
+  EXPECT_TRUE(file_system.ReadFile(main, &contents));
+  EXPECT_EQ(contents, "main");
+  EXPECT_TRUE(file_system.ReadFile(absl::StrCat("file:", main), &contents));
+  EXPECT_EQ(contents, "main");
+
+  // A path relative to a file opened by its native path joins to its folder.
+  EXPECT_TRUE(file_system.ReadFile(
+      JoinPath(RemoveFilename(main), "../lib/include"), &contents));
+  EXPECT_EQ(contents, "include");
+  EXPECT_TRUE(file_system.ReadFile(
+      JoinPath(RemoveFilename(main), JoinPath("../lib", kNonAsciiName)),
+      &contents));
+  EXPECT_EQ(contents, "name");
+
+  // Paths are listed and written the same way.
+  EXPECT_THAT(
+      file_system.List(lib),
+      UnorderedElementsAre(absl::StrCat("file:", lib, "/include"),
+                           absl::StrCat("file:", lib, "/", kNonAsciiName)));
+  EXPECT_TRUE(file_system.WriteFile(JoinPath(lib, "new"), "new"));
+  EXPECT_TRUE(fs::is_regular_file(parent_path / "lib/new", error));
+
+  // A relative path is relative to the current directory, whether it is
+  // converted or opened directly.
+  fs::current_path(parent_path / "src", error);
+  ASSERT_FALSE(error) << error.message();
+  EXPECT_EQ(file_system.GetCurrentFolder("file"), src);
+  EXPECT_EQ(LocalFileProtocol::ToOsRootPath("../lib/include"),
+            JoinPath(lib, "include"));
+  EXPECT_TRUE(file_system.ReadFile("../lib/include", &contents));
+  EXPECT_EQ(contents, "include");
+
+  // A path that is empty or isn't UTF-8 can't be converted.
+  EXPECT_EQ(LocalFileProtocol::ToOsRootPath(""), "");
+  EXPECT_EQ(LocalFileProtocol::ToOsRootPath("\xFF"), "");
 }
 
 }  // namespace

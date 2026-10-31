@@ -24,8 +24,10 @@ from whichever project shows the need (see [Game Bits](#game-bits)).
 ### Names
 
 - Offer concise, plain words: two or three candidates, the existing terms each
-  one avoids colliding with, and a recommendation. No jargon, abbreviations, or
-  catch-alls ("building block", "manager", "helper").
+  one avoids colliding with, and a recommendation. No jargon, abbreviations
+  known only within a narrow domain, or catch-alls ("building block",
+  "manager", "helper"). Abbreviations known throughout computing, such as "OS"
+  or "HTTP", are fine.
 - "Add" creates something that the owner registers and keeps (`AddChild()`).
   "Create" is for factories that return a `unique_ptr` to the caller.
 - "Validate" names code that judges whether something is acceptable and fails

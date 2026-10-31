@@ -31,16 +31,18 @@ class CurrentPathProtocol : public MemoryFileProtocol {
  protected:
   std::string DoGetCurrentPath(std::string_view protocol_name) override {
     ++call_count_;
-    return "/";
+    return current_path_;
   }
   bool DoSetCurrentPath(std::string_view protocol_name,
                         std::string_view path) override {
     ++call_count_;
+    current_path_ = path;
     return true;
   }
 
  private:
   int call_count_ = 0;
+  std::string current_path_ = "/";
 };
 
 TEST(FileSystemTest, DefaultConstruct) {
@@ -129,6 +131,27 @@ TEST(FileSystemTest, CurrentFolder) {
   EXPECT_EQ(file_system.GetCurrentFolder("mem"), "/");
   EXPECT_TRUE(file_system.SetCurrentFolder("mem:/"));
   EXPECT_EQ(protocol_ptr->GetCallCount(), 2);
+}
+
+TEST(FileSystemTest, RelativePathsUseCurrentFolder) {
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(
+      std::make_unique<CurrentPathProtocol>(FileProtocolFlags(
+          {kReadWriteFileProtocolFlags, FileProtocolFlag::kCurrentPath})),
+      "mem"));
+  ASSERT_TRUE(file_system.SetDefaultProtocol("mem"));
+  ASSERT_TRUE(file_system.CreateFolder("mem:/a/b", FolderMode::kRecursive));
+  ASSERT_TRUE(file_system.WriteFile("mem:/a/b/file-b", "b"));
+  ASSERT_TRUE(file_system.WriteFile("mem:/a/file-a", "a"));
+  ASSERT_TRUE(file_system.SetCurrentFolder("mem:/a/b"));
+
+  std::string contents;
+  EXPECT_TRUE(file_system.ReadFile("file-b", &contents));
+  EXPECT_EQ(contents, "b");
+  EXPECT_TRUE(file_system.ReadFile("../file-a", &contents));
+  EXPECT_EQ(contents, "a");
+  EXPECT_TRUE(file_system.ReadFile("mem:../b/./file-b", &contents));
+  EXPECT_EQ(contents, "b");
 }
 
 TEST(FileSystemTest, CurrentFolderNeedsProtocolSupport) {

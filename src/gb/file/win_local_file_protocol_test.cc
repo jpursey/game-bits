@@ -6,6 +6,8 @@
 #include <filesystem>
 #include <string>
 
+#include "absl/strings/ascii.h"
+#include "gb/base/unicode.h"
 #include "gb/base/win_platform.h"
 #include "gb/file/file_system.h"
 #include "gb/file/local_file_protocol.h"
@@ -109,6 +111,40 @@ TEST_F(WinLocalFileProtocolTest, WriteFails) {
   ASSERT_EQ(file->SeekTo(kLockedOffset), kLockedOffset);
   EXPECT_EQ(file->WriteString(text), kLockedOffset);
   EXPECT_TRUE(file->Close());
+}
+
+TEST(WinLocalFileProtocolOsRootTest, ToOsRootPath) {
+  // The drive is the first folder, on any drive.
+  EXPECT_EQ(LocalFileProtocol::ToOsRootPath("C:\\src\\Main.txt"),
+            "/c/src/Main.txt");
+  EXPECT_EQ(LocalFileProtocol::ToOsRootPath("q:/src/../lib/"), "/q/lib");
+  EXPECT_EQ(LocalFileProtocol::ToOsRootPath("C:\\"), "/c");
+
+  // Network paths aren't supported.
+  EXPECT_EQ(LocalFileProtocol::ToOsRootPath("\\\\server\\share\\file"), "");
+  EXPECT_EQ(LocalFileProtocol::ToOsRootPath("//server/share/file"), "");
+}
+
+TEST(WinLocalFileProtocolOsRootTest, DriveFolders) {
+  std::error_code error;
+  const fs::path temp_path = fs::temp_directory_path(error);
+  ASSERT_FALSE(error) << error.message();
+  const std::string drive = LocalFileProtocol::ToOsRootPath(
+      ToUtf8(temp_path.root_path().u16string()));
+  ASSERT_EQ(drive.size(), 2) << drive;
+
+  // A drive is a folder, but the root that would hold the drives isn't, nor is
+  // a first folder that isn't a drive letter.
+  auto protocol = LocalFileProtocol::CreateOsRoot();
+  EXPECT_EQ(protocol->GetRoot(), "");
+  EXPECT_EQ(protocol->GetPathInfo("file", drive).type, PathType::kFolder);
+  EXPECT_EQ(protocol->GetPathInfo("file", "/").type, PathType::kInvalid);
+  EXPECT_THAT(
+      protocol->List("file", "/", {}, FolderMode::kNormal, kAllPathTypes),
+      IsEmpty());
+  EXPECT_EQ(protocol->GetPathInfo("file", "/cc").type, PathType::kInvalid);
+  EXPECT_EQ(protocol->GetPathInfo("file", absl::AsciiStrToUpper(drive)).type,
+            PathType::kInvalid);
 }
 
 }  // namespace

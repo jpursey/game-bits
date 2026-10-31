@@ -16,7 +16,8 @@
 namespace gb {
 
 // This class implements FileProtocol rooted in a folder on the local operating
-// system.
+// system, or at the operating system's root, to open any path in it (see
+// CreateOsRoot()).
 //
 // This class supports all file system operations, but is subject to the
 // requirements of the underlying operating system. By default, it will register
@@ -99,8 +100,31 @@ class LocalFileProtocol : public FileProtocol {
   static std::unique_ptr<LocalFileProtocol> CreateTemp(
       std::string_view temp_prefix = {});
 
+  // Creates a local file protocol rooted at the top of the operating system's
+  // file system, which opens any absolute path in it, such as the paths a
+  // command line tool is given. ToOsRootPath() converts an operating system
+  // path to one of its paths.
+  //
+  // Where the operating system has drive letters, the root is above them, and
+  // the first folder in a path is the drive, in lowercase: "/c/src/a" is
+  // "C:\src\a". The root itself isn't a folder, so .. segments that go above a
+  // drive's root leave the drive. Network paths (such as "\\server\share")
+  // can't be opened.
+  static std::unique_ptr<LocalFileProtocol> CreateOsRoot();
+
+  // Converts an operating system path, absolute or relative to the current
+  // directory, to a path of a protocol from CreateOsRoot(). The path is
+  // normalized and absolute, with no protocol name, so it is opened with that
+  // protocol as the default protocol, or prefixed with its name.
+  //
+  // Returns an empty string if the path is empty, isn't UTF-8, or is a network
+  // path.
+  static std::string ToOsRootPath(std::string_view native_path);
+
   ~LocalFileProtocol() override;
 
+  // Returns the normalized root path, or an empty string for a protocol from
+  // CreateOsRoot().
   const std::string& GetRoot() const { return root_; }
 
   // Public overrides for FileProtocol.
@@ -133,8 +157,8 @@ class LocalFileProtocol : public FileProtocol {
                         std::string_view path) override;
 
  private:
-  explicit LocalFileProtocol(std::string_view root,
-                             const ValidatedContext& context);
+  LocalFileProtocol(FileProtocolFlags flags, std::string_view root,
+                    bool unique_root, bool delete_at_exit);
 
   const FileProtocolFlags flags_;
   const std::string root_;

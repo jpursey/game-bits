@@ -353,7 +353,10 @@ FileSystem::GetNormalizedPath(std::string_view path) {
   if (current_path.empty()) {
     return {{}, protocol_name, protocol};
   }
-  return {JoinPath(current_path, normalized_path), protocol_name, protocol};
+
+  // A relative path may start with .. segments, to collapse once joined.
+  return {NormalizePath(JoinPath(current_path, normalized_path)), protocol_name,
+          protocol};
 }
 
 bool FileSystem::GenericCopyFolder(std::string_view from_protocol_name,

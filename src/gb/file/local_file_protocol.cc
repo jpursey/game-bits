@@ -11,6 +11,7 @@
 #include <random>
 
 #include "absl/log/log.h"
+#include "absl/strings/ascii.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/strip.h"
 #include "gb/base/context_builder.h"
@@ -120,15 +121,53 @@ fs::path ToPath(std::string_view path) {
   return fs::path(ToUtf16(path), fs::path::generic_format);
 }
 
-// Returns the operating system path for a protocol path under the root, or
-// nullopt for an invalid path: one with a host, which isn't under the root, or
-// one that isn't valid UTF-8.
+// Returns true if operating system paths start with a drive letter, as Windows
+// paths do.
+bool HasDriveLetters() {
+  static const bool s_has_drive_letters = fs::path("c:/").has_root_name();
+  return s_has_drive_letters;
+}
+
+// Returns the operating system path for an absolute path of a protocol at the
+// operating system's root, or an empty string if it names no path: where there
+// are drive letters, its first folder must be one, in lowercase.
+std::string OsRootToFullPath(std::string_view path) {
+  if (!HasDriveLetters()) {
+    return std::string(path);
+  }
+  if (path.size() < 2 || !absl::ascii_islower(path[1]) ||
+      (path.size() > 2 && path[2] != '/')) {
+    return {};
+  }
+  const std::string_view folder = path.substr(2);
+  return absl::StrCat(path.substr(1, 1), ":", folder.empty() ? "/" : folder);
+}
+
+// Returns the path of a protocol at the operating system's root for a
+// normalized absolute operating system path, or an empty string for a network
+// path.
+std::string FullToOsRootPath(std::string_view path) {
+  std::string_view drive;
+  path = RemoveProtocol(path, &drive);
+  if (!GetHostName(path).empty()) {
+    return {};
+  }
+  if (drive.empty()) {
+    return std::string(path);
+  }
+  return absl::StrCat("/", drive, path == "/" ? "" : path);
+}
+
+// Returns the operating system path for a protocol path under the root (an
+// empty root is the operating system's root), or nullopt for an invalid path:
+// one with a host, which isn't under the root, or one that isn't valid UTF-8.
 std::optional<fs::path> ToFullPath(std::string_view root,
                                    std::string_view path) {
   if (!GetHostName(path).empty()) {
     return std::nullopt;
   }
-  fs::path full_path = ToPath(JoinPath(root, path));
+  fs::path full_path =
+      ToPath(root.empty() ? OsRootToFullPath(path) : JoinPath(root, path));
   if (full_path.empty()) {
     return std::nullopt;
   }
@@ -136,8 +175,12 @@ std::optional<fs::path> ToFullPath(std::string_view root,
 }
 
 // Returns the protocol path for a normalized operating system path, or an
-// empty string if it is not under the root.
+// empty string if it is not under the root (or is a network path, for the
+// operating system's root).
 std::string ToProtocolPath(std::string_view root, std::string_view path) {
+  if (root.empty()) {
+    return FullToOsRootPath(path);
+  }
   if (!absl::ConsumePrefix(&path, root)) {
     return {};
   }
@@ -312,7 +355,10 @@ std::unique_ptr<LocalFileProtocol> LocalFileProtocol::Create(
     }
   }
 
-  return absl::WrapUnique(new LocalFileProtocol(root, context));
+  return absl::WrapUnique(
+      new LocalFileProtocol(context.GetValue<FileProtocolFlags>(), root,
+                            context.GetValue<bool>(kKeyUniqueRoot),
+                            context.GetValue<bool>(kKeyDeleteAtExit)));
 }
 
 std::unique_ptr<LocalFileProtocol> LocalFileProtocol::Create(
@@ -346,12 +392,31 @@ std::unique_ptr<LocalFileProtocol> LocalFileProtocol::CreateTemp(
                     .Build());
 }
 
-LocalFileProtocol::LocalFileProtocol(std::string_view root,
-                                     const ValidatedContext& context)
-    : flags_(context.GetValue<FileProtocolFlags>()),
-      root_(root.data(), root.size()),
-      unique_root_(context.GetValue<bool>(kKeyUniqueRoot)),
-      delete_at_exit_(context.GetValue<bool>(kKeyDeleteAtExit)) {}
+std::unique_ptr<LocalFileProtocol> LocalFileProtocol::CreateOsRoot() {
+  return absl::WrapUnique(
+      new LocalFileProtocol(kDefaultFlags, {}, false, false));
+}
+
+std::string LocalFileProtocol::ToOsRootPath(std::string_view native_path) {
+  const fs::path path = ToPath(native_path);
+  if (path.empty()) {
+    return {};
+  }
+  std::error_code error;
+  const fs::path absolute_path = fs::absolute(path, error);
+  if (error) {
+    return {};
+  }
+  return FullToOsRootPath(ToString(absolute_path));
+}
+
+LocalFileProtocol::LocalFileProtocol(FileProtocolFlags flags,
+                                     std::string_view root, bool unique_root,
+                                     bool delete_at_exit)
+    : flags_(flags),
+      root_(root),
+      unique_root_(unique_root),
+      delete_at_exit_(delete_at_exit) {}
 
 LocalFileProtocol::~LocalFileProtocol() {
   if (!delete_at_exit_) {
@@ -485,8 +550,9 @@ bool LocalFileProtocol::DoCopyFolder(std::string_view protocol_name,
 
 bool LocalFileProtocol::DoDeleteFolder(std::string_view protocol_name,
                                        std::string_view path, FolderMode mode) {
+  // Neither the protocol's root nor a drive's root folder is deleted.
   auto full_path = ToFullPath(root_, path);
-  if (!full_path || IsRootPath(path)) {
+  if (!full_path || IsRootPath(path) || !full_path->has_relative_path()) {
     return false;
   }
 
