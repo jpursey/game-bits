@@ -55,8 +55,8 @@ gb::Profiler thread_profiler({.main = &profiler, .name = "loader"});
 - **Threads:** once a Profiler has joined, a table with a row for each joined
   Profiler, and one for the main thread: its name, its busy time (the time in
   its outermost timed points) per frame on average and at most, its average as
-  a share of the average frame, and the class of core it was busy on, or
-  "mixed" with the time on each. Rows are sorted by name, so reports diff
+  a share of the average frame, and the share of its busy time on each class
+  of core, in a column per class. Rows are sorted by name, so reports diff
   cleanly.
 - **Reading:** only the main Profiler's thread reads its report, as today. The
   main Profiler reads the joined Profilers' slots while their threads write
@@ -209,10 +209,17 @@ std::vector<JoinedThread> joined_threads_ ABSL_GUARDED_BY(joined_mutex_);
   the frame: a frame that is the slowest so far takes 12us to capture, against
   0.5us with no threads. A slow frame's report takes 130-185us with or without
   them, nearly all of it formatting. A frame that captures nothing is
-  unchanged.
+  unchanged. A frame's end confirmed in CL5: gathering busy times takes it
+  from 13ns to 27ns with no joined threads (the lock), 100ns with 24 idle
+  ones, and 400ns with 24 that were each busy in the frame, as their busy
+  times are read from other cores. Reading only a frame's total busy time
+  took 41ns and 170ns, but needed a second set of baselines for the times by
+  class; at 0.003% of a 16ms frame, the simpler gathering won.
 - Whether `GetThisThreadCoreClass()` on every outermost point is cheap enough
   for Terra Diem's shortest jobs. CL5 measures it against a job of a few
-  microseconds.
+  microseconds. Confirmed in CL5: an outermost point on a joined Profiler
+  costs 19.9ns against 15.0ns for a nested one, so the busy time adds about
+  5ns, 0.1-0.25% of a 2-5us job.
 
 ## CLs
 
@@ -285,13 +292,26 @@ Depends on: CL3.
   and `on_slow_frame`'s report; one that ends between frames is in neither.
 - Performance: capturing a slow frame with 24 joined threads and 300 points.
 
-### CL5 [ ] profile: busy time per thread
+### CL5 [x] profile: busy time per thread
 
 Depends on: CL4.
 
 - Joined Profilers record busy time, in total, per frame, and by class of
   core; a frame's end gathers each thread's busy time in it.
 - The report's threads table.
+- Busy time only counts outermost points that end during a frame, by class
+  of core as well, so a thread's shares by class are of the same time as its
+  busy time per frame.
+- Each joined Profiler only adds to its busy time by class, and a frame's
+  end gathers what each has added since the last, so there are no frame
+  tags, baselines, or folds for it. A point that ends in the moment between
+  the gathering and the frame's end counts in the next frame, and what a
+  destroyed Profiler added since the last gathering counts in the frame in
+  progress.
+- The table has a column per class of core any thread was busy on, with the
+  share of each thread's busy time on it, rather than a "mixed" cell listing
+  them, so threads line up by class. The main thread's frames that changed
+  class count under "mixed", as in the frames by class of core.
 
 **Verify**
 - Standard checks.

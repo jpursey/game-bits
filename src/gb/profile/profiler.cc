@@ -145,17 +145,25 @@ std::string FormatSelfTime(ProfilePoint::Kind kind, absl::Duration self_time) {
   return FormatTime(self_time);
 }
 
-// Formats a point's self time as a share of the frames' time, `frame_ticks`, as
-// a percentage with three significant digits, such as "19.2%". Only a timed
-// point has a share, and only once frames have taken time.
-std::string FormatShare(ProfilePoint::Kind kind, int64_t self_ticks,
-                        int64_t frame_ticks) {
-  if (!absl::c_linear_search(kTimedKinds, kind) || frame_ticks <= 0) {
+// Formats `part` as a share of `whole`, as a percentage with three significant
+// digits, such as "19.2%". There is no share of a `whole` of zero.
+std::string FormatPercent(int64_t part, int64_t whole) {
+  if (whole <= 0) {
     return std::string(kNotApplicable);
   }
-  return FormatNumber(static_cast<double>(self_ticks) * 100 /
-                      static_cast<double>(frame_ticks)) +
+  return FormatNumber(static_cast<double>(part) * 100 /
+                      static_cast<double>(whole)) +
          "%";
+}
+
+// Formats a point's self time as a share of the frames' time, `frame_ticks`.
+// Only a timed point has a share, and only once frames have taken time.
+std::string FormatShare(ProfilePoint::Kind kind, int64_t self_ticks,
+                        int64_t frame_ticks) {
+  if (!absl::c_linear_search(kTimedKinds, kind)) {
+    return std::string(kNotApplicable);
+  }
+  return FormatPercent(self_ticks, frame_ticks);
 }
 
 // Returns whether `a` comes before `b` in a report: grouped by kind, and
@@ -202,13 +210,14 @@ Profiler::Profiler(Options options)
       slots_(std::make_unique<Slot[]>(kMaxProfilePoints)),
       frame_(options.main != nullptr ? &options.main->current_frame_.number
                                      : &current_frame_.number),
+      main_(options.main),
       ticks_per_second_(fake_cpu_ != nullptr ? fake_cpu_->GetCpuTicksPerSecond()
                                              : GetCpuTicksPerSecond()),
       budget_per_frame_(options.budget_per_frame),
       budget_fraction_(options.budget_fraction),
       slow_frame_ticks_(ToTicks(options.slow_frame, ticks_per_second_)),
       on_slow_frame_(std::move(options.on_slow_frame)),
-      main_(options.main) {
+      name_(options.name.empty() ? "main" : options.name) {
   CHECK(s_current == nullptr) << "Only one Profiler may exist per thread";
   if (main_ != nullptr) {
     CHECK(main_->main_ == nullptr)
@@ -289,6 +298,10 @@ void Profiler::RemoveJoinedThread(int index) {
     thread.folded.resize(point_count);
   }
   thread.profiler->AddOwnTotals(absl::MakeSpan(thread.folded), thread.baseline);
+
+  // The next Profiler under this name starts from no busy time.
+  thread.left_busy_ticks += GatherBusyTicks(thread);
+  thread.gathered_busy_ticks = {};
 
   // If the frame has ended since its number was read, its part is kept but
   // never captured.
@@ -374,6 +387,9 @@ void Profiler::Reset() {
   absl::MutexLock lock(&joined_mutex_);
   for (JoinedThread& thread : joined_threads_) {
     thread.folded.clear();
+    thread.busy_core_ticks = {};
+    thread.max_frame_busy_ticks = 0;
+    thread.left_busy_ticks = 0;
     if (thread.profiler != nullptr) {
       thread.baseline = thread.profiler->GatherOwnTotals();
     }
@@ -388,6 +404,7 @@ void Profiler::ResetOwn() {
   frame_buckets_ = {};
   core_frames_ = {};
   slowest_frame_ = {};
+  busy_ = BusyTime();
 }
 
 double Profiler::MeasurePointCost() {
@@ -445,6 +462,7 @@ void Profiler::EndFrame(int index, Timing& timing) {
                 is_slowest ? slowest_frame_ : slow_frame,
                 ProfilePoint::GetRegisteredPoints());
   }
+  AddFrameBusyTimes();
   current_frame_.number.Set(0);
 
   // The callback is called after the frame ends, so any points it reaches are
@@ -511,6 +529,38 @@ void Profiler::AddFramePoint(FrameBreakdown::Point& point,
   point.joined_self_ticks += part.joined_self_ticks;
 }
 
+void Profiler::AddBusyTime(int64_t ticks) {
+  if (frame_->Get() != 0) {
+    busy_.core_ticks[ReadCoreClass()].Add(ticks);
+  }
+}
+
+int64_t Profiler::GatherBusyTicks(JoinedThread& thread) {
+  // Each class's busy time only grows, so none is gathered twice.
+  const BusyTime& busy = thread.profiler->busy_;
+  int64_t added_ticks = 0;
+  for (int core = 0; core < kCoreClasses; ++core) {
+    const int64_t ticks = busy.core_ticks[core].Get();
+    const int64_t added = ticks - thread.gathered_busy_ticks[core];
+    thread.gathered_busy_ticks[core] = ticks;
+    thread.busy_core_ticks[core] += added;
+    added_ticks += added;
+  }
+  return added_ticks;
+}
+
+void Profiler::AddFrameBusyTimes() {
+  absl::MutexLock lock(&joined_mutex_);
+  for (JoinedThread& thread : joined_threads_) {
+    int64_t ticks = thread.left_busy_ticks;
+    thread.left_busy_ticks = 0;
+    if (thread.profiler != nullptr) {
+      ticks += GatherBusyTicks(thread);
+    }
+    thread.max_frame_busy_ticks = std::max(thread.max_frame_busy_ticks, ticks);
+  }
+}
+
 std::string Profiler::GetReport() const {
   const std::vector<ProfilePoint> registered =
       ProfilePoint::GetRegisteredPoints();
@@ -527,6 +577,7 @@ std::string Profiler::GetReport() const {
   AppendValues(report, points);
   AppendFrameSummary(report);
   AppendCoreFrames(report);
+  AppendThreads(report);
   AppendPoints(report, points);
   if (frames_ > 0) {
     absl::StrAppend(&report, "\n");
@@ -599,6 +650,72 @@ void Profiler::AppendCoreFrames(std::string& report) const {
                     "Warning: frames ran on more than one class of core, "
                     "which run at different speeds\n");
   }
+}
+
+void Profiler::AppendThreads(std::string& report) const {
+  // A thread's busy time in frames, by class of core, where the main thread's
+  // frames can also be kMixedCores.
+  struct ThreadBusy {
+    std::string name;
+    int64_t max_frame_ticks = 0;
+    std::array<int64_t, kCoreClasses + 1> core_ticks = {};
+  };
+  std::vector<ThreadBusy> threads;
+  {
+    absl::MutexLock lock(&joined_mutex_);
+    if (joined_threads_.empty()) {
+      return;
+    }
+    for (const JoinedThread& thread : joined_threads_) {
+      ThreadBusy& busy = threads.emplace_back(ThreadBusy{
+          .name = thread.name, .max_frame_ticks = thread.max_frame_busy_ticks});
+      absl::c_copy(thread.busy_core_ticks, busy.core_ticks.begin());
+    }
+  }
+  ThreadBusy& main = threads.emplace_back(
+      ThreadBusy{.name = name_, .max_frame_ticks = slowest_frame_.ticks});
+  for (int core = 0; core < static_cast<int>(core_frames_.size()); ++core) {
+    main.core_ticks[core] = core_frames_[core].ticks;
+  }
+  absl::c_stable_sort(threads, [](const ThreadBusy& a, const ThreadBusy& b) {
+    return a.name < b.name;
+  });
+
+  // A column for each class of core any thread was busy on.
+  std::vector<int> cores;
+  for (int core = 0; core < kCoreClasses + 1; ++core) {
+    if (absl::c_any_of(threads, [core](const ThreadBusy& busy) {
+          return busy.core_ticks[core] > 0;
+        })) {
+      cores.push_back(core);
+    }
+  }
+
+  Table table = {{"Thread", "Busy/frame", "Max", "Share"}};
+  for (int core : cores) {
+    table[0].push_back(FormatCore(core));
+  }
+  const bool has_frames = frames_ > 0;
+  for (const ThreadBusy& busy : threads) {
+    int64_t busy_ticks = 0;
+    for (int64_t ticks : busy.core_ticks) {
+      busy_ticks += ticks;
+    }
+    std::vector<std::string>& row = table.emplace_back();
+    row.push_back(busy.name);
+    row.push_back(has_frames ? FormatTime(TicksToDuration(busy_ticks) / frames_)
+                             : std::string(kNotApplicable));
+    row.push_back(has_frames ? FormatTime(TicksToDuration(busy.max_frame_ticks))
+                             : std::string(kNotApplicable));
+    row.push_back(FormatPercent(busy_ticks, total_frame_ticks_));
+    for (int core : cores) {
+      row.push_back(busy.core_ticks[core] > 0
+                        ? FormatPercent(busy.core_ticks[core], busy_ticks)
+                        : std::string(kNotApplicable));
+    }
+  }
+  absl::StrAppend(&report, "\n");
+  AppendTable(report, table, 1);
 }
 
 void Profiler::AppendPoints(std::string& report,

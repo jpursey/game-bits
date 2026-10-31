@@ -84,8 +84,9 @@ class Profiler final {
     // FakeProfilerCpu, both need one, at the same rate).
     Profiler* main = nullptr;
 
-    // A joined Profiler's thread's name in the main Profiler's report. If this
-    // is empty, the thread's own name is used (see GetThreadName() in
+    // The thread's name in the main Profiler's threads table (see
+    // GetReport()). If this is empty, a main Profiler's thread is "main". A
+    // joined Profiler's thread has its own name (see GetThreadName() in
     // gb/thread/thread.h), as it is when the Profiler is made. A thread with
     // no name, including any thread CreateThread() didn't make, is "thread N",
     // for the lowest N no other existing Profiler joined to the same main
@@ -178,6 +179,16 @@ class Profiler final {
   // which add up to the frame's time), then the frame's count and self time of
   // each point, slowest first.
   //
+  // Once a Profiler has joined, a main Profiler's report also has a table of
+  // threads, with a row for its own thread and one for each name it has had
+  // joined Profilers under, sorted by name. Each has the thread's busy time
+  // per frame on average and at most, the average as a share of the average
+  // frame, and the share of its busy time on each class of core. A joined
+  // thread's busy time is the time in its outermost timed points that ended
+  // during frames, and its classes of core are those its outermost points
+  // ended on. The main thread's busy time is its frames' time, by the class
+  // of core each frame ran on.
+  //
   // Once a Profiler has joined a main Profiler, the main Profiler's frame
   // breakdowns include the points that ended on every joined Profiler's thread
   // while the frame was in progress, including on any destroyed by then. The
@@ -239,6 +250,9 @@ class Profiler final {
     int64_t ticks = 0;
     int64_t max_ticks = 0;
   };
+
+  // Ticks by class of core.
+  using CoreTicks = std::array<int64_t, kCoreClasses>;
 
   // A timed point in progress, kept by whatever times it. Timings running on
   // the thread form a stack, linked through `parent`.
@@ -326,6 +340,27 @@ class Profiler final {
     // What the destroyed ones recorded since this was last reset, by point
     // index.
     std::vector<PointTotals> folded;
+
+    // The busy time in frames since this was last reset, by class of core,
+    // and in the busiest frame, gathered at each frame's end.
+    CoreTicks busy_core_ticks = {};
+    int64_t max_frame_busy_ticks = 0;
+
+    // `profiler`'s busy time (see BusyTime) when it was last gathered, by
+    // class of core.
+    CoreTicks gathered_busy_ticks = {};
+
+    // The busy time the destroyed ones added since the last frame's end,
+    // which counts in the frame in progress, or the next one.
+    int64_t left_busy_ticks = 0;
+  };
+
+  // A joined Profiler's busy time in every frame (see GetReport()), by the
+  // class of core each outermost point ended on. Only its thread writes it,
+  // and the main Profiler gathers what it has added at each frame's end. It
+  // has a cache line of its own, as both threads use it.
+  struct alignas(ABSL_CACHELINE_SIZE) BusyTime {
+    std::array<SingleWriterInt64, kCoreClasses> core_ticks;
   };
 
   // A frame's time, and the part each point had in it.
@@ -374,6 +409,8 @@ class Profiler final {
     top_ = timing.parent;
     if (top_ != nullptr) {
       top_->child_ticks += elapsed_ticks;
+    } else if (main_ != nullptr) {
+      AddBusyTime(elapsed_ticks);
     }
     AddTime(index, elapsed_ticks - timing.child_ticks);
     ++current_frame_timed_points_;
@@ -402,6 +439,19 @@ class Profiler final {
   // Adds one thread's part in a frame for a point, `part`, to `point`.
   static void AddFramePoint(FrameBreakdown::Point& point,
                             const FrameBreakdown::Point& part);
+
+  // As a joined Profiler, adds an outermost timed point's time, `ticks`, to
+  // busy_, if a frame is in progress.
+  void AddBusyTime(int64_t ticks);
+
+  // As a main Profiler, adds the busy time `thread`'s joined Profiler has
+  // added since it was last gathered to `thread`'s totals, and returns it.
+  static int64_t GatherBusyTicks(JoinedThread& thread);
+
+  // As a main Profiler, adds each joined thread's busy time in the frame in
+  // progress to its entry in joined_threads_. A point that ends after this,
+  // but before the frame does, counts in the next frame.
+  void AddFrameBusyTimes() ABSL_LOCKS_EXCLUDED(joined_mutex_);
 
   // Returns the slot at `index` (a ProfilePoint's index), with its frame part
   // reset if it was for another frame.
@@ -476,6 +526,8 @@ class Profiler final {
                     absl::Span<const ReportPoint> points) const;
   void AppendFrameSummary(std::string& report) const;
   void AppendCoreFrames(std::string& report) const;
+  void AppendThreads(std::string& report) const
+      ABSL_LOCKS_EXCLUDED(joined_mutex_);
   void AppendPoints(std::string& report,
                     absl::Span<const ReportPoint> points) const;
   void AppendFrame(std::string& report, std::string_view title,
@@ -533,6 +585,10 @@ class Profiler final {
   // current_frame_ for a joined Profiler, or else this Profiler's own.
   const SingleWriterInt64* const frame_;
 
+  // The main Profiler this is joined to, at joined_index_ in its
+  // joined_threads_, or null.
+  Profiler* const main_;
+
   // The innermost timing on this thread, or null.
   Timing* top_ = nullptr;
 
@@ -573,10 +629,17 @@ class Profiler final {
   std::array<CoreFrames, kCoreClasses + 1> core_frames_ = {};
   FrameBreakdown slowest_frame_;
 
-  // The main Profiler this is joined to, at joined_index_ in its
-  // joined_threads_, or null.
-  Profiler* const main_;
+  // This Profiler's entry in main_->joined_threads_, or -1.
   int joined_index_ = -1;
+
+  // A main Profiler's thread's name, for the threads table. Only a main
+  // Profiler uses it, as a joined Profiler's is in its main Profiler's
+  // joined_threads_.
+  const std::string name_;
+
+  // Only a joined Profiler records busy time, as the main thread's is its
+  // frames' time.
+  BusyTime busy_;
 
   // The Profilers joined to this main Profiler, by name (see JoinedThread), in
   // the order they were first used.

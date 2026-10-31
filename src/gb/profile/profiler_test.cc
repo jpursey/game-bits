@@ -687,6 +687,159 @@ TEST_F(ProfilerTest, ThreadPointsBeforeResetAreInNoFrame) {
   EXPECT_EQ(profiler_.GetSlowestFrameCount("ThreadFrameTest/BeforeReset"), 0);
 }
 
+TEST_F(ProfilerTest, ThreadsTable) {
+  ProfiledThread loader(&profiler_, "loader");
+  ProfiledThread idle(&profiler_);
+  {
+    ProfileFrame<"ThreadBusyTest/Frame"> frame;
+    ticks_.Advance(1000);
+
+    // Only the outermost point counts, on the class of core it ends on.
+    loader.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+      ProfileScope<"ThreadBusyTest/Outer"> outer;
+      ticks.Advance(100);
+      {
+        ProfileScope<"ThreadBusyTest/Inner"> inner;
+        ticks.Advance(100);
+      }
+      ticks.Advance(100);
+      ticks.SetCoreClass(1);
+    });
+  }
+
+  // Busy time between frames isn't counted.
+  loader.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+    ProfileScope<"ThreadBusyTest/Outer"> outer;
+    ticks.Advance(5000);
+  });
+  {
+    ProfileFrame<"ThreadBusyTest/Frame"> frame;
+    ticks_.Advance(1000);
+    loader.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+      ticks.SetCoreClass(0);
+      ProfileScope<"ThreadBusyTest/Outer"> outer;
+      ticks.Advance(100);
+    });
+  }
+
+  // Sorted by name, with the main thread's busy time its frames' time.
+  const std::string report = profiler_.GetReport();
+  EXPECT_NE(report.find(R"(
+Thread    Busy/frame     Max  Share  class 0  class 1
+loader         200ns   300ns  20.0%    25.0%    75.0%
+main          1.00us  1.00us   100%     100%        -
+thread 1           0       0  0.00%        -        -
+)"),
+            std::string::npos)
+      << report;
+}
+
+TEST_F(ProfilerTest, NoThreadsTableUntilJoined) {
+  RecordFrames({1000});
+  EXPECT_EQ(profiler_.GetReport().find("Thread"), std::string::npos);
+}
+
+TEST_F(ProfilerTest, MainThreadName) {
+  ticks_.SetCoreClass(1);
+  RecordFrames({1000});
+  ticks_.SetCoreClass(0);
+  {
+    // A frame that changes class of core is mixed.
+    ProfileFrame<"ProfilerTest/Frames"> frame;
+    ticks_.Advance(3000);
+    ticks_.SetCoreClass(1);
+  }
+  std::thread thread([this] {
+    FakeProfilerCpu ticks;
+    Profiler profiler({.fake_cpu = &ticks, .main = &profiler_});
+  });
+  thread.join();
+  const std::string report = profiler_.GetReport();
+  EXPECT_NE(report.find(R"(
+Thread    Busy/frame     Max  Share  class 1  mixed
+main          2.00us  3.00us   100%    25.0%  75.0%
+thread 1           0       0  0.00%        -      -
+)"),
+            std::string::npos)
+      << report;
+}
+
+TEST(ProfilerThreadSetupTest, MainThreadHasItsName) {
+  FakeProfilerCpu ticks;
+  Profiler main({.fake_cpu = &ticks, .name = "render"});
+  std::thread thread([&main] {
+    FakeProfilerCpu thread_ticks;
+    Profiler profiler({.fake_cpu = &thread_ticks, .main = &main});
+  });
+  thread.join();
+  const std::string report = main.GetReport();
+  EXPECT_NE(report.find("\nrender  "), std::string::npos) << report;
+}
+
+TEST_F(ProfilerTest, DestroyedThreadStaysBusy) {
+  std::optional<ProfiledThread> thread(std::in_place, &profiler_, "loader");
+  {
+    ProfileFrame<"ThreadBusyTest/Frame"> frame;
+    ticks_.Advance(1000);
+    thread->Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+      ProfileScope<"ThreadBusyTest/Destroyed"> scope;
+      ticks.Advance(400);
+    });
+    thread.reset();
+  }
+  std::string report = profiler_.GetReport();
+  EXPECT_NE(report.find("\nloader       400ns   400ns  40.0%     100%\n"),
+            std::string::npos)
+      << report;
+
+  // A reset clears it, and a thread of the same name carries on after.
+  profiler_.Reset();
+  thread.emplace(&profiler_, "loader");
+  {
+    ProfileFrame<"ThreadBusyTest/Frame"> frame;
+    ticks_.Advance(1000);
+    thread->Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+      ProfileScope<"ThreadBusyTest/Destroyed"> scope;
+      ticks.Advance(100);
+    });
+  }
+  report = profiler_.GetReport();
+  EXPECT_NE(report.find("\nloader       100ns   100ns  10.0%     100%\n"),
+            std::string::npos)
+      << report;
+}
+
+TEST_F(ProfilerTest, ResetClearsLiveThreadsBusyTime) {
+  ProfiledThread thread(&profiler_, "loader");
+  {
+    ProfileFrame<"ThreadBusyTest/Frame"> frame;
+    ticks_.Advance(1000);
+    thread.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+      ticks.SetCoreClass(1);
+      ProfileScope<"ThreadBusyTest/Live"> scope;
+      ticks.Advance(400);
+    });
+  }
+  profiler_.Reset();
+  {
+    ProfileFrame<"ThreadBusyTest/Frame"> frame;
+    ticks_.Advance(1000);
+    thread.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+      ticks.SetCoreClass(0);
+      ProfileScope<"ThreadBusyTest/Live"> scope;
+      ticks.Advance(100);
+    });
+  }
+  const std::string report = profiler_.GetReport();
+  EXPECT_NE(report.find(R"(
+Thread  Busy/frame     Max  Share  class 0
+loader       100ns   100ns  10.0%     100%
+main        1.00us  1.00us   100%     100%
+)"),
+            std::string::npos)
+      << report;
+}
+
 TEST_F(ProfilerTest, ReadingValueAsSlowestFrameDies) {
   ProfilePoint value(ProfilePoint::Kind::kValue, "ProfilerTest/SlowestValue");
   EXPECT_DEATH(profiler_.GetSlowestFrameCount("ProfilerTest/SlowestValue"),
