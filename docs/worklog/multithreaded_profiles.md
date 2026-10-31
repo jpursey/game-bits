@@ -178,7 +178,10 @@ std::vector<JoinedThread> joined_threads_ ABSL_GUARDED_BY(joined_mutex_);
 
 - The relaxed atomic slots and the frame pointer leave the cost of a timed
   point unchanged (12.25ns as the Profiler measures it, 15.0ns for a
-  `ProfileScope` in a loop). CL2 measures it.
+  `ProfileScope` in a loop). Confirmed in CL2: 11.75ns and 14.8ns, against
+  11.75ns and 15.1ns before. That needs Release's inlining (`/Ob2`): with
+  CMake's `/Ob1`, MSVC calls two STL helpers in every `std::atomic` load and
+  store, and a point costs 20ns.
 - The timestamp counter agrees across cores to well under a microsecond, so a
   point on another thread is put in the right frame. Windows keeps an
   invariant counter in step across processors; CL3 checks it by hand, with two
@@ -205,7 +208,7 @@ Depends on: nothing.
 - Standard checks (see CLAUDE.md).
 - Existing report tests pass unchanged, apart from the new column.
 
-### CL2 [ ] profile: slots readable from other threads
+### CL2 [x] profile: slots readable from other threads
 
 Depends on: CL1.
 

@@ -200,6 +200,7 @@ Profiler::Profiler() : Profiler(Options()) {}
 Profiler::Profiler(Options options)
     : fake_cpu_(options.fake_cpu),
       slots_(std::make_unique<Slot[]>(kMaxProfilePoints)),
+      frame_(&current_frame_.number),
       ticks_per_second_(fake_cpu_ != nullptr ? fake_cpu_->GetCpuTicksPerSecond()
                                              : GetCpuTicksPerSecond()),
       budget_per_frame_(options.budget_per_frame),
@@ -314,8 +315,8 @@ double Profiler::MeasurePointCost() {
 }
 
 void Profiler::StartFrame(Timing& timing) {
-  CHECK(current_frame_ == 0) << "Profile frames can't nest";
-  current_frame_ = frames_ + 1;
+  CHECK(current_frame_.number.Get() == 0) << "Profile frames can't nest";
+  current_frame_.number.Set(frames_ + 1);
   current_frame_timed_points_ = 0;
   current_frame_start_core_ = ReadCoreClass();
   StartTiming(timing);
@@ -348,7 +349,7 @@ void Profiler::EndFrame(int index, Timing& timing) {
                 is_slowest ? slowest_frame_ : slow_frame,
                 ProfilePoint::GetRegisteredPoints());
   }
-  current_frame_ = 0;
+  current_frame_.number.Set(0);
 
   // The callback is called after the frame ends, so any points it reaches are
   // outside the frame.
@@ -361,11 +362,13 @@ Profiler::FrameBreakdown Profiler::CaptureFrame(int64_t ticks, int core) const {
   FrameBreakdown frame = {.ticks = ticks,
                           .core = core,
                           .timed_points = current_frame_timed_points_};
+  const int64_t frame_number = current_frame_.number.Get();
   const int point_count = ProfilePoint::GetRegisteredCount();
   for (int i = 0; i < point_count; ++i) {
     const Slot& slot = slots_[i];
-    if (slot.frame == current_frame_) {
-      frame.points.push_back({i, slot.frame_count, slot.frame_self_ticks});
+    if (slot.frame.Get() == frame_number) {
+      frame.points.push_back(
+          {i, slot.frame_count.Get(), slot.frame_self_ticks.Get()});
     }
   }
   return frame;
@@ -551,9 +554,9 @@ std::vector<Profiler::PointTotals> Profiler::GatherPointTotals() const {
   std::vector<PointTotals> totals(ProfilePoint::GetRegisteredCount());
   for (int i = 0; i < static_cast<int>(totals.size()); ++i) {
     const Slot& slot = slots_[i];
-    totals[i] = {.count = slot.count,
-                 .self_ticks = slot.self_ticks,
-                 .value = slot.value};
+    totals[i] = {.count = slot.count.Get(),
+                 .self_ticks = slot.self_ticks.Get(),
+                 .value = slot.value.Get()};
   }
   return totals;
 }

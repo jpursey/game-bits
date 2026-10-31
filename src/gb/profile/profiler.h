@@ -7,6 +7,7 @@
 #define GB_PROFILE_PROFILER_H_
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -14,6 +15,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/base/optimization.h"
 #include "absl/functional/any_invocable.h"
 #include "absl/log/check.h"
 #include "absl/time/time.h"
@@ -107,7 +109,7 @@ class Profiler final {
 
     // The profiler's own average cost per frame: the timed points in frames,
     // times GetPointCost(). Counters and values aren't included, as they cost
-    // only a few adds.
+    // only a few adds, and for a value a read of the timestamp counter.
     absl::Duration profiler_cost;
 
     // The budget for profiler_cost: the larger of the options'
@@ -204,20 +206,44 @@ class Profiler final {
     int64_t child_ticks = 0;
   };
 
-  // What is recorded for each point.
+  // An int64_t that only one thread writes, and any thread may read. Reads and
+  // writes are relaxed, and Add() is a load and a store rather than an atomic
+  // add, so each costs what a plain int64_t's does. A read on another thread
+  // sees each write whole, but in no particular order with other writes.
+  class SingleWriterInt64 {
+   public:
+    SingleWriterInt64() = default;
+    SingleWriterInt64& operator=(const SingleWriterInt64& other) {
+      Set(other.Get());
+      return *this;
+    }
+
+    int64_t Get() const { return value_.load(std::memory_order_relaxed); }
+    void Set(int64_t value) { value_.store(value, std::memory_order_relaxed); }
+    void Add(int64_t delta) { Set(Get() + delta); }
+
+   private:
+    std::atomic<int64_t> value_ = 0;
+  };
+
+  // What is recorded for each point. Only the Profiler's thread writes it.
   struct Slot {
     // Calls for a timed point, the total for a counter, or the times a value
     // was set. A point with a count of zero hasn't been recorded.
-    int64_t count = 0;
-    int64_t self_ticks = 0;
-    int64_t value = 0;
+    SingleWriterInt64 count;
+    SingleWriterInt64 self_ticks;
 
-    // The same, for only the frame numbered `frame` (see current_frame_). They
-    // are reset by the first add in a new frame, so nothing needs clearing
-    // when a frame starts.
-    int64_t frame = 0;
-    int64_t frame_count = 0;
-    int64_t frame_self_ticks = 0;
+    // The same, for only the frame numbered `frame` (see frame_). They are
+    // reset by the first add in a new frame, so nothing needs clearing when a
+    // frame starts. They come before `value`, so the fields a timed point
+    // writes are together.
+    SingleWriterInt64 frame;
+    SingleWriterInt64 frame_count;
+    SingleWriterInt64 frame_self_ticks;
+
+    // A value point's latest value, and when it was set.
+    SingleWriterInt64 value;
+    SingleWriterInt64 value_ticks;
   };
 
   // A point's totals, as the report and the test readers see them.
@@ -286,30 +312,32 @@ class Profiler final {
   // reset if it was for another frame.
   Slot& GetFrameSlot(int index) {
     Slot& slot = slots_[index];
-    if (slot.frame != current_frame_) {
-      slot.frame = current_frame_;
-      slot.frame_count = 0;
-      slot.frame_self_ticks = 0;
+    const int64_t frame = frame_->Get();
+    if (slot.frame.Get() != frame) {
+      slot.frame.Set(frame);
+      slot.frame_count.Set(0);
+      slot.frame_self_ticks.Set(0);
     }
     return slot;
   }
 
   void AddTime(int index, int64_t self_ticks) {
     Slot& slot = GetFrameSlot(index);
-    ++slot.count;
-    slot.self_ticks += self_ticks;
-    ++slot.frame_count;
-    slot.frame_self_ticks += self_ticks;
+    slot.count.Add(1);
+    slot.self_ticks.Add(self_ticks);
+    slot.frame_count.Add(1);
+    slot.frame_self_ticks.Add(self_ticks);
   }
   void AddCount(int index, int64_t count) {
     Slot& slot = GetFrameSlot(index);
-    slot.count += count;
-    slot.frame_count += count;
+    slot.count.Add(count);
+    slot.frame_count.Add(count);
   }
   void SetValue(int index, int64_t value) {
     Slot& slot = slots_[index];
-    ++slot.count;
-    slot.value = value;
+    slot.count.Add(1);
+    slot.value.Set(value);
+    slot.value_ticks.Set(ReadTicks());
   }
 
   // Returns the totals of every registered point, by index.
@@ -376,16 +404,24 @@ class Profiler final {
   FakeProfilerCpu* const fake_cpu_;
   const std::unique_ptr<Slot[]> slots_;
 
+  // The number of the frame that points are recorded in: this Profiler's
+  // current_frame_.
+  const SingleWriterInt64* const frame_;
+
   // The innermost timing on this thread, or null.
   Timing* top_ = nullptr;
 
-  // The number of the frame in progress, counting from 1, or 0 between
-  // frames. Points between frames are recorded against frame 0, which is
-  // never captured.
-  int64_t current_frame_ = 0;
-
   // The timed points ended in the frame in progress, including its own.
   int64_t current_frame_timed_points_ = 0;
+
+  // The number of the frame in progress, counting from 1, or 0 between
+  // frames. Points between frames are recorded against frame 0, which is
+  // never captured. It is read by every point, so it has a cache line of its
+  // own, apart from what every point writes.
+  struct alignas(ABSL_CACHELINE_SIZE) FrameNumber {
+    SingleWriterInt64 number;
+  };
+  FrameNumber current_frame_;
 
   // The class of core the frame in progress started on.
   int current_frame_start_core_ = 0;
