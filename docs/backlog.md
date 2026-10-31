@@ -106,8 +106,9 @@ itself:
 - How long each job waited to start, from `Run()` to running, and how long a
   waiting job took to resume once its counter reached zero, per job name. That
   shows whether a program's jobs need priorities, or more threads.
-- Each job thread's busy and idle time per frame of the main loop, idle being
-  the time it spends waiting for work.
+- Each job thread's idle time per frame of the main loop, the time it spends
+  waiting for work. Its busy time is already in the threads table, once each
+  job is the thread's outermost timed point.
 - Time blocked in the OS on a contended `absl::Mutex`. Abseil reports each
   contended wait through `absl::RegisterMutexProfiler()`, in cycles that on
   x86-64 are timestamp counter ticks, like the profiler's. A program can
@@ -155,6 +156,22 @@ Tracy (a third-party profiler) already does all of this, with a live viewer,
 fibers, locks, and plots. It would be a new dependency, with its own
 instrumentation alongside `gb/profile`'s points, so decide between it and this
 before starting.
+
+## Joined Profilers' own cost
+
+- **Layers:** profile
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Multithreaded profiles](worklog/multithreaded_profiles.md)
+
+A main Profiler's cost per frame (`FrameSummary::profiler_cost`) and the
+"profiler" figure on each frame breakdown count only the main thread's timed
+points, though the report and breakdowns now include every joined thread's.
+Count the timed points that end in each frame on every joined Profiler too
+(each measures its own point cost), and show the other threads' cost beside the
+main thread's, as the self time by kind does. The budget is a fraction of the
+main thread's frame, so it should stay against the main thread's cost alone.
 
 ## Pipeline state per material
 

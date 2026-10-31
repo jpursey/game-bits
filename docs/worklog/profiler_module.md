@@ -196,6 +196,7 @@ CPUID leaf 0x15 reports; QPC runs at 10MHz):
 
 Each is a backlog item:
 
-- **Multithreaded profiles:** each thread's Profiler is separate, and the
-  report reads a Profiler's own slots.
 - **Fiber-aware profiling:** a timed point can't span a fiber switch.
+
+Each thread's Profiler is separate unless it joins another, as
+[Multithreaded profiles](multithreaded_profiles.md) describes.

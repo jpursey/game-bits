@@ -1,28 +1,20 @@
 # Multithreaded profiles
 
-Combine the profiles of several threads, each with its own `Profiler`, into the
-report of the Profiler on the thread that runs the main loop. A program makes
-that Profiler as it does today, and gives each of its other threads a Profiler
-that is joined to it. The main Profiler's report then shows every point's CPU
-time and calls across all threads, a frame's breakdown includes what the other
-threads did during it, and a table shows how busy each thread is per frame, and
-on which class of core.
+The profiles of several threads, each with its own `Profiler`, combined into the
+report of the Profiler on the thread that runs the main loop. Each other thread
+has a Profiler joined to that one. The main Profiler's report then shows every
+point's time and calls across all threads, a frame's breakdown includes what the
+other threads did during it, and a table shows how busy each thread is per
+frame, and on which class of core.
 
-Overlap, idle gaps, and critical paths need a timeline of events, which this is
-not (see *Profile timelines* in the backlog). The job system giving its job
-threads Profilers is *Profiled jobs*; this feature is what they join.
+It is all in `gb/profile`, as changes to `Profiler`, with no new public types.
+Points cost what they did, and a joined thread's outermost points about 5ns
+more.
 
-Terra Diem is the main user: its world loads, lights, meshes, and simulates as
-thousands of short jobs on a `FiberJobSystem`. Its job threads are pinned, so
-each runs on one class of core, but they spread across performance and
-efficiency cores, which on an i9-14900KF run the same frame 25-30% apart. The
-single-thread report already splits frames by class of core; the combined
-report needs the same per thread.
-
-## Behavior
+## Using it
 
 ```
-// The main loop's thread, as today:
+// The main loop's thread, as before:
 gb::Profiler profiler({.slow_frame = absl::Milliseconds(20),
                        .on_slow_frame = ...});
 
@@ -30,293 +22,144 @@ gb::Profiler profiler({.slow_frame = absl::Milliseconds(20),
 gb::Profiler thread_profiler({.main = &profiler, .name = "loader"});
 ```
 
-- **Joined Profilers:** a Profiler made with `Options::main` records its own
-  thread's points as any Profiler does, and adds them to the main Profiler's
-  report. The main Profiler must outlive it (CHECK when the main Profiler is
-  destroyed), and it can't time frames (CHECK): its points count in the main
-  Profiler's frames. A joined Profiler can be made and destroyed while the main
-  loop runs, on any thread. When it is destroyed, what it recorded stays in the
-  main Profiler's report.
-- **Totals:** every point's count and self time in the main Profiler's report
-  is the sum over the main thread and every joined Profiler, including those
-  already destroyed. A counter is the sum of its counts on every thread. A
-  value is the one set most recently on any thread.
-- **Frames:** a point on another thread counts in the main Profiler's frame
-  that is in progress when the point ends, by the shared timestamp counter, and
-  in no frame if it ends between frames, as on the main thread. A frame's
-  breakdown (the slowest frame, and `on_slow_frame`) includes those points.
-  The frame's time is still the main thread's wall time; the self times by kind
-  now add up to the frame's time only for the main thread, and the breakdown
-  shows the other threads' CPU time beside them.
-- **Share of the frame:** the points table gives each point's self time per
-  frame as a share of the average frame, alongside its total. On many threads
-  the shares add up to more than 100%: a frame is wall time, and the threads'
-  points are CPU time, so they can't be summed with it.
-- **Threads:** once a Profiler has joined, a table with a row for each joined
-  Profiler, and one for the main thread: its name, its busy time (the time in
-  its outermost timed points) per frame on average and at most, its average as
-  a share of the average frame, and the share of its busy time on each class
-  of core, in a column per class. Rows are sorted by name, so reports diff
-  cleanly.
-- **Reading:** only the main Profiler's thread reads its report, as today. The
-  main Profiler reads the joined Profilers' slots while their threads write
-  them, with no lock on their side, so a point ending at the same moment can be
-  missing from a report or a frame breakdown, and appear in the next. Nothing
-  is lost or counted twice in the totals.
+## Behavior
+
+- **Main and joined Profilers:** a Profiler made with `Options::main` (a joined
+  Profiler) records its own thread's points as any Profiler does, and adds them
+  to the main Profiler's report and test readers. It can be made and destroyed
+  at any time, on any thread, and what it recorded stays in the main Profiler's
+  report once it is destroyed. CHECKs: the main Profiler outlives its joined
+  Profilers (checked when it is destroyed, naming the thread left), a joined
+  Profiler can't time frames or be reset, a main Profiler can't itself be
+  joined, and both have the same tick rate (so tests give each its own
+  `FakeProfilerCpu` at one rate).
+- **Names:** `Options::name` names the thread in the threads table. An empty
+  name is "main" for a main Profiler, and for a joined one the thread's own
+  name (`GetThreadName()`) when it is made, or "thread N" for a thread with
+  none (including any thread `CreateThread()` didn't make), with the lowest N
+  no existing joined Profiler has. The main Profiler keeps what each name
+  recorded: a Profiler that joins under the name of one that was destroyed
+  carries on from it, so a program that keeps recreating threads under the same
+  names holds a fixed amount. Two that exist at once with one name are kept
+  apart, as two rows of the same name.
+- **Totals:** every point's count and self time in the main Profiler's report is
+  the sum over the main thread and every joined Profiler, including those
+  destroyed. A counter is the sum of its counts. A value is the one set most
+  recently on any thread, by the timestamp counter.
+- **Points table:** each timed point's self time also shows as a share of the
+  frames' time. On many threads the shares add up to more than 100%, as a
+  frame is wall time on the main thread and the points are time on every
+  thread.
+- **Frames:** a point on another thread counts in the main Profiler's frame that
+  is in progress when the point ends, and in no frame if it ends between
+  frames. The main Profiler's frame breakdowns (the slowest frame, and
+  `on_slow_frame`'s report) include those points, including those of a joined
+  Profiler destroyed during the frame. Once a Profiler has joined, the self time
+  by kind has two columns: the main thread's, which adds up to the frame's
+  time, and the other threads', which is time spent alongside it.
+- **Threads table:** once a Profiler has joined, the report has a row for the
+  main thread and one for each name, sorted by name: busy time per frame on
+  average and at most, the average as a share of the average frame, and a
+  column for each class of core any thread was busy on, with the share of the
+  thread's busy time on it. A joined thread's busy time is the time in its
+  outermost timed points that ended during frames, by the class of core each
+  ended on. The main thread's is its frames' time, by the class of core each
+  frame ran on ("mixed" for one that changed).
+- **Reading:** only the main Profiler's thread reads its report, as before. It
+  reads the joined Profilers' slots while their threads write them, without
+  stopping them, so a point that ends as it reads can be missing from a report
+  or a frame's breakdown, and appear in the next. Nothing is lost or counted
+  twice in the totals. Busy time is gathered at the frame's end, so a point that
+  ends in the moment between the gathering and the frame's end counts in the
+  next frame.
+- **Reset:** `Reset()` on the main Profiler clears what every thread recorded.
+  Frame numbers carry on counting rather than starting again, so a thread's
+  parts of frames from before the reset are never taken for new ones.
 - **For tests:** `GetCount()`, `GetSelfTime()`, `GetValue()`, and the slowest
-  frame readers on the main Profiler read the combined profile. On a joined
-  Profiler, they read its own thread, and `Reset()` CHECK-fails. `Reset()` on
-  the main Profiler clears what every thread recorded, too. Each thread's
-  Profiler takes its own `FakeProfilerCpu`, which must have the main
-  Profiler's tick rate (CHECK).
+  frame readers read every thread on a main Profiler, and only the Profiler's
+  own thread on a joined one.
 
-No existing API changes. A Profiler with no other Profilers joined reports
-what it does today, plus the share-of-frame column.
+A Profiler with nothing joined reports what it did before, plus the share
+column in the points table.
 
-## Design
+## Structure
 
-All of it is in `gb/profile`, as `Profiler` changes. Nothing in `gb/thread` or
-`gb/job` changes; *Profiled jobs* uses `Options::main` from `FiberJobSystem`.
-
-### Names
-
-- **`Options::main`**, the Profiler another one joins. Candidates:
-  `main` (matches "the main loop", which the docs already use for the thread
-  that runs frames; collides only with `main()`, which a member can't be
-  confused with), `frames_from` (says what it takes from it, but reads oddly
-  for totals), and `combine_into` (says what happens, but not which Profiler
-  it should be). Recommended: `main`.
-- **Joined Profiler** and **main Profiler**, in docs and comments, for the two
-  roles. No type names: both are `Profiler`. "Joined" matches what the code
-  does (`AddJoinedThread()`, `joined_threads_`); "thread Profiler", used at first,
-  didn't say which role, as every Profiler is on a thread.
-- **`Options::name`**, the thread's name in the threads table. When empty, it
-  defaults to the thread's own name (`GetThreadName()`), or "thread N" for a
-  thread with none, with the lowest N no existing joined Profiler has, and
-  "main" for the main Profiler. The thread's name is taken when the Profiler is made, as
-  `kKeySetFiberNames` renames a job thread after each job it runs, so
-  *Profiled jobs* should make each thread's Profiler before it runs a job.
-- **Busy time**, the time a thread spends inside its outermost timed points,
-  against the frame's wall time. Avoids "load" and "utilization", which suggest
-  a measure of the CPU rather than of the points.
-
-### Slots readable from another thread
-
-```
-struct Slot {
-  // Written only by the Profiler's thread, and read by the main Profiler.
-  std::atomic<int64_t> count;
-  std::atomic<int64_t> self_ticks;
-  std::atomic<int64_t> value;
-  std::atomic<int64_t> value_ticks;  // When `value` was set.
-  std::atomic<int64_t> frame;
-  std::atomic<int64_t> frame_count;
-  std::atomic<int64_t> frame_self_ticks;
-};
-```
-
-- Every Profiler's slots become relaxed atomics, each written only by its own
-  thread as a load and a store (not a read-modify-write), which on x86-64 are
-  the same plain moves as today. The main Profiler's own slots don't need it,
-  but one Slot type keeps one code path.
-- `SetValue()` also records the ticks it was set at, so the main Profiler can
-  find the value set most recently on any thread. That adds a counter read
-  (about 5ns) to setting a value, which is done when the value changes.
-- The frame a point is tagged with comes from `frame_`, a pointer to the frame
-  number in progress: the Profiler's own, or the main Profiler's for a joined
-  Profiler. The main Profiler's frame number is a relaxed atomic on its own
-  cache line, written twice a frame, so the threads reading it on every point
-  don't share a line with the main thread's timing stack, which it writes on
-  every point.
-
-### Joining a main Profiler
-
-```
-// In the main Profiler, under a mutex. One entry per name: at most one
-// joined Profiler that exists, and every one that was destroyed.
-struct JoinedThread {
-  Profiler* profiler;   // The one that exists, or null.
-  std::string name;
-  // While `profiler` exists, its totals when the main Profiler was last
-  // reset, by point.
-  std::vector<PointTotals> baseline;
-  // What the destroyed ones recorded since the last reset, by point.
-  std::vector<PointTotals> folded;
-  // Busy time per frame, gathered by the main Profiler at each frame's end.
-  BusyFrames busy;
-};
-std::vector<JoinedThread> joined_threads_ ABSL_GUARDED_BY(joined_mutex_);
-```
-
-- A joined Profiler joins in its constructor and leaves in its destructor, so
-  there is no call to pair. Leaving folds its totals into its entry, which
-  stays, so its row and its points stay in the report.
-- A Profiler that joins with the name of an entry whose Profilers were all
-  destroyed takes it over, so the entries grow with the names in use, not with
-  every thread made. A program that keeps making threads under the same names
-  (a pool that recreates its threads) holds a fixed number. Threads that share
-  a name share a row, which suits a pool, but merges unrelated threads that
-  happen to share one. Two that exist at once with the same name each have an
+- **Slots:** each slot field is a `SingleWriterInt64`, a relaxed atomic that
+  only its Profiler's thread writes, with `Add()` as a load and a store, so on
+  x86-64 each costs the plain move it did before. Another thread reads each
+  field whole, in no particular order with the others.
+- **Frame numbers:** points tag their frame part through `frame_`, a pointer to
+  the frame number in progress: the Profiler's own, or the main Profiler's for a
+  joined one. The main Profiler's number has a cache line of its own, apart
+  from what each point writes. A slot's frame number is written after its frame
+  part is reset, with release and acquire, so the main Profiler never reads an
+  old frame's part under a new number. Frame numbers come from
+  `last_frame_number_`, which `Reset()` leaves.
+- **Joined threads:** the main Profiler keeps a `JoinedThread` per name, under a
+  mutex, with at most one Profiler that exists, and what destroyed ones
+  recorded. A joined Profiler joins as the last step of its constructor and
+  leaves in its destructor, through the main Profiler's `AddJoinedThread()` and
+  `RemoveJoinedThread()`, so there is no call to pair, and every lock is taken
+  inside the main Profiler's own methods.
+- **Totals:** the report gathers a snapshot of totals by point
+  (`GatherPointTotals()`), then formats it. It adds the main thread's slots,
+  each entry's `folded` totals from destroyed Profilers, and its live
+  Profiler's slots less its `baseline`. As the main Profiler can't clear
+  another thread's slots, `Reset()` records each live Profiler's totals as its
+  baseline instead, and leaving folds its totals less its baseline into the
   entry.
-- The report gathers totals from the main thread's slots, and from each
-  entry's folded totals, plus its live slots less its baseline, under the
-  mutex, then formats them. `GetReport()` is split into gathering a
-  snapshot of totals by point, and formatting it, which a single Profiler then
-  does the same way.
-- A frame's end locks the mutex once, to read each joined thread's busy time in
-  that frame (two loads per thread), and, only when the frame is the slowest or
-  slow, each joined thread's slots tagged with that frame. That is about 20ns
-  for the lock, and a few nanoseconds per thread, per frame.
+- **Frame breakdowns:** capturing a frame adds every thread's frame part into
+  one vector by point index, then drops the points with none. A joined Profiler
+  destroyed during a frame leaves its part with the main Profiler
+  (`left_frame_points_`), tagged with the frame's number. Each point keeps the
+  part of its self time on joined threads, for the two columns of self time by
+  kind.
+- **Busy time:** when a joined Profiler's outermost timed point ends during a
+  frame, it adds the time to a running total for the class of core it ends on
+  (`BusyTime`, on a cache line of its own). These only grow, so each frame's
+  end gathers what each thread has added since the last, by class, keeping
+  each entry's totals since the reset and its busiest frame. What a destroyed
+  Profiler added since the last gathering counts in the next.
 
-### Busy time and classes of core
+Nothing here is meant for reuse outside `Profiler`.
 
-- When a joined Profiler's outermost timing ends, it adds the elapsed time to
-  its busy time, in total, in the frame part (tagged as slots are), and by the
-  class of core it ends on. Reading the class costs about 2.4ns, once per
-  outermost point, so a job (one outermost point, once *Profiled jobs* times
-  them) pays it once.
-- The main thread's busy time is its frames' time, by the class each frame ran
-  on, which it records already.
+## Measurements
 
-**Brittleness:**
-- The main Profiler must outlive its joined Profilers. Its destructor CHECKs
-  that none are left, which catches the order being wrong on the first run,
-  but only at the end. *Profiled jobs* destroys its Profilers with the job
-  system, so a program destroys the job system before the main Profiler.
-- A joined Profiler's points before it joins aren't in the report, which can't
-  happen, as it joins in its constructor.
-- The main Profiler reads the threads' slots without their threads' help, so
-  nothing on a thread has to be called at a safe point.
+On the development machine (an i9-14900KF, with 8 performance cores of class 1
+and 16 efficiency cores of class 0), in RelWithDebInfo builds:
 
-### To confirm
-
-- The relaxed atomic slots and the frame pointer leave the cost of a timed
-  point unchanged (12.25ns as the Profiler measures it, 15.0ns for a
-  `ProfileScope` in a loop). Confirmed in CL2: 11.75ns and 14.8ns, against
-  11.75ns and 15.1ns before. That needs Release's inlining (`/Ob2`): with
-  CMake's `/Ob1`, MSVC calls two STL helpers in every `std::atomic` load and
-  store, and a point costs 20ns.
-- The timestamp counter agrees across cores to well under a microsecond, so a
-  point on another thread is put in the right frame. Windows keeps an
-  invariant counter in step across processors; CL3 checks it by hand, with two
-  threads pinned to a performance and an efficiency core. Confirmed in CL3 on
-  an i9-14900KF: two such threads passing a reading of the counter back and
-  forth saw it advance by at least 20-70ns each way, so the cores differ by
-  less than that.
-- What a frame's end costs with 24 joined threads, and what capturing a slow
-  frame costs with 24 threads and a few hundred points. CL4 and CL5 measure
-  them. Capturing confirmed in CL4, with every thread in all of 300 points in
-  the frame: a frame that is the slowest so far takes 12us to capture, against
+- **A timed point:** 11.75ns as a Profiler measures it, and 14.8ns for a
+  `ProfileScope` in a loop, the same as before. That needs Release's inlining
+  (`/Ob2`, which Game Bits' RelWithDebInfo now uses): with CMake's `/Ob1`,
+  MSVC calls two STL helpers in every `std::atomic` load and store, and a point
+  costs 20ns.
+- **An outermost point on a joined Profiler:** 19.9ns, against 15.0ns for a
+  nested one, so busy time adds about 5ns, most of it reading the class of core
+  (2.4ns). That is 0.1-0.25% of a 2-5us job.
+- **A frame's end:** 27ns with nothing joined, against 13ns before (the lock to
+  gather busy times), 100ns with 24 idle joined threads, and 400ns with 24 that
+  were each busy in the frame, as their busy times are read from other cores.
+  Gathering only each thread's total per frame took 41ns and 170ns, but needed
+  a second set of baselines for the times by class; at 0.003% of a 16ms frame,
+  the simpler one won.
+- **Capturing a frame:** with 24 joined threads, each in all of 300 points in
+  the frame, a frame that is the slowest so far takes 12us to capture, against
   0.5us with no threads. A slow frame's report takes 130-185us with or without
-  them, nearly all of it formatting. A frame that captures nothing is
-  unchanged. A frame's end confirmed in CL5: gathering busy times takes it
-  from 13ns to 27ns with no joined threads (the lock), 100ns with 24 idle
-  ones, and 400ns with 24 that were each busy in the frame, as their busy
-  times are read from other cores. Reading only a frame's total busy time
-  took 41ns and 170ns, but needed a second set of baselines for the times by
-  class; at 0.003% of a 16ms frame, the simpler gathering won.
-- Whether `GetThisThreadCoreClass()` on every outermost point is cheap enough
-  for Terra Diem's shortest jobs. CL5 measures it against a job of a few
-  microseconds. Confirmed in CL5: an outermost point on a joined Profiler
-  costs 19.9ns against 15.0ns for a nested one, so the busy time adds about
-  5ns, 0.1-0.25% of a 2-5us job.
+  them, nearly all of it formatting.
+- **The timestamp counter across cores:** two threads pinned to a performance
+  and an efficiency core, passing a reading back and forth, saw it advance by
+  at least 20-70ns each way, so the cores agree to within that, and a point on
+  another thread lands in the right frame.
 
-## CLs
+## Known limitations
 
-### CL1 [x] profile: report from a snapshot of totals
+Each is a backlog item:
 
-Depends on: nothing.
-
-- `Profiler::GetReport()` gathers a snapshot of each point's totals, then
-  formats it, rather than reading the slots as it goes.
-- The points table gains the share-of-frame column.
-- No other change in behavior.
-
-**Verify**
-- Standard checks (see CLAUDE.md).
-- Existing report tests pass unchanged, apart from the new column.
-
-### CL2 [x] profile: slots readable from other threads
-
-Depends on: CL1.
-
-- `Slot` fields become relaxed atomics, and `SetValue()` records when it was
-  set.
-- Points tag their frame part through `frame_`, and the main Profiler's frame
-  number moves to its own cache line.
-- Unused, so no visible change.
-
-**Verify**
-- Standard checks.
-- Performance: a timed point's cost, as the Profiler measures it and in a
-  loop, before and after, in RelWithDebInfo.
-
-### CL3 [x] profile: joined Profilers
-
-Depends on: CL2.
-
-- `Options::main` and `Options::name`; joining and leaving; the CHECKs on
-  lifetime, frames, `Reset()`, and the tick rate.
-- The main Profiler's totals, counters, values, and test readers combine
-  every thread.
-
-**Verify**
-- Standard checks.
-- Unit tests, with threads that time points and count while the main thread
-  waits on notifications, so no test waits on time: totals sum across threads;
-  a value is the latest set on any thread; a destroyed thread's points stay;
-  `Reset()` on the main Profiler clears every thread; each CHECK.
-- By hand: two threads pinned to a performance and an efficiency core read
-  the timestamp counter in turn, to check they agree.
-
-### CL4 [x] profile: other threads' points in frame breakdowns
-
-Depends on: CL3.
-
-- A frame's end captures each joined thread's slots tagged with that frame,
-  when the frame is the slowest or slow.
-- The breakdown shows the other threads' CPU time beside the main thread's
-  self time by kind.
-- Frame numbers keep counting up across `Reset()`, rather than starting again
-  from 1, as a joined Profiler's slots aren't cleared by it, and can still be
-  tagged with a frame number from before the reset.
-- A joined Profiler destroyed during a frame leaves its part in that frame
-  with the main Profiler, so the frame's breakdown still has it.
-- A slot's frame number is written after its frame part is reset, with
-  release and acquire, so the main Profiler never reads an old frame's part
-  under the new frame's number.
-
-**Verify**
-- Standard checks.
-- Unit tests: a thread's point that ends during a frame is in its breakdown
-  and `on_slow_frame`'s report; one that ends between frames is in neither.
-- Performance: capturing a slow frame with 24 joined threads and 300 points.
-
-### CL5 [x] profile: busy time per thread
-
-Depends on: CL4.
-
-- Joined Profilers record busy time, in total, per frame, and by class of
-  core; a frame's end gathers each thread's busy time in it.
-- The report's threads table.
-- Busy time only counts outermost points that end during a frame, by class
-  of core as well, so a thread's shares by class are of the same time as its
-  busy time per frame.
-- Each joined Profiler only adds to its busy time by class, and a frame's
-  end gathers what each has added since the last, so there are no frame
-  tags, baselines, or folds for it. A point that ends in the moment between
-  the gathering and the frame's end counts in the next frame, and what a
-  destroyed Profiler added since the last gathering counts in the frame in
-  progress.
-- The table has a column per class of core any thread was busy on, with the
-  share of each thread's busy time on it, rather than a "mixed" cell listing
-  them, so threads line up by class. The main thread's frames that changed
-  class count under "mixed", as in the frames by class of core.
-
-**Verify**
-- Standard checks.
-- Unit tests, with a `FakeProfilerCpu` per thread: busy time per frame on
-  average and at most, share of the frame, and class of core, including a
-  thread that is busy on two classes.
-- Performance: a frame's end with 24 joined threads; an outermost point on a
-  joined Profiler, against a job of a few microseconds.
+- **Profiled jobs:** `FiberJobSystem` doesn't give its job threads Profilers,
+  so a program joins its own threads.
+- **Fiber-aware profiling:** a timed point still can't span a fiber switch.
+- **Profile timelines:** there are totals, but no timeline, so overlap, idle
+  gaps, and critical paths don't show. A point counts whole in the frame it
+  ends in, so a thread's busy time in a frame can include time from before it.
+- **Joined Profilers' own cost:** the profiler's cost per frame, and in a frame
+  breakdown, counts only the main thread's timed points.
