@@ -205,7 +205,11 @@ std::vector<JoinedThread> joined_threads_ ABSL_GUARDED_BY(joined_mutex_);
   less than that.
 - What a frame's end costs with 24 joined threads, and what capturing a slow
   frame costs with 24 threads and a few hundred points. CL4 and CL5 measure
-  them.
+  them. Capturing confirmed in CL4, with every thread in all of 300 points in
+  the frame: a frame that is the slowest so far takes 12us to capture, against
+  0.5us with no threads. A slow frame's report takes 130-185us with or without
+  them, nearly all of it formatting. A frame that captures nothing is
+  unchanged.
 - Whether `GetThisThreadCoreClass()` on every outermost point is cheap enough
   for Terra Diem's shortest jobs. CL5 measures it against a job of a few
   microseconds.
@@ -258,7 +262,7 @@ Depends on: CL2.
 - By hand: two threads pinned to a performance and an efficiency core read
   the timestamp counter in turn, to check they agree.
 
-### CL4 [ ] profile: other threads' points in frame breakdowns
+### CL4 [x] profile: other threads' points in frame breakdowns
 
 Depends on: CL3.
 
@@ -269,6 +273,11 @@ Depends on: CL3.
 - Frame numbers keep counting up across `Reset()`, rather than starting again
   from 1, as a joined Profiler's slots aren't cleared by it, and can still be
   tagged with a frame number from before the reset.
+- A joined Profiler destroyed during a frame leaves its part in that frame
+  with the main Profiler, so the frame's breakdown still has it.
+- A slot's frame number is written after its frame part is reset, with
+  release and acquire, so the main Profiler never reads an old frame's part
+  under the new frame's number.
 
 **Verify**
 - Standard checks.

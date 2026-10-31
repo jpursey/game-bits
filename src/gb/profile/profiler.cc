@@ -282,12 +282,27 @@ int Profiler::AddJoinedThread(Profiler* profiler, std::string_view name) {
 
 void Profiler::RemoveJoinedThread(int index) {
   const int point_count = ProfilePoint::GetRegisteredCount();
+  const int64_t frame_number = current_frame_.number.Get();
   absl::MutexLock lock(&joined_mutex_);
   JoinedThread& thread = joined_threads_[index];
   if (static_cast<int>(thread.folded.size()) < point_count) {
     thread.folded.resize(point_count);
   }
   thread.profiler->AddOwnTotals(absl::MakeSpan(thread.folded), thread.baseline);
+
+  // If the frame has ended since its number was read, its part is kept but
+  // never captured.
+  if (frame_number != 0) {
+    if (left_frame_number_ != frame_number) {
+      left_frame_number_ = frame_number;
+      left_frame_points_.clear();
+    }
+    if (static_cast<int>(left_frame_points_.size()) < point_count) {
+      left_frame_points_.resize(point_count);
+    }
+    thread.profiler->AddOwnFramePoints(frame_number,
+                                       absl::MakeSpan(left_frame_points_));
+  }
   thread.profiler = nullptr;
   thread.baseline.clear();
 }
@@ -397,7 +412,7 @@ double Profiler::MeasurePointCost() {
 void Profiler::StartFrame(Timing& timing) {
   CHECK(main_ == nullptr) << "A joined Profiler can't time frames";
   CHECK(current_frame_.number.Get() == 0) << "Profile frames can't nest";
-  current_frame_.number.Set(frames_ + 1);
+  current_frame_.number.Set(++last_frame_number_);
   current_frame_timed_points_ = 0;
   current_frame_start_core_ = ReadCoreClass();
   StartTiming(timing);
@@ -444,15 +459,56 @@ Profiler::FrameBreakdown Profiler::CaptureFrame(int64_t ticks, int core) const {
                           .core = core,
                           .timed_points = current_frame_timed_points_};
   const int64_t frame_number = current_frame_.number.Get();
-  const int point_count = ProfilePoint::GetRegisteredCount();
-  for (int i = 0; i < point_count; ++i) {
-    const Slot& slot = slots_[i];
-    if (slot.frame.Get() == frame_number) {
-      frame.points.push_back(
-          {i, slot.frame_count.Get(), slot.frame_self_ticks.Get()});
+  frame.points.resize(ProfilePoint::GetRegisteredCount());
+  AddOwnFramePoints(frame_number, absl::MakeSpan(frame.points));
+  {
+    absl::MutexLock lock(&joined_mutex_);
+    frame.has_joined = !joined_threads_.empty();
+    for (const JoinedThread& thread : joined_threads_) {
+      if (thread.profiler != nullptr) {
+        thread.profiler->AddOwnFramePoints(frame_number,
+                                           absl::MakeSpan(frame.points));
+      }
+    }
+    if (left_frame_number_ == frame_number) {
+      // Points may be registered while this runs, as in GatherPointTotals().
+      const int count = std::min(static_cast<int>(frame.points.size()),
+                                 static_cast<int>(left_frame_points_.size()));
+      for (int i = 0; i < count; ++i) {
+        if (left_frame_points_[i].index >= 0) {
+          AddFramePoint(frame.points[i], left_frame_points_[i]);
+        }
+      }
     }
   }
+  std::erase_if(frame.points, [](const FrameBreakdown::Point& point) {
+    return point.index < 0;
+  });
   return frame;
+}
+
+void Profiler::AddOwnFramePoints(
+    int64_t frame_number, absl::Span<FrameBreakdown::Point> points) const {
+  for (int i = 0; i < static_cast<int>(points.size()); ++i) {
+    const Slot& slot = slots_[i];
+    if (slot.frame.GetAcquire() != frame_number) {
+      continue;
+    }
+    const int64_t self_ticks = slot.frame_self_ticks.Get();
+    AddFramePoint(points[i],
+                  {.index = i,
+                   .count = slot.frame_count.Get(),
+                   .self_ticks = self_ticks,
+                   .joined_self_ticks = main_ != nullptr ? self_ticks : 0});
+  }
+}
+
+void Profiler::AddFramePoint(FrameBreakdown::Point& point,
+                             const FrameBreakdown::Point& part) {
+  point.index = part.index;
+  point.count += part.count;
+  point.self_ticks += part.self_ticks;
+  point.joined_self_ticks += part.joined_self_ticks;
 }
 
 std::string Profiler::GetReport() const {
@@ -594,17 +650,29 @@ void Profiler::AppendFrame(std::string& report, std::string_view title,
     return IsBeforeInReport(a.first, b.first);
   });
 
-  // The self times of the kinds add up to the frame's time.
+  // The main thread's self times of the kinds add up to the frame's time.
+  // Joined Profilers can't time frames, so the other threads have none.
   Table kinds = {{"Kind", "Self"}};
+  if (frame.has_joined) {
+    kinds[0] = {"Kind", "Main thread", "Other threads"};
+  }
   for (ProfilePoint::Kind kind : kTimedKinds) {
     int64_t self_ticks = 0;
+    int64_t joined_self_ticks = 0;
     for (const auto& [point, frame_point] : points) {
       if (point.GetKind() == kind) {
         self_ticks += frame_point.self_ticks;
+        joined_self_ticks += frame_point.joined_self_ticks;
       }
     }
-    kinds.push_back({std::string(GetKindName(kind)),
-                     FormatTime(TicksToDuration(self_ticks))});
+    std::vector<std::string>& row = kinds.emplace_back();
+    row.push_back(std::string(GetKindName(kind)));
+    row.push_back(FormatTime(TicksToDuration(self_ticks - joined_self_ticks)));
+    if (frame.has_joined) {
+      row.push_back(kind == ProfilePoint::Kind::kFrame
+                        ? std::string(kNotApplicable)
+                        : FormatTime(TicksToDuration(joined_self_ticks)));
+    }
   }
   AppendTable(report, kinds, 1);
   absl::StrAppend(&report, "\n");

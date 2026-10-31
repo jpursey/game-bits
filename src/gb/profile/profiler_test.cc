@@ -574,6 +574,119 @@ TEST_F(ProfilerTest, ResetClearsFrames) {
   EXPECT_EQ(profiler_.GetSlowestFrameCount("ProfilerTest/ResetFrame"), 1);
 }
 
+TEST_F(ProfilerTest, ThreadPointsInFrameBreakdown) {
+  ProfiledThread thread(&profiler_);
+  {
+    ProfileFrame<"ThreadFrameTest/Frame"> frame;
+    ticks_.Advance(10);
+    thread.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+      ProfileScope<"ThreadFrameTest/Scope"> scope;
+      ticks.Advance(30);
+      ProfileCount<"ThreadFrameTest/Count">(2);
+    });
+  }
+  EXPECT_EQ(profiler_.GetSlowestFrameCount("ThreadFrameTest/Scope"), 1);
+  EXPECT_EQ(profiler_.GetSlowestFrameSelfTime("ThreadFrameTest/Scope"),
+            absl::Nanoseconds(30));
+  EXPECT_EQ(profiler_.GetSlowestFrameCount("ThreadFrameTest/Count"), 2);
+
+  // Points that end between frames are in no frame's breakdown.
+  thread.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+    ProfileScope<"ThreadFrameTest/Scope"> scope;
+    ticks.Advance(5);
+    ProfileCount<"ThreadFrameTest/Count">(1);
+  });
+  {
+    // Slower, so it replaces the slowest frame.
+    ProfileFrame<"ThreadFrameTest/Frame"> frame;
+    ticks_.Advance(20);
+  }
+  EXPECT_EQ(profiler_.GetSlowestFrameCount("ThreadFrameTest/Frame"), 1);
+  EXPECT_EQ(profiler_.GetSlowestFrameCount("ThreadFrameTest/Scope"), 0);
+  EXPECT_EQ(profiler_.GetSlowestFrameCount("ThreadFrameTest/Count"), 0);
+  EXPECT_EQ(profiler_.GetCount("ThreadFrameTest/Scope"), 2);
+}
+
+TEST_F(ProfilerTest, PointsOfEveryThreadAddInFrame) {
+  ProfiledThread thread_a(&profiler_);
+  ProfiledThread thread_b(&profiler_);
+  {
+    ProfileFrame<"ThreadFrameTest/EveryFrame"> frame;
+    ProfileScope<"ThreadFrameTest/Every"> scope;
+    ticks_.Advance(10);
+    thread_a.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+      ProfileScope<"ThreadFrameTest/Every"> scope;
+      ticks.Advance(20);
+    });
+    thread_b.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+      ProfileScope<"ThreadFrameTest/Every"> scope;
+      ticks.Advance(40);
+    });
+  }
+  EXPECT_EQ(profiler_.GetSlowestFrameCount("ThreadFrameTest/Every"), 3);
+  EXPECT_EQ(profiler_.GetSlowestFrameSelfTime("ThreadFrameTest/Every"),
+            absl::Nanoseconds(70));
+}
+
+TEST_F(ProfilerTest, DestroyedThreadStaysInFrame) {
+  // Destroyed before the frame, so it has no part in it.
+  std::optional<ProfiledThread> before(std::in_place, &profiler_);
+  before->Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+    ProfileCount<"ThreadFrameTest/Destroyed">(1);
+  });
+  {
+    ProfileFrame<"ThreadFrameTest/DestroyedFrame"> frame;
+    ticks_.Advance(10);
+    before->Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+      ProfileCount<"ThreadFrameTest/Destroyed">(2);
+    });
+    before.reset();
+
+    // Two that are destroyed during the frame both count.
+    for (int64_t count : {4, 8}) {
+      std::optional<ProfiledThread> during(std::in_place, &profiler_);
+      during->Run([count](Profiler& profiler, FakeProfilerCpu& ticks) {
+        ProfileCount<"ThreadFrameTest/Destroyed">(count);
+        ProfileScope<"ThreadFrameTest/DestroyedScope"> scope;
+        ticks.Advance(count);
+      });
+    }
+  }
+  EXPECT_EQ(profiler_.GetSlowestFrameCount("ThreadFrameTest/Destroyed"), 14);
+  EXPECT_EQ(profiler_.GetSlowestFrameCount("ThreadFrameTest/DestroyedScope"),
+            2);
+  EXPECT_EQ(profiler_.GetSlowestFrameSelfTime("ThreadFrameTest/DestroyedScope"),
+            absl::Nanoseconds(12));
+
+  // The destroyed threads' parts are only in the frame they were destroyed in.
+  {
+    ProfileFrame<"ThreadFrameTest/DestroyedFrame"> frame;
+    ticks_.Advance(20);
+  }
+  EXPECT_EQ(profiler_.GetSlowestFrameCount("ThreadFrameTest/Destroyed"), 0);
+  EXPECT_EQ(profiler_.GetCount("ThreadFrameTest/Destroyed"), 15);
+}
+
+TEST_F(ProfilerTest, ThreadPointsBeforeResetAreInNoFrame) {
+  ProfiledThread thread(&profiler_);
+  {
+    ProfileFrame<"ThreadFrameTest/ResetFrame"> frame;
+    thread.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+      ProfileCount<"ThreadFrameTest/BeforeReset">(1);
+    });
+  }
+  profiler_.Reset();
+
+  // The first frame after the reset isn't taken for the one before it, which
+  // the thread's slots still hold a part in.
+  {
+    ProfileFrame<"ThreadFrameTest/ResetFrame"> frame;
+    ticks_.Advance(10);
+  }
+  EXPECT_EQ(profiler_.GetSlowestFrameCount("ThreadFrameTest/ResetFrame"), 1);
+  EXPECT_EQ(profiler_.GetSlowestFrameCount("ThreadFrameTest/BeforeReset"), 0);
+}
+
 TEST_F(ProfilerTest, ReadingValueAsSlowestFrameDies) {
   ProfilePoint value(ProfilePoint::Kind::kValue, "ProfilerTest/SlowestValue");
   EXPECT_DEATH(profiler_.GetSlowestFrameCount("ProfilerTest/SlowestValue"),
@@ -938,6 +1051,37 @@ SlowFrameTest/Call   call       1  600ns
 SlowFrameTest/A      scope      1  500ns
 SlowFrameTest/B      scope      1  500ns
 SlowFrameTest/Frame  frame      1  100ns
+)");
+}
+
+TEST_F(ProfilerSlowFrameTest, BreakdownHasOtherThreadsTime) {
+  ProfiledThread thread(&profiler_);
+  {
+    ProfileFrame<"SlowFrameTest/Frame"> frame;
+    ticks_.Advance(1000);
+    thread.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+      ProfileScope<"SlowFrameTest/OnThread"> scope;
+      ticks.Advance(300);
+      ProfileCall<"SlowFrameTest/Call"> call;
+      ticks.Advance(200);
+    });
+    ProfileScope<"SlowFrameTest/OnThread"> scope;
+    ticks_.Advance(400);
+  }
+
+  // A point's self time is on every thread, and the main thread's adds up to
+  // the frame's time.
+  ASSERT_EQ(reports_.size(), 1);
+  EXPECT_EQ(reports_[0], R"(Slow frame: 1.40us, core class 0, profiler 0
+Kind   Main thread  Other threads
+frame       1.00us              -
+scope        400ns          300ns
+call             0          200ns
+
+Point                   Kind   Count    Self
+SlowFrameTest/Frame     frame      1  1.00us
+SlowFrameTest/OnThread  scope      2   700ns
+SlowFrameTest/Call      call       1   200ns
 )");
 }
 

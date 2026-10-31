@@ -178,6 +178,13 @@ class Profiler final {
   // which add up to the frame's time), then the frame's count and self time of
   // each point, slowest first.
   //
+  // Once a Profiler has joined a main Profiler, the main Profiler's frame
+  // breakdowns include the points that ended on every joined Profiler's thread
+  // while the frame was in progress, including on any destroyed by then. The
+  // self time by kind has the main thread's beside the other threads', which
+  // is CPU time spent alongside the frame, so only the main thread's adds up
+  // to the frame's time.
+  //
   // A program can put its own header (such as its build and the date) before
   // the report.
   std::string GetReport() const;
@@ -259,6 +266,16 @@ class Profiler final {
     void Set(int64_t value) { value_.store(value, std::memory_order_relaxed); }
     void Add(int64_t delta) { Set(Get() + delta); }
 
+    // As Get() and Set(), and a read with GetAcquire() that sees a value
+    // written by SetRelease() also sees the writes before it. On x86-64 these
+    // too are plain moves.
+    int64_t GetAcquire() const {
+      return value_.load(std::memory_order_acquire);
+    }
+    void SetRelease(int64_t value) {
+      value_.store(value, std::memory_order_release);
+    }
+
    private:
     std::atomic<int64_t> value_ = 0;
   };
@@ -272,8 +289,9 @@ class Profiler final {
 
     // The same, for only the frame numbered `frame` (see frame_). They are
     // reset by the first add in a new frame, so nothing needs clearing when a
-    // frame starts. They come before `value`, so the fields a timed point
-    // writes are together.
+    // frame starts, and `frame` is set after them (with SetRelease()), so a
+    // reader that sees the new frame number sees them reset. They come before
+    // `value`, so the fields a timed point writes are together.
     SingleWriterInt64 frame;
     SingleWriterInt64 frame_count;
     SingleWriterInt64 frame_self_ticks;
@@ -312,10 +330,15 @@ class Profiler final {
 
   // A frame's time, and the part each point had in it.
   struct FrameBreakdown {
+    // A point's part in the frame, on every thread. An index of -1 is a point
+    // with no part.
     struct Point {
-      int index;
-      int64_t count;
-      int64_t self_ticks;
+      int index = -1;
+      int64_t count = 0;
+      int64_t self_ticks = 0;
+
+      // The part of `self_ticks` on joined Profilers' threads.
+      int64_t joined_self_ticks = 0;
     };
 
     int64_t ticks = 0;
@@ -323,8 +346,13 @@ class Profiler final {
     // The class of core the frame ran on, or kMixedCores.
     int core = 0;
 
-    // The timed points ended in the frame, including its own.
+    // The timed points ended in the frame on the main thread, including its
+    // own.
     int64_t timed_points = 0;
+
+    // Whether any Profiler had joined by the frame's end, so its breakdown
+    // shows the other threads' time.
+    bool has_joined = false;
 
     std::vector<Point> points;
   };
@@ -362,8 +390,18 @@ class Profiler final {
   void EndFrame(int index, Timing& timing);
 
   // Returns the current frame's time, `ticks`, the class of core it ran on,
-  // `core`, and the part each point had in it.
-  FrameBreakdown CaptureFrame(int64_t ticks, int core) const;
+  // `core`, and the part each point had in it, on every thread.
+  FrameBreakdown CaptureFrame(int64_t ticks, int core) const
+      ABSL_LOCKS_EXCLUDED(joined_mutex_);
+
+  // Adds the part this Profiler's own slots had in the frame numbered
+  // `frame_number` to `points`, by point index. Any thread may call it.
+  void AddOwnFramePoints(int64_t frame_number,
+                         absl::Span<FrameBreakdown::Point> points) const;
+
+  // Adds one thread's part in a frame for a point, `part`, to `point`.
+  static void AddFramePoint(FrameBreakdown::Point& point,
+                            const FrameBreakdown::Point& part);
 
   // Returns the slot at `index` (a ProfilePoint's index), with its frame part
   // reset if it was for another frame.
@@ -371,9 +409,9 @@ class Profiler final {
     Slot& slot = slots_[index];
     const int64_t frame = frame_->Get();
     if (slot.frame.Get() != frame) {
-      slot.frame.Set(frame);
       slot.frame_count.Set(0);
       slot.frame_self_ticks.Set(0);
+      slot.frame.SetRelease(frame);
     }
     return slot;
   }
@@ -426,7 +464,8 @@ class Profiler final {
 
   // As a main Profiler, removes the joined Profiler at `index` in
   // joined_threads_ (from AddJoinedThread()), keeping what it recorded in the
-  // entry. It is called on the joined Profiler's thread, as it is destroyed.
+  // entry, and its part in the frame in progress. It is called on the joined
+  // Profiler's thread, as it is destroyed.
   void RemoveJoinedThread(int index) ABSL_LOCKS_EXCLUDED(joined_mutex_);
 
   // Report sections, each appended to `report`. AppendValues() and
@@ -509,6 +548,11 @@ class Profiler final {
   };
   FrameNumber current_frame_;
 
+  // The number of the last frame started. Reset() leaves it, so no number is
+  // used twice, as joined Profilers' slots aren't cleared, and can still hold
+  // frame parts from before.
+  int64_t last_frame_number_ = 0;
+
   // The class of core the frame in progress started on.
   int current_frame_start_core_ = 0;
 
@@ -538,6 +582,12 @@ class Profiler final {
   // the order they were first used.
   mutable absl::Mutex joined_mutex_;
   std::vector<JoinedThread> joined_threads_ ABSL_GUARDED_BY(joined_mutex_);
+
+  // The part in the frame numbered `left_frame_number_` of the joined
+  // Profilers destroyed while it was in progress, by point index.
+  int64_t left_frame_number_ ABSL_GUARDED_BY(joined_mutex_) = 0;
+  std::vector<FrameBreakdown::Point> left_frame_points_
+      ABSL_GUARDED_BY(joined_mutex_);
 };
 
 }  // namespace gb
