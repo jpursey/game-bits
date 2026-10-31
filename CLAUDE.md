@@ -56,7 +56,7 @@ To also run Debug test binaries, add the debug CRT to PATH in the same shell (se
 
 ### Configure
 
-These match the `x64-Debug` and `x64-Release` configurations in CMakeSettings.json, so the IDE picks up whatever the command line configures and vice versa. Note that Visual Studio's "x64-Release" is `RelWithDebInfo`, not `Release`.
+These match the `x64-Debug` and `x64-Release` configurations in CMakeSettings.json, so the IDE picks up whatever the command line configures and vice versa. Note that Visual Studio's "x64-Release" is `RelWithDebInfo`, not `Release`. Game Bits builds `RelWithDebInfo` with Release's inlining (`/Ob2` rather than CMake's `/Ob1`), for the whole build including the project using it (see the root `CMakeLists.txt`), so it runs as fast as Release.
 
 ```
 cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -S . -B out/build/x64-Debug

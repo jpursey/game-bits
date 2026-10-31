@@ -34,6 +34,20 @@ add_compile_definitions(
   _CRT_SECURE_NO_WARNINGS
 )
 
+# CMake's RelWithDebInfo inlines only functions marked inline (/Ob1), which
+# leaves the standard library's internal templates as calls, such as the two
+# inside every std::atomic load and store. This inlines as Release does. It is
+# set in the cache, so it applies to the whole build, including the project
+# that adds Game Bits as a subdirectory.
+if (MSVC)
+  foreach(_lang C CXX)
+    string(REPLACE "/Ob1" "/Ob2" _flags "${CMAKE_${_lang}_FLAGS_RELWITHDEBINFO}")
+    set(CMAKE_${_lang}_FLAGS_RELWITHDEBINFO "${_flags}" CACHE STRING
+        "Flags used by the ${_lang} compiler during RELWITHDEBINFO builds."
+        FORCE)
+  endforeach()
+endif()
+
 list(APPEND CMAKE_MODULE_PATH
   "${GB_DIR}/CMake"
 )
