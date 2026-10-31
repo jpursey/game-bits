@@ -39,6 +39,7 @@ using WinFiber = void*;
 inline constexpr int kMaxFiberNameSize = 128;
 std::atomic<int> g_fiber_index = 0;
 std::atomic<int> g_running_count = 0;
+std::atomic<const FiberSwitchCallbacks*> g_switch_callbacks = nullptr;
 
 // Returns the thread local storage index holding the fiber that the thread
 // last switched away from. This is Windows thread local storage, rather than
@@ -320,10 +321,33 @@ bool SwitchToFiber(Fiber fiber) {
   GB_FIBER_LOG << "Switching thread from fiber " << ToString(current_fiber)
                << " to fiber " << ToString(fiber);
 
+  // These locals are on this fiber's own stack, so they are still here when it
+  // resumes, on whichever thread.
+  const FiberSwitchCallbacks* const callbacks =
+      g_switch_callbacks.load(std::memory_order_acquire);
+  void* const state = callbacks != nullptr ? callbacks->on_suspend() : nullptr;
   SetPrevFiber(current_fiber);
   ::SwitchToFiber(win_fiber);
   ReleasePrevFiber();
+  if (callbacks != nullptr) {
+    callbacks->on_resume(state);
+  }
   return true;
+}
+
+void SetFiberSwitchCallbacks(const FiberSwitchCallbacks* callbacks) {
+  if (callbacks == nullptr) {
+    g_switch_callbacks.store(nullptr, std::memory_order_release);
+    return;
+  }
+  CHECK(callbacks->on_suspend != nullptr && callbacks->on_resume != nullptr)
+      << "Fiber switch callbacks must set both on_suspend and on_resume";
+  const FiberSwitchCallbacks* previous = nullptr;
+  if (!g_switch_callbacks.compare_exchange_strong(previous, callbacks,
+                                                  std::memory_order_acq_rel)) {
+    CHECK(previous == callbacks)
+        << "A program can have only one set of fiber switch callbacks";
+  }
 }
 
 std::string_view GetFiberName(Fiber fiber) {

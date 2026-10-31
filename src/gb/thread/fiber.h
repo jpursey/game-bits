@@ -146,6 +146,35 @@ void DeleteFiber(Fiber fiber);
 // on the same fiber).
 bool SwitchToFiber(Fiber fiber);
 
+// Callbacks that every SwitchToFiber() calls, so a library can carry what
+// belongs to a fiber, such as the profiler's open timers, from the thread it
+// suspends on to the thread it resumes on.
+struct FiberSwitchCallbacks {
+  // Called on the fiber that is switching away, on its thread, just before it
+  // suspends. Returns what is passed to on_resume when this fiber resumes. A
+  // fiber that is deleted while suspended never resumes, so what this returns
+  // mustn't need on_resume to free it.
+  void* (*on_suspend)() = nullptr;
+
+  // Called on the fiber that suspended, as soon as it resumes, on the thread
+  // it resumed on, with what on_suspend returned.
+  void (*on_resume)(void* state) = nullptr;
+};
+
+// Sets the callbacks every SwitchToFiber() calls from now on, or none if
+// `callbacks` is null. Both callbacks must be set (CHECK), and `callbacks` must
+// outlive every fiber switch. A fiber resumes with the callbacks it suspended
+// with, even if they changed while it was suspended.
+//
+// A fiber's first run starts in its main, not in a switch, so it begins with
+// no on_resume. A fiber that exits calls neither, nor does a switch that fails.
+//
+// A program has one set: setting others while some are set CHECK-fails, so
+// they must be cleared first. Setting the same ones again does nothing.
+//
+// This function is thread-safe.
+void SetFiberSwitchCallbacks(const FiberSwitchCallbacks* callbacks);
+
 // Gets or sets the name of a fiber.
 //
 // The maximum name length is 128 bytes (including the null terminator). Any

@@ -7,22 +7,30 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <thread>
 #include <vector>
 
+#include "absl/base/attributes.h"
+#include "absl/base/thread_annotations.h"
 #include "absl/cleanup/cleanup.h"
+#include "absl/strings/str_cat.h"
 #include "absl/synchronization/mutex.h"
 #include "absl/synchronization/notification.h"
 #include "absl/types/span.h"
 #include "gb/container/queue.h"
 #include "gb/thread/thread.h"
 #include "gb/thread/thread_placement.h"
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
 namespace gb {
 namespace {
+
+using ::testing::ElementsAre;
+using ::testing::IsEmpty;
 
 #define CHECK_FIBER_SUPPORT() \
   if (!SupportsFibers()) {    \
@@ -264,29 +272,40 @@ TEST_F(FiberTest, SwapThreadsAndExit) {
   EXPECT_EQ(state.counter, 31);
 }
 
-TEST_F(FiberTest, GetThisThreadAfterFiberMovesThreads) {
-  CHECK_FIBER_SUPPORT();
+// The threads a fiber moved between in MoveFiberBetweenThreads().
+struct FiberMove {
+  // The two threads, in the order the fiber ran on them.
+  Thread threads[2] = {};
+
+  // What GetThisThread() returned on the fiber on each of them.
+  Thread seen_threads[2] = {};
+};
+
+// Runs a fiber, named "M", on a new thread, whose own fiber is named "T1", and
+// switches back to it. Then it resumes the fiber on a second new thread, "T2",
+// while the first is still alive, and switches back to that. The fiber reads
+// its thread on the first, and then in the same function after resuming on the
+// second, so a thread local address kept from before the switch would read the
+// first.
+void MoveFiberBetweenThreads(FiberMove& move) {
   struct State {
-    State() = default;
+    FiberMove* move = nullptr;
     Fiber moving_fiber = nullptr;
     Fiber return_fiber = nullptr;
     absl::Notification first_visit_done;
     absl::Notification second_visit_done;
-    Thread seen_threads[2] = {};
   } state;
-
-  // The moving fiber reads its thread on the first thread, and then in the same
-  // function after resuming on the second. The first thread stays alive until
-  // then, so a thread local address kept from before the switch would read it.
+  state.move = &move;
   state.moving_fiber = CreateFiber(
       {}, 0, &state, +[](void* user_data) {
         auto& state = *static_cast<State*>(user_data);
-        state.seen_threads[0] = GetThisThread();
+        state.move->seen_threads[0] = GetThisThread();
         SwitchToFiber(state.return_fiber);
-        state.seen_threads[1] = GetThisThread();
+        state.move->seen_threads[1] = GetThisThread();
         SwitchToFiber(state.return_fiber);
       });
   ASSERT_NE(state.moving_fiber, nullptr);
+  SetFiberName(state.moving_fiber, "M");
   absl::Cleanup delete_moving_fiber = [&state] {
     DeleteFiber(state.moving_fiber);
   };
@@ -294,11 +313,13 @@ TEST_F(FiberTest, GetThisThreadAfterFiberMovesThreads) {
       std::vector<PlacedThread>(1), {}, 0, &state, +[](void* user_data) {
         auto& state = *static_cast<State*>(user_data);
         state.return_fiber = GetThisFiber();
+        SetFiberName(state.return_fiber, "T1");
         EXPECT_TRUE(SwitchToFiber(state.moving_fiber));
         state.first_visit_done.Notify();
         state.second_visit_done.WaitForNotification();
       });
   ASSERT_EQ(fiber_1.size(), 1);
+  move.threads[0] = fiber_1[0].thread;
 
   // The first thread waits for the second to finish, so if the second can't be
   // created, this releases the first before it is joined.
@@ -313,15 +334,231 @@ TEST_F(FiberTest, GetThisThreadAfterFiberMovesThreads) {
         auto& state = *static_cast<State*>(user_data);
         state.first_visit_done.WaitForNotification();
         state.return_fiber = GetThisFiber();
+        SetFiberName(state.return_fiber, "T2");
         EXPECT_TRUE(SwitchToFiber(state.moving_fiber));
         state.second_visit_done.Notify();
       });
   ASSERT_EQ(fiber_2.size(), 1);
-  const Thread thread_1 = fiber_1[0].thread;
-  const Thread thread_2 = fiber_2[0].thread;
+  move.threads[1] = fiber_2[0].thread;
   WaitAndDeleteFibers(fiber_2);
-  EXPECT_EQ(state.seen_threads[0], thread_1);
-  EXPECT_EQ(state.seen_threads[1], thread_2);
+}
+
+TEST_F(FiberTest, GetThisThreadAfterFiberMovesThreads) {
+  CHECK_FIBER_SUPPORT();
+  FiberMove move;
+  ASSERT_NO_FATAL_FAILURE(MoveFiberBetweenThreads(move));
+  EXPECT_EQ(move.seen_threads[0], move.threads[0]);
+  EXPECT_EQ(move.seen_threads[1], move.threads[1]);
+}
+
+//------------------------------------------------------------------------------
+// Fiber switch callbacks
+//------------------------------------------------------------------------------
+
+// A call to one of the recording switch callbacks below.
+struct SwitchCall {
+  // "suspend" or "resume", the fiber's name, and the state on_suspend returned
+  // or on_resume was passed, such as "suspend A 1".
+  std::string text;
+  Thread thread = nullptr;
+};
+
+ABSL_CONST_INIT absl::Mutex g_switch_calls_mutex(absl::kConstInit);
+std::vector<SwitchCall> g_switch_calls ABSL_GUARDED_BY(g_switch_calls_mutex);
+int g_suspend_count ABSL_GUARDED_BY(g_switch_calls_mutex) = 0;
+
+void ClearSwitchCalls() {
+  absl::MutexLock lock(&g_switch_calls_mutex);
+  g_switch_calls.clear();
+  g_suspend_count = 0;
+}
+
+// Returns the number of the suspend, counting from 1, as the state.
+void* RecordSuspend() {
+  absl::MutexLock lock(&g_switch_calls_mutex);
+  const int number = ++g_suspend_count;
+  g_switch_calls.push_back(
+      {absl::StrCat("suspend ", GetFiberName(GetThisFiber()), " ", number),
+       GetThisThread()});
+  return reinterpret_cast<void*>(static_cast<intptr_t>(number));
+}
+
+void RecordResume(void* state) {
+  absl::MutexLock lock(&g_switch_calls_mutex);
+  g_switch_calls.push_back(
+      {absl::StrCat("resume ", GetFiberName(GetThisFiber()), " ",
+                    reinterpret_cast<intptr_t>(state)),
+       GetThisThread()});
+}
+
+constexpr FiberSwitchCallbacks kRecordSwitches = {
+    .on_suspend = RecordSuspend,
+    .on_resume = RecordResume,
+};
+
+std::vector<std::string> GetSwitchCallTexts() {
+  absl::MutexLock lock(&g_switch_calls_mutex);
+  std::vector<std::string> texts;
+  for (const SwitchCall& call : g_switch_calls) {
+    texts.push_back(call.text);
+  }
+  return texts;
+}
+
+class FiberSwitchCallbacksTest : public FiberTest {
+ public:
+  FiberSwitchCallbacksTest() {
+    ClearSwitchCalls();
+    SetFiberSwitchCallbacks(&kRecordSwitches);
+  }
+  ~FiberSwitchCallbacksTest() override { SetFiberSwitchCallbacks(nullptr); }
+};
+
+TEST_F(FiberSwitchCallbacksTest, EachSwitchSuspendsAndResumesItsFiber) {
+  CHECK_FIBER_SUPPORT();
+  struct State {
+    Fiber thread_fiber = nullptr;
+    Fiber fiber_b = nullptr;
+  } state;
+  state.fiber_b = CreateFiber(
+      {}, 0, &state, +[](void* user_data) {
+        auto& state = *static_cast<State*>(user_data);
+        SwitchToFiber(state.thread_fiber);
+      });
+  ASSERT_NE(state.fiber_b, nullptr);
+  SetFiberName(state.fiber_b, "B");
+  auto fibers = CreateFiberThreads(
+      std::vector<PlacedThread>(1), {}, 0, &state, +[](void* user_data) {
+        auto& state = *static_cast<State*>(user_data);
+        state.thread_fiber = GetThisFiber();
+        SetFiberName(state.thread_fiber, "A");
+        EXPECT_TRUE(SwitchToFiber(state.fiber_b));
+      });
+  ASSERT_EQ(fibers.size(), 1);
+  WaitAndDeleteFibers(fibers);
+  DeleteFiber(state.fiber_b);
+
+  // B starts in its main, so it has no resume, and it never resumes after its
+  // switch back.
+  EXPECT_THAT(GetSwitchCallTexts(),
+              ElementsAre("suspend A 1", "suspend B 2", "resume A 1"));
+}
+
+TEST_F(FiberSwitchCallbacksTest, ResumesWithStateOnAnotherThread) {
+  CHECK_FIBER_SUPPORT();
+  FiberMove move;
+  ASSERT_NO_FATAL_FAILURE(MoveFiberBetweenThreads(move));
+
+  // M suspends on the first thread, as suspend 2, and resumes with that state
+  // on the second.
+  EXPECT_THAT(
+      GetSwitchCallTexts(),
+      ElementsAre("suspend T1 1", "suspend M 2", "resume T1 1", "suspend T2 3",
+                  "resume M 2", "suspend M 4", "resume T2 3"));
+  absl::MutexLock lock(&g_switch_calls_mutex);
+  ASSERT_EQ(g_switch_calls.size(), 7);
+  EXPECT_EQ(g_switch_calls[1].thread, move.threads[0]);
+  EXPECT_EQ(g_switch_calls[4].thread, move.threads[1]);
+}
+
+TEST_F(FiberSwitchCallbacksTest, FailedSwitchCallsNeither) {
+  CHECK_FIBER_SUPPORT();
+  Fiber fiber = CreateFiber({}, 0, nullptr, +[](void* user_data) {});
+  ASSERT_NE(fiber, nullptr);
+
+  // This thread isn't a fiber, and a fiber can't switch to itself.
+  EXPECT_FALSE(SwitchToFiber(fiber));
+  auto fibers = CreateFiberThreads(
+      std::vector<PlacedThread>(1), {}, 0, nullptr,
+      +[](void* user_data) { EXPECT_FALSE(SwitchToFiber(GetThisFiber())); });
+  ASSERT_EQ(fibers.size(), 1);
+  WaitAndDeleteFibers(fibers);
+  DeleteFiber(fiber);
+  EXPECT_THAT(GetSwitchCallTexts(), IsEmpty());
+}
+
+TEST_F(FiberSwitchCallbacksTest, ResumesWithCallbacksItSuspendedWith) {
+  CHECK_FIBER_SUPPORT();
+  struct State {
+    Fiber thread_fiber = nullptr;
+    Fiber fiber_b = nullptr;
+  } state;
+
+  // B clears the callbacks while A is suspended, so A still resumes with them,
+  // and B suspends with none. A sets them again, and B, which suspended with
+  // none, resumes with none.
+  state.fiber_b = CreateFiber(
+      {}, 0, &state, +[](void* user_data) {
+        auto& state = *static_cast<State*>(user_data);
+        SetFiberSwitchCallbacks(nullptr);
+        SwitchToFiber(state.thread_fiber);
+      });
+  ASSERT_NE(state.fiber_b, nullptr);
+  SetFiberName(state.fiber_b, "B");
+  auto fibers = CreateFiberThreads(
+      std::vector<PlacedThread>(1), {}, 0, &state, +[](void* user_data) {
+        auto& state = *static_cast<State*>(user_data);
+        state.thread_fiber = GetThisFiber();
+        SetFiberName(state.thread_fiber, "A");
+        EXPECT_TRUE(SwitchToFiber(state.fiber_b));
+        SetFiberSwitchCallbacks(&kRecordSwitches);
+        EXPECT_TRUE(SwitchToFiber(state.fiber_b));
+      });
+  ASSERT_EQ(fibers.size(), 1);
+  WaitAndDeleteFibers(fibers);
+  DeleteFiber(state.fiber_b);
+  EXPECT_THAT(GetSwitchCallTexts(),
+              ElementsAre("suspend A 1", "resume A 1", "suspend A 2"));
+}
+
+void* IgnoreSuspend() { return nullptr; }
+void IgnoreResume(void* state) {}
+
+TEST_F(FiberSwitchCallbacksTest, SettingSameSetAgainKeepsIt) {
+  CHECK_FIBER_SUPPORT();
+  SetFiberSwitchCallbacks(&kRecordSwitches);
+  struct State {
+    Fiber thread_fiber = nullptr;
+    Fiber fiber_b = nullptr;
+  } state;
+  state.fiber_b = CreateFiber(
+      {}, 0, &state, +[](void* user_data) {
+        auto& state = *static_cast<State*>(user_data);
+        SwitchToFiber(state.thread_fiber);
+      });
+  ASSERT_NE(state.fiber_b, nullptr);
+  SetFiberName(state.fiber_b, "B");
+  auto fibers = CreateFiberThreads(
+      std::vector<PlacedThread>(1), {}, 0, &state, +[](void* user_data) {
+        auto& state = *static_cast<State*>(user_data);
+        state.thread_fiber = GetThisFiber();
+        SetFiberName(state.thread_fiber, "A");
+        EXPECT_TRUE(SwitchToFiber(state.fiber_b));
+      });
+  ASSERT_EQ(fibers.size(), 1);
+  WaitAndDeleteFibers(fibers);
+  DeleteFiber(state.fiber_b);
+  EXPECT_THAT(GetSwitchCallTexts(),
+              ElementsAre("suspend A 1", "suspend B 2", "resume A 1"));
+}
+
+TEST_F(FiberSwitchCallbacksTest, SettingAnotherSetDies) {
+  CHECK_FIBER_SUPPORT();
+  static constexpr FiberSwitchCallbacks kIgnoreSwitches = {
+      .on_suspend = IgnoreSuspend,
+      .on_resume = IgnoreResume,
+  };
+  EXPECT_DEATH(SetFiberSwitchCallbacks(&kIgnoreSwitches),
+               "one set of fiber switch callbacks");
+}
+
+TEST_F(FiberSwitchCallbacksTest, MissingCallbackDies) {
+  CHECK_FIBER_SUPPORT();
+  SetFiberSwitchCallbacks(nullptr);
+  static constexpr FiberSwitchCallbacks kNoResume = {
+      .on_suspend = IgnoreSuspend,
+  };
+  EXPECT_DEATH(SetFiberSwitchCallbacks(&kNoResume), "both");
 }
 
 TEST_F(FiberTest, FiberName) {

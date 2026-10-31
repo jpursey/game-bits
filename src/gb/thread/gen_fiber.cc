@@ -3,6 +3,9 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
+#include <atomic>
+
+#include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "gb/thread/fiber.h"
 
@@ -31,6 +34,24 @@ void DeleteFiber(Fiber) {
 bool SwitchToFiber(Fiber) {
   LOG(ERROR) << "Job fibers not supported on this platform";
   return false;
+}
+
+// There are no switches, but the callbacks follow the same rules, so a program
+// that breaks them fails here too.
+void SetFiberSwitchCallbacks(const FiberSwitchCallbacks* callbacks) {
+  static std::atomic<const FiberSwitchCallbacks*> s_callbacks = nullptr;
+  if (callbacks == nullptr) {
+    s_callbacks.store(nullptr, std::memory_order_release);
+    return;
+  }
+  CHECK(callbacks->on_suspend != nullptr && callbacks->on_resume != nullptr)
+      << "Fiber switch callbacks must set both on_suspend and on_resume";
+  const FiberSwitchCallbacks* previous = nullptr;
+  if (!s_callbacks.compare_exchange_strong(previous, callbacks,
+                                           std::memory_order_acq_rel)) {
+    CHECK(previous == callbacks)
+        << "A program can have only one set of fiber switch callbacks";
+  }
 }
 
 std::string_view GetFiberName(Fiber) { return "null"; }

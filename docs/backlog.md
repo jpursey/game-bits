@@ -62,28 +62,6 @@ component, as the MSVC standard library rejects older clang versions. Fix them,
 build and test both clang configurations, and consider building one in CI so it
 stays working.
 
-## Fiber-aware profiling
-
-- **Layers:** thread, profile
-- **Size:** medium
-- **Feature workflow:** yes
-- **Depends on:** *Profiler module*, *Fiber profile timers*
-- **Requested by:** Terra Diem *Profile the world's jobs*
-- **Background:** [Profiler module](worklog/profiler_module.md)
-
-Let a timed point span a fiber switch, which is a CHECK failure today. When a
-fiber switches out, its open timers pause and leave the thread's timer stack,
-and when it switches back in, on any thread, they resume there, so a job that
-waits is charged only for the time it runs. Needs a hook in `gb/thread`'s fiber
-switch that the profiler can use without `gb/thread` depending on it. Most
-useful alongside *Multithreaded profiles*, since fiber jobs are the main
-multithreaded case.
-
-Terra Diem plans phases of work that wait on job counters inside jobs, so the
-timed points around them span fiber switches. Besides the time a timed point
-runs, record the time it spent switched out, as its wait time: a phase that
-mostly waits for other jobs needs a different fix from one that runs long.
-
 ## Profiled jobs
 
 - **Layers:** profile, job
