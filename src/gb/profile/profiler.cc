@@ -200,14 +200,22 @@ Profiler::Profiler() : Profiler(Options()) {}
 Profiler::Profiler(Options options)
     : fake_cpu_(options.fake_cpu),
       slots_(std::make_unique<Slot[]>(kMaxProfilePoints)),
-      frame_(&current_frame_.number),
+      frame_(options.main != nullptr ? &options.main->current_frame_.number
+                                     : &current_frame_.number),
       ticks_per_second_(fake_cpu_ != nullptr ? fake_cpu_->GetCpuTicksPerSecond()
                                              : GetCpuTicksPerSecond()),
       budget_per_frame_(options.budget_per_frame),
       budget_fraction_(options.budget_fraction),
       slow_frame_ticks_(ToTicks(options.slow_frame, ticks_per_second_)),
-      on_slow_frame_(std::move(options.on_slow_frame)) {
+      on_slow_frame_(std::move(options.on_slow_frame)),
+      main_(options.main) {
   CHECK(s_current == nullptr) << "Only one Profiler may exist per thread";
+  if (main_ != nullptr) {
+    CHECK(main_->main_ == nullptr)
+        << "A joined Profiler's main Profiler can't itself be joined";
+    CHECK(ticks_per_second_ == main_->ticks_per_second_)
+        << "A joined Profiler must have its main Profiler's tick rate";
+  }
   s_current = this;
 
   // The first read of the core's class finds every core's class, which is
@@ -218,14 +226,70 @@ Profiler::Profiler(Options options)
 
   // Measuring times points into the slots, which are then cleared.
   point_cost_ticks_ = MeasurePointCost();
-  Reset();
+  ResetOwn();
+
+  // The main Profiler reads the slots from here on, so this joins it last.
+  if (main_ != nullptr) {
+    // GetThreadName() is "null" for a thread CreateThread() didn't make.
+    std::string_view name = options.name;
+    if (name.empty() && GetThisThread() != nullptr) {
+      name = GetThreadName(GetThisThread());
+    }
+    joined_index_ = main_->AddJoinedThread(this, name);
+  }
 }
 
 Profiler::~Profiler() {
   CHECK(s_current == this)
       << "A Profiler must be destroyed on the thread that created it";
   CHECK(top_ == nullptr) << "A Profiler must not be destroyed in a timed point";
+  if (main_ != nullptr) {
+    main_->RemoveJoinedThread(joined_index_);
+  }
+  {
+    absl::MutexLock lock(&joined_mutex_);
+    for (const JoinedThread& thread : joined_threads_) {
+      CHECK(thread.profiler == nullptr)
+          << "A main Profiler must outlive its joined Profilers, but \""
+          << thread.name << "\" still exists";
+    }
+  }
   s_current = nullptr;
+}
+
+int Profiler::AddJoinedThread(Profiler* profiler, std::string_view name) {
+  absl::MutexLock lock(&joined_mutex_);
+
+  // Numbered entries are added in the order of their numbers, so the first
+  // one free has the lowest number free.
+  int numbered_count = 0;
+  for (int i = 0; i < static_cast<int>(joined_threads_.size()); ++i) {
+    JoinedThread& thread = joined_threads_[i];
+    numbered_count += thread.numbered ? 1 : 0;
+    if (thread.profiler == nullptr &&
+        (name.empty() ? thread.numbered : thread.name == name)) {
+      thread.profiler = profiler;
+      return i;
+    }
+  }
+  joined_threads_.push_back(
+      {.profiler = profiler,
+       .name = name.empty() ? absl::StrCat("thread ", numbered_count + 1)
+                            : std::string(name),
+       .numbered = name.empty()});
+  return static_cast<int>(joined_threads_.size()) - 1;
+}
+
+void Profiler::RemoveJoinedThread(int index) {
+  const int point_count = ProfilePoint::GetRegisteredCount();
+  absl::MutexLock lock(&joined_mutex_);
+  JoinedThread& thread = joined_threads_[index];
+  if (static_cast<int>(thread.folded.size()) < point_count) {
+    thread.folded.resize(point_count);
+  }
+  thread.profiler->AddOwnTotals(absl::MakeSpan(thread.folded), thread.baseline);
+  thread.profiler = nullptr;
+  thread.baseline.clear();
 }
 
 // Never inlined, even by link-time code generation.
@@ -285,7 +349,23 @@ absl::Duration Profiler::GetSlowestFrameSelfTime(std::string_view name) const {
 }
 
 void Profiler::Reset() {
+  CHECK(main_ == nullptr)
+      << "A joined Profiler can't be reset, only its main Profiler";
   CHECK(top_ == nullptr) << "A Profiler can't be reset in a timed point";
+  ResetOwn();
+
+  // The joined Profilers' slots are written by their threads, so rather than
+  // being cleared, what they hold now is subtracted from them.
+  absl::MutexLock lock(&joined_mutex_);
+  for (JoinedThread& thread : joined_threads_) {
+    thread.folded.clear();
+    if (thread.profiler != nullptr) {
+      thread.baseline = thread.profiler->GatherOwnTotals();
+    }
+  }
+}
+
+void Profiler::ResetOwn() {
   std::fill_n(slots_.get(), kMaxProfilePoints, Slot());
   frame_timed_points_ = 0;
   frames_ = 0;
@@ -315,6 +395,7 @@ double Profiler::MeasurePointCost() {
 }
 
 void Profiler::StartFrame(Timing& timing) {
+  CHECK(main_ == nullptr) << "A joined Profiler can't time frames";
   CHECK(current_frame_.number.Get() == 0) << "Profile frames can't nest";
   current_frame_.number.Set(frames_ + 1);
   current_frame_timed_points_ = 0;
@@ -551,14 +632,57 @@ int Profiler::FindIndex(std::string_view name,
 }
 
 std::vector<Profiler::PointTotals> Profiler::GatherPointTotals() const {
-  std::vector<PointTotals> totals(ProfilePoint::GetRegisteredCount());
-  for (int i = 0; i < static_cast<int>(totals.size()); ++i) {
-    const Slot& slot = slots_[i];
-    totals[i] = {.count = slot.count.Get(),
-                 .self_ticks = slot.self_ticks.Get(),
-                 .value = slot.value.Get()};
+  std::vector<PointTotals> totals = GatherOwnTotals();
+  absl::MutexLock lock(&joined_mutex_);
+  for (const JoinedThread& thread : joined_threads_) {
+    // Points may be registered while this runs, so the totals of threads that
+    // have left can cover more points than `totals` does, or fewer.
+    const int count = std::min(static_cast<int>(totals.size()),
+                               static_cast<int>(thread.folded.size()));
+    for (int i = 0; i < count; ++i) {
+      AddPointTotals(totals[i], thread.folded[i]);
+    }
+    if (thread.profiler != nullptr) {
+      thread.profiler->AddOwnTotals(absl::MakeSpan(totals), thread.baseline);
+    }
   }
   return totals;
+}
+
+std::vector<Profiler::PointTotals> Profiler::GatherOwnTotals() const {
+  std::vector<PointTotals> totals(ProfilePoint::GetRegisteredCount());
+  AddOwnTotals(absl::MakeSpan(totals), {});
+  return totals;
+}
+
+void Profiler::AddOwnTotals(absl::Span<PointTotals> totals,
+                            absl::Span<const PointTotals> baseline) const {
+  const int baseline_count = static_cast<int>(baseline.size());
+  for (int i = 0; i < static_cast<int>(totals.size()); ++i) {
+    const Slot& slot = slots_[i];
+    PointTotals own = {.count = slot.count.Get(),
+                       .self_ticks = slot.self_ticks.Get(),
+                       .value = slot.value.Get(),
+                       .value_ticks = slot.value_ticks.Get()};
+
+    // Points registered since the baseline was gathered have none.
+    if (i < baseline_count) {
+      own.count -= baseline[i].count;
+      own.self_ticks -= baseline[i].self_ticks;
+    }
+    AddPointTotals(totals[i], own);
+  }
+}
+
+void Profiler::AddPointTotals(PointTotals& totals, const PointTotals& thread) {
+  // Setting a value counts, so a value set before the baseline was gathered
+  // has a count of zero, and is left out.
+  if (thread.count > 0 && thread.value_ticks >= totals.value_ticks) {
+    totals.value = thread.value;
+    totals.value_ticks = thread.value_ticks;
+  }
+  totals.count += thread.count;
+  totals.self_ticks += thread.self_ticks;
 }
 
 Profiler::PointTotals Profiler::FindPointTotals(

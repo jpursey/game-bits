@@ -18,6 +18,7 @@
 #include "absl/base/optimization.h"
 #include "absl/functional/any_invocable.h"
 #include "absl/log/check.h"
+#include "absl/synchronization/mutex.h"
 #include "absl/time/time.h"
 #include "absl/types/span.h"
 #include "gb/profile/fake_profiler_cpu.h"
@@ -37,6 +38,20 @@ namespace gb {
 // time), the total of each counter, and the latest of each value. Points on
 // other threads, or on a thread with no Profiler, are ignored, and cost about a
 // nanosecond.
+//
+// To profile several threads together, the thread that runs the main loop has
+// a Profiler as above (the main Profiler), and each other thread has a Profiler
+// made with Options::main (a joined Profiler). A joined Profiler records its
+// thread's points as any Profiler does, and adds them to the main Profiler's
+// report and test readers, even once it is destroyed. It can be made and
+// destroyed at any time, but the main Profiler must outlive it. The main
+// Profiler reads what the other threads record without stopping them, so a
+// point that ends while it reads may be left out until its next read.
+//
+// The main Profiler keeps what each thread recorded by the thread's name (see
+// Options::name). A Profiler that joins with the name of one that was
+// destroyed carries on from it, so a program that keeps making threads with
+// the same names doesn't keep adding to what the main Profiler holds.
 //
 // Frames (see ProfileFrame) are timed points that also record a histogram of
 // frame times, and the breakdown by point of the slowest frame so far. Points
@@ -60,6 +75,22 @@ class Profiler final {
     // Replaces the CPU's timestamp counter, for tests. It must outlive the
     // Profiler.
     FakeProfilerCpu* fake_cpu = nullptr;
+
+    // Another Profiler to add this one's points to, normally the one on the
+    // thread that runs the main loop, or null. That Profiler must outlive this
+    // one, and must not have a `main` of its own. With a `main`, this Profiler
+    // can't time frames, as its points count in the main Profiler's frames,
+    // and its tick rate must match the main Profiler's (so if either has a
+    // FakeProfilerCpu, both need one, at the same rate).
+    Profiler* main = nullptr;
+
+    // A joined Profiler's thread's name in the main Profiler's report. If this
+    // is empty, the thread's own name is used (see GetThreadName() in
+    // gb/thread/thread.h), as it is when the Profiler is made. A thread with
+    // no name, including any thread CreateThread() didn't make, is "thread N",
+    // for the lowest N no other existing Profiler joined to the same main
+    // Profiler has.
+    std::string_view name;
 
     // The profiler's own budget per frame is the larger of these: a fixed
     // time, and a fraction of the average frame. With neither set, there is
@@ -132,6 +163,9 @@ class Profiler final {
   // recorded). Points are grouped by kind and sorted by name, so two reports of
   // the same program diff cleanly.
   //
+  // A main Profiler's counts and self times are the sum over every thread, and
+  // each value is the one set most recently on any thread.
+  //
   // The tick rate converts ticks to time. A rate that changes between runs
   // makes every time wrong by the same factor.
   //
@@ -152,7 +186,9 @@ class Profiler final {
   // For tests
   //
   // Each of these reads the point named `name`, returning zero if there is no
-  // such point, and CHECK-fails if it has the wrong kind.
+  // such point, and CHECK-fails if it has the wrong kind. A main Profiler reads
+  // what every thread recorded, as its report does, and a joined Profiler reads
+  // only its own thread.
   //----------------------------------------------------------------------------
 
   // Returns how many times a frame, scope, or call was timed, or a counter's
@@ -169,7 +205,8 @@ class Profiler final {
   int64_t GetSlowestFrameCount(std::string_view name) const;
   absl::Duration GetSlowestFrameSelfTime(std::string_view name) const;
 
-  // Clears everything recorded. CHECK-fails inside a timed point.
+  // Clears everything recorded, on every thread for a main Profiler.
+  // CHECK-fails inside a timed point, or on a joined Profiler.
   void Reset();
 
  private:
@@ -251,6 +288,26 @@ class Profiler final {
     int64_t count = 0;
     int64_t self_ticks = 0;
     int64_t value = 0;
+    int64_t value_ticks = 0;
+  };
+
+  // The Profilers joined to this one under a name: at most one that exists,
+  // and every one that was destroyed.
+  struct JoinedThread {
+    // The one that exists, or null.
+    Profiler* profiler = nullptr;
+
+    // The name, which is "thread N" if `numbered`, for threads with no name.
+    std::string name;
+    bool numbered = false;
+
+    // While `profiler` exists, its totals when this was last reset, which its
+    // slots still hold, by point index.
+    std::vector<PointTotals> baseline;
+
+    // What the destroyed ones recorded since this was last reset, by point
+    // index.
+    std::vector<PointTotals> folded;
   };
 
   // A frame's time, and the part each point had in it.
@@ -340,8 +397,37 @@ class Profiler final {
     slot.value_ticks.Set(ReadTicks());
   }
 
-  // Returns the totals of every registered point, by index.
+  // Returns the totals of every registered point, by index, from every thread.
   std::vector<PointTotals> GatherPointTotals() const;
+
+  // As GatherPointTotals(), from only this Profiler's own slots. Any thread may
+  // call it.
+  std::vector<PointTotals> GatherOwnTotals() const;
+
+  // Adds what this Profiler's own slots hold for each point in `totals`, less
+  // `baseline` (see JoinedThread), to `totals`, both by point index. Any thread
+  // may call it.
+  void AddOwnTotals(absl::Span<PointTotals> totals,
+                    absl::Span<const PointTotals> baseline) const;
+
+  // Adds what one thread recorded for a point, `thread`, to `totals`, keeping
+  // the value set most recently.
+  static void AddPointTotals(PointTotals& totals, const PointTotals& thread);
+
+  // Clears what this Profiler's own thread recorded.
+  void ResetOwn();
+
+  // As a main Profiler, adds `profiler` to joined_threads_ under `name`, or
+  // the lowest "thread N" free if `name` is empty, and returns its index. It
+  // takes over an entry of that name whose joined Profilers were all
+  // destroyed, if there is one.
+  int AddJoinedThread(Profiler* profiler, std::string_view name)
+      ABSL_LOCKS_EXCLUDED(joined_mutex_);
+
+  // As a main Profiler, removes the joined Profiler at `index` in
+  // joined_threads_ (from AddJoinedThread()), keeping what it recorded in the
+  // entry. It is called on the joined Profiler's thread, as it is destroyed.
+  void RemoveJoinedThread(int index) ABSL_LOCKS_EXCLUDED(joined_mutex_);
 
   // Report sections, each appended to `report`. AppendValues() and
   // AppendPoints() take every registered point with its totals, sorted for the
@@ -404,8 +490,8 @@ class Profiler final {
   FakeProfilerCpu* const fake_cpu_;
   const std::unique_ptr<Slot[]> slots_;
 
-  // The number of the frame that points are recorded in: this Profiler's
-  // current_frame_.
+  // The number of the frame that points are recorded in: the main Profiler's
+  // current_frame_ for a joined Profiler, or else this Profiler's own.
   const SingleWriterInt64* const frame_;
 
   // The innermost timing on this thread, or null.
@@ -442,6 +528,16 @@ class Profiler final {
   std::array<int64_t, kFrameBuckets> frame_buckets_ = {};
   std::array<CoreFrames, kCoreClasses + 1> core_frames_ = {};
   FrameBreakdown slowest_frame_;
+
+  // The main Profiler this is joined to, at joined_index_ in its
+  // joined_threads_, or null.
+  Profiler* const main_;
+  int joined_index_ = -1;
+
+  // The Profilers joined to this main Profiler, by name (see JoinedThread), in
+  // the order they were first used.
+  mutable absl::Mutex joined_mutex_;
+  std::vector<JoinedThread> joined_threads_ ABSL_GUARDED_BY(joined_mutex_);
 };
 
 }  // namespace gb

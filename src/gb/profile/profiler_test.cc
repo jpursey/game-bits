@@ -8,14 +8,20 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <thread>
+#include <utility>
 #include <vector>
 
+#include "absl/functional/any_invocable.h"
 #include "absl/log/log.h"
+#include "absl/synchronization/mutex.h"
+#include "absl/synchronization/notification.h"
 #include "absl/time/time.h"
 #include "gb/profile/fake_profiler_cpu.h"
 #include "gb/profile/profile_point.h"
 #include "gb/profile/profile_timer.h"
+#include "gb/thread/thread.h"
 #include "gtest/gtest.h"
 
 namespace gb {
@@ -93,6 +99,311 @@ TEST_F(ProfilerTest, ResetClearsEverything) {
 TEST_F(ProfilerTest, ResetInTimerDies) {
   ProfileScope<"ProfilerTest/ResetInTimer"> scope;
   EXPECT_DEATH(profiler_.Reset(), "can't be reset in a timed point");
+}
+
+//------------------------------------------------------------------------------
+// Joined Profilers
+//------------------------------------------------------------------------------
+
+// A thread with a Profiler joined to a main Profiler, which runs tasks
+// for the test. Each thread has its own FakeProfilerCpu, with the default tick
+// rate.
+class ProfiledThread {
+ public:
+  using Task =
+      absl::AnyInvocable<void(Profiler& profiler, FakeProfilerCpu& ticks)>;
+
+  // Starts the thread, and waits until its Profiler, named `name`, has joined
+  // `main`, which must outlive this.
+  explicit ProfiledThread(Profiler* main, std::string_view name = {})
+      : thread_(&ProfiledThread::RunThread, this, main, std::string(name)) {
+    Run([](Profiler& profiler, FakeProfilerCpu& ticks) {});
+  }
+  ProfiledThread(const ProfiledThread&) = delete;
+  ProfiledThread& operator=(const ProfiledThread&) = delete;
+
+  // Destroys the thread's Profiler, and waits for the thread to end.
+  ~ProfiledThread() {
+    {
+      absl::MutexLock lock(&mutex_);
+      stop_ = true;
+    }
+    thread_.join();
+  }
+
+  // Runs `task` on the thread, and waits for it to finish.
+  void Run(Task task) {
+    absl::MutexLock lock(&mutex_);
+    task_ = std::move(task);
+    mutex_.Await(absl::Condition(this, &ProfiledThread::IsIdle));
+  }
+
+ private:
+  bool IsIdle() const ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_) {
+    return task_ == nullptr;
+  }
+  bool HasWork() const ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_) {
+    return task_ != nullptr || stop_;
+  }
+
+  void RunThread(Profiler* main, std::string name) {
+    FakeProfilerCpu ticks;
+    Profiler profiler({.fake_cpu = &ticks, .main = main, .name = name});
+    absl::MutexLock lock(&mutex_);
+    while (true) {
+      mutex_.Await(absl::Condition(this, &ProfiledThread::HasWork));
+      if (task_ == nullptr) {
+        break;
+      }
+      task_(profiler, ticks);
+      task_ = nullptr;
+    }
+  }
+
+  absl::Mutex mutex_;
+  Task task_ ABSL_GUARDED_BY(mutex_);
+  bool stop_ ABSL_GUARDED_BY(mutex_) = false;
+
+  // Last, so the thread starts after the rest is initialized.
+  std::thread thread_;
+};
+
+TEST_F(ProfilerTest, ThreadPointsAddToMain) {
+  {
+    ProfileScope<"ThreadTest/Scope"> scope;
+    ticks_.Advance(5);
+  }
+  ProfileCount<"ThreadTest/Count">(1);
+
+  ProfiledThread thread(&profiler_);
+  thread.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+    for (int i = 0; i < 2; ++i) {
+      ProfileScope<"ThreadTest/Scope"> scope;
+      ticks.Advance(10);
+    }
+    ProfileCount<"ThreadTest/Count">(2);
+
+    // A joined Profiler reads only its own thread.
+    EXPECT_EQ(profiler.GetCount("ThreadTest/Scope"), 2);
+    EXPECT_EQ(profiler.GetSelfTime("ThreadTest/Scope"), absl::Nanoseconds(20));
+    EXPECT_EQ(profiler.GetCount("ThreadTest/Count"), 2);
+  });
+
+  EXPECT_EQ(profiler_.GetCount("ThreadTest/Scope"), 3);
+  EXPECT_EQ(profiler_.GetSelfTime("ThreadTest/Scope"), absl::Nanoseconds(25));
+  EXPECT_EQ(profiler_.GetCount("ThreadTest/Count"), 3);
+  const std::string report = profiler_.GetReport();
+  EXPECT_NE(report.find("ThreadTest/Scope  scope        3"), std::string::npos)
+      << report;
+}
+
+TEST_F(ProfilerTest, PointsOfEveryThreadAdd) {
+  ProfiledThread thread_a(&profiler_);
+  ProfiledThread thread_b(&profiler_);
+  thread_a.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+    ProfileCount<"ThreadTest/EveryThread">(1);
+  });
+  thread_b.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+    ProfileCount<"ThreadTest/EveryThread">(2);
+  });
+  EXPECT_EQ(profiler_.GetCount("ThreadTest/EveryThread"), 3);
+}
+
+TEST_F(ProfilerTest, DestroyedThreadStaysInTotals) {
+  std::optional<ProfiledThread> thread(std::in_place, &profiler_);
+  thread->Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+    ProfileScope<"ThreadTest/Destroyed"> scope;
+    ticks.Advance(10);
+  });
+  thread.reset();
+  EXPECT_EQ(profiler_.GetCount("ThreadTest/Destroyed"), 1);
+  EXPECT_EQ(profiler_.GetSelfTime("ThreadTest/Destroyed"),
+            absl::Nanoseconds(10));
+}
+
+TEST_F(ProfilerTest, ValueIsLatestSetOnAnyThread) {
+  // Each thread's ticks are its own, so the test sets when each value is set.
+  ticks_.Advance(10);
+  ProfileSetValue<"ThreadTest/Value">(1);
+  ProfiledThread thread(&profiler_);
+  thread.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+    ticks.Advance(20);
+    ProfileSetValue<"ThreadTest/Value">(2);
+  });
+  EXPECT_EQ(profiler_.GetValue("ThreadTest/Value"), 2);
+
+  ticks_.Advance(20);
+  ProfileSetValue<"ThreadTest/Value">(3);
+  EXPECT_EQ(profiler_.GetValue("ThreadTest/Value"), 3);
+
+  std::optional<ProfiledThread> destroyed(std::in_place, &profiler_);
+  destroyed->Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+    ticks.Advance(40);
+    ProfileSetValue<"ThreadTest/Value">(4);
+  });
+  destroyed.reset();
+  EXPECT_EQ(profiler_.GetValue("ThreadTest/Value"), 4);
+}
+
+TEST_F(ProfilerTest, ResetClearsEveryThread) {
+  ProfileCount<"ThreadTest/Reset">(1);
+  ProfiledThread thread(&profiler_);
+  thread.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+    ProfileCount<"ThreadTest/Reset">(2);
+    ProfileSetValue<"ThreadTest/ResetValue">(5);
+  });
+  std::optional<ProfiledThread> destroyed(std::in_place, &profiler_);
+  destroyed->Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+    ProfileCount<"ThreadTest/Reset">(4);
+  });
+  destroyed.reset();
+  ASSERT_EQ(profiler_.GetCount("ThreadTest/Reset"), 7);
+
+  profiler_.Reset();
+  EXPECT_EQ(profiler_.GetCount("ThreadTest/Reset"), 0);
+  EXPECT_EQ(profiler_.GetValue("ThreadTest/ResetValue"), 0);
+
+  // What a thread records after the reset counts.
+  thread.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+    ProfileCount<"ThreadTest/Reset">(8);
+  });
+  EXPECT_EQ(profiler_.GetCount("ThreadTest/Reset"), 8);
+}
+
+TEST_F(ProfilerTest, ThreadCantTimeFrames) {
+  EXPECT_DEATH(
+      {
+        ProfiledThread thread(&profiler_);
+        thread.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+          ProfileFrame<"ThreadTest/Frame"> frame;
+        });
+      },
+      "A joined Profiler can't time frames");
+}
+
+TEST_F(ProfilerTest, ThreadCantReset) {
+  EXPECT_DEATH(
+      {
+        ProfiledThread thread(&profiler_);
+        thread.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+          profiler.Reset();
+        });
+      },
+      "A joined Profiler can't be reset");
+}
+
+TEST_F(ProfilerTest, ThreadNeedsMainTickRate) {
+  EXPECT_DEATH(
+      {
+        std::thread thread([this] {
+          FakeProfilerCpu ticks(2e9);
+          Profiler profiler({.fake_cpu = &ticks, .main = &profiler_});
+        });
+        thread.join();
+      },
+      "must have its main Profiler's tick rate");
+}
+
+TEST_F(ProfilerTest, MainCantBeJoined) {
+  EXPECT_DEATH(
+      {
+        ProfiledThread thread(&profiler_);
+        thread.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+          ProfiledThread inner(&profiler);
+        });
+      },
+      "main Profiler can't itself be joined");
+}
+
+TEST_F(ProfilerTest, ThreadWithNameOfDestroyedOneCarriesOn) {
+  std::optional<ProfiledThread> first(std::in_place, &profiler_, "loader");
+  first->Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+    ProfileCount<"ThreadTest/SameName">(1);
+  });
+  first.reset();
+
+  // The second takes over the first's totals, and a third that joins while
+  // the second exists is kept apart from them.
+  std::optional<ProfiledThread> second(std::in_place, &profiler_, "loader");
+  second->Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+    ProfileCount<"ThreadTest/SameName">(2);
+  });
+  ProfiledThread third(&profiler_, "loader");
+  third.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+    ProfileCount<"ThreadTest/SameName">(4);
+  });
+  EXPECT_EQ(profiler_.GetCount("ThreadTest/SameName"), 7);
+  second.reset();
+  EXPECT_EQ(profiler_.GetCount("ThreadTest/SameName"), 7);
+
+  profiler_.Reset();
+  std::optional<ProfiledThread> fourth(std::in_place, &profiler_, "loader");
+  fourth->Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+    ProfileCount<"ThreadTest/SameName">(8);
+  });
+  EXPECT_EQ(profiler_.GetCount("ThreadTest/SameName"), 8);
+}
+
+// Joined Profilers are numbered with the lowest number no other existing one
+// has, and only those that still exist when the main Profiler is destroyed are
+// an error.
+TEST(ProfilerThreadSetupTest, MainMustOutliveThreads) {
+  EXPECT_DEATH(
+      {
+        FakeProfilerCpu ticks;
+        std::optional<Profiler> main(std::in_place,
+                                     Profiler::Options{.fake_cpu = &ticks});
+        std::optional<ProfiledThread> first(std::in_place, &*main);
+        std::optional<ProfiledThread> second(std::in_place, &*main);
+        second.reset();
+        ProfiledThread third(&*main);
+        first.reset();
+        main.reset();
+      },
+      "must outlive its joined Profilers, but \"thread 2\" still exists");
+}
+
+TEST(ProfilerThreadSetupTest, MainMustOutliveNamedThread) {
+  EXPECT_DEATH(
+      {
+        FakeProfilerCpu ticks;
+        std::optional<Profiler> main(std::in_place,
+                                     Profiler::Options{.fake_cpu = &ticks});
+        ProfiledThread thread(&*main, "loader");
+        main.reset();
+      },
+      "\"loader\" still exists");
+}
+
+// A joined Profiler on a named thread that CreateThread() made.
+struct NamedThreadJoiner {
+  Profiler* main;
+  absl::Notification joined;
+  absl::Notification done;
+};
+
+TEST(ProfilerThreadSetupTest, NameDefaultsToThreadName) {
+  EXPECT_DEATH(
+      {
+        FakeProfilerCpu ticks;
+        std::optional<Profiler> main(std::in_place,
+                                     Profiler::Options{.fake_cpu = &ticks});
+        NamedThreadJoiner joiner = {.main = &*main};
+        Thread thread = CreateThread(0, 0, &joiner, [](void* user_data) {
+          NamedThreadJoiner* joiner =
+              static_cast<NamedThreadJoiner*>(user_data);
+          SetThreadName(GetThisThread(), "loader thread");
+          FakeProfilerCpu ticks;
+          Profiler profiler({.fake_cpu = &ticks, .main = joiner->main});
+          joiner->joined.Notify();
+          joiner->done.WaitForNotification();
+        });
+        joiner.joined.WaitForNotification();
+        main.reset();
+        joiner.done.Notify();
+        JoinThread(thread);
+      },
+      "\"loader thread\" still exists");
 }
 
 //------------------------------------------------------------------------------
