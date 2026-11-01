@@ -91,8 +91,9 @@ struct Binding {
 
   // Returns true if the binding is compatible.
   //
-  // Compatible bindings have the same set, index, and binding type, but may
-  // have different shader types or data volatility.
+  // Compatible bindings have the same set, index, and binding type (and for
+  // constants, the same constants TypeKey), but may have different shader
+  // types or data volatility.
   bool IsCompatible(const Binding& other) const;
 
   // Combines the other binding into this one, if it is compatible.
@@ -180,7 +181,9 @@ inline bool Binding::IsCompatible(const Binding& other) const {
   return set == other.set && index == other.index &&
          binding_type == other.binding_type &&
          (binding_type != BindingType::kConstants ||
-          constants_type == other.constants_type);
+          constants_type == other.constants_type ||
+          (constants_type != nullptr && other.constants_type != nullptr &&
+           constants_type->GetType() == other.constants_type->GetType()));
 }
 
 inline bool Binding::Combine(const Binding& other) {
@@ -202,12 +205,8 @@ inline bool operator<=(const Binding& a, const Binding& b) { return !(b < a); }
 inline bool operator>=(const Binding& a, const Binding& b) { return !(a < b); }
 
 inline bool operator==(const Binding& a, const Binding& b) {
-  return a.shader_types == b.shader_types && a.binding_type == b.binding_type &&
-         (a.binding_type != BindingType::kConstants ||
-          a.constants_type == b.constants_type ||
-          (a.constants_type != nullptr && b.constants_type != nullptr &&
-           a.constants_type->GetType() == b.constants_type->GetType())) &&
-         a.volatility == b.volatility && a.set == b.set && a.index == b.index;
+  return a.IsCompatible(b) && a.shader_types == b.shader_types &&
+         a.volatility == b.volatility;
 }
 inline bool operator!=(const Binding& a, const Binding& b) { return !(a == b); }
 

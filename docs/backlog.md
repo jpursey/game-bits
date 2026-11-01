@@ -538,18 +538,6 @@ size, or one whose pixel count doesn't fit in an `int`, goes unnoticed. Check
 them where they are made, as `gb_render`'s texture loading now does, with
 tests.
 
-## Binding compatibility by type key
-
-- **Layers:** render
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** [Code audit](worklog/code_audit.md)
-
-`Binding::IsCompatible()` compares constants types by pointer, while
-`Binding::operator==` compares their `TypeKey`, so two bindings can be equal
-but not compatible. Compare by `TypeKey` in both, with a test.
-
 ## size_t in public APIs
 
 - **Layers:** job, render
