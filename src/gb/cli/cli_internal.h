@@ -21,6 +21,10 @@ namespace gb::internal {
 // tests.
 //==============================================================================
 
+// The help flag, "--help" or "-h", which every command has. A program's flags
+// can't use its names.
+extern const CliFlag<bool> kCliHelpFlag;
+
 // The fields every flag has, whatever its value type.
 struct CliFlagFields {
   // The CliFlag<T>, which identifies the flag.

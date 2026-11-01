@@ -112,12 +112,14 @@ struct CliFlag {
                 "double");
 
   // The flag's long name, without the leading "--". This must not be empty,
-  // start with "-", or contain "=".
+  // start with "-", or contain "=", and must not be "help", which every
+  // command has.
   std::string_view name;
 
   // The flag's short name, without the leading "-", or 0 if it has none. This
   // must be a visible ASCII character other than "-", ".", or a digit, as a
-  // word starting with "-" then a digit or "." is a negative number.
+  // word starting with "-" then a digit or "." is a negative number, and must
+  // not be "h", which every command has for help.
   char short_name = 0;
 
   // What the flag's value is, as shown in help: "--output <file>". If this is
@@ -193,7 +195,8 @@ using CliAnyArg = std::variant<const CliArg<std::string_view>*,
 //
 // A command has either positional arguments or subcommands, not both. Its
 // flags are accepted anywhere after its name, including after its
-// subcommands' names.
+// subcommands' names. Every command also takes "--help" and "-h", which ask for
+// its help (see CliValues::Run()).
 struct CliCommand {
   // The command's name. For the program, this is the name used in help and
   // errors (rather than `argv[0]`). This must not be empty or start with "-".
@@ -213,8 +216,9 @@ struct CliCommand {
   std::initializer_list<const CliCommand*> commands;
 
   // Runs the command with the values given on the command line, returning
-  // whether it succeeded. If a command with subcommands has no run function,
-  // one of its subcommands must be named.
+  // whether it succeeded. A command with no run function writes its help
+  // instead (see CliValues::Run()), so one with subcommands but no run
+  // function writes its help if none of them is named.
   bool (*run)(const CliValues& values) = nullptr;
 
   // Leave unset. This is here only to prevent the definition from being

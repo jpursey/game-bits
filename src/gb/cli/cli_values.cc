@@ -15,6 +15,7 @@
 #include "absl/strings/ascii.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_split.h"
+#include "gb/cli/cli_help.h"
 #include "gb/cli/cli_internal.h"
 
 namespace gb {
@@ -35,6 +36,9 @@ bool IsWord(std::string_view arg) {
   return absl::ascii_isdigit(arg[1]) || arg[1] == '.';
 }
 
+// The help flag, as every command lists it.
+const CliAnyFlag kHelpFlag = &internal::kCliHelpFlag;
+
 // Parses a command line in a single pass, walking down the command tree as it
 // reaches each subcommand's name.
 class CliParser {
@@ -43,6 +47,7 @@ class CliParser {
 
   absl::Status Parse(absl::Span<const std::string> args);
 
+  bool IsHelp() const { return help_flag_given_ || help_command_given_; }
   std::vector<const CliCommand*> TakePath() { return std::move(path_); }
   absl::flat_hash_map<const void*, internal::CliValue> TakeValues() {
     return std::move(values_);
@@ -53,15 +58,16 @@ class CliParser {
   // takes the next argument.
   absl::Status ParseFlag(absl::Span<const std::string> args, int* index);
 
-  // Parses a bare word: a subcommand's name, or a positional argument.
+  // Parses a bare word: a subcommand's name, or a positional argument. After
+  // the help command, every word is a subcommand's name.
   absl::Status ParseWord(std::string_view word);
 
   // Validates that nothing required is missing, once all arguments are
   // parsed.
   absl::Status ValidateComplete() const;
 
-  // Return the flag in the command path with this long or short name, or null
-  // if there is none.
+  // Return the flag in the command path with this long or short name,
+  // including the help flag, or null if there is none.
   const CliAnyFlag* FindFlag(std::string_view name) const;
   const CliAnyFlag* FindFlag(char short_name) const;
 
@@ -77,11 +83,19 @@ class CliParser {
 
   // Whether "--" was given, so the remaining arguments are all positional.
   bool positional_only_ = false;
+
+  // Whether the help flag was given. Help is for the command so far, so the
+  // rest of the command line isn't parsed.
+  bool help_flag_given_ = false;
+
+  // Whether the help command was given, so every word after it names a
+  // subcommand.
+  bool help_command_given_ = false;
 };
 
 absl::Status CliParser::Parse(absl::Span<const std::string> args) {
   const int arg_count = static_cast<int>(args.size());
-  for (int i = 0; i < arg_count; ++i) {
+  for (int i = 0; i < arg_count && !help_flag_given_; ++i) {
     const std::string_view arg = args[i];
     absl::Status status;
     if (positional_only_ || IsWord(arg)) {
@@ -94,6 +108,9 @@ absl::Status CliParser::Parse(absl::Span<const std::string> args) {
     if (!status.ok()) {
       return status;
     }
+  }
+  if (IsHelp()) {
+    return absl::OkStatus();
   }
   return ValidateComplete();
 }
@@ -130,6 +147,10 @@ absl::Status CliParser::ParseFlag(absl::Span<const std::string> args,
     if (attached_value.has_value()) {
       return Error(absl::StrCat("\"", flag_text, "\" doesn't take a value"));
     }
+    if (flag == &kHelpFlag) {
+      help_flag_given_ = true;
+      return absl::OkStatus();
+    }
   } else if (attached_value.has_value()) {
     text = *attached_value;
   } else if (*index + 1 < static_cast<int>(args.size())) {
@@ -149,12 +170,22 @@ absl::Status CliParser::ParseFlag(absl::Span<const std::string> args,
 
 absl::Status CliParser::ParseWord(std::string_view word) {
   const CliCommand* command = path_.back();
-  if (command->commands.size() != 0 && !positional_only_) {
+  if (help_command_given_ ||
+      (command->commands.size() != 0 && !positional_only_)) {
     for (const CliCommand* subcommand : command->commands) {
-      if (subcommand->name == word) {
-        path_.push_back(subcommand);
-        return absl::OkStatus();
+      if (subcommand->name != word) {
+        continue;
       }
+
+      // The help command asks for help for the commands named after it, so
+      // it isn't in the path itself, unless it is named again after itself
+      // (`prog help help`).
+      if (subcommand == &kCliHelpCommand && !help_command_given_) {
+        help_command_given_ = true;
+      } else {
+        path_.push_back(subcommand);
+      }
+      return absl::OkStatus();
     }
     return Error(absl::StrCat("unknown command \"", word, "\""));
   }
@@ -176,9 +207,6 @@ absl::Status CliParser::ParseWord(std::string_view word) {
 
 absl::Status CliParser::ValidateComplete() const {
   const CliCommand* command = path_.back();
-  if (command->commands.size() != 0 && command->run == nullptr) {
-    return Error("missing command");
-  }
   if (next_arg_ < static_cast<int>(command->args.size())) {
     const internal::CliArgFields fields =
         internal::GetCliArgFields(command->args.begin()[next_arg_]);
@@ -190,6 +218,9 @@ absl::Status CliParser::ValidateComplete() const {
 }
 
 const CliAnyFlag* CliParser::FindFlag(std::string_view name) const {
+  if (name == internal::kCliHelpFlag.name) {
+    return &kHelpFlag;
+  }
   for (const CliCommand* command : path_) {
     for (const CliAnyFlag& flag : command->flags) {
       if (internal::GetCliFlagFields(flag).name == name) {
@@ -201,6 +232,9 @@ const CliAnyFlag* CliParser::FindFlag(std::string_view name) const {
 }
 
 const CliAnyFlag* CliParser::FindFlag(char short_name) const {
+  if (short_name == internal::kCliHelpFlag.short_name) {
+    return &kHelpFlag;
+  }
   for (const CliCommand* command : path_) {
     for (const CliAnyFlag& flag : command->flags) {
       if (internal::GetCliFlagFields(flag).short_name == short_name) {
@@ -221,6 +255,16 @@ absl::Status CliParser::Error(std::string_view message) const {
 //==============================================================================
 // CliValues
 //==============================================================================
+
+bool CliValues::Run(
+    absl::FunctionRef<void(std::string_view help)> write_help) const {
+  const CliCommand* command = GetCommand();
+  if (is_help_ || command->run == nullptr) {
+    write_help(FormatCliHelp(path_));
+    return true;
+  }
+  return command->run(*this);
+}
 
 bool CliValues::Get(const CliFlag<bool>& flag) const {
   return Find(&flag) != nullptr;
@@ -257,6 +301,9 @@ template std::optional<int64_t> CliValues::Get(
 template std::optional<double> CliValues::Get(const CliArg<double>& arg) const;
 
 const internal::CliValue* CliValues::Find(const void* definition) const {
+  CHECK(!is_help_) << "Flag or argument read from a command line for \""
+                   << internal::GetCliPathName(path_)
+                   << "\" that asks for help";
   const auto it = values_.find(definition);
   if (it != values_.end()) {
     return &it->second;
@@ -295,7 +342,7 @@ absl::StatusOr<CliValues> ParseCommandLine(const CliCommand* program,
   if (!status.ok()) {
     return status;
   }
-  return CliValues(parser.TakePath(), parser.TakeValues());
+  return CliValues(parser.TakePath(), parser.TakeValues(), parser.IsHelp());
 }
 
 }  // namespace gb

@@ -174,6 +174,18 @@ absl::Status CliCommandValidator::ValidateFlags() const {
       return Error(absl::StrCat("flag \"--", fields.name,
                                 "\" has an invalid short name"));
     }
+    const CliFlag<bool>& help = internal::kCliHelpFlag;
+    if (fields.name == help.name) {
+      return Error(
+          absl::StrCat("flag \"--", fields.name, "\" is reserved for help"));
+    }
+    if (fields.short_name == help.short_name) {
+      return Error(absl::StrCat("flag \"--", fields.name,
+                                "\" has short name \"-",
+                                std::string_view(&fields.short_name, 1),
+                                "\", which is reserved for "
+                                "help"));
+    }
     const absl::Status status = std::visit(
         [](const auto* typed) { return ValidateValueFields(*typed); }, flag);
     if (!status.ok()) {

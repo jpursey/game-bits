@@ -5,6 +5,7 @@
 
 set(gb_cli_SOURCE
   cli.cc cli.h
+  cli_help.cc cli_help.h
   cli_internal.cc cli_internal.h
   cli_validators.cc cli_validators.h
   cli_values.cc cli_values.h
@@ -23,6 +24,7 @@ set(gb_cli_LIBS
 )
 
 set(gb_cli_TEST_SOURCE
+  cli_help_test.cc
   cli_test.cc
   cli_validators_test.cc
   cli_values_test.cc

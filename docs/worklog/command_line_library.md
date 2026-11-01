@@ -82,7 +82,8 @@ int main(int argc, char* argv[]) {
   subcommands, and an optional run function, `bool (*)(const CliValues&)`.
   The program is the root command, and its name is used in help rather than
   `argv[0]`. A command has either arguments or subcommands, not both. A
-  command with subcommands but no run function needs one of them to be named.
+  command with no run function writes its help when it is run, so a command
+  with subcommands but no run function writes its help when none is named.
 - **Flags:** a `CliFlag<T>` has a long name (`--name`) and an optional short
   name (`-n`). A flag's `value_name` is shown in help (`--instruction-set
   <instruction set>`), and defaults to the flag's name. A flag may have a
@@ -161,7 +162,9 @@ class CliValues {
   const CliCommand* GetProgram() const;
   const CliCommand* GetCommand() const;  // The command that runs.
   absl::Span<const CliCommand* const> GetCommandPath() const;  // Root first.
-  bool IsHelp() const;  // See Help.
+
+  // Runs the command, or writes its help (see Help).
+  bool Run(absl::FunctionRef<void(std::string_view help)> write_help) const;
 
   bool Get(const CliFlag<bool>& flag) const;
   template <typename T> std::optional<T> Get(const CliFlag<T>& flag) const;
@@ -169,23 +172,34 @@ class CliValues {
 };
 ```
 
+- `Run()` calls the command's run function with the values, and returns its
+  result. If the command line asks for help, or the command has no run
+  function, it writes the command's help to `write_help` instead, and returns
+  true. So a run function never sees the partial values of a request for help,
+  and a caller handles help and running the same way.
 - `Get()` returns the given value, else the default, else `std::nullopt`. A
   required argument is always set. A bool flag reads as a plain `bool`, as a
   `std::optional<bool>` would be true in a condition whenever it holds a
   value, even false.
 - `Get()` on a flag or argument that isn't in the command path CHECKs, as the
-  code reading it was written for a different command.
+  code reading it was written for a different command. So does `Get()` on the
+  values of a request for help, which may be missing values, including
+  required arguments.
 
 ### Help
 
 - Every command accepts `--help` and `-h`, which stop parsing and request the
-  help for the command so far: `CliValues::IsHelp()`. Nothing after them is
-  checked.
+  help for the command so far, which `CliValues::Run()` writes. Nothing after
+  them is checked.
 - `gb::kCliHelpCommand` is a `help` command a program can add to any command's
   subcommands: `prog help build` is `prog build --help`, and `prog help` is
-  `prog --help`.
-- `FormatCliHelp(const CliValues&)` returns the help text, wrapped to 80
-  columns:
+  `prog --help`. Every word after `help` names a subcommand, so the help
+  command isn't in the command path, unless it is named again (`prog help
+  help`). It has an optional `<command>` argument, which only its own help
+  shows.
+- A program's own flags can't be `--help` or `-h` (a definition error).
+- `FormatCliHelp(absl::Span<const CliCommand* const> path)` returns the help
+  text for the command at the end of the command path, wrapped to 80 columns:
 
 ```
 Usage: oz3asm [<flags>] <source file> [<program file>]
@@ -194,22 +208,27 @@ Assembles a program, and writes its program file.
 
 Arguments:
   <source file>   The program to assemble.
-  <program file>  Where to write the program. Defaults to the source file's
-                  path with the extension .oz3.
+  <program file>  Where to write the program. Defaults to the source file's path
+                  with the extension .oz3.
 
 Flags:
   -i, --instruction-set <instruction set>
-                  Assembles for the instruction set in this source file
-                  (.izm), rather than the default one.
+                  Assembles for the instruction set in this source file (.izm),
+                  rather than the default one.
   -m, --map       Writes the program's map beside the program file (.oz3map).
-  -h, --help      Writes this help.
+  -h, --help      Writes help for this command.
 ```
 
 - A command's help paragraphs are separated by blank lines (`"\n\n"`). Its
   subcommands are listed under `Commands:` with the first paragraph of their
-  help, and its flags are followed by those of the commands above it, under
-  `Flags for <command>:`. A flag or argument with choices lists them, with
-  their help, and a default is shown as `(default: <value>)`.
+  help, and its flags are followed by those of the commands above it, nearest
+  first, under `Flags for <command>:`. A flag or argument with choices lists
+  them, with their help, and a default is shown as `(default: <value>)` (an
+  empty string as `""`), except for a required argument, which never uses it.
+- Help is beside each entry, in a column shared by all the lists. An entry
+  wider than 26 columns has its help start on the next line. Lines are
+  wrapped at words, up to 80 columns; a word longer than a line isn't split.
+  The usage line isn't wrapped.
 
 ### Running
 
@@ -232,9 +251,9 @@ int RunCommandLine(
 std::vector<std::string> GetMainArgs(int argc, char* argv[]);
 ```
 
-- `RunCommandLine()` parses the command line, then writes the help if it was
-  asked for, or the error if the command line isn't valid, or runs the
-  command. Text goes only to `write`, so a program can send it elsewhere (a
+- `RunCommandLine()` parses the command line, then writes the error if it
+  isn't valid, or else calls `CliValues::Run()`, which writes the help if it
+  was asked for, or runs the command. Text goes only to `write`, so a program can send it elsewhere (a
   log, a window), and tests can collect it. Returns `main`'s exit code: 0 if
   the command succeeded or help was written, 1 if the command returned false,
   and 2 if the command line isn't valid.
@@ -339,9 +358,11 @@ using CliAnyArg =
   `double` bounds (`CliInRange<0.5, 1.5>`). In a test macro the
   bounds' comma splits the macro's arguments, so tests name the validator
   first.
-- Help counts code points with utfcpp (`utf8::distance()`), which `gb_base`
-  already uses privately (an include directory, not a new dependency).
-  Checked by CL3.
+- ~~Help counts code points with utfcpp (`utf8::distance()`), which `gb_base`
+  already uses privately.~~ CL4 counts the bytes that aren't UTF-8
+  continuation bytes instead, which needs no dependency: utfcpp would have
+  been a new include directory for `gb_cli`, and `gb_base`'s `unicode.h` has
+  no count of code points.
 
 ## CLs
 
@@ -407,11 +428,12 @@ Depends on: CL2.
 - By hand: a flag of an enumeration, or of `int`, fails to compile, and so
   does a `CliArg<bool>`.
 
-### CL4 [ ] gb_cli: help
+### CL4 [x] gb_cli: help
 
 Depends on: CL3.
 
-- `--help` and `-h` on every command, and `CliValues::IsHelp()`.
+- `--help` and `-h` on every command, and `CliValues::Run()`, which runs the
+  command or writes its help.
 - `cli_help.h`: `kCliHelpCommand` and `FormatCliHelp()`.
 
 **Verify**
@@ -419,19 +441,40 @@ Depends on: CL3.
 - Unit tests: the full help text for a program with arguments, one with
   subcommands and inherited flags, a flag with choices, defaults, long flag
   names that push help onto the next line, and wrapping. `--help` in each
-  position, with invalid arguments after it, and `help <command>`.
+  position, with invalid arguments after it, and `help <command>`. `Run()`
+  runs the command and returns its result, writes help instead when asked or
+  when there is no run function, and `Get()` CHECKs on help's values.
 
-### CL5 [ ] gb_cli: running a command line
+### CL5 [ ] gb_cli: rename CliValues to CliCommandLine
 
 Depends on: CL4.
 
-- `run_command_line.h`: `CliText`, `WriteCliText()`, `RunCommandLine()`, and
-  `GetMainArgs()`.
+- `CliValues` becomes `CliCommandLine`, the parsed command line, which holds
+  more than values: the command path, whether help was asked for, and
+  `Run()`. `cli_values.h` becomes `cli_command_line.h`. No change in behavior.
+
+**Verify**
+- Standard checks. The tests carry over, renamed.
+
+### CL6 [ ] gb_cli: context and running a command line
+
+Depends on: CL5.
+
+- To be designed in this worklog, and reviewed, before it is written. The
+  direction: `ParseCommandLine()` and `RunCommandLine()` take a `gb::Context`,
+  validated against `gb_cli`'s `ContextConstraint`s: an optional `CliWriter`
+  for help and errors (stdout and stderr by default), and later an optional
+  `gb::FileSystem` for path validators. The parsed command line keeps the
+  context, so `Run()` writes help to its writer and takes no `write_help`, and
+  run functions get the context, to which a program adds its own values.
+  `gb_cli` depends on `gb_base` again (tier 0).
+- `run_command_line.h`: `RunCommandLine()` and `GetMainArgs()`, replacing the
+  `CliText` and `WriteCliText()` design above.
 
 **Verify**
 - Standard checks.
-- Unit tests: the exit codes, that the run function gets the values, and the
-  text written for help and errors, collected by the test's `write`.
-  `GetMainArgs()` skips the program's name, and returns nothing for an
-  `argc` of 1. `WriteCliText()` itself (stdout and stderr) is the only part
-  left untested.
+- Unit tests: the exit codes, that the run function gets the values and the
+  context, and the text written for help and errors, collected by a fake
+  writer in the context. `GetMainArgs()` skips the program's name, and returns
+  nothing for an `argc` of 1. The default writer itself (stdout and stderr) is
+  the only part left untested.

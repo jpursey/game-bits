@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <string_view>
 
+#include "gb/cli/cli_help.h"
 #include "gtest/gtest.h"
 
 namespace gb {
@@ -137,6 +138,32 @@ TEST(ValidateCliCommandTest, ShortNameThatStartsANumber) {
             "prog: flag \"--digit\" has an invalid short name");
   EXPECT_EQ(ValidateCliCommand(&kDotProgram).message(),
             "prog: flag \"--dot\" has an invalid short name");
+}
+
+TEST(ValidateCliCommandTest, FlagNamesReservedForHelp) {
+  static const CliFlag<bool> kHelp = {.name = "help"};
+  static const CliFlag<bool> kHeight = {.name = "height", .short_name = 'h'};
+  static const CliCommand kHelpProgram = {.name = "prog", .flags = {&kHelp}};
+  static const CliCommand kHeightProgram = {.name = "prog",
+                                            .flags = {&kHeight}};
+  EXPECT_EQ(ValidateCliCommand(&kHelpProgram).message(),
+            "prog: flag \"--help\" is reserved for help");
+  EXPECT_EQ(ValidateCliCommand(&kHeightProgram).message(),
+            "prog: flag \"--height\" has short name \"-h\", which is reserved "
+            "for help");
+}
+
+TEST(ValidateCliCommandTest, ValidWithHelpCommand) {
+  static const CliCommand kProgram = {
+      .name = "prog",
+      .commands = {&kSub, &kCliHelpCommand},
+  };
+  static const CliCommand kNested = {
+      .name = "prog",
+      .commands = {&kProgram, &kCliHelpCommand},
+  };
+  EXPECT_TRUE(ValidateCliCommand(&kProgram).ok());
+  EXPECT_TRUE(ValidateCliCommand(&kNested).ok());
 }
 
 absl::Status ValidateAnything(const bool&) { return absl::OkStatus(); }

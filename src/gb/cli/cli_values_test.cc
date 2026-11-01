@@ -12,6 +12,8 @@
 #include <type_traits>
 #include <vector>
 
+#include "absl/strings/str_cat.h"
+#include "gb/cli/cli_help.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
@@ -20,8 +22,18 @@ namespace {
 
 using ::testing::ElementsAre;
 using ::testing::Optional;
+using ::testing::StartsWith;
 
 bool RunNothing(const CliValues&) { return true; }
+bool RunFails(const CliValues&) { return false; }
+
+// Runs `values`, which must succeed, and returns the help it writes, if any.
+std::string RunForHelp(const CliValues& values) {
+  std::string help;
+  EXPECT_TRUE(values.Run(
+      [&help](std::string_view text) { absl::StrAppend(&help, text); }));
+  return help;
+}
 
 absl::Status ValidateNotEmpty(const std::string_view& value) {
   if (value.empty()) {
@@ -95,7 +107,7 @@ const CliCommand kStatus = {.name = "status", .run = RunNothing};
 const CliCommand kTool = {
     .name = "tool",
     .flags = {&kVerbose},
-    .commands = {&kRemote, &kStatus},
+    .commands = {&kRemote, &kStatus, &kCliHelpCommand},
     .run = RunNothing,
 };
 
@@ -422,8 +434,13 @@ TEST(ParseCommandLineTest, UnknownCommand) {
   EXPECT_EQ(ParseError(&kTool, {"nope"}), "tool: unknown command \"nope\"");
 }
 
-TEST(ParseCommandLineTest, MissingCommand) {
-  EXPECT_EQ(ParseError(&kTool, {"remote"}), "tool remote: missing command");
+TEST(ParseCommandLineTest, NoCommandAndNoRunFunction) {
+  const std::vector<std::string> args = {"remote"};
+  absl::StatusOr<CliValues> values = ParseCommandLine(&kTool, args);
+  ASSERT_TRUE(values.ok()) << values.status();
+  EXPECT_THAT(values->GetCommandPath(), ElementsAre(&kTool, &kRemote));
+  EXPECT_THAT(RunForHelp(*values),
+              StartsWith("Usage: tool remote [<flags>] <command>\n"));
 }
 
 TEST(ParseCommandLineTest, ErrorNamesCommandPath) {
@@ -434,6 +451,106 @@ TEST(ParseCommandLineTest, ErrorNamesCommandPath) {
 TEST(ParseCommandLineTest, DoubleDashBeforeCommand) {
   EXPECT_EQ(ParseError(&kTool, {"--", "status"}),
             "tool: unexpected argument \"status\"");
+}
+
+//==============================================================================
+// Help
+//==============================================================================
+
+TEST(CliValuesTest, RunRunsTheCommand) {
+  const std::vector<std::string> args = {"status"};
+  absl::StatusOr<CliValues> values = ParseCommandLine(&kTool, args);
+  ASSERT_TRUE(values.ok()) << values.status();
+  EXPECT_EQ(RunForHelp(*values), "");
+}
+
+TEST(CliValuesTest, RunReturnsWhetherTheCommandSucceeded) {
+  static const CliCommand kFails = {.name = "fails", .run = RunFails};
+  const std::vector<std::string> args = {};
+  absl::StatusOr<CliValues> values = ParseCommandLine(&kFails, args);
+  ASSERT_TRUE(values.ok()) << values.status();
+  EXPECT_FALSE(values->Run(
+      [](std::string_view text) { ADD_FAILURE() << "Wrote help: " << text; }));
+}
+
+TEST(CliValuesTest, RunWritesHelpForACommandWithNoRunFunction) {
+  static const CliCommand kNoRun = {.name = "prog"};
+  const std::vector<std::string> args = {};
+  absl::StatusOr<CliValues> values = ParseCommandLine(&kNoRun, args);
+  ASSERT_TRUE(values.ok()) << values.status();
+  EXPECT_THAT(RunForHelp(*values), StartsWith("Usage: prog [<flags>]\n"));
+}
+
+TEST(ParseCommandLineTest, HelpFlag) {
+  for (const std::string_view flag : {"--help", "-h"}) {
+    // The help is for the command so far, and needs nothing that is missing.
+    const std::vector<std::string> args = {"remote", "add", std::string(flag)};
+    absl::StatusOr<CliValues> values = ParseCommandLine(&kTool, args);
+    ASSERT_TRUE(values.ok()) << values.status();
+    EXPECT_THAT(values->GetCommandPath(), ElementsAre(&kTool, &kRemote, &kAdd));
+    EXPECT_THAT(RunForHelp(*values),
+                StartsWith("Usage: tool remote add [<flags>] <name>\n"));
+  }
+}
+
+TEST(ParseCommandLineTest, HelpFlagStopsParsing) {
+  const std::vector<std::string> args = {"-v", "-h", "nope", "--nope", "-v"};
+  absl::StatusOr<CliValues> values = ParseCommandLine(&kTool, args);
+  ASSERT_TRUE(values.ok()) << values.status();
+  EXPECT_THAT(values->GetCommandPath(), ElementsAre(&kTool));
+  EXPECT_THAT(RunForHelp(*values), StartsWith("Usage: tool [<flags>]"));
+}
+
+TEST(ParseCommandLineTest, ErrorBeforeHelpFlag) {
+  EXPECT_EQ(ParseError(&kTool, {"--nope", "--help"}),
+            "tool: unknown flag \"--nope\"");
+  EXPECT_EQ(ParseError(&kTool, {"nope", "--help"}),
+            "tool: unknown command \"nope\"");
+}
+
+TEST(ParseCommandLineTest, HelpFlagWithValue) {
+  EXPECT_EQ(ParseError(&kTool, {"--help=yes"}),
+            "tool: \"--help\" doesn't take a value");
+}
+
+TEST(ParseCommandLineTest, HelpFlagAfterDoubleDash) {
+  const std::vector<std::string> args = {"--", "--help"};
+  absl::StatusOr<CliValues> values = ParseCommandLine(&kConvert, args);
+  ASSERT_TRUE(values.ok()) << values.status();
+  EXPECT_THAT(values->Get(kInput), Optional(std::string_view("--help")));
+  EXPECT_EQ(RunForHelp(*values), "");
+}
+
+TEST(ParseCommandLineTest, HelpCommand) {
+  const std::vector<std::string> args = {"help", "remote", "add"};
+  absl::StatusOr<CliValues> values = ParseCommandLine(&kTool, args);
+  ASSERT_TRUE(values.ok()) << values.status();
+  EXPECT_THAT(values->GetCommandPath(), ElementsAre(&kTool, &kRemote, &kAdd));
+  EXPECT_THAT(RunForHelp(*values),
+              StartsWith("Usage: tool remote add [<flags>] <name>\n"));
+}
+
+TEST(ParseCommandLineTest, HelpCommandAlone) {
+  const std::vector<std::string> args = {"-v", "help"};
+  absl::StatusOr<CliValues> values = ParseCommandLine(&kTool, args);
+  ASSERT_TRUE(values.ok()) << values.status();
+  EXPECT_THAT(values->GetCommandPath(), ElementsAre(&kTool));
+  EXPECT_THAT(RunForHelp(*values), StartsWith("Usage: tool [<flags>]"));
+}
+
+TEST(ParseCommandLineTest, HelpForHelpCommand) {
+  const std::vector<std::string> args = {"help", "help"};
+  absl::StatusOr<CliValues> values = ParseCommandLine(&kTool, args);
+  ASSERT_TRUE(values.ok()) << values.status();
+  EXPECT_THAT(values->GetCommandPath(), ElementsAre(&kTool, &kCliHelpCommand));
+  EXPECT_THAT(RunForHelp(*values), StartsWith("Usage: tool help [<flags>]"));
+}
+
+TEST(ParseCommandLineTest, HelpCommandOnlyNamesCommands) {
+  EXPECT_EQ(ParseError(&kTool, {"help", "nope"}),
+            "tool: unknown command \"nope\"");
+  EXPECT_EQ(ParseError(&kTool, {"help", "remote", "add", "origin"}),
+            "tool remote add: unknown command \"origin\"");
 }
 
 //==============================================================================
@@ -602,6 +719,13 @@ TEST(ParseCommandLineDeathTest, GetOutsideCommandPath) {
   ASSERT_TRUE(values.ok()) << values.status();
   EXPECT_DEATH(values->Get(kForce), "doesn't belong");
   EXPECT_DEATH(values->Get(kName), "doesn't belong");
+}
+
+TEST(ParseCommandLineDeathTest, GetForHelp) {
+  const std::vector<std::string> args = {"-v", "--help"};
+  absl::StatusOr<CliValues> values = ParseCommandLine(&kTool, args);
+  ASSERT_TRUE(values.ok()) << values.status();
+  EXPECT_DEATH(values->Get(kVerbose), "asks for help");
 }
 
 }  // namespace

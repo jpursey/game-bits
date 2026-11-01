@@ -18,6 +18,12 @@
 
 namespace gb::internal {
 
+const CliFlag<bool> kCliHelpFlag = {
+    .name = "help",
+    .short_name = 'h',
+    .help = "Writes help for this command.",
+};
+
 namespace {
 
 //==============================================================================
