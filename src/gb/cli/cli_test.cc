@@ -127,6 +127,17 @@ TEST(ValidateCliCommandTest, InvalidShortName) {
             "prog: flag \"--space\" has an invalid short name");
 }
 
+TEST(ValidateCliCommandTest, ShortNameThatStartsANumber) {
+  static const CliFlag<bool> kDigit = {.name = "digit", .short_name = '5'};
+  static const CliFlag<bool> kDot = {.name = "dot", .short_name = '.'};
+  static const CliCommand kDigitProgram = {.name = "prog", .flags = {&kDigit}};
+  static const CliCommand kDotProgram = {.name = "prog", .flags = {&kDot}};
+  EXPECT_EQ(ValidateCliCommand(&kDigitProgram).message(),
+            "prog: flag \"--digit\" has an invalid short name");
+  EXPECT_EQ(ValidateCliCommand(&kDotProgram).message(),
+            "prog: flag \"--dot\" has an invalid short name");
+}
+
 absl::Status ValidateAnything(const bool&) { return absl::OkStatus(); }
 
 TEST(ValidateCliCommandTest, BoolFlagWithValueFields) {
@@ -141,11 +152,75 @@ TEST(ValidateCliCommandTest, BoolFlagWithValueFields) {
   static const CliCommand kValidatorsProgram = {.name = "prog",
                                                 .flags = {&kValidators}};
   EXPECT_EQ(ValidateCliCommand(&kValueNameProgram).message(),
-            "prog: bool flag \"--a\" has a value name, but takes no value");
+            "prog: flag \"--a\" is a bool, so can't have a value name");
   EXPECT_EQ(ValidateCliCommand(&kDefaultProgram).message(),
-            "prog: bool flag \"--b\" has a default value, but takes no value");
+            "prog: flag \"--b\" is a bool, so can't have a default value");
   EXPECT_EQ(ValidateCliCommand(&kValidatorsProgram).message(),
-            "prog: bool flag \"--c\" has validators, but takes no value");
+            "prog: flag \"--c\" is a bool, so can't have validators");
+}
+
+enum class Color { kRed, kGreen };
+
+TEST(ValidateCliCommandTest, ValidEnumeration) {
+  static const CliFlag<Color> kFlag = {
+      .name = "color",
+      .names = {{.name = "red", .value = Color::kRed},
+                {.name = "green", .value = Color::kGreen}},
+  };
+  static const CliArg<Color> kArg = {
+      .name = "color",
+      .names = {{.name = "red", .value = Color::kRed}},
+  };
+  static const CliCommand kProgram = {
+      .name = "prog",
+      .flags = {&kFlag},
+      .args = {&kArg},
+  };
+  EXPECT_TRUE(ValidateCliCommand(&kProgram).ok());
+}
+
+TEST(ValidateCliCommandTest, EnumerationWithoutNames) {
+  static const CliFlag<Color> kFlag = {.name = "color"};
+  static const CliArg<Color> kArg = {.name = "color"};
+  static const CliCommand kFlagProgram = {.name = "prog", .flags = {&kFlag}};
+  static const CliCommand kArgProgram = {.name = "prog", .args = {&kArg}};
+  EXPECT_EQ(ValidateCliCommand(&kFlagProgram).message(),
+            "prog: flag \"--color\" is an enumeration with no names");
+  EXPECT_EQ(ValidateCliCommand(&kArgProgram).message(),
+            "prog: argument <color> is an enumeration with no names");
+}
+
+TEST(ValidateCliCommandTest, EmptyEnumerationName) {
+  static const CliFlag<Color> kFlag = {
+      .name = "color",
+      .names = {{.name = "red", .value = Color::kRed},
+                {.name = "", .value = Color::kGreen}},
+  };
+  static const CliCommand kProgram = {.name = "prog", .flags = {&kFlag}};
+  EXPECT_EQ(ValidateCliCommand(&kProgram).message(),
+            "prog: flag \"--color\" has an empty enumeration name");
+}
+
+TEST(ValidateCliCommandTest, EnumerationNameStartsWithDash) {
+  static const CliArg<Color> kArg = {
+      .name = "color",
+      .names = {{.name = "-red", .value = Color::kRed}},
+  };
+  static const CliCommand kProgram = {.name = "prog", .args = {&kArg}};
+  EXPECT_EQ(ValidateCliCommand(&kProgram).message(),
+            "prog: argument <color> has enumeration name \"-red\", which "
+            "starts with \"-\"");
+}
+
+TEST(ValidateCliCommandTest, DuplicateEnumerationName) {
+  static const CliArg<Color> kArg = {
+      .name = "color",
+      .names = {{.name = "red", .value = Color::kRed},
+                {.name = "red", .value = Color::kGreen}},
+  };
+  static const CliCommand kProgram = {.name = "prog", .args = {&kArg}};
+  EXPECT_EQ(ValidateCliCommand(&kProgram).message(),
+            "prog: argument <color> has duplicate enumeration name \"red\"");
 }
 
 TEST(ValidateCliCommandTest, DuplicateFlag) {

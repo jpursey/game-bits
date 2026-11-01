@@ -21,7 +21,7 @@ const gb::CliFlag<std::string_view> kInstructionSet = {
     .value_name = "instruction set",
     .help = "Assembles for the instruction set in this source file (.izm), "
             "rather than the default one.",
-    .validators = {gb::CliPathExists},
+    .validators = {gb::CliNotEmpty},
 };
 const gb::CliFlag<bool> kMap = {
     .name = "map",
@@ -31,7 +31,7 @@ const gb::CliFlag<bool> kMap = {
 const gb::CliArg<std::string_view> kSourceFile = {
     .name = "source file",
     .help = "The program to assemble.",
-    .validators = {gb::CliPathExists},
+    .validators = {gb::CliNotEmpty},
 };
 const gb::CliArg<std::string_view> kProgramFile = {
     .name = "program file",
@@ -91,24 +91,36 @@ int main(int argc, char* argv[]) {
 - **Positional arguments:** a `CliArg<T>` has a name, shown in help as
   `<name>`, and help. Optional arguments (`.optional = true`) follow the
   required ones, and may have a `default_value`.
-- **Value types:** `std::string_view`, `int`, `int64_t`, `float`, `double`, and
-  enumerations, and `bool` for flags only. An enumeration's flag or argument lists the names it accepts,
-  each a `CliName<T>` of a name, its value, and optional help. Any other type
-  fails to compile. A string value points into the arguments, which must
-  outlive the values.
+- **Value types:** `std::string_view`, `int64_t`, `double`, and enumerations,
+  and `bool` for flags only. Numbers are only the largest size of each kind, as
+  a command line has no use for smaller ones, and the program converts them if
+  it needs to. An enumeration's flag or argument lists the names it accepts in
+  `names`, each a `CliName<T>` of a name, its value, and optional help. For any
+  other type `names` is an empty struct, so names given to it fail to compile.
+  Any other value type fails to compile. A string value points into the
+  arguments, which must outlive the values.
+- **Numbers:** the text must be exactly the number, with no surrounding space:
+  a base 10 integer with an optional sign, or a finite floating point number
+  (not `inf` or `nan`), in range. Abseil's `SimpleAtoi()` and `SimpleAtod()`
+  parse them, with checks for what they allow beyond that (space, and infinity
+  for an out of range value).
 - **Validators:** a flag or argument has a list of validators,
   `absl::Status (*)(const T& value)`, each returning an error saying what is
   wrong with the value. The common ones are `CliInRange<kMin, kMax>`,
   `CliAtLeast<kMin>`, `CliAtMost<kMax>` (function templates, so the bounds are
-  part of the constant), `CliNotEmpty`, and `CliPathExists` (a native path,
-  through `std::filesystem`). A default value is not validated.
+  part of the constant), and `CliNotEmpty`. A default value is not validated.
+  There is no validator for paths: one would check them against the program's
+  `FileSystem`, which a validator (a plain function pointer) has no way to be
+  given, so the command checks its paths when it runs.
 - **Definition errors:** a definition that can't be parsed unambiguously is a
   programmer error, found by `ValidateCliCommand()`: empty or duplicate names
   (a flag's long and short names are unique across the command and the
-  commands above it), names starting with `-`, `--help` or `-h` (see Help), an
+  commands above it), names starting with `-`, a short name that is `-`, `.`,
+  a digit, or not visible ASCII, `--help` or `-h` (see Help), an
   optional argument before a required one, arguments and subcommands on one
   command, a bool flag with a value name, default, or validators, or an
-  enumeration without names. `ParseCommandLine()` CHECKs it, so
+  enumeration without names or with an empty or duplicate one, or one
+  starting with `-` (which a positional argument would parse as a flag). `ParseCommandLine()` CHECKs it, so
   any run of the program finds a bad definition.
 
 ### Parsing
@@ -126,7 +138,9 @@ absl::StatusOr<CliValues> ParseCommandLine(
 - A bare word is the next subcommand's name, if the command has subcommands,
   and otherwise its next positional argument. After `--`, every word is a
   positional argument. `-` alone is a positional argument (the usual name for
-  standard input).
+  standard input), and so is a word starting with `-` then a digit or `.`, so
+  that negative numbers can be given (`prog -5`). No short name is a digit or
+  `.`, so this never hides a flag.
 - A command's flags are accepted anywhere after its name, including after its
   subcommands' names (`prog --verbose build` and `prog build --verbose`), and
   can be read by the command that runs.
@@ -235,7 +249,7 @@ std::vector<std::string> GetMainArgs(int argc, char* argv[]);
 
 ## Design
 
-`gb_cli` is a new tier 1 library, depending only on `gb_base` and Abseil. It
+`gb_cli` is a new tier 1 library, depending only on Abseil. It
 is a component a program takes on its own, and nothing in tier 0 needs it.
 
 ### Names
@@ -288,8 +302,7 @@ class CliFlagRef {
 
 // A parsed value. A bool flag that is given is true, and an enumeration is
 // held as int64_t.
-using CliValue = std::variant<bool, std::string_view, int, int64_t, float,
-                              double>;
+using CliValue = std::variant<bool, std::string_view, int64_t, double>;
 
 }  // namespace internal
 ```
@@ -310,9 +323,10 @@ using CliValue = std::variant<bool, std::string_view, int, int64_t, float,
   `constexpr`, which would silently break on MSVC, fails to compile.
 - A flag must be in its command's `flags` to be read. `Get()` CHECKs if it
   isn't, which any test of the command finds.
-- The value types are the alternatives of the `CliValue` variant, and the
-  check that a definition's type is supported is derived from it, so a type is
-  added in one place.
+- The value types are the alternatives of the `CliValue` variant (with
+  enumerations held as `int64_t`), and the check that a definition's type is
+  supported is derived from it. A new type is added to the variant and given
+  a `ParseCliText()` overload, and a missing overload fails to compile.
 - A `CliFlag<bool>` has fields it can't use (`value_name`, `default_value`,
   `validators`). `ValidateCliCommand()` rejects them, so any run of the
   program finds one that is set.
@@ -324,8 +338,11 @@ using CliValue = std::variant<bool, std::string_view, int, int64_t, float,
   run time, for lists of pointers and of refs alike; `const` definitions are
   correct. Definitions are `const`, and `constexpr` is made a compile error
   (see Definitions).
-- `&CliInRange<1, 64>` converts to a validator for an `int` and a `double`.
-  Checked by CL2.
+- ~~`&CliInRange<1, 64>` converts to a validator for an `int64_t` and a
+  `double`.~~ CL2 confirmed it does, with or without the `&`, and with
+  `double` bounds (`CliInRange<0.5, 1.5>`). In a test macro the
+  bounds' comma splits the macro's arguments, so tests name the validator
+  first.
 - Help counts code points with utfcpp (`utf8::distance()`), which `gb_base`
   already uses privately (an include directory, not a new dependency).
   Checked by CL3.
@@ -357,21 +374,22 @@ Depends on: nothing.
 - By hand: a `constexpr` definition fails to compile, and so does a
   `CliArg<bool>`.
 
-### CL2 [ ] gb_cli: number and enumeration values, and validators
+### CL2 [x] gb_cli: number and enumeration values, and validators
 
 Depends on: CL1.
 
-- `int`, `int64_t`, `float`, `double`, and enumeration values with `CliName`,
-  parsed with Abseil's `SimpleAtoi` and `SimpleAtod` family.
-- `cli_validators.h`: `CliInRange`, `CliAtLeast`, `CliAtMost`, `CliNotEmpty`,
-  `CliPathExists`.
+- `int64_t`, `double`, and enumeration values with `CliName`, parsed with
+  Abseil's `SimpleAtoi` and `SimpleAtod`.
+- `cli_validators.h`: `CliInRange`, `CliAtLeast`, `CliAtMost`, and
+  `CliNotEmpty`.
 
 **Verify**
 - Standard checks.
 - Unit tests: each type's values, out of range and malformed numbers, unknown
   names, each validator, several validators on one flag, and that a default
-  isn't validated. `CliPathExists` against files the test writes in a
-  temporary directory.
+  isn't validated.
+- By hand: `names` on a flag or argument that isn't an enumeration fails to
+  compile.
 
 ### CL3 [ ] gb_cli: help
 

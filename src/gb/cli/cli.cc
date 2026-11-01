@@ -5,13 +5,17 @@
 
 #include "gb/cli/cli.h"
 
+#include <cmath>
+#include <cstdint>
 #include <string_view>
 #include <vector>
 
 #include "absl/algorithm/container.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/ascii.h"
+#include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/str_join.h"
 #include "gb/cli/cli_internal.h"
 
 namespace gb {
@@ -105,24 +109,17 @@ absl::Status CliCommandValidator::ValidateFlags() const {
       return Error(absl::StrCat("flag name \"", fields.name,
                                 "\" starts with \"-\" or contains \"=\""));
     }
+    // A word starting with "-" then a digit or "." is a negative number.
     if (fields.short_name != 0 &&
-        (!absl::ascii_isgraph(fields.short_name) || fields.short_name == '-')) {
+        (!absl::ascii_isgraph(fields.short_name) || fields.short_name == '-' ||
+         fields.short_name == '.' || absl::ascii_isdigit(fields.short_name))) {
       return Error(absl::StrCat("flag \"--", fields.name,
                                 "\" has an invalid short name"));
     }
-    if (!flag.TakesValue()) {
-      std::string_view value_field;
-      if (!fields.value_name.empty()) {
-        value_field = "a value name";
-      } else if (fields.has_default_value) {
-        value_field = "a default value";
-      } else if (fields.has_validators) {
-        value_field = "validators";
-      }
-      if (!value_field.empty()) {
-        return Error(absl::StrCat("bool flag \"--", fields.name, "\" has ",
-                                  value_field, ", but takes no value"));
-      }
+    const absl::Status status = flag.ValidateValueFields();
+    if (!status.ok()) {
+      return Error(
+          absl::StrCat("flag \"--", fields.name, "\" ", status.message()));
     }
     if (!names.insert(fields.name).second) {
       return Error(absl::StrCat("duplicate flag \"--", fields.name, "\""));
@@ -144,6 +141,11 @@ absl::Status CliCommandValidator::ValidateArgs() const {
     if (fields.name.empty()) {
       return Error("argument has no name");
     }
+    const absl::Status status = arg.ValidateValueFields();
+    if (!status.ok()) {
+      return Error(
+          absl::StrCat("argument <", fields.name, "> ", status.message()));
+    }
     if (!names.insert(fields.name).second) {
       return Error(absl::StrCat("duplicate argument <", fields.name, ">"));
     }
@@ -162,7 +164,97 @@ absl::Status CliCommandValidator::Error(std::string_view message) const {
       absl::StrCat(internal::GetCliPathName(path_), ": ", message));
 }
 
+//==============================================================================
+// Value parsing
+//==============================================================================
+
+// Returns whether `text` is written as a base 10 integer: an optional sign,
+// then digits.
+bool IsCliInteger(std::string_view text) {
+  if (text.starts_with('+') || text.starts_with('-')) {
+    text.remove_prefix(1);
+  }
+  return !text.empty() && absl::c_all_of(text, absl::ascii_isdigit);
+}
+
 }  // namespace
+
+namespace internal {
+
+absl::Status ParseCliText(std::string_view text, std::string_view* value) {
+  *value = text;
+  return absl::OkStatus();
+}
+
+absl::Status ParseCliText(std::string_view text, int64_t* value) {
+  if (!IsCliInteger(text)) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("\"", text, "\" is not an integer"));
+  }
+
+  // The text is an integer, so it can only fail by being out of range.
+  if (!absl::SimpleAtoi(text, value)) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("\"", text, "\" is out of range"));
+  }
+  return absl::OkStatus();
+}
+
+absl::Status ParseCliText(std::string_view text, double* value) {
+  // SimpleAtod() accepts surrounding space, which isn't part of a number.
+  if (text != absl::StripAsciiWhitespace(text) ||
+      !absl::SimpleAtod(text, value)) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("\"", text, "\" is not a number"));
+  }
+
+  // A value out of range is parsed as infinite, and has digits, unlike "inf"
+  // and "nan".
+  if (!std::isfinite(*value)) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "\"", text, "\" is ",
+        absl::c_any_of(text, absl::ascii_isdigit) ? "out of range"
+                                                  : "not a finite number"));
+  }
+  return absl::OkStatus();
+}
+
+absl::StatusOr<int> FindCliName(absl::Span<const std::string_view> names,
+                                std::string_view text) {
+  const int count = static_cast<int>(names.size());
+  for (int i = 0; i < count; ++i) {
+    if (names[i] == text) {
+      return i;
+    }
+  }
+  return absl::InvalidArgumentError(absl::StrCat(
+      "\"", text, "\" is not one of: ", absl::StrJoin(names, ", ")));
+}
+
+absl::Status ValidateCliNames(absl::Span<const std::string_view> names) {
+  if (names.empty()) {
+    return absl::InvalidArgumentError("is an enumeration with no names");
+  }
+  absl::flat_hash_set<std::string_view> seen;
+  for (const std::string_view name : names) {
+    if (name.empty()) {
+      return absl::InvalidArgumentError("has an empty enumeration name");
+    }
+
+    // A positional argument starting with "-" is parsed as a flag.
+    if (name.starts_with('-')) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "has enumeration name \"", name, "\", which starts with \"-\""));
+    }
+    if (!seen.insert(name).second) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("has duplicate enumeration name \"", name, "\""));
+    }
+  }
+  return absl::OkStatus();
+}
+
+}  // namespace internal
 
 //==============================================================================
 // ValidateCliCommand

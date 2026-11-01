@@ -9,7 +9,6 @@
 #include <optional>
 #include <string>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
@@ -98,7 +97,7 @@ std::optional<T> CliValues::Get(const CliFlag<T>& flag) const {
   if (value == nullptr) {
     return flag.default_value;
   }
-  return *std::get_if<T>(value);
+  return internal::FromCliValue<T>(*value);
 }
 
 template <typename T>
@@ -107,7 +106,7 @@ std::optional<T> CliValues::Get(const CliArg<T>& arg) const {
   if (value == nullptr) {
     return arg.default_value;
   }
-  return *std::get_if<T>(value);
+  return internal::FromCliValue<T>(*value);
 }
 
 }  // namespace gb

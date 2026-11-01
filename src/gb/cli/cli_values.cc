@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "absl/log/check.h"
+#include "absl/strings/ascii.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_split.h"
 #include "gb/cli/cli_internal.h"
@@ -20,6 +21,16 @@ namespace {
 //==============================================================================
 // CliParser
 //==============================================================================
+
+// Returns whether `arg` is a bare word, rather than a flag: anything not
+// starting with "-", "-" alone, and a negative number ("-5", "-.5"), as no
+// short name is a digit or ".".
+bool IsWord(std::string_view arg) {
+  if (!arg.starts_with('-') || arg == "-") {
+    return true;
+  }
+  return absl::ascii_isdigit(arg[1]) || arg[1] == '.';
+}
 
 // Parses a command line in a single pass, walking down the command tree as it
 // reaches each subcommand's name.
@@ -70,7 +81,7 @@ absl::Status CliParser::Parse(absl::Span<const std::string> args) {
   for (int i = 0; i < arg_count; ++i) {
     const std::string_view arg = args[i];
     absl::Status status;
-    if (positional_only_ || arg == "-" || !arg.starts_with('-')) {
+    if (positional_only_ || IsWord(arg)) {
       status = ParseWord(arg);
     } else if (arg == "--") {
       positional_only_ = true;

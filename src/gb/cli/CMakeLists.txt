@@ -6,6 +6,7 @@
 set(gb_cli_SOURCE
   cli.cc cli.h
   cli_internal.cc cli_internal.h
+  cli_validators.cc cli_validators.h
   cli_values.cc cli_values.h
 )
 
@@ -15,7 +16,6 @@ set(gb_cli_DEPS
   absl::status
   absl::statusor
   absl::strings
-  gb_base
 )
 
 set(gb_cli_LIBS
@@ -24,6 +24,7 @@ set(gb_cli_LIBS
 
 set(gb_cli_TEST_SOURCE
   cli_test.cc
+  cli_validators_test.cc
   cli_values_test.cc
 )
 

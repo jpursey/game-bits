@@ -5,6 +5,8 @@
 
 #include "gb/cli/cli_values.h"
 
+#include <cstdint>
+#include <limits>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -94,6 +96,49 @@ const CliCommand kTool = {
     .name = "tool",
     .flags = {&kVerbose},
     .commands = {&kRemote, &kStatus},
+    .run = RunNothing,
+};
+
+//==============================================================================
+// A program with a flag or argument of each value type.
+//==============================================================================
+
+enum class Shape { kCircle, kSquare };
+
+const CliFlag<int64_t> kCount = {.name = "count"};
+const CliFlag<int64_t> kLimit = {.name = "limit", .default_value = 10};
+const CliFlag<double> kRatio = {.name = "ratio"};
+const CliFlag<double> kScale = {.name = "scale", .default_value = 1.5};
+const CliFlag<Shape> kShape = {
+    .name = "shape",
+    .names = {{.name = "circle", .value = Shape::kCircle},
+              {.name = "square", .value = Shape::kSquare}},
+    .default_value = Shape::kCircle,
+};
+const CliArg<Shape> kOutline = {
+    .name = "outline",
+    .optional = true,
+    .names = {{.name = "circle", .value = Shape::kCircle},
+              {.name = "square", .value = Shape::kSquare}},
+};
+const CliCommand kTypes = {
+    .name = "types",
+    .flags = {&kCount, &kLimit, &kRatio, &kScale, &kShape},
+    .args = {&kOutline},
+    .run = RunNothing,
+};
+
+//==============================================================================
+// A program with number arguments.
+//==============================================================================
+
+const CliFlag<bool> kRelative = {.name = "relative", .short_name = 'r'};
+const CliArg<int64_t> kOffset = {.name = "offset"};
+const CliArg<double> kFactor = {.name = "factor", .optional = true};
+const CliCommand kMove = {
+    .name = "move",
+    .flags = {&kRelative},
+    .args = {&kOffset, &kFactor},
     .run = RunNothing,
 };
 
@@ -393,6 +438,152 @@ TEST(ParseCommandLineTest, ErrorNamesCommandPath) {
 TEST(ParseCommandLineTest, DoubleDashBeforeCommand) {
   EXPECT_EQ(ParseError(&kTool, {"--", "status"}),
             "tool: unexpected argument \"status\"");
+}
+
+//==============================================================================
+// Value types
+//==============================================================================
+
+TEST(ParseCommandLineTest, Integers) {
+  const std::vector<std::string> args = {"--count", "-12", "--limit", "+5"};
+  absl::StatusOr<CliValues> values = ParseCommandLine(&kTypes, args);
+  ASSERT_TRUE(values.ok()) << values.status();
+  EXPECT_THAT(values->Get(kCount), Optional(-12));
+  EXPECT_THAT(values->Get(kLimit), Optional(5));
+}
+
+TEST(ParseCommandLineTest, IntegerDefault) {
+  const std::vector<std::string> args = {};
+  absl::StatusOr<CliValues> values = ParseCommandLine(&kTypes, args);
+  ASSERT_TRUE(values.ok()) << values.status();
+  EXPECT_EQ(values->Get(kCount), std::nullopt);
+  EXPECT_THAT(values->Get(kLimit), Optional(10));
+}
+
+TEST(ParseCommandLineTest, IntegerLimits) {
+  const std::vector<std::string> args = {"--count=9223372036854775807",
+                                         "--limit=-9223372036854775808"};
+  absl::StatusOr<CliValues> values = ParseCommandLine(&kTypes, args);
+  ASSERT_TRUE(values.ok()) << values.status();
+  EXPECT_THAT(values->Get(kCount),
+              Optional(std::numeric_limits<int64_t>::max()));
+  EXPECT_THAT(values->Get(kLimit),
+              Optional(std::numeric_limits<int64_t>::min()));
+}
+
+TEST(ParseCommandLineTest, NotAnInteger) {
+  EXPECT_EQ(ParseError(&kTypes, {"--count=abc"}),
+            "types: \"--count\": \"abc\" is not an integer");
+  EXPECT_EQ(ParseError(&kTypes, {"--count=1.5"}),
+            "types: \"--count\": \"1.5\" is not an integer");
+  EXPECT_EQ(ParseError(&kTypes, {"--count=0x10"}),
+            "types: \"--count\": \"0x10\" is not an integer");
+  EXPECT_EQ(ParseError(&kTypes, {"--count= 5"}),
+            "types: \"--count\": \" 5\" is not an integer");
+  EXPECT_EQ(ParseError(&kTypes, {"--count=-"}),
+            "types: \"--count\": \"-\" is not an integer");
+  EXPECT_EQ(ParseError(&kTypes, {"--limit="}),
+            "types: \"--limit\": \"\" is not an integer");
+}
+
+TEST(ParseCommandLineTest, IntegerOutOfRange) {
+  EXPECT_EQ(ParseError(&kTypes, {"--count=9223372036854775808"}),
+            "types: \"--count\": \"9223372036854775808\" is out of range");
+  EXPECT_EQ(ParseError(&kTypes, {"--count=-9223372036854775809"}),
+            "types: \"--count\": \"-9223372036854775809\" is out of range");
+}
+
+TEST(ParseCommandLineTest, FloatingPoint) {
+  const std::vector<std::string> args = {"--ratio", "0.25", "--scale", "-1e3"};
+  absl::StatusOr<CliValues> values = ParseCommandLine(&kTypes, args);
+  ASSERT_TRUE(values.ok()) << values.status();
+  EXPECT_THAT(values->Get(kRatio), Optional(0.25));
+  EXPECT_THAT(values->Get(kScale), Optional(-1000.0));
+}
+
+TEST(ParseCommandLineTest, FloatingPointDefault) {
+  const std::vector<std::string> args = {};
+  absl::StatusOr<CliValues> values = ParseCommandLine(&kTypes, args);
+  ASSERT_TRUE(values.ok()) << values.status();
+  EXPECT_EQ(values->Get(kRatio), std::nullopt);
+  EXPECT_THAT(values->Get(kScale), Optional(1.5));
+}
+
+TEST(ParseCommandLineTest, NotANumber) {
+  EXPECT_EQ(ParseError(&kTypes, {"--ratio=abc"}),
+            "types: \"--ratio\": \"abc\" is not a number");
+  EXPECT_EQ(ParseError(&kTypes, {"--ratio=1.5x"}),
+            "types: \"--ratio\": \"1.5x\" is not a number");
+  EXPECT_EQ(ParseError(&kTypes, {"--scale=1.5 "}),
+            "types: \"--scale\": \"1.5 \" is not a number");
+  EXPECT_EQ(ParseError(&kTypes, {"--scale="}),
+            "types: \"--scale\": \"\" is not a number");
+}
+
+TEST(ParseCommandLineTest, NotAFiniteNumber) {
+  EXPECT_EQ(ParseError(&kTypes, {"--scale=inf"}),
+            "types: \"--scale\": \"inf\" is not a finite number");
+  EXPECT_EQ(ParseError(&kTypes, {"--scale=nan"}),
+            "types: \"--scale\": \"nan\" is not a finite number");
+  EXPECT_EQ(ParseError(&kTypes, {"--scale=1e999"}),
+            "types: \"--scale\": \"1e999\" is out of range");
+  EXPECT_EQ(ParseError(&kTypes, {"--ratio=-1e999"}),
+            "types: \"--ratio\": \"-1e999\" is out of range");
+}
+
+TEST(ParseCommandLineTest, NumberArgs) {
+  const std::vector<std::string> args = {"12", "2.5"};
+  absl::StatusOr<CliValues> values = ParseCommandLine(&kMove, args);
+  ASSERT_TRUE(values.ok()) << values.status();
+  EXPECT_THAT(values->Get(kOffset), Optional(12));
+  EXPECT_THAT(values->Get(kFactor), Optional(2.5));
+}
+
+TEST(ParseCommandLineTest, NegativeNumberArgs) {
+  const std::vector<std::string> args = {"-r", "-5", "-.5"};
+  absl::StatusOr<CliValues> values = ParseCommandLine(&kMove, args);
+  ASSERT_TRUE(values.ok()) << values.status();
+  EXPECT_TRUE(values->Get(kRelative));
+  EXPECT_THAT(values->Get(kOffset), Optional(-5));
+  EXPECT_THAT(values->Get(kFactor), Optional(-0.5));
+}
+
+TEST(ParseCommandLineTest, NegativeNumberLooksLikeAnArg) {
+  // A word starting with "-" and a digit is a word whatever the argument's
+  // type, so it is reported as what it is for.
+  EXPECT_EQ(ParseError(&kMove, {"-5", "-1x"}),
+            "move: <factor>: \"-1x\" is not a number");
+  EXPECT_EQ(ParseError(&kMove, {"1", "2", "-3"}),
+            "move: unexpected argument \"-3\"");
+  EXPECT_EQ(ParseError(&kTool, {"-1"}), "tool: unknown command \"-1\"");
+
+  const std::vector<std::string> args = {"-5"};
+  absl::StatusOr<CliValues> values = ParseCommandLine(&kConvert, args);
+  ASSERT_TRUE(values.ok()) << values.status();
+  EXPECT_THAT(values->Get(kInput), Optional(std::string_view("-5")));
+}
+
+TEST(ParseCommandLineTest, Enumerations) {
+  const std::vector<std::string> args = {"--shape", "square", "circle"};
+  absl::StatusOr<CliValues> values = ParseCommandLine(&kTypes, args);
+  ASSERT_TRUE(values.ok()) << values.status();
+  EXPECT_THAT(values->Get(kShape), Optional(Shape::kSquare));
+  EXPECT_THAT(values->Get(kOutline), Optional(Shape::kCircle));
+}
+
+TEST(ParseCommandLineTest, EnumerationDefault) {
+  const std::vector<std::string> args = {};
+  absl::StatusOr<CliValues> values = ParseCommandLine(&kTypes, args);
+  ASSERT_TRUE(values.ok()) << values.status();
+  EXPECT_THAT(values->Get(kShape), Optional(Shape::kCircle));
+  EXPECT_EQ(values->Get(kOutline), std::nullopt);
+}
+
+TEST(ParseCommandLineTest, UnknownEnumerationName) {
+  EXPECT_EQ(ParseError(&kTypes, {"--shape=triangle"}),
+            "types: \"--shape\": \"triangle\" is not one of: circle, square");
+  EXPECT_EQ(ParseError(&kTypes, {"Square"}),
+            "types: <outline>: \"Square\" is not one of: circle, square");
 }
 
 //==============================================================================

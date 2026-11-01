@@ -6,14 +6,17 @@
 #ifndef GB_CLI_CLI_H_
 #define GB_CLI_CLI_H_
 
+#include <cstdint>
 #include <initializer_list>
 #include <optional>
 #include <string_view>
 #include <type_traits>
 #include <variant>
+#include <vector>
 
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "absl/types/span.h"
 
 namespace gb {
 
@@ -67,8 +70,9 @@ class CliValues;
 
 namespace internal {
 
-// A value given on the command line. A bool flag that is given is true.
-using CliValue = std::variant<bool, std::string_view>;
+// A value given on the command line. A bool flag that is given is true, and an
+// enumeration is held as int64_t.
+using CliValue = std::variant<bool, std::string_view, int64_t, double>;
 
 template <typename T, typename Variant>
 inline constexpr bool kIsVariantAlternative = false;
@@ -76,9 +80,15 @@ template <typename T, typename... Types>
 inline constexpr bool kIsVariantAlternative<T, std::variant<Types...>> =
     (std::is_same_v<T, Types> || ...);
 
-// Whether `T` is a type a flag or argument value can have: one CliValue holds.
+// Whether `T` is a type a flag or argument value can have: an enumeration, or
+// one CliValue holds.
 template <typename T>
-inline constexpr bool kIsCliValueType = kIsVariantAlternative<T, CliValue>;
+inline constexpr bool kIsCliValueType =
+    std::is_enum_v<T> || kIsVariantAlternative<T, CliValue>;
+
+// The type a CliValue holds a value of type `T` as.
+template <typename T>
+using CliStoredType = std::conditional_t<std::is_enum_v<T>, int64_t, T>;
 
 // A member that makes a definition with lists fail to compile as constexpr.
 // MSVC miscompiles a constexpr aggregate with an initializer list member: the
@@ -94,9 +104,33 @@ struct CliNotConstexpr {
 
 // A function that judges whether a flag's or argument's value is acceptable.
 // It returns an error saying what is wrong with `value`, or OK if it is
-// acceptable.
+// acceptable. Common ones are in cli_validators.h.
 template <typename T>
 using CliValidator = absl::Status (*)(const T& value);
+
+// One name an enumeration flag or argument accepts, and the value it gives.
+template <typename T>
+struct CliName {
+  // The name, as given on the command line. This must not be empty.
+  std::string_view name;
+
+  // The value the name gives.
+  T value;
+
+  // Help for the name.
+  std::string_view help;
+};
+
+// A definition's `names` for a type that isn't an enumeration: it has none, so
+// any names given fail to compile.
+struct CliNoNames {};
+
+// The type of a definition's `names`: a list of CliName<T> for an
+// enumeration, and CliNoNames for any other type.
+template <typename T>
+using CliNames =
+    std::conditional_t<std::is_enum_v<T>, std::initializer_list<CliName<T>>,
+                       CliNoNames>;
 
 // A flag: `--name value`, `--name=value`, or `-n value`.
 //
@@ -112,7 +146,9 @@ struct CliFlag {
   // start with "-", or contain "=".
   std::string_view name;
 
-  // The flag's short name, without the leading "-", or 0 if it has none.
+  // The flag's short name, without the leading "-", or 0 if it has none. This
+  // must be a visible ASCII character other than "-", ".", or a digit, as a
+  // word starting with "-" then a digit or "." is a negative number.
   char short_name = 0;
 
   // What the flag's value is, as shown in help: "--output <file>". If this is
@@ -121,6 +157,11 @@ struct CliFlag {
 
   // Help for the flag.
   std::string_view help;
+
+  // The names an enumeration flag accepts. There must be at least one, and
+  // each must be unique. Only an enumeration has names: for any other type,
+  // names fail to compile.
+  CliNames<T> names;
 
   // The value if the flag isn't given, if any. This is not validated.
   std::optional<T> default_value;
@@ -152,6 +193,11 @@ struct CliArg {
   // required ones in a command.
   bool optional = false;
 
+  // The names an enumeration argument accepts. There must be at least one, and
+  // each must be unique. Only an enumeration has names: for any other type,
+  // names fail to compile.
+  CliNames<T> names;
+
   // The value if the argument isn't given, if any. Only an optional argument
   // can be left out, so a required argument's default is never used. This is
   // not validated.
@@ -174,15 +220,6 @@ struct CliFlagFields {
 
   // The flag's short name, without the leading "-", or 0 if it has none.
   char short_name = 0;
-
-  // What the flag's value is, as shown in help.
-  std::string_view value_name;
-
-  // Whether the flag has a default value.
-  bool has_default_value = false;
-
-  // Whether the flag has any validators.
-  bool has_validators = false;
 };
 
 // The fields every positional argument has.
@@ -194,32 +231,105 @@ struct CliArgFields {
   bool optional = false;
 };
 
+// Parses `text` into `value`, returning an error saying what is wrong with it
+// if it isn't of the type. A number must be only the number, with no
+// surrounding space: base 10 for an integer, and finite for floating point,
+// in the type's range. Any text is a string.
+absl::Status ParseCliText(std::string_view text, std::string_view* value);
+absl::Status ParseCliText(std::string_view text, int64_t* value);
+absl::Status ParseCliText(std::string_view text, double* value);
+
+// Returns the names in an enumeration's `names`.
+template <typename T>
+std::vector<std::string_view> GetCliNames(
+    std::initializer_list<CliName<T>> names) {
+  std::vector<std::string_view> result;
+  result.reserve(names.size());
+  for (const CliName<T>& name : names) {
+    result.push_back(name.name);
+  }
+  return result;
+}
+
+// Returns the index of `text` in `names`, or an error listing them if it
+// isn't one.
+absl::StatusOr<int> FindCliName(absl::Span<const std::string_view> names,
+                                std::string_view text);
+
+// Validates an enumeration's `names`, returning an error worded as for
+// ValidateCliValueFields().
+absl::Status ValidateCliNames(absl::Span<const std::string_view> names);
+
+template <typename T>
+CliValue ToCliValue(const T& value) {
+  return CliValue(static_cast<CliStoredType<T>>(value));
+}
+
+// `value` must hold the type for `T`.
+template <typename T>
+T FromCliValue(const CliValue& value) {
+  return static_cast<T>(*std::get_if<CliStoredType<T>>(&value));
+}
+
 // Returns `definition`'s value parsed from `text` and validated, or an error
 // saying what is wrong with it. `Definition` is CliFlag<T> or CliArg<T>.
 template <typename T, typename Definition>
 absl::StatusOr<CliValue> ParseCliValue(const void* definition,
                                        std::string_view text) {
   const auto* typed = static_cast<const Definition*>(definition);
-  const T value = text;
-  for (const CliValidator<T> validator : typed->validators) {
-    const absl::Status status = validator(value);
+  T value = {};
+  absl::Status status;
+  if constexpr (std::is_enum_v<T>) {
+    const absl::StatusOr<int> index =
+        FindCliName(GetCliNames(typed->names), text);
+    if (!index.ok()) {
+      return index.status();
+    }
+    value = typed->names.begin()[*index].value;
+  } else {
+    status = ParseCliText(text, &value);
     if (!status.ok()) {
       return status;
     }
   }
-  return CliValue(value);
+  for (const CliValidator<T> validator : typed->validators) {
+    status = validator(value);
+    if (!status.ok()) {
+      return status;
+    }
+  }
+  return ToCliValue(value);
+}
+
+// Validates the fields of `definition` that depend on its type, returning an
+// error saying what is wrong, worded to follow the definition's name ("flag
+// \"--mode\" ..."). `Definition` is CliFlag<T> or CliArg<T>.
+template <typename T, typename Definition>
+absl::Status ValidateCliValueFields([[maybe_unused]] const void* definition) {
+  if constexpr (std::is_same_v<T, bool>) {
+    const auto* typed = static_cast<const Definition*>(definition);
+    if (!typed->value_name.empty()) {
+      return absl::InvalidArgumentError(
+          "is a bool, so can't have a value name");
+    }
+    if (typed->default_value.has_value()) {
+      return absl::InvalidArgumentError(
+          "is a bool, so can't have a default value");
+    }
+    if (typed->validators.size() != 0) {
+      return absl::InvalidArgumentError("is a bool, so can't have validators");
+    }
+  } else if constexpr (std::is_enum_v<T>) {
+    const auto* typed = static_cast<const Definition*>(definition);
+    return ValidateCliNames(GetCliNames(typed->names));
+  }
+  return absl::OkStatus();
 }
 
 template <typename T>
 CliFlagFields GetCliFlagFields(const void* flag) {
   const auto* typed = static_cast<const CliFlag<T>*>(flag);
-  return {
-      .name = typed->name,
-      .short_name = typed->short_name,
-      .value_name = typed->value_name,
-      .has_default_value = typed->default_value.has_value(),
-      .has_validators = typed->validators.size() != 0,
-  };
+  return {.name = typed->name, .short_name = typed->short_name};
 }
 
 template <typename T>
@@ -236,7 +346,9 @@ class CliFlagRef {
  public:
   template <typename T>
   constexpr CliFlagRef(const CliFlag<T>* flag)
-      : definition_(flag), get_fields_(&GetCliFlagFields<T>) {
+      : definition_(flag),
+        get_fields_(&GetCliFlagFields<T>),
+        validate_(&ValidateCliValueFields<T, CliFlag<T>>) {
     if constexpr (!std::is_same_v<T, bool>) {
       parse_ = &ParseCliValue<T, CliFlag<T>>;
     }
@@ -246,6 +358,9 @@ class CliFlagRef {
   const void* GetDefinition() const { return definition_; }
 
   CliFlagFields GetFields() const { return get_fields_(definition_); }
+
+  // See ValidateCliValueFields().
+  absl::Status ValidateValueFields() const { return validate_(definition_); }
 
   // Returns whether the flag takes a value (it is not a CliFlag<bool>).
   bool TakesValue() const { return parse_ != nullptr; }
@@ -258,6 +373,7 @@ class CliFlagRef {
  private:
   const void* definition_;
   CliFlagFields (*get_fields_)(const void* flag);
+  absl::Status (*validate_)(const void* flag);
   absl::StatusOr<CliValue> (*parse_)(const void* flag,
                                      std::string_view text) = nullptr;
 };
@@ -272,12 +388,16 @@ class CliArgRef {
   constexpr CliArgRef(const CliArg<T>* arg)
       : definition_(arg),
         get_fields_(&GetCliArgFields<T>),
+        validate_(&ValidateCliValueFields<T, CliArg<T>>),
         parse_(&ParseCliValue<T, CliArg<T>>) {}
 
   // Returns the CliArg this refers to.
   const void* GetDefinition() const { return definition_; }
 
   CliArgFields GetFields() const { return get_fields_(definition_); }
+
+  // See ValidateCliValueFields().
+  absl::Status ValidateValueFields() const { return validate_(definition_); }
 
   // Returns the value parsed from `text`.
   absl::StatusOr<CliValue> Parse(std::string_view text) const {
@@ -287,6 +407,7 @@ class CliArgRef {
  private:
   const void* definition_;
   CliArgFields (*get_fields_)(const void* arg);
+  absl::Status (*validate_)(const void* arg);
   absl::StatusOr<CliValue> (*parse_)(const void* arg, std::string_view text);
 };
 

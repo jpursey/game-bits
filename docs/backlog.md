@@ -699,3 +699,21 @@ it. Have `GetMainArgs()` read the arguments as UTF-8 on Windows instead
 (`GetCommandLineW()` and `CommandLineToArgvW()`, converted with `ToUtf8()`),
 behind a `win_` / `gen_` split. Its API doesn't change: it already returns
 strings it owns.
+
+## Path validators for command lines
+
+- **Layers:** gb_cli
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** Command line library
+- **Background:** [Command line library](worklog/command_line_library.md)
+
+A validator that a path given on the command line exists (or is a file, or a
+folder), checked against the program's `gb::FileSystem` rather than
+`std::filesystem`. A validator is a plain function pointer in constant data, so
+the design question is how it gets the `FileSystem`. One way is a template
+taking the program's accessor (`gb::CliPathExists<GetFileSystem>`); another is
+a context that `ParseCommandLine()` passes to every validator. Command line
+paths are written the operating system's way, so the validator converts them
+with `LocalFileProtocol::ToOsRootPath()`, for a `FileSystem` whose default
+protocol is from `CreateOsRoot()`.
