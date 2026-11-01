@@ -428,21 +428,6 @@ lists across several meshes instead, checked by hand with
 `examples/render-check`'s "Go over the vertex limit" button, which should then
 keep drawing.
 
-## Register returns matching render types
-
-- **Layers:** render, imgui
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** [Code audit](worklog/code_audit.md)
-
-`RenderSystem`'s `Register*` functions fail for a name already registered, so
-code that may run more than once (such as each `ImGuiInstance`'s `Init()`)
-has to look each type up first and register it only if missing. That also
-never checks that the existing type matches. Have `Register*` return the
-existing type when its definition matches, and fail when it differs, then
-simplify `ImGuiInstance::Init()` to just register.
-
 ## Shared gb_render test support
 
 - **Layers:** render, imgui

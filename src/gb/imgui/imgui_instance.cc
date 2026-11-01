@@ -417,24 +417,14 @@ bool ImGuiInstance::Init() {
   auto* render_system = context_.GetPtr<RenderSystem>();
 
   const RenderDataType* scene_constants_type =
-      render_system->GetConstantsType(kSceneConstantsName);
-  if (scene_constants_type == nullptr) {
-    scene_constants_type =
-        render_system->RegisterConstantsType<ImGuiSceneConstants>(
-            kSceneConstantsName);
-  }
+      render_system->RegisterConstantsType<ImGuiSceneConstants>(
+          kSceneConstantsName);
   const RenderDataType* material_constants =
-      render_system->GetConstantsType(kSamplerInfoName);
-  if (material_constants == nullptr) {
-    material_constants =
-        render_system->RegisterConstantsType<float>(kSamplerInfoName);
-  }
-  const VertexType* vertex_type = render_system->GetVertexType(kVertexName);
-  if (vertex_type == nullptr) {
-    vertex_type = render_system->RegisterVertexType<ImGuiVertex>(
-        kVertexName,
-        {ShaderValue::kVec2, ShaderValue::kVec2, ShaderValue::kColor});
-  }
+      render_system->RegisterConstantsType<float>(kSamplerInfoName);
+  const VertexType* vertex_type =
+      render_system->RegisterVertexType<ImGuiVertex>(
+          kVertexName,
+          {ShaderValue::kVec2, ShaderValue::kVec2, ShaderValue::kColor});
   if (scene_constants_type == nullptr || material_constants == nullptr ||
       vertex_type == nullptr) {
     LOG(ERROR) << "Could not register ImGui render types";
@@ -445,10 +435,8 @@ bool ImGuiInstance::Init() {
           .SetShaders(ShaderType::kVertex)
           .SetLocation(BindingSet::kScene, 0)
           .SetConstants(scene_constants_type, DataVolatility::kPerFrame);
-  RenderSceneType* scene_type = render_system->GetSceneType(kSceneName);
-  if (scene_type == nullptr) {
-    scene_type = render_system->RegisterSceneType(kSceneName, {scene_binding});
-  }
+  RenderSceneType* scene_type =
+      render_system->RegisterSceneType(kSceneName, {scene_binding});
   scene_ = render_system->CreateScene(scene_type,
                                       context_.GetValue<int>(kKeySceneOrder));
   if (scene_ == nullptr) {

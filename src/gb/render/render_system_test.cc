@@ -269,8 +269,9 @@ TEST_F(RenderSystemTest, RegisterConstantsType) {
   EXPECT_EQ(type->GetSize(), sizeof(Vector3));
   EXPECT_EQ(render_system_->GetConstantsType("vec3"), type);
 
-  EXPECT_EQ(render_system_->RegisterConstantsType<Vector3>("vec3"), nullptr);
+  EXPECT_EQ(render_system_->RegisterConstantsType<Vector3>("vec3"), type);
   EXPECT_EQ(render_system_->RegisterConstantsType<Vector4>("vec3"), nullptr);
+  EXPECT_EQ(render_system_->GetConstantsType("vec3"), type);
   EXPECT_NE(render_system_->RegisterConstantsType<Vector3>("vec3b"), nullptr);
   EXPECT_NE(render_system_->RegisterConstantsType<Vector4>("vec4"), nullptr);
 }
@@ -292,10 +293,14 @@ TEST_F(RenderSystemTest, RegisterVertexType) {
 
   EXPECT_EQ(render_system_->RegisterVertexType<Vertex>(
                 "vertex", {ShaderValue::kVec3, ShaderValue::kVec2}),
-            nullptr);
+            type);
   EXPECT_EQ(render_system_->RegisterVertexType<Vector4>("vertex",
                                                         {ShaderValue::kVec4}),
             nullptr);
+  EXPECT_EQ(render_system_->RegisterVertexType<Vertex>(
+                "vertex", {ShaderValue::kVec2, ShaderValue::kVec3}),
+            nullptr);
+  EXPECT_EQ(render_system_->GetVertexType("vertex"), type);
   EXPECT_EQ(render_system_->RegisterVertexType<Vertex>("vertex2",
                                                        {ShaderValue::kVec3}),
             nullptr);
@@ -330,7 +335,10 @@ TEST_F(RenderSystemTest, RegisterSceneType) {
   EXPECT_THAT(scene_type->GetBindings(), ElementsAreArray(bindings));
   EXPECT_EQ(render_system_->GetSceneType("scene"), scene_type);
 
+  EXPECT_EQ(render_system_->RegisterSceneType("scene", bindings), scene_type);
   EXPECT_EQ(render_system_->RegisterSceneType("scene", {}), nullptr);
+  EXPECT_EQ(render_system_->RegisterSceneType("scene", {bindings[0]}), nullptr);
+  EXPECT_EQ(render_system_->GetSceneType("scene"), scene_type);
   EXPECT_NE(render_system_->RegisterSceneType("scene2", {}), nullptr);
 }
 

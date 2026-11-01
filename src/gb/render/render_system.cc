@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/algorithm/container.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/log/check.h"
 #include "absl/log/log.h"
@@ -498,19 +499,34 @@ RenderSystem::~RenderSystem() {
 
 const RenderDataType* RenderSystem::DoRegisterConstantsType(
     std::string_view name, TypeKey* type, size_t size) {
-  auto [it, added] = constants_types_.try_emplace(
-      absl::StrCat(name),
-      std::make_unique<RenderDataType>(RenderInternal{}, name, type, size));
-  if (!added) {
-    LOG(ERROR) << "Constants type " << name << " is already registered.";
-    return nullptr;
+  if (auto it = constants_types_.find(name); it != constants_types_.end()) {
+    if (it->second->GetType() != type) {
+      LOG(ERROR) << "Constants type " << name
+                 << " is already registered with a different type.";
+      return nullptr;
+    }
+    return it->second.get();
   }
-  return it->second.get();
+  auto& constants_type = constants_types_[name];
+  constants_type =
+      std::make_unique<RenderDataType>(RenderInternal{}, name, type, size);
+  return constants_type.get();
 }
 
 const VertexType* RenderSystem::DoRegisterVertexType(
     std::string_view name, TypeKey* type, size_t size,
     absl::Span<const ShaderValue> attributes) {
+  if (auto it = vertex_types_.find(name); it != vertex_types_.end()) {
+    if (it->second->GetType() != type ||
+        !absl::c_equal(it->second->GetAttributes(), attributes)) {
+      LOG(ERROR) << "Vertex type " << name
+                 << " is already registered with a different type or "
+                    "attributes.";
+      return nullptr;
+    }
+    return it->second.get();
+  }
+
   // Validate that the type size matches the expected size based on the
   // attributes.
   size_t expected_size = 0;
@@ -655,14 +671,10 @@ const VertexType* RenderSystem::DoRegisterVertexType(
     return nullptr;
   }
 
-  auto [it, added] = vertex_types_.try_emplace(
-      absl::StrCat(name), std::make_unique<VertexType>(RenderInternal{}, name,
-                                                       type, size, attributes));
-  if (!added) {
-    LOG(ERROR) << "Vertex type " << name << " is already registered.";
-    return nullptr;
-  }
-  return it->second.get();
+  auto& vertex_type = vertex_types_[name];
+  vertex_type = std::make_unique<VertexType>(RenderInternal{}, name, type, size,
+                                             attributes);
+  return vertex_type.get();
 }
 
 RenderSceneType* RenderSystem::RegisterSceneType(
@@ -671,19 +683,23 @@ RenderSceneType* RenderSystem::RegisterSceneType(
   if (!GetUniqueBindings(bindings, &scene_bindings)) {
     return nullptr;
   }
+  if (auto it = scene_types_.find(name); it != scene_types_.end()) {
+    if (!absl::c_equal(it->second->GetBindings(), scene_bindings)) {
+      LOG(ERROR) << "Scene type " << name
+                 << " is already registered with different bindings.";
+      return nullptr;
+    }
+    return it->second.get();
+  }
 
   auto scene_type = backend_->CreateSceneType({}, scene_bindings);
   if (scene_type == nullptr) {
     return nullptr;
   }
   scene_type->SetName({}, name);
-  auto [it, added] =
-      scene_types_.try_emplace(absl::StrCat(name), std::move(scene_type));
-  if (!added) {
-    LOG(ERROR) << "Scene type " << name << " is already registered.";
-    return nullptr;
-  }
-  return it->second.get();
+  auto& registered_scene_type = scene_types_[name];
+  registered_scene_type = std::move(scene_type);
+  return registered_scene_type.get();
 }
 
 const RenderDataType* RenderSystem::GetConstantsType(

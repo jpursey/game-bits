@@ -132,6 +132,9 @@ class RenderSystem final {
   // types and provide type safety when setting constant data. This must be a
   // trivially copyable type that conforms to the layout specification of the
   // underlying graphics API (stb140 for OpenGL or Vulkan).
+  //
+  // If the name is already registered, this returns the existing type if it
+  // is for the same Type, and fails (returning null) otherwise.
   template <typename Type>
   const RenderDataType* RegisterConstantsType(std::string_view name);
 
@@ -139,6 +142,9 @@ class RenderSystem final {
   // types and provide type safety when setting constant data. This must be a
   // trivially copyable type that is packed, with ShaderValue at its natural
   // alignment (1, 2, or 4 bytes).
+  //
+  // If the name is already registered, this returns the existing type if it
+  // has the same Type and attributes, and fails (returning null) otherwise.
   template <typename Type>
   const VertexType* RegisterVertexType(
       std::string_view name, absl::Span<const ShaderValue> attributes);
@@ -151,6 +157,10 @@ class RenderSystem final {
   //
   // After registering a scene type, any binding data defaults should be set
   // before calling CreateScene or CreateMaterialType.
+  //
+  // If the name is already registered, this returns the existing scene type
+  // if it has the same bindings, and fails (returning null) otherwise. The
+  // existing scene type keeps its binding data defaults.
   RenderSceneType* RegisterSceneType(std::string_view name,
                                      absl::Span<const Binding> bindings);
 
