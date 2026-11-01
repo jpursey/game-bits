@@ -70,7 +70,7 @@ stays working.
 - **Depends on:** *Multithreaded profiles*, *Fiber profile timers*
 - **Requested by:** Terra Diem *Profile the world's jobs*
 - **Background:** [Multithreaded profiles](worklog/multithreaded_profiles.md),
-  *Fiber-aware profiling*
+  [Fiber-aware profiling](worklog/fiber_aware_profiling.md)
 
 Let `FiberJobSystem` profile the jobs it runs, so a program can see whether its
 job threads are kept busy and where their time goes, without timing every job
@@ -150,6 +150,22 @@ Count the timed points that end in each frame on every joined Profiler too
 (each measures its own point cost), and show the other threads' cost beside the
 main thread's, as the self time by kind does. The budget is a fraction of the
 main thread's frame, so it should stay against the main thread's cost alone.
+
+## Profile slots on cache lines
+
+- **Layers:** profile
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Fiber-aware profiling](worklog/fiber_aware_profiling.md)
+
+Each point's `Profiler::Slot` is 72 bytes, packed in one array, so the 56 bytes
+every timed point writes (its totals, wait, and frame part) cross a cache line
+boundary for many points, depending on the point's index. The value fields,
+which only value points use, make up the rest. Measure a scope in a loop over
+points at several indices to see what crossing costs, and if it matters, move
+the value fields to an array of their own and align each slot to a cache line,
+so every timed point touches one line.
 
 ## Pipeline state per material
 
