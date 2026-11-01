@@ -77,6 +77,13 @@ namespace gb {
 // CHECK-fails. The first Profiler sets the program's fiber switch callbacks, so
 // no other library can set its own.
 //
+// The time from a fiber's suspending to its resuming is the wait time of the
+// innermost timed point open on it, as self time is charged to the innermost
+// point. It is recorded as the fiber resumes, in the Profiler of the thread it
+// resumes on, so it counts in the frame in progress then. It is measured from
+// one thread's timestamp counter to another's, which agree for an invariant
+// counter (and for FakeProfilerCpus a test keeps in step).
+//
 // There can be at most one Profiler per thread, and it must be destroyed on the
 // thread that created it, outside any timed point. This class is
 // thread-compatible, and only its thread may call it.
@@ -175,8 +182,13 @@ class Profiler final {
   // recorded). Points are grouped by kind and sorted by name, so two reports of
   // the same program diff cleanly.
   //
-  // A main Profiler's counts and self times are the sum over every thread, and
-  // each value is the one set most recently on any thread.
+  // A main Profiler's counts, self times, and wait times are the sum over
+  // every thread, and each value is the one set most recently on any thread.
+  //
+  // Once any point has waited, the points table also has each point's wait
+  // time in total and per call, and a frame's breakdown, once a point in it
+  // has waited, each point's wait in the frame. A point that has waited but
+  // not yet ended counts as recorded.
   //
   // The tick rate converts ticks to time. A rate that changes between runs
   // makes every time wrong by the same factor.
@@ -227,6 +239,10 @@ class Profiler final {
   // Returns the total self time of a frame, scope, or call.
   absl::Duration GetSelfTime(std::string_view name) const;
 
+  // Returns the total wait time of a frame, scope, or call (see the class
+  // comment).
+  absl::Duration GetWaitTime(std::string_view name) const;
+
   // Returns the latest value set for a value.
   int64_t GetValue(std::string_view name) const;
 
@@ -236,7 +252,8 @@ class Profiler final {
 
   // Clears everything recorded, on every thread for a main Profiler.
   // CHECK-fails inside a timed point, or on a joined Profiler. Timed points
-  // open on a suspended fiber record all their time once they end.
+  // open on a suspended fiber record all their time once they end, and their
+  // whole wait once it resumes.
   void Reset();
 
  private:
@@ -289,6 +306,10 @@ class Profiler final {
     // last resumed, which are already in the busy time of the threads they ran
     // on.
     int64_t prior_run_ticks = 0;
+
+    // For the innermost timing while its fiber is suspended, the ticks when it
+    // suspended.
+    int64_t suspend_ticks = 0;
   };
 
   // An int64_t that only one thread writes, and any thread may read. Reads and
@@ -328,6 +349,10 @@ class Profiler final {
     SingleWriterInt64 count;
     SingleWriterInt64 self_ticks;
 
+    // A timed point's wait (see GetWaitTime()), which only a fiber resuming
+    // adds to.
+    SingleWriterInt64 wait_ticks;
+
     // The same, for only the frame numbered `frame` (see frame_). They are
     // reset by the first add in a new frame, so nothing needs clearing when a
     // frame starts, and `frame` is set after them (with SetRelease()), so a
@@ -336,6 +361,7 @@ class Profiler final {
     SingleWriterInt64 frame;
     SingleWriterInt64 frame_count;
     SingleWriterInt64 frame_self_ticks;
+    SingleWriterInt64 frame_wait_ticks;
 
     // A value point's latest value, and when it was set.
     SingleWriterInt64 value;
@@ -344,10 +370,15 @@ class Profiler final {
 
   // A point's totals, as the report and the test readers see them.
   struct PointTotals {
+    // Returns whether the point has recorded anything. A point that has
+    // waited, but not yet ended, has.
+    bool IsRecorded() const { return count > 0 || wait_ticks > 0; }
+
     int64_t count = 0;
     int64_t self_ticks = 0;
     int64_t value = 0;
     int64_t value_ticks = 0;
+    int64_t wait_ticks = 0;
   };
 
   // The Profilers joined to this one under a name: at most one that exists,
@@ -401,6 +432,8 @@ class Profiler final {
 
       // The part of `self_ticks` on joined Profilers' threads.
       int64_t joined_self_ticks = 0;
+
+      int64_t wait_ticks = 0;
     };
 
     int64_t ticks = 0;
@@ -450,10 +483,11 @@ class Profiler final {
   // The fiber switch callbacks (see gb/thread/fiber.h). When a fiber
   // suspends, SuspendTimings() takes its open timings off the thread's stack,
   // with the ticks each has run so far, adds the outermost's run on this
-  // thread to its busy time, and returns the innermost, or null if
-  // there are none. When it resumes, ResumeTimings() makes them the stack of
-  // the thread it resumed on, ending in that thread's Profiler, or in none if
-  // it has none.
+  // thread to its busy time, notes the suspend ticks in the innermost, and
+  // returns it, or null if there are none. When it resumes, ResumeTimings()
+  // adds the wait to the innermost's point and makes them the stack of the
+  // thread it resumed on, ending in that thread's Profiler, or in none if it
+  // has none.
   static void* SuspendTimings();
   static void ResumeTimings(void* state);
 
@@ -501,6 +535,7 @@ class Profiler final {
     if (slot.frame.Get() != frame) {
       slot.frame_count.Set(0);
       slot.frame_self_ticks.Set(0);
+      slot.frame_wait_ticks.Set(0);
       slot.frame.SetRelease(frame);
     }
     return slot;
@@ -517,6 +552,11 @@ class Profiler final {
     Slot& slot = GetFrameSlot(index);
     slot.count.Add(count);
     slot.frame_count.Add(count);
+  }
+  void AddWaitTime(int index, int64_t wait_ticks) {
+    Slot& slot = GetFrameSlot(index);
+    slot.wait_ticks.Add(wait_ticks);
+    slot.frame_wait_ticks.Add(wait_ticks);
   }
   void SetValue(int index, int64_t value) {
     Slot& slot = slots_[index];

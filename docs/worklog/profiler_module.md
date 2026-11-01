@@ -65,7 +65,9 @@ std::string report = profiler.GetReport();
   each side of a wait, and a timed point can span the wait, as
   [Fiber-aware profiling](fiber_aware_profiling.md) describes. A point reached
   after the fiber resumed on another thread is recorded in that thread's
-  Profiler.
+  Profiler. The time a fiber spends suspended is the wait time of the
+  innermost timed point open on it, which the report shows once any point has
+  waited.
 - **Frames:** `GetFrameSummary()` gives the frame count, total, average, p50,
   p90, p99, and max, from a histogram with 8 buckets for each power of two
   (percentiles within 1/16th, exact below 16 ticks). The breakdown by point of
@@ -96,7 +98,7 @@ std::string report = profiler.GetReport();
 - **Slow frames:** a frame longer than `slow_frame` calls `on_slow_frame` with
   that frame's breakdown, just after the frame ends, so any points the callback
   reaches are outside the frame.
-- **For tests:** `GetCount()`, `GetSelfTime()`, `GetValue()`,
+- **For tests:** `GetCount()`, `GetSelfTime()`, `GetWaitTime()`, `GetValue()`,
   `GetSlowestFrameCount()`, and `GetSlowestFrameSelfTime()` read a point by
   name, and `Reset()` clears everything recorded. A `FakeProfilerCpu` in the
   options replaces the CPU's timestamp counter, so no test reads real time. It

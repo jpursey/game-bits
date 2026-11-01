@@ -386,6 +386,165 @@ second       300ns   300ns  30.0%     100%        -
       << report;
 }
 
+TEST_F(ProfileTimerSwitchTest, InnermostScopeWaitsWhileOtherFiberRuns) {
+  CreateSwitchingFiber(+[](void* user_data) {
+    auto& fiber = *static_cast<SwitchingFiber*>(user_data);
+    fiber.ticks->Advance(10);
+    SwitchBack(fiber);
+  });
+  RunFiberThread(
+      fiber_, +[](void* user_data) {
+        auto& fiber = *static_cast<SwitchingFiber*>(user_data);
+        FakeProfilerCpu ticks;
+        Profiler profiler({.fake_cpu = &ticks});
+        {
+          ProfileScope<"SwitchTest/WaitOuter"> outer;
+          ticks.Advance(1);
+          {
+            ProfileScope<"SwitchTest/WaitInner"> inner;
+            ticks.Advance(2);
+            RunFiberHere(fiber, ticks);
+            ticks.Advance(4);
+          }
+        }
+        EXPECT_EQ(profiler.GetWaitTime("SwitchTest/WaitInner"),
+                  absl::Nanoseconds(10));
+        EXPECT_EQ(profiler.GetSelfTime("SwitchTest/WaitInner"),
+                  absl::Nanoseconds(6));
+        EXPECT_EQ(profiler.GetWaitTime("SwitchTest/WaitOuter"),
+                  absl::ZeroDuration());
+      });
+}
+
+// The second thread's ticks are 20 ahead of where the first's were when the
+// fiber suspended, so the two threads' ticks are in step.
+TEST_F(ProfileTimerSwitchTest, WaitIsRecordedWhereFiberResumes) {
+  CreateSwitchingFiber(+[](void* user_data) {
+    auto& fiber = *static_cast<SwitchingFiber*>(user_data);
+    {
+      ProfileScope<"SwitchTest/MovedWait"> scope;
+      fiber.ticks->Advance(1);
+      SwitchBack(fiber);
+      fiber.ticks->Advance(2);
+    }
+    SwitchBack(fiber);
+  });
+  RunFiberThread(
+      fiber_, +[](void* user_data) {
+        auto& fiber = *static_cast<SwitchingFiber*>(user_data);
+        FakeProfilerCpu ticks;
+        Profiler profiler({.fake_cpu = &ticks});
+        RunFiberHere(fiber, ticks);
+        EXPECT_EQ(profiler.GetWaitTime("SwitchTest/MovedWait"),
+                  absl::ZeroDuration());
+      });
+  RunFiberThread(
+      fiber_, +[](void* user_data) {
+        auto& fiber = *static_cast<SwitchingFiber*>(user_data);
+        FakeProfilerCpu ticks;
+        ticks.Advance(21);
+        Profiler profiler({.fake_cpu = &ticks});
+        RunFiberHere(fiber, ticks);
+        EXPECT_EQ(profiler.GetWaitTime("SwitchTest/MovedWait"),
+                  absl::Nanoseconds(20));
+        EXPECT_EQ(profiler.GetSelfTime("SwitchTest/MovedWait"),
+                  absl::Nanoseconds(3));
+      });
+}
+
+// The scope waits from the first joined thread to the second, which is
+// destroyed during the frame with the scope still open, so the scope has
+// waited but has no calls.
+TEST_F(ProfileTimerSwitchTest, JoinedWaitInMainReport) {
+  CreateSwitchingFiber(+[](void* user_data) {
+    auto& fiber = *static_cast<SwitchingFiber*>(user_data);
+    ProfileScope<"SwitchTest/JoinedWait"> scope;
+    SwitchBack(fiber);
+    fiber.ticks->Advance(1);
+    SwitchBack(fiber);
+  });
+  FakeProfilerCpu ticks;
+  Profiler main({.fake_cpu = &ticks});
+  fiber_.main = &main;
+  {
+    ProfileFrame<"SwitchTest/WaitFrame"> frame;
+    ticks.Advance(100);
+    RunFiberThread(
+        fiber_, +[](void* user_data) {
+          auto& fiber = *static_cast<SwitchingFiber*>(user_data);
+          FakeProfilerCpu ticks;
+          Profiler profiler({.fake_cpu = &ticks, .main = fiber.main});
+          RunFiberHere(fiber, ticks);
+        });
+    RunFiberThread(
+        fiber_, +[](void* user_data) {
+          auto& fiber = *static_cast<SwitchingFiber*>(user_data);
+          FakeProfilerCpu ticks;
+          ticks.Advance(30);
+          Profiler profiler({.fake_cpu = &ticks, .main = fiber.main});
+          RunFiberHere(fiber, ticks);
+        });
+  }
+  EXPECT_EQ(main.GetWaitTime("SwitchTest/JoinedWait"), absl::Nanoseconds(30));
+  const std::string report = main.GetReport();
+  EXPECT_NE(report.find(R"(
+Point                  Kind   Count  Count/frame   Self  Self/call  Self/frame  Share    Wait  Wait/call
+SwitchTest/WaitFrame   frame      1         1.00  100ns      100ns       100ns   100%       0          0
+SwitchTest/JoinedWait  scope      0         0.00      0          -           0  0.00%  30.0ns          -
+)"),
+            std::string::npos)
+      << report;
+  EXPECT_NE(report.find(R"(
+Point                  Kind   Count   Self    Wait
+SwitchTest/WaitFrame   frame      1  100ns       0
+SwitchTest/JoinedWait  scope      0      0  30.0ns
+)"),
+            std::string::npos)
+      << report;
+}
+
+// A joined thread that runs `fiber` twice, so the fiber's scope waits, and then
+// stays alive until `reset` is notified.
+struct LiveJoinedThread {
+  SwitchingFiber* fiber = nullptr;
+  absl::Notification waited;
+  absl::Notification reset;
+};
+
+TEST_F(ProfileTimerSwitchTest, ResetClearsLiveJoinedWait) {
+  CreateSwitchingFiber(+[](void* user_data) {
+    auto& fiber = *static_cast<SwitchingFiber*>(user_data);
+    {
+      ProfileScope<"SwitchTest/LiveWait"> scope;
+      SwitchBack(fiber);
+    }
+    SwitchBack(fiber);
+  });
+  FakeProfilerCpu ticks;
+  Profiler main({.fake_cpu = &ticks});
+  fiber_.main = &main;
+  LiveJoinedThread live = {.fiber = &fiber_};
+  auto threads = CreateFiberThreads(
+      std::vector<PlacedThread>(1), {}, 0, &live, +[](void* user_data) {
+        auto& live = *static_cast<LiveJoinedThread*>(user_data);
+        FakeProfilerCpu ticks;
+        Profiler profiler({.fake_cpu = &ticks, .main = live.fiber->main});
+        RunFiberHere(*live.fiber, ticks);
+        ticks.Advance(30);
+        RunFiberHere(*live.fiber, ticks);
+        live.waited.Notify();
+        live.reset.WaitForNotification();
+      });
+  ASSERT_EQ(threads.size(), 1);
+  live.waited.WaitForNotification();
+  EXPECT_EQ(main.GetWaitTime("SwitchTest/LiveWait"), absl::Nanoseconds(30));
+  main.Reset();
+  EXPECT_EQ(main.GetWaitTime("SwitchTest/LiveWait"), absl::ZeroDuration());
+  live.reset.Notify();
+  JoinThread(threads[0].thread);
+  DeleteFiber(threads[0].fiber);
+}
+
 // The fiber starts a scope on a thread with a Profiler, resumes on one with
 // none, and ends the scope after resuming on a third thread with a Profiler.
 TEST_F(ProfileTimerSwitchTest, ScopeResumedWithoutProfilerRecordsNothing) {

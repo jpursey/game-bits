@@ -138,12 +138,22 @@ std::string_view GetKindName(ProfilePoint::Kind kind) {
   return "unknown";
 }
 
-// Formats a point's self time, which only a timed point has.
-std::string FormatSelfTime(ProfilePoint::Kind kind, absl::Duration self_time) {
+// Formats a point's self time or wait time, which only a timed point has.
+std::string FormatPointTime(ProfilePoint::Kind kind, absl::Duration time) {
   if (!absl::c_linear_search(kTimedKinds, kind)) {
     return std::string(kNotApplicable);
   }
-  return FormatTime(self_time);
+  return FormatTime(time);
+}
+
+// As FormatPointTime(), for `time` per call over `count` calls. A point that
+// has waited, but not yet ended, has no calls, and so no time per call.
+std::string FormatPerCall(ProfilePoint::Kind kind, absl::Duration time,
+                          int64_t count) {
+  if (count == 0) {
+    return std::string(kNotApplicable);
+  }
+  return FormatPointTime(kind, time / count);
 }
 
 // Formats `part` as a share of `whole`, as a percentage with three significant
@@ -357,6 +367,7 @@ void* Profiler::SuspendTimings() {
   if (profiler->main_ != nullptr) {
     profiler->AddBusyTime(run_ticks);
   }
+  profiler->top_->suspend_ticks = ticks;
   return std::exchange(profiler->top_, nullptr);
 }
 
@@ -375,6 +386,11 @@ void Profiler::ResumeTimings(void* state) {
   CHECK(profiler->top_ == nullptr)
       << "A fiber resumed on a thread with timed points open";
   const int64_t ticks = profiler->ReadTicks();
+
+  // The wait is measured across two threads' ticks, which may disagree by a
+  // little, so it is never less than zero.
+  profiler->AddWaitTime(top->index,
+                        std::max<int64_t>(ticks - top->suspend_ticks, 0));
   for (Timing* timing = top; timing != nullptr; timing = timing->parent) {
     timing->start_ticks = ticks - timing->start_ticks;
     timing->profiler = profiler;
@@ -417,6 +433,10 @@ int64_t Profiler::GetCount(std::string_view name) const {
 
 absl::Duration Profiler::GetSelfTime(std::string_view name) const {
   return TicksToDuration(FindPointTotals(name, kTimedKinds).self_ticks);
+}
+
+absl::Duration Profiler::GetWaitTime(std::string_view name) const {
+  return TicksToDuration(FindPointTotals(name, kTimedKinds).wait_ticks);
 }
 
 int64_t Profiler::GetValue(std::string_view name) const {
@@ -576,7 +596,8 @@ void Profiler::AddOwnFramePoints(
                   {.index = i,
                    .count = slot.frame_count.Get(),
                    .self_ticks = self_ticks,
-                   .joined_self_ticks = main_ != nullptr ? self_ticks : 0});
+                   .joined_self_ticks = main_ != nullptr ? self_ticks : 0,
+                   .wait_ticks = slot.frame_wait_ticks.Get()});
   }
 }
 
@@ -586,6 +607,7 @@ void Profiler::AddFramePoint(FrameBreakdown::Point& point,
   point.count += part.count;
   point.self_ticks += part.self_ticks;
   point.joined_self_ticks += part.joined_self_ticks;
+  point.wait_ticks += part.wait_ticks;
 }
 
 void Profiler::AddBusyTime(int64_t ticks) {
@@ -649,7 +671,7 @@ void Profiler::AppendValues(std::string& report,
                             absl::Span<const ReportPoint> points) const {
   Table table = {{"Value", "Latest"}};
   for (const auto& [point, totals] : points) {
-    if (point.GetKind() == ProfilePoint::Kind::kValue && totals.count > 0) {
+    if (point.GetKind() == ProfilePoint::Kind::kValue && totals.IsRecorded()) {
       table.push_back(
           {std::string(point.GetName()), absl::StrCat(totals.value)});
     }
@@ -781,23 +803,37 @@ void Profiler::AppendPoints(std::string& report,
                             absl::Span<const ReportPoint> points) const {
   Table table = {{"Point", "Kind", "Count", "Count/frame", "Self", "Self/call",
                   "Self/frame", "Share"}};
+  const bool has_waits = absl::c_any_of(points, [](const ReportPoint& point) {
+    return point.second.wait_ticks > 0;
+  });
+  if (has_waits) {
+    table[0].push_back("Wait");
+    table[0].push_back("Wait/call");
+  }
   const bool has_frames = frames_ > 0;
   for (const auto& [point, totals] : points) {
-    if (point.GetKind() == ProfilePoint::Kind::kValue || totals.count == 0) {
+    if (point.GetKind() == ProfilePoint::Kind::kValue || !totals.IsRecorded()) {
       continue;
     }
     const ProfilePoint::Kind kind = point.GetKind();
     const absl::Duration self_time = TicksToDuration(totals.self_ticks);
-    table.push_back(
-        {std::string(point.GetName()), std::string(GetKindName(kind)),
-         absl::StrCat(totals.count),
-         has_frames ? FormatNumber(static_cast<double>(totals.count) / frames_)
-                    : std::string(kNotApplicable),
-         FormatSelfTime(kind, self_time),
-         FormatSelfTime(kind, self_time / totals.count),
-         has_frames ? FormatSelfTime(kind, self_time / frames_)
-                    : std::string(kNotApplicable),
-         FormatShare(kind, totals.self_ticks, total_frame_ticks_)});
+    std::vector<std::string>& row = table.emplace_back();
+    row.push_back(std::string(point.GetName()));
+    row.push_back(std::string(GetKindName(kind)));
+    row.push_back(absl::StrCat(totals.count));
+    row.push_back(
+        has_frames ? FormatNumber(static_cast<double>(totals.count) / frames_)
+                   : std::string(kNotApplicable));
+    row.push_back(FormatPointTime(kind, self_time));
+    row.push_back(FormatPerCall(kind, self_time, totals.count));
+    row.push_back(has_frames ? FormatPointTime(kind, self_time / frames_)
+                             : std::string(kNotApplicable));
+    row.push_back(FormatShare(kind, totals.self_ticks, total_frame_ticks_));
+    if (has_waits) {
+      const absl::Duration wait_time = TicksToDuration(totals.wait_ticks);
+      row.push_back(FormatPointTime(kind, wait_time));
+      row.push_back(FormatPerCall(kind, wait_time, totals.count));
+    }
   }
   absl::StrAppend(&report, "\n");
   AppendTable(report, table, 2);
@@ -854,12 +890,24 @@ void Profiler::AppendFrame(std::string& report, std::string_view title,
   absl::StrAppend(&report, "\n");
 
   Table table = {{"Point", "Kind", "Count", "Self"}};
+  const bool has_waits = absl::c_any_of(
+      frame.points,
+      [](const FrameBreakdown::Point& point) { return point.wait_ticks > 0; });
+  if (has_waits) {
+    table[0].push_back("Wait");
+  }
   for (const auto& [point, frame_point] : points) {
-    table.push_back({std::string(point.GetName()),
-                     std::string(GetKindName(point.GetKind())),
-                     absl::StrCat(frame_point.count),
-                     FormatSelfTime(point.GetKind(),
-                                    TicksToDuration(frame_point.self_ticks))});
+    const ProfilePoint::Kind kind = point.GetKind();
+    std::vector<std::string>& row = table.emplace_back();
+    row.push_back(std::string(point.GetName()));
+    row.push_back(std::string(GetKindName(kind)));
+    row.push_back(absl::StrCat(frame_point.count));
+    row.push_back(
+        FormatPointTime(kind, TicksToDuration(frame_point.self_ticks)));
+    if (has_waits) {
+      row.push_back(
+          FormatPointTime(kind, TicksToDuration(frame_point.wait_ticks)));
+    }
   }
   AppendTable(report, table, 2);
 }
@@ -907,12 +955,14 @@ void Profiler::AddOwnTotals(absl::Span<PointTotals> totals,
     PointTotals own = {.count = slot.count.Get(),
                        .self_ticks = slot.self_ticks.Get(),
                        .value = slot.value.Get(),
-                       .value_ticks = slot.value_ticks.Get()};
+                       .value_ticks = slot.value_ticks.Get(),
+                       .wait_ticks = slot.wait_ticks.Get()};
 
     // Points registered since the baseline was gathered have none.
     if (i < baseline_count) {
       own.count -= baseline[i].count;
       own.self_ticks -= baseline[i].self_ticks;
+      own.wait_ticks -= baseline[i].wait_ticks;
     }
     AddPointTotals(totals[i], own);
   }
@@ -927,6 +977,7 @@ void Profiler::AddPointTotals(PointTotals& totals, const PointTotals& thread) {
   }
   totals.count += thread.count;
   totals.self_ticks += thread.self_ticks;
+  totals.wait_ticks += thread.wait_ticks;
 }
 
 Profiler::PointTotals Profiler::FindPointTotals(

@@ -38,9 +38,10 @@ thread a Profiler, builds on this.
   time of the innermost timed point open on it, as self time is charged to the
   innermost point. It is recorded as the fiber resumes, in the Profiler of the
   thread it resumes on, so it counts in the frame in progress then.
-  - The report's points table gains Wait and Wait/call columns, and frame
-    breakdowns a Wait column, once any point has waited, so the reports of
-    programs that never wait don't change. `GetWaitTime()` reads it in tests.
+  - The report's points table gains Wait and Wait/call columns once any point
+    has waited, and a frame breakdown a Wait column once a point in that frame
+    has, so the reports of programs that never wait don't change.
+    `GetWaitTime()` reads it in tests.
   - It is measured from one thread's ticks to another's, which agree for the
     CPU's timestamp counter. Tests with a `FakeProfilerCpu` per thread keep
     them in step.
@@ -138,11 +139,18 @@ running fiber's timings depends on every switch going through
 
 ### Wait time (gb/profile)
 
-- `Slot` gains `wait_ticks` and `frame_wait_ticks`, after the value fields, so
-  the fields a timed point writes stay together. Only a resume writes them.
+- `Slot` gains `wait_ticks` and `frame_wait_ticks`, before the value fields,
+  so the fields a timed point writes stay together: only a resume adds to
+  them, but a new frame's first add resets `frame_wait_ticks` with the
+  frame's other parts.
+- `Timing` gains `suspend_ticks`, set in the innermost as its fiber suspends.
+  The wait is never less than zero, as the two threads' ticks can disagree by
+  a little.
 - `PointTotals` and `FrameBreakdown::Point` gain `wait_ticks`, gathered,
   folded, and kept for destroyed Profilers as self ticks are.
-- A point that has waited, but not yet ended, counts as recorded.
+- A point that has waited, but not yet ended, counts as recorded, with no
+  self or wait per call. The report decides on the points table's Wait
+  columns from every point, and on a frame breakdown's from that frame's.
 
 ### To confirm
 
@@ -204,7 +212,7 @@ Depends on: CL1.
 - Performance: a timed point, and a switch with the profiler's callbacks, with
   no open timings and with three.
 
-### CL3 [ ] profile: Wait time
+### CL3 [x] profile: Wait time
 
 Depends on: CL2.
 
