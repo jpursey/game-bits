@@ -66,7 +66,7 @@ int main(int argc, char* argv[]) {
 
 - **Constant data:** every definition is a `const` aggregate, written with
   designated initializers, with static storage (at namespace scope, or
-  `static` in a function). Its lists (`flags`, `args`, `commands`, `names`,
+  `static` in a function). Its lists (`flags`, `args`, `commands`, `choices`,
   `validators`) are initializer lists, so a definition holds pointers into
   constant data. It is trivially destructible, so it is safe as a global under
   the Google style rule for static storage. The cost is that a definition must
@@ -91,14 +91,15 @@ int main(int argc, char* argv[]) {
 - **Positional arguments:** a `CliArg<T>` has a name, shown in help as
   `<name>`, and help. Optional arguments (`.optional = true`) follow the
   required ones, and may have a `default_value`.
-- **Value types:** `std::string_view`, `int64_t`, `double`, and enumerations,
-  and `bool` for flags only. Numbers are only the largest size of each kind, as
-  a command line has no use for smaller ones, and the program converts them if
-  it needs to. An enumeration's flag or argument lists the names it accepts in
-  `names`, each a `CliName<T>` of a name, its value, and optional help. For any
-  other type `names` is an empty struct, so names given to it fail to compile.
-  Any other value type fails to compile. A string value points into the
+- **Value types:** `std::string_view`, `int64_t`, and `double`, and `bool` for
+  flags only. Any other value type fails to compile. Numbers are only the
+  largest size of each kind, as a command line has no use for smaller ones,
+  and the program converts them if it needs to. A string value points into the
   arguments, which must outlive the values.
+- **Choices:** a string flag or argument that accepts only some values lists
+  them in `choices`, each a `CliChoice` of a name and optional help. There are
+  no enumeration values: the program maps the chosen string to its own enum if
+  it has one. Choices on any other type are a definition error.
 - **Numbers:** the text must be exactly the number, with no surrounding space:
   a base 10 integer with an optional sign, or a finite floating point number
   (not `inf` or `nan`), in range. Abseil's `SimpleAtoi()` and `SimpleAtod()`
@@ -118,10 +119,11 @@ int main(int argc, char* argv[]) {
   commands above it), names starting with `-`, a short name that is `-`, `.`,
   a digit, or not visible ASCII, `--help` or `-h` (see Help), an
   optional argument before a required one, arguments and subcommands on one
-  command, a bool flag with a value name, default, or validators, or an
-  enumeration without names or with an empty or duplicate one, or one
-  starting with `-` (which a positional argument would parse as a flag). `ParseCommandLine()` CHECKs it, so
-  any run of the program finds a bad definition.
+  command, a bool flag with a value name, default, or validators, choices on a
+  type other than a string, or a choice that is empty, a duplicate, or starts
+  with `-` (which a positional argument would parse as a flag).
+  `ParseCommandLine()` CHECKs it, so any run of the program finds a bad
+  definition.
 
 ### Parsing
 
@@ -146,7 +148,7 @@ absl::StatusOr<CliValues> ParseCommandLine(
   can be read by the command that runs.
 - Errors, as an `InvalidArgument` status whose message is ready to show: an
   unknown flag or command, a flag given twice, a missing value, a value that
-  isn't of the type (or one of the names), a value a validator rejects, a
+  isn't of the type (or one of the choices), a value a validator rejects, a
   missing required argument, or an extra argument. Each names the command
   path, and says how to get help: `oz3asm: unknown flag "--foo". Run "oz3asm
   --help" for help.`
@@ -206,8 +208,8 @@ Flags:
 - A command's help paragraphs are separated by blank lines (`"\n\n"`). Its
   subcommands are listed under `Commands:` with the first paragraph of their
   help, and its flags are followed by those of the commands above it, under
-  `Flags for <command>:`. An enumeration lists its names, with their help, and
-  a default is shown as `(default: <value>)`.
+  `Flags for <command>:`. A flag or argument with choices lists them, with
+  their help, and a default is shown as `(default: <value>)`.
 
 ### Running
 
@@ -255,7 +257,7 @@ is a component a program takes on its own, and nothing in tier 0 needs it.
 ### Names
 
 - `gb_cli`, and a `Cli` prefix on its types and functions: `CliCommand`,
-  `CliFlag`, `CliArg`, `CliName`, `CliValues`. "Flag" alone would
+  `CliFlag`, `CliArg`, `CliChoice`, `CliValues`. "Flag" alone would
   be confused with `gb::Flags<T>`, the enumeration bit set in `gb_base`, and
   "Option" with the `Options` structs throughout Game Bits.
 - `ParseCommandLine()`, `RunCommandLine()`, `FormatCliHelp()`,
@@ -266,53 +268,45 @@ is a component a program takes on its own, and nothing in tier 0 needs it.
 
 ### Files
 
-- `cli.h`: the definitions (`CliCommand`, `CliFlag`, `CliArg`, `CliName`) and
-  `ValidateCliCommand()`.
+- `cli.h`: the definitions (`CliCommand`, `CliFlag`, `CliArg`, `CliChoice`,
+  `CliAnyFlag`, `CliAnyArg`) and `ValidateCliCommand()`.
 - `cli_internal.h`: what the library's source files share, private to
-  `gb_cli` and its tests (`GetCliPathName()`, for errors and help).
+  `gb_cli` and its tests: the fields every flag or argument has, parsing a
+  value for any of them, and `GetCliPathName()`, for errors and help.
 - `cli_validators.h`: the common validators.
 - `cli_values.h`: `CliValues` and `ParseCommandLine()`.
 - `cli_help.h`: `kCliHelpCommand` and `FormatCliHelp()`.
 - `run_command_line.h`: `CliText`, `WriteCliText()`, `RunCommandLine()`, and
   `GetMainArgs()`. Nothing in the library is platform-specific.
 
-### Type erasure
+### Value types
 
 ```
-namespace internal {
+// A flag of any value type, as a command lists it: `{&kOutput, &kVerbose}`.
+using CliAnyFlag =
+    std::variant<const CliFlag<bool>*, const CliFlag<std::string_view>*,
+                 const CliFlag<int64_t>*, const CliFlag<double>*>;
 
-// One flag (a CliFlag<T>) in a command's list, with the fields every flag
-// has, and functions for the parts that depend on its type.
-class CliFlagRef {
- public:
-  template <typename T>
-  constexpr CliFlagRef(const CliFlag<T>* flag);
-
-  const void* GetDefinition() const;
-  std::string_view GetName() const;
-  char GetShortName() const;
-  bool TakesValue() const;
-  ...
-
-  // Parses and validates `text`.
-  absl::StatusOr<CliValue> Parse(std::string_view text) const;
-  std::string FormatDefault() const;  // Empty if there is none.
-  ...
-};
-
-// A parsed value. A bool flag that is given is true, and an enumeration is
-// held as int64_t.
-using CliValue = std::variant<bool, std::string_view, int64_t, double>;
-
-}  // namespace internal
+// A positional argument of any value type, as a command lists it.
+using CliAnyArg =
+    std::variant<const CliArg<std::string_view>*, const CliArg<int64_t>*,
+                 const CliArg<double>*>;
 ```
 
-- `CliArgRef` is the same for arguments. Each holds a pointer to the
-  definition and pointers to functions instantiated for its type, so a ref
-  only reads the definition when it is used.
-- `CliValues` maps each definition's address to its `CliValue`, in an
-  `absl::flat_hash_map`. `Get<T>()` looks it up and converts back, so a read
-  costs one hash lookup.
+- The value types are a fixed set, so a command's lists are variants of
+  pointers to each type's definition, and `&kOutput` converts to one. The
+  library's sources `std::visit` them, so parsing and validating definitions
+  are in the `.cc` files, and `cli.h` holds only what a program writes, apart
+  from `internal::CliNotConstexpr`.
+- `CliValues` maps each definition's address to its value, an
+  `internal::CliValue` (`std::variant<bool, std::string_view, int64_t,
+  double>`), in an `absl::flat_hash_map`. `Get<T>()` looks it up, so a read
+  costs one hash lookup. It is defined in `cli_values.cc`, and explicitly
+  instantiated for each value type.
+- CL1 and CL2 allowed any enumeration as a value type too. That left the type
+  open, so each type's parsing had to be instantiated from the header and
+  hidden behind type-erased refs in a command's lists. CL3 replaced
+  enumerations with string choices, which the program maps to its own enum.
 - Parsing is a single pass over the arguments, walking down the command tree.
   It costs nothing that matters: it runs once per program.
 
@@ -323,13 +317,15 @@ using CliValue = std::variant<bool, std::string_view, int64_t, double>;
   `constexpr`, which would silently break on MSVC, fails to compile.
 - A flag must be in its command's `flags` to be read. `Get()` CHECKs if it
   isn't, which any test of the command finds.
-- The value types are the alternatives of the `CliValue` variant (with
-  enumerations held as `int64_t`), and the check that a definition's type is
-  supported is derived from it. A new type is added to the variant and given
-  a `ParseCliText()` overload, and a missing overload fails to compile.
-- A `CliFlag<bool>` has fields it can't use (`value_name`, `default_value`,
-  `validators`). `ValidateCliCommand()` rejects them, so any run of the
-  program finds one that is set.
+- The value types are listed five times: the `static_assert`s in `CliFlag`
+  and `CliArg`, `CliAnyFlag`, `CliAnyArg`, and `CliValue`. A new type is
+  added to each, given a `ParseText()` overload in `cli_internal.cc` (whose
+  absence fails to compile), and an explicit instantiation of `Get()` in
+  `cli_values.cc` (whose absence fails to link).
+- A `CliFlag<bool>` has fields it can't use (`value_name`, `choices`,
+  `default_value`, `validators`), and a number has `choices`.
+  `ValidateCliCommand()` rejects them, so any run of the program finds one
+  that is set.
 
 ### To confirm
 
@@ -391,9 +387,29 @@ Depends on: CL1.
 - By hand: `names` on a flag or argument that isn't an enumeration fails to
   compile.
 
-### CL3 [ ] gb_cli: help
+### CL3 [x] gb_cli: a fixed set of value types
 
 Depends on: CL2.
+
+- The value types are fixed: `bool`, `std::string_view`, `int64_t`, and
+  `double`. A command lists its flags and arguments as `CliAnyFlag` and
+  `CliAnyArg`, variants of pointers to each type's definition, so parsing and
+  validating definitions move out of `cli.h` into the library's sources, and
+  the type-erased refs go.
+- Enumerations are replaced by `choices` on a string value, each a
+  `CliChoice` of a name and its help.
+
+**Verify**
+- Standard checks.
+- Unit tests: choices given and defaulted, a value that isn't a choice, and
+  each choice definition error (choices on a type other than a string, and an
+  empty, duplicate, or "-" prefixed choice). The other tests carry over.
+- By hand: a flag of an enumeration, or of `int`, fails to compile, and so
+  does a `CliArg<bool>`.
+
+### CL4 [ ] gb_cli: help
+
+Depends on: CL3.
 
 - `--help` and `-h` on every command, and `CliValues::IsHelp()`.
 - `cli_help.h`: `kCliHelpCommand` and `FormatCliHelp()`.
@@ -401,13 +417,13 @@ Depends on: CL2.
 **Verify**
 - Standard checks.
 - Unit tests: the full help text for a program with arguments, one with
-  subcommands and inherited flags, an enumeration flag, defaults, long flag
+  subcommands and inherited flags, a flag with choices, defaults, long flag
   names that push help onto the next line, and wrapping. `--help` in each
   position, with invalid arguments after it, and `help <command>`.
 
-### CL4 [ ] gb_cli: running a command line
+### CL5 [ ] gb_cli: running a command line
 
-Depends on: CL3.
+Depends on: CL4.
 
 - `run_command_line.h`: `CliText`, `WriteCliText()`, `RunCommandLine()`, and
   `GetMainArgs()`.

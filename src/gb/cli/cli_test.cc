@@ -5,6 +5,7 @@
 
 #include "gb/cli/cli.h"
 
+#include <cstdint>
 #include <string_view>
 
 #include "gtest/gtest.h"
@@ -28,7 +29,7 @@ const CliCommand kValid = {
 
 TEST(CliCommandTest, ListsHoldTheirElements) {
   ASSERT_EQ(kValid.flags.size(), 1);
-  EXPECT_EQ(kValid.flags.begin()[0].GetDefinition(), &kAlpha);
+  EXPECT_EQ(kValid.flags.begin()[0], CliAnyFlag(&kAlpha));
   ASSERT_EQ(kValid.commands.size(), 2);
   EXPECT_EQ(kValid.commands.begin()[0], &kSub);
   EXPECT_EQ(kValid.commands.begin()[1], &kOtherSub);
@@ -159,17 +160,14 @@ TEST(ValidateCliCommandTest, BoolFlagWithValueFields) {
             "prog: flag \"--c\" is a bool, so can't have validators");
 }
 
-enum class Color { kRed, kGreen };
-
-TEST(ValidateCliCommandTest, ValidEnumeration) {
-  static const CliFlag<Color> kFlag = {
+TEST(ValidateCliCommandTest, ValidChoices) {
+  static const CliFlag<std::string_view> kFlag = {
       .name = "color",
-      .names = {{.name = "red", .value = Color::kRed},
-                {.name = "green", .value = Color::kGreen}},
+      .choices = {{.name = "red"}, {.name = "green"}},
   };
-  static const CliArg<Color> kArg = {
+  static const CliArg<std::string_view> kArg = {
       .name = "color",
-      .names = {{.name = "red", .value = Color::kRed}},
+      .choices = {{.name = "red"}},
   };
   static const CliCommand kProgram = {
       .name = "prog",
@@ -179,48 +177,48 @@ TEST(ValidateCliCommandTest, ValidEnumeration) {
   EXPECT_TRUE(ValidateCliCommand(&kProgram).ok());
 }
 
-TEST(ValidateCliCommandTest, EnumerationWithoutNames) {
-  static const CliFlag<Color> kFlag = {.name = "color"};
-  static const CliArg<Color> kArg = {.name = "color"};
-  static const CliCommand kFlagProgram = {.name = "prog", .flags = {&kFlag}};
-  static const CliCommand kArgProgram = {.name = "prog", .args = {&kArg}};
-  EXPECT_EQ(ValidateCliCommand(&kFlagProgram).message(),
-            "prog: flag \"--color\" is an enumeration with no names");
-  EXPECT_EQ(ValidateCliCommand(&kArgProgram).message(),
-            "prog: argument <color> is an enumeration with no names");
+TEST(ValidateCliCommandTest, ChoicesOnAnotherType) {
+  static const CliFlag<bool> kBool = {.name = "a", .choices = {{.name = "x"}}};
+  static const CliArg<int64_t> kInteger = {.name = "b",
+                                           .choices = {{.name = "1"}}};
+  static const CliCommand kBoolProgram = {.name = "prog", .flags = {&kBool}};
+  static const CliCommand kIntegerProgram = {.name = "prog",
+                                             .args = {&kInteger}};
+  EXPECT_EQ(ValidateCliCommand(&kBoolProgram).message(),
+            "prog: flag \"--a\" isn't a string, so can't have choices");
+  EXPECT_EQ(ValidateCliCommand(&kIntegerProgram).message(),
+            "prog: argument <b> isn't a string, so can't have choices");
 }
 
-TEST(ValidateCliCommandTest, EmptyEnumerationName) {
-  static const CliFlag<Color> kFlag = {
+TEST(ValidateCliCommandTest, EmptyChoice) {
+  static const CliFlag<std::string_view> kFlag = {
       .name = "color",
-      .names = {{.name = "red", .value = Color::kRed},
-                {.name = "", .value = Color::kGreen}},
+      .choices = {{.name = "red"}, {.name = ""}},
   };
   static const CliCommand kProgram = {.name = "prog", .flags = {&kFlag}};
   EXPECT_EQ(ValidateCliCommand(&kProgram).message(),
-            "prog: flag \"--color\" has an empty enumeration name");
+            "prog: flag \"--color\" has an empty choice");
 }
 
-TEST(ValidateCliCommandTest, EnumerationNameStartsWithDash) {
-  static const CliArg<Color> kArg = {
+TEST(ValidateCliCommandTest, ChoiceStartsWithDash) {
+  static const CliArg<std::string_view> kArg = {
       .name = "color",
-      .names = {{.name = "-red", .value = Color::kRed}},
+      .choices = {{.name = "-red"}},
   };
   static const CliCommand kProgram = {.name = "prog", .args = {&kArg}};
   EXPECT_EQ(ValidateCliCommand(&kProgram).message(),
-            "prog: argument <color> has enumeration name \"-red\", which "
-            "starts with \"-\"");
+            "prog: argument <color> has choice \"-red\", which starts with "
+            "\"-\"");
 }
 
-TEST(ValidateCliCommandTest, DuplicateEnumerationName) {
-  static const CliArg<Color> kArg = {
+TEST(ValidateCliCommandTest, DuplicateChoice) {
+  static const CliArg<std::string_view> kArg = {
       .name = "color",
-      .names = {{.name = "red", .value = Color::kRed},
-                {.name = "red", .value = Color::kGreen}},
+      .choices = {{.name = "red"}, {.name = "red"}},
   };
   static const CliCommand kProgram = {.name = "prog", .args = {&kArg}};
   EXPECT_EQ(ValidateCliCommand(&kProgram).message(),
-            "prog: argument <color> has duplicate enumeration name \"red\"");
+            "prog: argument <color> has duplicate choice \"red\"");
 }
 
 TEST(ValidateCliCommandTest, DuplicateFlag) {

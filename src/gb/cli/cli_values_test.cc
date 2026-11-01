@@ -100,26 +100,22 @@ const CliCommand kTool = {
 };
 
 //==============================================================================
-// A program with a flag or argument of each value type.
+// A program with a flag or argument of each value type, and choices.
 //==============================================================================
-
-enum class Shape { kCircle, kSquare };
 
 const CliFlag<int64_t> kCount = {.name = "count"};
 const CliFlag<int64_t> kLimit = {.name = "limit", .default_value = 10};
 const CliFlag<double> kRatio = {.name = "ratio"};
 const CliFlag<double> kScale = {.name = "scale", .default_value = 1.5};
-const CliFlag<Shape> kShape = {
+const CliFlag<std::string_view> kShape = {
     .name = "shape",
-    .names = {{.name = "circle", .value = Shape::kCircle},
-              {.name = "square", .value = Shape::kSquare}},
-    .default_value = Shape::kCircle,
+    .choices = {{.name = "circle"}, {.name = "square"}},
+    .default_value = "circle",
 };
-const CliArg<Shape> kOutline = {
+const CliArg<std::string_view> kOutline = {
     .name = "outline",
     .optional = true,
-    .names = {{.name = "circle", .value = Shape::kCircle},
-              {.name = "square", .value = Shape::kSquare}},
+    .choices = {{.name = "circle"}, {.name = "square"}},
 };
 const CliCommand kTypes = {
     .name = "types",
@@ -563,23 +559,23 @@ TEST(ParseCommandLineTest, NegativeNumberLooksLikeAnArg) {
   EXPECT_THAT(values->Get(kInput), Optional(std::string_view("-5")));
 }
 
-TEST(ParseCommandLineTest, Enumerations) {
+TEST(ParseCommandLineTest, Choices) {
   const std::vector<std::string> args = {"--shape", "square", "circle"};
   absl::StatusOr<CliValues> values = ParseCommandLine(&kTypes, args);
   ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_THAT(values->Get(kShape), Optional(Shape::kSquare));
-  EXPECT_THAT(values->Get(kOutline), Optional(Shape::kCircle));
+  EXPECT_THAT(values->Get(kShape), Optional(std::string_view("square")));
+  EXPECT_THAT(values->Get(kOutline), Optional(std::string_view("circle")));
 }
 
-TEST(ParseCommandLineTest, EnumerationDefault) {
+TEST(ParseCommandLineTest, ChoiceDefault) {
   const std::vector<std::string> args = {};
   absl::StatusOr<CliValues> values = ParseCommandLine(&kTypes, args);
   ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_THAT(values->Get(kShape), Optional(Shape::kCircle));
+  EXPECT_THAT(values->Get(kShape), Optional(std::string_view("circle")));
   EXPECT_EQ(values->Get(kOutline), std::nullopt);
 }
 
-TEST(ParseCommandLineTest, UnknownEnumerationName) {
+TEST(ParseCommandLineTest, NotAChoice) {
   EXPECT_EQ(ParseError(&kTypes, {"--shape=triangle"}),
             "types: \"--shape\": \"triangle\" is not one of: circle, square");
   EXPECT_EQ(ParseError(&kTypes, {"Square"}),

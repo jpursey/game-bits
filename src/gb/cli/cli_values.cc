@@ -5,7 +5,10 @@
 
 #include "gb/cli/cli_values.h"
 
+#include <cstdint>
+#include <optional>
 #include <string_view>
+#include <variant>
 #include <vector>
 
 #include "absl/log/check.h"
@@ -59,8 +62,8 @@ class CliParser {
 
   // Return the flag in the command path with this long or short name, or null
   // if there is none.
-  const internal::CliFlagRef* FindFlag(std::string_view name) const;
-  const internal::CliFlagRef* FindFlag(char short_name) const;
+  const CliAnyFlag* FindFlag(std::string_view name) const;
+  const CliAnyFlag* FindFlag(char short_name) const;
 
   // Returns an error for the command at the end of the path.
   absl::Status Error(std::string_view message) const;
@@ -102,7 +105,7 @@ absl::Status CliParser::ParseFlag(absl::Span<const std::string> args,
   // How the flag was written, without any "=value", for errors.
   std::string_view flag_text = arg;
   std::optional<std::string_view> attached_value;
-  const internal::CliFlagRef* flag = nullptr;
+  const CliAnyFlag* flag = nullptr;
   if (arg.starts_with("--")) {
     const std::vector<std::string_view> parts =
         absl::StrSplit(arg, absl::MaxSplits('=', 1));
@@ -117,33 +120,30 @@ absl::Status CliParser::ParseFlag(absl::Span<const std::string> args,
   if (flag == nullptr) {
     return Error(absl::StrCat("unknown flag \"", flag_text, "\""));
   }
-  const void* const definition = flag->GetDefinition();
-  if (values_.contains(definition)) {
+  const internal::CliFlagFields fields = internal::GetCliFlagFields(*flag);
+  if (values_.contains(fields.definition)) {
     return Error(absl::StrCat("\"", flag_text, "\" was given twice"));
   }
 
-  if (!flag->TakesValue()) {
+  std::string_view text;
+  if (std::holds_alternative<const CliFlag<bool>*>(*flag)) {
     if (attached_value.has_value()) {
       return Error(absl::StrCat("\"", flag_text, "\" doesn't take a value"));
     }
-    values_[definition] = true;
-    return absl::OkStatus();
-  }
-
-  std::string_view text;
-  if (attached_value.has_value()) {
+  } else if (attached_value.has_value()) {
     text = *attached_value;
   } else if (*index + 1 < static_cast<int>(args.size())) {
     text = args[++*index];
   } else {
     return Error(absl::StrCat("\"", flag_text, "\" needs a value"));
   }
-  absl::StatusOr<internal::CliValue> value = flag->Parse(text);
+  absl::StatusOr<internal::CliValue> value =
+      internal::ParseCliValue(*flag, text);
   if (!value.ok()) {
     return Error(
         absl::StrCat("\"", flag_text, "\": ", value.status().message()));
   }
-  values_[definition] = *std::move(value);
+  values_[fields.definition] = *std::move(value);
   return absl::OkStatus();
 }
 
@@ -162,13 +162,14 @@ absl::Status CliParser::ParseWord(std::string_view word) {
   if (next_arg_ == static_cast<int>(command->args.size())) {
     return Error(absl::StrCat("unexpected argument \"", word, "\""));
   }
-  const internal::CliArgRef& arg = command->args.begin()[next_arg_];
-  absl::StatusOr<internal::CliValue> value = arg.Parse(word);
+  const CliAnyArg& arg = command->args.begin()[next_arg_];
+  const internal::CliArgFields fields = internal::GetCliArgFields(arg);
+  absl::StatusOr<internal::CliValue> value = internal::ParseCliValue(arg, word);
   if (!value.ok()) {
-    return Error(absl::StrCat("<", arg.GetFields().name,
-                              ">: ", value.status().message()));
+    return Error(
+        absl::StrCat("<", fields.name, ">: ", value.status().message()));
   }
-  values_[arg.GetDefinition()] = *std::move(value);
+  values_[fields.definition] = *std::move(value);
   ++next_arg_;
   return absl::OkStatus();
 }
@@ -180,7 +181,7 @@ absl::Status CliParser::ValidateComplete() const {
   }
   if (next_arg_ < static_cast<int>(command->args.size())) {
     const internal::CliArgFields fields =
-        command->args.begin()[next_arg_].GetFields();
+        internal::GetCliArgFields(command->args.begin()[next_arg_]);
     if (!fields.optional) {
       return Error(absl::StrCat("missing <", fields.name, ">"));
     }
@@ -188,10 +189,10 @@ absl::Status CliParser::ValidateComplete() const {
   return absl::OkStatus();
 }
 
-const internal::CliFlagRef* CliParser::FindFlag(std::string_view name) const {
+const CliAnyFlag* CliParser::FindFlag(std::string_view name) const {
   for (const CliCommand* command : path_) {
-    for (const internal::CliFlagRef& flag : command->flags) {
-      if (flag.GetFields().name == name) {
+    for (const CliAnyFlag& flag : command->flags) {
+      if (internal::GetCliFlagFields(flag).name == name) {
         return &flag;
       }
     }
@@ -199,10 +200,10 @@ const internal::CliFlagRef* CliParser::FindFlag(std::string_view name) const {
   return nullptr;
 }
 
-const internal::CliFlagRef* CliParser::FindFlag(char short_name) const {
+const CliAnyFlag* CliParser::FindFlag(char short_name) const {
   for (const CliCommand* command : path_) {
-    for (const internal::CliFlagRef& flag : command->flags) {
-      if (flag.GetFields().short_name == short_name) {
+    for (const CliAnyFlag& flag : command->flags) {
+      if (internal::GetCliFlagFields(flag).short_name == short_name) {
         return &flag;
       }
     }
@@ -225,6 +226,36 @@ bool CliValues::Get(const CliFlag<bool>& flag) const {
   return Find(&flag) != nullptr;
 }
 
+template <typename T>
+std::optional<T> CliValues::Get(const CliFlag<T>& flag) const {
+  const internal::CliValue* value = Find(&flag);
+  if (value == nullptr) {
+    return flag.default_value;
+  }
+  return *std::get_if<T>(value);
+}
+
+template <typename T>
+std::optional<T> CliValues::Get(const CliArg<T>& arg) const {
+  const internal::CliValue* value = Find(&arg);
+  if (value == nullptr) {
+    return arg.default_value;
+  }
+  return *std::get_if<T>(value);
+}
+
+template std::optional<std::string_view> CliValues::Get(
+    const CliFlag<std::string_view>& flag) const;
+template std::optional<int64_t> CliValues::Get(
+    const CliFlag<int64_t>& flag) const;
+template std::optional<double> CliValues::Get(
+    const CliFlag<double>& flag) const;
+template std::optional<std::string_view> CliValues::Get(
+    const CliArg<std::string_view>& arg) const;
+template std::optional<int64_t> CliValues::Get(
+    const CliArg<int64_t>& arg) const;
+template std::optional<double> CliValues::Get(const CliArg<double>& arg) const;
+
 const internal::CliValue* CliValues::Find(const void* definition) const {
   const auto it = values_.find(definition);
   if (it != values_.end()) {
@@ -238,13 +269,13 @@ const internal::CliValue* CliValues::Find(const void* definition) const {
 
 bool CliValues::IsInPath(const void* definition) const {
   for (const CliCommand* command : path_) {
-    for (const internal::CliFlagRef& flag : command->flags) {
-      if (flag.GetDefinition() == definition) {
+    for (const CliAnyFlag& flag : command->flags) {
+      if (internal::GetCliFlagFields(flag).definition == definition) {
         return true;
       }
     }
-    for (const internal::CliArgRef& arg : command->args) {
-      if (arg.GetDefinition() == definition) {
+    for (const CliAnyArg& arg : command->args) {
+      if (internal::GetCliArgFields(arg).definition == definition) {
         return true;
       }
     }

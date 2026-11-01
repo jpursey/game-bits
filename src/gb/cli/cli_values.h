@@ -6,9 +6,12 @@
 #ifndef GB_CLI_CLI_VALUES_H_
 #define GB_CLI_CLI_VALUES_H_
 
+#include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
@@ -17,6 +20,13 @@
 #include "gb/cli/cli.h"
 
 namespace gb {
+
+namespace internal {
+
+// A value given on the command line. A bool flag that is given is true.
+using CliValue = std::variant<bool, std::string_view, int64_t, double>;
+
+}  // namespace internal
 
 //==============================================================================
 // CliValues
@@ -86,28 +96,6 @@ class CliValues {
 // String values point into `args`, so `args` must outlive the values.
 absl::StatusOr<CliValues> ParseCommandLine(const CliCommand* program,
                                            absl::Span<const std::string> args);
-
-//==============================================================================
-// Template implementation
-//==============================================================================
-
-template <typename T>
-std::optional<T> CliValues::Get(const CliFlag<T>& flag) const {
-  const internal::CliValue* value = Find(&flag);
-  if (value == nullptr) {
-    return flag.default_value;
-  }
-  return internal::FromCliValue<T>(*value);
-}
-
-template <typename T>
-std::optional<T> CliValues::Get(const CliArg<T>& arg) const {
-  const internal::CliValue* value = Find(&arg);
-  if (value == nullptr) {
-    return arg.default_value;
-  }
-  return internal::FromCliValue<T>(*value);
-}
 
 }  // namespace gb
 

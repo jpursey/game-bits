@@ -31,20 +31,11 @@ namespace gb {
 // integers or floating point for either (`gb::CliAtLeast<0.5>`).
 //==============================================================================
 
-namespace internal {
-
-// Whether `T` is a number type a flag or argument can have, which the number
-// validators take.
-template <typename T>
-inline constexpr bool kIsCliNumber =
-    std::is_same_v<T, int64_t> || std::is_same_v<T, double>;
-
-}  // namespace internal
-
 // Validates that a number is from `kMin` to `kMax`, inclusive.
 template <auto kMin, auto kMax, typename T>
 absl::Status CliInRange(const T& value) {
-  static_assert(internal::kIsCliNumber<T>, "CliInRange is for numbers");
+  static_assert(std::is_same_v<T, int64_t> || std::is_same_v<T, double>,
+                "CliInRange is for numbers");
   static_assert(kMin <= kMax, "CliInRange's minimum is more than its maximum");
   if (value < kMin || value > kMax) {
     return absl::InvalidArgumentError(
@@ -56,7 +47,8 @@ absl::Status CliInRange(const T& value) {
 // Validates that a number is at least `kMin`.
 template <auto kMin, typename T>
 absl::Status CliAtLeast(const T& value) {
-  static_assert(internal::kIsCliNumber<T>, "CliAtLeast is for numbers");
+  static_assert(std::is_same_v<T, int64_t> || std::is_same_v<T, double>,
+                "CliAtLeast is for numbers");
   if (value < kMin) {
     return absl::InvalidArgumentError(
         absl::StrCat(value, " is less than ", kMin));
@@ -67,7 +59,8 @@ absl::Status CliAtLeast(const T& value) {
 // Validates that a number is at most `kMax`.
 template <auto kMax, typename T>
 absl::Status CliAtMost(const T& value) {
-  static_assert(internal::kIsCliNumber<T>, "CliAtMost is for numbers");
+  static_assert(std::is_same_v<T, int64_t> || std::is_same_v<T, double>,
+                "CliAtMost is for numbers");
   if (value > kMax) {
     return absl::InvalidArgumentError(
         absl::StrCat(value, " is more than ", kMax));
