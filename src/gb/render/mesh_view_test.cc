@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "gb/render/mesh.h"
+#include "gb/render/render_assert.h"
 #include "gb/render/render_test.h"
 #include "gtest/gtest.h"
 
@@ -391,6 +392,85 @@ TEST_F(MeshViewTest, RemoveTriangles) {
   EXPECT_EQ(test_vertex_buffer_->GetInvalidCallCount(), 0);
   EXPECT_EQ(test_index_buffer_->GetModifyCount(), 1);
   EXPECT_EQ(test_index_buffer_->GetInvalidCallCount(), 0);
+}
+
+class MeshViewDeathTest : public MeshViewTest {
+ protected:
+  void SetUp() override {
+    if (!kRenderAssertsCompiled) {
+      GTEST_SKIP() << "Render asserts are compiled out";
+    }
+    MeshViewTest::SetUp();
+    SetRenderAssertEnabled(true);
+  }
+};
+
+TEST_F(MeshViewDeathTest, VertexAccess) {
+  auto view = mesh_->Edit();
+  ASSERT_NE(view, nullptr);
+  view->GetVertex<Vector3>(kCubeVertexCount - 1);
+  view->ModifyVertex<Vector3>(0);
+
+  EXPECT_DEATH(view->GetVertex<Vector2>(0), "vertex_type_");
+  EXPECT_DEATH(view->ModifyVertex<Vector2>(0), "vertex_type_");
+  EXPECT_DEATH(view->GetVertex<Vector3>(-1), "index >= 0");
+  EXPECT_DEATH(view->GetVertex<Vector3>(kCubeVertexCount), "GetSize");
+  EXPECT_DEATH(view->ModifyVertex<Vector3>(kCubeVertexCount), "GetSize");
+}
+
+TEST_F(MeshViewDeathTest, SetVertices) {
+  auto view = mesh_->Edit();
+  ASSERT_NE(view, nullptr);
+  const std::vector<Vector2> vertices2 = {{1, 2}};
+  const std::vector<Vector3> vertices3 = {{1, 2, 3}};
+  view->SetVertices<Vector3>(kCubeVertexCount, vertices3);
+
+  EXPECT_DEATH(view->SetVertices<Vector2>(0, vertices2), "vertex_type_");
+  EXPECT_DEATH(view->AddVertices<Vector2>(vertices2), "vertex_type_");
+  EXPECT_DEATH(view->SetVertices<Vector3>(-1, vertices3), "index >= 0");
+  EXPECT_DEATH(view->SetVertices<Vector3>(kCubeVertexCount + 2, vertices3),
+               "index <= size");
+}
+
+TEST_F(MeshViewDeathTest, RemoveVertices) {
+  auto view = mesh_->Edit();
+  ASSERT_NE(view, nullptr);
+  EXPECT_DEATH(view->RemoveVertices(-1, 1), "index >= 0");
+  EXPECT_DEATH(view->RemoveVertices(kCubeVertexCount + 1, 1), "index <= size");
+  EXPECT_DEATH(view->RemoveVertices(0, -1), "count >= 0");
+}
+
+TEST_F(MeshViewDeathTest, TriangleAccess) {
+  auto view = mesh_->Edit();
+  ASSERT_NE(view, nullptr);
+  view->GetTriangle(kCubeTriangleCount - 1);
+  view->ModifyTriangle(0);
+
+  EXPECT_DEATH(view->GetTriangle(-1), "index >= 0");
+  EXPECT_DEATH(view->GetTriangle(kCubeTriangleCount), "GetSize");
+  EXPECT_DEATH(view->ModifyTriangle(kCubeTriangleCount), "GetSize");
+}
+
+TEST_F(MeshViewDeathTest, SetTriangles) {
+  auto view = mesh_->Edit();
+  ASSERT_NE(view, nullptr);
+  const std::vector<uint16_t> partial_indices = {0, 1, 2, 3};
+  const std::vector<Triangle> triangles = {{0, 1, 2}};
+
+  EXPECT_DEATH(view->SetTriangles(0, partial_indices), "% 3 == 0");
+  EXPECT_DEATH(view->AddTriangles(partial_indices), "% 3 == 0");
+  EXPECT_DEATH(view->SetTriangles(-1, triangles), "index >= 0");
+  EXPECT_DEATH(view->SetTriangles(kCubeTriangleCount + 1, triangles),
+               "index <= size");
+}
+
+TEST_F(MeshViewDeathTest, RemoveTriangles) {
+  auto view = mesh_->Edit();
+  ASSERT_NE(view, nullptr);
+  EXPECT_DEATH(view->RemoveTriangles(-1, 1), "index >= 0");
+  EXPECT_DEATH(view->RemoveTriangles(kCubeTriangleCount + 1, 1),
+               "index <= size");
+  EXPECT_DEATH(view->RemoveTriangles(0, -1), "count >= 0");
 }
 
 }  // namespace

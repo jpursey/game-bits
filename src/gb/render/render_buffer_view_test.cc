@@ -5,6 +5,7 @@
 
 #include "gb/render/render_buffer_view.h"
 
+#include "gb/render/render_assert.h"
 #include "gb/render/render_buffer.h"
 #include "gb/render/render_test.h"
 #include "gtest/gtest.h"
@@ -120,6 +121,19 @@ TEST_F(RenderBufferViewTest, Resize) {
 
   view.reset();
   EXPECT_EQ(test_render_buffer_.GetInvalidCallCount(), 0);
+}
+
+TEST_F(RenderBufferViewTest, ResizeOutOfRangeDies) {
+  if (!kRenderAssertsCompiled) {
+    GTEST_SKIP() << "Render asserts are compiled out";
+  }
+  SetRenderAssertEnabled(true);
+
+  auto view = render_buffer.Edit();
+  ASSERT_NE(view, nullptr);
+  view->Resize(kCapacity);
+  EXPECT_DEATH(view->Resize(kCapacity + 1), "new_size <= ");
+  EXPECT_DEATH(view->Resize(-1), "new_size >= 0");
 }
 
 }  // namespace

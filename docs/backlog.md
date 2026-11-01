@@ -336,21 +336,6 @@ which also has `Cancel()` and `Invoke()`. Switch Game Bits' own uses to
 Removing `ScopedCall` breaks every project that uses it, so each one switches
 first, and it is removed once they have.
 
-## Testable render asserts
-
-- **Layers:** render
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** [Code audit](worklog/code_audit.md)
-
-`RENDER_ASSERT` calls `assert`, and is off unless `SetRenderAssertEnabled()`
-turns it on, so tests can't check that misuse is caught: the `DrawList`
-argument checks, for instance, were inverted without any test noticing. Let a
-test install a handler that records failed render asserts instead of aborting
-(as the test backend counts invalid calls), and test the asserts that guard
-`DrawList`, `MeshView`, `RenderBufferView`, and `BindingData`.
-
 ## Explicit resource bool conversions
 
 - **Layers:** resource

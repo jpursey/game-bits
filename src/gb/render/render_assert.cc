@@ -7,6 +7,8 @@
 
 #include <atomic>
 
+#include "absl/log/log.h"
+
 namespace gb {
 
 namespace {
@@ -18,11 +20,16 @@ void SetRenderAssertEnabled(bool enabled) {
 }
 
 bool IsRenderAssertEnabled() {
-#ifdef NDEBUG
-  return false;
-#else
-  return g_assert_enabled.load(std::memory_order_relaxed);
-#endif
+  return kRenderAssertsCompiled &&
+         g_assert_enabled.load(std::memory_order_relaxed);
 }
+
+namespace internal {
+
+void RenderAssertFailed(const char* condition, const char* file, int line) {
+  LOG(FATAL).AtLocation(file, line) << "Render assert failed: " << condition;
+}
+
+}  // namespace internal
 
 }  // namespace gb

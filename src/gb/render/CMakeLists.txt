@@ -41,11 +41,13 @@ set(gb_render_FBS
 set(gb_render_TEST_SOURCE
   binding_data_test.cc
   binding_test.cc
+  draw_list_test.cc
   local_binding_data_test.cc
   material_test.cc
   material_type_test.cc
   mesh_test.cc
   mesh_view_test.cc
+  render_assert_test.cc
   render_buffer_test.cc
   render_buffer_view_test.cc
   render_scene_test.cc

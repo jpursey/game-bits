@@ -5,6 +5,7 @@
 
 #include "gb/render/test_render_pipeline.h"
 
+#include "absl/algorithm/container.h"
 #include "gb/render/test_binding_data.h"
 
 namespace gb {
@@ -44,8 +45,20 @@ std::unique_ptr<BindingData> TestRenderPipeline::CreateInstanceBindingData() {
 
 bool TestRenderPipeline::ValidateInstanceBindingData(
     BindingData* binding_data) {
-  // This is only used in RENDER_ASSERT calls, and there are not tests for this,
-  // so we just return true for now.
+  if (binding_data->GetSet() != BindingSet::kInstance) {
+    return false;
+  }
+  for (const auto& value :
+       static_cast<TestBindingData*>(binding_data)->GetValues()) {
+    if (value.GetType() == nullptr) {
+      continue;
+    }
+    if (!absl::c_any_of(bindings_, [&value](const Binding& binding) {
+          return binding.IsCompatible(value.GetBinding());
+        })) {
+      return false;
+    }
+  }
   return true;
 }
 

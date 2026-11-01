@@ -7,6 +7,7 @@
 
 #include <vector>
 
+#include "gb/render/render_assert.h"
 #include "gb/render/render_test.h"
 #include "gb/render/test_binding_data.h"
 #include "gmock/gmock.h"
@@ -143,6 +144,46 @@ TEST_F(BindingDataTest, TextureArrays) {
   ResourceDependencyList dependencies;
   binding_data.GetDependencies(&dependencies);
   EXPECT_THAT(dependencies, ElementsAre(texture_array.Get()));
+}
+
+TEST_F(BindingDataTest, AccessWithWrongTypeOrIndexDies) {
+  if (!kRenderAssertsCompiled) {
+    GTEST_SKIP() << "Render asserts are compiled out";
+  }
+  CreateSystem();
+  SetRenderAssertEnabled(true);
+  auto* constants_type = render_system_->RegisterConstantsType<Vector2>("0");
+  ASSERT_NE(constants_type, nullptr);
+  auto texture =
+      render_system_->CreateTexture(DataVolatility::kStaticWrite, 16, 16);
+  ASSERT_NE(texture, nullptr);
+  TestBindingData binding_data(nullptr, BindingSet::kScene,
+                               {Binding()
+                                    .SetShaders(ShaderType::kVertex)
+                                    .SetLocation(BindingSet::kScene, 0)
+                                    .SetConstants(constants_type),
+                                Binding()
+                                    .SetShaders(ShaderType::kFragment)
+                                    .SetLocation(BindingSet::kScene, 1)
+                                    .SetTexture()});
+
+  Vector2 vector2;
+  binding_data.SetConstants(0, Vector2{1.0f, 2.0f});
+  binding_data.GetConstants(0, &vector2);
+  binding_data.SetTexture(1, texture.Get());
+  binding_data.GetTexture(1);
+
+  Vector3 vector3;
+  EXPECT_DEATH(binding_data.SetConstants(0, Vector3{1.0f, 2.0f, 3.0f}),
+               "Validate");
+  EXPECT_DEATH(binding_data.GetConstants(0, &vector3), "Validate");
+  EXPECT_DEATH(binding_data.GetConstants(1, &vector2), "Validate");
+  EXPECT_DEATH(binding_data.GetConstants(2, &vector2), "Validate");
+  EXPECT_DEATH(binding_data.SetTexture(0, texture.Get()), "Validate");
+  EXPECT_DEATH(binding_data.GetTexture(0), "Validate");
+  EXPECT_DEATH(binding_data.GetTexture(-1), "Validate");
+  EXPECT_DEATH(binding_data.SetTextureArray(1, nullptr), "Validate");
+  EXPECT_DEATH(binding_data.GetTextureArray(1), "Validate");
 }
 
 }  // namespace
