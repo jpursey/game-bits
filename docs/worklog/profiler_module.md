@@ -58,13 +58,14 @@ std::string report = profiler.GetReport();
 - **One Profiler per thread:** a Profiler records the points on the thread that
   created it, and must be destroyed there. Points on other threads, or on a
   thread with no Profiler, are ignored.
-- **No fiber switches inside a timed point:** a timed point must end on the
-  fiber and thread it started on. Ending one that isn't the thread's innermost
-  CHECK-fails, which catches a switch to another fiber that times points, and
-  resuming on another thread.
+- **Timed points end in order:** a timed point must end on the fiber it
+  started on, after the timed points inside it. Ending one that isn't the
+  innermost on its fiber CHECK-fails.
 - **Fibers:** code that runs on fibers, such as jobs, can use any point on
-  each side of a wait. A point reached after the fiber resumed on another
-  thread is recorded in that thread's Profiler.
+  each side of a wait, and a timed point can span the wait, as
+  [Fiber-aware profiling](fiber_aware_profiling.md) describes. A point reached
+  after the fiber resumed on another thread is recorded in that thread's
+  Profiler.
 - **Frames:** `GetFrameSummary()` gives the frame count, total, average, p50,
   p90, p99, and max, from a histogram with 8 buckets for each power of two
   (percentiles within 1/16th, exact below 16 ticks). The breakdown by point of
@@ -136,9 +137,10 @@ the current core (`GetThisThreadCoreClass()` in `gb/thread/thread.h`), are in
   stop it), so a fiber that resumed on another thread would read the thread it
   left. Timers, counters, and values find the current Profiler through
   `Profiler::GetCurrent()`, which is never inlined, and a timer ends in the
-  Profiler it started with.
-- **Timing:** each timer holds a `Profiler::Timing`, its entry in a stack of
-  the timings on the thread, linked through the timers on the C++ stack.
+  Profiler its timing holds, which a fiber switch updates.
+- **Timing:** each timer holds a `Profiler::Timing`, with its Profiler and
+  point's index, its entry in a stack of the timings of the fiber running on
+  the thread, linked through the timers on the C++ stack.
   Ending one reads the counter, pops it, adds its elapsed ticks to its parent's
   child ticks, and adds its elapsed ticks less its own child ticks to its slot.
   `ProfileFrame` is a separate type, so other timers don't pay a branch on the
@@ -189,14 +191,9 @@ CPUID leaf 0x15 reports; QPC runs at 10MHz):
   read, both in 100ns steps, so neither could time the points themselves.
 - **Fibers:** a fiber sees the `thread_local`s of the thread it runs on, and
   without `/GT` (which Game Bits doesn't use) a fiber that moved threads read
-  the old thread's storage, hence the rule against fiber switches inside a
-  timed point.
+  the old thread's storage, hence `Profiler::GetCurrent()`.
 
 ## Known limitations
-
-Each is a backlog item:
-
-- **Fiber-aware profiling:** a timed point can't span a fiber switch.
 
 Each thread's Profiler is separate unless it joins another, as
 [Multithreaded profiles](multithreaded_profiles.md) describes.

@@ -66,6 +66,17 @@ namespace gb {
 // and efficiency cores), each frame records the class of core it ran on, where
 // a higher class is faster, and the report splits frames by it.
 //
+// A timed point on a fiber, such as a job, can span a switch to another fiber
+// (see gb/thread/fiber.h). Its timer pauses while the fiber is suspended, and
+// carries on when it resumes, on any thread, so its time is the time its fiber
+// ran, on every thread. Its self time and its part in a frame are recorded in
+// the Profiler of the thread it ends on, while each joined Profiler's busy time
+// has the part that ran on its thread. Timed points that resume on a thread
+// with no Profiler record nothing, even if their fiber moves on to a thread
+// with one. A frame can't span a switch: switching fibers in a frame
+// CHECK-fails. The first Profiler sets the program's fiber switch callbacks, so
+// no other library can set its own.
+//
 // There can be at most one Profiler per thread, and it must be destroyed on the
 // thread that created it, outside any timed point. This class is
 // thread-compatible, and only its thread may call it.
@@ -184,10 +195,10 @@ class Profiler final {
   // joined Profilers under, sorted by name. Each has the thread's busy time
   // per frame on average and at most, the average as a share of the average
   // frame, and the share of its busy time on each class of core. A joined
-  // thread's busy time is the time in its outermost timed points that ended
-  // during frames, and its classes of core are those its outermost points
-  // ended on. The main thread's busy time is its frames' time, by the class
-  // of core each frame ran on.
+  // thread's busy time is the time its outermost timed points ran on it,
+  // counted when each ends, or its fiber suspends, during a frame, by the
+  // class of core it was on then. The main thread's busy time is its frames'
+  // time, by the class of core each frame ran on.
   //
   // Once a Profiler has joined a main Profiler, the main Profiler's frame
   // breakdowns include the points that ended on every joined Profiler's thread
@@ -224,7 +235,8 @@ class Profiler final {
   absl::Duration GetSlowestFrameSelfTime(std::string_view name) const;
 
   // Clears everything recorded, on every thread for a main Profiler.
-  // CHECK-fails inside a timed point, or on a joined Profiler.
+  // CHECK-fails inside a timed point, or on a joined Profiler. Timed points
+  // open on a suspended fiber record all their time once they end.
   void Reset();
 
  private:
@@ -255,13 +267,28 @@ class Profiler final {
   using CoreTicks = std::array<int64_t, kCoreClasses>;
 
   // A timed point in progress, kept by whatever times it. Timings running on
-  // the thread form a stack, linked through `parent`.
+  // the thread form a stack, linked through `parent`, which holds only the
+  // running fiber's timings (see SuspendTimings()).
   struct Timing {
+    // The Profiler the timing ends in, or null if it records nothing. While its
+    // fiber is suspended, the Profiler it suspended from.
+    Profiler* profiler = nullptr;
+
+    // The point's index.
+    int index = 0;
+
     Timing* parent = nullptr;
+
+    // While its fiber is suspended, the ticks it has run so far instead.
     int64_t start_ticks = 0;
 
     // The elapsed ticks of the timings inside this one.
     int64_t child_ticks = 0;
+
+    // For the outermost timing of a fiber, the ticks it ran before the fiber
+    // last resumed, which are already in the busy time of the threads they ran
+    // on.
+    int64_t prior_run_ticks = 0;
   };
 
   // An int64_t that only one thread writes, and any thread may read. Reads and
@@ -356,9 +383,9 @@ class Profiler final {
   };
 
   // A joined Profiler's busy time in every frame (see GetReport()), by the
-  // class of core each outermost point ended on. Only its thread writes it,
-  // and the main Profiler gathers what it has added at each frame's end. It
-  // has a cache line of its own, as both threads use it.
+  // class of core each outermost point ended or suspended on. Only its thread
+  // writes it, and the main Profiler gathers what it has added at each frame's
+  // end. It has a cache line of its own, as both threads use it.
   struct alignas(ABSL_CACHELINE_SIZE) BusyTime {
     std::array<SingleWriterInt64, kCoreClasses> core_ticks;
   };
@@ -392,30 +419,43 @@ class Profiler final {
     std::vector<Point> points;
   };
 
-  // Starts `timing` inside the innermost timing on this thread.
-  void StartTiming(Timing& timing) {
+  // Starts `timing` for the point at `index`, inside the innermost timing on
+  // this thread.
+  void StartTiming(int index, Timing& timing) {
+    timing.profiler = this;
+    timing.index = index;
     timing.parent = top_;
     top_ = &timing;
     timing.start_ticks = ReadTicks();
   }
 
-  // Ends `timing`, which must be the innermost, and adds its self time to the
-  // point at `index`. Returns its elapsed ticks.
-  int64_t EndTiming(int index, Timing& timing) {
+  // Ends `timing`, which must be the innermost, and adds its self time to its
+  // point. Returns its elapsed ticks.
+  int64_t EndTiming(Timing& timing) {
     const int64_t elapsed_ticks = ReadTicks() - timing.start_ticks;
     CHECK(top_ == &timing)
-        << "A timed point must end on the thread and fiber it started on, "
-           "after the timed points inside it";
+        << "A timed point must end on the fiber it started on, after the "
+           "timed points inside it";
     top_ = timing.parent;
     if (top_ != nullptr) {
       top_->child_ticks += elapsed_ticks;
     } else if (main_ != nullptr) {
-      AddBusyTime(elapsed_ticks);
+      AddBusyTime(elapsed_ticks - timing.prior_run_ticks);
     }
-    AddTime(index, elapsed_ticks - timing.child_ticks);
+    AddTime(timing.index, elapsed_ticks - timing.child_ticks);
     ++current_frame_timed_points_;
     return elapsed_ticks;
   }
+
+  // The fiber switch callbacks (see gb/thread/fiber.h). When a fiber
+  // suspends, SuspendTimings() takes its open timings off the thread's stack,
+  // with the ticks each has run so far, adds the outermost's run on this
+  // thread to its busy time, and returns the innermost, or null if
+  // there are none. When it resumes, ResumeTimings() makes them the stack of
+  // the thread it resumed on, ending in that thread's Profiler, or in none if
+  // it has none.
+  static void* SuspendTimings();
+  static void ResumeTimings(void* state);
 
   // Returns the ticks a timed point adds to the timed point around it, the
   // least of several measurements, so a thread switch doesn't skew it.
@@ -423,8 +463,8 @@ class Profiler final {
 
   // Frames are timings that also record the frame as a whole. Frames can't
   // nest.
-  void StartFrame(Timing& timing);
-  void EndFrame(int index, Timing& timing);
+  void StartFrame(int index, Timing& timing);
+  void EndFrame(Timing& timing);
 
   // Returns the current frame's time, `ticks`, the class of core it ran on,
   // `core`, and the part each point had in it, on every thread.
@@ -440,8 +480,8 @@ class Profiler final {
   static void AddFramePoint(FrameBreakdown::Point& point,
                             const FrameBreakdown::Point& part);
 
-  // As a joined Profiler, adds an outermost timed point's time, `ticks`, to
-  // busy_, if a frame is in progress.
+  // As a joined Profiler, adds an outermost timed point's time on this thread,
+  // `ticks`, to busy_, if a frame is in progress.
   void AddBusyTime(int64_t ticks);
 
   // As a main Profiler, adds the busy time `thread`'s joined Profiler has
@@ -589,7 +629,7 @@ class Profiler final {
   // joined_threads_, or null.
   Profiler* const main_;
 
-  // The innermost timing on this thread, or null.
+  // The innermost timing of the fiber running on this thread, or null.
   Timing* top_ = nullptr;
 
   // The timed points ended in the frame in progress, including its own.

@@ -61,10 +61,11 @@ gb::Profiler thread_profiler({.main = &profiler, .name = "loader"});
   main thread and one for each name, sorted by name: busy time per frame on
   average and at most, the average as a share of the average frame, and a
   column for each class of core any thread was busy on, with the share of the
-  thread's busy time on it. A joined thread's busy time is the time in its
-  outermost timed points that ended during frames, by the class of core each
-  ended on. The main thread's is its frames' time, by the class of core each
-  frame ran on ("mixed" for one that changed).
+  thread's busy time on it. A joined thread's busy time is the time its
+  outermost timed points ran on it, counted when each ends, or its fiber
+  suspends, during a frame, by the class of core it was on then. The main
+  thread's is its frames' time, by the class of core each frame ran on
+  ("mixed" for one that changed).
 - **Reading:** only the main Profiler's thread reads its report, as before. It
   reads the joined Profilers' slots while their threads write them, without
   stopping them, so a point that ends as it reads can be missing from a report
@@ -116,7 +117,10 @@ column in the points table.
   kind.
 - **Busy time:** when a joined Profiler's outermost timed point ends during a
   frame, it adds the time to a running total for the class of core it ends on
-  (`BusyTime`, on a cache line of its own). These only grow, so each frame's
+  (`BusyTime`, on a cache line of its own). A point that spans a fiber switch
+  adds its run on each thread as its fiber suspends there, and the rest when
+  it ends, less what it ran before (`Timing::prior_run_ticks`). These only
+  grow, so each frame's
   end gathers what each thread has added since the last, by class, keeping
   each entry's totals since the reset and its busiest frame. What a destroyed
   Profiler added since the last gathering counts in the next.
@@ -157,9 +161,9 @@ Each is a backlog item:
 
 - **Profiled jobs:** `FiberJobSystem` doesn't give its job threads Profilers,
   so a program joins its own threads.
-- **Fiber-aware profiling:** a timed point still can't span a fiber switch.
 - **Profile timelines:** there are totals, but no timeline, so overlap, idle
-  gaps, and critical paths don't show. A point counts whole in the frame it
-  ends in, so a thread's busy time in a frame can include time from before it.
+  gaps, and critical paths don't show. A point's busy time counts in the frame
+  it ends in, or its fiber suspends in, so a thread's busy time in a frame can
+  include time from before it.
 - **Joined Profilers' own cost:** the profiler's cost per frame, and in a frame
   breakdown, counts only the main thread's timed points.

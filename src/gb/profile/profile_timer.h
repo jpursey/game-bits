@@ -27,46 +27,44 @@ class NamedProfileTimer;
 // The point is charged with its self time: its elapsed time less that of the
 // timers created inside it.
 //
-// A timer must be destroyed on the thread and fiber it was created on, with no
-// switch to another fiber in between, and timers must be destroyed in the
-// reverse order they were created (as scoped variables are). Destroying a timer
-// that isn't the innermost on its thread CHECK-fails.
+// A timer must be destroyed on the fiber it was created on, and timers must be
+// destroyed in the reverse order they were created (as scoped variables are).
+// Destroying a timer that isn't the innermost on its fiber CHECK-fails.
 //
-// Code on fibers, such as jobs, can use timers on each side of a wait: a timer
-// created after a fiber resumed on another thread times into that thread's
-// Profiler.
+// Code on fibers, such as jobs, can keep a timer across a switch to another
+// fiber, such as a wait, even if it resumes on another thread. It times only
+// what its fiber ran, all recorded in the Profiler of the thread it is
+// destroyed on, as Profiler describes.
 //
 // Timing a point costs two reads of the CPU's timestamp counter, and a few
 // adds. With no Profiler on the thread, it costs about a nanosecond.
 class ProfileTimer final {
  public:
-  [[nodiscard]] explicit ProfileTimer(const ProfilePoint& point)
-      : profiler_(Profiler::GetCurrent()), index_(point.GetIndex()) {
-    if (profiler_ == nullptr) {
+  [[nodiscard]] explicit ProfileTimer(const ProfilePoint& point) {
+    Profiler* const profiler = Profiler::GetCurrent();
+    if (profiler == nullptr) {
       return;
     }
     DCHECK(point.GetKind() == ProfilePoint::Kind::kScope ||
            point.GetKind() == ProfilePoint::Kind::kCall)
         << point.GetName() << " is not a scope or a call";
-    profiler_->StartTiming(timing_);
+    profiler->StartTiming(point.GetIndex(), timing_);
   }
   ProfileTimer(const ProfileTimer&) = delete;
   ProfileTimer& operator=(const ProfileTimer&) = delete;
 
-  // This ends the timing in the Profiler the timer started with, rather than
-  // reading the thread's again, as the compiler may cache a thread_local's
-  // address across a fiber switch. That Profiler then CHECKs that this is its
-  // innermost timing.
+  // This ends the timing in its own Profiler, which a fiber switch updates,
+  // rather than reading the thread's again, as the compiler may cache a
+  // thread_local's address across a fiber switch. That Profiler then CHECKs
+  // that this is its innermost timing.
   ~ProfileTimer() {
-    if (profiler_ == nullptr) {
+    if (timing_.profiler == nullptr) {
       return;
     }
-    profiler_->EndTiming(index_, timing_);
+    timing_.profiler->EndTiming(timing_);
   }
 
  private:
-  Profiler* const profiler_;
-  const int index_;
   Profiler::Timing timing_;
 };
 
@@ -113,31 +111,30 @@ using ProfileCall =
 //
 // A frame is a timed point like a scope, charged with its self time, that also
 // records the frame as a whole (see Profiler::GetFrameSummary). Frames can't
-// nest (CHECK), and follow the same rules as other timers (see ProfileTimer).
+// nest (CHECK), and follow the same rules as other timers (see ProfileTimer),
+// except that a frame can't span a fiber switch (CHECK).
 template <ProfileName kName>
 class ProfileFrame final {
  public:
-  [[nodiscard]] ProfileFrame()
-      : profiler_(Profiler::GetCurrent()),
-        index_(internal::GetNamedPoint<ProfilePoint::Kind::kFrame, kName>()
-                   .GetIndex()) {
-    if (profiler_ == nullptr) {
+  [[nodiscard]] ProfileFrame() {
+    const ProfilePoint& point =
+        internal::GetNamedPoint<ProfilePoint::Kind::kFrame, kName>();
+    Profiler* const profiler = Profiler::GetCurrent();
+    if (profiler == nullptr) {
       return;
     }
-    profiler_->StartFrame(timing_);
+    profiler->StartFrame(point.GetIndex(), timing_);
   }
   ProfileFrame(const ProfileFrame&) = delete;
   ProfileFrame& operator=(const ProfileFrame&) = delete;
   ~ProfileFrame() {
-    if (profiler_ == nullptr) {
+    if (timing_.profiler == nullptr) {
       return;
     }
-    profiler_->EndFrame(index_, timing_);
+    timing_.profiler->EndFrame(timing_);
   }
 
  private:
-  Profiler* const profiler_;
-  const int index_;
   Profiler::Timing timing_;
 };
 

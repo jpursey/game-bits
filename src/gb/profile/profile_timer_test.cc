@@ -6,6 +6,7 @@
 #include "gb/profile/profile_timer.h"
 
 #include <optional>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -111,7 +112,7 @@ TEST_F(ProfileTimerTest, EndingOuterTimerFirstDies) {
   std::optional<ProfileScope<"TimerTest/First">> first;
   first.emplace();
   ProfileScope<"TimerTest/Second"> second;
-  EXPECT_DEATH(first.reset(), "must end on the thread and fiber");
+  EXPECT_DEATH(first.reset(), "must end on the fiber it started on");
 }
 
 // A fiber times a scope and counts on one thread, switches away, and does the
@@ -192,6 +193,281 @@ TEST(ProfileTimerFiberTest, TimesInProfilerOfThreadFiberMovedTo) {
   ASSERT_EQ(fiber_2.size(), 1);
   JoinThread(fiber_2[0].thread);
   DeleteFiber(fiber_2[0].fiber);
+}
+
+//==============================================================================
+// Timers across fiber switches
+//==============================================================================
+
+// A fiber that keeps timers open across switches. Each thread that runs it
+// sets `ticks` to its own FakeProfilerCpu, which the fiber advances, and
+// `return_fiber` to its own fiber, which the fiber switches back to.
+struct SwitchingFiber {
+  Fiber fiber = nullptr;
+  Fiber return_fiber = nullptr;
+  FakeProfilerCpu* ticks = nullptr;
+
+  // The main Profiler that threads running the fiber join, if any.
+  Profiler* main = nullptr;
+};
+
+// Runs `fiber` on the calling thread, with `ticks`, until it switches back.
+void RunFiberHere(SwitchingFiber& fiber, FakeProfilerCpu& ticks) {
+  fiber.ticks = &ticks;
+  fiber.return_fiber = GetThisFiber();
+  EXPECT_TRUE(SwitchToFiber(fiber.fiber));
+}
+
+// Switches from `fiber` back to the thread running it.
+void SwitchBack(SwitchingFiber& fiber) {
+  EXPECT_TRUE(SwitchToFiber(fiber.return_fiber));
+}
+
+// Runs `thread_main`, passed `fiber`, on a new thread's fiber, and waits for it
+// to finish.
+void RunFiberThread(SwitchingFiber& fiber, FiberMain thread_main) {
+  auto threads = CreateFiberThreads(std::vector<PlacedThread>(1), {}, 0, &fiber,
+                                    thread_main);
+  ASSERT_EQ(threads.size(), 1);
+  JoinThread(threads[0].thread);
+  DeleteFiber(threads[0].fiber);
+}
+
+// A thread main that runs the fiber on a thread with no Profiler.
+void RunWithoutProfiler(void* user_data) {
+  auto& fiber = *static_cast<SwitchingFiber*>(user_data);
+  FakeProfilerCpu ticks;
+  RunFiberHere(fiber, ticks);
+}
+
+class ProfileTimerSwitchTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    if (!SupportsFibers()) {
+      GTEST_SKIP() << "Fibers are not supported";
+    }
+  }
+
+  void TearDown() override {
+    if (fiber_.fiber != nullptr) {
+      DeleteFiber(fiber_.fiber);
+    }
+  }
+
+  // Creates the fiber, which must end by switching back, as it is deleted
+  // while suspended.
+  void CreateSwitchingFiber(FiberMain fiber_main) {
+    fiber_.fiber = CreateFiber({}, 0, &fiber_, fiber_main);
+    ASSERT_NE(fiber_.fiber, nullptr);
+  }
+
+  SwitchingFiber fiber_;
+};
+
+TEST_F(ProfileTimerSwitchTest, ScopeLeavesOutOtherFiberOnSameThread) {
+  CreateSwitchingFiber(+[](void* user_data) {
+    auto& fiber = *static_cast<SwitchingFiber*>(user_data);
+    {
+      ProfileScope<"SwitchTest/Other"> other;
+      fiber.ticks->Advance(2);
+    }
+    fiber.ticks->Advance(8);
+    SwitchBack(fiber);
+  });
+  RunFiberThread(
+      fiber_, +[](void* user_data) {
+        auto& fiber = *static_cast<SwitchingFiber*>(user_data);
+        FakeProfilerCpu ticks;
+        Profiler profiler({.fake_cpu = &ticks});
+        {
+          ProfileScope<"SwitchTest/Spanning"> spanning;
+          ticks.Advance(1);
+          RunFiberHere(fiber, ticks);
+          ticks.Advance(4);
+        }
+        EXPECT_EQ(profiler.GetCount("SwitchTest/Spanning"), 1);
+        EXPECT_EQ(profiler.GetSelfTime("SwitchTest/Spanning"),
+                  absl::Nanoseconds(5));
+        EXPECT_EQ(profiler.GetCount("SwitchTest/Other"), 1);
+        EXPECT_EQ(profiler.GetSelfTime("SwitchTest/Other"),
+                  absl::Nanoseconds(2));
+      });
+}
+
+// The second thread's ticks are far ahead of the first's, so a timer that kept
+// its first thread's start would record a long time.
+TEST_F(ProfileTimerSwitchTest, ScopesRecordRunTimeInProfilerTheyEndIn) {
+  CreateSwitchingFiber(+[](void* user_data) {
+    auto& fiber = *static_cast<SwitchingFiber*>(user_data);
+    {
+      ProfileScope<"SwitchTest/MovedOuter"> outer;
+      fiber.ticks->Advance(1);
+      {
+        ProfileScope<"SwitchTest/MovedInner"> inner;
+        fiber.ticks->Advance(2);
+        SwitchBack(fiber);
+        fiber.ticks->Advance(4);
+      }
+      fiber.ticks->Advance(8);
+    }
+    SwitchBack(fiber);
+  });
+  RunFiberThread(
+      fiber_, +[](void* user_data) {
+        auto& fiber = *static_cast<SwitchingFiber*>(user_data);
+        FakeProfilerCpu ticks;
+        Profiler profiler({.fake_cpu = &ticks});
+        RunFiberHere(fiber, ticks);
+        EXPECT_EQ(profiler.GetCount("SwitchTest/MovedOuter"), 0);
+        EXPECT_EQ(profiler.GetCount("SwitchTest/MovedInner"), 0);
+      });
+  RunFiberThread(
+      fiber_, +[](void* user_data) {
+        auto& fiber = *static_cast<SwitchingFiber*>(user_data);
+        FakeProfilerCpu ticks;
+        ticks.Advance(1000);
+        Profiler profiler({.fake_cpu = &ticks});
+        RunFiberHere(fiber, ticks);
+        EXPECT_EQ(profiler.GetCount("SwitchTest/MovedOuter"), 1);
+        EXPECT_EQ(profiler.GetSelfTime("SwitchTest/MovedOuter"),
+                  absl::Nanoseconds(9));
+        EXPECT_EQ(profiler.GetCount("SwitchTest/MovedInner"), 1);
+        EXPECT_EQ(profiler.GetSelfTime("SwitchTest/MovedInner"),
+                  absl::Nanoseconds(6));
+      });
+}
+
+// The scope runs on two joined threads during one frame, the first on a class 1
+// core, and each thread's busy time is its own part.
+TEST_F(ProfileTimerSwitchTest, BusyTimeGoesToEachThreadScopeRanOn) {
+  CreateSwitchingFiber(+[](void* user_data) {
+    auto& fiber = *static_cast<SwitchingFiber*>(user_data);
+    {
+      ProfileScope<"SwitchTest/Busy"> scope;
+      fiber.ticks->Advance(100);
+      SwitchBack(fiber);
+      fiber.ticks->Advance(300);
+    }
+    SwitchBack(fiber);
+  });
+  FakeProfilerCpu ticks;
+  Profiler main({.fake_cpu = &ticks});
+  fiber_.main = &main;
+  {
+    ProfileFrame<"SwitchTest/BusyFrame"> frame;
+    ticks.Advance(1000);
+    RunFiberThread(
+        fiber_, +[](void* user_data) {
+          auto& fiber = *static_cast<SwitchingFiber*>(user_data);
+          FakeProfilerCpu ticks;
+          ticks.SetCoreClass(1);
+          Profiler profiler(
+              {.fake_cpu = &ticks, .main = fiber.main, .name = "first"});
+          RunFiberHere(fiber, ticks);
+        });
+    RunFiberThread(
+        fiber_, +[](void* user_data) {
+          auto& fiber = *static_cast<SwitchingFiber*>(user_data);
+          FakeProfilerCpu ticks;
+          Profiler profiler(
+              {.fake_cpu = &ticks, .main = fiber.main, .name = "second"});
+          RunFiberHere(fiber, ticks);
+        });
+  }
+  EXPECT_EQ(main.GetSelfTime("SwitchTest/Busy"), absl::Nanoseconds(400));
+  const std::string report = main.GetReport();
+  EXPECT_NE(report.find(R"(
+Thread  Busy/frame     Max  Share  class 0  class 1
+first        100ns   100ns  10.0%        -     100%
+main        1.00us  1.00us   100%     100%        -
+second       300ns   300ns  30.0%     100%        -
+)"),
+            std::string::npos)
+      << report;
+}
+
+// The fiber starts a scope on a thread with a Profiler, resumes on one with
+// none, and ends the scope after resuming on a third thread with a Profiler.
+TEST_F(ProfileTimerSwitchTest, ScopeResumedWithoutProfilerRecordsNothing) {
+  CreateSwitchingFiber(+[](void* user_data) {
+    auto& fiber = *static_cast<SwitchingFiber*>(user_data);
+    {
+      ProfileScope<"SwitchTest/Unprofiled"> scope;
+      fiber.ticks->Advance(1);
+      SwitchBack(fiber);
+      fiber.ticks->Advance(2);
+      SwitchBack(fiber);
+      fiber.ticks->Advance(4);
+    }
+    SwitchBack(fiber);
+  });
+  constexpr FiberMain kRunWithProfiler = +[](void* user_data) {
+    auto& fiber = *static_cast<SwitchingFiber*>(user_data);
+    FakeProfilerCpu ticks;
+    Profiler profiler({.fake_cpu = &ticks});
+    RunFiberHere(fiber, ticks);
+    EXPECT_EQ(profiler.GetCount("SwitchTest/Unprofiled"), 0);
+  };
+  RunFiberThread(fiber_, kRunWithProfiler);
+  RunFiberThread(fiber_, RunWithoutProfiler);
+  RunFiberThread(fiber_, kRunWithProfiler);
+}
+
+TEST_F(ProfileTimerSwitchTest, ScopeStartedWithoutProfilerStaysIgnored) {
+  CreateSwitchingFiber(+[](void* user_data) {
+    auto& fiber = *static_cast<SwitchingFiber*>(user_data);
+    {
+      ProfileScope<"SwitchTest/StartedWithout"> scope;
+      SwitchBack(fiber);
+      fiber.ticks->Advance(1);
+    }
+    SwitchBack(fiber);
+  });
+  RunFiberThread(fiber_, RunWithoutProfiler);
+  RunFiberThread(
+      fiber_, +[](void* user_data) {
+        auto& fiber = *static_cast<SwitchingFiber*>(user_data);
+        FakeProfilerCpu ticks;
+        Profiler profiler({.fake_cpu = &ticks});
+        RunFiberHere(fiber, ticks);
+        EXPECT_EQ(profiler.GetCount("SwitchTest/StartedWithout"), 0);
+      });
+}
+
+void RunFiberInFrame(void* user_data) {
+  auto& fiber = *static_cast<SwitchingFiber*>(user_data);
+  FakeProfilerCpu ticks;
+  Profiler profiler({.fake_cpu = &ticks});
+  ProfileFrame<"SwitchTest/Frame"> frame;
+  RunFiberHere(fiber, ticks);
+}
+
+TEST_F(ProfileTimerSwitchTest, SwitchingInFrameDies) {
+  CreateSwitchingFiber(+[](void* user_data) {
+    SwitchBack(*static_cast<SwitchingFiber*>(user_data));
+  });
+  EXPECT_DEATH(RunFiberThread(fiber_, RunFiberInFrame),
+               "can't span a fiber switch");
+}
+
+// A timer the thread's own fiber starts, which the switching fiber ends.
+std::optional<ProfileScope<"SwitchTest/OtherFiber">> g_other_fiber_scope;
+
+void RunFiberWithOpenScope(void* user_data) {
+  auto& fiber = *static_cast<SwitchingFiber*>(user_data);
+  FakeProfilerCpu ticks;
+  Profiler profiler({.fake_cpu = &ticks});
+  g_other_fiber_scope.emplace();
+  RunFiberHere(fiber, ticks);
+}
+
+TEST_F(ProfileTimerSwitchTest, EndingTimerOnAnotherFiberDies) {
+  CreateSwitchingFiber(+[](void* user_data) {
+    g_other_fiber_scope.reset();
+    SwitchBack(*static_cast<SwitchingFiber*>(user_data));
+  });
+  EXPECT_DEATH(RunFiberThread(fiber_, RunFiberWithOpenScope),
+               "must end on the fiber it started on");
 }
 
 TEST(ProfileTimerNoProfilerTest, IgnoredWithoutProfiler) {

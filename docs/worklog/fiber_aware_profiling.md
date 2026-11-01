@@ -24,9 +24,11 @@ thread a Profiler, builds on this.
 - **Timed points across switches:** a scope or call can span a fiber switch.
   - A timer must still be destroyed on the fiber it was created on, now on any
     thread, and in the reverse order timers were created (CHECK, as now).
-  - Its time is the time it ran, on every thread it ran on, all of it recorded
-    in the Profiler of the thread it ends on: its self time, its part in that
-    Profiler's frame, and for a joined Profiler, its busy time.
+  - Its time is the time it ran, on every thread it ran on. Its self time and
+    its part in a frame are recorded in the Profiler of the thread it ends on.
+    For an outermost point, each joined thread's busy time has the part that
+    ran on it, counted as the fiber suspends there, or as the point ends, so a
+    job that moves doesn't make the thread it ends on look busier than it was.
   - Timers that resume on a thread with no Profiler record nothing, even if the
     fiber later moves to a thread with one, as a timer started on a thread with
     no Profiler is ignored today.
@@ -109,20 +111,25 @@ one needs to.
   place, and `EndTiming()` is unchanged, so a timed point costs the same.
 - `SuspendTimings()`: with no Profiler on the thread, or no timing open,
   returns null. Otherwise it CHECKs that the Profiler has no frame in
-  progress, replaces each open timing's start with its ticks so far, clears its
-  Profiler, notes the suspend ticks in the innermost, empties the thread's
-  stack, and returns the innermost.
+  progress, replaces each open timing's start with its ticks so far, notes the
+  suspend ticks in the innermost (CL3), empties the thread's stack, and returns
+  the innermost. On a joined Profiler, it adds the outermost timing's run on
+  this thread to the thread's busy time. The outermost keeps the ticks it has
+  run before (`prior_run_ticks`), which its end leaves out of the busy time it
+  adds, so each thread is charged for its own part. Each timing keeps its Profiler, so a timer ended on another fiber
+  meanwhile fails `EndTiming()`'s CHECK rather than being ignored.
 - `ResumeTimings()`: with null, does nothing. With no Profiler on the thread,
-  the timings stay without one, so they record nothing. Otherwise it adds the
-  wait to the innermost timing's point (CL3), turns each timing's ticks so far
-  back into a start, sets its Profiler, and makes them the thread's stack.
+  it clears each timing's Profiler, so they record nothing. Otherwise it adds
+  the wait to the innermost timing's point (CL3), turns each timing's ticks so
+  far back into a start, sets its Profiler, and makes them the thread's stack.
 - Each switch takes the thread's whole stack. The stack only ever holds the
   running fiber's timings, since every switch empties it and a fiber starts
   with none, which `ResumeTimings()` CHECKs.
 - A point's run time is measured in each thread's own ticks, so it doesn't
   depend on the threads' counters agreeing. Only its wait does.
-- The Profiler constructor sets the callbacks, once per program. No timing is
-  open before the first Profiler, so no switch with one is missed.
+- Each Profiler's constructor sets the callbacks, which only the first does
+  anything, as setting the same ones again does nothing. No timing is open
+  before the first Profiler, so no switch with one is missed.
 
 **Brittleness:** a timer must still end on the fiber it started on, in order,
 which the existing CHECK in `EndTiming()` catches. The stack holding only the
@@ -144,9 +151,16 @@ running fiber's timings depends on every switch going through
   - CL1, in RelWithDebInfo, the best of five rounds of a million round trips
     between two fibers on one thread: 51.6ns a switch with no callbacks set,
     and 52.0ns with callbacks that do nothing.
-- That a timed point's cost is unchanged (CL2).
+  - CL2, the same way, averaged over the two switches of a round trip: 51ns
+    with no callbacks set, 53.5ns with the profiler's and no open timings, and
+    63.25ns with three open on one of the two fibers.
+- That a timed point's cost is unchanged (CL2): in RelWithDebInfo, a scope in
+  a loop costs 14.75ns before and after. `GetPointCost()` went from
+  11.75-12.25ns to 12.25-12.75ns, as its measurement now stores the Profiler
+  and index, which a timer stored outside `StartTiming()` before.
 - That a timing's fields are read fresh after a switch in Release, since its
-  address is on the thread's stack (CL2's tests move a fiber between threads).
+  address is on the thread's stack: CL2's tests that move a fiber between
+  threads pass in RelWithDebInfo.
 
 ## CLs
 
@@ -167,7 +181,7 @@ Depends on: nothing.
   with none set, nothing is called.
 - Performance: a switch's cost with and without callbacks.
 
-### CL2 [ ] profile: Timers across fiber switches
+### CL2 [x] profile: Timers across fiber switches
 
 Depends on: CL1.
 
@@ -184,8 +198,9 @@ Depends on: CL1.
   inside it spanning a move to a thread with its own Profiler, recorded there,
   with run time only; resuming on a thread with no Profiler records nothing;
   a timer started with no Profiler stays ignored after moving to a thread with
-  one; switching with a frame in progress dies; ending timers out of order
-  still dies.
+  one; a scope that moves between two joined threads during a frame adds each
+  thread's part to its busy time, by its class of core; switching with a frame
+  in progress dies; ending timers out of order still dies.
 - Performance: a timed point, and a switch with the profiler's callbacks, with
   no open timings and with three.
 

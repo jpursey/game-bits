@@ -20,6 +20,7 @@
 #include "absl/strings/str_format.h"
 #include "absl/types/span.h"
 #include "gb/thread/cpu_ticks.h"
+#include "gb/thread/fiber.h"
 #include "gb/thread/thread.h"
 
 #ifdef _MSC_VER
@@ -227,6 +228,14 @@ Profiler::Profiler(Options options)
   }
   s_current = this;
 
+  // No timing is open before the first Profiler, so no switch with one is
+  // missed. Setting them again does nothing.
+  static constexpr FiberSwitchCallbacks kFiberSwitchCallbacks = {
+      .on_suspend = &SuspendTimings,
+      .on_resume = &ResumeTimings,
+  };
+  SetFiberSwitchCallbacks(&kFiberSwitchCallbacks);
+
   // The first read of the core's class finds every core's class, which is
   // done here rather than in the first frame.
   if (fake_cpu_ == nullptr) {
@@ -323,6 +332,56 @@ void Profiler::RemoveJoinedThread(int index) {
 // Never inlined, even by link-time code generation.
 GB_PROFILE_NOINLINE Profiler* Profiler::GetCurrent() { return s_current; }
 
+// The callbacks don't span a switch, as SwitchToFiber() calls each through a
+// pointer, on the thread it runs on, so they read s_current directly.
+void* Profiler::SuspendTimings() {
+  Profiler* const profiler = s_current;
+  if (profiler == nullptr || profiler->top_ == nullptr) {
+    return nullptr;
+  }
+  CHECK(profiler->current_frame_.number.Get() == 0)
+      << "A profile frame can't span a fiber switch";
+  // Each timing keeps its Profiler, so a timer ended on another fiber meanwhile
+  // fails EndTiming()'s CHECK, rather than being ignored.
+  const int64_t ticks = profiler->ReadTicks();
+  Timing* outermost = nullptr;
+  for (Timing* timing = profiler->top_; timing != nullptr;
+       timing = timing->parent) {
+    timing->start_ticks = ticks - timing->start_ticks;
+    outermost = timing;
+  }
+
+  // The outermost timing's run on this thread is this thread's busy time.
+  const int64_t run_ticks = outermost->start_ticks - outermost->prior_run_ticks;
+  outermost->prior_run_ticks = outermost->start_ticks;
+  if (profiler->main_ != nullptr) {
+    profiler->AddBusyTime(run_ticks);
+  }
+  return std::exchange(profiler->top_, nullptr);
+}
+
+void Profiler::ResumeTimings(void* state) {
+  if (state == nullptr) {
+    return;
+  }
+  Timing* const top = static_cast<Timing*>(state);
+  Profiler* const profiler = s_current;
+  if (profiler == nullptr) {
+    for (Timing* timing = top; timing != nullptr; timing = timing->parent) {
+      timing->profiler = nullptr;
+    }
+    return;
+  }
+  CHECK(profiler->top_ == nullptr)
+      << "A fiber resumed on a thread with timed points open";
+  const int64_t ticks = profiler->ReadTicks();
+  for (Timing* timing = top; timing != nullptr; timing = timing->parent) {
+    timing->start_ticks = ticks - timing->start_ticks;
+    timing->profiler = profiler;
+  }
+  profiler->top_ = top;
+}
+
 absl::Duration Profiler::GetPointCost() const {
   return TicksToDuration(point_cost_ticks_);
 }
@@ -411,32 +470,32 @@ double Profiler::MeasurePointCost() {
   // The points are timed inside another, as most are, so each also adds its
   // time to its parent's.
   Timing outer;
-  StartTiming(outer);
+  StartTiming(0, outer);
   int64_t fastest_ticks = std::numeric_limits<int64_t>::max();
   for (int round = 0; round < kCostRounds; ++round) {
     const int64_t start_ticks = ReadTicks();
     for (int i = 0; i < kCostPoints; ++i) {
       Timing timing;
-      StartTiming(timing);
-      EndTiming(0, timing);
+      StartTiming(0, timing);
+      EndTiming(timing);
     }
     fastest_ticks = std::min(fastest_ticks, ReadTicks() - start_ticks);
   }
-  EndTiming(0, outer);
+  EndTiming(outer);
   return static_cast<double>(fastest_ticks) / kCostPoints;
 }
 
-void Profiler::StartFrame(Timing& timing) {
+void Profiler::StartFrame(int index, Timing& timing) {
   CHECK(main_ == nullptr) << "A joined Profiler can't time frames";
   CHECK(current_frame_.number.Get() == 0) << "Profile frames can't nest";
   current_frame_.number.Set(++last_frame_number_);
   current_frame_timed_points_ = 0;
   current_frame_start_core_ = ReadCoreClass();
-  StartTiming(timing);
+  StartTiming(index, timing);
 }
 
-void Profiler::EndFrame(int index, Timing& timing) {
-  const int64_t frame_ticks = EndTiming(index, timing);
+void Profiler::EndFrame(Timing& timing) {
+  const int64_t frame_ticks = EndTiming(timing);
   frame_timed_points_ += current_frame_timed_points_;
   ++frames_;
   total_frame_ticks_ += frame_ticks;
