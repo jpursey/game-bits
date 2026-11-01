@@ -226,7 +226,7 @@ Depends on: CL2.
   the main Profiler's totals and frame breakdown, including once destroyed;
   report text with and without waits.
 
-### CL4 [ ] job: Timed points across job waits
+### CL4 [x] job: Timed points across job waits
 
 Depends on: CL3.
 

@@ -16,8 +16,12 @@
 #include "absl/strings/str_format.h"
 #include "absl/synchronization/mutex.h"
 #include "absl/synchronization/notification.h"
+#include "absl/time/time.h"
 #include "gb/base/context_builder.h"
 #include "gb/base/fake_clock.h"
+#include "gb/profile/fake_profiler_cpu.h"
+#include "gb/profile/profile_timer.h"
+#include "gb/profile/profiler.h"
 #include "gb/test/log_recorder.h"
 #include "gb/thread/fiber.h"
 #include "gb/thread/thread.h"
@@ -691,6 +695,52 @@ TEST(FiberJobSystemCreateTest, NegativeThreadCountFails) {
                     .SetValue<int>(FiberJobSystem::kKeyThreadCount, -1)
                     .Build()),
             nullptr);
+}
+
+// With one job thread, the waited-on job runs on the waiting job's thread while
+// it waits, in the same Profiler. Its run is the waiting scope's wait, which is
+// only recorded if Wait()'s fiber switch reaches the profiler.
+TEST(FiberJobSystemProfileTest, TimedScopeLeavesOutWaitedOnJob) {
+  if (!SupportsFibers()) {
+    GTEST_SKIP();
+  }
+  auto job_system = FiberJobSystem::Create(
+      ContextBuilder()
+          .SetValue<int>(FiberJobSystem::kKeyThreadCount, 1)
+          .Build());
+  ASSERT_NE(job_system, nullptr);
+
+  // A Profiler is read on its own thread, so the job reads what it recorded.
+  absl::Duration waiting_self_time;
+  absl::Duration waiting_wait_time;
+  absl::Duration other_self_time;
+  absl::Duration other_wait_time;
+  EXPECT_TRUE(job_system->Run([&] {
+    FakeProfilerCpu ticks;
+    Profiler profiler({.fake_cpu = &ticks});
+    {
+      ProfileScope<"JobWaitTest/Waiting"> scope;
+      ticks.Advance(1);
+      JobCounter counter;
+      EXPECT_TRUE(JobSystem::Get()->Run(&counter, [&ticks] {
+        ProfileScope<"JobWaitTest/Other"> scope;
+        ticks.Advance(10);
+      }));
+      JobSystem::Wait(&counter);
+      ticks.Advance(2);
+    }
+    waiting_self_time = profiler.GetSelfTime("JobWaitTest/Waiting");
+    waiting_wait_time = profiler.GetWaitTime("JobWaitTest/Waiting");
+    other_self_time = profiler.GetSelfTime("JobWaitTest/Other");
+    other_wait_time = profiler.GetWaitTime("JobWaitTest/Other");
+  }));
+
+  // Destroying the job system waits for the job, which uses these locals.
+  job_system.reset();
+  EXPECT_EQ(waiting_self_time, absl::Nanoseconds(3));
+  EXPECT_EQ(waiting_wait_time, absl::Nanoseconds(10));
+  EXPECT_EQ(other_self_time, absl::Nanoseconds(10));
+  EXPECT_EQ(other_wait_time, absl::ZeroDuration());
 }
 
 TEST(FiberJobSystemDeathTest, DestroyTimesOut) {

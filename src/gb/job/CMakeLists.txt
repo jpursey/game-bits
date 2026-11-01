@@ -22,6 +22,7 @@ set(gb_job_TEST_SOURCE
 
 set(gb_job_TEST_DEPS
   absl::str_format
+  gb_profile
   gb_test
 )
 
