@@ -14,6 +14,7 @@ endif()
 
 add_subdirectory(alloc)
 add_subdirectory(base)
+add_subdirectory(cli)
 add_subdirectory(collide)
 add_subdirectory(config)
 add_subdirectory(container)
