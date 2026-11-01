@@ -3,7 +3,7 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "gb/cli/cli_values.h"
+#include "gb/cli/cli_command_line.h"
 
 #include <cstdint>
 #include <limits>
@@ -24,13 +24,13 @@ using ::testing::ElementsAre;
 using ::testing::Optional;
 using ::testing::StartsWith;
 
-bool RunNothing(const CliValues&) { return true; }
-bool RunFails(const CliValues&) { return false; }
+bool RunNothing(const CliCommandLine&) { return true; }
+bool RunFails(const CliCommandLine&) { return false; }
 
-// Runs `values`, which must succeed, and returns the help it writes, if any.
-std::string RunForHelp(const CliValues& values) {
+// Runs `command_line`, which must succeed, and returns any help it writes.
+std::string RunForHelp(const CliCommandLine& command_line) {
   std::string help;
-  EXPECT_TRUE(values.Run(
+  EXPECT_TRUE(command_line.Run(
       [&help](std::string_view text) { absl::StrAppend(&help, text); }));
   return help;
 }
@@ -154,12 +154,12 @@ const CliCommand kMove = {
 // parse.
 std::string ParseError(const CliCommand* program,
                        const std::vector<std::string>& args) {
-  absl::StatusOr<CliValues> values = ParseCommandLine(program, args);
-  if (values.ok()) {
+  absl::StatusOr<CliCommandLine> command_line = ParseCommandLine(program, args);
+  if (command_line.ok()) {
     return "";
   }
-  EXPECT_EQ(values.status().code(), absl::StatusCode::kInvalidArgument);
-  return std::string(values.status().message());
+  EXPECT_EQ(command_line.status().code(), absl::StatusCode::kInvalidArgument);
+  return std::string(command_line.status().message());
 }
 
 //==============================================================================
@@ -168,112 +168,131 @@ std::string ParseError(const CliCommand* program,
 
 TEST(ParseCommandLineTest, LongFlagWithValue) {
   const std::vector<std::string> args = {"--output", "out.txt", "in.txt"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kConvert, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_THAT(values->Get(kOutput), Optional(std::string_view("out.txt")));
+  absl::StatusOr<CliCommandLine> command_line =
+      ParseCommandLine(&kConvert, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->Get(kOutput),
+              Optional(std::string_view("out.txt")));
 }
 
 TEST(ParseCommandLineTest, LongFlagWithAttachedValue) {
   const std::vector<std::string> args = {"--output=out.txt", "in.txt"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kConvert, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_THAT(values->Get(kOutput), Optional(std::string_view("out.txt")));
+  absl::StatusOr<CliCommandLine> command_line =
+      ParseCommandLine(&kConvert, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->Get(kOutput),
+              Optional(std::string_view("out.txt")));
 }
 
 TEST(ParseCommandLineTest, AttachedValueWithEquals) {
   const std::vector<std::string> args = {"--output=a=b", "in.txt"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kConvert, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_THAT(values->Get(kOutput), Optional(std::string_view("a=b")));
+  absl::StatusOr<CliCommandLine> command_line =
+      ParseCommandLine(&kConvert, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->Get(kOutput), Optional(std::string_view("a=b")));
 }
 
 TEST(ParseCommandLineTest, AttachedEmptyValue) {
   const std::vector<std::string> args = {"--output=", "in.txt"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kConvert, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_THAT(values->Get(kOutput), Optional(std::string_view("")));
+  absl::StatusOr<CliCommandLine> command_line =
+      ParseCommandLine(&kConvert, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->Get(kOutput), Optional(std::string_view("")));
 }
 
 TEST(ParseCommandLineTest, ShortFlagWithValue) {
   const std::vector<std::string> args = {"-o", "out.txt", "in.txt"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kConvert, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_THAT(values->Get(kOutput), Optional(std::string_view("out.txt")));
+  absl::StatusOr<CliCommandLine> command_line =
+      ParseCommandLine(&kConvert, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->Get(kOutput),
+              Optional(std::string_view("out.txt")));
 }
 
 TEST(ParseCommandLineTest, ValueStartingWithDash) {
   const std::vector<std::string> args = {"--output", "-v", "in.txt"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kConvert, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_THAT(values->Get(kOutput), Optional(std::string_view("-v")));
-  EXPECT_FALSE(values->Get(kVerbose));
+  absl::StatusOr<CliCommandLine> command_line =
+      ParseCommandLine(&kConvert, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->Get(kOutput), Optional(std::string_view("-v")));
+  EXPECT_FALSE(command_line->Get(kVerbose));
 }
 
 TEST(ParseCommandLineTest, FlagNotGiven) {
   const std::vector<std::string> args = {"in.txt"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kConvert, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_EQ(values->Get(kOutput), std::nullopt);
+  absl::StatusOr<CliCommandLine> command_line =
+      ParseCommandLine(&kConvert, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_EQ(command_line->Get(kOutput), std::nullopt);
 }
 
 TEST(ParseCommandLineTest, FlagDefault) {
   const std::vector<std::string> args = {"in.txt"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kConvert, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_THAT(values->Get(kMode), Optional(std::string_view("fast")));
+  absl::StatusOr<CliCommandLine> command_line =
+      ParseCommandLine(&kConvert, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->Get(kMode), Optional(std::string_view("fast")));
 }
 
 TEST(ParseCommandLineTest, DefaultIsNotValidated) {
   const std::vector<std::string> args = {"in.txt"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kConvert, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_THAT(values->Get(kTitle), Optional(std::string_view("")));
+  absl::StatusOr<CliCommandLine> command_line =
+      ParseCommandLine(&kConvert, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->Get(kTitle), Optional(std::string_view("")));
   EXPECT_EQ(ParseError(&kConvert, {"--title=", "in.txt"}),
             "convert: \"--title\": is empty");
 }
 
 TEST(ParseCommandLineTest, FlagOverridesDefault) {
   const std::vector<std::string> args = {"--mode", "slow", "in.txt"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kConvert, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_THAT(values->Get(kMode), Optional(std::string_view("slow")));
+  absl::StatusOr<CliCommandLine> command_line =
+      ParseCommandLine(&kConvert, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->Get(kMode), Optional(std::string_view("slow")));
 }
 
 TEST(ParseCommandLineTest, BoolFlags) {
   const std::vector<std::string> args = {"--verbose", "-q", "in.txt"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kConvert, args);
-  ASSERT_TRUE(values.ok()) << values.status();
+  absl::StatusOr<CliCommandLine> command_line =
+      ParseCommandLine(&kConvert, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
 
   // A bool flag reads as a plain bool, not a std::optional<bool>, which would
   // be true whenever it holds a value.
-  static_assert(std::is_same_v<decltype(values->Get(kVerbose)), bool>);
-  EXPECT_TRUE(values->Get(kVerbose));
-  EXPECT_TRUE(values->Get(kQuiet));
+  static_assert(std::is_same_v<decltype(command_line->Get(kVerbose)), bool>);
+  EXPECT_TRUE(command_line->Get(kVerbose));
+  EXPECT_TRUE(command_line->Get(kQuiet));
 }
 
 TEST(ParseCommandLineTest, BoolFlagNotGiven) {
   const std::vector<std::string> args = {"in.txt"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kConvert, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_FALSE(values->Get(kVerbose));
+  absl::StatusOr<CliCommandLine> command_line =
+      ParseCommandLine(&kConvert, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_FALSE(command_line->Get(kVerbose));
 }
 
 TEST(ParseCommandLineTest, FlagsBetweenArgs) {
   const std::vector<std::string> args = {"-v", "in.txt", "-o", "out.txt",
                                          "more.txt"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kConvert, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_TRUE(values->Get(kVerbose));
-  EXPECT_THAT(values->Get(kOutput), Optional(std::string_view("out.txt")));
-  EXPECT_THAT(values->Get(kInput), Optional(std::string_view("in.txt")));
-  EXPECT_THAT(values->Get(kExtra), Optional(std::string_view("more.txt")));
+  absl::StatusOr<CliCommandLine> command_line =
+      ParseCommandLine(&kConvert, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_TRUE(command_line->Get(kVerbose));
+  EXPECT_THAT(command_line->Get(kOutput),
+              Optional(std::string_view("out.txt")));
+  EXPECT_THAT(command_line->Get(kInput), Optional(std::string_view("in.txt")));
+  EXPECT_THAT(command_line->Get(kExtra),
+              Optional(std::string_view("more.txt")));
 }
 
 TEST(ParseCommandLineTest, ValidatorsPass) {
   const std::vector<std::string> args = {"--label", "name", "in.txt"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kConvert, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_THAT(values->Get(kLabel), Optional(std::string_view("name")));
+  absl::StatusOr<CliCommandLine> command_line =
+      ParseCommandLine(&kConvert, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->Get(kLabel), Optional(std::string_view("name")));
 }
 
 TEST(ParseCommandLineTest, UnknownFlag) {
@@ -325,42 +344,49 @@ TEST(ParseCommandLineTest, ValidatorsFail) {
 
 TEST(ParseCommandLineTest, RequiredArg) {
   const std::vector<std::string> args = {"in.txt"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kConvert, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_THAT(values->Get(kInput), Optional(std::string_view("in.txt")));
+  absl::StatusOr<CliCommandLine> command_line =
+      ParseCommandLine(&kConvert, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->Get(kInput), Optional(std::string_view("in.txt")));
 }
 
 TEST(ParseCommandLineTest, OptionalArgs) {
   const std::vector<std::string> args = {"in.txt", "more.txt", "last.txt"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kConvert, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_THAT(values->Get(kExtra), Optional(std::string_view("more.txt")));
-  EXPECT_THAT(values->Get(kLast), Optional(std::string_view("last.txt")));
+  absl::StatusOr<CliCommandLine> command_line =
+      ParseCommandLine(&kConvert, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->Get(kExtra),
+              Optional(std::string_view("more.txt")));
+  EXPECT_THAT(command_line->Get(kLast), Optional(std::string_view("last.txt")));
 }
 
 TEST(ParseCommandLineTest, OptionalArgsNotGiven) {
   const std::vector<std::string> args = {"in.txt"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kConvert, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_THAT(values->Get(kExtra), Optional(std::string_view("extra.txt")));
-  EXPECT_EQ(values->Get(kLast), std::nullopt);
+  absl::StatusOr<CliCommandLine> command_line =
+      ParseCommandLine(&kConvert, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->Get(kExtra),
+              Optional(std::string_view("extra.txt")));
+  EXPECT_EQ(command_line->Get(kLast), std::nullopt);
 }
 
 TEST(ParseCommandLineTest, DoubleDashEndsFlags) {
   const std::vector<std::string> args = {"-v", "--", "--quiet", "-o"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kConvert, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_TRUE(values->Get(kVerbose));
-  EXPECT_FALSE(values->Get(kQuiet));
-  EXPECT_THAT(values->Get(kInput), Optional(std::string_view("--quiet")));
-  EXPECT_THAT(values->Get(kExtra), Optional(std::string_view("-o")));
+  absl::StatusOr<CliCommandLine> command_line =
+      ParseCommandLine(&kConvert, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_TRUE(command_line->Get(kVerbose));
+  EXPECT_FALSE(command_line->Get(kQuiet));
+  EXPECT_THAT(command_line->Get(kInput), Optional(std::string_view("--quiet")));
+  EXPECT_THAT(command_line->Get(kExtra), Optional(std::string_view("-o")));
 }
 
 TEST(ParseCommandLineTest, SingleDashIsArg) {
   const std::vector<std::string> args = {"-"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kConvert, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_THAT(values->Get(kInput), Optional(std::string_view("-")));
+  absl::StatusOr<CliCommandLine> command_line =
+      ParseCommandLine(&kConvert, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->Get(kInput), Optional(std::string_view("-")));
 }
 
 TEST(ParseCommandLineTest, MissingArg) {
@@ -384,45 +410,46 @@ TEST(ParseCommandLineTest, ArgValidatorFails) {
 
 TEST(ParseCommandLineTest, Program) {
   const std::vector<std::string> args = {};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kTool, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_EQ(values->GetProgram(), &kTool);
-  EXPECT_EQ(values->GetCommand(), &kTool);
-  EXPECT_THAT(values->GetCommandPath(), ElementsAre(&kTool));
+  absl::StatusOr<CliCommandLine> command_line = ParseCommandLine(&kTool, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_EQ(command_line->GetProgram(), &kTool);
+  EXPECT_EQ(command_line->GetCommand(), &kTool);
+  EXPECT_THAT(command_line->GetCommandPath(), ElementsAre(&kTool));
 }
 
 TEST(ParseCommandLineTest, Subcommand) {
   const std::vector<std::string> args = {"remote", "add", "origin"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kTool, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_EQ(values->GetProgram(), &kTool);
-  EXPECT_EQ(values->GetCommand(), &kAdd);
-  EXPECT_THAT(values->GetCommandPath(), ElementsAre(&kTool, &kRemote, &kAdd));
-  EXPECT_THAT(values->Get(kName), Optional(std::string_view("origin")));
+  absl::StatusOr<CliCommandLine> command_line = ParseCommandLine(&kTool, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_EQ(command_line->GetProgram(), &kTool);
+  EXPECT_EQ(command_line->GetCommand(), &kAdd);
+  EXPECT_THAT(command_line->GetCommandPath(),
+              ElementsAre(&kTool, &kRemote, &kAdd));
+  EXPECT_THAT(command_line->Get(kName), Optional(std::string_view("origin")));
 }
 
 TEST(ParseCommandLineTest, ParentFlagBeforeSubcommand) {
   const std::vector<std::string> args = {"--verbose", "remote", "add",
                                          "origin"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kTool, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_TRUE(values->Get(kVerbose));
+  absl::StatusOr<CliCommandLine> command_line = ParseCommandLine(&kTool, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_TRUE(command_line->Get(kVerbose));
 }
 
 TEST(ParseCommandLineTest, ParentFlagAfterSubcommand) {
   const std::vector<std::string> args = {"remote", "add", "origin", "-v", "-f"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kTool, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_TRUE(values->Get(kVerbose));
-  EXPECT_TRUE(values->Get(kForce));
+  absl::StatusOr<CliCommandLine> command_line = ParseCommandLine(&kTool, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_TRUE(command_line->Get(kVerbose));
+  EXPECT_TRUE(command_line->Get(kForce));
 }
 
 TEST(ParseCommandLineTest, SameFlagInSiblingCommands) {
   const std::vector<std::string> args = {"remote", "remove", "-f", "origin"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kTool, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_EQ(values->GetCommand(), &kRemove);
-  EXPECT_TRUE(values->Get(kForce));
+  absl::StatusOr<CliCommandLine> command_line = ParseCommandLine(&kTool, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_EQ(command_line->GetCommand(), &kRemove);
+  EXPECT_TRUE(command_line->Get(kForce));
 }
 
 TEST(ParseCommandLineTest, SubcommandFlagBeforeSubcommand) {
@@ -436,10 +463,10 @@ TEST(ParseCommandLineTest, UnknownCommand) {
 
 TEST(ParseCommandLineTest, NoCommandAndNoRunFunction) {
   const std::vector<std::string> args = {"remote"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kTool, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_THAT(values->GetCommandPath(), ElementsAre(&kTool, &kRemote));
-  EXPECT_THAT(RunForHelp(*values),
+  absl::StatusOr<CliCommandLine> command_line = ParseCommandLine(&kTool, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->GetCommandPath(), ElementsAre(&kTool, &kRemote));
+  EXPECT_THAT(RunForHelp(*command_line),
               StartsWith("Usage: tool remote [<flags>] <command>\n"));
 }
 
@@ -457,48 +484,50 @@ TEST(ParseCommandLineTest, DoubleDashBeforeCommand) {
 // Help
 //==============================================================================
 
-TEST(CliValuesTest, RunRunsTheCommand) {
+TEST(CliCommandLineTest, RunRunsTheCommand) {
   const std::vector<std::string> args = {"status"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kTool, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_EQ(RunForHelp(*values), "");
+  absl::StatusOr<CliCommandLine> command_line = ParseCommandLine(&kTool, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_EQ(RunForHelp(*command_line), "");
 }
 
-TEST(CliValuesTest, RunReturnsWhetherTheCommandSucceeded) {
+TEST(CliCommandLineTest, RunReturnsWhetherTheCommandSucceeded) {
   static const CliCommand kFails = {.name = "fails", .run = RunFails};
   const std::vector<std::string> args = {};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kFails, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_FALSE(values->Run(
+  absl::StatusOr<CliCommandLine> command_line = ParseCommandLine(&kFails, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_FALSE(command_line->Run(
       [](std::string_view text) { ADD_FAILURE() << "Wrote help: " << text; }));
 }
 
-TEST(CliValuesTest, RunWritesHelpForACommandWithNoRunFunction) {
+TEST(CliCommandLineTest, RunWritesHelpForACommandWithNoRunFunction) {
   static const CliCommand kNoRun = {.name = "prog"};
   const std::vector<std::string> args = {};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kNoRun, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_THAT(RunForHelp(*values), StartsWith("Usage: prog [<flags>]\n"));
+  absl::StatusOr<CliCommandLine> command_line = ParseCommandLine(&kNoRun, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(RunForHelp(*command_line), StartsWith("Usage: prog [<flags>]\n"));
 }
 
 TEST(ParseCommandLineTest, HelpFlag) {
   for (const std::string_view flag : {"--help", "-h"}) {
     // The help is for the command so far, and needs nothing that is missing.
     const std::vector<std::string> args = {"remote", "add", std::string(flag)};
-    absl::StatusOr<CliValues> values = ParseCommandLine(&kTool, args);
-    ASSERT_TRUE(values.ok()) << values.status();
-    EXPECT_THAT(values->GetCommandPath(), ElementsAre(&kTool, &kRemote, &kAdd));
-    EXPECT_THAT(RunForHelp(*values),
+    absl::StatusOr<CliCommandLine> command_line =
+        ParseCommandLine(&kTool, args);
+    ASSERT_TRUE(command_line.ok()) << command_line.status();
+    EXPECT_THAT(command_line->GetCommandPath(),
+                ElementsAre(&kTool, &kRemote, &kAdd));
+    EXPECT_THAT(RunForHelp(*command_line),
                 StartsWith("Usage: tool remote add [<flags>] <name>\n"));
   }
 }
 
 TEST(ParseCommandLineTest, HelpFlagStopsParsing) {
   const std::vector<std::string> args = {"-v", "-h", "nope", "--nope", "-v"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kTool, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_THAT(values->GetCommandPath(), ElementsAre(&kTool));
-  EXPECT_THAT(RunForHelp(*values), StartsWith("Usage: tool [<flags>]"));
+  absl::StatusOr<CliCommandLine> command_line = ParseCommandLine(&kTool, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->GetCommandPath(), ElementsAre(&kTool));
+  EXPECT_THAT(RunForHelp(*command_line), StartsWith("Usage: tool [<flags>]"));
 }
 
 TEST(ParseCommandLineTest, ErrorBeforeHelpFlag) {
@@ -515,35 +544,39 @@ TEST(ParseCommandLineTest, HelpFlagWithValue) {
 
 TEST(ParseCommandLineTest, HelpFlagAfterDoubleDash) {
   const std::vector<std::string> args = {"--", "--help"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kConvert, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_THAT(values->Get(kInput), Optional(std::string_view("--help")));
-  EXPECT_EQ(RunForHelp(*values), "");
+  absl::StatusOr<CliCommandLine> command_line =
+      ParseCommandLine(&kConvert, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->Get(kInput), Optional(std::string_view("--help")));
+  EXPECT_EQ(RunForHelp(*command_line), "");
 }
 
 TEST(ParseCommandLineTest, HelpCommand) {
   const std::vector<std::string> args = {"help", "remote", "add"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kTool, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_THAT(values->GetCommandPath(), ElementsAre(&kTool, &kRemote, &kAdd));
-  EXPECT_THAT(RunForHelp(*values),
+  absl::StatusOr<CliCommandLine> command_line = ParseCommandLine(&kTool, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->GetCommandPath(),
+              ElementsAre(&kTool, &kRemote, &kAdd));
+  EXPECT_THAT(RunForHelp(*command_line),
               StartsWith("Usage: tool remote add [<flags>] <name>\n"));
 }
 
 TEST(ParseCommandLineTest, HelpCommandAlone) {
   const std::vector<std::string> args = {"-v", "help"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kTool, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_THAT(values->GetCommandPath(), ElementsAre(&kTool));
-  EXPECT_THAT(RunForHelp(*values), StartsWith("Usage: tool [<flags>]"));
+  absl::StatusOr<CliCommandLine> command_line = ParseCommandLine(&kTool, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->GetCommandPath(), ElementsAre(&kTool));
+  EXPECT_THAT(RunForHelp(*command_line), StartsWith("Usage: tool [<flags>]"));
 }
 
 TEST(ParseCommandLineTest, HelpForHelpCommand) {
   const std::vector<std::string> args = {"help", "help"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kTool, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_THAT(values->GetCommandPath(), ElementsAre(&kTool, &kCliHelpCommand));
-  EXPECT_THAT(RunForHelp(*values), StartsWith("Usage: tool help [<flags>]"));
+  absl::StatusOr<CliCommandLine> command_line = ParseCommandLine(&kTool, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->GetCommandPath(),
+              ElementsAre(&kTool, &kCliHelpCommand));
+  EXPECT_THAT(RunForHelp(*command_line),
+              StartsWith("Usage: tool help [<flags>]"));
 }
 
 TEST(ParseCommandLineTest, HelpCommandOnlyNamesCommands) {
@@ -559,28 +592,28 @@ TEST(ParseCommandLineTest, HelpCommandOnlyNamesCommands) {
 
 TEST(ParseCommandLineTest, Integers) {
   const std::vector<std::string> args = {"--count", "-12", "--limit", "+5"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kTypes, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_THAT(values->Get(kCount), Optional(-12));
-  EXPECT_THAT(values->Get(kLimit), Optional(5));
+  absl::StatusOr<CliCommandLine> command_line = ParseCommandLine(&kTypes, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->Get(kCount), Optional(-12));
+  EXPECT_THAT(command_line->Get(kLimit), Optional(5));
 }
 
 TEST(ParseCommandLineTest, IntegerDefault) {
   const std::vector<std::string> args = {};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kTypes, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_EQ(values->Get(kCount), std::nullopt);
-  EXPECT_THAT(values->Get(kLimit), Optional(10));
+  absl::StatusOr<CliCommandLine> command_line = ParseCommandLine(&kTypes, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_EQ(command_line->Get(kCount), std::nullopt);
+  EXPECT_THAT(command_line->Get(kLimit), Optional(10));
 }
 
 TEST(ParseCommandLineTest, IntegerLimits) {
   const std::vector<std::string> args = {"--count=9223372036854775807",
                                          "--limit=-9223372036854775808"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kTypes, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_THAT(values->Get(kCount),
+  absl::StatusOr<CliCommandLine> command_line = ParseCommandLine(&kTypes, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->Get(kCount),
               Optional(std::numeric_limits<int64_t>::max()));
-  EXPECT_THAT(values->Get(kLimit),
+  EXPECT_THAT(command_line->Get(kLimit),
               Optional(std::numeric_limits<int64_t>::min()));
 }
 
@@ -608,18 +641,18 @@ TEST(ParseCommandLineTest, IntegerOutOfRange) {
 
 TEST(ParseCommandLineTest, FloatingPoint) {
   const std::vector<std::string> args = {"--ratio", "0.25", "--scale", "-1e3"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kTypes, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_THAT(values->Get(kRatio), Optional(0.25));
-  EXPECT_THAT(values->Get(kScale), Optional(-1000.0));
+  absl::StatusOr<CliCommandLine> command_line = ParseCommandLine(&kTypes, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->Get(kRatio), Optional(0.25));
+  EXPECT_THAT(command_line->Get(kScale), Optional(-1000.0));
 }
 
 TEST(ParseCommandLineTest, FloatingPointDefault) {
   const std::vector<std::string> args = {};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kTypes, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_EQ(values->Get(kRatio), std::nullopt);
-  EXPECT_THAT(values->Get(kScale), Optional(1.5));
+  absl::StatusOr<CliCommandLine> command_line = ParseCommandLine(&kTypes, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_EQ(command_line->Get(kRatio), std::nullopt);
+  EXPECT_THAT(command_line->Get(kScale), Optional(1.5));
 }
 
 TEST(ParseCommandLineTest, NotANumber) {
@@ -646,19 +679,19 @@ TEST(ParseCommandLineTest, NotAFiniteNumber) {
 
 TEST(ParseCommandLineTest, NumberArgs) {
   const std::vector<std::string> args = {"12", "2.5"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kMove, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_THAT(values->Get(kOffset), Optional(12));
-  EXPECT_THAT(values->Get(kFactor), Optional(2.5));
+  absl::StatusOr<CliCommandLine> command_line = ParseCommandLine(&kMove, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->Get(kOffset), Optional(12));
+  EXPECT_THAT(command_line->Get(kFactor), Optional(2.5));
 }
 
 TEST(ParseCommandLineTest, NegativeNumberArgs) {
   const std::vector<std::string> args = {"-r", "-5", "-.5"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kMove, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_TRUE(values->Get(kRelative));
-  EXPECT_THAT(values->Get(kOffset), Optional(-5));
-  EXPECT_THAT(values->Get(kFactor), Optional(-0.5));
+  absl::StatusOr<CliCommandLine> command_line = ParseCommandLine(&kMove, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_TRUE(command_line->Get(kRelative));
+  EXPECT_THAT(command_line->Get(kOffset), Optional(-5));
+  EXPECT_THAT(command_line->Get(kFactor), Optional(-0.5));
 }
 
 TEST(ParseCommandLineTest, NegativeNumberLooksLikeAnArg) {
@@ -671,25 +704,27 @@ TEST(ParseCommandLineTest, NegativeNumberLooksLikeAnArg) {
   EXPECT_EQ(ParseError(&kTool, {"-1"}), "tool: unknown command \"-1\"");
 
   const std::vector<std::string> args = {"-5"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kConvert, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_THAT(values->Get(kInput), Optional(std::string_view("-5")));
+  absl::StatusOr<CliCommandLine> command_line =
+      ParseCommandLine(&kConvert, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->Get(kInput), Optional(std::string_view("-5")));
 }
 
 TEST(ParseCommandLineTest, Choices) {
   const std::vector<std::string> args = {"--shape", "square", "circle"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kTypes, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_THAT(values->Get(kShape), Optional(std::string_view("square")));
-  EXPECT_THAT(values->Get(kOutline), Optional(std::string_view("circle")));
+  absl::StatusOr<CliCommandLine> command_line = ParseCommandLine(&kTypes, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->Get(kShape), Optional(std::string_view("square")));
+  EXPECT_THAT(command_line->Get(kOutline),
+              Optional(std::string_view("circle")));
 }
 
 TEST(ParseCommandLineTest, ChoiceDefault) {
   const std::vector<std::string> args = {};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kTypes, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_THAT(values->Get(kShape), Optional(std::string_view("circle")));
-  EXPECT_EQ(values->Get(kOutline), std::nullopt);
+  absl::StatusOr<CliCommandLine> command_line = ParseCommandLine(&kTypes, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->Get(kShape), Optional(std::string_view("circle")));
+  EXPECT_EQ(command_line->Get(kOutline), std::nullopt);
 }
 
 TEST(ParseCommandLineTest, NotAChoice) {
@@ -715,17 +750,17 @@ TEST(ParseCommandLineDeathTest, InvalidProgram) {
 
 TEST(ParseCommandLineDeathTest, GetOutsideCommandPath) {
   const std::vector<std::string> args = {"status"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kTool, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_DEATH(values->Get(kForce), "doesn't belong");
-  EXPECT_DEATH(values->Get(kName), "doesn't belong");
+  absl::StatusOr<CliCommandLine> command_line = ParseCommandLine(&kTool, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_DEATH(command_line->Get(kForce), "doesn't belong");
+  EXPECT_DEATH(command_line->Get(kName), "doesn't belong");
 }
 
 TEST(ParseCommandLineDeathTest, GetForHelp) {
   const std::vector<std::string> args = {"-v", "--help"};
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kTool, args);
-  ASSERT_TRUE(values.ok()) << values.status();
-  EXPECT_DEATH(values->Get(kVerbose), "asks for help");
+  absl::StatusOr<CliCommandLine> command_line = ParseCommandLine(&kTool, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_DEATH(command_line->Get(kVerbose), "asks for help");
 }
 
 }  // namespace

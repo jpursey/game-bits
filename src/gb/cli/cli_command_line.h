@@ -3,8 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef GB_CLI_CLI_VALUES_H_
-#define GB_CLI_CLI_VALUES_H_
+#ifndef GB_CLI_CLI_COMMAND_LINE_H_
+#define GB_CLI_CLI_COMMAND_LINE_H_
 
 #include <cstdint>
 #include <optional>
@@ -30,15 +30,16 @@ using CliValue = std::variant<bool, std::string_view, int64_t, double>;
 }  // namespace internal
 
 //==============================================================================
-// CliValues
+// CliCommandLine
 //==============================================================================
 
-// The values given on a command line, for the command it names. These are made
-// by ParseCommandLine().
+// A parsed command line: the command it names, and the values given for that
+// command's flags and arguments and those of the commands above it. This is
+// made by ParseCommandLine().
 //
 // String values point into the arguments that were parsed, so the arguments
-// must outlive these values.
-class CliValues {
+// must outlive this.
+class CliCommandLine {
  public:
   // Returns the program: the root of the command tree.
   const CliCommand* GetProgram() const { return path_.front(); }
@@ -50,7 +51,7 @@ class CliValues {
   // Returns the path from the program to the command the command line names.
   absl::Span<const CliCommand* const> GetCommandPath() const { return path_; }
 
-  // Runs the command with these values, returning whether it succeeded.
+  // Runs the command with this command line, returning whether it succeeded.
   //
   // If the command line asks for help, with "--help", "-h", or the help command
   // (see cli_help.h), this writes the command's help (FormatCliHelp()) to
@@ -81,12 +82,12 @@ class CliValues {
   std::optional<T> Get(const CliArg<T>& arg) const;
 
  private:
-  friend absl::StatusOr<CliValues> ParseCommandLine(
+  friend absl::StatusOr<CliCommandLine> ParseCommandLine(
       const CliCommand* program, absl::Span<const std::string> args);
 
-  CliValues(std::vector<const CliCommand*> path,
-            absl::flat_hash_map<const void*, internal::CliValue> values,
-            bool is_help)
+  CliCommandLine(std::vector<const CliCommand*> path,
+                 absl::flat_hash_map<const void*, internal::CliValue> values,
+                 bool is_help)
       : path_(std::move(path)), values_(std::move(values)), is_help_(is_help) {}
 
   // Returns the value given for `definition`, or null if none was. CHECKs that
@@ -112,13 +113,13 @@ class CliValues {
 // valid (see ValidateCliCommand(), which this CHECKs).
 //
 // A command line that is valid may ask for help rather than for the command to
-// run, so pass the values to CliValues::Run(), which handles both, rather than
-// reading them directly.
+// run, so pass it to CliCommandLine::Run(), which handles both, rather than
+// reading its values directly.
 //
-// String values point into `args`, so `args` must outlive the values.
-absl::StatusOr<CliValues> ParseCommandLine(const CliCommand* program,
-                                           absl::Span<const std::string> args);
+// String values point into `args`, so `args` must outlive the command line.
+absl::StatusOr<CliCommandLine> ParseCommandLine(
+    const CliCommand* program, absl::Span<const std::string> args);
 
 }  // namespace gb
 
-#endif  // GB_CLI_CLI_VALUES_H_
+#endif  // GB_CLI_CLI_COMMAND_LINE_H_

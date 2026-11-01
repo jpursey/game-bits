@@ -11,7 +11,7 @@
 #include <vector>
 
 #include "gb/cli/cli.h"
-#include "gb/cli/cli_values.h"
+#include "gb/cli/cli_command_line.h"
 #include "gtest/gtest.h"
 
 namespace gb {
@@ -91,11 +91,12 @@ const CliCommand kProgram = {
 };
 
 std::string ParseError(const std::vector<std::string>& args) {
-  absl::StatusOr<CliValues> values = ParseCommandLine(&kProgram, args);
-  if (values.ok()) {
+  absl::StatusOr<CliCommandLine> command_line =
+      ParseCommandLine(&kProgram, args);
+  if (command_line.ok()) {
     return "";
   }
-  return std::string(values.status().message());
+  return std::string(command_line.status().message());
 }
 
 TEST(CliValidatorsTest, InDefinitions) {

@@ -3,7 +3,7 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "gb/cli/cli_values.h"
+#include "gb/cli/cli_command_line.h"
 
 #include <cstdint>
 #include <optional>
@@ -253,10 +253,10 @@ absl::Status CliParser::Error(std::string_view message) const {
 }  // namespace
 
 //==============================================================================
-// CliValues
+// CliCommandLine
 //==============================================================================
 
-bool CliValues::Run(
+bool CliCommandLine::Run(
     absl::FunctionRef<void(std::string_view help)> write_help) const {
   const CliCommand* command = GetCommand();
   if (is_help_ || command->run == nullptr) {
@@ -266,12 +266,12 @@ bool CliValues::Run(
   return command->run(*this);
 }
 
-bool CliValues::Get(const CliFlag<bool>& flag) const {
+bool CliCommandLine::Get(const CliFlag<bool>& flag) const {
   return Find(&flag) != nullptr;
 }
 
 template <typename T>
-std::optional<T> CliValues::Get(const CliFlag<T>& flag) const {
+std::optional<T> CliCommandLine::Get(const CliFlag<T>& flag) const {
   const internal::CliValue* value = Find(&flag);
   if (value == nullptr) {
     return flag.default_value;
@@ -280,7 +280,7 @@ std::optional<T> CliValues::Get(const CliFlag<T>& flag) const {
 }
 
 template <typename T>
-std::optional<T> CliValues::Get(const CliArg<T>& arg) const {
+std::optional<T> CliCommandLine::Get(const CliArg<T>& arg) const {
   const internal::CliValue* value = Find(&arg);
   if (value == nullptr) {
     return arg.default_value;
@@ -288,19 +288,20 @@ std::optional<T> CliValues::Get(const CliArg<T>& arg) const {
   return *std::get_if<T>(value);
 }
 
-template std::optional<std::string_view> CliValues::Get(
+template std::optional<std::string_view> CliCommandLine::Get(
     const CliFlag<std::string_view>& flag) const;
-template std::optional<int64_t> CliValues::Get(
+template std::optional<int64_t> CliCommandLine::Get(
     const CliFlag<int64_t>& flag) const;
-template std::optional<double> CliValues::Get(
+template std::optional<double> CliCommandLine::Get(
     const CliFlag<double>& flag) const;
-template std::optional<std::string_view> CliValues::Get(
+template std::optional<std::string_view> CliCommandLine::Get(
     const CliArg<std::string_view>& arg) const;
-template std::optional<int64_t> CliValues::Get(
+template std::optional<int64_t> CliCommandLine::Get(
     const CliArg<int64_t>& arg) const;
-template std::optional<double> CliValues::Get(const CliArg<double>& arg) const;
+template std::optional<double> CliCommandLine::Get(
+    const CliArg<double>& arg) const;
 
-const internal::CliValue* CliValues::Find(const void* definition) const {
+const internal::CliValue* CliCommandLine::Find(const void* definition) const {
   CHECK(!is_help_) << "Flag or argument read from a command line for \""
                    << internal::GetCliPathName(path_)
                    << "\" that asks for help";
@@ -314,7 +315,7 @@ const internal::CliValue* CliValues::Find(const void* definition) const {
   return nullptr;
 }
 
-bool CliValues::IsInPath(const void* definition) const {
+bool CliCommandLine::IsInPath(const void* definition) const {
   for (const CliCommand* command : path_) {
     for (const CliAnyFlag& flag : command->flags) {
       if (internal::GetCliFlagFields(flag).definition == definition) {
@@ -334,15 +335,16 @@ bool CliValues::IsInPath(const void* definition) const {
 // ParseCommandLine
 //==============================================================================
 
-absl::StatusOr<CliValues> ParseCommandLine(const CliCommand* program,
-                                           absl::Span<const std::string> args) {
+absl::StatusOr<CliCommandLine> ParseCommandLine(
+    const CliCommand* program, absl::Span<const std::string> args) {
   CHECK_OK(ValidateCliCommand(program));
   CliParser parser(program);
   const absl::Status status = parser.Parse(args);
   if (!status.ok()) {
     return status;
   }
-  return CliValues(parser.TakePath(), parser.TakeValues(), parser.IsHelp());
+  return CliCommandLine(parser.TakePath(), parser.TakeValues(),
+                        parser.IsHelp());
 }
 
 }  // namespace gb

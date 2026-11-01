@@ -39,7 +39,7 @@ namespace gb {
 //       .help = "The file to read.",
 //   };
 //
-//   bool Run(const gb::CliValues& values);
+//   bool Run(const gb::CliCommandLine& command_line);
 //
 //   const gb::CliCommand kProgram = {
 //       .name = "convert",
@@ -49,8 +49,8 @@ namespace gb {
 //       .run = Run,
 //   };
 //
-// The command that runs reads the values given for them from CliValues (see
-// cli_values.h), using the same definitions.
+// The command that runs reads the values given for them from the parsed
+// CliCommandLine (see cli_command_line.h), using the same definitions.
 //
 // A flag's or argument's value is a std::string_view, int64_t, or double, and a
 // flag may also be a bool.
@@ -66,7 +66,7 @@ namespace gb {
 // main() starts.
 //==============================================================================
 
-class CliValues;
+class CliCommandLine;
 
 namespace internal {
 
@@ -196,7 +196,7 @@ using CliAnyArg = std::variant<const CliArg<std::string_view>*,
 // A command has either positional arguments or subcommands, not both. Its
 // flags are accepted anywhere after its name, including after its
 // subcommands' names. Every command also takes "--help" and "-h", which ask for
-// its help (see CliValues::Run()).
+// its help (see CliCommandLine::Run()).
 struct CliCommand {
   // The command's name. For the program, this is the name used in help and
   // errors (rather than `argv[0]`). This must not be empty or start with "-".
@@ -217,9 +217,9 @@ struct CliCommand {
 
   // Runs the command with the values given on the command line, returning
   // whether it succeeded. A command with no run function writes its help
-  // instead (see CliValues::Run()), so one with subcommands but no run
+  // instead (see CliCommandLine::Run()), so one with subcommands but no run
   // function writes its help if none of them is named.
-  bool (*run)(const CliValues& values) = nullptr;
+  bool (*run)(const CliCommandLine& command_line) = nullptr;
 
   // Leave unset. This is here only to prevent the definition from being
   // constexpr.

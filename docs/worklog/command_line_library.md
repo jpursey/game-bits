@@ -40,7 +40,7 @@ const gb::CliArg<std::string_view> kProgramFile = {
     .optional = true,
 };
 
-bool Run(const gb::CliValues& values);
+bool Run(const gb::CliCommandLine& command_line);
 
 const gb::CliCommand kProgram = {
     .name = "oz3asm",
@@ -50,10 +50,11 @@ const gb::CliCommand kProgram = {
     .run = Run,
 };
 
-bool Run(const gb::CliValues& values) {
-  std::optional<std::string_view> instruction_set = values.Get(kInstructionSet);
-  const bool write_map = values.Get(kMap);
-  const std::string_view source_path = *values.Get(kSourceFile);
+bool Run(const gb::CliCommandLine& command_line) {
+  std::optional<std::string_view> instruction_set =
+      command_line.Get(kInstructionSet);
+  const bool write_map = command_line.Get(kMap);
+  const std::string_view source_path = *command_line.Get(kSourceFile);
   ...
 }
 
@@ -79,7 +80,7 @@ int main(int argc, char* argv[]) {
   initialized dynamically, at startup. That is safe because definitions refer
   to each other only by address, and must not be read before `main()`.
 - **Commands:** a `CliCommand` has a name, help, flags, positional arguments,
-  subcommands, and an optional run function, `bool (*)(const CliValues&)`.
+  subcommands, and an optional run function, `bool (*)(const CliCommandLine&)`.
   The program is the root command, and its name is used in help rather than
   `argv[0]`. A command has either arguments or subcommands, not both. A
   command with no run function writes its help when it is run, so a command
@@ -129,7 +130,7 @@ int main(int argc, char* argv[]) {
 ### Parsing
 
 ```
-absl::StatusOr<CliValues> ParseCommandLine(
+absl::StatusOr<CliCommandLine> ParseCommandLine(
     const CliCommand* program, absl::Span<const std::string> args);
 ```
 
@@ -157,7 +158,7 @@ absl::StatusOr<CliValues> ParseCommandLine(
 ### Values
 
 ```
-class CliValues {
+class CliCommandLine {
  public:
   const CliCommand* GetProgram() const;
   const CliCommand* GetCommand() const;  // The command that runs.
@@ -189,7 +190,7 @@ class CliValues {
 ### Help
 
 - Every command accepts `--help` and `-h`, which stop parsing and request the
-  help for the command so far, which `CliValues::Run()` writes. Nothing after
+  help for the command so far, which `CliCommandLine::Run()` writes. Nothing after
   them is checked.
 - `gb::kCliHelpCommand` is a `help` command a program can add to any command's
   subcommands: `prog help build` is `prog build --help`, and `prog help` is
@@ -252,7 +253,7 @@ std::vector<std::string> GetMainArgs(int argc, char* argv[]);
 ```
 
 - `RunCommandLine()` parses the command line, then writes the error if it
-  isn't valid, or else calls `CliValues::Run()`, which writes the help if it
+  isn't valid, or else calls `CliCommandLine::Run()`, which writes the help if it
   was asked for, or runs the command. Text goes only to `write`, so a program can send it elsewhere (a
   log, a window), and tests can collect it. Returns `main`'s exit code: 0 if
   the command succeeded or help was written, 1 if the command returned false,
@@ -276,9 +277,13 @@ is a component a program takes on its own, and nothing in tier 0 needs it.
 ### Names
 
 - `gb_cli`, and a `Cli` prefix on its types and functions: `CliCommand`,
-  `CliFlag`, `CliArg`, `CliChoice`, `CliValues`. "Flag" alone would
+  `CliFlag`, `CliArg`, `CliChoice`, `CliCommandLine`. "Flag" alone would
   be confused with `gb::Flags<T>`, the enumeration bit set in `gb_base`, and
   "Option" with the `Options` structs throughout Game Bits.
+- `CliCommandLine`: the parsed command line, which `ParseCommandLine()`
+  returns. It holds more than values (the command path, whether help was asked
+  for, and `Run()`), so not `CliValues`. Not `CliResult`, which reads as the
+  outcome of running, and not `ParsedCli`, which breaks the `Cli` prefix.
 - `ParseCommandLine()`, `RunCommandLine()`, `FormatCliHelp()`,
   `ValidateCliCommand()`, `CliText` and `WriteCliText()`.
 - `GetMainArgs()`: the arguments `main()` is given. Not `GetCommandLine...`,
@@ -293,7 +298,7 @@ is a component a program takes on its own, and nothing in tier 0 needs it.
   `gb_cli` and its tests: the fields every flag or argument has, parsing a
   value for any of them, and `GetCliPathName()`, for errors and help.
 - `cli_validators.h`: the common validators.
-- `cli_values.h`: `CliValues` and `ParseCommandLine()`.
+- `cli_command_line.h`: `CliCommandLine` and `ParseCommandLine()`.
 - `cli_help.h`: `kCliHelpCommand` and `FormatCliHelp()`.
 - `run_command_line.h`: `CliText`, `WriteCliText()`, `RunCommandLine()`, and
   `GetMainArgs()`. Nothing in the library is platform-specific.
@@ -317,10 +322,10 @@ using CliAnyArg =
   library's sources `std::visit` them, so parsing and validating definitions
   are in the `.cc` files, and `cli.h` holds only what a program writes, apart
   from `internal::CliNotConstexpr`.
-- `CliValues` maps each definition's address to its value, an
+- `CliCommandLine` maps each definition's address to its value, an
   `internal::CliValue` (`std::variant<bool, std::string_view, int64_t,
   double>`), in an `absl::flat_hash_map`. `Get<T>()` looks it up, so a read
-  costs one hash lookup. It is defined in `cli_values.cc`, and explicitly
+  costs one hash lookup. It is defined in `cli_command_line.cc`, and explicitly
   instantiated for each value type.
 - CL1 and CL2 allowed any enumeration as a value type too. That left the type
   open, so each type's parsing had to be instantiated from the header and
@@ -340,7 +345,7 @@ using CliAnyArg =
   and `CliArg`, `CliAnyFlag`, `CliAnyArg`, and `CliValue`. A new type is
   added to each, given a `ParseText()` overload in `cli_internal.cc` (whose
   absence fails to compile), and an explicit instantiation of `Get()` in
-  `cli_values.cc` (whose absence fails to link).
+  `cli_command_line.cc` (whose absence fails to link).
 - A `CliFlag<bool>` has fields it can't use (`value_name`, `choices`,
   `default_value`, `validators`), and a number has `choices`.
   `ValidateCliCommand()` rejects them, so any run of the program finds one
@@ -445,7 +450,7 @@ Depends on: CL3.
   runs the command and returns its result, writes help instead when asked or
   when there is no run function, and `Get()` CHECKs on help's values.
 
-### CL5 [ ] gb_cli: rename CliValues to CliCommandLine
+### CL5 [x] gb_cli: rename CliValues to CliCommandLine
 
 Depends on: CL4.
 

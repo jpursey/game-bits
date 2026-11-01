@@ -19,14 +19,14 @@ namespace gb {
 
 // A "help" command, which a program may add to any command's subcommands.
 // `prog help build` asks for the same help as `prog build --help`, and
-// `prog help` the same as `prog --help`: CliValues::Run() writes the help for
-// the command named after "help".
+// `prog help` the same as `prog --help`: CliCommandLine::Run() writes the help
+// for the command named after "help".
 extern const CliCommand kCliHelpCommand;
 
 // Returns the help for the command at the end of `path`, the commands from the
-// program down to it (CliValues::GetCommandPath()), wrapped to 80 columns: how
-// to use it, its help, then its arguments or subcommands, and its flags,
-// followed by those of the commands above it.
+// program down to it (CliCommandLine::GetCommandPath()), wrapped to 80
+// columns: how to use it, its help, then its arguments or subcommands, and its
+// flags, followed by those of the commands above it.
 //
 // A definition's help is UTF-8, and is split into paragraphs at blank lines
 // ("\n\n"). A subcommand is listed with the first paragraph of its help.

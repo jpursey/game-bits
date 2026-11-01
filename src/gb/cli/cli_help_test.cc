@@ -12,23 +12,23 @@
 
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
-#include "gb/cli/cli_values.h"
+#include "gb/cli/cli_command_line.h"
 #include "gtest/gtest.h"
 
 namespace gb {
 namespace {
 
-bool RunNothing(const CliValues&) { return true; }
+bool RunNothing(const CliCommandLine&) { return true; }
 
 // Returns the help for the command the command line `args` names, or its
 // error.
 std::string GetHelp(const CliCommand* program,
                     const std::vector<std::string>& args) {
-  absl::StatusOr<CliValues> values = ParseCommandLine(program, args);
-  if (!values.ok()) {
-    return std::string(values.status().message());
+  absl::StatusOr<CliCommandLine> command_line = ParseCommandLine(program, args);
+  if (!command_line.ok()) {
+    return std::string(command_line.status().message());
   }
-  return FormatCliHelp(values->GetCommandPath());
+  return FormatCliHelp(command_line->GetCommandPath());
 }
 
 //==============================================================================

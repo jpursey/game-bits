@@ -12,7 +12,7 @@
 #include "absl/status/statusor.h"
 #include "absl/types/span.h"
 #include "gb/cli/cli.h"
-#include "gb/cli/cli_values.h"
+#include "gb/cli/cli_command_line.h"
 
 namespace gb::internal {
 
