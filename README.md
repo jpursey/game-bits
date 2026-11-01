@@ -163,6 +163,9 @@ sub-libraries (organized as subdirectories).
          `gb_render` system in terms of Vulkan.
          *  [`gb_render_vulkan_sdl`](src/gb/render/vulkan/sdl): Library that
             implements `gb_render_vulkan` dependencies when using SDL.
+      *  [`gb_render_testing`](src/gb/render): Test-only render backend and
+         `RenderTest` fixture, for tests of `gb_render` and the libraries that
+         draw with it.
    *  [`gb_imgui`](src/gb/imgui): Implementation of
       [Dear ImGui](https://github.com/ocornut/imgui/wiki) that is built in
       terms of the `gb_render` library. It supports context switching, texture

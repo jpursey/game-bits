@@ -428,19 +428,6 @@ lists across several meshes instead, checked by hand with
 `examples/render-check`'s "Go over the vertex limit" button, which should then
 keep drawing.
 
-## Shared gb_render test support
-
-- **Layers:** render, imgui
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** [Code audit](worklog/code_audit.md)
-
-`gb_imgui`'s tests draw with `gb_render`'s test backend, which they compile
-from its source files, listed again in `gb_imgui`'s `CMakeLists.txt`. Make
-the test backend and `RenderTest` a library target that tests link instead,
-so the list is kept in one place.
-
 ## Deterministic concurrency tests
 
 - **Layers:** game, job, message, resource

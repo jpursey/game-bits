@@ -53,23 +53,14 @@ set(gb_render_TEST_SOURCE
   render_scene_test.cc
   render_scene_type_test.cc
   render_system_test.cc
-  render_test.cc render_test.h
   shader_test.cc
-  test_binding_data.cc test_binding_data.h
-  test_render_backend.cc test_render_backend.h
-  test_render_buffer.cc test_render_buffer.h
-  test_render_pipeline.cc test_render_pipeline.h
-  test_render_scene.h
-  test_render_scene_type.h
-  test_shader_code.cc test_shader_code.h
-  test_texture.cc test_texture.h
-  test_texture_array.cc test_texture_array.h
   texture_test.cc
   texture_array_test.cc
 )
 
 set(gb_render_TEST_DEPS
   gb_render_fbs_generated
+  gb_render_testing
 )
 
 set(gb_render_DEPS
@@ -90,3 +81,34 @@ set(gb_render_LIBS
 )
 
 gb_add_library(gb_render)
+
+# The test backend and RenderTest fixture, for tests of gb_render and of the
+# libraries that draw with it.
+set(gb_render_testing_SOURCE
+  render_test.cc render_test.h
+  test_binding_data.cc test_binding_data.h
+  test_render_backend.cc test_render_backend.h
+  test_render_buffer.cc test_render_buffer.h
+  test_render_pipeline.cc test_render_pipeline.h
+  test_render_scene.h
+  test_render_scene_type.h
+  test_shader_code.cc test_shader_code.h
+  test_texture.cc test_texture.h
+  test_texture_array.cc test_texture_array.h
+)
+
+set(gb_render_testing_DEPS
+  absl::span
+  gb_base
+  gb_file
+  gb_render
+  gb_resource
+  gtest
+)
+
+set(gb_render_testing_LIBS
+  absl::check
+  absl::log
+)
+
+gb_add_library(gb_render_testing)
