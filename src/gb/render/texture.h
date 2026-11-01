@@ -6,7 +6,6 @@
 #ifndef GB_RENDER_TEXTURE_H_
 #define GB_RENDER_TEXTURE_H_
 
-#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <utility>
@@ -57,7 +56,7 @@ class Texture : public Resource {
   // The pixels array must contain at least GetWidth() * GetHeight() pixels.
   bool Set(absl::Span<const Pixel> pixels);
   bool Set(absl::Span<const uint32_t> pixels);
-  bool Set(const void* pixels, size_t size_in_bytes);
+  bool Set(const void* pixels, int64_t size_in_bytes);
 
   // Clears a region of the texture with the specified colors.
   //
@@ -89,7 +88,7 @@ class Texture : public Resource {
   bool SetRegion(int x, int y, int width, int height,
                  absl::Span<const uint32_t> pixels);
   bool SetRegion(int x, int y, int width, int height, const void* pixels,
-                 size_t size_in_bytes);
+                 int64_t size_in_bytes);
 
   // Returns an editable view onto the texture.
   //
@@ -184,11 +183,13 @@ class Texture : public Resource {
 inline bool Texture::Clear(uint32_t pixel) { return Clear(Pixel(pixel)); }
 
 inline bool Texture::Set(absl::Span<const Pixel> pixels) {
-  return Set(pixels.data(), pixels.size() * sizeof(Pixel));
+  return Set(pixels.data(),
+             static_cast<int64_t>(pixels.size() * sizeof(Pixel)));
 }
 
 inline bool Texture::Set(absl::Span<const uint32_t> pixels) {
-  return Set(pixels.data(), pixels.size() * sizeof(uint32_t));
+  return Set(pixels.data(),
+             static_cast<int64_t>(pixels.size() * sizeof(uint32_t)));
 }
 
 inline bool Texture::ClearRegion(int x, int y, int width, int height,
@@ -199,13 +200,13 @@ inline bool Texture::ClearRegion(int x, int y, int width, int height,
 inline bool Texture::SetRegion(int x, int y, int width, int height,
                                absl::Span<const Pixel> pixels) {
   return SetRegion(x, y, width, height, pixels.data(),
-                   pixels.size() * sizeof(Pixel));
+                   static_cast<int64_t>(pixels.size() * sizeof(Pixel)));
 }
 
 inline bool Texture::SetRegion(int x, int y, int width, int height,
                                absl::Span<const uint32_t> pixels) {
   return SetRegion(x, y, width, height, pixels.data(),
-                   pixels.size() * sizeof(uint32_t));
+                   static_cast<int64_t>(pixels.size() * sizeof(uint32_t)));
 }
 
 }  // namespace gb

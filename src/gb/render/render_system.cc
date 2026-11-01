@@ -6,6 +6,7 @@
 #include "gb/render/render_system.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 #include <string_view>
 #include <tuple>
@@ -1659,7 +1660,8 @@ bool RenderSystem::SaveTextureArrayChunk(
   std::vector<uint32_t> pixels(total_pixel_count);
   for (int i = 0; i < texture_array->GetCount(); ++i) {
     if (!texture_array->Get(i, pixels.data() + (i * texture_pixel_count),
-                            texture_pixel_count * sizeof(uint32_t))) {
+                            int64_t{texture_pixel_count} *
+                                static_cast<int64_t>(sizeof(uint32_t)))) {
       LOG(ERROR) << "Failed to read texture " << i
                  << " from texture array in order to save it";
       return false;

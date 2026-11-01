@@ -595,7 +595,7 @@ void RenderCheck::DrawTextureArrayGui() {
   ImGui::SameLine();
   if (ImGui::Button("Get layer 1")) {
     std::vector<gb::Pixel> pixels;
-    const bool result = read_write_array_->Get(1, pixels);
+    const bool result = read_write_array_->Get(1, &pixels);
     read_write_array_result_ =
         absl::StrCat("Get: ", ResultString(result, /*expected=*/true), ", ",
                      pixels.size(), " pixels, first ",

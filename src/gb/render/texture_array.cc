@@ -5,6 +5,8 @@
 
 #include "gb/render/texture_array.h"
 
+#include <cstdint>
+
 #include "absl/log/log.h"
 
 namespace gb {
@@ -18,13 +20,14 @@ bool TextureArray::Clear(int index, Pixel pixel) {
   return DoClear(index, pixel);
 }
 
-bool TextureArray::Set(int index, const void* pixels, size_t size_in_bytes) {
+bool TextureArray::Set(int index, const void* pixels, int64_t size_in_bytes) {
   if (index < 0 || index >= count_) {
     LOG(ERROR) << "Invalid index for texture array Set: " << index
                << " (count is " << count_ << ").";
     return false;
   }
-  if (size_in_bytes < width_ * height_ * sizeof(Pixel)) {
+  if (size_in_bytes <
+      int64_t{width_} * height_ * static_cast<int64_t>(sizeof(Pixel))) {
     LOG(ERROR) << "Failed to set pixels, as provided buffer is too small";
     return false;
   }
@@ -46,11 +49,12 @@ bool TextureArray::CanGet(int index) const {
   return true;
 }
 
-bool TextureArray::Get(int index, void* out_pixels, size_t size_in_bytes) {
+bool TextureArray::Get(int index, void* out_pixels, int64_t size_in_bytes) {
   if (!CanGet(index)) {
     return false;
   }
-  if (size_in_bytes < width_ * height_ * sizeof(Pixel)) {
+  if (size_in_bytes <
+      int64_t{width_} * height_ * static_cast<int64_t>(sizeof(Pixel))) {
     LOG(ERROR) << "Failed to get pixels, as provided buffer is too small";
     return false;
   }

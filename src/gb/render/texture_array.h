@@ -6,7 +6,6 @@
 #ifndef GB_RENDER_TEXTURE_ARRAY_H_
 #define GB_RENDER_TEXTURE_ARRAY_H_
 
-#include <cstddef>
 #include <cstdint>
 #include <utility>
 #include <vector>
@@ -65,15 +64,15 @@ class TextureArray : public Resource {
   // return false.
   bool Set(int index, absl::Span<const Pixel> pixels);
   bool Set(int index, absl::Span<const uint32_t> pixels);
-  bool Set(int index, const void* pixels, size_t size_in_bytes);
+  bool Set(int index, const void* pixels, int64_t size_in_bytes);
 
   // Reads the entirety of a texture into a provided buffer.
   //
   // This will always fail for texture arrays with kStaticWrite volatility. A
   // vector passed in is left unchanged for an invalid index or volatility.
-  bool Get(int index, std::vector<Pixel>& out_pixels);
-  bool Get(int index, std::vector<uint32_t>& out_pixels);
-  bool Get(int index, void* out_pixels, size_t size_in_bytes);
+  bool Get(int index, std::vector<Pixel>* out_pixels);
+  bool Get(int index, std::vector<uint32_t>* out_pixels);
+  bool Get(int index, void* out_pixels, int64_t size_in_bytes);
 
  protected:
   TextureArray(ResourceEntry entry, DataVolatility volatility, int count,
@@ -131,27 +130,29 @@ inline bool TextureArray::Clear(int index, uint32_t pixel) {
 }
 
 inline bool TextureArray::Set(int index, absl::Span<const Pixel> pixels) {
-  return Set(index, pixels.data(), pixels.size() * sizeof(Pixel));
+  return Set(index, pixels.data(),
+             static_cast<int64_t>(pixels.size() * sizeof(Pixel)));
 }
 
 inline bool TextureArray::Set(int index, absl::Span<const uint32_t> pixels) {
-  return Set(index, pixels.data(), pixels.size() * sizeof(uint32_t));
+  return Set(index, pixels.data(),
+             static_cast<int64_t>(pixels.size() * sizeof(uint32_t)));
 }
 
-inline bool TextureArray::Get(int index, std::vector<Pixel>& out_pixels) {
+inline bool TextureArray::Get(int index, std::vector<Pixel>* out_pixels) {
   if (!CanGet(index)) {
     return false;
   }
-  out_pixels.resize(width_ * height_);
-  return DoGet(index, out_pixels.data());
+  out_pixels->resize(width_ * height_);
+  return DoGet(index, out_pixels->data());
 }
 
-inline bool TextureArray::Get(int index, std::vector<uint32_t>& out_pixels) {
+inline bool TextureArray::Get(int index, std::vector<uint32_t>* out_pixels) {
   if (!CanGet(index)) {
     return false;
   }
-  out_pixels.resize(width_ * height_);
-  return DoGet(index, out_pixels.data());
+  out_pixels->resize(width_ * height_);
+  return DoGet(index, out_pixels->data());
 }
 
 }  // namespace gb

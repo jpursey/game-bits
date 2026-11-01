@@ -268,16 +268,16 @@ TEST_F(TextureArrayTest, Get) {
                                                {0, 0, 0, 0}, {4, 3, 2, 1})));
 
   std::vector<Pixel> pixels;
-  ASSERT_TRUE(texture_array->Get(0, pixels));
+  ASSERT_TRUE(texture_array->Get(0, &pixels));
   EXPECT_THAT(test_texture_array->GetPixels(0), ElementsAreArray(pixels));
-  ASSERT_TRUE(texture_array->Get(1, pixels));
+  ASSERT_TRUE(texture_array->Get(1, &pixels));
   EXPECT_THAT(test_texture_array->GetPixels(1), ElementsAreArray(pixels));
 
   std::vector<uint32_t> packed_pixels;
-  ASSERT_TRUE(texture_array->Get(0, packed_pixels));
+  ASSERT_TRUE(texture_array->Get(0, &packed_pixels));
   EXPECT_THAT(test_texture_array->GetPackedPixels(0),
               ElementsAreArray(packed_pixels));
-  ASSERT_TRUE(texture_array->Get(1, packed_pixels));
+  ASSERT_TRUE(texture_array->Get(1, &packed_pixels));
   EXPECT_THAT(test_texture_array->GetPackedPixels(1),
               ElementsAreArray(packed_pixels));
 
@@ -305,8 +305,8 @@ TEST_F(TextureArrayTest, FailGet) {
                                   packed_pixels.size() * sizeof(uint32_t) - 1));
 
   state_.texture_array_config.fail_get = true;
-  EXPECT_FALSE(texture_array->Get(0, pixels));
-  EXPECT_FALSE(texture_array->Get(0, packed_pixels));
+  EXPECT_FALSE(texture_array->Get(0, &pixels));
+  EXPECT_FALSE(texture_array->Get(0, &packed_pixels));
   EXPECT_FALSE(texture_array->Get(0, packed_pixels.data(),
                                   packed_pixels.size() * sizeof(uint32_t)));
 
@@ -323,10 +323,10 @@ TEST_F(TextureArrayTest, CannotGetStaticWrite) {
       static_cast<TestTextureArray*>(texture_array.Get());
 
   std::vector<Pixel> pixels;
-  EXPECT_FALSE(texture_array->Get(0, pixels));
+  EXPECT_FALSE(texture_array->Get(0, &pixels));
 
   std::vector<uint32_t> packed_pixels;
-  EXPECT_FALSE(texture_array->Get(0, packed_pixels));
+  EXPECT_FALSE(texture_array->Get(0, &packed_pixels));
 
   EXPECT_EQ(state_.invalid_call_count, 0);
   EXPECT_EQ(test_texture_array->GetInvalidCallCount(), 0);
@@ -346,11 +346,11 @@ TEST_F(TextureArrayTest, InvalidIndex) {
 
   // A failed get leaves the vectors as they were.
   std::vector<Pixel> pixels = {Pixel(1, 2, 3, 4)};
-  EXPECT_FALSE(texture_array->Get(-1, pixels));
-  EXPECT_FALSE(texture_array->Get(2, pixels));
+  EXPECT_FALSE(texture_array->Get(-1, &pixels));
+  EXPECT_FALSE(texture_array->Get(2, &pixels));
   EXPECT_EQ(pixels, std::vector<Pixel>{Pixel(1, 2, 3, 4)});
   std::vector<uint32_t> packed_pixels = {0xdeadbeef};
-  EXPECT_FALSE(texture_array->Get(2, packed_pixels));
+  EXPECT_FALSE(texture_array->Get(2, &packed_pixels));
   EXPECT_EQ(packed_pixels, std::vector<uint32_t>{0xdeadbeef});
 
   EXPECT_EQ(state_.invalid_call_count, 0);

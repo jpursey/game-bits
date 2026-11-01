@@ -59,12 +59,13 @@ bool Texture::Clear(Pixel pixel) {
   return DoClear(0, 0, width_, height_, pixel);
 }
 
-bool Texture::Set(const void* pixels, size_t size_in_bytes) {
+bool Texture::Set(const void* pixels, int64_t size_in_bytes) {
   if (editing_) {
     LOG(ERROR) << "Failed to set pixels, as an ImageView is still active";
     return false;
   }
-  if (size_in_bytes < width_ * height_ * sizeof(Pixel)) {
+  if (size_in_bytes <
+      int64_t{width_} * height_ * static_cast<int64_t>(sizeof(Pixel))) {
     LOG(ERROR) << "Failed to set pixels, as provided buffer is too small";
     return false;
   }
@@ -85,7 +86,7 @@ bool Texture::ClearRegion(int x, int y, int width, int height, Pixel pixel) {
 }
 
 bool Texture::SetRegion(int x, int y, int width, int height, const void* pixels,
-                        size_t size_in_bytes) {
+                        int64_t size_in_bytes) {
   if (editing_) {
     LOG(ERROR) << "Failed to set pixels, as an ImageView is still active";
     return false;
@@ -93,7 +94,7 @@ bool Texture::SetRegion(int x, int y, int width, int height, const void* pixels,
   if (width <= 0 || height <= 0) {
     return true;
   }
-  if (static_cast<int64_t>(size_in_bytes) <
+  if (size_in_bytes <
       int64_t{width} * height * static_cast<int64_t>(sizeof(Pixel))) {
     LOG(ERROR) << "Failed to set pixels, as provided buffer is too small";
     return false;

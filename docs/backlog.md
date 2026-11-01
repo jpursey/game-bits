@@ -512,17 +512,14 @@ tests.
 
 ## size_t in public APIs
 
-- **Layers:** job, render
+- **Layers:** job
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** nothing
 - **Background:** [Code audit](worklog/code_audit.md)
 
-A few public APIs still use `size_t`, against the Game Bits style:
-`JobDataHandle`, and the sizes `Texture` and `TextureArray` take.
-`TextureArray::Get()` also returns pixels through a vector taken by reference
-rather than a pointer. Changing them breaks callers, which each project fixes
-as it updates.
+`JobDataHandle` still uses `size_t` in its public API, against the Game Bits
+style. Changing it breaks callers, which each project fixes as it updates.
 
 ## ImGui contexts made outside ImGuiInstance
 
