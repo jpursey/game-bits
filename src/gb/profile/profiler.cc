@@ -54,10 +54,11 @@ constexpr int kCostPoints = 100;
 // The kinds of point each reader accepts.
 constexpr ProfilePoint::Kind kCountedKinds[] = {
     ProfilePoint::Kind::kFrame, ProfilePoint::Kind::kScope,
-    ProfilePoint::Kind::kCall, ProfilePoint::Kind::kCounter};
-constexpr ProfilePoint::Kind kTimedKinds[] = {ProfilePoint::Kind::kFrame,
-                                              ProfilePoint::Kind::kScope,
-                                              ProfilePoint::Kind::kCall};
+    ProfilePoint::Kind::kCall, ProfilePoint::Kind::kJob,
+    ProfilePoint::Kind::kCounter};
+constexpr ProfilePoint::Kind kTimedKinds[] = {
+    ProfilePoint::Kind::kFrame, ProfilePoint::Kind::kScope,
+    ProfilePoint::Kind::kCall, ProfilePoint::Kind::kJob};
 constexpr ProfilePoint::Kind kValueKinds[] = {ProfilePoint::Kind::kValue};
 
 // Returns the histogram bucket for a frame of `ticks`. Buckets 0 to 7 hold
@@ -130,6 +131,8 @@ std::string_view GetKindName(ProfilePoint::Kind kind) {
       return "scope";
     case ProfilePoint::Kind::kCall:
       return "call";
+    case ProfilePoint::Kind::kJob:
+      return "job";
     case ProfilePoint::Kind::kCounter:
       return "counter";
     case ProfilePoint::Kind::kValue:
@@ -217,7 +220,9 @@ void AppendTable(std::string& report, const Table& table, int left_columns) {
 Profiler::Profiler() : Profiler(Options()) {}
 
 Profiler::Profiler(Options options)
-    : fake_cpu_(options.fake_cpu),
+    : fake_cpu_(options.fake_cpu == nullptr && options.main != nullptr
+                    ? options.main->fake_cpu_
+                    : options.fake_cpu),
       slots_(std::make_unique<Slot[]>(kMaxProfilePoints)),
       frame_(options.main != nullptr ? &options.main->current_frame_.number
                                      : &current_frame_.number),
@@ -863,19 +868,25 @@ void Profiler::AppendFrame(std::string& report, std::string_view title,
   });
 
   // The main thread's self times of the kinds add up to the frame's time.
-  // Joined Profilers can't time frames, so the other threads have none.
+  // Joined Profilers can't time frames, so the other threads have none. Jobs
+  // have a row only in frames that ran one, as most programs have none.
   Table kinds = {{"Kind", "Self"}};
   if (frame.has_joined) {
     kinds[0] = {"Kind", "Main thread", "Other threads"};
   }
   for (ProfilePoint::Kind kind : kTimedKinds) {
+    bool has_kind = false;
     int64_t self_ticks = 0;
     int64_t joined_self_ticks = 0;
     for (const auto& [point, frame_point] : points) {
       if (point.GetKind() == kind) {
+        has_kind = true;
         self_ticks += frame_point.self_ticks;
         joined_self_ticks += frame_point.joined_self_ticks;
       }
+    }
+    if (kind == ProfilePoint::Kind::kJob && !has_kind) {
+      continue;
     }
     std::vector<std::string>& row = kinds.emplace_back();
     row.push_back(std::string(GetKindName(kind)));

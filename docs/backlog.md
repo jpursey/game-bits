@@ -62,47 +62,6 @@ component, as the MSVC standard library rejects older clang versions. Fix them,
 build and test both clang configurations, and consider building one in CI so it
 stays working.
 
-## Profiled jobs
-
-- **Layers:** profile, job
-- **Size:** medium
-- **Feature workflow:** yes
-- **Depends on:** *Multithreaded profiles*, *Fiber profile timers*
-- **Requested by:** Terra Diem *Profile the world's jobs*
-- **Background:** [Multithreaded profiles](worklog/multithreaded_profiles.md),
-  [Fiber-aware profiling](worklog/fiber_aware_profiling.md)
-
-Let `FiberJobSystem` profile the jobs it runs, so a program can see whether its
-job threads are kept busy and where their time goes, without timing every job
-itself:
-- An option that gives each job thread a `Profiler` for as long as the thread
-  runs, made with options the program passes (so tests can give a
-  `FakeProfilerCpu`), and combined through *Multithreaded profiles*.
-- Each job timed as a point named after the job: its count, run time, and
-  distribution (p50, p90, p99, and max, from the histogram frames already
-  use), since a phase that waits for many jobs finishes with the slowest.
-- How long each job waited to start, from `Run()` to running, and how long a
-  waiting job took to resume once its counter reached zero, per job name. That
-  shows whether a program's jobs need priorities, or more threads.
-- Each job thread's idle time per frame of the main loop, the time it spends
-  waiting for work. Its busy time is already in the threads table, once each
-  job is the thread's outermost timed point.
-- Time blocked in the OS on a contended `absl::Mutex`. Abseil reports each
-  contended wait through `absl::RegisterMutexProfiler()`, in cycles that on
-  x86-64 are timestamp counter ticks, like the profiler's. A program can
-  register only one such hook, so Game Bits should own it, recording the waits
-  as a point of their own on the thread that waited (check which thread the
-  hook runs on).
-- Job names that cost nothing per run. Naming jobs today (`kKeySetFiberNames`)
-  copies each name into a `std::string`, adds the job to a set under a global
-  mutex, and sets the thread's description twice, a system call each time. A
-  job named by a `ProfileName` (a string literal as a template argument) or a
-  registered `ProfilePoint` would have a fixed name for profiles, the shutdown
-  report, and debuggers, with no allocation.
-
-Profiling is off unless asked for, and costs a few timestamp reads per job when
-on.
-
 ## Profile timelines
 
 - **Layers:** profile, job
@@ -166,6 +125,31 @@ which only value points use, make up the rest. Measure a scope in a loop over
 points at several indices to see what crossing costs, and if it matters, move
 the value fields to an array of their own and align each slot to a cache line,
 so every timed point touches one line.
+
+## Cheaper job names
+
+- **Layers:** job
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** *Profiled jobs*
+- **Background:** [Profiled jobs](worklog/profiled_jobs.md)
+
+Keeping job names (`FiberJobSystem::kKeySetFiberNames`, on by default in Debug)
+costs every job a copy of its name into a `std::string`, an insert into and
+erase from a set of running jobs under a mutex every job thread shares (for
+naming the jobs that keep the job system from shutting down), and two renames
+of its thread, a system call each, as it starts and ends. Measure what that
+costs a short job, then cut what matters:
+- Keep each job's name as the job point *Profiled jobs* finds for it, rather
+  than a copy, as a profiled job already does.
+- Count running jobs by point in an atomic count each, rather than a set, and
+  name each point with its count in the shutdown error.
+- Rename the thread only when a job starts or resumes, or not at all, if a
+  debugger can show the job some other way.
+
+Without profiling, a job's point would be found by name for each run, which
+*Profiled jobs* does through a thread-local cache. Names built at runtime, one
+per piece of work, would then reach the limit of 1024 points.
 
 ## Pipeline state per material
 

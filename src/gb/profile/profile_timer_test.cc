@@ -98,6 +98,37 @@ TEST_F(ProfileTimerTest, CallbackIsSubtractedFromCall) {
   EXPECT_EQ(profiler_.GetSelfTime("TimerTest/Callback"), absl::Nanoseconds(4));
 }
 
+TEST_F(ProfileTimerTest, JobTimerRecordsSelfTime) {
+  ProfilePoint job(ProfilePoint::Kind::kJob, "TimerTest/Job");
+  for (int i = 0; i < 2; ++i) {
+    ProfileTimer timer(job);
+    ticks_.Advance(1);
+    {
+      ProfileScope<"TimerTest/InJob"> scope;
+      ticks_.Advance(2);
+    }
+  }
+  EXPECT_EQ(profiler_.GetCount("TimerTest/Job"), 2);
+  EXPECT_EQ(profiler_.GetSelfTime("TimerTest/Job"), absl::Nanoseconds(2));
+  EXPECT_EQ(profiler_.GetSelfTime("TimerTest/InJob"), absl::Nanoseconds(4));
+}
+
+TEST_F(ProfileTimerTest, JobsInReport) {
+  ProfilePoint job(ProfilePoint::Kind::kJob, "TimerTest/ReportJob");
+  {
+    ProfileFrame<"TimerTest/ReportFrame"> frame;
+    ticks_.Advance(1);
+    ProfileTimer timer(job);
+    ticks_.Advance(4);
+  }
+  const std::string report = profiler_.GetReport();
+  EXPECT_NE(report.find("\nTimerTest/ReportJob    job "), std::string::npos)
+      << report;
+
+  // The breakdown has a row for jobs, as the frame ran one.
+  EXPECT_NE(report.find("\njob    4.00ns\n"), std::string::npos) << report;
+}
+
 TEST_F(ProfileTimerTest, OtherThreadIsIgnored) {
   std::thread thread([] {
     ProfileScope<"TimerTest/OtherThread"> scope;

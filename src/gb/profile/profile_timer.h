@@ -21,8 +21,9 @@ class NamedProfileTimer;
 // ProfileTimer
 //==============================================================================
 
-// Times a scope or call point in the calling thread's Profiler, from when the
-// timer is created until it is destroyed.
+// Times a scope, call, or job point in the calling thread's Profiler, from when
+// the timer is created until it is destroyed. A job system (see gb/job) puts
+// one around each job it runs, with a job point.
 //
 // The point is charged with its self time: its elapsed time less that of the
 // timers created inside it.
@@ -46,8 +47,9 @@ class ProfileTimer final {
       return;
     }
     DCHECK(point.GetKind() == ProfilePoint::Kind::kScope ||
-           point.GetKind() == ProfilePoint::Kind::kCall)
-        << point.GetName() << " is not a scope or a call";
+           point.GetKind() == ProfilePoint::Kind::kCall ||
+           point.GetKind() == ProfilePoint::Kind::kJob)
+        << point.GetName() << " is not a scope, call, or job";
     profiler->StartTiming(point.GetIndex(), timing_);
   }
   ProfileTimer(const ProfileTimer&) = delete;

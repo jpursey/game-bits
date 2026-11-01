@@ -91,15 +91,18 @@ class Profiler final {
  public:
   struct Options {
     // Replaces the CPU's timestamp counter, for tests. It must outlive the
-    // Profiler.
+    // Profiler. A Profiler with a `main` and no `fake_cpu` uses its main
+    // Profiler's, if it has one. Making a Profiler reads its ticks many times
+    // (see GetPointCost()), so with an auto advance set, making one that
+    // shares a FakeProfilerCpu advances the ticks every sharer sees.
     FakeProfilerCpu* fake_cpu = nullptr;
 
     // Another Profiler to add this one's points to, normally the one on the
     // thread that runs the main loop, or null. That Profiler must outlive this
     // one, and must not have a `main` of its own. With a `main`, this Profiler
     // can't time frames, as its points count in the main Profiler's frames,
-    // and its tick rate must match the main Profiler's (so if either has a
-    // FakeProfilerCpu, both need one, at the same rate).
+    // and its tick rate must match the main Profiler's (so a FakeProfilerCpu
+    // of its own needs one on the main Profiler, at the same rate).
     Profiler* main = nullptr;
 
     // The thread's name in the main Profiler's threads table (see
@@ -198,9 +201,9 @@ class Profiler final {
   // their times aren't comparable.
   //
   // A frame's breakdown is read to find what made it slow, so it has the
-  // frame's class of core and self time by kind (frames, scopes, and calls,
-  // which add up to the frame's time), then the frame's count and self time of
-  // each point, slowest first.
+  // frame's class of core and self time by kind (frames, scopes, calls, and,
+  // in a frame that ran any, jobs, which add up to the frame's time), then the
+  // frame's count and self time of each point, slowest first.
   //
   // Once a Profiler has joined, a main Profiler's report also has a table of
   // threads, with a row for its own thread and one for each name it has had

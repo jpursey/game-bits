@@ -6,6 +6,7 @@
 #ifndef GB_PROFILE_FAKE_PROFILER_CPU_H_
 #define GB_PROFILE_FAKE_PROFILER_CPU_H_
 
+#include <atomic>
 #include <cstdint>
 
 namespace gb {
@@ -21,6 +22,11 @@ namespace gb {
 //
 // The ticks start at zero and only change when the test advances them, or
 // when they are read, if an auto advance is set.
+//
+// Any thread may call it, so Profilers on several threads can share one, as
+// they share the CPU's timestamp counter. Every thread then sees the same
+// ticks and class of core, and an auto advance applies to every read, on any
+// thread. This class is thread-safe.
 class FakeProfilerCpu {
  public:
   // Every tick is a nanosecond by default.
@@ -32,27 +38,35 @@ class FakeProfilerCpu {
 
   // Advances the ticks by the auto advance, and returns them.
   int64_t ReadCpuTicks() {
-    ticks_ += auto_advance_;
-    return ticks_;
+    const int64_t advance = auto_advance_.load(std::memory_order_relaxed);
+    return ticks_.fetch_add(advance, std::memory_order_relaxed) + advance;
   }
 
   double GetCpuTicksPerSecond() const { return ticks_per_second_; }
 
   // The class of core, 0 unless set.
-  int GetThisThreadCoreClass() const { return core_class_; }
-  void SetCoreClass(int core_class) { core_class_ = core_class; }
+  int GetThisThreadCoreClass() const {
+    return core_class_.load(std::memory_order_relaxed);
+  }
+  void SetCoreClass(int core_class) {
+    core_class_.store(core_class, std::memory_order_relaxed);
+  }
 
-  void Advance(int64_t ticks) { ticks_ += ticks; }
+  void Advance(int64_t ticks) {
+    ticks_.fetch_add(ticks, std::memory_order_relaxed);
+  }
 
   // Sets how far each call to ReadCpuTicks() advances the ticks, such as to
   // give each read of the ticks a cost.
-  void SetAutoAdvance(int64_t ticks) { auto_advance_ = ticks; }
+  void SetAutoAdvance(int64_t ticks) {
+    auto_advance_.store(ticks, std::memory_order_relaxed);
+  }
 
  private:
   const double ticks_per_second_;
-  int core_class_ = 0;
-  int64_t ticks_ = 0;
-  int64_t auto_advance_ = 0;
+  std::atomic<int> core_class_ = 0;
+  std::atomic<int64_t> ticks_ = 0;
+  std::atomic<int64_t> auto_advance_ = 0;
 };
 
 }  // namespace gb

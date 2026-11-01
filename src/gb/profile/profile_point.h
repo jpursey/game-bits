@@ -37,6 +37,7 @@ class ProfilePoint final {
     kFrame,    // One iteration of the program's loop.
     kScope,    // A section of the program's own code.
     kCall,     // A call out to another system.
+    kJob,      // A job run by a job system (see gb/job).
     kCounter,  // Work done, added to as it happens.
     kValue,    // A number describing the workload, set when it changes.
   };

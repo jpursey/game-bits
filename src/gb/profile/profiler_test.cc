@@ -197,6 +197,17 @@ TEST_F(ProfilerTest, ThreadPointsAddToMain) {
       << report;
 }
 
+TEST_F(ProfilerTest, JoinedProfilerWithoutFakeUsesMains) {
+  std::thread thread([this] {
+    Profiler profiler({.main = &profiler_});
+    ProfileScope<"ThreadTest/MainsFake"> scope;
+    ticks_.Advance(7);
+  });
+  thread.join();
+  EXPECT_EQ(profiler_.GetSelfTime("ThreadTest/MainsFake"),
+            absl::Nanoseconds(7));
+}
+
 TEST_F(ProfilerTest, PointsOfEveryThreadAdd) {
   ProfiledThread thread_a(&profiler_);
   ProfiledThread thread_b(&profiler_);
