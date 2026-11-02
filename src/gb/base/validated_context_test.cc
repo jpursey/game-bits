@@ -5,7 +5,11 @@
 
 #include "gb/base/validated_context.h"
 
+#include <string>
+
 #include "absl/log/log.h"
+#include "gb/test/log_recorder.h"
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
 namespace gb {
@@ -14,6 +18,9 @@ namespace {
 using ::testing::AssertionFailure;
 using ::testing::AssertionResult;
 using ::testing::AssertionSuccess;
+using ::testing::ElementsAre;
+using ::testing::Field;
+using ::testing::HasSubstr;
 using ::testing::Test;
 
 // Equality operator for EXPECT_EQ support in tests.
@@ -1511,6 +1518,21 @@ TEST_F(ContextOwnershipTest, AssignSharedContextAgain) {
                                        {kInRequiredItem}));
   EXPECT_NE(validated_context.GetPtr<Item>(), nullptr);
   EXPECT_EQ(counts.destruct, 0);
+}
+
+TEST(ValidatedContextErrorTest, NullCallbackRestoresLogging) {
+  int error_count = 0;
+  ValidatedContext::SetGlobalErrorCallback(
+      [&error_count](const std::string&) { ++error_count; });
+  ValidatedContext::SetGlobalErrorCallback(nullptr);
+  LogRecorder log_recorder;
+  ValidatedContext validated_context(static_cast<Context*>(nullptr), {});
+  EXPECT_FALSE(validated_context.IsValid());
+  EXPECT_EQ(error_count, 0);
+  EXPECT_THAT(log_recorder.TakeMessages(),
+              ElementsAre(Field(&LogRecorder::Message::text,
+                                HasSubstr("Context passed to ValidatedContext "
+                                          "was null"))));
 }
 
 }  // namespace

@@ -225,7 +225,8 @@ void ValidatedContext::ReportError(const std::string& message) const {
 void ValidatedContext::SetGlobalErrorCallback(ErrorCallback callback) {
   auto& global_callback = GlobalErrorCallback();
   delete global_callback;
-  global_callback = new ErrorCallback(std::move(callback));
+  global_callback =
+      callback != nullptr ? new ErrorCallback(std::move(callback)) : nullptr;
 }
 
 }  // namespace gb

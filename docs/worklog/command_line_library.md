@@ -345,8 +345,8 @@ struct CliCommand {
   function. A run function reads the program's values from it
   (`context.GetPtr<FileSystem>()`), and any `kOut` values it adds are
   validated when it returns. A required value that is missing is reported as
-  `ValidatedContext` reports any error (`LOG(FATAL)` in debug builds), and
-  `Run()` returns false without running the command. A value the command must
+  `ValidatedContext` reports any error (`LOG(ERROR)`, unless a program sets
+  a callback), and `Run()` returns false without running the command. A value the command must
   add but doesn't is reported the same way, and `Run()` returns false.
 - **Writing:** `CliWriter` is a single function, given what the text is and
   the text. `kConstraintCliWriter`'s default, `WriteCliText()`, is added to a
@@ -638,7 +638,7 @@ Depends on: CL5.
     allowed by a command above it.
   - A command's required value that is missing: `Run()` returns false
     without running it (with the `ValidatedContext` error callback set to
-    collect the error, rather than `LOG(FATAL)`).
+    collect the error, rather than `LOG(ERROR)`).
   - `RunCommandLine()`'s exit codes (0, 1, 2), and the text written for help
     and errors.
   - Each parse error ends with the right `Run "... --help"` hint.

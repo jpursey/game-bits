@@ -218,9 +218,8 @@ class ValidatedContext final {
   // ContextConstraint::kScoped constraint values will be cleared.
   ~ValidatedContext() { Complete(); }
 
-  // Sets the error callback that will be called if any validation error occurs.
-  // If not set, this will LOG(ERROR) in release builds and LOG(FATAL) in debug
-  // builds.
+  // Sets the error callback that will be called if any validation error occurs,
+  // instead of LOG(ERROR). A null callback restores LOG(ERROR).
   static void SetGlobalErrorCallback(ErrorCallback callback);
 
   // Assignment from from a Context or ValidatedContext and set of valid context
