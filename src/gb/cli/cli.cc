@@ -58,6 +58,33 @@ absl::Status ValidateChoices(std::initializer_list<CliChoice> choices) {
 }
 
 template <typename T>
+absl::Status ValidateValidators(
+    std::initializer_list<const CliValidator<T>*> validators) {
+  for (const CliValidator<T>* validator : validators) {
+    if (validator == nullptr) {
+      return absl::InvalidArgumentError("has a null validator");
+    }
+    if (validator->validate == nullptr) {
+      return absl::InvalidArgumentError("has a validator with no function");
+    }
+    for (const ContextConstraint* constraint : validator->constraints) {
+      if (constraint == nullptr) {
+        return absl::InvalidArgumentError(
+            "has a validator with a null constraint");
+      }
+
+      // Validators only read the context.
+      if (constraint->presence != ContextConstraint::kInRequired &&
+          constraint->presence != ContextConstraint::kInOptional) {
+        return absl::InvalidArgumentError(
+            "has a validator with a constraint that isn't an input");
+      }
+    }
+  }
+  return absl::OkStatus();
+}
+
+template <typename T>
 absl::Status ValidateValueFields(const CliFlag<T>& flag) {
   if constexpr (std::is_same_v<T, bool>) {
     if (!flag.value_name.empty()) {
@@ -72,11 +99,19 @@ absl::Status ValidateValueFields(const CliFlag<T>& flag) {
       return absl::InvalidArgumentError("is a bool, so can't have validators");
     }
   }
+  const absl::Status status = ValidateValidators<T>(flag.validators);
+  if (!status.ok()) {
+    return status;
+  }
   return ValidateChoices<T>(flag.choices);
 }
 
 template <typename T>
 absl::Status ValidateValueFields(const CliArg<T>& arg) {
+  const absl::Status status = ValidateValidators<T>(arg.validators);
+  if (!status.ok()) {
+    return status;
+  }
   return ValidateChoices<T>(arg.choices);
 }
 

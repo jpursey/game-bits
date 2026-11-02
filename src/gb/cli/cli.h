@@ -84,11 +84,35 @@ struct CliNotConstexpr {
 
 }  // namespace internal
 
-// A function that judges whether a flag's or argument's value is acceptable.
-// It returns an error saying what is wrong with `value`, or OK if it is
-// acceptable. Common ones are in cli_validators.h.
+// Validates a flag's or argument's value. This is a definition, which a flag or
+// argument lists by address, as a command lists its flags. Common ones are in
+// cli_validators.h. For example:
+//
+//   const gb::CliValidator<int64_t> kAtMostLevel = {
+//       .validate = ValidateAtMostLevel,
+//       .constraints = {&kConstraintSettings},
+//   };
+//   const gb::CliFlag<int64_t> kDepth = {
+//       .name = "depth",
+//       .validators = {&kAtMostLevel, &gb::kCliAtLeast<int64_t, 0>},
+//   };
 template <typename T>
-using CliValidator = absl::Status (*)(const T& value);
+struct CliValidator {
+  // Returns an error saying what is wrong with `value`, or OK if it is
+  // acceptable. `context` is the context the command line is parsed with,
+  // validated against `constraints`. This must not be null.
+  absl::Status (*validate)(const ValidatedContext& context, const T& value);
+
+  // What `validate` reads from the context. These must be inputs (kInRequired
+  // or kInOptional), and point to constants, as the GB_CONTEXT_CONSTRAINT
+  // macros define. Parsing fails if the context doesn't meet them, once a
+  // command with a flag or argument using this validator is reached.
+  std::initializer_list<const ContextConstraint*> constraints;
+
+  // Leave unset. This is here only to prevent the definition from being
+  // constexpr.
+  internal::CliNotConstexpr not_constexpr;
+};
 
 // One value a string flag or argument accepts, when it lists its choices.
 struct CliChoice {
@@ -139,7 +163,7 @@ struct CliFlag {
   std::optional<T> default_value;
 
   // Validators for the value, run in order until one fails.
-  std::initializer_list<CliValidator<T>> validators;
+  std::initializer_list<const CliValidator<T>*> validators;
 
   // Leave unset. This is here only to prevent the definition from being
   // constexpr.
@@ -175,7 +199,7 @@ struct CliArg {
   std::optional<T> default_value;
 
   // Validators for the value, run in order until one fails.
-  std::initializer_list<CliValidator<T>> validators;
+  std::initializer_list<const CliValidator<T>*> validators;
 
   // Leave unset. This is here only to prevent the definition from being
   // constexpr.

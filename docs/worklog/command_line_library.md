@@ -21,7 +21,7 @@ const gb::CliFlag<std::string_view> kInstructionSet = {
     .value_name = "instruction set",
     .help = "Assembles for the instruction set in this source file (.izm), "
             "rather than the default one.",
-    .validators = {gb::CliNotEmpty},
+    .validators = {&gb::kCliNotEmpty},
 };
 const gb::CliFlag<bool> kMap = {
     .name = "map",
@@ -31,7 +31,7 @@ const gb::CliFlag<bool> kMap = {
 const gb::CliArg<std::string_view> kSourceFile = {
     .name = "source file",
     .help = "The program to assemble.",
-    .validators = {gb::CliNotEmpty},
+    .validators = {&gb::kCliNotEmpty},
 };
 const gb::CliArg<std::string_view> kProgramFile = {
     .name = "program file",
@@ -109,14 +109,20 @@ int main(int argc, char* argv[]) {
   (not `inf` or `nan`), in range. Abseil's `SimpleAtoi()` and `SimpleAtod()`
   parse them, with checks for what they allow beyond that (space, and infinity
   for an out of range value).
-- **Validators:** a flag or argument has a list of validators,
-  `absl::Status (*)(const T& value)`, each returning an error saying what is
-  wrong with the value. The common ones are `CliInRange<kMin, kMax>`,
-  `CliAtLeast<kMin>`, `CliAtMost<kMax>` (function templates, so the bounds are
-  part of the constant), and `CliNotEmpty`. A default value is not validated.
-  There is no validator for paths: one would check them against the program's
-  `FileSystem`, which a validator (a plain function pointer) has no way to be
-  given, so the command checks its paths when it runs.
+- **Validators:** a flag or argument lists its validators by address, each a
+  `CliValidator<T>` definition: a function, `absl::Status (*)(const
+  ValidatedContext& context, const T& value)`, returning an error saying what
+  is wrong with the value, and the constraints of what it reads from the
+  context. The common ones are `kCliInRange<T, kMin, kMax>`,
+  `kCliAtLeast<T, kMin>`, `kCliAtMost<T, kMax>` (variable templates, so the
+  bounds are part of the constant), and `kCliNotEmpty`: `.validators =
+  {&gb::kCliInRange<int64_t, 1, 64>}`. A default value is not validated.
+  When the parser reaches a command, the context is validated against the
+  constraints of the validators of its flags and arguments, and those of the
+  commands above it, whether or not they are given. A value that is missing is
+  reported as `ValidatedContext` reports any error, and `ParseCommandLine()`
+  returns a `FailedPrecondition` error, as that is the program's mistake, not
+  the user's.
 - **Definition errors:** a definition that can't be parsed unambiguously is a
   programmer error, found by `ValidateCliCommand()`: empty or duplicate names
   (a flag's long and short names are unique across the command and the
@@ -125,7 +131,10 @@ int main(int argc, char* argv[]) {
   optional argument before a required one, arguments and subcommands on one
   command, a bool flag with a value name, default, or validators, choices on a
   type other than a string, or a choice that is empty, a duplicate, or starts
-  with `-` (which a positional argument would parse as a flag).
+  with `-` (which a positional argument would parse as a flag), a null
+  constraint on a command, and a null validator, one with no function, or one
+  with a constraint that is null or isn't an input (`kInRequired` or
+  `kInOptional`).
   `ParseCommandLine()` CHECKs it, so any run of the program finds a bad
   definition.
 
@@ -309,8 +318,26 @@ struct CliCommand {
 - **Parsing:** `ParseCommandLine()` takes the context as a `CliContract`, the
   same way `gb::Game::Run()` takes a `GameContract`: a `Context*`, or an owned
   `Context`. The parsed `CliCommandLine` keeps it, so it becomes move-only.
-  Parsing itself reads nothing from it yet; path validators will (see *Path
-  validators for command lines* in the backlog).
+  Validators read from it while parsing (see Validators), each through a
+  `ValidatedContext` with the constraints of the validators of the command
+  path so far. A context that fails `gb_cli`'s own constraints (a null
+  `Context*`, or a width that isn't an `int`) is a `FailedPrecondition` error
+  too.
+- **Validator constraints:** a validator is a `CliValidator<T>` definition of
+  its function and constraints, rather than a function pointer, so that it
+  can say what it reads, as a command does. Every validator takes the
+  context, so there is one kind.
+- **Validators by address:** a flag or argument lists its validators by
+  address, as a command lists its flags, rather than holding copies.
+  Definitions are initialized when the program starts, and a copy of a
+  validator defined in another file could be made before that file's
+  definitions are initialized (the static initialization order problem),
+  leaving an empty validator. An address is fixed before any initialization,
+  and validators are only read once parsing starts, so nothing in a
+  definition depends on the order. The cost is that every validator is a
+  named definition, even one used once, and a number validator names its
+  value type (`kCliInRange<int64_t, 1, 64>`), as a variable template can't
+  take it from the list it is in. A wrong type is a compile error.
 - **Running:** `CliCommandLine::Run()` takes no writer. It writes help to the
   context's `CliWriter`. To run
   the command, it validates the context against the constraints of every
@@ -367,7 +394,10 @@ int main(int argc, char* argv[]) {
   the command. Text goes only to the writer, so a program can send it
   elsewhere (a log, a window), and tests can collect it. Returns `main`'s exit
   code: 0 if the command succeeded or help was written, 1 if the command
-  returned false, and 2 if the command line isn't valid.
+  returned false or the context is missing something (the program's mistake),
+  and 2 if the command line isn't valid. A context that fails `gb_cli`'s own
+  constraints may have no writer, so nothing is written for it beyond what
+  `ValidatedContext` reports.
 - A parse error says how to get help for the command so far, as part of the
   error's message: `tool remote: unknown flag "--x". Run "tool remote
   --help" for help.` So a program calling `ParseCommandLine()` itself gets
@@ -671,6 +701,61 @@ Depends on: CL6.
   rather than "columns", as the formatter already says.
 
 **Brittleness**
-- A width set under another name or type (`SetValue<int64_t>`) is a different
-  value, so help is wrapped to 80 without an error. `kKeyCliHelpWidth` and
-  `SetValue` needing its type written make this unlikely.
+- A width set under another name is a different value, so help is wrapped to
+  80 without an error. `kKeyCliHelpWidth` makes this unlikely. A width of
+  another type (`SetValue<int64_t>`) under the name is a validation error.
+
+### CL8 [x] gb_cli: validators that use the context
+
+Depends on: CL7.
+
+- `CliValidator<T>` becomes a definition of a function that takes the context
+  and the value, and the constraints of what it reads, which flags and
+  arguments list by address (see Validators and Context). The common
+  validators become constants: `kCliInRange<T, kMin, kMax>`,
+  `kCliAtLeast<T, kMin>`, and `kCliAtMost<T, kMax>` (variable templates), and
+  `kCliNotEmpty`. Their functions move to `internal`.
+- The parser validates the context against the validators' constraints of
+  each command it reaches, and passes the validated context to them.
+  `ParseCommandLine()` returns a `FailedPrecondition` error for a context that
+  is missing a value, or fails `gb_cli`'s own constraints, and
+  `RunCommandLine()` returns 1 for it.
+- `ValidateCliCommand()` rejects a null validator, a validator with no
+  function, and a null constraint or one that isn't an input.
+
+**Verify**
+- Standard checks.
+- Unit tests:
+  - A validator reads a value its constraints allow from the context, for a
+    flag of the command and one of a command above it, and for an argument.
+  - A missing value fails parsing when the command is reached, even if the
+    flag isn't given, with the `ValidatedContext` error callback collecting
+    the error.
+  - A context that fails `gb_cli`'s constraints fails parsing, and
+    `RunCommandLine()` returns 1 for it and for a missing value.
+  - The definition errors for validators.
+
+**Brittleness**
+- A validator with constraints is only checked against the context when its
+  command is reached, so help for that command (`prog build --help`) fails too
+  when the program's context is missing the value. That is the program's
+  mistake, and is found on any run naming the command.
+
+### CL9 [ ] gb_cli: path validators
+
+Depends on: CL8.
+
+- `cli_path.h`: `kConstraintCliFileSystem`, `kConstraintCliFileProtocol`
+  (`"cli_file_protocol"`, defaulting to `"file"`), `GetCliFilePath()`, and
+  the validators `kCliPathExists`, `kCliFileExists`, and `kCliFolderExists`.
+  Paths are converted with `LocalFileProtocol::ToOsRootPath()`, so the
+  protocol must take its paths, as one from `CreateOsRoot()` does.
+- `gb_cli` depends on `gb_file`.
+- *Path validators for command lines* comes out of the backlog.
+
+**Verify**
+- Standard checks.
+- Unit tests, with a `MemoryFileProtocol` registered as `"file"`, and files
+  at the `ToOsRootPath()` paths: each validator accepts and rejects paths,
+  relative and absolute, `GetCliFilePath()` uses the context's protocol, and a
+  missing `FileSystem` fails parsing.

@@ -8,6 +8,8 @@
 #include <cstdint>
 #include <string_view>
 
+#include "absl/status/status.h"
+#include "gb/base/validated_context.h"
 #include "gb/cli/cli_help.h"
 #include "gtest/gtest.h"
 
@@ -172,13 +174,17 @@ TEST(ValidateCliCommandTest, ValidWithHelpCommand) {
   EXPECT_TRUE(ValidateCliCommand(&kNested).ok());
 }
 
-absl::Status ValidateAnything(const bool&) { return absl::OkStatus(); }
+absl::Status ValidateAnything(const ValidatedContext&, const bool&) {
+  return absl::OkStatus();
+}
+
+const CliValidator<bool> kAnything = {.validate = ValidateAnything};
 
 TEST(ValidateCliCommandTest, BoolFlagWithValueFields) {
   static const CliFlag<bool> kValueName = {.name = "a", .value_name = "x"};
   static const CliFlag<bool> kDefault = {.name = "b", .default_value = true};
   static const CliFlag<bool> kValidators = {.name = "c",
-                                            .validators = {ValidateAnything}};
+                                            .validators = {&kAnything}};
   static const CliCommand kValueNameProgram = {.name = "prog",
                                                .flags = {&kValueName}};
   static const CliCommand kDefaultProgram = {.name = "prog",
@@ -252,6 +258,82 @@ TEST(ValidateCliCommandTest, DuplicateChoice) {
   static const CliCommand kProgram = {.name = "prog", .args = {&kArg}};
   EXPECT_EQ(ValidateCliCommand(&kProgram).message(),
             "prog: argument <color> has duplicate choice \"red\"");
+}
+
+GB_CONTEXT_CONSTRAINT(kConstraintIn, kInRequired, int);
+GB_CONTEXT_CONSTRAINT(kConstraintOut, kOutOptional, int);
+
+absl::Status ValidateAnyNumber(const ValidatedContext&, const int64_t&) {
+  return absl::OkStatus();
+}
+
+const CliValidator<int64_t> kAnyNumber = {.validate = ValidateAnyNumber};
+const CliValidator<int64_t> kAnyNumberWithInput = {
+    .validate = ValidateAnyNumber,
+    .constraints = {&kConstraintIn},
+};
+
+TEST(ValidateCliCommandTest, ValidValidators) {
+  static const CliFlag<int64_t> kFlag = {
+      .name = "a",
+      .validators = {&kAnyNumber, &kAnyNumberWithInput},
+  };
+  static const CliArg<int64_t> kArg = {
+      .name = "b",
+      .validators = {&kAnyNumberWithInput},
+  };
+  static const CliCommand kProgram = {
+      .name = "prog",
+      .flags = {&kFlag},
+      .args = {&kArg},
+  };
+  EXPECT_TRUE(ValidateCliCommand(&kProgram).ok());
+}
+
+TEST(ValidateCliCommandTest, NullValidator) {
+  static const CliFlag<int64_t> kFlag = {.name = "a", .validators = {nullptr}};
+  static const CliCommand kProgram = {.name = "prog", .flags = {&kFlag}};
+  EXPECT_EQ(ValidateCliCommand(&kProgram).message(),
+            "prog: flag \"--a\" has a null validator");
+}
+
+TEST(ValidateCliCommandTest, ValidatorWithNoFunction) {
+  static const CliValidator<int64_t> kNoFunction = {};
+  static const CliFlag<int64_t> kFlag = {.name = "a",
+                                         .validators = {&kNoFunction}};
+  static const CliArg<int64_t> kArg = {.name = "b",
+                                       .validators = {&kNoFunction}};
+  static const CliCommand kFlagProgram = {.name = "prog", .flags = {&kFlag}};
+  static const CliCommand kArgProgram = {.name = "prog", .args = {&kArg}};
+  EXPECT_EQ(ValidateCliCommand(&kFlagProgram).message(),
+            "prog: flag \"--a\" has a validator with no function");
+  EXPECT_EQ(ValidateCliCommand(&kArgProgram).message(),
+            "prog: argument <b> has a validator with no function");
+}
+
+TEST(ValidateCliCommandTest, ValidatorWithNullConstraint) {
+  static const CliValidator<int64_t> kNullConstraint = {
+      .validate = ValidateAnyNumber,
+      .constraints = {nullptr},
+  };
+  static const CliFlag<int64_t> kFlag = {.name = "a",
+                                         .validators = {&kNullConstraint}};
+  static const CliCommand kProgram = {.name = "prog", .flags = {&kFlag}};
+  EXPECT_EQ(ValidateCliCommand(&kProgram).message(),
+            "prog: flag \"--a\" has a validator with a null constraint");
+}
+
+TEST(ValidateCliCommandTest, ValidatorWithOutputConstraint) {
+  static const CliValidator<int64_t> kOutput = {
+      .validate = ValidateAnyNumber,
+      .constraints = {&kConstraintIn, &kConstraintOut},
+  };
+  static const CliArg<int64_t> kArg = {.name = "b", .validators = {&kOutput}};
+  static const CliCommand kProgram = {.name = "prog", .args = {&kArg}};
+  EXPECT_EQ(
+      ValidateCliCommand(&kProgram).message(),
+      "prog: argument <b> has a validator with a constraint that isn't an "
+      "input");
 }
 
 TEST(ValidateCliCommandTest, DuplicateFlag) {

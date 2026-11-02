@@ -12,31 +12,18 @@
 
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
+#include "gb/base/validated_context.h"
+#include "gb/cli/cli.h"
 
 namespace gb {
 
-//==============================================================================
-// Common validators
-//
-// Each of these is a CliValidator for a flag's or argument's `validators`:
-//
-//   const gb::CliFlag<int64_t> kThreads = {
-//       .name = "threads",
-//       .validators = {gb::CliInRange<1, 64>},
-//   };
-//
-// The number validators are function templates whose bounds are template
-// arguments, so the bounds are part of the constant. Their value type is
-// deduced from the flag or argument they are listed in, and the bounds may be
-// integers or floating point for either (`gb::CliAtLeast<0.5>`).
-//==============================================================================
+namespace internal {
 
-// Validates that a number is from `kMin` to `kMax`, inclusive.
-template <auto kMin, auto kMax, typename T>
-absl::Status CliInRange(const T& value) {
+template <typename T, auto kMin, auto kMax>
+absl::Status ValidateInRange(const ValidatedContext&, const T& value) {
   static_assert(std::is_same_v<T, int64_t> || std::is_same_v<T, double>,
-                "CliInRange is for numbers");
-  static_assert(kMin <= kMax, "CliInRange's minimum is more than its maximum");
+                "kCliInRange is for numbers");
+  static_assert(kMin <= kMax, "kCliInRange's minimum is more than its maximum");
   if (value < kMin || value > kMax) {
     return absl::InvalidArgumentError(
         absl::StrCat(value, " is not from ", kMin, " to ", kMax));
@@ -44,11 +31,10 @@ absl::Status CliInRange(const T& value) {
   return absl::OkStatus();
 }
 
-// Validates that a number is at least `kMin`.
-template <auto kMin, typename T>
-absl::Status CliAtLeast(const T& value) {
+template <typename T, auto kMin>
+absl::Status ValidateAtLeast(const ValidatedContext&, const T& value) {
   static_assert(std::is_same_v<T, int64_t> || std::is_same_v<T, double>,
-                "CliAtLeast is for numbers");
+                "kCliAtLeast is for numbers");
   if (value < kMin) {
     return absl::InvalidArgumentError(
         absl::StrCat(value, " is less than ", kMin));
@@ -56,11 +42,10 @@ absl::Status CliAtLeast(const T& value) {
   return absl::OkStatus();
 }
 
-// Validates that a number is at most `kMax`.
-template <auto kMax, typename T>
-absl::Status CliAtMost(const T& value) {
+template <typename T, auto kMax>
+absl::Status ValidateAtMost(const ValidatedContext&, const T& value) {
   static_assert(std::is_same_v<T, int64_t> || std::is_same_v<T, double>,
-                "CliAtMost is for numbers");
+                "kCliAtMost is for numbers");
   if (value > kMax) {
     return absl::InvalidArgumentError(
         absl::StrCat(value, " is more than ", kMax));
@@ -68,8 +53,44 @@ absl::Status CliAtMost(const T& value) {
   return absl::OkStatus();
 }
 
+}  // namespace internal
+
+//==============================================================================
+// Common validators
+//
+// Each of these is a CliValidator, which a flag or argument lists by address:
+//
+//   const gb::CliFlag<int64_t> kThreads = {
+//       .name = "threads",
+//       .validators = {&gb::kCliInRange<int64_t, 1, 64>},
+//   };
+//
+// The number validators are variable templates of the value type, which must
+// be the flag's or argument's, and their bounds, so the bounds are part of the
+// constant. The bounds may be integers or floating point for either type
+// (`gb::kCliAtLeast<double, 1>`).
+//==============================================================================
+
+// Validates that a number is from `kMin` to `kMax`, inclusive.
+template <typename T, auto kMin, auto kMax>
+inline const CliValidator<T> kCliInRange = {
+    .validate = internal::ValidateInRange<T, kMin, kMax>,
+};
+
+// Validates that a number is at least `kMin`.
+template <typename T, auto kMin>
+inline const CliValidator<T> kCliAtLeast = {
+    .validate = internal::ValidateAtLeast<T, kMin>,
+};
+
+// Validates that a number is at most `kMax`.
+template <typename T, auto kMax>
+inline const CliValidator<T> kCliAtMost = {
+    .validate = internal::ValidateAtMost<T, kMax>,
+};
+
 // Validates that a string is not empty.
-absl::Status CliNotEmpty(const std::string_view& value);
+extern const CliValidator<std::string_view> kCliNotEmpty;
 
 }  // namespace gb
 

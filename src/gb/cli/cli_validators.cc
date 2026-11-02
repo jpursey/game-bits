@@ -7,11 +7,20 @@
 
 namespace gb {
 
-absl::Status CliNotEmpty(const std::string_view& value) {
+namespace {
+
+absl::Status ValidateNotEmpty(const ValidatedContext&,
+                              const std::string_view& value) {
   if (value.empty()) {
     return absl::InvalidArgumentError("is empty");
   }
   return absl::OkStatus();
 }
+
+}  // namespace
+
+const CliValidator<std::string_view> kCliNotEmpty = {
+    .validate = ValidateNotEmpty,
+};
 
 }  // namespace gb

@@ -47,7 +47,9 @@ const CliAnyFlag kHelpFlag = &internal::kCliHelpFlag;
 // reaches each subcommand's name.
 class CliParser {
  public:
-  explicit CliParser(const CliCommand* program) : path_({program}) {}
+  // Parses with `context`, which must outlive this.
+  CliParser(ValidatedContext* context, const CliCommand* program)
+      : context_(context), path_({program}) {}
 
   absl::Status Parse(absl::Span<const std::string_view> args);
 
@@ -66,6 +68,11 @@ class CliParser {
   // the help command, every word is a subcommand's name.
   absl::Status ParseWord(std::string_view word);
 
+  // Validates the context against the constraints of the validators of the
+  // flags and arguments of every command in the path, for the validators to
+  // read it.
+  absl::Status ValidateContext();
+
   // Validates that nothing required is missing, once all arguments are
   // parsed.
   absl::Status ValidateComplete() const;
@@ -78,8 +85,12 @@ class CliParser {
   // Returns an error for the command at the end of the path.
   absl::Status Error(std::string_view message) const;
 
+  ValidatedContext* const context_;
   std::vector<const CliCommand*> path_;
   absl::flat_hash_map<const void*, internal::CliValue> values_;
+
+  // The context the validators get (see ValidateContext()).
+  ValidatedContext validator_context_;
 
   // The index of the next positional argument of the command at the end of
   // the path.
@@ -98,10 +109,13 @@ class CliParser {
 };
 
 absl::Status CliParser::Parse(absl::Span<const std::string_view> args) {
+  absl::Status status = ValidateContext();
+  if (!status.ok()) {
+    return status;
+  }
   const int arg_count = static_cast<int>(args.size());
   for (int i = 0; i < arg_count && !help_flag_given_; ++i) {
     const std::string_view arg = args[i];
-    absl::Status status;
     if (positional_only_ || IsWord(arg)) {
       status = ParseWord(arg);
     } else if (arg == "--") {
@@ -163,7 +177,7 @@ absl::Status CliParser::ParseFlag(absl::Span<const std::string_view> args,
     return Error(absl::StrCat("\"", flag_text, "\" needs a value"));
   }
   absl::StatusOr<internal::CliValue> value =
-      internal::ParseCliValue(*flag, text);
+      internal::ParseCliValue(validator_context_, *flag, text);
   if (!value.ok()) {
     return Error(
         absl::StrCat("\"", flag_text, "\": ", value.status().message()));
@@ -186,10 +200,10 @@ absl::Status CliParser::ParseWord(std::string_view word) {
       // (`prog help help`).
       if (subcommand == &kCliHelpCommand && !help_command_given_) {
         help_command_given_ = true;
-      } else {
-        path_.push_back(subcommand);
+        return absl::OkStatus();
       }
-      return absl::OkStatus();
+      path_.push_back(subcommand);
+      return ValidateContext();
     }
     return Error(absl::StrCat("unknown command \"", word, "\""));
   }
@@ -199,13 +213,34 @@ absl::Status CliParser::ParseWord(std::string_view word) {
   }
   const CliAnyArg& arg = command->args.begin()[next_arg_];
   const internal::CliArgFields fields = internal::GetCliArgFields(arg);
-  absl::StatusOr<internal::CliValue> value = internal::ParseCliValue(arg, word);
+  absl::StatusOr<internal::CliValue> value =
+      internal::ParseCliValue(validator_context_, arg, word);
   if (!value.ok()) {
     return Error(
         absl::StrCat("<", fields.name, ">: ", value.status().message()));
   }
   values_[fields.definition] = *std::move(value);
   ++next_arg_;
+  return absl::OkStatus();
+}
+
+absl::Status CliParser::ValidateContext() {
+  std::vector<ContextConstraint> constraints;
+  for (const CliCommand* command : path_) {
+    for (const CliAnyFlag& flag : command->flags) {
+      internal::AppendCliValidatorConstraints(flag, &constraints);
+    }
+    for (const CliAnyArg& arg : command->args) {
+      internal::AppendCliValidatorConstraints(arg, &constraints);
+    }
+  }
+  validator_context_ = ValidatedContext(*context_, std::move(constraints));
+  if (!validator_context_.IsValid()) {
+    return absl::FailedPreconditionError(
+        absl::StrCat(internal::GetCliPathName(path_),
+                     ": the context is missing a value that the validators "
+                     "of its flags or arguments read"));
+  }
   return absl::OkStatus();
 }
 
@@ -361,14 +396,18 @@ absl::StatusOr<CliCommandLine> ParseCommandLine(
     CliContract contract, const CliCommand* program,
     absl::Span<const std::string_view> args) {
   CHECK_OK(ValidateCliCommand(program));
-  CliParser parser(program);
+  ValidatedContext context(std::move(contract));
+  if (!context.IsValid()) {
+    return absl::FailedPreconditionError(absl::StrCat(
+        program->name, ": the context doesn't meet gb_cli's constraints"));
+  }
+  CliParser parser(&context, program);
   const absl::Status status = parser.Parse(args);
   if (!status.ok()) {
     return status;
   }
-  return CliCommandLine(ValidatedContext(std::move(contract)),
-                        parser.TakePath(), parser.TakeValues(),
-                        parser.IsHelp());
+  return CliCommandLine(std::move(context), parser.TakePath(),
+                        parser.TakeValues(), parser.IsHelp());
 }
 
 absl::StatusOr<CliCommandLine> ParseCommandLine(

@@ -12,6 +12,7 @@
 #include <type_traits>
 #include <vector>
 
+#include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/strip.h"
 #include "gb/base/context.h"
@@ -34,10 +35,19 @@ bool RunNothing(ValidatedContext&, const CliCommandLine&) { return true; }
 bool RunFails(ValidatedContext&, const CliCommandLine&) { return false; }
 
 // Parses command lines with a context, which holds a writer that keeps what is
-// written to it.
+// written to it, and keeps the errors ValidatedContext reports.
 class CliCommandLineRunTest : public ::testing::Test {
  protected:
-  CliCommandLineRunTest() { context_.SetValue<CliWriter>(writer_.GetWriter()); }
+  CliCommandLineRunTest() {
+    context_.SetValue<CliWriter>(writer_.GetWriter());
+    ValidatedContext::SetGlobalErrorCallback(
+        [this](const std::string& message) {
+          context_errors_.push_back(message);
+        });
+  }
+  ~CliCommandLineRunTest() override {
+    ValidatedContext::SetGlobalErrorCallback(nullptr);
+  }
 
   absl::StatusOr<CliCommandLine> Parse(
       const CliCommand* program, const std::vector<std::string_view>& args) {
@@ -53,21 +63,29 @@ class CliCommandLineRunTest : public ::testing::Test {
   // The writer is first, as the context's CliWriter refers to it.
   FakeCliWriter writer_;
   Context context_;
+
+  // The errors ValidatedContext has reported.
+  std::vector<std::string> context_errors_;
 };
 
-absl::Status ValidateNotEmpty(const std::string_view& value) {
+absl::Status ValidateNotEmpty(const ValidatedContext&,
+                              const std::string_view& value) {
   if (value.empty()) {
     return absl::InvalidArgumentError("is empty");
   }
   return absl::OkStatus();
 }
 
-absl::Status ValidateNoSpaces(const std::string_view& value) {
+absl::Status ValidateNoSpaces(const ValidatedContext&,
+                              const std::string_view& value) {
   if (value.find(' ') != std::string_view::npos) {
     return absl::InvalidArgumentError("contains a space");
   }
   return absl::OkStatus();
 }
+
+const CliValidator<std::string_view> kNotEmpty = {.validate = ValidateNotEmpty};
+const CliValidator<std::string_view> kNoSpaces = {.validate = ValidateNoSpaces};
 
 //==============================================================================
 // A program with flags and positional arguments.
@@ -78,18 +96,18 @@ const CliFlag<std::string_view> kMode = {.name = "mode",
                                          .default_value = "fast"};
 const CliFlag<std::string_view> kLabel = {
     .name = "label",
-    .validators = {ValidateNotEmpty, ValidateNoSpaces},
+    .validators = {&kNotEmpty, &kNoSpaces},
 };
 const CliFlag<std::string_view> kTitle = {
     .name = "title",
     .default_value = "",
-    .validators = {ValidateNotEmpty},
+    .validators = {&kNotEmpty},
 };
 const CliFlag<bool> kVerbose = {.name = "verbose", .short_name = 'v'};
 const CliFlag<bool> kQuiet = {.name = "quiet", .short_name = 'q'};
 const CliArg<std::string_view> kInput = {
     .name = "input file",
-    .validators = {ValidateNoSpaces},
+    .validators = {&kNoSpaces},
 };
 const CliArg<std::string_view> kExtra = {
     .name = "extra file",
@@ -697,14 +715,8 @@ TEST_F(CliCommandLineRunTest, RunWithoutARequiredValue) {
   const std::vector<std::string_view> args = {"inner"};
   absl::StatusOr<CliCommandLine> command_line = Parse(&kOuter, args);
   ASSERT_TRUE(command_line.ok()) << command_line.status();
-  std::string error;
-  ValidatedContext::SetGlobalErrorCallback(
-      [&error](const std::string& message) {
-        absl::StrAppend(&error, message);
-      });
   EXPECT_FALSE(command_line->Run());
-  ValidatedContext::SetGlobalErrorCallback(nullptr);
-  EXPECT_THAT(error, HasSubstr("Settings"));
+  EXPECT_THAT(context_errors_, ElementsAre(HasSubstr("Settings")));
   EXPECT_FALSE(context_.Exists<int>("result"));
 }
 
@@ -717,17 +729,77 @@ TEST_F(CliCommandLineRunTest, RunWithoutAValueTheCommandAdds) {
   const std::vector<std::string_view> args = {};
   absl::StatusOr<CliCommandLine> command_line = Parse(&kForgets, args);
   ASSERT_TRUE(command_line.ok()) << command_line.status();
-  std::string error;
-  int error_count = 0;
-  ValidatedContext::SetGlobalErrorCallback(
-      [&error, &error_count](const std::string& message) {
-        absl::StrAppend(&error, message);
-        ++error_count;
-      });
   EXPECT_FALSE(command_line->Run());
-  ValidatedContext::SetGlobalErrorCallback(nullptr);
-  EXPECT_THAT(error, HasSubstr("result"));
-  EXPECT_EQ(error_count, 1);
+  EXPECT_THAT(context_errors_, ElementsAre(HasSubstr("result")));
+}
+
+TEST_F(CliCommandLineRunTest, ParseWithAnInvalidContext) {
+  // A width that isn't an int fails kConstraintCliHelpWidth.
+  context_.SetValue<int64_t>(kKeyCliHelpWidth, 40);
+  const std::vector<std::string_view> args = {"status"};
+  absl::StatusOr<CliCommandLine> command_line = Parse(&kTool, args);
+  EXPECT_TRUE(absl::IsFailedPrecondition(command_line.status()))
+      << command_line.status();
+  EXPECT_THAT(context_errors_, ElementsAre(HasSubstr(kKeyCliHelpWidth)));
+}
+
+//==============================================================================
+// Validators that read the context
+//==============================================================================
+
+// Validates that a number is at most the Settings level in the context, which
+// kConstraintSettings requires.
+absl::Status ValidateAtMostLevel(const ValidatedContext& context,
+                                 const int64_t& value) {
+  const Settings* settings = context.GetPtr<Settings>();
+  if (value > settings->level) {
+    return absl::InvalidArgumentError(
+        absl::StrCat(value, " is more than level ", settings->level));
+  }
+  return absl::OkStatus();
+}
+
+const CliValidator<int64_t> kAtMostLevel = {
+    .validate = ValidateAtMostLevel,
+    .constraints = {&kConstraintSettings},
+};
+
+const CliFlag<int64_t> kDepth = {.name = "depth",
+                                 .validators = {&kAtMostLevel}};
+const CliArg<int64_t> kAmount = {.name = "amount",
+                                 .validators = {&kAtMostLevel}};
+const CliCommand kLeaf = {
+    .name = "leaf", .args = {&kAmount}, .run = RunNothing};
+const CliCommand kTree = {
+    .name = "tree",
+    .flags = {&kDepth},
+    .commands = {&kLeaf},
+    .run = RunNothing,
+};
+
+TEST_F(CliCommandLineRunTest, ValidatorsReadTheContext) {
+  Settings settings = {.level = 5};
+  context_.SetPtr<Settings>(&settings);
+  EXPECT_TRUE(Parse(&kTree, {"--depth", "5", "leaf", "5"}).ok());
+
+  // A flag of the command, one of the command above it, and an argument.
+  EXPECT_THAT(Parse(&kTree, {"--depth", "6"}).status().message(),
+              StartsWith("tree: \"--depth\": 6 is more than level 5."));
+  EXPECT_THAT(Parse(&kTree, {"leaf", "--depth", "6", "5"}).status().message(),
+              StartsWith("tree leaf: \"--depth\": 6 is more than level 5."));
+  EXPECT_THAT(Parse(&kTree, {"leaf", "6"}).status().message(),
+              StartsWith("tree leaf: <amount>: 6 is more than level 5."));
+}
+
+TEST_F(CliCommandLineRunTest, ValidatorsWithoutAValueTheyRead) {
+  // The command's validators need Settings, though "--depth" isn't given.
+  absl::StatusOr<CliCommandLine> command_line = Parse(&kTree, {});
+  EXPECT_TRUE(absl::IsFailedPrecondition(command_line.status()))
+      << command_line.status();
+  EXPECT_EQ(command_line.status().message(),
+            "tree: the context is missing a value that the validators of its "
+            "flags or arguments read");
+  EXPECT_THAT(context_errors_, ElementsAre(HasSubstr("Settings")));
 }
 
 //==============================================================================

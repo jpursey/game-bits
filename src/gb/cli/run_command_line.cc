@@ -8,6 +8,7 @@
 #include <memory>
 #include <utility>
 
+#include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "gb/base/context.h"
 #include "gb/base/validated_context.h"
@@ -29,13 +30,21 @@ int RunCommandLine(CliContract contract, const CliCommand* program,
   // The context is held here, so that it is still there to write an error to
   // if the command line doesn't parse.
   ValidatedContext context(std::move(contract));
+  if (!context.IsValid()) {
+    // There may be no writer, and ValidatedContext has reported the error.
+    return kExitFailure;
+  }
   absl::StatusOr<CliCommandLine> command_line =
       ParseCommandLine(CliContract(context), program, args);
   if (!command_line.ok()) {
     // The context has a writer, as kConstraintCliWriter has a default.
     (*context.GetPtr<CliWriter>())(CliText::kError,
                                    command_line.status().message());
-    return kExitInvalidCommandLine;
+
+    // Any other error is the program's, as its context is missing a value.
+    return absl::IsInvalidArgument(command_line.status())
+               ? kExitInvalidCommandLine
+               : kExitFailure;
   }
   return command_line->Run() ? kExitSuccess : kExitFailure;
 }

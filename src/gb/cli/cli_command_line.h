@@ -152,6 +152,13 @@ class CliCommandLine {
 // saying how to get help. `program` must be valid (see ValidateCliCommand(),
 // which this CHECKs).
 //
+// The context is validated against CliContract, and, as each command is
+// reached, against the constraints of its flags' and arguments' validators and
+// those of the commands above it, which read from it. If it isn't valid, the
+// error is reported as ValidatedContext reports any error, and this returns a
+// FailedPrecondition error, as that is the program's mistake rather than the
+// user's.
+//
 // A command line that is valid may ask for help rather than for the command to
 // run, so pass it to CliCommandLine::Run(), which handles both, rather than
 // reading its values directly.

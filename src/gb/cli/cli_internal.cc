@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <initializer_list>
 #include <variant>
+#include <vector>
 
 #include "absl/algorithm/container.h"
 #include "absl/strings/ascii.h"
@@ -124,8 +125,9 @@ absl::Status ValidateChoice(std::string_view text,
 
 template <typename T>
 absl::StatusOr<CliValue> ParseValue(
-    std::string_view text, std::initializer_list<CliChoice> choices,
-    std::initializer_list<CliValidator<T>> validators) {
+    const ValidatedContext& context, std::string_view text,
+    std::initializer_list<CliChoice> choices,
+    std::initializer_list<const CliValidator<T>*> validators) {
   T value = {};
   absl::Status status = ParseText(text, &value);
   if (!status.ok()) {
@@ -135,8 +137,8 @@ absl::StatusOr<CliValue> ParseValue(
   if (!status.ok()) {
     return status;
   }
-  for (const CliValidator<T> validator : validators) {
-    status = validator(value);
+  for (const CliValidator<T>* validator : validators) {
+    status = validator->validate(context, value);
     if (!status.ok()) {
       return status;
     }
@@ -146,9 +148,22 @@ absl::StatusOr<CliValue> ParseValue(
 
 // Parses the value of `definition`, a CliFlag<T> or CliArg<T>, from `text`.
 template <typename Definition>
-absl::StatusOr<CliValue> Parse(const Definition& definition,
+absl::StatusOr<CliValue> Parse(const ValidatedContext& context,
+                               const Definition& definition,
                                std::string_view text) {
-  return ParseValue(text, definition.choices, definition.validators);
+  return ParseValue(context, text, definition.choices, definition.validators);
+}
+
+// Appends the constraints of `definition`'s validators, for a CliFlag<T> or
+// CliArg<T>.
+template <typename Definition>
+void AppendConstraints(const Definition& definition,
+                       std::vector<ContextConstraint>* constraints) {
+  for (const auto* validator : definition.validators) {
+    for (const ContextConstraint* constraint : validator->constraints) {
+      constraints->push_back(*constraint);
+    }
+  }
 }
 
 }  // namespace
@@ -165,16 +180,38 @@ CliArgFields GetCliArgFields(const CliAnyArg& arg) {
   return std::visit([](const auto* typed) { return GetFields(*typed); }, arg);
 }
 
-absl::StatusOr<CliValue> ParseCliValue(const CliAnyFlag& flag,
+absl::StatusOr<CliValue> ParseCliValue(const ValidatedContext& context,
+                                       const CliAnyFlag& flag,
                                        std::string_view text) {
-  return std::visit([text](const auto* typed) { return Parse(*typed, text); },
-                    flag);
+  return std::visit(
+      [&context, text](const auto* typed) {
+        return Parse(context, *typed, text);
+      },
+      flag);
 }
 
-absl::StatusOr<CliValue> ParseCliValue(const CliAnyArg& arg,
+absl::StatusOr<CliValue> ParseCliValue(const ValidatedContext& context,
+                                       const CliAnyArg& arg,
                                        std::string_view text) {
-  return std::visit([text](const auto* typed) { return Parse(*typed, text); },
-                    arg);
+  return std::visit(
+      [&context, text](const auto* typed) {
+        return Parse(context, *typed, text);
+      },
+      arg);
+}
+
+void AppendCliValidatorConstraints(
+    const CliAnyFlag& flag, std::vector<ContextConstraint>* constraints) {
+  std::visit([constraints](
+                 const auto* typed) { AppendConstraints(*typed, constraints); },
+             flag);
+}
+
+void AppendCliValidatorConstraints(
+    const CliAnyArg& arg, std::vector<ContextConstraint>* constraints) {
+  std::visit([constraints](
+                 const auto* typed) { AppendConstraints(*typed, constraints); },
+             arg);
 }
 
 std::string GetCliPathName(absl::Span<const CliCommand* const> path) {

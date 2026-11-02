@@ -8,9 +8,11 @@
 
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "absl/status/statusor.h"
 #include "absl/types/span.h"
+#include "gb/base/validated_context.h"
 #include "gb/cli/cli.h"
 #include "gb/cli/cli_command_line.h"
 
@@ -54,11 +56,21 @@ CliArgFields GetCliArgFields(const CliAnyArg& arg);
 
 // Returns the value parsed from `text` and validated, or an error saying what
 // is wrong with it. A bool flag takes no value, so `text` is ignored, and its
-// value is true.
-absl::StatusOr<CliValue> ParseCliValue(const CliAnyFlag& flag,
+// value is true. The validators get `context`, which must meet their
+// constraints (see AppendCliValidatorConstraints()).
+absl::StatusOr<CliValue> ParseCliValue(const ValidatedContext& context,
+                                       const CliAnyFlag& flag,
                                        std::string_view text);
-absl::StatusOr<CliValue> ParseCliValue(const CliAnyArg& arg,
+absl::StatusOr<CliValue> ParseCliValue(const ValidatedContext& context,
+                                       const CliAnyArg& arg,
                                        std::string_view text);
+
+// Appends the constraints of a flag's or argument's validators to
+// `constraints`.
+void AppendCliValidatorConstraints(const CliAnyFlag& flag,
+                                   std::vector<ContextConstraint>* constraints);
+void AppendCliValidatorConstraints(const CliAnyArg& arg,
+                                   std::vector<ContextConstraint>* constraints);
 
 // Returns the names of the commands in `path`, separated by spaces, as used to
 // say which command an error is for: "program build".

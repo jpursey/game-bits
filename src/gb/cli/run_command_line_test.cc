@@ -5,11 +5,16 @@
 
 #include "gb/cli/run_command_line.h"
 
+#include <cstdint>
+#include <string>
 #include <string_view>
 #include <vector>
 
+#include "absl/status/status.h"
 #include "gb/base/context.h"
 #include "gb/base/validated_context.h"
+#include "gb/cli/cli.h"
+#include "gb/cli/cli_command_line.h"
 #include "gb/cli/cli_writer.h"
 #include "gb/cli/fake_cli_writer.h"
 #include "gmock/gmock.h"
@@ -19,6 +24,7 @@ namespace gb {
 namespace {
 
 using ::testing::ElementsAre;
+using ::testing::HasSubstr;
 using ::testing::IsEmpty;
 using ::testing::StartsWith;
 
@@ -37,7 +43,16 @@ const CliCommand kProgram = {
 
 class RunCommandLineTest : public ::testing::Test {
  protected:
-  RunCommandLineTest() { context_.SetValue<CliWriter>(writer_.GetWriter()); }
+  RunCommandLineTest() {
+    context_.SetValue<CliWriter>(writer_.GetWriter());
+    ValidatedContext::SetGlobalErrorCallback(
+        [this](const std::string& message) {
+          context_errors_.push_back(message);
+        });
+  }
+  ~RunCommandLineTest() override {
+    ValidatedContext::SetGlobalErrorCallback(nullptr);
+  }
 
   int RunWith(const std::vector<std::string_view>& args) {
     return RunCommandLine(&context_, &kProgram, args);
@@ -46,6 +61,9 @@ class RunCommandLineTest : public ::testing::Test {
   // The writer is first, as the context's CliWriter refers to it.
   FakeCliWriter writer_;
   Context context_;
+
+  // The errors ValidatedContext has reported.
+  std::vector<std::string> context_errors_;
 };
 
 TEST_F(RunCommandLineTest, Succeeds) {
@@ -71,6 +89,37 @@ TEST_F(RunCommandLineTest, WritesError) {
   EXPECT_EQ(writer_.TakeHelp(), "");
   EXPECT_EQ(writer_.TakeError(),
             "prog: unknown flag \"--nope\". Run \"prog --help\" for help.");
+}
+
+GB_CONTEXT_CONSTRAINT_NAMED(kConstraintNeeded, kInRequired, int, "needed");
+
+absl::Status ValidateAnything(const ValidatedContext&, const int64_t&) {
+  return absl::OkStatus();
+}
+
+TEST_F(RunCommandLineTest, ContextMissingAValue) {
+  static const CliValidator<int64_t> kNeedsValue = {
+      .validate = ValidateAnything,
+      .constraints = {&kConstraintNeeded},
+  };
+  static const CliFlag<int64_t> kNeeds = {.name = "needs",
+                                          .validators = {&kNeedsValue}};
+  static const CliCommand kNeedsProgram = {.name = "prog", .flags = {&kNeeds}};
+  EXPECT_EQ(RunCommandLine(&context_, &kNeedsProgram, {}), 1);
+  EXPECT_EQ(writer_.TakeHelp(), "");
+  EXPECT_EQ(writer_.TakeError(),
+            "prog: the context is missing a value that the validators of its "
+            "flags or arguments read");
+  EXPECT_THAT(context_errors_, ElementsAre(HasSubstr("needed")));
+}
+
+TEST_F(RunCommandLineTest, InvalidContext) {
+  // A width that isn't an int fails kConstraintCliHelpWidth.
+  context_.SetValue<int64_t>(kKeyCliHelpWidth, 40);
+  EXPECT_EQ(RunWith({}), 1);
+  EXPECT_EQ(writer_.TakeHelp(), "");
+  EXPECT_EQ(writer_.TakeError(), "");
+  EXPECT_THAT(context_errors_, ElementsAre(HasSubstr(kKeyCliHelpWidth)));
 }
 
 TEST(GetMainArgsTest, SkipsTheProgramName) {
