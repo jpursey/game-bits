@@ -120,7 +120,8 @@ sub-libraries (organized as subdirectories).
    *  [`gb_cli`](src/gb/cli): This library defines a program's command line as
       constant data (its commands, flags, positional arguments, and their
       help), parses it into the values given for the command it names, and
-      runs that command or writes its help.
+      runs that command or writes its help. Paths given on the command line
+      are validated and opened in a `gb_file` file system.
    *  [`gb_collide`](src/gb/collide): This library defines collision shapes and
       the intersection tests between them, implemented in terms of libccd.
    *  [`gb_config`](src/gb/config): This library defines a general purpose

@@ -639,25 +639,23 @@ reliable, order cores by it within a class.
 the ANSI code page, so `GetMainArgs()` garbles a path with characters outside
 it. Have `GetMainArgs()` read the arguments as UTF-8 on Windows instead
 (`GetCommandLineW()` and `CommandLineToArgvW()`, converted with `ToUtf8()`),
-behind a `win_` / `gen_` split. Its API doesn't change: it already returns
-strings it owns.
+behind a `win_` / `gen_` split. Its API doesn't change if it keeps the
+converted strings for the rest of the program, as the views it returns already
+promise.
 
-## Path validators for command lines
+## Command line paths without conversion
 
-- **Layers:** gb_cli
-- **Size:** small
+- **Layers:** gb_file, gb_cli
+- **Size:** medium
 - **Feature workflow:** no
 - **Depends on:** Command line library
 - **Background:** [Command line library](worklog/command_line_library.md)
 
-A validator that a path given on the command line exists (or is a file, or a
-folder), checked against the program's `gb::FileSystem` rather than
-`std::filesystem`. A validator is a plain function pointer in constant data, so
-the design question is how it gets the `FileSystem`. `ParseCommandLine()` now
-takes a `gb::Context` (a `CliContract`), and the `FileSystem` belongs there:
-validators would be given the context, validated against a
-`kConstraintFileSystem` that a path validator's flag or argument adds, so a
-missing `FileSystem` is found when the command line is parsed. Command line
-paths are written the operating system's way, so the validator converts them
-with `LocalFileProtocol::ToOsRootPath()`, for a `FileSystem` whose default
-protocol is from `CreateOsRoot()`.
+A path given on a command line is written the operating system's way, and on
+Windows its drive (`c:\src`) reads as a protocol name, so `gb_cli` converts
+every path with `LocalFileProtocol::ToOsRootPath()` before opening it
+(`GetCliFilePath()`). That ties the path validators to a protocol that takes
+the paths of one from `CreateOsRoot()`. Ideally an operating system path
+opens in a `FileSystem` as it is, and the conversion goes. A conversion hook
+on each protocol, or asking the file system how to read a path, were
+considered and set aside, as they work around the drive rather than fix it.

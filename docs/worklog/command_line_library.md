@@ -362,6 +362,21 @@ struct CliCommand {
   keeps it apart from other libraries' values in a shared context.
   `FormatCliHelp()` takes the width rather than a default, so the default is
   only in the constraint.
+- **Paths:** a path given on the command line is written the operating
+  system's way, absolute or relative to the current directory, and is opened
+  in the context's `FileSystem` (`kConstraintCliFileSystem`), with its default
+  protocol, or the one named by `kConstraintCliFileProtocol`, an optional
+  `std::string` named `"cli_file_protocol"`. `GetCliFilePath()` converts the
+  path with `LocalFileProtocol::ToOsRootPath()`, and prefixes the protocol if
+  the context names one (`"file:/c/src/main.txt"`), so the protocol must take
+  the paths of one from `CreateOsRoot()`. The validators `kCliPathExists`,
+  `kCliFileExists`, and `kCliFolderExists` read both constraints, so a
+  missing `FileSystem` fails parsing. A run function that calls
+  `GetCliFilePath()` lists both in its command's constraints too: a validated
+  context only reads the values its own constraints name, so that each piece
+  of code declares what it reads, rather than working only because another
+  command's or validator's constraint added it. A path that can't be
+  converted (a network path) doesn't exist, as far as the validators say.
 - **Constraints as data:** a command lists pointers to the
   `ContextConstraint`s it needs, which the `GB_CONTEXT_CONSTRAINT` macros
   define as `inline const` globals, so a command stays constant data:
@@ -446,6 +461,8 @@ and nothing in tier 0 needs it.
   `gb_cli` and its tests: the fields every flag or argument has, parsing a
   value for any of them, and `GetCliPathName()`, for errors and help.
 - `cli_validators.h`: the common validators.
+- `cli_path.h`: `kConstraintCliFileSystem`, `kConstraintCliFileProtocol`
+  (with `kKeyCliFileProtocol`), `GetCliFilePath()`, and the path validators.
 - `cli_command_line.h`: `CliCommandLine`, `ParseCommandLine()`,
   `kConstraintCliWriter`, `kConstraintCliHelpWidth` (with
   `kKeyCliHelpWidth` and `kDefaultCliHelpWidth`), and `CliContract`.
@@ -741,21 +758,45 @@ Depends on: CL7.
   when the program's context is missing the value. That is the program's
   mistake, and is found on any run naming the command.
 
-### CL9 [ ] gb_cli: path validators
+### CL9 [x] gb_cli: path validators
 
 Depends on: CL8.
 
 - `cli_path.h`: `kConstraintCliFileSystem`, `kConstraintCliFileProtocol`
-  (`"cli_file_protocol"`, defaulting to `"file"`), `GetCliFilePath()`, and
-  the validators `kCliPathExists`, `kCliFileExists`, and `kCliFolderExists`.
-  Paths are converted with `LocalFileProtocol::ToOsRootPath()`, so the
-  protocol must take its paths, as one from `CreateOsRoot()` does.
-- `gb_cli` depends on `gb_file`.
-- *Path validators for command lines* comes out of the backlog.
+  (`"cli_file_protocol"`, optional, for the file system's default protocol
+  when it is missing or empty), `GetCliFilePath()`, and the validators
+  `kCliPathExists`, `kCliFileExists`, and `kCliFolderExists`. Paths are
+  converted with `LocalFileProtocol::ToOsRootPath()`, so the protocol must
+  take its paths, as one from `CreateOsRoot()` does.
+- `gb_cli` depends on `gb_file` (tier 0).
+- *Path validators for command lines* comes out of the backlog, and
+  *Command line paths without conversion* goes in, for paths that don't need
+  `ToOsRootPath()`.
 
 **Verify**
 - Standard checks.
-- Unit tests, with a `MemoryFileProtocol` registered as `"file"`, and files
-  at the `ToOsRootPath()` paths: each validator accepts and rejects paths,
-  relative and absolute, `GetCliFilePath()` uses the context's protocol, and a
-  missing `FileSystem` fails parsing.
+- Unit tests, with a `MemoryFileProtocol` registered as `"file"` and made the
+  default, and files at the `ToOsRootPath()` paths: each validator accepts and
+  rejects paths, relative and absolute, `GetCliFilePath()` uses the default
+  protocol, the context's, or the default for an empty one (and for a context
+  that can't read it, with an error), and a missing `FileSystem` fails
+  parsing.
+
+**Names**
+- `kConstraintCliFileSystem` and `kConstraintCliFileProtocol`, with the `Cli`
+  prefix that keeps them apart from the `kConstraintFileSystem` of other
+  classes, and as `kConstraintCliHelpWidth` is named. "File protocol" rather
+  than "path protocol", as `gb_file` calls it a `FileProtocol`.
+- `GetCliFilePath()`: a path in the file system, from a command line path.
+- `kCliPathExists`, `kCliFileExists`, and `kCliFolderExists`: what each
+  validates, as `kCliNotEmpty` does.
+
+**Brittleness**
+- A run function that calls `GetCliFilePath()` must list
+  `kConstraintCliFileProtocol` in its command's constraints. If it doesn't,
+  reading the protocol is reported as a context error on the first run, and
+  the path is for the default protocol.
+- The protocol must take the paths of one from `CreateOsRoot()`. One rooted
+  elsewhere (`LocalFileProtocol::Create(root)`) is given paths it reads as
+  under its root, without an error. That is the program's mistake, and found
+  on its first run.
