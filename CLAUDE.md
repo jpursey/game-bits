@@ -31,6 +31,8 @@ This is a CMake project, starting at the root. The directory structure is as fol
                    and can get deleted at any time.
   assets/       -- Assets used at runtime by examples
   CMake/        -- Custom CMake rules used by all Game Bits modules in src/
+  tools/        -- Scripts used while developing, such as running a program
+                   and capturing its window
   docs/         -- The shared workflow, feature plans (worklog/), and the
                    backlog
 ```
@@ -125,13 +127,28 @@ CLANG_FORMAT="/c/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/L
 
 A `clang-format` on PATH may be a different version, and versions disagree on a few constructs (18 and 19 differ on bare `{ ... }` scope blocks), so use this one. Style comes from `src/.clang-format` (Google style); clang-format finds it automatically for any file under `src/`. Every file under `src/` passes the check, so formatting a touched file only changes the lines you edited.
 
+### Run an example
+
+A session can run an example itself, drive it with keys, and look at screenshots of its window. README.md says how to build each one (`bin/render_check.exe` in "Running the RenderCheck example").
+
+```
+# PowerShell
+.\tools\run-program.ps1 -Exe bin\render_check.exe -Steps "wait:3,shot:start"
+```
+
+The steps wait, press or hold keys, and save screenshots (see the script for the list). The screenshots, and the program's stdout and stderr, go to `out\run\<program>\`. Read the PNGs to see what was drawn. Screenshots include Vulkan drawing, and keys go to the window, so the program can be behind other windows (but not minimized) and nothing is typed anywhere else.
+
+After the last step, the window is closed as its close button would, so every run also checks that the program shuts down cleanly. The run fails if it exits with an error code, or is still running 15 seconds after being closed (`-CloseSecs`). In that case the stack of each of its threads is saved to `hang-stacks.txt` there first, showing where it is stuck. `tools\dump-stacks.ps1 -ProcessId <id>` prints the same for any running program, such as one the user says has hung.
+
+There is no mouse step, as ImGui reads the real cursor, so a script can't press an ImGui button or check box without taking over the user's mouse.
+
 ### Checks
 
 Every change is checked as follows:
 - It builds cleanly (warnings are errors) in both Debug and Release.
 - `ctest` passes in Debug.
 - Touched files pass the clang-format check (see Format above).
-- New and changed behavior has unit tests. Code that can't be unit tested (rendering, windows, input) is checked by hand in an example, which the user runs.
+- New and changed behavior has unit tests. Code that can't be unit tested (rendering, windows, input) is checked in an example, such as `examples/render-check`. The session builds it, runs it with `tools\run-program.ps1` (see Run an example above), and checks the screenshots itself. Only what the steps can't reach is left for the user to check by hand, and the hand-off says exactly what that is.
 
 ## Sessions
 
@@ -192,5 +209,4 @@ These add to the C++ style in the workflow.
 - C++20, built with both MSVC and clang-cl.
 
 ## Don't
-- Don't add or modify code outside src/gb/ without asking.
 - Don't generate or build Visual Studio solutions; build with Ninja as described above.
