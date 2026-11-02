@@ -182,6 +182,16 @@ developed and maintained on Windows with Visual Studio 2022, building with
 CMake and the Ninja generator. CMake 3.13 or later is required; the copy that
 ships with Visual Studio is what is normally used.
 
+Game Bits works only in UTF-8 (of which ASCII is a part): every `char` string
+it takes or returns, including paths and command line arguments, is UTF-8.
+Every executable that uses Game Bits must be defined with its CMake commands
+(see [GameBitsTargetCommands.cmake](CMake/GameBitsTargetCommands.cmake)). On
+Windows, they embed a manifest that makes the process's code page UTF-8, so
+`main()`'s arguments are UTF-8. This requires Windows 10 version 1903 or later.
+A DLL runs with its host program's code page instead, so beyond `main()`'s
+arguments, Game Bits code doesn't rely on the code page, and converts to and
+from UTF-16 when it calls Windows.
+
 ## Dependencies
 
 Game Bits stores most of its library dependencies in the third_party directory.

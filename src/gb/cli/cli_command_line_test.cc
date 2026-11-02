@@ -748,10 +748,13 @@ TEST_F(CliCommandLineRunTest, ParseWithAnInvalidContext) {
 //==============================================================================
 
 // Validates that a number is at most the Settings level in the context, which
-// kConstraintSettings requires.
+// kConstraintSettings requires. A negative level is the program's mistake.
 absl::Status ValidateAtMostLevel(const ValidatedContext& context,
                                  const int64_t& value) {
   const Settings* settings = context.GetPtr<Settings>();
+  if (settings->level < 0) {
+    return absl::FailedPreconditionError("the level is negative");
+  }
   if (value > settings->level) {
     return absl::InvalidArgumentError(
         absl::StrCat(value, " is more than level ", settings->level));
@@ -789,6 +792,23 @@ TEST_F(CliCommandLineRunTest, ValidatorsReadTheContext) {
               StartsWith("tree leaf: \"--depth\": 6 is more than level 5."));
   EXPECT_THAT(Parse(&kTree, {"leaf", "6"}).status().message(),
               StartsWith("tree leaf: <amount>: 6 is more than level 5."));
+}
+
+TEST_F(CliCommandLineRunTest, ValidatorsReportTheProgramsMistakes) {
+  Settings settings = {.level = -1};
+  context_.SetPtr<Settings>(&settings);
+
+  // The error doesn't say how to get help, which is no use to the user.
+  absl::StatusOr<CliCommandLine> command_line = Parse(&kTree, {"--depth", "1"});
+  EXPECT_TRUE(absl::IsFailedPrecondition(command_line.status()))
+      << command_line.status();
+  EXPECT_EQ(command_line.status().message(),
+            "tree: \"--depth\": the level is negative");
+  command_line = Parse(&kTree, {"leaf", "1"});
+  EXPECT_TRUE(absl::IsFailedPrecondition(command_line.status()))
+      << command_line.status();
+  EXPECT_EQ(command_line.status().message(),
+            "tree leaf: <amount>: the level is negative");
 }
 
 TEST_F(CliCommandLineRunTest, ValidatorsWithoutAValueTheyRead) {

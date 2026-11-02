@@ -99,9 +99,15 @@ struct CliNotConstexpr {
 template <typename T>
 struct CliValidator {
   // Returns an error saying what is wrong with `value`, or OK if it is
-  // acceptable. `context` is the context the command line is parsed with,
-  // validated against `constraints` alone, so it reads only what they name,
-  // even if another validator declares more. This must not be null.
+  // acceptable. This must not be null.
+  //
+  // An InvalidArgument error is the user's mistake, and any other is the
+  // program's, such as a context value that names something the context
+  // doesn't have (see ParseCommandLine()).
+  //
+  // `context` is the context the command line is parsed with, validated
+  // against `constraints` alone, so it reads only what they name, even if
+  // another validator declares more.
   absl::Status (*validate)(const ValidatedContext& context, const T& value);
 
   // What `validate` reads from the context. These must be inputs (kInRequired

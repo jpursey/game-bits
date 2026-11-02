@@ -133,6 +133,10 @@ A program with nothing in its context calls `RunCommandLine(&kProgram, args)`.
   `CliValidator<T>`: a function, `absl::Status (*)(const ValidatedContext&,
   const T&)`, returning an error saying what is wrong with the value, and the
   constraints of what it reads from the context, which must be inputs.
+- A validator's `InvalidArgument` error is the user's mistake. Any other error
+  is the program's, such as a context value naming something the context
+  doesn't have, and `ParseCommandLine()` returns it as a `FailedPrecondition`
+  error, without saying how to get help.
 - Common validators, in `cli_validators.h`: `kCliInRange<T, kMin, kMax>`,
   `kCliAtLeast<T, kMin>`, and `kCliAtMost<T, kMax>` (variable templates of the
   value type and bounds: `{&gb::kCliInRange<int64_t, 1, 64>}`), and
@@ -175,7 +179,9 @@ absl::StatusOr<CliCommandLine> ParseCommandLine(
   --help" for help.`
 - A context that fails `gb_cli`'s own constraints (a null `Context*`, or a
   width that isn't an `int`), or is missing a value a validator reads, is a
-  `FailedPrecondition` error.
+  `FailedPrecondition` error, as is a validator's error other than
+  `InvalidArgument`: `oz3asm: <source file>: paths are opened with the "src"
+  protocol, which the file system doesn't have`.
 
 ### Values and running a command
 
@@ -269,7 +275,9 @@ is added to it if it has none:
   path exists, is a file, or is a folder: `"x" doesn't exist`, `"x" isn't a
   file`, `"x" isn't a folder`. Each reads both constraints, so a context
   without a `FileSystem` fails parsing. A path that can't be converted doesn't
-  exist, as far as they say.
+  exist, as far as they say. If the file system doesn't have the context's
+  protocol, or a default protocol when the context names none, they fail as
+  the program's mistake.
 - A run function that calls `GetCliFilePath()` lists both constraints in its
   command's constraints, as the example does.
 
@@ -287,13 +295,14 @@ std::vector<std::string_view> GetMainArgs(int argc, char* argv[]);
   context's writer if it isn't valid, and otherwise calls
   `CliCommandLine::Run()`. It returns `main`'s exit code: 0 if the command
   succeeded or help was written, 1 if the command returned false or the
-  context is missing something, and 2 if the command line isn't valid. A
-  context that fails `gb_cli`'s own constraints may have no writer, so nothing
-  is written for it beyond what `ValidatedContext` reports.
+  program made a mistake (`FailedPrecondition`), and 2 if the command line
+  isn't valid. A context that fails `gb_cli`'s own constraints may have no
+  writer, so nothing is written for it beyond what `ValidatedContext` reports.
 - `GetMainArgs()` returns views of `main()`'s arguments after the program's
   name, which stay valid for the rest of the program.
 - Arguments and definitions are UTF-8, and pass through as bytes. On Windows,
-  `argv` is in the ANSI code page (see Known limitations).
+  `argv` is UTF-8 because the Game Bits CMake commands embed a manifest in
+  every executable that makes the process's code page UTF-8.
 
 ## Structure
 
@@ -411,11 +420,6 @@ platform-specific.
 
 Each is a backlog item:
 
-- **UTF-8 command line arguments on Windows:** `GetMainArgs()` returns `argv`
-  as it is, which on Windows is in the ANSI code page, so a path with
-  characters outside it is garbled.
 - **Command line paths without conversion:** every path is converted with
   `ToOsRootPath()`, which ties the path validators to a protocol that takes
   the paths of one from `CreateOsRoot()`.
-- **Command line protocol errors:** a `cli_file_protocol` the file system
-  doesn't have makes every path read as missing.

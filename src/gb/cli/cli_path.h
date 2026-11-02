@@ -66,7 +66,9 @@ std::string GetCliFilePath(const ValidatedContext& context,
 // Validate that a path given on the command line exists in
 // kConstraintCliFileSystem, is a file, or is a folder. Each reads
 // kConstraintCliFileSystem and kConstraintCliFileProtocol, so parsing fails if
-// the context has no FileSystem.
+// the context has no FileSystem. Parsing also fails, as the program's mistake
+// rather than the user's, if the file system doesn't have the protocol that
+// kConstraintCliFileProtocol names, or a default protocol if it names none.
 extern const CliValidator<std::string_view> kCliPathExists;
 extern const CliValidator<std::string_view> kCliFileExists;
 extern const CliValidator<std::string_view> kCliFolderExists;

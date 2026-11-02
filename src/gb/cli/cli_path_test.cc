@@ -163,6 +163,35 @@ TEST_F(CliPathTest, ValidatorsUseTheContextsProtocol) {
   EXPECT_FALSE(Validate(kCliFileExists, "data/input.txt").ok());
 }
 
+TEST_F(CliPathTest, ValidatorsWithAMissingProtocol) {
+  context_.SetValue<std::string>(kKeyCliFileProtocol, "missing");
+  for (const CliValidator<std::string_view>* validator :
+       {&kCliPathExists, &kCliFileExists, &kCliFolderExists}) {
+    const absl::Status status = Validate(*validator, "data/input.txt");
+    EXPECT_TRUE(absl::IsFailedPrecondition(status)) << status;
+    EXPECT_EQ(status.message(),
+              "paths are opened with the \"missing\" protocol, which the file "
+              "system doesn't have");
+  }
+}
+
+TEST_F(CliPathTest, ValidatorsWithNoDefaultProtocol) {
+  FileSystem file_system;
+  EXPECT_TRUE(
+      file_system.Register(std::make_unique<MemoryFileProtocol>(), "mem"));
+  context_.SetPtr<FileSystem>(&file_system);
+  const absl::Status status = Validate(kCliFileExists, "data/input.txt");
+  EXPECT_TRUE(absl::IsFailedPrecondition(status)) << status;
+  EXPECT_EQ(status.message(),
+            "paths are opened with the default protocol, which the file "
+            "system doesn't have");
+
+  // A protocol the context names doesn't need a default protocol.
+  context_.SetValue<std::string>(kKeyCliFileProtocol, "mem");
+  EXPECT_EQ(Validate(kCliFileExists, "data/input.txt").message(),
+            "\"data/input.txt\" doesn't exist");
+}
+
 //==============================================================================
 // Validators in definitions
 //==============================================================================
@@ -193,6 +222,18 @@ TEST_F(CliPathTest, InDefinitions) {
   EXPECT_THAT(command_line.status().message(),
               StartsWith("prog: <input>: \"data/missing.txt\" doesn't exist."));
   EXPECT_THAT(context_errors_, ElementsAre());
+}
+
+TEST_F(CliPathTest, InDefinitionsWithAMissingProtocol) {
+  context_.SetValue<std::string>(kKeyCliFileProtocol, "missing");
+  const std::vector<std::string_view> args = {"data/input.txt"};
+  absl::StatusOr<CliCommandLine> command_line =
+      ParseCommandLine(&context_, &kProgram, args);
+  EXPECT_TRUE(absl::IsFailedPrecondition(command_line.status()))
+      << command_line.status();
+  EXPECT_EQ(command_line.status().message(),
+            "prog: <input>: paths are opened with the \"missing\" protocol, "
+            "which the file system doesn't have");
 }
 
 TEST_F(CliPathTest, WithoutAFileSystem) {

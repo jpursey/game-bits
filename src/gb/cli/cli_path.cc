@@ -6,6 +6,7 @@
 #include "gb/cli/cli_path.h"
 
 #include "absl/status/status.h"
+#include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "gb/file/file_types.h"
 #include "gb/file/local_file_protocol.h"
@@ -14,37 +15,60 @@ namespace gb {
 
 namespace {
 
-// Returns the type of `path`, given on the command line, in the context's file
-// system, which is PathType::kInvalid if it doesn't exist or can't be
-// converted.
-PathType GetPathType(const ValidatedContext& context, std::string_view path) {
-  const std::string file_path = GetCliFilePath(context, path);
-  if (file_path.empty()) {
-    return PathType::kInvalid;
-  }
-  return context.GetPtr<FileSystem>()->GetPathInfo(file_path).type;
-}
-
-absl::Status PathDoesNotExist(std::string_view path) {
-  return absl::InvalidArgumentError(
-      absl::StrCat("\"", path, "\" doesn't exist"));
-}
-
-absl::Status ValidatePathExists(const ValidatedContext& context,
-                                const std::string_view& path) {
-  if (GetPathType(context, path) == PathType::kInvalid) {
-    return PathDoesNotExist(path);
+// Validates that the context's file system has the protocol that paths given on
+// the command line are opened with. A missing one is the program's mistake, so
+// this returns a FailedPrecondition error.
+absl::Status ValidateProtocol(const ValidatedContext& context) {
+  const FileSystem* file_system = context.GetPtr<FileSystem>();
+  const std::string protocol =
+      context.GetValue<std::string>(kKeyCliFileProtocol);
+  if (protocol.empty()) {
+    if (file_system->GetDefaultProtocolName().empty()) {
+      return absl::FailedPreconditionError(
+          "paths are opened with the default protocol, which the file system "
+          "doesn't have");
+    }
+  } else if (!file_system->IsRegistered(protocol)) {
+    return absl::FailedPreconditionError(
+        absl::StrCat("paths are opened with the \"", protocol,
+                     "\" protocol, which the file system doesn't have"));
   }
   return absl::OkStatus();
 }
 
+// Returns the type of `path`, given on the command line, in the context's file
+// system, or an error if it doesn't exist or can't be converted, or the file
+// system doesn't have the protocol to open it with.
+absl::StatusOr<PathType> GetExistingPathType(const ValidatedContext& context,
+                                             std::string_view path) {
+  const absl::Status status = ValidateProtocol(context);
+  if (!status.ok()) {
+    return status;
+  }
+  const std::string file_path = GetCliFilePath(context, path);
+  const PathType type =
+      file_path.empty()
+          ? PathType::kInvalid
+          : context.GetPtr<FileSystem>()->GetPathInfo(file_path).type;
+  if (type == PathType::kInvalid) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("\"", path, "\" doesn't exist"));
+  }
+  return type;
+}
+
+absl::Status ValidatePathExists(const ValidatedContext& context,
+                                const std::string_view& path) {
+  return GetExistingPathType(context, path).status();
+}
+
 absl::Status ValidateFileExists(const ValidatedContext& context,
                                 const std::string_view& path) {
-  const PathType type = GetPathType(context, path);
-  if (type == PathType::kInvalid) {
-    return PathDoesNotExist(path);
+  const absl::StatusOr<PathType> type = GetExistingPathType(context, path);
+  if (!type.ok()) {
+    return type.status();
   }
-  if (type != PathType::kFile) {
+  if (*type != PathType::kFile) {
     return absl::InvalidArgumentError(
         absl::StrCat("\"", path, "\" isn't a file"));
   }
@@ -53,11 +77,11 @@ absl::Status ValidateFileExists(const ValidatedContext& context,
 
 absl::Status ValidateFolderExists(const ValidatedContext& context,
                                   const std::string_view& path) {
-  const PathType type = GetPathType(context, path);
-  if (type == PathType::kInvalid) {
-    return PathDoesNotExist(path);
+  const absl::StatusOr<PathType> type = GetExistingPathType(context, path);
+  if (!type.ok()) {
+    return type.status();
   }
-  if (type != PathType::kFolder) {
+  if (*type != PathType::kFolder) {
     return absl::InvalidArgumentError(
         absl::StrCat("\"", path, "\" isn't a folder"));
   }

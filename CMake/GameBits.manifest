@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  Copyright (c) 2026 John Pursey
+
+  Use of this source code is governed by an MIT-style License that can be found
+  in the LICENSE file or at https://opensource.org/licenses/MIT.
+
+  The manifest embedded in every Game Bits executable on Windows. It makes the
+  process's code page UTF-8, so main()'s arguments and the Windows APIs that
+  take char strings use UTF-8 (Windows 10 version 1903 or later).
+-->
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
+  <application>
+    <windowsSettings>
+      <activeCodePage xmlns="http://schemas.microsoft.com/SMI/2019/WindowsSettings">UTF-8</activeCodePage>
+    </windowsSettings>
+  </application>
+</assembly>

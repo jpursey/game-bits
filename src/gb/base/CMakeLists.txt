@@ -11,6 +11,7 @@ if (WIN32)
     win_stdio_file.cc
   )
   set(gb_base_internal_TEST_SOURCE
+    win_manifest_test.cc
     win_platform_test.cc
   )
 else()

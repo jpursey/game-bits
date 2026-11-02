@@ -18,11 +18,18 @@
 ##  Target_TEST_FBS     FlatBuffer schema files to build for unit tests
 ##  Target_TEST_DEPS    Additional unit test target dependencies
 ##  Target_TEST_LIBS    Additional external libraries for this unit test target
+##
+## Every executable these define, and any other given gb_set_target_properties,
+## embeds the Game Bits manifest on Windows (see gb_embed_manifest).
 ###############################################################################
 
 function(gb_set_target_properties NAME)
   if(DEFINED VS_FOLDER)
     set_target_properties(${NAME} PROPERTIES FOLDER ${VS_FOLDER})
+  endif()
+  get_target_property(_type ${NAME} TYPE)
+  if (_type STREQUAL "EXECUTABLE")
+    gb_embed_manifest(${NAME})
   endif()
   if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     target_compile_options(${NAME} PRIVATE -Wthread-safety)
@@ -74,8 +81,17 @@ function(gb_set_target_properties NAME)
   ) 
 endfunction()
 
+# On Windows, embeds the Game Bits manifest in an executable, which makes the
+# process's code page UTF-8, so main()'s arguments are UTF-8.
+function(gb_embed_manifest NAME)
+  if (WIN32)
+    target_sources(${NAME} PRIVATE "${GB_DIR}/CMake/GameBits.manifest")
+  endif()
+endfunction()
+
 function(gb_add_test NAME)
   add_executable(${NAME}_test ${${NAME}_TEST_SOURCE})
+  gb_embed_manifest(${NAME}_test)
 
   if(DEFINED ${NAME}_TEST_FBS)
     string(REGEX REPLACE "_" "/" ${NAME}_TEST_FBS_PREFIX ${NAME})

@@ -627,22 +627,6 @@ other six. The field is in the Windows SDK headers but undocumented. Check what
 it means, and what other CPUs (AMD's in particular) report, and if it is
 reliable, order cores by it within a class.
 
-## UTF-8 command line arguments on Windows
-
-- **Layers:** gb_cli
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** Command line library
-- **Background:** [Command line library](worklog/command_line_library.md)
-
-`gb_cli` takes its arguments as UTF-8, but on Windows `main()`'s `argv` is in
-the ANSI code page, so `GetMainArgs()` garbles a path with characters outside
-it. Have `GetMainArgs()` read the arguments as UTF-8 on Windows instead
-(`GetCommandLineW()` and `CommandLineToArgvW()`, converted with `ToUtf8()`),
-behind a `win_` / `gen_` split. Its API doesn't change if it keeps the
-converted strings for the rest of the program, as the views it returns already
-promise.
-
 ## Command line paths without conversion
 
 - **Layers:** gb_file, gb_cli
@@ -660,7 +644,7 @@ opens in a `FileSystem` as it is, and the conversion goes. A conversion hook
 on each protocol, or asking the file system how to read a path, were
 considered and set aside, as they work around the drive rather than fix it.
 
-## Command line protocol errors
+## UTF-8 console output on Windows
 
 - **Layers:** gb_cli
 - **Size:** small
@@ -668,11 +652,11 @@ considered and set aside, as they work around the drive rather than fix it.
 - **Depends on:** Command line library
 - **Background:** [Command line library](worklog/command_line_library.md)
 
-If a program's context names a `cli_file_protocol` that its `FileSystem`
-doesn't have, every path a path validator checks reads as missing (`"main.txt"
-doesn't exist`), with nothing pointing at the protocol. It is the program's
-mistake, found on its first run, but the message misleads. Have the path
-validators check that the protocol is registered (`FileSystem::IsRegistered()`,
-or that there is a default protocol when the context names none), and report a
-missing one as the program's mistake rather than the user's, as a missing
-context value is.
+`gb_cli`'s default writer writes UTF-8 to `stdout` and `stderr`, but a Windows
+console shows text in its own output code page (often the OEM one, such as
+437), which the manifest that makes the process's code page UTF-8 doesn't
+change. Help or an error quoting a path with characters outside ASCII is
+garbled there, though it is correct when redirected to a file. Have the
+default writer write UTF-8 a console shows correctly, behind a `win_` / `gen_`
+split: `SetConsoleOutputCP(CP_UTF8)`, or `WriteConsoleW()` when the handle is
+a console. Check by hand first that the console garbles it.

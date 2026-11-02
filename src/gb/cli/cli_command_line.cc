@@ -87,6 +87,12 @@ class CliParser {
   // Returns an error for the command at the end of the path.
   absl::Status Error(std::string_view message) const;
 
+  // Returns the error for a value that failed to parse, as `status` says, for
+  // the flag or argument named by `label` (`"--output"` or `<input>`). An
+  // InvalidArgument error is the user's, and any other is the program's.
+  absl::Status ValueError(std::string_view label,
+                          const absl::Status& status) const;
+
   ValidatedContext* const context_;
   std::vector<const CliCommand*> path_;
   absl::flat_hash_map<const void*, internal::CliValue> values_;
@@ -178,8 +184,7 @@ absl::Status CliParser::ParseFlag(absl::Span<const std::string_view> args,
   absl::StatusOr<internal::CliValue> value =
       internal::ParseCliValue(context_, *flag, text);
   if (!value.ok()) {
-    return Error(
-        absl::StrCat("\"", flag_text, "\": ", value.status().message()));
+    return ValueError(absl::StrCat("\"", flag_text, "\""), value.status());
   }
   values_[fields.definition] = *std::move(value);
   return absl::OkStatus();
@@ -215,8 +220,7 @@ absl::Status CliParser::ParseWord(std::string_view word) {
   absl::StatusOr<internal::CliValue> value =
       internal::ParseCliValue(context_, arg, word);
   if (!value.ok()) {
-    return Error(
-        absl::StrCat("<", fields.name, ">: ", value.status().message()));
+    return ValueError(absl::StrCat("<", fields.name, ">"), value.status());
   }
   values_[fields.definition] = *std::move(value);
   ++next_arg_;
@@ -287,6 +291,15 @@ absl::Status CliParser::Error(std::string_view message) const {
   const std::string path_name = internal::GetCliPathName(path_);
   return absl::InvalidArgumentError(absl::StrCat(
       path_name, ": ", message, ". Run \"", path_name, " --help\" for help."));
+}
+
+absl::Status CliParser::ValueError(std::string_view label,
+                                   const absl::Status& status) const {
+  if (absl::IsInvalidArgument(status)) {
+    return Error(absl::StrCat(label, ": ", status.message()));
+  }
+  return absl::FailedPreconditionError(absl::StrCat(
+      internal::GetCliPathName(path_), ": ", label, ": ", status.message()));
 }
 
 }  // namespace

@@ -31,8 +31,9 @@ namespace gb {
 // wrong to the context's writer instead (see kConstraintCliWriter).
 //
 // Returns main()'s exit code: 0 if the command succeeded or help was written,
-// 1 if the command failed or the context isn't valid (see ParseCommandLine()),
-// and 2 if the command line isn't valid.
+// 1 if the command failed or the program made a mistake, such as a context
+// that isn't valid (see ParseCommandLine()), and 2 if the command line isn't
+// valid.
 int RunCommandLine(CliContract contract, const CliCommand* program,
                    absl::Span<const std::string_view> args);
 
@@ -43,8 +44,8 @@ int RunCommandLine(const CliCommand* program,
 // Returns main()'s arguments after the program's name, which stay valid for the
 // rest of the program.
 //
-// The arguments are as main() was given them, so on Windows they are in the
-// ANSI code page rather than UTF-8.
+// The arguments are in UTF-8 in a program built with the Game Bits CMake
+// commands, which on Windows make the process's code page UTF-8.
 std::vector<std::string_view> GetMainArgs(int argc, char* argv[]);
 
 }  // namespace gb

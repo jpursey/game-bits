@@ -41,7 +41,7 @@ int RunCommandLine(CliContract contract, const CliCommand* program,
     (*context.GetPtr<CliWriter>())(CliText::kError,
                                    command_line.status().message());
 
-    // Any other error is the program's, as its context is missing a value.
+    // Any other error is the program's, such as its context missing a value.
     return absl::IsInvalidArgument(command_line.status())
                ? kExitInvalidCommandLine
                : kExitFailure;
