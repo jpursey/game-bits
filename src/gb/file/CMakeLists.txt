@@ -4,8 +4,16 @@
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
 if (WIN32)
+  set(gb_file_internal_SOURCE
+    win_local_current_path.cc
+  )
   set(gb_file_internal_TEST_SOURCE
+    win_local_file_protocol_drive_test.cc
     win_local_file_protocol_test.cc
+  )
+else()
+  set(gb_file_internal_SOURCE
+    gen_local_current_path.cc
   )
 endif()
 
@@ -17,10 +25,12 @@ set(gb_file_SOURCE
   file_protocol.cc file_protocol.h
   file_system.cc file_system.h
   file_types.h
+  local_current_path.h
   local_file_protocol.cc local_file_protocol.h
   memory_file_protocol.cc memory_file_protocol.h
   path.cc path.h
   raw_file.cc raw_file.h
+  ${gb_file_internal_SOURCE}
 )
 
 set(gb_file_TEST_SOURCE

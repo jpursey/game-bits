@@ -35,6 +35,11 @@ namespace gb {
 // (this is passed as a separate argument in all cases). The public functions
 // fail for any other path.
 //
+// A protocol may be registered under several names. Each path is passed with
+// the name it was given with, including both paths of a copy. The same path
+// under each name names the same file, unless the protocol says otherwise (see
+// GetCanonicalPath()).
+//
 // This class has no state of its own and its thread-safety is the same as
 // whatever the derived protocol class guarantees. However, see caution above if
 // a protocol wishes to both be thread-safe and implement one or more Basic*
@@ -56,6 +61,17 @@ class FileProtocol {
   //
   // If not overridden, the protocol contains no default names.
   virtual std::vector<std::string> GetDefaultNames() const;
+
+  // Returns the canonical path of `path`, an absolute normalized path given
+  // with the name `protocol_name`: the same path under every name the protocol
+  // is registered under, so the same file or folder under two names has one
+  // canonical path. Whether paths that differ only in case, or that reach the
+  // same file through a link, have one canonical path depends on the
+  // protocol.
+  //
+  // If not overridden, every name has the same paths, so this returns `path`.
+  virtual std::string GetCanonicalPath(std::string_view protocol_name,
+                                       std::string_view path) const;
 
   // Returns the path information for the specified path.
   //
@@ -88,7 +104,8 @@ class FileProtocol {
   // FileProtocolFlag::kFolderCreate is supported. GetPathInfo, List,
   // CreateFolder, and CopyFile are also called if DoCopyFolder is not
   // implemented.
-  bool CopyFolder(std::string_view protocol_name, std::string_view from_path,
+  bool CopyFolder(std::string_view from_protocol_name,
+                  std::string_view from_path, std::string_view to_protocol_name,
                   std::string_view to_path);
 
   // Deletes a folder at the specified path.
@@ -106,8 +123,8 @@ class FileProtocol {
   // implement this if FileProtocolFlag::kFileCreate is supported. GetPathInfo
   // is called if DoCopyFile is not implemented. OpenFile is called if neither
   // DoCopyFile or BasicCopyFile are implemented.
-  bool CopyFile(std::string_view protocol_name, std::string_view from_path,
-                std::string_view to_path);
+  bool CopyFile(std::string_view from_protocol_name, std::string_view from_path,
+                std::string_view to_protocol_name, std::string_view to_path);
 
   // Deletes a file at the specified path
   //
@@ -220,12 +237,14 @@ class FileProtocol {
   // It is also should return false if the parent of 'to_path' is not the root
   // or an existing folder.
   //
-  // CreateFolder is only called if the protocol supports both
-  // FileProtocolFlag::kFolderCreate and FileProtocolFlag::kFileCreate, and
-  // from_path is not a parent of to_path. The protocol is responsible for all
-  // further validation.
-  virtual bool DoCopyFolder(std::string_view protocol_name,
+  // CopyFolder is only called if the protocol supports both
+  // FileProtocolFlag::kFolderCreate and FileProtocolFlag::kFileCreate, and the
+  // canonical from_path is not the canonical to_path or a parent of it (see
+  // GetCanonicalPath()). The protocol is responsible for all further
+  // validation.
+  virtual bool DoCopyFolder(std::string_view from_protocol_name,
                             std::string_view from_path,
+                            std::string_view to_protocol_name,
                             std::string_view to_path);
 
   // Deletes a folder at the specified path.
@@ -257,8 +276,10 @@ class FileProtocol {
   //
   // CopyFile is only called if FileProtocolFlag::kFileCreate is supported. The
   // protocol is responsible for all further validation.
-  virtual bool DoCopyFile(std::string_view protocol_name,
-                          std::string_view from_path, std::string_view to_path);
+  virtual bool DoCopyFile(std::string_view from_protocol_name,
+                          std::string_view from_path,
+                          std::string_view to_protocol_name,
+                          std::string_view to_path);
 
   // Deletes a file at the specified path
   //
@@ -347,8 +368,9 @@ class FileProtocol {
   //
   // BasicCopyFile is only called if from_path refers to an existing file and
   // to_path is not a folder.
-  virtual bool BasicCopyFile(std::string_view protocol_name,
+  virtual bool BasicCopyFile(std::string_view from_protocol_name,
                              std::string_view from_path,
+                             std::string_view to_protocol_name,
                              std::string_view to_path);
 
   // File protocols may optionally override BasicDeleteFile instead of

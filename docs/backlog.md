@@ -660,3 +660,23 @@ garbled there, though it is correct when redirected to a file. Have the
 default writer write UTF-8 a console shows correctly, behind a `win_` / `gen_`
 split: `SetConsoleOutputCP(CP_UTF8)`, or `WriteConsoleW()` when the handle is
 a console. Check by hand first that the console garbles it.
+
+## Canonical local paths
+
+- **Layers:** gb_file
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** none
+- **Background:** `FileProtocol::GetCanonicalPath()` in `file_protocol.h`
+
+`LocalFileProtocol::GetCanonicalPath()` only maps a drive's paths to the
+`"file"` name's paths, so two paths for the same folder that differ in case
+(Windows ignores it) or go through a link have different canonical paths.
+`FileSystem::CopyFolder()` then misses a folder copied into itself
+(`C:\src` into `c:\SRC\sub`), which `std::filesystem::copy()` recurses into.
+Have it ask the file system, with `std::filesystem::weakly_canonical()`,
+which resolves the case and links of the part of a path that exists. Folding
+case in the path itself can't match Windows: NTFS compares names with an
+uppercase table of its own, and a folder can be made case-sensitive. A link
+under a rooted protocol that leads outside its root falls back to the path
+as written.

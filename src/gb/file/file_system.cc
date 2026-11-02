@@ -230,7 +230,7 @@ bool FileSystem::CopyFolder(std::string_view from_path,
     return false;
   }
 
-  // Two names for the same protocol name the same files, so only a copy between
+  // A protocol copies between its own names itself, so only a copy between
   // protocols is generic.
   if (from_protocol != to_protocol) {
     if (!from_flags.IsSet(
@@ -244,11 +244,20 @@ bool FileSystem::CopyFolder(std::string_view from_path,
                              to_protocol_name, to_protocol, to_path);
   }
 
-  if (IsRootPath(from_path) || from_path == to_path ||
-      absl::StartsWith(to_path, absl::StrCat(from_path, "/"))) {
+  // A folder can't be copied into itself, which may be named by another of the
+  // protocol's names.
+  const std::string canonical_from_path =
+      from_protocol->GetCanonicalPath(from_protocol_name, from_path);
+  const std::string canonical_to_path =
+      from_protocol->GetCanonicalPath(to_protocol_name, to_path);
+  if (IsRootPath(canonical_from_path) ||
+      canonical_from_path == canonical_to_path ||
+      absl::StartsWith(canonical_to_path,
+                       absl::StrCat(canonical_from_path, "/"))) {
     return false;
   }
-  return from_protocol->CopyFolder(from_protocol_name, from_path, to_path);
+  return from_protocol->CopyFolder(from_protocol_name, from_path,
+                                   to_protocol_name, to_path);
 }
 
 bool FileSystem::CopyFile(std::string_view from_path,
@@ -278,7 +287,8 @@ bool FileSystem::CopyFile(std::string_view from_path,
     return GenericCopyFile(from_protocol_name, from_protocol, from_path,
                            to_protocol_name, to_protocol, to_path);
   }
-  return from_protocol->CopyFile(from_protocol_name, from_path, to_path);
+  return from_protocol->CopyFile(from_protocol_name, from_path,
+                                 to_protocol_name, to_path);
 }
 
 PathInfo FileSystem::GetPathInfo(std::string_view path) {

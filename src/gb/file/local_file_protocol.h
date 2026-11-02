@@ -7,7 +7,9 @@
 #define GB_FILE_LOCAL_FILE_PROTOCOL_H_
 
 #include <filesystem>
+#include <optional>
 #include <string>
+#include <string_view>
 
 #include "gb/base/validated_context.h"
 #include "gb/file/file_protocol.h"
@@ -21,7 +23,8 @@ namespace gb {
 //
 // This class supports all file system operations, but is subject to the
 // requirements of the underlying operating system. By default, it will register
-// under the "file" protocol name.
+// under the "file" protocol name, and one from CreateOsRoot() also under each
+// drive letter, where the operating system has them.
 //
 // Paths are UTF-8. A path with a host (such as "file://host/a") isn't under the
 // root, so it is invalid.
@@ -101,15 +104,23 @@ class LocalFileProtocol : public FileProtocol {
       std::string_view temp_prefix = {});
 
   // Creates a local file protocol rooted at the top of the operating system's
-  // file system, which opens any absolute path in it, such as the paths a
-  // command line tool is given. ToOsRootPath() converts an operating system
-  // path to one of its paths.
+  // file system, which opens any absolute path in it.
   //
   // Where the operating system has drive letters, the root is above them, and
   // the first folder in a path is the drive, in lowercase: "/c/src/a" is
   // "C:\src\a". The root itself isn't a folder, so .. segments that go above a
   // drive's root leave the drive. Network paths (such as "\\server\share")
   // can't be opened.
+  //
+  // Each drive letter is also a name for the protocol, whose paths are on that
+  // drive, so a path written the operating system's way opens as it is:
+  // "C:\src\a" is "c:/src/a", which is "file:/c/src/a". A path relative to a
+  // drive ("C:src\a") is relative to that drive's current folder, which the
+  // operating system keeps for each drive. Setting a current folder, under any
+  // name, sets its drive's, and makes it the process's current folder, which
+  // is the current folder of "file". Other drives keep their own.
+  // ToOsRootPath() converts any operating system path to a path for the "file"
+  // name.
   static std::unique_ptr<LocalFileProtocol> CreateOsRoot();
 
   // Converts an operating system path, absolute or relative to the current
@@ -131,6 +142,14 @@ class LocalFileProtocol : public FileProtocol {
   FileProtocolFlags GetFlags() const override;
   std::vector<std::string> GetDefaultNames() const override;
 
+  // For a protocol from CreateOsRoot(), a path with a drive's name has the
+  // canonical path of the same file under "file": "/src/a" on "c" is
+  // "/c/src/a". Otherwise this returns `path`, so paths that differ only in
+  // case, or that reach the same file through a link, have different
+  // canonical paths.
+  std::string GetCanonicalPath(std::string_view protocol_name,
+                               std::string_view path) const override;
+
  protected:
   // Protected overrides for FileProtocol.
   PathInfo DoGetPathInfo(std::string_view protocol_name,
@@ -141,11 +160,14 @@ class LocalFileProtocol : public FileProtocol {
                                   PathTypes types) override;
   bool DoCreateFolder(std::string_view protocol_name, std::string_view path,
                       FolderMode mode) override;
-  bool DoCopyFolder(std::string_view protocol_name, std::string_view from_path,
+  bool DoCopyFolder(std::string_view from_protocol_name,
+                    std::string_view from_path,
+                    std::string_view to_protocol_name,
                     std::string_view to_path) override;
   bool DoDeleteFolder(std::string_view protocol_name, std::string_view path,
                       FolderMode mode) override;
-  bool DoCopyFile(std::string_view protocol_name, std::string_view from_path,
+  bool DoCopyFile(std::string_view from_protocol_name,
+                  std::string_view from_path, std::string_view to_protocol_name,
                   std::string_view to_path) override;
   bool DoDeleteFile(std::string_view protocol_name,
                     std::string_view path) override;
@@ -159,6 +181,16 @@ class LocalFileProtocol : public FileProtocol {
  private:
   LocalFileProtocol(FileProtocolFlags flags, std::string_view root,
                     bool unique_root, bool delete_at_exit);
+
+  // Returns the operating system path of `path` with the name `protocol_name`,
+  // or nullopt for an invalid path.
+  std::optional<std::filesystem::path> GetFullPath(
+      std::string_view protocol_name, std::string_view path) const;
+
+  // Returns the normalized root folder of paths with the name `protocol_name`:
+  // the drive's root folder ("c:/") for a drive's name, or GetRoot() for any
+  // other name.
+  std::string GetNativeRoot(std::string_view protocol_name) const;
 
   const FileProtocolFlags flags_;
   const std::string root_;

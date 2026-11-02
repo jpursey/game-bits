@@ -5,7 +5,15 @@
 
 #include "gb/file/file_system.h"
 
+#include <initializer_list>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include "absl/strings/str_cat.h"
 #include "gb/file/memory_file_protocol.h"
+#include "gb/file/path.h"
 #include "gb/file/raw_file.h"
 #include "gb/file/test_protocol.h"
 #include "gb/test/test_util.h"
@@ -43,6 +51,51 @@ class CurrentPathProtocol : public MemoryFileProtocol {
  private:
   int call_count_ = 0;
   std::string current_path_ = "/";
+};
+
+// A protocol where each of `names` has its own files, in a folder of that name,
+// as a protocol for drives would.
+class FolderPerNameProtocol : public MemoryFileProtocol {
+ public:
+  explicit FolderPerNameProtocol(
+      std::initializer_list<std::string_view> names) {
+    for (std::string_view name : names) {
+      MemoryFileProtocol::BasicCreateFolder(name, absl::StrCat("/", name));
+    }
+  }
+
+  std::string GetCanonicalPath(std::string_view protocol_name,
+                               std::string_view path) const override {
+    return JoinPath(absl::StrCat("/", protocol_name), path);
+  }
+
+ protected:
+  PathInfo DoGetPathInfo(std::string_view protocol_name,
+                         std::string_view path) override {
+    return MemoryFileProtocol::DoGetPathInfo(
+        protocol_name, GetCanonicalPath(protocol_name, path));
+  }
+  std::vector<std::string> BasicList(std::string_view protocol_name,
+                                     std::string_view path) override {
+    std::vector<std::string> paths = MemoryFileProtocol::BasicList(
+        protocol_name, GetCanonicalPath(protocol_name, path));
+    for (std::string& listed_path : paths) {
+      // Removes the name's folder: "a:/a/file" is "a:/file".
+      listed_path.erase(protocol_name.size() + 1, protocol_name.size() + 1);
+    }
+    return paths;
+  }
+  bool BasicCreateFolder(std::string_view protocol_name,
+                         std::string_view path) override {
+    return MemoryFileProtocol::BasicCreateFolder(
+        protocol_name, GetCanonicalPath(protocol_name, path));
+  }
+  std::unique_ptr<RawFile> BasicOpenFile(std::string_view protocol_name,
+                                         std::string_view path,
+                                         FileFlags flags) override {
+    return MemoryFileProtocol::BasicOpenFile(
+        protocol_name, GetCanonicalPath(protocol_name, path), flags);
+  }
 };
 
 TEST(FileSystemTest, DefaultConstruct) {
@@ -617,6 +670,37 @@ TEST(FileSystemTest, CopyFile) {
   EXPECT_FALSE(file_system.CopyFile("test:/file", "test:/new-file-3"));
   EXPECT_EQ(state.paths["/new-file-3"].GetType(), PathType::kInvalid);
   EXPECT_EQ(state.invalid_call_count, 0);
+}
+
+TEST(FileSystemTest, CopyBetweenNamesWithTheirOwnFiles) {
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(
+      std::make_unique<FolderPerNameProtocol>(
+          std::initializer_list<std::string_view>{"a", "b"}),
+      std::vector<std::string>{"a", "b"}));
+  ASSERT_TRUE(file_system.CreateFolder("a:/folder"));
+  ASSERT_TRUE(file_system.WriteFile("a:/folder/file", "12345"));
+  EXPECT_FALSE(file_system.IsValidPath("b:/folder"));
+
+  // Each copy is under its own name.
+  std::string contents;
+  EXPECT_TRUE(file_system.CopyFile("a:/folder/file", "b:/file"));
+  ASSERT_TRUE(file_system.ReadFile("b:/file", &contents));
+  EXPECT_EQ(contents, "12345");
+  EXPECT_FALSE(file_system.IsValidPath("a:/file"));
+
+  // The same path under another name isn't the same folder.
+  ASSERT_TRUE(file_system.CreateFolder("b:/folder"));
+  EXPECT_TRUE(file_system.CopyFolder("a:/folder", "b:/folder/sub"));
+  ASSERT_TRUE(file_system.ReadFile("b:/folder/sub/file", &contents));
+  EXPECT_EQ(contents, "12345");
+  EXPECT_FALSE(file_system.IsValidPath("a:/folder/sub"));
+  EXPECT_FALSE(file_system.CopyFolder("a:/folder", "a:/folder/sub"));
+
+  // A file copied onto itself keeps its contents.
+  EXPECT_TRUE(file_system.CopyFile("b:/file", "b:/file"));
+  ASSERT_TRUE(file_system.ReadFile("b:/file", &contents));
+  EXPECT_EQ(contents, "12345");
 }
 
 TEST(FileSystemTest, CopyFilesAcrossProtocols) {

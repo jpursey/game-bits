@@ -187,9 +187,12 @@ class TestProtocol : public FileProtocol {
                       FolderMode mode) override;
   bool DoDeleteFolder(std::string_view protocol_name, std::string_view path,
                       FolderMode mode) override;
-  bool DoCopyFolder(std::string_view protocol_name, std::string_view from_path,
+  bool DoCopyFolder(std::string_view from_protocol_name,
+                    std::string_view from_path,
+                    std::string_view to_protocol_name,
                     std::string_view to_path) override;
-  bool DoCopyFile(std::string_view protocol_name, std::string_view from_path,
+  bool DoCopyFile(std::string_view from_protocol_name,
+                  std::string_view from_path, std::string_view to_protocol_name,
                   std::string_view to_path) override;
   bool DoDeleteFile(std::string_view protocol_name,
                     std::string_view path) override;
@@ -202,7 +205,9 @@ class TestProtocol : public FileProtocol {
                          std::string_view path) override;
   bool BasicDeleteFolder(std::string_view protocol_name,
                          std::string_view path) override;
-  bool BasicCopyFile(std::string_view protocol_name, std::string_view from_path,
+  bool BasicCopyFile(std::string_view from_protocol_name,
+                     std::string_view from_path,
+                     std::string_view to_protocol_name,
                      std::string_view to_path) override;
   bool BasicDeleteFile(std::string_view protocol_name,
                        std::string_view path) override;

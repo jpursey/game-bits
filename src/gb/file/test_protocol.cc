@@ -229,17 +229,20 @@ bool TestProtocol::DoCreateFolder(std::string_view protocol_name,
   return FileProtocol::DoCreateFolder(protocol_name, path, mode);
 }
 
-bool TestProtocol::DoCopyFolder(std::string_view protocol_name,
+bool TestProtocol::DoCopyFolder(std::string_view from_protocol_name,
                                 std::string_view from_path,
+                                std::string_view to_protocol_name,
                                 std::string_view to_path) {
   state_->copy_folder_count += 1;
-  if (!IsValidProtocolName(protocol_name) || !IsValidPath(from_path) ||
+  if (!IsValidProtocolName(from_protocol_name) ||
+      !IsValidProtocolName(to_protocol_name) || !IsValidPath(from_path) ||
       !IsValidPath(to_path) ||
       !state_->flags.IsSet(FileProtocolFlag::kFolderCreate)) {
     state_->invalid_call_count += 1;
     return false;
   }
-  return FileProtocol::DoCopyFolder(protocol_name, from_path, to_path);
+  return FileProtocol::DoCopyFolder(from_protocol_name, from_path,
+                                    to_protocol_name, to_path);
 }
 
 bool TestProtocol::DoDeleteFolder(std::string_view protocol_name,
@@ -253,17 +256,20 @@ bool TestProtocol::DoDeleteFolder(std::string_view protocol_name,
   return FileProtocol::DoDeleteFolder(protocol_name, path, mode);
 }
 
-bool TestProtocol::DoCopyFile(std::string_view protocol_name,
+bool TestProtocol::DoCopyFile(std::string_view from_protocol_name,
                               std::string_view from_path,
+                              std::string_view to_protocol_name,
                               std::string_view to_path) {
   state_->copy_file_count += 1;
-  if (!IsValidProtocolName(protocol_name) || !IsValidPath(from_path) ||
+  if (!IsValidProtocolName(from_protocol_name) ||
+      !IsValidProtocolName(to_protocol_name) || !IsValidPath(from_path) ||
       !IsValidPath(to_path) ||
       !state_->flags.IsSet(FileProtocolFlag::kFileCreate)) {
     state_->invalid_call_count += 1;
     return false;
   }
-  return FileProtocol::DoCopyFile(protocol_name, from_path, to_path);
+  return FileProtocol::DoCopyFile(from_protocol_name, from_path,
+                                  to_protocol_name, to_path);
 }
 
 bool TestProtocol::DoDeleteFile(std::string_view protocol_name,
@@ -405,11 +411,13 @@ bool TestProtocol::BasicDeleteFolder(std::string_view protocol_name,
   return true;
 }
 
-bool TestProtocol::BasicCopyFile(std::string_view protocol_name,
+bool TestProtocol::BasicCopyFile(std::string_view from_protocol_name,
                                  std::string_view from_path,
+                                 std::string_view to_protocol_name,
                                  std::string_view to_path) {
   state_->basic_copy_file_count += 1;
-  if (!IsValidProtocolName(protocol_name) || !IsValidPath(from_path) ||
+  if (!IsValidProtocolName(from_protocol_name) ||
+      !IsValidProtocolName(to_protocol_name) || !IsValidPath(from_path) ||
       !IsValidPath(to_path)) {
     state_->invalid_call_count += 1;
     return false;
@@ -435,7 +443,8 @@ bool TestProtocol::BasicCopyFile(std::string_view protocol_name,
     to_state = PathState::NewFile(from_state.GetFile()->contents);
     return true;
   }
-  return FileProtocol::BasicCopyFile(protocol_name, from_path, to_path);
+  return FileProtocol::BasicCopyFile(from_protocol_name, from_path,
+                                     to_protocol_name, to_path);
 }
 
 bool TestProtocol::BasicDeleteFile(std::string_view protocol_name,

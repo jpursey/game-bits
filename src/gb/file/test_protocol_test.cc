@@ -283,27 +283,27 @@ TEST(TestProtocolTest, CopyFolder) {
   state.paths["/folder/file"] = TestProtocol::PathState::NewFile("1234567890");
   TestProtocol protocol(&state);
 
-  EXPECT_FALSE(protocol.CopyFolder("test", "folder", "/new-folder"));
+  EXPECT_FALSE(protocol.CopyFolder("test", "folder", "test", "/new-folder"));
   EXPECT_EQ(state.invalid_call_count, 0);
   EXPECT_EQ(state.copy_folder_count, 0);
   EXPECT_EQ(state.copy_file_count, 0);
   state.ResetCounts();
 
-  EXPECT_FALSE(protocol.CopyFolder("test", "/folder", "new-folder"));
+  EXPECT_FALSE(protocol.CopyFolder("test", "/folder", "test", "new-folder"));
   EXPECT_EQ(state.invalid_call_count, 0);
   EXPECT_EQ(state.copy_folder_count, 0);
   EXPECT_EQ(state.copy_file_count, 0);
   state.ResetCounts();
 
   state.flags -= FileProtocolFlag::kFolderCreate;
-  EXPECT_FALSE(protocol.CopyFolder("test", "/folder", "/new-folder"));
+  EXPECT_FALSE(protocol.CopyFolder("test", "/folder", "test", "/new-folder"));
   EXPECT_EQ(state.invalid_call_count, 1);
   EXPECT_EQ(state.copy_folder_count, 1);
   EXPECT_EQ(state.copy_file_count, 0);
   state.ResetCounts();
   state.flags += FileProtocolFlag::kFolderCreate;
 
-  EXPECT_FALSE(protocol.CopyFolder("other", "/folder", "/new-folder"));
+  EXPECT_FALSE(protocol.CopyFolder("other", "/folder", "other", "/new-folder"));
   EXPECT_EQ(state.invalid_call_count, 1);
   EXPECT_EQ(state.copy_folder_count, 1);
   EXPECT_EQ(state.copy_file_count, 0);
@@ -346,27 +346,27 @@ TEST(TestProtocolTest, CopyFile) {
   state.paths["/folder"] = TestProtocol::PathState::NewFolder();
   TestProtocol protocol(&state);
 
-  EXPECT_FALSE(protocol.CopyFile("test", "file", "/new-file"));
+  EXPECT_FALSE(protocol.CopyFile("test", "file", "test", "/new-file"));
   EXPECT_EQ(state.invalid_call_count, 0);
   EXPECT_EQ(state.copy_file_count, 0);
   EXPECT_EQ(state.basic_copy_file_count, 0);
   state.ResetCounts();
 
-  EXPECT_FALSE(protocol.CopyFile("test", "/file", "new-file"));
+  EXPECT_FALSE(protocol.CopyFile("test", "/file", "test", "new-file"));
   EXPECT_EQ(state.invalid_call_count, 0);
   EXPECT_EQ(state.copy_file_count, 0);
   EXPECT_EQ(state.basic_copy_file_count, 0);
   state.ResetCounts();
 
   state.flags -= FileProtocolFlag::kFileCreate;
-  EXPECT_FALSE(protocol.CopyFile("test", "/file", "/new-file"));
+  EXPECT_FALSE(protocol.CopyFile("test", "/file", "test", "/new-file"));
   EXPECT_EQ(state.invalid_call_count, 1);
   EXPECT_EQ(state.copy_file_count, 1);
   EXPECT_EQ(state.basic_copy_file_count, 0);
   state.ResetCounts();
   state.flags += FileProtocolFlag::kFileCreate;
 
-  EXPECT_FALSE(protocol.CopyFile("other", "/file", "/new-file"));
+  EXPECT_FALSE(protocol.CopyFile("other", "/file", "other", "/new-file"));
   EXPECT_EQ(state.invalid_call_count, 1);
   EXPECT_EQ(state.copy_file_count, 1);
   EXPECT_EQ(state.basic_copy_file_count, 0);
@@ -681,51 +681,51 @@ TEST(TestProtocolTest, BasicCopyFile) {
   state.paths["/folder"] = TestProtocol::PathState::NewFolder();
   TestProtocol protocol(&state);
 
-  EXPECT_FALSE(protocol.BasicCopyFile("test", "/folder", "/new-file"));
+  EXPECT_FALSE(protocol.BasicCopyFile("test", "/folder", "test", "/new-file"));
   EXPECT_EQ(state.invalid_call_count, 1);
   EXPECT_EQ(state.basic_copy_file_count, 1);
   EXPECT_EQ(protocol.GetPathInfo("test", "/folder").type, PathType::kFolder);
   EXPECT_EQ(protocol.GetPathInfo("test", "/new-file").type, PathType::kInvalid);
   state.ResetCounts();
 
-  EXPECT_FALSE(protocol.BasicCopyFile("test", "/invalid", "/new-file"));
+  EXPECT_FALSE(protocol.BasicCopyFile("test", "/invalid", "test", "/new-file"));
   EXPECT_EQ(state.invalid_call_count, 1);
   EXPECT_EQ(state.basic_copy_file_count, 1);
   EXPECT_EQ(protocol.GetPathInfo("test", "/new-file").type, PathType::kInvalid);
   state.ResetCounts();
 
-  EXPECT_FALSE(protocol.BasicCopyFile("test", "file", "/new-file"));
+  EXPECT_FALSE(protocol.BasicCopyFile("test", "file", "test", "/new-file"));
   EXPECT_EQ(state.invalid_call_count, 1);
   EXPECT_EQ(state.basic_copy_file_count, 1);
   state.ResetCounts();
 
-  EXPECT_FALSE(protocol.BasicCopyFile("test", "/file", "new-file"));
+  EXPECT_FALSE(protocol.BasicCopyFile("test", "/file", "test", "new-file"));
   EXPECT_EQ(state.invalid_call_count, 1);
   EXPECT_EQ(state.basic_copy_file_count, 1);
   state.ResetCounts();
 
   state.flags -= FileProtocolFlag::kFileCreate;
-  EXPECT_FALSE(protocol.BasicCopyFile("test", "/file", "/new-file"));
+  EXPECT_FALSE(protocol.BasicCopyFile("test", "/file", "test", "/new-file"));
   EXPECT_EQ(state.invalid_call_count, 1);
   EXPECT_EQ(state.basic_copy_file_count, 1);
   state.ResetCounts();
   state.flags += FileProtocolFlag::kFileCreate;
 
   state.fail_path = "/file";
-  EXPECT_FALSE(protocol.BasicCopyFile("test", "/file", "/new-file"));
+  EXPECT_FALSE(protocol.BasicCopyFile("test", "/file", "test", "/new-file"));
   EXPECT_EQ(state.invalid_call_count, 0);
   EXPECT_EQ(state.basic_copy_file_count, 1);
   state.ResetCounts();
   state.fail_path.clear();
 
   state.fail_path = "/new-file";
-  EXPECT_FALSE(protocol.BasicCopyFile("test", "/file", "/new-file"));
+  EXPECT_FALSE(protocol.BasicCopyFile("test", "/file", "test", "/new-file"));
   EXPECT_EQ(state.invalid_call_count, 0);
   EXPECT_EQ(state.basic_copy_file_count, 1);
   state.ResetCounts();
   state.fail_path.clear();
 
-  EXPECT_TRUE(protocol.BasicCopyFile("test", "/file", "/new-file"));
+  EXPECT_TRUE(protocol.BasicCopyFile("test", "/file", "test", "/new-file"));
   EXPECT_EQ(state.invalid_call_count, 0);
   EXPECT_EQ(state.basic_copy_file_count, 1);
   EXPECT_EQ(protocol.GetPathInfo("test", "/file").type, PathType::kFile);
@@ -735,7 +735,7 @@ TEST(TestProtocolTest, BasicCopyFile) {
   state.ResetCounts();
 
   state.paths["/new-file"].SetContents("different contents");
-  EXPECT_TRUE(protocol.BasicCopyFile("test", "/file", "/new-file"));
+  EXPECT_TRUE(protocol.BasicCopyFile("test", "/file", "test", "/new-file"));
   EXPECT_EQ(state.invalid_call_count, 0);
   EXPECT_EQ(state.basic_copy_file_count, 1);
   EXPECT_EQ(protocol.GetPathInfo("test", "/file").type, PathType::kFile);
@@ -744,19 +744,19 @@ TEST(TestProtocolTest, BasicCopyFile) {
             state.paths["/new-file"].GetContents());
   state.ResetCounts();
 
-  EXPECT_FALSE(protocol.BasicCopyFile("test", "/file", "/folder"));
+  EXPECT_FALSE(protocol.BasicCopyFile("test", "/file", "test", "/folder"));
   EXPECT_EQ(state.invalid_call_count, 1);
   EXPECT_EQ(state.basic_copy_file_count, 1);
   state.ResetCounts();
 
   state.paths.erase("/new-file");
-  EXPECT_FALSE(protocol.BasicCopyFile("other", "/file", "/new-file"));
+  EXPECT_FALSE(protocol.BasicCopyFile("other", "/file", "other", "/new-file"));
   EXPECT_EQ(state.invalid_call_count, 1);
   EXPECT_EQ(state.basic_copy_file_count, 1);
   state.ResetCounts();
 
   state.name.clear();
-  EXPECT_TRUE(protocol.BasicCopyFile("other", "/file", "/new-file"));
+  EXPECT_TRUE(protocol.BasicCopyFile("other", "/file", "other", "/new-file"));
   EXPECT_EQ(state.invalid_call_count, 0);
   EXPECT_EQ(state.basic_copy_file_count, 1);
   EXPECT_EQ(protocol.GetPathInfo("test", "/file").type, PathType::kFile);

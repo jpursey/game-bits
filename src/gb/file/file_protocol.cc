@@ -25,6 +25,11 @@ bool IsValidPath(std::string_view path) {
 
 std::vector<std::string> FileProtocol::GetDefaultNames() const { return {}; }
 
+std::string FileProtocol::GetCanonicalPath(std::string_view protocol_name,
+                                           std::string_view path) const {
+  return std::string(path);
+}
+
 void FileProtocol::Lock(LockType type) {}
 void FileProtocol::Unlock(LockType type) {}
 
@@ -63,14 +68,16 @@ bool FileProtocol::CreateFolder(std::string_view protocol_name,
   return result;
 }
 
-bool FileProtocol::CopyFolder(std::string_view protocol_name,
+bool FileProtocol::CopyFolder(std::string_view from_protocol_name,
                               std::string_view from_path,
+                              std::string_view to_protocol_name,
                               std::string_view to_path) {
   if (!IsValidPath(from_path) || !IsValidPath(to_path)) {
     return false;
   }
   Lock(LockType::kModify);
-  auto result = DoCopyFolder(protocol_name, from_path, to_path);
+  auto result =
+      DoCopyFolder(from_protocol_name, from_path, to_protocol_name, to_path);
   Unlock(LockType::kModify);
   return result;
 }
@@ -86,14 +93,16 @@ bool FileProtocol::DeleteFolder(std::string_view protocol_name,
   return result;
 }
 
-bool FileProtocol::CopyFile(std::string_view protocol_name,
+bool FileProtocol::CopyFile(std::string_view from_protocol_name,
                             std::string_view from_path,
+                            std::string_view to_protocol_name,
                             std::string_view to_path) {
   if (!IsValidPath(from_path) || !IsValidPath(to_path)) {
     return false;
   }
   Lock(LockType::kModify);
-  auto result = DoCopyFile(protocol_name, from_path, to_path);
+  auto result =
+      DoCopyFile(from_protocol_name, from_path, to_protocol_name, to_path);
   Unlock(LockType::kModify);
   return result;
 }
@@ -264,25 +273,26 @@ bool FileProtocol::DoDeleteFolder(std::string_view protocol_name,
   return BasicDeleteFolder(protocol_name, path);
 }
 
-bool FileProtocol::DoCopyFolder(std::string_view protocol_name,
+bool FileProtocol::DoCopyFolder(std::string_view from_protocol_name,
                                 std::string_view from_path,
+                                std::string_view to_protocol_name,
                                 std::string_view to_path) {
-  auto to_info = DoGetPathInfo(protocol_name, to_path);
+  auto to_info = DoGetPathInfo(to_protocol_name, to_path);
   if (to_info.type != PathType::kInvalid && to_info.type != PathType::kFolder) {
     return false;
   }
-  auto from_info = DoGetPathInfo(protocol_name, from_path);
+  auto from_info = DoGetPathInfo(from_protocol_name, from_path);
   if (from_info.type != PathType::kFolder) {
     return false;
   }
 
-  auto from_files = DoList(protocol_name, from_path, {}, FolderMode::kNormal,
-                           PathType::kFile);
-  auto from_folders = DoList(protocol_name, from_path, {}, FolderMode::kNormal,
-                             PathType::kFolder);
+  auto from_files = DoList(from_protocol_name, from_path, {},
+                           FolderMode::kNormal, PathType::kFile);
+  auto from_folders = DoList(from_protocol_name, from_path, {},
+                             FolderMode::kNormal, PathType::kFolder);
 
   if (to_info.type == PathType::kInvalid) {
-    if (!DoCreateFolder(protocol_name, to_path, FolderMode::kNormal)) {
+    if (!DoCreateFolder(to_protocol_name, to_path, FolderMode::kNormal)) {
       return false;
     }
   }
@@ -290,14 +300,15 @@ bool FileProtocol::DoCopyFolder(std::string_view protocol_name,
   for (const auto& from_file : from_files) {
     from_path = RemoveProtocol(std::string_view{from_file});
     std::string to_file = JoinPath(to_path, RemoveFolder(from_path));
-    if (!DoCopyFile(protocol_name, from_path, to_file)) {
+    if (!DoCopyFile(from_protocol_name, from_path, to_protocol_name, to_file)) {
       return false;
     }
   }
   for (const auto& from_folder : from_folders) {
     from_path = RemoveProtocol(std::string_view{from_folder});
     std::string to_folder = JoinPath(to_path, RemoveFolder(from_path));
-    if (!DoCopyFolder(protocol_name, from_path, to_folder)) {
+    if (!DoCopyFolder(from_protocol_name, from_path, to_protocol_name,
+                      to_folder)) {
       return false;
     }
   }
@@ -305,23 +316,26 @@ bool FileProtocol::DoCopyFolder(std::string_view protocol_name,
   return true;
 }
 
-bool FileProtocol::DoCopyFile(std::string_view protocol_name,
+bool FileProtocol::DoCopyFile(std::string_view from_protocol_name,
                               std::string_view from_path,
+                              std::string_view to_protocol_name,
                               std::string_view to_path) {
-  if (DoGetPathInfo(protocol_name, from_path).type != PathType::kFile) {
+  if (DoGetPathInfo(from_protocol_name, from_path).type != PathType::kFile) {
     return false;
   }
-  auto to_info = DoGetPathInfo(protocol_name, to_path);
+  auto to_info = DoGetPathInfo(to_protocol_name, to_path);
   if (to_info.type == PathType::kFolder) {
     return false;
   } else if (to_info.type == PathType::kInvalid &&
-             DoGetPathInfo(protocol_name, RemoveFilename(to_path)).type !=
+             DoGetPathInfo(to_protocol_name, RemoveFilename(to_path)).type !=
                  PathType::kFolder) {
     return false;
-  } else if (from_path == to_path) {
+  } else if (GetCanonicalPath(from_protocol_name, from_path) ==
+             GetCanonicalPath(to_protocol_name, to_path)) {
     return true;
   }
-  return BasicCopyFile(protocol_name, from_path, to_path);
+  return BasicCopyFile(from_protocol_name, from_path, to_protocol_name,
+                       to_path);
 }
 
 bool FileProtocol::DoDeleteFile(std::string_view protocol_name,
@@ -381,15 +395,16 @@ bool FileProtocol::BasicDeleteFolder(std::string_view protocol_name,
   return false;
 }
 
-bool FileProtocol::BasicCopyFile(std::string_view protocol_name,
+bool FileProtocol::BasicCopyFile(std::string_view from_protocol_name,
                                  std::string_view from_path,
+                                 std::string_view to_protocol_name,
                                  std::string_view to_path) {
-  auto from_file = DoOpenFile(protocol_name, from_path, FileFlag::kRead);
+  auto from_file = DoOpenFile(from_protocol_name, from_path, FileFlag::kRead);
   if (from_file == nullptr) {
     return false;
   }
   auto to_file =
-      DoOpenFile(protocol_name, to_path,
+      DoOpenFile(to_protocol_name, to_path,
                  {FileFlag::kCreate, FileFlag::kReset, FileFlag::kWrite});
   if (to_file == nullptr) {
     return false;
