@@ -298,11 +298,17 @@ bool VulkanRenderPipeline::Init(
   vk::PolygonMode polygon_mode =
       (config.raster_mode == RasterMode::kFill ? vk::PolygonMode::eFill
                                                : vk::PolygonMode::eLine);
-  auto rasterizer = vk::PipelineRasterizationStateCreateInfo()
-                        .setPolygonMode(polygon_mode)
-                        .setLineWidth(1.0f)
-                        .setCullMode(cull_mode)
-                        .setFrontFace(vk::FrontFace::eCounterClockwise);
+  auto rasterizer =
+      vk::PipelineRasterizationStateCreateInfo()
+          .setPolygonMode(polygon_mode)
+          .setLineWidth(1.0f)
+          .setCullMode(cull_mode)
+          .setFrontFace(vk::FrontFace::eCounterClockwise)
+          .setDepthBiasEnable(config.depth_mode != DepthMode::kNone &&
+                              (config.depth_bias_constant != 0.0f ||
+                               config.depth_bias_slope != 0.0f))
+          .setDepthBiasConstantFactor(config.depth_bias_constant)
+          .setDepthBiasSlopeFactor(config.depth_bias_slope);
 
   auto multisampling =
       vk::PipelineMultisampleStateCreateInfo().setRasterizationSamples(
@@ -326,10 +332,15 @@ bool VulkanRenderPipeline::Init(
       depth_compare_op = vk::CompareOp::eGreater;
       break;
   }
+
+  // Vulkan only writes depth while the depth test is enabled, so writing
+  // without a test is a test that always passes.
+  if (config.depth_mode == DepthMode::kWrite) {
+    depth_compare_op = vk::CompareOp::eAlways;
+  }
   auto depth_stencil =
       vk::PipelineDepthStencilStateCreateInfo()
-          .setDepthTestEnable(config.depth_mode == DepthMode::kTest ||
-                              config.depth_mode == DepthMode::kTestAndWrite)
+          .setDepthTestEnable(config.depth_mode != DepthMode::kNone)
           .setDepthWriteEnable(config.depth_mode == DepthMode::kWrite ||
                                config.depth_mode == DepthMode::kTestAndWrite)
           .setDepthCompareOp(depth_compare_op)
@@ -340,18 +351,53 @@ bool VulkanRenderPipeline::Init(
           .setFront({})
           .setBack({});
 
-  auto color_blend_attachment =
-      vk::PipelineColorBlendAttachmentState()
-          .setColorWriteMask(
-              vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
-              vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA)
-          .setBlendEnable(VK_TRUE)
+  vk::ColorComponentFlags color_write_mask = {};
+  if (config.color_channels.IsSet(ColorChannel::kRed)) {
+    color_write_mask |= vk::ColorComponentFlagBits::eR;
+  }
+  if (config.color_channels.IsSet(ColorChannel::kGreen)) {
+    color_write_mask |= vk::ColorComponentFlagBits::eG;
+  }
+  if (config.color_channels.IsSet(ColorChannel::kBlue)) {
+    color_write_mask |= vk::ColorComponentFlagBits::eB;
+  }
+  if (config.color_channels.IsSet(ColorChannel::kAlpha)) {
+    color_write_mask |= vk::ColorComponentFlagBits::eA;
+  }
+  auto color_blend_attachment = vk::PipelineColorBlendAttachmentState()
+                                    .setColorWriteMask(color_write_mask)
+                                    .setColorBlendOp(vk::BlendOp::eAdd)
+                                    .setAlphaBlendOp(vk::BlendOp::eAdd);
+
+  // With no color written, blending would read the frame for nothing.
+  const BlendMode blend_mode =
+      (color_write_mask ? config.blend_mode : BlendMode::kNone);
+  switch (blend_mode) {
+    case BlendMode::kNone:
+      color_blend_attachment.setBlendEnable(VK_FALSE);
+      break;
+    case BlendMode::kAlpha:
+      color_blend_attachment.setBlendEnable(VK_TRUE)
           .setSrcColorBlendFactor(vk::BlendFactor::eSrcAlpha)
           .setDstColorBlendFactor(vk::BlendFactor::eOneMinusSrcAlpha)
-          .setColorBlendOp(vk::BlendOp::eAdd)
           .setSrcAlphaBlendFactor(vk::BlendFactor::eOne)
-          .setDstAlphaBlendFactor(vk::BlendFactor::eZero)
-          .setAlphaBlendOp(vk::BlendOp::eAdd);
+          .setDstAlphaBlendFactor(vk::BlendFactor::eZero);
+      break;
+    case BlendMode::kPremultiplied:
+      color_blend_attachment.setBlendEnable(VK_TRUE)
+          .setSrcColorBlendFactor(vk::BlendFactor::eOne)
+          .setDstColorBlendFactor(vk::BlendFactor::eOneMinusSrcAlpha)
+          .setSrcAlphaBlendFactor(vk::BlendFactor::eOne)
+          .setDstAlphaBlendFactor(vk::BlendFactor::eOneMinusSrcAlpha);
+      break;
+    case BlendMode::kAdditive:
+      color_blend_attachment.setBlendEnable(VK_TRUE)
+          .setSrcColorBlendFactor(vk::BlendFactor::eSrcAlpha)
+          .setDstColorBlendFactor(vk::BlendFactor::eOne)
+          .setSrcAlphaBlendFactor(vk::BlendFactor::eZero)
+          .setDstAlphaBlendFactor(vk::BlendFactor::eOne);
+      break;
+  }
 
   auto color_blending = vk::PipelineColorBlendStateCreateInfo()
                             .setAttachmentCount(1)

@@ -581,9 +581,7 @@ TEST_F(MaterialTypeTest, Properties) {
       scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get());
   ASSERT_NE(material_type, nullptr);
   const MaterialType* const_material_type = material_type.Get();
-  EXPECT_EQ(const_material_type->GetConfig().cull_mode, CullMode::kBack);
-  EXPECT_EQ(const_material_type->GetConfig().depth_mode,
-            DepthMode::kTestAndWrite);
+  EXPECT_EQ(const_material_type->GetConfig(), MaterialConfig());
   EXPECT_EQ(const_material_type->GetVertexShader(), vertex_shader.Get());
   EXPECT_EQ(const_material_type->GetFragmentShader(), fragment_shader.Get());
   EXPECT_EQ(const_material_type->GetVertexType(), vertex_type);
@@ -618,22 +616,22 @@ TEST_F(MaterialTypeTest, ExplicitMaterialConfig) {
       {}, {}, {});
   ASSERT_NE(fragment_shader, nullptr);
 
+  const MaterialConfig config = MaterialConfig()
+                                    .SetCullMode(CullMode::kFront)
+                                    .SetDepthMode(DepthMode::kTest)
+                                    .SetBlendMode(BlendMode::kPremultiplied)
+                                    .SetColorChannels({})
+                                    .SetDepthBias(-1.0f, 0.5f);
   auto material_type = render_system_->CreateMaterialType(
       scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get(),
-      MaterialConfig()
-          .SetCullMode(CullMode::kFront)
-          .SetDepthMode(DepthMode::kTest));
+      config);
   ASSERT_NE(material_type, nullptr);
   const MaterialType* const_material_type = material_type.Get();
-  EXPECT_EQ(const_material_type->GetConfig().cull_mode, CullMode::kFront);
-  EXPECT_EQ(const_material_type->GetConfig().depth_mode, DepthMode::kTest);
+  EXPECT_EQ(const_material_type->GetConfig(), config);
 
   auto* test_pipeline = static_cast<TestRenderPipeline*>(
       const_material_type->GetPipeline(GetAccessToken()));
-  EXPECT_EQ(const_material_type->GetConfig().cull_mode,
-            test_pipeline->GetConfig().cull_mode);
-  EXPECT_EQ(const_material_type->GetConfig().depth_mode,
-            test_pipeline->GetConfig().depth_mode);
+  EXPECT_EQ(test_pipeline->GetConfig(), config);
 
   EXPECT_EQ(state_.invalid_call_count, 0);
 }

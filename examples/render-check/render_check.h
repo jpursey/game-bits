@@ -16,9 +16,12 @@
 #include "absl/log/log_sink.h"
 #include "absl/synchronization/mutex.h"
 #include "gb/file/file_system.h"
+#include "gb/image/pixel.h"
 #include "gb/imgui/imgui_instance.h"
 #include "gb/message/message_dispatcher.h"
 #include "gb/message/message_system.h"
+#include "gb/render/draw_list.h"
+#include "gb/render/material_config.h"
 #include "gb/render/render_system.h"
 #include "gb/render/vulkan/vulkan_backend.h"
 #include "gb/resource/resource_set.h"
@@ -55,7 +58,8 @@ class LogCounter final : public absl::LogSink {
 //==============================================================================
 
 // Exercises the Vulkan backend by hand: window resizing, binding data churn,
-// and texture and texture array updates while they are drawn.
+// texture and texture array updates while they are drawn, and each material
+// blend mode.
 class RenderCheck final {
  public:
   RenderCheck() = default;
@@ -96,6 +100,7 @@ class RenderCheck final {
   bool InitGui();
   bool InitQuads();
   bool InitTextures();
+  bool InitBlendQuads();
   void CleanUp();
 
   bool ProcessEvents();
@@ -108,12 +113,23 @@ class RenderCheck final {
   void DrawTextureGui();
   void DrawTextureArrayGui();
   void DrawGuiCheckGui();
+  void DrawBlendGui();
   void DrawLogGui();
   void DrawExtraRects();
   void DrawQuads();
 
   void CreateInstances();
   void SetInstanceData(int index, gb::BindingData* instance);
+  void SetQuadData(gb::BindingData* instance, float x, float y, float width,
+                   float height, gb::Pixel color);
+
+  // Returns a new material of the quad material type, with its own config.
+  gb::Material* CreateQuadMaterial(const gb::MaterialConfig& config);
+
+  // Adds a quad to the blend check's draw list. `material` may be null, if
+  // creating it failed, which fails here.
+  bool AddBlendQuad(gb::Material* material, float x, float y, float width,
+                    float height, gb::Pixel color);
   void PaintSquare(gb::Texture* texture, int step);
   void ResetCheckerboard(gb::Texture* texture);
   void SetArrayLayer(gb::TextureArray* texture_array, int index,
@@ -170,6 +186,10 @@ class RenderCheck final {
   int extra_rects_ = 0;
   int over_limit_frames_ = 0;
   bool reset_render_state_ = false;
+
+  // Blend modes, drawn in order from a list built once.
+  std::vector<std::unique_ptr<gb::BindingData>> blend_instances_;
+  gb::DrawList blend_draw_list_;
 };
 
 #endif  // RENDER_CHECK_H_

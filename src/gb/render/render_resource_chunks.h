@@ -82,6 +82,16 @@ inline gb::CullMode FromFbs(fbs::CullMode type) {
   return RenderEnumFromFbs<fbs::CullMode, gb::CullMode>(type);
 }
 
+inline fbs::BlendMode ToFbs(gb::BlendMode type) {
+  return RenderEnumToFbs<fbs::BlendMode, gb::BlendMode>(type);
+}
+inline gb::BlendMode FromFbs(fbs::BlendMode type) {
+  return RenderEnumFromFbs<fbs::BlendMode, gb::BlendMode>(type);
+}
+
+// MaterialTypeChunk::color_channels defaults to this mask.
+static_assert(kAllColorChannels.GetMask() == 15);
+
 inline fbs::SamplerAddressMode ToFbs(gb::SamplerAddressMode type) {
   return RenderEnumToFbs<fbs::SamplerAddressMode, gb::SamplerAddressMode>(type);
 }

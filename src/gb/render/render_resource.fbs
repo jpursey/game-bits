@@ -64,6 +64,14 @@ enum CullMode : uint8 {
   Back,
 }
 
+// Must be kept in sync with gb::BlendMode
+enum BlendMode : uint8 {
+  None,
+  Alpha,
+  Premultiplied,
+  Additive,
+}
+
 // Must be kept in sync with gb::SamplerAddressMode
 enum SamplerAddressMode : uint8 {
   Repeat,
@@ -172,6 +180,12 @@ table MaterialTypeChunk {
   instance_data : [BindingDataEntry];
   depth_test : DepthTest;
   raster_mode : RasterMode;
+
+  // Defaults match material types saved before these were added.
+  blend_mode : BlendMode = Alpha;
+  color_channels : uint8 = 15;  // gb::ColorChannels mask
+  depth_bias_constant : float;
+  depth_bias_slope : float;
 }
 
 // Chunk for shader resource.

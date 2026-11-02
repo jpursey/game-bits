@@ -931,11 +931,15 @@ TEST_F(RenderSystemTest, SaveLoadMaterialType) {
           .SetLocation(BindingSet::kInstance, 1)
           .SetTexture(),
   };
-  auto* material_type_ptr = CreateMaterialType(
-      bindings, MaterialConfig()
-                    .SetCullMode(CullMode::kFront)
-                    .SetDepthMode(DepthMode::kTest, DepthTest::kGreater)
-                    .SetRasterMode(RasterMode::kLine));
+  const MaterialConfig config =
+      MaterialConfig()
+          .SetCullMode(CullMode::kFront)
+          .SetDepthMode(DepthMode::kTest, DepthTest::kGreater)
+          .SetRasterMode(RasterMode::kLine)
+          .SetBlendMode(BlendMode::kAdditive)
+          .SetColorChannels({ColorChannel::kRed, ColorChannel::kAlpha})
+          .SetDepthBias(1.5f, 2.5f);
+  auto* material_type_ptr = CreateMaterialType(bindings, config);
   auto material_type_id = material_type_ptr->GetResourceId();
   auto* vertex_shader = material_type_ptr->GetVertexShader();
   auto* fragment_shader = material_type_ptr->GetFragmentShader();
@@ -969,10 +973,7 @@ TEST_F(RenderSystemTest, SaveLoadMaterialType) {
   EXPECT_EQ(material_type->GetVertexShader(), vertex_shader);
   EXPECT_EQ(material_type->GetFragmentShader(), fragment_shader);
   EXPECT_EQ(material_type->GetVertexType(), vertex_type);
-  EXPECT_EQ(material_type->GetConfig().cull_mode, CullMode::kFront);
-  EXPECT_EQ(material_type->GetConfig().depth_mode, DepthMode::kTest);
-  EXPECT_EQ(material_type->GetConfig().depth_test, DepthTest::kGreater);
-  EXPECT_EQ(material_type->GetConfig().raster_mode, RasterMode::kLine);
+  EXPECT_EQ(material_type->GetConfig(), config);
   Vector2 constants = {0, 0};
   material_type->GetDefaultMaterialBindingData()->GetConstants<Vector2>(
       0, &constants);
@@ -1038,6 +1039,38 @@ TEST_F(RenderSystemTest, LoadMaterialTypeWithWrongConstantsSize) {
   EXPECT_EQ(resource_system_->Load<MaterialType>(&temp_resource_set_,
                                                  "mem:/material_type.gbmt"),
             nullptr);
+}
+
+TEST_F(RenderSystemTest, LoadMaterialTypeWithoutBlendOrDepthBias) {
+  CreateSystem(true);
+  auto* constants_type = render_system_->RegisterConstantsType<Vector2>("vec2");
+  ASSERT_NE(constants_type, nullptr);
+  auto* material_type =
+      CreateMaterialType({Binding()
+                              .SetShaders(kAllShaderTypes)
+                              .SetLocation(BindingSet::kMaterial, 0)
+                              .SetConstants(constants_type)});
+  ASSERT_NE(material_type, nullptr);
+  ASSERT_TRUE(render_system_->SaveShader("mem:/vertex.gbsh",
+                                         material_type->GetVertexShader()));
+  ASSERT_TRUE(render_system_->SaveShader("mem:/fragment.gbsh",
+                                         material_type->GetFragmentShader()));
+
+  // The chunk has none of the fields added for blending, color channels, or
+  // depth bias, like material types saved before they were added.
+  const uint8_t constants[sizeof(Vector2)] = {};
+  ASSERT_TRUE(WriteMaterialTypeChunk("mem:/material_type.gbmt", material_type,
+                                     constants));
+  temp_resource_set_.RemoveAll();
+
+  auto* loaded = resource_system_->Load<MaterialType>(
+      &temp_resource_set_, "mem:/material_type.gbmt");
+  ASSERT_NE(loaded, nullptr);
+  const MaterialConfig& config = loaded->GetConfig();
+  EXPECT_EQ(config.blend_mode, BlendMode::kAlpha);
+  EXPECT_EQ(config.color_channels, kAllColorChannels);
+  EXPECT_EQ(config.depth_bias_constant, 0.0f);
+  EXPECT_EQ(config.depth_bias_slope, 0.0f);
 }
 
 TEST_F(RenderSystemTest, SaveLoadMaterialTypeAndDependencies) {

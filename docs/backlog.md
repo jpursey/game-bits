@@ -151,30 +151,6 @@ Without profiling, a job's point would be found by name for each run, which
 *Profiled jobs* does through a thread-local cache. Names built at runtime, one
 per piece of work, would then reach the limit of 1024 points.
 
-## Pipeline state per material
-
-- **Layers:** render, render_vulkan
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Requested by:** Terra Diem *Water refraction and reflections*, *Sun and
-  moon shadows*
-- **Background:** `vulkan_render_pipeline.cc`, where blending is set
-
-`MaterialConfig` chooses the depth, raster, and cull modes, but every pipeline
-blends source alpha over what's there (`vulkan_render_pipeline.cc`), so opaque
-materials pay for blending they don't use, and nothing can draw additively,
-with premultiplied alpha, or without writing color. Add to `MaterialConfig`:
-- A blend mode: none, alpha, premultiplied alpha, and additive. The default
-  stays alpha, so existing materials don't change.
-- A color write mask, so a material can write only depth (a depth pre-pass,
-  which lets only the nearest of several transparent surfaces be shaded).
-- Depth bias, constant and slope-scaled, for shadow maps and decals.
-
-Each goes through the resource chunks that save material types, and the test
-backend records it. Check by hand in `examples/render-check`, with a material
-of each blend mode over the same background.
-
 ## Volume textures and storage buffers
 
 - **Layers:** render, render_vulkan

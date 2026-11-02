@@ -1165,6 +1165,10 @@ MaterialType* RenderSystem::LoadMaterialTypeChunk(
   config.depth_test = FromFbs(chunk->depth_test());
   config.raster_mode = FromFbs(chunk->raster_mode());
   config.cull_mode = FromFbs(chunk->cull_mode());
+  config.blend_mode = FromFbs(chunk->blend_mode());
+  config.color_channels = ColorChannels(chunk->color_channels());
+  config.depth_bias_constant = chunk->depth_bias_constant();
+  config.depth_bias_slope = chunk->depth_bias_slope();
 
   std::string_view scene_type_name =
       (chunk->scene_type_name() != nullptr ? chunk->scene_type_name()->c_str()
@@ -1263,6 +1267,11 @@ bool RenderSystem::SaveMaterialTypeChunk(Context* context,
   material_type_builder.add_depth_mode(ToFbs(config.depth_mode));
   material_type_builder.add_depth_test(ToFbs(config.depth_test));
   material_type_builder.add_raster_mode(ToFbs(config.raster_mode));
+  material_type_builder.add_blend_mode(ToFbs(config.blend_mode));
+  material_type_builder.add_color_channels(
+      static_cast<uint8_t>(config.color_channels.GetMask()));
+  material_type_builder.add_depth_bias_constant(config.depth_bias_constant);
+  material_type_builder.add_depth_bias_slope(config.depth_bias_slope);
   material_type_builder.add_material_data(fb_material_data);
   material_type_builder.add_instance_data(fb_instance_data);
   const auto fb_material_type = material_type_builder.Finish();

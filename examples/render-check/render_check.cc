@@ -73,6 +73,15 @@ constexpr int kOverLimitFrames = 60;
 constexpr int kExtraRectColumns = 128;
 constexpr float kExtraRectTop = kGridTop + kGridRows * kCellSize + 40.0f;
 
+// The blend check is a row of cells below the extra rectangles, each with a
+// quad over a background that is black in its top half and grey below.
+constexpr float kBlendTop = kExtraRectTop + 280.0f;
+constexpr int kBlendCells = 5;
+constexpr float kBlendCellSize = 100.0f;
+constexpr float kBlendQuadWidth = 60.0f;
+constexpr float kBlendQuadHeight = 80.0f;
+constexpr float kBlendHoleSize = 30.0f;
+
 // Converts a hue in [0, 1) to a fully saturated color.
 gb::Pixel HueColor(float hue) {
   hue = hue - std::floor(hue);
@@ -95,6 +104,13 @@ gb::Pixel HueColor(float hue) {
   return gb::Pixel(static_cast<uint8_t>(r * 255.0f),
                    static_cast<uint8_t>(g * 255.0f),
                    static_cast<uint8_t>(b * 255.0f));
+}
+
+// Quads are drawn without culling or depth, unless a check needs them.
+gb::MaterialConfig QuadConfig() {
+  return gb::MaterialConfig()
+      .SetCullMode(gb::CullMode::kNone)
+      .SetDepthMode(gb::DepthMode::kNone);
 }
 
 std::string PixelString(gb::Pixel pixel) {
@@ -149,7 +165,7 @@ RenderCheck::~RenderCheck() { CleanUp(); }
 bool RenderCheck::Init() {
   absl::AddLogSink(&log_counter_);
   return InitWindow() && InitRenderSystem() && InitGui() && InitQuads() &&
-         InitTextures();
+         InitTextures() && InitBlendQuads();
 }
 
 bool RenderCheck::InitWindow() {
@@ -292,9 +308,7 @@ bool RenderCheck::InitQuads() {
 
   gb::MaterialType* material_type = render_system_->CreateMaterialType(
       &resources_, scene_type, vertex_type, vertex_shader, fragment_shader,
-      gb::MaterialConfig()
-          .SetCullMode(gb::CullMode::kNone)
-          .SetDepthMode(gb::DepthMode::kNone));
+      QuadConfig());
   if (material_type == nullptr) {
     LOG(ERROR) << "Could not create quad material type";
     return false;
@@ -374,8 +388,65 @@ bool RenderCheck::InitTextures() {
   return true;
 }
 
+bool RenderCheck::InitBlendQuads() {
+  gb::Material* none_material =
+      CreateQuadMaterial(QuadConfig().SetBlendMode(gb::BlendMode::kNone));
+  gb::Material* premultiplied_material = CreateQuadMaterial(
+      QuadConfig().SetBlendMode(gb::BlendMode::kPremultiplied));
+  gb::Material* additive_material =
+      CreateQuadMaterial(QuadConfig().SetBlendMode(gb::BlendMode::kAdditive));
+  gb::Material* depth_only_material = CreateQuadMaterial(
+      QuadConfig().SetDepthMode(gb::DepthMode::kWrite).SetColorChannels({}));
+  gb::Material* depth_test_material =
+      CreateQuadMaterial(QuadConfig().SetDepthMode(gb::DepthMode::kTest));
+
+  // The background, black above grey, drawn without blending.
+  const float width = kBlendCells * kBlendCellSize;
+  const float half_height = kBlendCellSize / 2.0f;
+  if (!AddBlendQuad(none_material, kGridLeft, kBlendTop, width, half_height,
+                    gb::PixelColor::kBlack) ||
+      !AddBlendQuad(none_material, kGridLeft, kBlendTop + half_height, width,
+                    half_height, gb::PixelColor::kGrey)) {
+    return false;
+  }
+
+  // A half transparent orange quad in each blend mode, the premultiplied one
+  // with its color scaled by its alpha so it matches kAlpha. In the last cell,
+  // a depth-only square cuts a hole in the blue quad drawn after it.
+  struct BlendQuad {
+    gb::Material* material;
+    int cell;
+    float width;
+    float height;
+    gb::Pixel color;
+  };
+  const gb::Pixel orange(255, 128, 0, 128);
+  const BlendQuad quads[] = {
+      {none_material, 0, kBlendQuadWidth, kBlendQuadHeight, orange},
+      {quad_material_, 1, kBlendQuadWidth, kBlendQuadHeight, orange},
+      {premultiplied_material, 2, kBlendQuadWidth, kBlendQuadHeight,
+       orange * (orange.a / 255.0f)},
+      {additive_material, 3, kBlendQuadWidth, kBlendQuadHeight, orange},
+      {depth_only_material, 4, kBlendHoleSize, kBlendHoleSize,
+       gb::PixelColor::kWhite},
+      {depth_test_material, 4, kBlendQuadWidth, kBlendQuadHeight,
+       gb::Pixel(64, 128, 255)},
+  };
+  for (const BlendQuad& quad : quads) {
+    const float x = kGridLeft + quad.cell * kBlendCellSize +
+                    (kBlendCellSize - quad.width) / 2.0f;
+    const float y = kBlendTop + (kBlendCellSize - quad.height) / 2.0f;
+    if (!AddBlendQuad(quad.material, x, y, quad.width, quad.height,
+                      quad.color)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 void RenderCheck::CleanUp() {
   instances_.clear();
+  blend_instances_.clear();
   scene_.reset();
   if (gui_instance_ != nullptr) {
     ImGui_ImplSDL2_Shutdown();
@@ -480,6 +551,7 @@ void RenderCheck::DrawGui() {
   DrawTextureGui();
   DrawTextureArrayGui();
   DrawGuiCheckGui();
+  DrawBlendGui();
   DrawLogGui();
   ImGui::End();
   DrawExtraRects();
@@ -638,6 +710,18 @@ void RenderCheck::DrawGuiCheckGui() {
   }
 }
 
+void RenderCheck::DrawBlendGui() {
+  if (!ImGui::CollapsingHeader("Blend modes", ImGuiTreeNodeFlags_DefaultOpen)) {
+    return;
+  }
+  ImGui::TextWrapped(
+      "Below the grid, half transparent orange over black and grey, from the "
+      "left: kNone is solid orange; kAlpha and kPremultiplied match; "
+      "kAdditive matches them over black and is brighter over grey. Last is a "
+      "blue quad with a square hole, cut by a depth-only quad drawn before "
+      "it.");
+}
+
 void RenderCheck::DrawExtraRects() {
   int count = extra_rects_;
   if (over_limit_frames_ > 0) {
@@ -679,6 +763,7 @@ void RenderCheck::DrawQuads() {
     render_system_->Draw(scene_.get(), quad_mesh_, quad_material_,
                          instance.get());
   }
+  render_system_->Draw(scene_.get(), blend_draw_list_);
 }
 
 void RenderCheck::CreateInstances() {
@@ -698,18 +783,53 @@ void RenderCheck::CreateInstances() {
 }
 
 void RenderCheck::SetInstanceData(int index, gb::BindingData* instance) {
+  SetQuadData(
+      instance, kGridLeft + (index % kGridColumns) * kCellSize,
+      kGridTop + (index / kGridColumns) * kCellSize, kQuadSize, kQuadSize,
+      HueColor(index / static_cast<float>(kInstanceCount) + frame_ / 240.0f));
+}
+
+void RenderCheck::SetQuadData(gb::BindingData* instance, float x, float y,
+                              float width, float height, gb::Pixel color) {
   InstanceData data = {};
-  data.rect[0] = kGridLeft + (index % kGridColumns) * kCellSize;
-  data.rect[1] = kGridTop + (index / kGridColumns) * kCellSize;
-  data.rect[2] = kQuadSize;
-  data.rect[3] = kQuadSize;
-  const gb::Pixel color =
-      HueColor(index / static_cast<float>(kInstanceCount) + frame_ / 240.0f);
+  data.rect[0] = x;
+  data.rect[1] = y;
+  data.rect[2] = width;
+  data.rect[3] = height;
   data.color[0] = color.r / 255.0f;
   data.color[1] = color.g / 255.0f;
   data.color[2] = color.b / 255.0f;
-  data.color[3] = 1.0f;
+  data.color[3] = color.a / 255.0f;
   instance->SetConstants<InstanceData>(0, data);
+}
+
+gb::Material* RenderCheck::CreateQuadMaterial(
+    const gb::MaterialConfig& config) {
+  const gb::MaterialType* quad_type = quad_material_->GetType();
+  gb::MaterialType* material_type = render_system_->CreateMaterialType(
+      &resources_, quad_type->GetSceneType(), quad_type->GetVertexType(),
+      quad_type->GetVertexShader(), quad_type->GetFragmentShader(), config);
+  if (material_type == nullptr) {
+    return nullptr;
+  }
+  return render_system_->CreateMaterial(&resources_, material_type);
+}
+
+bool RenderCheck::AddBlendQuad(gb::Material* material, float x, float y,
+                               float width, float height, gb::Pixel color) {
+  std::unique_ptr<gb::BindingData> instance;
+  if (material != nullptr) {
+    instance = material->CreateInstanceBindingData();
+  }
+  if (instance == nullptr) {
+    LOG(ERROR) << "Could not create blend quad";
+    return false;
+  }
+  SetQuadData(instance.get(), x, y, width, height, color);
+  blend_draw_list_.SetMesh(quad_mesh_, material, instance.get());
+  blend_draw_list_.Draw();
+  blend_instances_.emplace_back(std::move(instance));
+  return true;
 }
 
 void RenderCheck::PaintSquare(gb::Texture* texture, int step) {

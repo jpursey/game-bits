@@ -6,6 +6,7 @@
 #ifndef GB_RENDER_MATERIAL_CONFIG_H_
 #define GB_RENDER_MATERIAL_CONFIG_H_
 
+#include "gb/base/flags.h"
 #include "gb/render/render_types.h"
 
 namespace gb {
@@ -41,6 +42,41 @@ enum class CullMode {
   kBack,   // Culls back face.
 };
 
+// Determines how a fragment's color is combined with the color already drawn.
+enum class BlendMode {
+  // The fragment's color and alpha replace what is there.
+  kNone,
+
+  // The fragment's color is blended over what is there by its alpha, and its
+  // alpha replaces what is there.
+  kAlpha,
+
+  // The fragment's color is already multiplied by its alpha, and is added to
+  // what is there scaled by one minus its alpha. Alpha is combined the same
+  // way.
+  kPremultiplied,
+
+  // The fragment's color, scaled by its alpha, is added to what is there. The
+  // alpha that is there is kept.
+  kAdditive,
+};
+
+// A color channel that a material writes.
+enum class ColorChannel {
+  kRed,
+  kGreen,
+  kBlue,
+  kAlpha,
+};
+
+using ColorChannels = Flags<ColorChannel>;
+inline constexpr ColorChannels kAllColorChannels = {
+    ColorChannel::kRed,
+    ColorChannel::kGreen,
+    ColorChannel::kBlue,
+    ColorChannel::kAlpha,
+};
+
 // MaterialConfig defines behavior of how mesh using a material is drawn by the
 // renderer.
 //
@@ -64,11 +100,38 @@ struct MaterialConfig {
     cull_mode = mode;
     return *this;
   }
+  MaterialConfig& SetBlendMode(BlendMode mode) {
+    blend_mode = mode;
+    return *this;
+  }
+
+  // With no channels, a material writes only depth, as in a depth pre-pass.
+  MaterialConfig& SetColorChannels(ColorChannels channels) {
+    color_channels = channels;
+    return *this;
+  }
+
+  // Adds to the depth of each fragment, as shadow maps and decals need to
+  // avoid fighting with the surface under them. `constant` is scaled by the
+  // smallest depth difference the depth buffer can resolve at the polygon's
+  // depth, and `slope` by how steeply the polygon's depth changes across a
+  // pixel.
+  MaterialConfig& SetDepthBias(float constant, float slope) {
+    depth_bias_constant = constant;
+    depth_bias_slope = slope;
+    return *this;
+  }
+
+  bool operator==(const MaterialConfig&) const = default;
 
   DepthMode depth_mode = DepthMode::kTestAndWrite;
   DepthTest depth_test = DepthTest::kLess;
   RasterMode raster_mode = RasterMode::kFill;
   CullMode cull_mode = CullMode::kBack;
+  BlendMode blend_mode = BlendMode::kAlpha;
+  ColorChannels color_channels = kAllColorChannels;
+  float depth_bias_constant = 0.0f;
+  float depth_bias_slope = 0.0f;
 };
 
 }  // namespace gb
