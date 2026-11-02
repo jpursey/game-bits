@@ -67,6 +67,9 @@ namespace gb {
 // frame times, and the breakdown by point of the slowest frame so far. Points
 // outside any frame are included in the totals, but in no frame's breakdown.
 //
+// Jobs (see ProfileJobTimer) are timed points that also record a histogram of
+// their run times, and the delays before each starts and resumes.
+//
 // Time is read from the CPU's timestamp counter, which must be invariant (true
 // of any x86-64 CPU in the last decade), unless a FakeProfilerCpu is given in
 // the options.
@@ -195,16 +198,68 @@ class Profiler final {
   FrameSummary GetFrameSummary() const;
 
   //----------------------------------------------------------------------------
+  // Jobs
+  //----------------------------------------------------------------------------
+
+  // Statistics over every run of a job point (see ProfileJobTimer). A run's
+  // time is the time the job ran, on any thread, including the timed points
+  // inside it, and leaving out the time its fiber was suspended. The
+  // percentiles come from a histogram, and are within 1/16th of the true
+  // value.
+  //
+  // A start delay is the time from a job being queued to its starting, and a
+  // resume delay the time from what a job waited on being ready to the job
+  // running again (see AddResumeDelay()). Each is an average, over the runs or
+  // the resumes. With no runs, or no resumes, their times are zero.
+  struct JobSummary {
+    int64_t runs = 0;
+    absl::Duration total;
+    absl::Duration average;
+    absl::Duration p50;
+    absl::Duration p90;
+    absl::Duration p99;
+    absl::Duration max;
+    absl::Duration start_delay;
+    absl::Duration max_start_delay;
+    int64_t resumes = 0;
+    absl::Duration resume_delay;
+    absl::Duration max_resume_delay;
+  };
+
+  // Returns the summary of the job point named `name`, which is zero if there
+  // is no such point, and CHECK-fails if it isn't a job. A main Profiler reads
+  // what every thread recorded, as its report does, and a joined Profiler reads
+  // only its own thread.
+  JobSummary GetJobSummary(std::string_view name) const;
+
+  // Returns the ticks now, for a job's delays (see ProfileJobTimer and
+  // AddResumeDelay()). Any thread may call it, and ticks read through a main
+  // Profiler compare with those of every Profiler joined to it.
+  int64_t ReadTicks() const {
+    if (fake_cpu_ != nullptr) {
+      return fake_cpu_->ReadCpuTicks();
+    }
+    return ReadCpuTicks();
+  }
+
+  // Adds a resume delay to the innermost job timed on the calling thread's
+  // fiber, from `ready_ticks` (ReadTicks() when what the job waited on was
+  // ready) until now. It is recorded in the calling thread's Profiler, and does
+  // nothing if there is none, or if no job is open on the fiber. A job system
+  // calls it when a job that suspended to wait carries on.
+  static void AddResumeDelay(int64_t ready_ticks);
+
+  //----------------------------------------------------------------------------
   // Report
   //----------------------------------------------------------------------------
 
   // Returns the profile as plain text: the values, the frame summary, the tick
   // rate, the frames by class of core, one line for each point with its count
   // and self time (in total, per frame, per call, and as a share of the
-  // frames' time), and the slowest frame's breakdown. Only points this Profiler
-  // has recorded are included (a counter whose total is zero counts as not
-  // recorded). Points are grouped by kind and sorted by name, so two reports of
-  // the same program diff cleanly.
+  // frames' time), the jobs, and the slowest frame's breakdown. Only points
+  // this Profiler has recorded are included (a counter whose total is zero
+  // counts as not recorded). Points are grouped by kind and sorted by name, so
+  // two reports of the same program diff cleanly.
   //
   // A main Profiler's counts, self times, and wait times are the sum over
   // every thread, and each value is the one set most recently on any thread.
@@ -213,6 +268,12 @@ class Profiler final {
   // time in total and per call, and a frame's breakdown, once a point in it
   // has waited, each point's wait in the frame. A point that has waited but
   // not yet ended counts as recorded.
+  //
+  // Once any job has run, the report has a table of jobs (see JobSummary),
+  // with a row for each job point that has run or resumed: its count, its run
+  // time in total, on average, and at p50, p90, p99, and max, and its average
+  // and longest start delay. Once any job has resumed, it also has each job's
+  // resumes, and its average and longest resume delay.
   //
   // The tick rate converts ticks to time. A rate that changes between runs
   // makes every time wrong by the same factor.
@@ -287,13 +348,14 @@ class Profiler final {
  private:
   friend class ProfilePoint;
   friend class ProfileTimer;
+  friend class ProfileJobTimer;
   template <ProfileName kName>
   friend class ProfileFrame;
 
-  // Frame times are counted in 8 buckets for each power of two. The highest
-  // bit a positive int64_t can have is bit 62, which lands in the last of
-  // these (see GetFrameBucket in profiler.cc).
-  static constexpr int kFrameBuckets = 61 * 8;
+  // Frame and job run times are counted in 8 buckets for each power of two.
+  // The highest bit a positive int64_t can have is bit 62, which lands in the
+  // last of these (see GetHistogramBucket in profiler.cc).
+  static constexpr int kHistogramBuckets = 61 * 8;
 
   // Frames are counted for each class of core up to kCoreClasses (higher
   // classes count as the highest), and then for frames that started and ended
@@ -324,6 +386,9 @@ class Profiler final {
 
     // Whether this is a frame, or inside one.
     bool in_frame = false;
+
+    // Whether this times a job (see JobTiming).
+    bool is_job = false;
 
     Timing* parent = nullptr;
 
@@ -356,6 +421,13 @@ class Profiler final {
     void Set(int64_t value) { value_.store(value, std::memory_order_relaxed); }
     void Add(int64_t delta) { Set(Get() + delta); }
 
+    // Sets the value to `value`, if that is larger.
+    void SetMax(int64_t value) {
+      if (value > Get()) {
+        Set(value);
+      }
+    }
+
     // As Get() and Set(), and a read with GetAcquire() that sees a value
     // written by SetRelease() also sees the writes before it. On x86-64 these
     // too are plain moves.
@@ -377,7 +449,7 @@ class Profiler final {
     SingleWriterInt64 count;
     SingleWriterInt64 self_ticks;
 
-    // The same, for only the frame numbered `frame` (see current_frame_), with
+    // The same, for only the frame numbered `frame` (see Numbers), with
     // the part outside the frame (see FrameBreakdown) apart. They and the frame
     // waits below are reset by the first add in a new frame, so nothing needs
     // clearing when a frame starts, and `frame` is set after them (with
@@ -397,6 +469,70 @@ class Profiler final {
     // A value point's latest value, and when it was set.
     SingleWriterInt64 value;
     SingleWriterInt64 value_ticks;
+  };
+
+  // What is recorded of a job point's runs and delays, beside its slot. Only
+  // the Profiler's thread writes it, and it is made the first time the thread
+  // records the point. It holds what was recorded since the main Profiler's
+  // Reset() numbered `resets` (see Numbers), and the first record after a later
+  // Reset() clears it, so Reset() needn't baseline it, and readers ignore it
+  // until then. The runs are counted by their buckets. All but the buckets
+  // share a cache line, so a job's end writes two.
+  struct alignas(ABSL_CACHELINE_SIZE) JobStats {
+    // Clears everything but `resets`.
+    void Clear() {
+      for (SingleWriterInt64* field :
+           {&run_ticks, &max_run_ticks, &start_delay_ticks,
+            &max_start_delay_ticks, &resumes, &resume_delay_ticks,
+            &max_resume_delay_ticks}) {
+        field->Set(0);
+      }
+      for (SingleWriterInt64& bucket : run_buckets) {
+        bucket.Set(0);
+      }
+    }
+
+    SingleWriterInt64 resets;
+    SingleWriterInt64 run_ticks;
+    SingleWriterInt64 max_run_ticks;
+    SingleWriterInt64 start_delay_ticks;
+    SingleWriterInt64 max_start_delay_ticks;
+    SingleWriterInt64 resumes;
+    SingleWriterInt64 resume_delay_ticks;
+    SingleWriterInt64 max_resume_delay_ticks;
+    std::array<SingleWriterInt64, kHistogramBuckets> run_buckets;
+  };
+
+  // A Profiler's JobStats for one point, or null. It is published with a
+  // release store, so a reader that loads it with acquire sees it made.
+  struct JobStatsPointer {
+    JobStatsPointer() = default;
+    JobStatsPointer(const JobStatsPointer&) = delete;
+    JobStatsPointer& operator=(const JobStatsPointer&) = delete;
+    ~JobStatsPointer() { delete stats.load(std::memory_order_relaxed); }
+
+    std::atomic<JobStats*> stats = nullptr;
+  };
+
+  // A job point's runs and delays, as the report and GetJobSummary() see them.
+  // These are gathered for every registered point, so `run_buckets` is empty
+  // until a thread's runs are added, rather than 4 KB for each point.
+  struct JobTotals {
+    int64_t runs = 0;
+    int64_t run_ticks = 0;
+    int64_t max_run_ticks = 0;
+    int64_t start_delay_ticks = 0;
+    int64_t max_start_delay_ticks = 0;
+    int64_t resumes = 0;
+    int64_t resume_delay_ticks = 0;
+    int64_t max_resume_delay_ticks = 0;
+    std::vector<int64_t> run_buckets;
+  };
+
+  // A job's timing, kept by its ProfileJobTimer.
+  struct JobTiming {
+    Timing timing;
+    int64_t start_delay_ticks = 0;
   };
 
   // A point's totals, as the report and the test readers see them.
@@ -429,6 +565,7 @@ class Profiler final {
     // What the destroyed ones recorded since this was last reset, by point
     // index.
     std::vector<PointTotals> folded;
+    std::vector<JobTotals> folded_jobs;
 
     // The busy time in frames since this was last reset, by class of core,
     // and in the busiest frame, gathered at each frame's end.
@@ -498,7 +635,7 @@ class Profiler final {
 
     int64_t frames = 0;
     int64_t ticks = 0;
-    std::array<int64_t, kFrameBuckets> buckets = {};
+    std::array<int64_t, kHistogramBuckets> buckets = {};
     std::array<CoreFrames, kCoreClasses + 1> cores = {};
     FrameBreakdown slowest;
   };
@@ -549,6 +686,16 @@ class Profiler final {
   // has none.
   static void* SuspendTimings();
   static void ResumeTimings(void* state);
+
+  // Jobs are timings that also record each run, and its start delay since
+  // `queued_ticks`, in the JobStats of the Profiler the job ends in.
+  void StartJob(int index, int64_t queued_ticks, JobTiming& job);
+  void EndJob(JobTiming& job);
+
+  // Returns this Profiler's JobStats for the point at `index`, making it the
+  // first time, and clearing it if it is from before the main Profiler's last
+  // Reset().
+  JobStats& GetJobStats(int index);
 
   // Returns the ticks a timed point adds to the timed point around it, the
   // least of several measurements, so a thread switch doesn't skew it.
@@ -612,7 +759,7 @@ class Profiler final {
   // reset if it was for another frame.
   Slot& GetFrameSlot(int index) {
     Slot& slot = slots_[index];
-    const int64_t frame = frame_profiler_->current_frame_.number.Get();
+    const int64_t frame = frame_profiler_->numbers_.frame.Get();
     if (slot.frame.Get() != frame) {
       slot.frame_count.Set(0);
       slot.frame_self_ticks.Set(0);
@@ -673,6 +820,20 @@ class Profiler final {
   // the value set most recently.
   static void AddPointTotals(PointTotals& totals, const PointTotals& thread);
 
+  // As GatherPointTotals(), for job points' runs and delays. Other points have
+  // none.
+  std::vector<JobTotals> GatherJobTotals() const
+      ABSL_LOCKS_EXCLUDED(joined_mutex_);
+
+  // Adds what this Profiler's own JobStats hold since the main Profiler's
+  // Reset() numbered `resets` to `totals`, by point index. Any thread may call
+  // it.
+  void AddOwnJobTotals(int64_t resets, absl::Span<JobTotals> totals) const;
+
+  // Adds what the destroyed Profilers of a thread recorded for a job point,
+  // `thread`, to `totals`.
+  static void AddJobTotals(JobTotals& totals, const JobTotals& thread);
+
   // Clears what this Profiler's own thread recorded, and its frames.
   // CHECK-fails while a frame is in progress.
   void ResetOwn() ABSL_LOCKS_EXCLUDED(frame_mutex_);
@@ -693,10 +854,14 @@ class Profiler final {
   // As GetFrameSummary(), for `frames`.
   FrameSummary DoGetFrameSummary(const FrameTotals& frames) const;
 
-  // Report sections, each appended to `report`. AppendValues() and
-  // AppendPoints() take every registered point with its totals, sorted for the
-  // report, and AppendFrame() takes the registered points in index order. The
-  // others take what was recorded of frames, `frames`.
+  // As GetJobSummary(), for `job`.
+  JobSummary DoGetJobSummary(const JobTotals& job) const;
+
+  // Report sections, each appended to `report`. AppendValues(), AppendPoints(),
+  // and AppendJobs() take every registered point with its totals, sorted for
+  // the report, and AppendFrame() takes the registered points in index order.
+  // AppendJobs() also takes the job totals, by point index. The others take
+  // what was recorded of frames, `frames`.
   using ReportPoint = std::pair<ProfilePoint, PointTotals>;
   void AppendValues(std::string& report,
                     absl::Span<const ReportPoint> points) const;
@@ -706,6 +871,8 @@ class Profiler final {
       ABSL_LOCKS_EXCLUDED(joined_mutex_);
   void AppendPoints(std::string& report, const FrameTotals& frames,
                     absl::Span<const ReportPoint> points) const;
+  void AppendJobs(std::string& report, absl::Span<const ReportPoint> points,
+                  absl::Span<const JobTotals> jobs) const;
   void AppendFrame(std::string& report, std::string_view title,
                    const FrameBreakdown& frame,
                    absl::Span<const ProfilePoint> registered) const;
@@ -726,16 +893,11 @@ class Profiler final {
       std::string_view name, absl::Span<const ProfilePoint::Kind> kinds) const
       ABSL_LOCKS_EXCLUDED(frame_mutex_);
 
-  // Returns the time that `fraction` of `frames` are at or under.
-  static int64_t GetFramePercentileTicks(const FrameTotals& frames,
-                                         double fraction);
-
-  int64_t ReadTicks() const {
-    if (fake_cpu_ != nullptr) {
-      return fake_cpu_->ReadCpuTicks();
-    }
-    return ReadCpuTicks();
-  }
+  // Returns the time that `fraction` of the `count` times in a histogram,
+  // `buckets`, are at or under, given that the longest is `max_ticks`.
+  static int64_t GetPercentileTicks(absl::Span<const int64_t> buckets,
+                                    int64_t count, int64_t max_ticks,
+                                    double fraction);
 
   // Returns the class of core the thread is on, below kCoreClasses.
   int ReadCoreClass() const;
@@ -759,6 +921,9 @@ class Profiler final {
   FakeProfilerCpu* const fake_cpu_;
   const std::unique_ptr<Slot[]> slots_;
 
+  // The JobStats of each point, by index, which only job points have.
+  const std::unique_ptr<JobStatsPointer[]> job_stats_;
+
   // The Profiler whose frames points are recorded in, and that records frames
   // this one times: the main Profiler for a joined Profiler, or else this one.
   Profiler* const frame_profiler_;
@@ -772,15 +937,20 @@ class Profiler final {
   // The innermost timing of the fiber running on this thread, or null.
   Timing* top_ = nullptr;
 
-  // The number of the frame in progress, counting from 1, or 0 between
-  // frames. Points between frames are recorded against frame 0, which is
-  // never captured. It is read by every point, so it has a cache line of its
-  // own, apart from what every point writes. Only the thread starting or
-  // ending a frame writes it, holding frame_mutex_.
-  struct alignas(ABSL_CACHELINE_SIZE) FrameNumber {
-    SingleWriterInt64 number;
+  // Numbers that every point or job reads, which have a cache line of their
+  // own, apart from what every point writes.
+  struct alignas(ABSL_CACHELINE_SIZE) Numbers {
+    // The number of the frame in progress, counting from 1, or 0 between
+    // frames. Points between frames are recorded against frame 0, which is
+    // never captured. Only the thread starting or ending a frame writes it,
+    // holding frame_mutex_.
+    SingleWriterInt64 frame;
+
+    // How many times a main Profiler has been reset, which JobStats are
+    // cleared by. Only Reset() writes it, holding joined_mutex_.
+    SingleWriterInt64 resets;
   };
-  FrameNumber current_frame_;
+  Numbers numbers_;
 
   const double ticks_per_second_;
 

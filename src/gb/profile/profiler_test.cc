@@ -886,6 +886,172 @@ TEST_F(ProfilerTest, ReadingValueAsSlowestFrameDies) {
 }
 
 //------------------------------------------------------------------------------
+// Jobs
+//------------------------------------------------------------------------------
+
+// Runs a job of `job` on the calling thread, whose Profiler is `profiler`,
+// queued `delay_ticks` before it starts, and running for `run_ticks`.
+void RunJob(Profiler& profiler, FakeProfilerCpu& ticks, const ProfilePoint& job,
+            int64_t delay_ticks, int64_t run_ticks) {
+  const int64_t queued_ticks = profiler.ReadTicks();
+  ticks.Advance(delay_ticks);
+  ProfileJobTimer timer(job, queued_ticks);
+  ticks.Advance(run_ticks);
+}
+
+TEST_F(ProfilerTest, JobSummaryWithNoRuns) {
+  ProfilePoint job(ProfilePoint::Kind::kJob, "JobTest/NoRuns");
+  const Profiler::JobSummary summary =
+      profiler_.GetJobSummary("JobTest/NoRuns");
+  EXPECT_EQ(summary.runs, 0);
+  EXPECT_EQ(summary.total, absl::ZeroDuration());
+  EXPECT_EQ(summary.p50, absl::ZeroDuration());
+  EXPECT_EQ(summary.max, absl::ZeroDuration());
+  EXPECT_EQ(summary.start_delay, absl::ZeroDuration());
+  EXPECT_EQ(profiler_.GetJobSummary("JobTest/Unknown").runs, 0);
+}
+
+TEST_F(ProfilerTest, ReadingNonJobAsJobDies) {
+  ProfilePoint scope(ProfilePoint::Kind::kScope, "JobTest/Scope");
+  EXPECT_DEATH(profiler_.GetJobSummary("JobTest/Scope"), "wrong kind");
+}
+
+TEST_F(ProfilerTest, JobPercentiles) {
+  // Runs of 1us to 1000us, in a shuffled order.
+  ProfilePoint job(ProfilePoint::Kind::kJob, "JobTest/Percentiles");
+  for (int i = 0; i < 1000; ++i) {
+    RunJob(profiler_, ticks_, job, 0, ((i * 7919) % 1000 + 1) * 1000);
+  }
+  const Profiler::JobSummary summary =
+      profiler_.GetJobSummary("JobTest/Percentiles");
+  EXPECT_EQ(summary.runs, 1000);
+  EXPECT_EQ(summary.total, absl::Microseconds(500500));
+  EXPECT_EQ(summary.average, absl::Microseconds(500.5));
+  ExpectPercentile(summary.p50, absl::Microseconds(500));
+  ExpectPercentile(summary.p90, absl::Microseconds(900));
+  ExpectPercentile(summary.p99, absl::Microseconds(990));
+  EXPECT_EQ(summary.max, absl::Microseconds(1000));
+}
+
+TEST_F(ProfilerTest, JoinedThreadJobsAddToMain) {
+  ProfilePoint job(ProfilePoint::Kind::kJob, "JobTest/Joined");
+  RunJob(profiler_, ticks_, job, 5, 10);
+  std::optional<ProfiledThread> thread(std::in_place, &profiler_);
+  thread->Run([&job](Profiler& profiler, FakeProfilerCpu& ticks) {
+    RunJob(profiler, ticks, job, 15, 30);
+    {
+      ProfileJobTimer timer(job, profiler.ReadTicks());
+      const int64_t ready_ticks = profiler.ReadTicks();
+      ticks.Advance(7);
+      Profiler::AddResumeDelay(ready_ticks);
+    }
+
+    // A joined Profiler reads only its own thread.
+    EXPECT_EQ(profiler.GetJobSummary("JobTest/Joined").runs, 2);
+  });
+
+  Profiler::JobSummary summary = profiler_.GetJobSummary("JobTest/Joined");
+  EXPECT_EQ(summary.runs, 3);
+  EXPECT_EQ(summary.total, absl::Nanoseconds(47));
+  EXPECT_EQ(summary.max, absl::Nanoseconds(30));
+  EXPECT_EQ(summary.start_delay, absl::Nanoseconds(20) / 3);
+  EXPECT_EQ(summary.max_start_delay, absl::Nanoseconds(15));
+  EXPECT_EQ(summary.resumes, 1);
+  EXPECT_EQ(summary.resume_delay, absl::Nanoseconds(7));
+
+  // What the thread recorded stays once it is destroyed.
+  thread.reset();
+  summary = profiler_.GetJobSummary("JobTest/Joined");
+  EXPECT_EQ(summary.runs, 3);
+  EXPECT_EQ(summary.total, absl::Nanoseconds(47));
+  EXPECT_EQ(summary.max, absl::Nanoseconds(30));
+  EXPECT_EQ(summary.resumes, 1);
+  ExpectPercentile(summary.p90, absl::Nanoseconds(30));
+}
+
+TEST_F(ProfilerTest, ResetClearsJobsOnEveryThread) {
+  ProfilePoint job(ProfilePoint::Kind::kJob, "JobTest/Reset");
+  RunJob(profiler_, ticks_, job, 100, 100);
+  ProfiledThread thread(&profiler_);
+  thread.Run([&job](Profiler& profiler, FakeProfilerCpu& ticks) {
+    RunJob(profiler, ticks, job, 200, 200);
+  });
+  std::optional<ProfiledThread> destroyed(std::in_place, &profiler_);
+  destroyed->Run([&job](Profiler& profiler, FakeProfilerCpu& ticks) {
+    RunJob(profiler, ticks, job, 300, 300);
+  });
+  destroyed.reset();
+  ASSERT_EQ(profiler_.GetJobSummary("JobTest/Reset").runs, 3);
+
+  profiler_.Reset();
+  Profiler::JobSummary summary = profiler_.GetJobSummary("JobTest/Reset");
+  EXPECT_EQ(summary.runs, 0);
+  EXPECT_EQ(summary.max, absl::ZeroDuration());
+  EXPECT_EQ(profiler_.GetReport().find("JobTest/Reset"), std::string::npos);
+
+  // What each thread records after the reset counts, with nothing from before.
+  RunJob(profiler_, ticks_, job, 1, 1);
+  thread.Run([&job](Profiler& profiler, FakeProfilerCpu& ticks) {
+    RunJob(profiler, ticks, job, 2, 2);
+  });
+  summary = profiler_.GetJobSummary("JobTest/Reset");
+  EXPECT_EQ(summary.runs, 2);
+  EXPECT_EQ(summary.total, absl::Nanoseconds(3));
+  EXPECT_EQ(summary.max, absl::Nanoseconds(2));
+  EXPECT_EQ(summary.max_start_delay, absl::Nanoseconds(2));
+  EXPECT_EQ(summary.p99, absl::Nanoseconds(2));
+}
+
+TEST_F(ProfilerTest, ResumedJobIsInJobsTableBeforeItEnds) {
+  ProfilePoint job(ProfilePoint::Kind::kJob, "JobTest/Resumed");
+  ProfileJobTimer timer(job, profiler_.ReadTicks());
+  const int64_t ready_ticks = profiler_.ReadTicks();
+  ticks_.Advance(40);
+  Profiler::AddResumeDelay(ready_ticks);
+  const std::string report = profiler_.GetReport();
+  EXPECT_NE(report.find("\nJobTest/Resumed      0    0         -    -    -    -"
+                        "    -            -          -        1        40.0ns"
+                        "      40.0ns\n"),
+            std::string::npos)
+      << report;
+}
+
+TEST_F(ProfilerTest, JobsTable) {
+  ProfilePoint render(ProfilePoint::Kind::kJob, "JobTest/Render");
+  ProfilePoint load(ProfilePoint::Kind::kJob, "JobTest/Load");
+  ProfilePoint unused(ProfilePoint::Kind::kJob, "JobTest/Unused");
+  RunJob(profiler_, ticks_, render, 10, 1000);
+  RunJob(profiler_, ticks_, render, 30, 3000);
+  RunJob(profiler_, ticks_, load, 0, 500);
+
+  // Percentiles are the middle of their histogram bucket, up to the max.
+  std::string report = profiler_.GetReport();
+  EXPECT_NE(report.find(R"(
+Job             Count     Run  Run/call    P50     P90     P99     Max  Start delay  Max start
+JobTest/Load        1   500ns     500ns  496ns   496ns   496ns   500ns            0          0
+JobTest/Render      2  4.00us    2.00us  992ns  2.94us  2.94us  3.00us       20.0ns     30.0ns
+)"),
+            std::string::npos)
+      << report;
+
+  // Once a job resumes, the table has resumes.
+  {
+    ProfileJobTimer timer(load, profiler_.ReadTicks());
+    const int64_t ready_ticks = profiler_.ReadTicks();
+    ticks_.Advance(40);
+    Profiler::AddResumeDelay(ready_ticks);
+  }
+  report = profiler_.GetReport();
+  EXPECT_NE(report.find(R"(
+Job             Count     Run  Run/call     P50     P90     P99     Max  Start delay  Max start  Resumes  Resume delay  Max resume
+JobTest/Load        2   540ns     270ns  42.0ns   496ns   496ns   500ns            0          0        1        40.0ns      40.0ns
+JobTest/Render      2  4.00us    2.00us   992ns  2.94us  2.94us  3.00us       20.0ns     30.0ns        0             -           -
+)"),
+            std::string::npos)
+      << report;
+}
+
+//------------------------------------------------------------------------------
 // Threadless main Profiler
 //------------------------------------------------------------------------------
 

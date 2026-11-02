@@ -60,11 +60,12 @@ constexpr ProfilePoint::Kind kTimedKinds[] = {
     ProfilePoint::Kind::kFrame, ProfilePoint::Kind::kScope,
     ProfilePoint::Kind::kCall, ProfilePoint::Kind::kJob};
 constexpr ProfilePoint::Kind kValueKinds[] = {ProfilePoint::Kind::kValue};
+constexpr ProfilePoint::Kind kJobKinds[] = {ProfilePoint::Kind::kJob};
 
-// Returns the histogram bucket for a frame of `ticks`. Buckets 0 to 7 hold
+// Returns the histogram bucket for a time of `ticks`. Buckets 0 to 7 hold
 // exactly 0 to 7 ticks. Above that, the bucket comes from the position of the
 // highest set bit and the three bits below it.
-int GetFrameBucket(int64_t ticks) {
+int GetHistogramBucket(int64_t ticks) {
   if (ticks < 8) {
     return static_cast<int>(std::max<int64_t>(ticks, 0));
   }
@@ -74,7 +75,7 @@ int GetFrameBucket(int64_t ticks) {
 }
 
 // Returns the middle of the range of ticks in `bucket`.
-int64_t GetFrameBucketMiddle(int bucket) {
+int64_t GetHistogramBucketMiddle(int bucket) {
   if (bucket < 8) {
     return bucket;
   }
@@ -224,6 +225,7 @@ Profiler::Profiler(Options options)
                     ? options.main->fake_cpu_
                     : options.fake_cpu),
       slots_(std::make_unique<Slot[]>(kMaxProfilePoints)),
+      job_stats_(std::make_unique<JobStatsPointer[]>(kMaxProfilePoints)),
       frame_profiler_(options.main != nullptr ? options.main : this),
       main_(options.main),
       threadless_(options.threadless),
@@ -321,13 +323,18 @@ int Profiler::AddJoinedThread(Profiler* profiler, std::string_view name) {
 
 void Profiler::RemoveJoinedThread(int index) {
   const int point_count = ProfilePoint::GetRegisteredCount();
-  const int64_t frame_number = current_frame_.number.Get();
+  const int64_t frame_number = numbers_.frame.Get();
   absl::MutexLock lock(&joined_mutex_);
   JoinedThread& thread = joined_threads_[index];
   if (static_cast<int>(thread.folded.size()) < point_count) {
     thread.folded.resize(point_count);
   }
   thread.profiler->AddOwnTotals(absl::MakeSpan(thread.folded), thread.baseline);
+  if (static_cast<int>(thread.folded_jobs.size()) < point_count) {
+    thread.folded_jobs.resize(point_count);
+  }
+  thread.profiler->AddOwnJobTotals(numbers_.resets.Get(),
+                                   absl::MakeSpan(thread.folded_jobs));
 
   // If the frame has ended since its number was read, its part is kept but
   // never captured, and its busy time counts in the next frame. The thread is
@@ -392,7 +399,7 @@ void Profiler::ResumeTimings(void* state) {
   // suspended from may be destroyed by now, so it isn't compared.
   CHECK(!top->in_frame ||
         (profiler != nullptr &&
-         profiler->frame_profiler_->current_frame_.number.Get() != 0))
+         profiler->frame_profiler_->numbers_.frame.Get() != 0))
       << "A profile frame's fiber must resume on a thread joined to the "
          "frame's main Profiler";
   if (profiler == nullptr) {
@@ -420,6 +427,66 @@ void Profiler::ResumeTimings(void* state) {
   }
 }
 
+void Profiler::StartJob(int index, int64_t queued_ticks, JobTiming& job) {
+  StartTiming(index, job.timing);
+  job.timing.is_job = true;
+
+  // The job may have been queued on another thread, whose ticks may disagree
+  // by a little, so the delay is never less than zero.
+  job.start_delay_ticks =
+      std::max<int64_t>(job.timing.start_ticks - queued_ticks, 0);
+}
+
+void Profiler::EndJob(JobTiming& job) {
+  const int64_t run_ticks = EndTiming(job.timing);
+  JobStats& stats = GetJobStats(job.timing.index);
+  stats.run_ticks.Add(run_ticks);
+  stats.max_run_ticks.SetMax(run_ticks);
+  stats.run_buckets[GetHistogramBucket(run_ticks)].Add(1);
+  stats.start_delay_ticks.Add(job.start_delay_ticks);
+  stats.max_start_delay_ticks.SetMax(job.start_delay_ticks);
+}
+
+void Profiler::AddResumeDelay(int64_t ready_ticks) {
+  Profiler* const profiler = GetCurrent();
+  if (profiler == nullptr) {
+    return;
+  }
+  for (Timing* timing = profiler->top_; timing != nullptr;
+       timing = timing->parent) {
+    if (!timing->is_job) {
+      continue;
+    }
+
+    // What the job waited on may have been ready on another thread.
+    const int64_t delay_ticks =
+        std::max<int64_t>(profiler->ReadTicks() - ready_ticks, 0);
+    JobStats& stats = profiler->GetJobStats(timing->index);
+    stats.resumes.Add(1);
+    stats.resume_delay_ticks.Add(delay_ticks);
+    stats.max_resume_delay_ticks.SetMax(delay_ticks);
+    return;
+  }
+}
+
+Profiler::JobStats& Profiler::GetJobStats(int index) {
+  // Only this thread writes the pointer, so it reads it relaxed.
+  std::atomic<JobStats*>& pointer = job_stats_[index].stats;
+  JobStats* stats = pointer.load(std::memory_order_relaxed);
+  const int64_t resets = frame_profiler_->numbers_.resets.Get();
+  if (stats == nullptr) {
+    stats = new JobStats();
+    stats->resets.Set(resets);
+    pointer.store(stats, std::memory_order_release);
+  } else if (stats->resets.Get() != resets) {
+    // A reader ignores the stats until `resets` is set, after they are
+    // cleared.
+    stats->Clear();
+    stats->resets.SetRelease(resets);
+  }
+  return *stats;
+}
+
 absl::Duration Profiler::GetPointCost() const {
   return TicksToDuration(point_cost_ticks_);
 }
@@ -442,9 +509,12 @@ Profiler::FrameSummary Profiler::DoGetFrameSummary(
       .frames = frames.frames,
       .total = total,
       .average = average,
-      .p50 = TicksToDuration(GetFramePercentileTicks(frames, 0.5)),
-      .p90 = TicksToDuration(GetFramePercentileTicks(frames, 0.9)),
-      .p99 = TicksToDuration(GetFramePercentileTicks(frames, 0.99)),
+      .p50 = TicksToDuration(GetPercentileTicks(frames.buckets, frames.frames,
+                                                frames.slowest.ticks, 0.5)),
+      .p90 = TicksToDuration(GetPercentileTicks(frames.buckets, frames.frames,
+                                                frames.slowest.ticks, 0.9)),
+      .p99 = TicksToDuration(GetPercentileTicks(frames.buckets, frames.frames,
+                                                frames.slowest.ticks, 0.99)),
       .max = TicksToDuration(frames.slowest.ticks),
       .profiler_cost =
           TicksToDuration(static_cast<double>(frames.timed_points) *
@@ -453,6 +523,37 @@ Profiler::FrameSummary Profiler::DoGetFrameSummary(
                     ? std::max(budget_per_frame_, average * budget_fraction_)
                     : absl::InfiniteDuration(),
   };
+}
+
+Profiler::JobSummary Profiler::GetJobSummary(std::string_view name) const {
+  const int index = FindIndex(name, kJobKinds);
+  if (index < 0) {
+    return {};
+  }
+  return DoGetJobSummary(GatherJobTotals()[index]);
+}
+
+Profiler::JobSummary Profiler::DoGetJobSummary(const JobTotals& job) const {
+  JobSummary summary = {.runs = job.runs, .resumes = job.resumes};
+  if (job.runs > 0) {
+    summary.total = TicksToDuration(job.run_ticks);
+    summary.average = summary.total / job.runs;
+    summary.p50 = TicksToDuration(
+        GetPercentileTicks(job.run_buckets, job.runs, job.max_run_ticks, 0.5));
+    summary.p90 = TicksToDuration(
+        GetPercentileTicks(job.run_buckets, job.runs, job.max_run_ticks, 0.9));
+    summary.p99 = TicksToDuration(
+        GetPercentileTicks(job.run_buckets, job.runs, job.max_run_ticks, 0.99));
+    summary.max = TicksToDuration(job.max_run_ticks);
+    summary.start_delay = TicksToDuration(job.start_delay_ticks) / job.runs;
+    summary.max_start_delay = TicksToDuration(job.max_start_delay_ticks);
+  }
+  if (job.resumes > 0) {
+    summary.resume_delay =
+        TicksToDuration(job.resume_delay_ticks) / job.resumes;
+    summary.max_resume_delay = TicksToDuration(job.max_resume_delay_ticks);
+  }
+  return summary;
 }
 
 int64_t Profiler::GetCount(std::string_view name) const {
@@ -486,10 +587,13 @@ void Profiler::Reset() {
   ResetOwn();
 
   // The joined Profilers' slots are written by their threads, so rather than
-  // being cleared, what they hold now is subtracted from them.
+  // being cleared, what they hold now is subtracted from them, and their
+  // JobStats are cleared by their threads as each is next written.
   absl::MutexLock lock(&joined_mutex_);
+  numbers_.resets.Add(1);
   for (JoinedThread& thread : joined_threads_) {
     thread.folded.clear();
+    thread.folded_jobs.clear();
     thread.busy_core_ticks = {};
     thread.max_frame_busy_ticks = 0;
     thread.left_busy_ticks = 0;
@@ -504,7 +608,7 @@ void Profiler::ResetOwn() {
     // Only a threadless Profiler can be outside every timed point here while
     // a frame is in progress, on another thread.
     absl::MutexLock lock(&frame_mutex_);
-    CHECK(current_frame_.number.Get() == 0)
+    CHECK(numbers_.frame.Get() == 0)
         << "A threadless Profiler can't be reset during a frame";
     frame_totals_ = {};
   }
@@ -552,9 +656,9 @@ void Profiler::EndFrame(Timing& timing) {
 
 void Profiler::OpenFrame(int64_t start_ticks, int start_core) {
   absl::MutexLock lock(&frame_mutex_);
-  CHECK(current_frame_.number.Get() == 0)
+  CHECK(numbers_.frame.Get() == 0)
       << "Only one profile frame can be in progress at a time";
-  current_frame_.number.Set(++last_frame_number_);
+  numbers_.frame.Set(++last_frame_number_);
   current_frame_start_ticks_ = start_ticks;
   current_frame_start_core_ = start_core;
 
@@ -581,7 +685,7 @@ void Profiler::RecordFrame(int64_t end_ticks, int end_core,
     totals.timed_points += timed_points;
     ++totals.frames;
     totals.ticks += ticks;
-    ++totals.buckets[GetFrameBucket(ticks)];
+    ++totals.buckets[GetHistogramBucket(ticks)];
     const int core =
         end_core == current_frame_start_core_ ? end_core : kMixedCores;
     CoreFrames& core_frames = totals.cores[core];
@@ -597,7 +701,7 @@ void Profiler::RecordFrame(int64_t end_ticks, int end_core,
           is_slowest ? totals.slowest : CaptureFrame(ticks, core, timed_points);
     }
     AddFrameBusyTimes(end_ticks);
-    current_frame_.number.Set(0);
+    numbers_.frame.Set(0);
   }
 
   // The report is made outside the lock, and the callback is called after the
@@ -614,7 +718,7 @@ Profiler::FrameBreakdown Profiler::CaptureFrame(int64_t ticks, int core,
                                                 int64_t timed_points) const {
   FrameBreakdown frame = {
       .ticks = ticks, .core = core, .timed_points = timed_points};
-  const int64_t frame_number = current_frame_.number.Get();
+  const int64_t frame_number = numbers_.frame.Get();
   frame.points.resize(ProfilePoint::GetRegisteredCount());
   AddOwnFramePoints(frame_number, absl::MakeSpan(frame.points));
   {
@@ -737,6 +841,7 @@ std::string Profiler::GetReport() const {
   const std::vector<ProfilePoint> registered =
       ProfilePoint::GetRegisteredPoints();
   const std::vector<PointTotals> totals = GatherPointTotals();
+  const std::vector<JobTotals> jobs = GatherJobTotals();
   std::vector<ReportPoint> points;
   points.reserve(registered.size());
   for (const ProfilePoint& point : registered) {
@@ -756,6 +861,7 @@ std::string Profiler::GetReport() const {
   AppendCoreFrames(report, frames);
   AppendThreads(report, frames);
   AppendPoints(report, frames, points);
+  AppendJobs(report, points, jobs);
   if (frames.frames > 0) {
     absl::StrAppend(&report, "\n");
     AppendFrame(report, "Slowest frame", frames.slowest, registered);
@@ -941,6 +1047,55 @@ void Profiler::AppendPoints(std::string& report, const FrameTotals& frames,
   AppendTable(report, table, 2);
 }
 
+void Profiler::AppendJobs(std::string& report,
+                          absl::Span<const ReportPoint> points,
+                          absl::Span<const JobTotals> jobs) const {
+  Table table = {{"Job", "Count", "Run", "Run/call", "P50", "P90", "P99", "Max",
+                  "Start delay", "Max start"}};
+  const bool has_resumes = absl::c_any_of(
+      jobs, [](const JobTotals& job) { return job.resumes > 0; });
+  if (has_resumes) {
+    table[0].push_back("Resumes");
+    table[0].push_back("Resume delay");
+    table[0].push_back("Max resume");
+  }
+  for (const ReportPoint& report_point : points) {
+    const ProfilePoint& point = report_point.first;
+    if (point.GetKind() != ProfilePoint::Kind::kJob) {
+      continue;
+    }
+    const JobTotals& job = jobs[point.GetIndex()];
+    if (job.runs == 0 && job.resumes == 0) {
+      continue;
+    }
+    const JobSummary summary = DoGetJobSummary(job);
+    const bool has_runs = summary.runs > 0;
+    std::vector<std::string>& row = table.emplace_back();
+    row.push_back(std::string(point.GetName()));
+    row.push_back(absl::StrCat(summary.runs));
+    row.push_back(FormatTime(summary.total));
+    for (absl::Duration time :
+         {summary.average, summary.p50, summary.p90, summary.p99, summary.max,
+          summary.start_delay, summary.max_start_delay}) {
+      row.push_back(has_runs ? FormatTime(time) : std::string(kNotApplicable));
+    }
+    if (has_resumes) {
+      const bool has_resumed = summary.resumes > 0;
+      row.push_back(absl::StrCat(summary.resumes));
+      for (absl::Duration time :
+           {summary.resume_delay, summary.max_resume_delay}) {
+        row.push_back(has_resumed ? FormatTime(time)
+                                  : std::string(kNotApplicable));
+      }
+    }
+  }
+  if (table.size() == 1) {
+    return;
+  }
+  absl::StrAppend(&report, "\n");
+  AppendTable(report, table, 1);
+}
+
 void Profiler::AppendFrame(std::string& report, std::string_view title,
                            const FrameBreakdown& frame,
                            absl::Span<const ProfilePoint> registered) const {
@@ -1101,6 +1256,77 @@ void Profiler::AddPointTotals(PointTotals& totals, const PointTotals& thread) {
   totals.wait_ticks += thread.wait_ticks;
 }
 
+std::vector<Profiler::JobTotals> Profiler::GatherJobTotals() const {
+  std::vector<JobTotals> totals(ProfilePoint::GetRegisteredCount());
+  absl::MutexLock lock(&joined_mutex_);
+  const int64_t resets = frame_profiler_->numbers_.resets.Get();
+  AddOwnJobTotals(resets, absl::MakeSpan(totals));
+  for (const JoinedThread& thread : joined_threads_) {
+    // As in GatherPointTotals(), the threads that have left can cover more
+    // points, or fewer.
+    const int count = std::min(static_cast<int>(totals.size()),
+                               static_cast<int>(thread.folded_jobs.size()));
+    for (int i = 0; i < count; ++i) {
+      AddJobTotals(totals[i], thread.folded_jobs[i]);
+    }
+    if (thread.profiler != nullptr) {
+      thread.profiler->AddOwnJobTotals(resets, absl::MakeSpan(totals));
+    }
+  }
+  return totals;
+}
+
+void Profiler::AddOwnJobTotals(int64_t resets,
+                               absl::Span<JobTotals> totals) const {
+  for (int i = 0; i < static_cast<int>(totals.size()); ++i) {
+    const JobStats* const stats =
+        job_stats_[i].stats.load(std::memory_order_acquire);
+    if (stats == nullptr || stats->resets.GetAcquire() != resets) {
+      continue;
+    }
+    JobTotals& job = totals[i];
+    job.run_ticks += stats->run_ticks.Get();
+    job.max_run_ticks = std::max(job.max_run_ticks, stats->max_run_ticks.Get());
+    job.start_delay_ticks += stats->start_delay_ticks.Get();
+    job.max_start_delay_ticks =
+        std::max(job.max_start_delay_ticks, stats->max_start_delay_ticks.Get());
+    job.resumes += stats->resumes.Get();
+    job.resume_delay_ticks += stats->resume_delay_ticks.Get();
+    job.max_resume_delay_ticks = std::max(job.max_resume_delay_ticks,
+                                          stats->max_resume_delay_ticks.Get());
+    if (job.run_buckets.empty()) {
+      job.run_buckets.resize(kHistogramBuckets);
+    }
+    for (int bucket = 0; bucket < kHistogramBuckets; ++bucket) {
+      const int64_t runs = stats->run_buckets[bucket].Get();
+      job.run_buckets[bucket] += runs;
+      job.runs += runs;
+    }
+  }
+}
+
+void Profiler::AddJobTotals(JobTotals& totals, const JobTotals& thread) {
+  totals.runs += thread.runs;
+  totals.run_ticks += thread.run_ticks;
+  totals.max_run_ticks = std::max(totals.max_run_ticks, thread.max_run_ticks);
+  totals.start_delay_ticks += thread.start_delay_ticks;
+  totals.max_start_delay_ticks =
+      std::max(totals.max_start_delay_ticks, thread.max_start_delay_ticks);
+  totals.resumes += thread.resumes;
+  totals.resume_delay_ticks += thread.resume_delay_ticks;
+  totals.max_resume_delay_ticks =
+      std::max(totals.max_resume_delay_ticks, thread.max_resume_delay_ticks);
+  if (thread.run_buckets.empty()) {
+    return;
+  }
+  if (totals.run_buckets.empty()) {
+    totals.run_buckets.resize(kHistogramBuckets);
+  }
+  for (int bucket = 0; bucket < kHistogramBuckets; ++bucket) {
+    totals.run_buckets[bucket] += thread.run_buckets[bucket];
+  }
+}
+
 Profiler::PointTotals Profiler::FindPointTotals(
     std::string_view name, absl::Span<const ProfilePoint::Kind> kinds) const {
   const int index = FindIndex(name, kinds);
@@ -1119,18 +1345,19 @@ Profiler::FrameBreakdown::Point Profiler::FindSlowestFramePoint(
   return {};
 }
 
-int64_t Profiler::GetFramePercentileTicks(const FrameTotals& frames,
-                                          double fraction) {
-  const int64_t target = std::max<int64_t>(
-      1, static_cast<int64_t>(std::ceil(fraction * frames.frames)));
-  int64_t count = 0;
-  for (int bucket = 0; bucket < kFrameBuckets; ++bucket) {
-    count += frames.buckets[bucket];
-    if (count >= target) {
-      return std::min(GetFrameBucketMiddle(bucket), frames.slowest.ticks);
+int64_t Profiler::GetPercentileTicks(absl::Span<const int64_t> buckets,
+                                     int64_t count, int64_t max_ticks,
+                                     double fraction) {
+  const int64_t target =
+      std::max<int64_t>(1, static_cast<int64_t>(std::ceil(fraction * count)));
+  int64_t counted = 0;
+  for (int bucket = 0; bucket < static_cast<int>(buckets.size()); ++bucket) {
+    counted += buckets[bucket];
+    if (counted >= target) {
+      return std::min(GetHistogramBucketMiddle(bucket), max_ticks);
     }
   }
-  return frames.slowest.ticks;
+  return max_ticks;
 }
 
 int Profiler::ReadCoreClass() const {

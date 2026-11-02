@@ -99,10 +99,10 @@ TEST_F(ProfileTimerTest, CallbackIsSubtractedFromCall) {
   EXPECT_EQ(profiler_.GetSelfTime("TimerTest/Callback"), absl::Nanoseconds(4));
 }
 
-TEST_F(ProfileTimerTest, JobTimerRecordsSelfTime) {
+TEST_F(ProfileTimerTest, JobTimerRecordsSelfTimeAndRunTime) {
   ProfilePoint job(ProfilePoint::Kind::kJob, "TimerTest/Job");
   for (int i = 0; i < 2; ++i) {
-    ProfileTimer timer(job);
+    ProfileJobTimer timer(job, profiler_.ReadTicks());
     ticks_.Advance(1);
     {
       ProfileScope<"TimerTest/InJob"> scope;
@@ -112,6 +112,70 @@ TEST_F(ProfileTimerTest, JobTimerRecordsSelfTime) {
   EXPECT_EQ(profiler_.GetCount("TimerTest/Job"), 2);
   EXPECT_EQ(profiler_.GetSelfTime("TimerTest/Job"), absl::Nanoseconds(2));
   EXPECT_EQ(profiler_.GetSelfTime("TimerTest/InJob"), absl::Nanoseconds(4));
+
+  // A run includes the points inside it.
+  const Profiler::JobSummary summary = profiler_.GetJobSummary("TimerTest/Job");
+  EXPECT_EQ(summary.runs, 2);
+  EXPECT_EQ(summary.total, absl::Nanoseconds(6));
+  EXPECT_EQ(summary.max, absl::Nanoseconds(3));
+}
+
+TEST_F(ProfileTimerTest, JobTimerRecordsStartDelay) {
+  ProfilePoint job(ProfilePoint::Kind::kJob, "TimerTest/StartDelay");
+  for (int64_t delay_ticks : {10, 30}) {
+    const int64_t queued_ticks = profiler_.ReadTicks();
+    ticks_.Advance(delay_ticks);
+    ProfileJobTimer timer(job, queued_ticks);
+    ticks_.Advance(1);
+  }
+  const Profiler::JobSummary summary =
+      profiler_.GetJobSummary("TimerTest/StartDelay");
+  EXPECT_EQ(summary.start_delay, absl::Nanoseconds(20));
+  EXPECT_EQ(summary.max_start_delay, absl::Nanoseconds(30));
+  EXPECT_EQ(summary.total, absl::Nanoseconds(2));
+}
+
+TEST_F(ProfileTimerTest, StartDelayIsNeverNegative) {
+  ProfilePoint job(ProfilePoint::Kind::kJob, "TimerTest/NegativeDelay");
+  {
+    ProfileJobTimer timer(job, profiler_.ReadTicks() + 100);
+  }
+  EXPECT_EQ(profiler_.GetJobSummary("TimerTest/NegativeDelay").max_start_delay,
+            absl::ZeroDuration());
+}
+
+TEST_F(ProfileTimerTest, ResumeDelayGoesToInnermostJob) {
+  ProfilePoint outer(ProfilePoint::Kind::kJob, "TimerTest/OuterJob");
+  ProfilePoint inner(ProfilePoint::Kind::kJob, "TimerTest/InnerJob");
+  {
+    ProfileJobTimer outer_timer(outer, profiler_.ReadTicks());
+    ProfileJobTimer inner_timer(inner, profiler_.ReadTicks());
+    ProfileScope<"TimerTest/InInnerJob"> scope;
+    for (int64_t delay_ticks : {4, 8}) {
+      const int64_t ready_ticks = profiler_.ReadTicks();
+      ticks_.Advance(delay_ticks);
+      Profiler::AddResumeDelay(ready_ticks);
+    }
+  }
+  const Profiler::JobSummary summary =
+      profiler_.GetJobSummary("TimerTest/InnerJob");
+  EXPECT_EQ(summary.resumes, 2);
+  EXPECT_EQ(summary.resume_delay, absl::Nanoseconds(6));
+  EXPECT_EQ(summary.max_resume_delay, absl::Nanoseconds(8));
+  EXPECT_EQ(profiler_.GetJobSummary("TimerTest/OuterJob").resumes, 0);
+}
+
+TEST_F(ProfileTimerTest, ResumeDelayOutsideJobIsIgnored) {
+  ProfilePoint job(ProfilePoint::Kind::kJob, "TimerTest/NoResume");
+  {
+    ProfileJobTimer timer(job, profiler_.ReadTicks());
+  }
+  {
+    ProfileScope<"TimerTest/NotAJob"> scope;
+    Profiler::AddResumeDelay(profiler_.ReadTicks());
+  }
+  Profiler::AddResumeDelay(profiler_.ReadTicks());
+  EXPECT_EQ(profiler_.GetJobSummary("TimerTest/NoResume").resumes, 0);
 }
 
 TEST_F(ProfileTimerTest, JobsInReport) {
@@ -119,7 +183,7 @@ TEST_F(ProfileTimerTest, JobsInReport) {
   {
     ProfileFrame<"TimerTest/ReportFrame"> frame;
     ticks_.Advance(1);
-    ProfileTimer timer(job);
+    ProfileJobTimer timer(job, profiler_.ReadTicks());
     ticks_.Advance(4);
   }
   const std::string report = profiler_.GetReport();
@@ -245,6 +309,9 @@ struct SwitchingFiber {
   // The FakeProfilerCpu every thread shares, if any, with `main`. Threads that
   // join `main` then use it, rather than their own, so their ticks agree.
   FakeProfilerCpu* shared_ticks = nullptr;
+
+  // For a job on the fiber, when what it waits on was ready.
+  int64_t ready_ticks = 0;
 };
 
 // Runs `fiber` on the calling thread, with `ticks`, until it switches back.
@@ -327,6 +394,41 @@ TEST_F(ProfileTimerSwitchTest, ScopeLeavesOutOtherFiberOnSameThread) {
         EXPECT_EQ(profiler.GetCount("SwitchTest/Other"), 1);
         EXPECT_EQ(profiler.GetSelfTime("SwitchTest/Other"),
                   absl::Nanoseconds(2));
+      });
+}
+
+TEST_F(ProfileTimerSwitchTest, JobRunLeavesOutSuspensionAndHasResumeDelay) {
+  CreateSwitchingFiber(+[](void* user_data) {
+    auto& fiber = *static_cast<SwitchingFiber*>(user_data);
+    static const ProfilePoint s_job(ProfilePoint::Kind::kJob,
+                                    "SwitchTest/WaitingJob");
+    {
+      ProfileJobTimer timer(s_job, 0);
+      fiber.ticks->Advance(1);
+      SwitchBack(fiber);
+      Profiler::AddResumeDelay(fiber.ready_ticks);
+      fiber.ticks->Advance(2);
+    }
+    SwitchBack(fiber);
+  });
+  RunFiberThread(
+      fiber_, +[](void* user_data) {
+        auto& fiber = *static_cast<SwitchingFiber*>(user_data);
+        FakeProfilerCpu ticks;
+        Profiler profiler({.fake_cpu = &ticks});
+        RunFiberHere(fiber, ticks);
+        ticks.Advance(10);
+        fiber.ready_ticks = profiler.ReadTicks();
+        ticks.Advance(5);
+        RunFiberHere(fiber, ticks);
+        const Profiler::JobSummary summary =
+            profiler.GetJobSummary("SwitchTest/WaitingJob");
+        EXPECT_EQ(summary.runs, 1);
+        EXPECT_EQ(summary.total, absl::Nanoseconds(3));
+        EXPECT_EQ(summary.resumes, 1);
+        EXPECT_EQ(summary.resume_delay, absl::Nanoseconds(5));
+        EXPECT_EQ(profiler.GetWaitTime("SwitchTest/WaitingJob"),
+                  absl::Nanoseconds(15));
       });
 }
 
@@ -810,6 +912,17 @@ TEST_F(ProfileTimerSwitchTest, EndingTimerOnAnotherFiberDies) {
   });
   EXPECT_DEATH(RunFiberThread(fiber_, RunFiberWithOpenScope),
                "must end on the fiber it started on");
+}
+
+TEST(ProfileTimerNoProfilerTest, JobIgnoredWithoutProfiler) {
+  ProfilePoint job(ProfilePoint::Kind::kJob, "TimerTest/NoProfilerJob");
+  {
+    ProfileJobTimer timer(job, 0);
+    Profiler::AddResumeDelay(0);
+  }
+  FakeProfilerCpu ticks;
+  Profiler profiler({.fake_cpu = &ticks});
+  EXPECT_EQ(profiler.GetJobSummary("TimerTest/NoProfilerJob").runs, 0);
 }
 
 TEST(ProfileTimerNoProfilerTest, IgnoredWithoutProfiler) {

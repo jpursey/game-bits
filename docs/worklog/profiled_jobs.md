@@ -190,8 +190,14 @@ class ProfileIdleTimer final { ... };
 class Profiler {
   ...
   //--------------------------------------------------------------------------
-  // For job systems
+  // Jobs
   //--------------------------------------------------------------------------
+
+  // A job point's runs: their count, run time in total, on average, and at
+  // p50, p90, p99, and max, and the average and longest start and resume
+  // delays, as the jobs table shows them.
+  struct JobSummary { ... };
+  JobSummary GetJobSummary(std::string_view name) const;
 
   // Returns the ticks now, which any thread may call, for the delays below.
   int64_t ReadTicks() const;
@@ -207,7 +213,17 @@ class Profiler {
   frame histogram's buckets (within 1/16th), about 4 KB each, so only job
   points have them, made the first time each thread ends a job of that point.
   The main Profiler reads them without stopping the other threads, as it reads
-  slots, and folds and baselines them as it does slots.
+  slots, and folds them as it does slots.
+- A job's longest run and delays can't be baselined, so `Reset()` counts its
+  resets instead, and each thread's job stats hold the reset count they are
+  for. The first record after a reset clears them, and readers ignore them
+  until then. So nothing about jobs is baselined.
+- A job point's stats (its histogram, and its runs, delays, and their
+  longest) are 3,976 bytes, and each Profiler has an 8 KB table of pointers to
+  them. Terra Diem has six job names (with the unnamed job), so on 32 threads
+  that is about 760 KB of stats, and 256 KB of tables.
+- `ProfileTimer` no longer takes job points, so every job point's run is
+  recorded.
 - Idle time is recorded by the joined Profiler, and gathered by the main
   Profiler at each frame's end with busy time. A wait still in progress at a
   frame's end counts in that frame up to its end, so a thread asleep for many
@@ -319,13 +335,13 @@ Depends on: CL2.
   adds up with its waits; a long outermost point's busy time in each frame.
 - Performance: a timed point, for the in-frame flag.
 
-### CL4 [ ] profile: job run times and delays
+### CL4 [x] profile: job run times and delays
 
 Depends on: CL1.
 
 - Run-time histograms, start and resume delays for job points, and the jobs
   table in the report. `Profiler::ReadTicks()` and `AddResumeDelay()`.
-- Folding, baselines, and `Reset()` cover them.
+- Folding and `Reset()` cover them.
 
 **Verify**
 - Standard checks.

@@ -6,6 +6,8 @@
 #ifndef GB_PROFILE_PROFILE_TIMER_H_
 #define GB_PROFILE_PROFILE_TIMER_H_
 
+#include <cstdint>
+
 #include "absl/log/check.h"
 #include "gb/profile/profile_point.h"
 #include "gb/profile/profiler.h"
@@ -21,9 +23,9 @@ class NamedProfileTimer;
 // ProfileTimer
 //==============================================================================
 
-// Times a scope, call, or job point in the calling thread's Profiler, from when
-// the timer is created until it is destroyed. A job system (see gb/job) puts
-// one around each job it runs, with a job point.
+// Times a scope or call point in the calling thread's Profiler, from when the
+// timer is created until it is destroyed. Job points are timed by
+// ProfileJobTimer.
 //
 // The point is charged with its self time: its elapsed time less that of the
 // timers created inside it.
@@ -47,9 +49,8 @@ class ProfileTimer final {
       return;
     }
     DCHECK(point.GetKind() == ProfilePoint::Kind::kScope ||
-           point.GetKind() == ProfilePoint::Kind::kCall ||
-           point.GetKind() == ProfilePoint::Kind::kJob)
-        << point.GetName() << " is not a scope, call, or job";
+           point.GetKind() == ProfilePoint::Kind::kCall)
+        << point.GetName() << " is not a scope or call";
     profiler->StartTiming(point.GetIndex(), timing_);
   }
   ProfileTimer(const ProfileTimer&) = delete;
@@ -68,6 +69,51 @@ class ProfileTimer final {
 
  private:
   Profiler::Timing timing_;
+};
+
+//==============================================================================
+// ProfileJobTimer
+//==============================================================================
+
+// Times a job point in the calling thread's Profiler, from when the timer is
+// created until it is destroyed. A job system (see gb/job) puts one around each
+// job it runs.
+//
+// `queued_ticks` is Profiler::ReadTicks() from when the job was queued, read
+// through the calling thread's Profiler, its main Profiler, or another Profiler
+// joined to that, and the job's start delay is from then until the timer is
+// created. If the job suspends to wait, the job system adds its resume delay
+// with Profiler::AddResumeDelay().
+//
+// The point is charged with its self time, as by ProfileTimer, and also
+// records the job's run time and delays (see Profiler::GetJobSummary()), in
+// the Profiler of the thread the timer is destroyed on. It follows the same
+// rules as ProfileTimer, and costs a little more: a histogram add, and a few
+// adds for the delays.
+class ProfileJobTimer final {
+ public:
+  [[nodiscard]] ProfileJobTimer(const ProfilePoint& job, int64_t queued_ticks) {
+    Profiler* const profiler = Profiler::GetCurrent();
+    if (profiler == nullptr) {
+      return;
+    }
+    DCHECK(job.GetKind() == ProfilePoint::Kind::kJob)
+        << job.GetName() << " is not a job";
+    profiler->StartJob(job.GetIndex(), queued_ticks, job_);
+  }
+  ProfileJobTimer(const ProfileJobTimer&) = delete;
+  ProfileJobTimer& operator=(const ProfileJobTimer&) = delete;
+
+  // As ~ProfileTimer().
+  ~ProfileJobTimer() {
+    if (job_.timing.profiler == nullptr) {
+      return;
+    }
+    job_.timing.profiler->EndJob(job_);
+  }
+
+ private:
+  Profiler::JobTiming job_;
 };
 
 //==============================================================================
