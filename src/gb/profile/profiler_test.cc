@@ -5,6 +5,7 @@
 
 #include "gb/profile/profiler.h"
 
+#include <atomic>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -13,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/base/internal/cycleclock.h"
 #include "absl/functional/any_invocable.h"
 #include "absl/log/log.h"
 #include "absl/synchronization/mutex.h"
@@ -21,10 +23,28 @@
 #include "gb/profile/fake_profiler_cpu.h"
 #include "gb/profile/profile_point.h"
 #include "gb/profile/profile_timer.h"
+#include "gb/thread/cpu_ticks.h"
 #include "gb/thread/thread.h"
 #include "gtest/gtest.h"
 
 namespace gb {
+
+// Records contended mutex waits as Abseil reports them, in the cycles of its
+// cycle clock. Profiler names it as a friend, so it is outside the anonymous
+// namespace.
+class ProfilerMutexTest : public ::testing::Test {
+ protected:
+  static void RecordMutexWait(int64_t wait_cycles) {
+    Profiler::RecordMutexWait(wait_cycles);
+  }
+
+  // Returns the cycles of Abseil's cycle clock in `time`.
+  static int64_t ToCycles(absl::Duration time) {
+    return static_cast<int64_t>(absl::ToDoubleSeconds(time) *
+                                absl::base_internal::CycleClock::Frequency());
+  }
+};
+
 namespace {
 
 // Points are registered for the whole program, so each test uses names of its
@@ -1877,6 +1897,112 @@ TEST(ProfilerSetupTest, RealTicks) {
   const std::string report = profiler.GetReport();
   EXPECT_NE(report.find("Slowest frame: "), std::string::npos) << report;
   LOG(INFO) << report;
+}
+
+// Spins until the CPU's timestamp counter has moved on by `ticks`, and returns
+// how far it moved.
+int64_t SpinTicks(int64_t ticks) {
+  const int64_t start_ticks = ReadCpuTicks();
+  int64_t now_ticks = start_ticks;
+  while (now_ticks - start_ticks < ticks) {
+    now_ticks = ReadCpuTicks();
+  }
+  return now_ticks - start_ticks;
+}
+
+TEST_F(ProfilerMutexTest, ContendedUnlockIsCountAndWait) {
+  FakeProfilerCpu ticks;
+  Profiler profiler({.fake_cpu = &ticks});
+  RecordMutexWait(ToCycles(absl::Microseconds(3)));
+  RecordMutexWait(ToCycles(absl::Microseconds(5)));
+  EXPECT_EQ(profiler.GetCount("absl::Mutex"), 2);
+  EXPECT_EQ(profiler.GetSelfTime("absl::Mutex"), absl::ZeroDuration());
+  EXPECT_NEAR(absl::ToDoubleNanoseconds(profiler.GetWaitTime("absl::Mutex")),
+              8000, 2);
+}
+
+TEST_F(ProfilerMutexTest, WaitIsOnTheUnlockingThread) {
+  FakeProfilerCpu ticks;
+  Profiler profiler({.fake_cpu = &ticks});
+  {
+    ProfiledThread thread(&profiler, "unlocker");
+    thread.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+      RecordMutexWait(ToCycles(absl::Microseconds(4)));
+    });
+  }
+
+  // A thread with no Profiler records nothing.
+  std::thread([] { RecordMutexWait(ToCycles(absl::Microseconds(1))); }).join();
+  EXPECT_EQ(profiler.GetCount("absl::Mutex"), 1);
+  EXPECT_NEAR(absl::ToDoubleNanoseconds(profiler.GetWaitTime("absl::Mutex")),
+              4000, 2);
+}
+
+// Other threads waited, so a frame's own time has no part of it, and it has no
+// wait row in the frame's time by kind.
+TEST_F(ProfilerMutexTest, WaitIsNotInTheFrame) {
+  FakeProfilerCpu ticks;
+  Profiler profiler({.fake_cpu = &ticks});
+  {
+    ProfileFrame<"ProfilerMutexTest/Frame"> frame;
+    ticks.Advance(100);
+    RecordMutexWait(ToCycles(absl::Nanoseconds(500)));
+  }
+  EXPECT_EQ(profiler.GetSlowestFrameCount("absl::Mutex"), 1);
+  const std::string report = profiler.GetReport();
+  EXPECT_NE(report.find(R"(
+Kind    Self
+frame  100ns
+scope      0
+call       0
+
+)"),
+            std::string::npos)
+      << report;
+}
+
+// Abseil's cycle clock runs at a fraction of the timestamp counter's rate,
+// which differs between Debug and Release builds, so this checks that a wait
+// it reports is converted to the same time the profiler's ticks measure.
+TEST_F(ProfilerMutexTest, CyclesConvertAtTheTickRate) {
+  Profiler profiler;
+  const int64_t start_cycles = absl::base_internal::CycleClock::Now();
+  const int64_t spun_ticks =
+      SpinTicks(static_cast<int64_t>(GetCpuTicksPerSecond() / 100));
+  RecordMutexWait(absl::base_internal::CycleClock::Now() - start_cycles);
+  const double expected_secs =
+      static_cast<double>(spun_ticks) / GetCpuTicksPerSecond();
+  EXPECT_NEAR(absl::ToDoubleSeconds(profiler.GetWaitTime("absl::Mutex")) /
+                  expected_secs,
+              1.0, 0.05);
+}
+
+// Contention can't be made to order, so this repeats a lock that another
+// thread is likely to be waiting for as it is unlocked, until Abseil reports
+// it, which shows the hook is registered.
+TEST(ProfilerMutexContentionTest, ContendedLockIsRecorded) {
+  Profiler profiler;
+  const int64_t hold_ticks =
+      static_cast<int64_t>(GetCpuTicksPerSecond() / 1000);
+  for (int attempt = 0; attempt < 100 && profiler.GetCount("absl::Mutex") == 0;
+       ++attempt) {
+    absl::Mutex mutex;
+    std::atomic<bool> locking = false;
+    mutex.Lock();
+    std::thread waiter([&] {
+      locking.store(true);
+      mutex.Lock();
+      mutex.Unlock();
+    });
+    while (!locking.load()) {
+      std::this_thread::yield();
+    }
+    SpinTicks(hold_ticks);
+    mutex.Unlock();
+    waiter.join();
+  }
+  EXPECT_GT(profiler.GetCount("absl::Mutex"), 0);
+  EXPECT_GT(profiler.GetWaitTime("absl::Mutex"), absl::ZeroDuration());
 }
 
 }  // namespace

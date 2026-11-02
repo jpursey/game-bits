@@ -99,6 +99,18 @@ namespace gb {
 // one thread's timestamp counter to another's, which agree for an invariant
 // counter (and for FakeProfilerCpus a test keeps in step).
 //
+// Contended absl::Mutex locks are recorded as a call point, "absl::Mutex",
+// whose count is the unlocks that woke a thread waiting to lock, and whose wait
+// is the time those threads waited. Abseil reports them on the thread that
+// unlocks the mutex (see absl::RegisterMutexProfiler()), so they are recorded
+// in its Profiler, and show where contended mutexes are released, but not who
+// waited for them. Waits for a condition (absl::CondVar, or a Condition) aren't
+// included. As other threads waited, the wait is in no frame's own time, even
+// on the frame's thread. The first Profiler registers Abseil's mutex profiler,
+// so no other library can register its own, and a program that registers one
+// before then can't make a Profiler (Abseil asserts in Debug builds, and
+// contention isn't recorded in Release builds).
+//
 // There can be at most one Profiler per thread, and it must be destroyed on the
 // thread that created it, outside any timed point. A threadless Profiler is no
 // thread's, so it doesn't count. Apart from a threadless Profiler, this class
@@ -360,6 +372,10 @@ class Profiler final {
   friend class ProfileIdleTimer;
   template <ProfileName kName>
   friend class ProfileFrame;
+
+  // Calls RecordMutexWait() with waits it chooses, as contention can't be
+  // made to order.
+  friend class ProfilerMutexTest;
 
   // Frame and job run times are counted in 8 buckets for each power of two.
   // The highest bit a positive int64_t can have is bit 62, which lands in the
@@ -700,6 +716,13 @@ class Profiler final {
   static void* SuspendTimings();
   static void ResumeTimings(void* state);
 
+  // Abseil's mutex profiler hook (see absl::RegisterMutexProfiler()), called
+  // when an unlock wakes threads waiting to lock, with the total they waited in
+  // Abseil's cycle clock. It records them in the calling thread's Profiler, if
+  // any, as the class comment describes. RegisterMutexHook() registers it.
+  static void RegisterMutexHook();
+  static void RecordMutexWait(int64_t wait_cycles);
+
   // Jobs are timings that also record each run, and its start delay since
   // `queued_ticks`, in the JobStats of the Profiler the job ends in.
   void StartJob(int index, int64_t queued_ticks, JobTiming& job);
@@ -972,6 +995,10 @@ class Profiler final {
   Numbers numbers_;
 
   const double ticks_per_second_;
+
+  // The ticks in a cycle of Abseil's cycle clock, which mutex waits are
+  // reported in (see RecordMutexWait()).
+  const double ticks_per_mutex_cycle_;
 
   const absl::Duration budget_per_frame_;
   const double budget_fraction_;

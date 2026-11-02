@@ -25,6 +25,7 @@ set(gb_profile_TEST_DEPS
 set(gb_profile_DEPS
   absl::algorithm_container
   absl::any_invocable
+  absl::base
   absl::flat_hash_map
   absl::no_destructor
   absl::span

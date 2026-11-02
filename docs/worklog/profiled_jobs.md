@@ -293,6 +293,20 @@ right by 2 in Debug and 1 in Release, and is converted by
 checks the conversion against the profiler's own tick rate, so an Abseil update
 that changes it fails a test.
 
+- The point is a call, as Abseil is another system. Its count is the contended
+  unlocks, and its self time is zero.
+- The wait was other threads', so it is recorded as outside the frame, even on
+  the frame's own thread, and a frame's own time by kind still adds up. The
+  kinds table's wait row now shows only where there is a wait in the frame, or
+  an "Alongside" column for one outside it.
+- The point is registered, and the cycle clock's rate read, before the hook is
+  registered, so the hook never locks a mutex (the point registry's) or
+  measures the rate, from inside an unlock.
+- Contention can't be made to order, so the tests call the hook through
+  `ProfilerMutexTest`, a fixture `Profiler` names as a friend. One test
+  contends a mutex for real, repeating until Abseil reports it, to show the
+  hook is registered.
+
 ### To confirm
 
 - Where Abseil calls the mutex profiler hook, and in what units: confirmed
@@ -400,7 +414,7 @@ Depends on: CL3, CL4, CL5.
 - Performance: a job's cost with and without profiling, including finding its
   point.
 
-### CL7 [ ] profile: mutex contention
+### CL7 [x] profile: mutex contention
 
 Depends on: CL1.
 

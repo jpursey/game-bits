@@ -15,9 +15,11 @@
 #include <vector>
 
 #include "absl/algorithm/container.h"
+#include "absl/base/internal/cycleclock.h"
 #include "absl/log/check.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
+#include "absl/synchronization/mutex.h"
 #include "absl/types/span.h"
 #include "gb/thread/cpu_ticks.h"
 #include "gb/thread/fiber.h"
@@ -50,6 +52,12 @@ int64_t ToTicks(absl::Duration time, double ticks_per_second) {
 // points, keeping the fastest round.
 constexpr int kCostRounds = 5;
 constexpr int kCostPoints = 100;
+
+// The point contended absl::Mutex locks are recorded in (see
+// RecordMutexWait()).
+const ProfilePoint& GetMutexPoint() {
+  return internal::GetNamedPoint<ProfilePoint::Kind::kCall, "absl::Mutex">();
+}
 
 // The kinds of point each reader accepts.
 constexpr ProfilePoint::Kind kCountedKinds[] = {
@@ -231,6 +239,8 @@ Profiler::Profiler(Options options)
       threadless_(options.threadless),
       ticks_per_second_(fake_cpu_ != nullptr ? fake_cpu_->GetCpuTicksPerSecond()
                                              : GetCpuTicksPerSecond()),
+      ticks_per_mutex_cycle_(ticks_per_second_ /
+                             absl::base_internal::CycleClock::Frequency()),
       budget_per_frame_(options.budget_per_frame),
       budget_fraction_(options.budget_fraction),
       slow_frame_ticks_(ToTicks(options.slow_frame, ticks_per_second_)),
@@ -256,6 +266,7 @@ Profiler::Profiler(Options options)
       .on_resume = &ResumeTimings,
   };
   SetFiberSwitchCallbacks(&kFiberSwitchCallbacks);
+  RegisterMutexHook();
 
   // The first read of the core's class finds every core's class, which is
   // done here rather than in the first frame.
@@ -474,6 +485,26 @@ void Profiler::AddResumeDelay(int64_t ready_ticks) {
     stats.max_resume_delay_ticks.SetMax(delay_ticks);
     return;
   }
+}
+
+void Profiler::RegisterMutexHook() {
+  // The hook's point is registered first, as registering it locks a mutex,
+  // which the hook can't do from inside an unlock. Registering either again
+  // does nothing.
+  GetMutexPoint();
+  absl::RegisterMutexProfiler(&RecordMutexWait);
+}
+
+void Profiler::RecordMutexWait(int64_t wait_cycles) {
+  Profiler* const profiler = GetCurrent();
+  if (profiler == nullptr) {
+    return;
+  }
+  const int index = GetMutexPoint().GetIndex();
+  const int64_t wait_ticks = static_cast<int64_t>(
+      static_cast<double>(wait_cycles) * profiler->ticks_per_mutex_cycle_);
+  profiler->AddCount(index, 1);
+  profiler->AddWaitTime(index, wait_ticks, /*in_frame=*/false);
 }
 
 Profiler::JobStats& Profiler::GetJobStats(int index) {
@@ -1169,7 +1200,8 @@ void Profiler::AppendFrame(std::string& report, std::string_view title,
   // The frame's own self times of the kinds, and its wait, add up to the
   // frame's time. Only one frame is in progress, so nothing outside it has
   // frame time. Jobs have a row only in frames that ran one, as most programs
-  // have none, and waits only in frames where a point waited.
+  // have none, and waits only in frames where a point in the frame waited, or
+  // with a column alongside it, where any point waited.
   int64_t wait_ticks = 0;
   int64_t other_wait_ticks = 0;
   for (const FrameBreakdown::Point& frame_point : frame.points) {
@@ -1204,10 +1236,11 @@ void Profiler::AppendFrame(std::string& report, std::string_view title,
                         : FormatTime(TicksToDuration(other_self_ticks)));
     }
   }
-  if (has_waits) {
+  const int64_t own_wait_ticks = wait_ticks - other_wait_ticks;
+  if (frame.has_joined ? has_waits : own_wait_ticks > 0) {
     std::vector<std::string>& row = kinds.emplace_back();
     row.push_back("wait");
-    row.push_back(FormatTime(TicksToDuration(wait_ticks - other_wait_ticks)));
+    row.push_back(FormatTime(TicksToDuration(own_wait_ticks)));
     if (frame.has_joined) {
       row.push_back(FormatTime(TicksToDuration(other_wait_ticks)));
     }
