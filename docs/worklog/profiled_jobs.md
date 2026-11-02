@@ -1,427 +1,251 @@
 # Profiled jobs
 
-`FiberJobSystem` profiles the jobs it runs, so a program can see whether its job
-threads are kept busy and where their time goes, without timing every job
-itself. A program switches it on when it creates the job system, which then owns
-a threadless main `Profiler` (no thread's own), and gives each job thread a
-Profiler joined to it. It times every job as a point named after it, and records
-how long jobs wait to start and to resume, and how long each job thread sits
-idle. The main loop can itself be a job: its frames are timed on whichever job
-thread it runs on, and a frame can wait on other jobs, ending on another thread.
-The report has a jobs table, and each job thread's idle time, beside what it
-already shows.
+`FiberJobSystem` can profile the jobs it runs, so a program can see whether its
+job threads are kept busy and where their time goes, without timing every job
+itself. With profiling on, the job system owns a threadless main `Profiler`
+(one that is no thread's own), and gives each job thread a Profiler joined to
+it. It times every job as a point named after the job, records how long jobs
+wait to start and to resume, and records how long each job thread sits idle.
+The main loop can itself be a job: its frames are timed on whichever job thread
+it runs on, and a frame can wait on other jobs and end on another thread.
+Contended `absl::Mutex` locks are recorded on any thread with a Profiler.
 
-Requested by Terra Diem *Profile the world's jobs*.
+It adds to `gb_profile` (job points, a threadless main Profiler, frames across
+fiber switches, busy time per frame, idle time, and mutex contention), and
+`gb_job` comes to depend on `gb_profile` to use them.
+
+Requested by Terra Diem *Profile the world's jobs*. It builds on *Multithreaded
+profiles* and *Fiber-aware profiling*.
+
+## Using it
+
+```
+auto job_system = gb::FiberJobSystem::Create(
+    gb::ContextBuilder()
+        .SetValue<bool>(gb::FiberJobSystem::kKeyProfileJobs, true)
+        .SetValue<gb::Profiler::Options>(
+            gb::FiberJobSystem::kKeyProfilerOptions,
+            gb::Profiler::Options{.slow_frame = absl::Milliseconds(20),
+                                  .on_slow_frame = LogSlowFrame})
+        .Build());
+
+// The main loop, run as a job:
+job_system->Run("MainLoop", [] {
+  while (running) {
+    gb::ProfileFrame<"Frame"> frame;
+    ...
+    gb::JobSystem::Wait(&counter);  // The frame waits, and may end elsewhere.
+  }
+});
+
+// From any thread:
+LOG(INFO) << job_system->GetProfiler()->GetReport();
+```
 
 ## Behavior
 
-All of this is new API. Nothing existing changes for its callers, so OZ-3,
-jprsurf, and Terra Diem build as they are. Only Terra Diem uses `gb_job`.
+All of this is new API. No public API broke, so OZ-3, jprsurf, and Terra Diem
+build as they are. Reports change only once something new is recorded: a
+contended mutex, for any program with a Profiler, and the rest only for a
+profiled job system.
 
-**Profiling the jobs.** `FiberJobSystem` takes two new optional constraints:
-- `kConstraintProfileJobs`, a `bool` (false by default), which switches it on.
-- `kConstraintProfilerOptions`, an owned `Profiler::Options` for the main
-  Profiler (its budget, `on_slow_frame`, and a `FakeProfilerCpu` for tests).
-  Create fails if it sets `main`.
+**Profiling the jobs** (`gb_job`). `FiberJobSystem` takes two optional
+constraints:
+- `kConstraintProfileJobs`, a `bool` (false by default), switches it on.
+- `kConstraintProfilerOptions`, a `Profiler::Options` for the main Profiler
+  (its budget, `on_slow_frame`, and a `FakeProfilerCpu` for tests, which the
+  job threads' Profilers share). `Create()` moves the options out of the
+  context, as `on_slow_frame` can't be copied, sets `threadless`, and fails if
+  they set `main`.
 
 With profiling on:
-- The job system makes a threadless main Profiler before it starts its
-  threads, and destroys it after they have stopped.
-  `GetProfiler()` returns it, or null with profiling off, for reading the
-  report, and for other threads to join (which must be destroyed before the
-  job system).
-- Each job thread has a Profiler joined to it for as long as the thread runs,
-  named "job thread 1" to "job thread N" in placement order.
-- Each job is timed as a point of a new kind, `ProfilePoint::Kind::kJob`, named
-  after the job, or "unnamed job" (see Job names below). A job's timer
-  encloses everything the job does, so each job thread's busy time in the
-  threads table is the time it spent running jobs, whichever jobs they were. A
-  job that waits and resumes on another thread has the part it ran on each
-  thread counted in that thread's busy time, as *Fiber-aware profiling* already
-  splits it.
-- Job code times frames with `ProfileFrame` as any code does (see Frames below).
-- The report gets a jobs table, a row for each job point: its count, its run
-  time (including the points inside it, and leaving out time suspended) in
-  total, on average, and at p50, p90, p99, and max, and its average and
-  longest start delay and resume delay:
-  - **Start delay:** from `Run()` to the job starting on a job thread.
-  - **Resume delay:** from the counter a job waits on reaching zero to the job
-    running again. It only counts waits that suspended.
-- The threads table gets each thread's idle time per frame: the time a job
-  thread spends waiting for work. What is neither busy nor idle is the job
-  system's own time between jobs.
+- `GetProfiler()` returns the main Profiler (null with profiling off), for any
+  thread to read, or for another thread to join, if that thread's Profiler is
+  destroyed before the job system.
+- Each job thread has a joined Profiler while it runs, named "job thread 1" to
+  "job thread N" in placement order. `Create()` returns once every one is made.
+  Jobs can't make Profilers of their own, as a thread has at most one.
+- Each job is timed as a job point named after it, or "unnamed job", around its
+  callback. Each distinct name registers a point the first time it runs, so
+  job names must come from a fixed set: points are limited to
+  `kMaxProfilePoints` (1024), and registering more CHECK-fails, as does a job
+  name that names another kind of point.
+- A job's start delay is from `Run()` to its start. Its resume delay is from the
+  counter it waits on reaching zero to its running again, counted only for
+  waits that suspended.
+- Each job thread's blocking wait for work is its idle time.
+- Without the constraint, nothing is recorded, and no point is registered.
 
-Without `kConstraintProfileJobs`, nothing is recorded, and the job system costs
-what it does today.
+**Job points** (`gb_profile`). `ProfilePoint::Kind::kJob` points are timed by
+`ProfileJobTimer`, which a job system puts around each job, with
+`Profiler::ReadTicks()` from when the job was queued. A job point is timed as a
+scope is, with the same self time and wait, and also records each run's time
+in a histogram (within 1/16th, as frames are), and its delays.
+`Profiler::AddResumeDelay()` adds a resume delay to the innermost job open on
+the calling fiber. The report gets a jobs table, a row for each job point that
+has run or resumed: Count, Run, Run/call, P50, P90, P99, Max, Start delay, and
+Max start, and once any job has resumed, Resumes, Resume delay, and Max resume.
+`GetJobSummary()` reads one row's numbers. A run's time includes the points
+inside it and leaves out the time it was suspended. `ProfileTimer` no longer
+takes job points, so every job's run is recorded.
 
-**A threadless main Profiler.** `Profiler::Options::threadless` is false by
-default, as every Profiler is today. A main Profiler made with it set isn't
-the Profiler of the thread that made it, or of any other, and records only what
-its joined Profilers do. It can be made and destroyed on any thread, and any
-thread can read its report.
+**A threadless main Profiler.** `Profiler::Options::threadless` makes a main
+Profiler that is no thread's Profiler, and records only what its joined
+Profilers do. It can be made and destroyed on any thread, any thread can read
+its report, and `Reset()` CHECK-fails only inside a frame. Any other main
+Profiler works as before.
 
-**Frames.** With a threadless main Profiler, frames are timed on its
-joined Profilers' threads, and a frame may span fiber switches, so it can wait
-on jobs and end on another thread:
+**Frames on a threadless main Profiler.** Frames are timed on its joined
+Profilers' threads, one at a time (CHECK), and a frame can span fiber switches:
 - A frame's time is from its start to its end, including the time its fiber
-  was suspended, which is the wait of the innermost point open at the time.
-- Only one frame can be in progress (CHECK).
-- The frame's breakdown shows the points inside the frame, on its fiber ("In
-  frame"), apart from everything else that ran on any thread while it was in
-  progress ("Alongside"). The first add up, with their waits, to the frame's
-  time, so the kinds table has a wait row in a frame where a point waited.
+  was suspended, which is the wait of the innermost point open at the time. Its
+  fiber must only resume on threads joined to the same main Profiler (CHECK).
+- A frame's breakdown splits its time by kind into the frame's own points, on
+  its fiber ("In frame"), and everything else that ran on any thread while it
+  was in progress ("Alongside"). The frame's own add up, with their waits, to
+  the frame's time, so the kinds table has a wait row in a frame where a point
+  in it waited.
 - The profiler's own cost per frame counts the timed points inside the frame.
 - `on_slow_frame` is called on the thread the frame ended on.
-- `Reset()` CHECK-fails only inside a frame, as a threadless Profiler has no
-  timings of its own.
 
-Any other main Profiler works as today, and its frames still can't span a fiber
-switch. A joined Profiler of one still can't time frames.
+A main Profiler with a thread still times frames only on its own thread, which
+can't span a fiber switch, and its joined Profilers can't time frames.
 
-**Busy time.** A thread's busy time is the time its outermost timed point ran
-on it during frames, which for a job thread is the job it is running. A point
-still running as a frame ends counts in that frame up to its end. So a long
-job, such as a main loop run as a job, counts in each frame it runs in, rather
-than all of it in the frame it ends in. Each run counts on the class of core it
-started or resumed on (it was the class it ended or suspended on).
+**Busy time** (the threads table). A joined thread's busy time is the time its
+outermost timed points ran on it during frames, which for a job thread is the
+jobs it ran. A point still running as a frame ends counts in that frame up to
+its end, and the rest in the frames after, so a long job, such as a main loop,
+counts in each frame it runs in. Each run counts on the class of core it
+started or resumed on. A main thread's busy time is its frames' time.
 
-**Job names.** Jobs are named as today, by the `std::string_view` passed to
-`Run()`. With profiling on, each distinct name registers a job point the first
-time it is run, so a program's job names must come from a fixed set: points are
-limited to `kMaxProfilePoints` (1024), and registering more CHECK-fails. A
-name built at runtime for each piece of work, such as one per chunk, would
-reach it.
+**Idle time** (`ProfileIdleTimer`). A joined thread's time waiting for work,
+inside a `ProfileIdleTimer`, is its idle time, which the threads table shows
+per frame and as a share of the average frame (Idle/frame and Idle share) once
+any joined thread has been idle in a frame. It is counted in frames as busy
+time is, so a thread asleep for many frames is idle in each. Other threads'
+idle time isn't reported. An idle timer must be outside every timed point,
+can't nest, span a fiber switch, or outlive its Profiler, and no timed point can
+start inside one (CHECK). What is neither busy nor idle is the thread's time
+between its timed points, which for a job thread is the job system's own.
 
-**Mutex contention.** Contended `absl::Mutex` waits are recorded as the wait of
-a point, "absl::Mutex", on the thread that unlocked the mutex (see Design).
+**Mutex contention.** Contended `absl::Mutex` locks are recorded as a call
+point, "absl::Mutex", whose count is the unlocks that woke a thread waiting to
+lock, and whose wait is the time those threads waited:
+- Abseil reports them on the thread that unlocks the mutex, so they are
+  recorded in its Profiler, and show where contended mutexes are released, but
+  not who waited for them.
+- Waits for a condition (`absl::CondVar`, or a `Condition`) aren't included, as
+  Abseil doesn't report them.
+- As other threads waited, the wait is in no frame's own time, even on the
+  frame's thread. The kinds table shows a wait row only for a wait in the
+  frame, or with an "Alongside" column for one outside it.
+- The first Profiler registers Abseil's mutex profiler, so no other library can
+  register its own, and a program that registers one first can't make a
+  Profiler (Abseil asserts in Debug, and contention isn't recorded in Release).
 
 **Tests.** A joined Profiler with no `fake_cpu` uses its main Profiler's, and
 `FakeProfilerCpu` can be read and advanced from any thread, so a job system test
 gives only the main Profiler a fake.
 
-## Design
+## Structure
 
-### Names
-
-- `ProfilePoint::Kind::kJob`: "job" is already the job system's word for what
-  it runs, and is in no profile name yet.
-- `Options::threadless`: says what it lacks, and is false by default, as a
-  `bool` option reads best. `own_thread` was the first name, but it owns no
-  thread, and `collect_only` reads as if nothing else differs.
-- `kConstraintProfileJobs` / `kKeyProfileJobs` ("profile_jobs"), matching
-  `kKeySetFiberNames`, and `kConstraintProfilerOptions` /
-  `kKeyProfilerOptions` ("profiler_options").
-- Start delay, resume delay: "wait" is taken, by a timed point's time
-  suspended (see *Fiber-aware profiling*), and "latency" is jargon here. A
-  delay is time before something runs.
-- Idle time: the opposite of the threads table's busy time.
-
-### Threadless Profiler (gb_profile)
-
-```
-struct Options {
-  ...
-  // Makes this a main Profiler that is no thread's Profiler, which records
-  // only its joined Profilers' points. Its frames are timed on their threads
-  // (see Frames).
-  bool threadless = false;
-};
-```
-
-- With `threadless` set, the Profiler doesn't set `s_current`, so it can be
-  destroyed on any thread, and has no slots of its own to gather.
-- Frame state (the frame number, start core, frame count and time, histogram,
-  and slowest frame) is written under a mutex, taken as each frame starts and
-  ends by the thread starting or ending it. So the report can be read from any
-  thread, and a second frame starting while one is in progress reliably
-  CHECK-fails. The report formats a copy, so it holds the mutex only to copy
-  it. The two locks add about 20 ns to a frame (an empty frame went from 35 ns
-  to 56 ns, or 61 ns on a threadless main, in Release), and nothing to a timed
-  point (13.9 ns before and after).
+**Threadless Profiler and frames** (`profiler.h`, `profiler.cc`):
+- A threadless Profiler doesn't set `s_current`, and has no slots of its own to
+  gather.
+- Frame state (the frame number, the frame's start ticks and class of core,
+  and the frame totals) is written under `frame_mutex_`, which the thread
+  starting or ending a frame takes, so the report can be read from any thread,
+  and a second frame starting while one is in progress reliably CHECK-fails.
+  The report formats a copy, so it holds the mutex only to copy it.
 - A joined Profiler of a threadless main Profiler times frames, recording them
-  in the main Profiler. Whether its thread is in a frame is its own flag, which
-  the fiber switch callback CHECKs, as the frame number is the main Profiler's.
-- The breakdown's split is the frame's own points against the rest, with the
-  columns "In frame" and "Alongside" (CL2 had "Frame thread" and "Other
-  threads", and before it "Main thread"). For a main Profiler with a thread,
-  that is the same split as by thread, as its frames can't span a switch.
-- Each timing records whether it is inside a frame, from its parent, so its
-  self time and wait can be split from the rest in the breakdown, by slot
-  fields for the part outside the frame. Each also counts the timed points
-  that end inside it, so a frame's own cost is its timing's count, wherever
+  in the main Profiler (its `frame_profiler_`).
+- Each timing records whether it is inside a frame, from its parent, and counts
+  the timed points that end inside it. Slots have fields for the part of a
+  frame's self time and wait outside it, so the breakdown splits the frame's
+  own from the rest, and a frame's own cost is its timing's count, wherever
   they ended. Neither needs any per-thread frame state.
-- A frame's time is from its start ticks, kept in the main Profiler under the
-  frame mutex, to its end ticks, which are its timing's start ticks (moved on
-  by each resume) plus its elapsed ticks.
-- A joined Profiler publishes its outermost point's run in progress (its start
-  ticks and class of core) beside the runs that have ended, so the main
-  Profiler can read its busy time up to any moment without stopping it. The
-  run is ended before it is added, and read in the other order, so a read
-  racing with a run's end leaves it out, which a later read includes, but
-  never counts it twice. The main Profiler gathers it as each frame starts,
-  dropping what was before the frame, and as it ends, counting the frame's.
-- Performance, in Release, against CL2: a timed point inside a frame goes from
-  15.4 to 16.7 ns, for the in-frame flag and point count. An outermost point
-  on a joined thread goes from 20.4 to 21.8 ns during a frame, but outside any
-  frame from 15.8 to 21.6 ns, as it now always reads the class of core. An
-  empty frame goes from 58 to 66 ns (63 to 75 ns threadless), for gathering
-  busy time as it starts.
+- A frame's time is from its start ticks, kept under the frame mutex, to its
+  end ticks, which are its timing's start ticks (moved on by each resume) plus
+  its elapsed ticks.
 
-**Brittleness:** what a frame can do depends on whether its main Profiler has a
-thread, which is set once, at construction, and CHECKed where it matters.
+**Thread time** (busy and idle):
+- A joined Profiler's `ThreadTime`, on a cache line of its own, has its runs by
+  state (busy on each class of core, or idle as `kIdle`) that have ended or
+  whose fiber suspended, and the run in progress: its start ticks and state.
+  A thread is in at most one run at a time, so it is never busy and idle at
+  once.
+- A run is ended before it is added, and read in the other order, with release
+  and acquire, so the main Profiler can read a thread's time up to any moment
+  without stopping it. A read racing with a run's end leaves it out, which a
+  later read includes, but never counts it twice.
+- The main Profiler gathers each joined thread's time as each frame starts,
+  dropping what was before the frame, as it ends, counting the frame's, and as
+  a joined Profiler is destroyed, keeping its part in the frame in progress.
 
-### Profiler for jobs (gb_profile)
-
-```
-// In ProfilePoint::Kind:
-kJob,  // A job run by a job system (see gb/job).
-
-// Times a job, from when it starts to when it ends, enclosing every point the
-// job reaches. `queued_ticks` is ReadTicks() from when the job was queued.
-class ProfileJobTimer final {
- public:
-  ProfileJobTimer(const ProfilePoint& job, int64_t queued_ticks);
-  ~ProfileJobTimer();
-};
-
-// Times the calling thread waiting for work, as its idle time.
-class ProfileIdleTimer final { ... };
-
-class Profiler {
-  ...
-  //--------------------------------------------------------------------------
-  // Jobs
-  //--------------------------------------------------------------------------
-
-  // A job point's runs: their count, run time in total, on average, and at
-  // p50, p90, p99, and max, and the average and longest start and resume
-  // delays, as the jobs table shows them.
-  struct JobSummary { ... };
-  JobSummary GetJobSummary(std::string_view name) const;
-
-  // Returns the ticks now, which any thread may call, for the delays below.
-  int64_t ReadTicks() const;
-
-  // Adds a delay to the innermost job on the calling thread's fiber, from
-  // `ready_ticks` (ReadTicks() when the counter it waits on reached zero).
-  static void AddResumeDelay(int64_t ready_ticks);
-};
-```
-
-- A job point is timed as a scope is, with the same self time and wait, and
-  also records its run time in a histogram, and its delays. Histograms use the
-  frame histogram's buckets (within 1/16th), about 4 KB each, so only job
-  points have them, made the first time each thread ends a job of that point.
-  The main Profiler reads them without stopping the other threads, as it reads
-  slots, and folds them as it does slots.
+**Job stats:**
+- A job point's `JobStats` (its histogram, and its runs, delays, and their
+  longest) are made the first time each thread ends a job of that point, and
+  published through a table of pointers, one per point, that the main Profiler
+  reads without stopping the other threads, as it reads slots, and folds as it
+  does slots.
 - A job's longest run and delays can't be baselined, so `Reset()` counts its
-  resets instead, and each thread's job stats hold the reset count they are
-  for. The first record after a reset clears them, and readers ignore them
-  until then. So nothing about jobs is baselined.
-- A job point's stats (its histogram, and its runs, delays, and their
-  longest) are 3,976 bytes, and each Profiler has an 8 KB table of pointers to
-  them. Terra Diem has six job names (with the unnamed job), so on 32 threads
-  that is about 760 KB of stats, and 256 KB of tables.
-- `ProfileTimer` no longer takes job points, so every job point's run is
-  recorded.
-- Idle time is recorded by the joined Profiler, and gathered by the main
-  Profiler as each frame starts and ends with busy time. A wait still in
-  progress at a frame's end counts in that frame up to its end, so a thread
-  asleep for many frames shows idle in each, rather than all of it in the frame
-  it wakes in.
-- Idle is another state of a thread's runs, beside busy on each class of core,
-  so a thread is never busy and idle at once (an idle timer must be outside
-  every timed point on any thread, and a timed point can't start inside one),
-  and it adds nothing to what gathering busy time reads.
-- Points are recorded as today: about 15 ns for a timed point. A job adds a
-  read of the ticks for its start delay, and a histogram add.
+  resets, and each thread's stats hold the reset count they are for. The first
+  record after a reset clears them, and readers ignore them until then.
 
-**Brittleness:** the job system must start and end each job's timer on the
-right fiber, and read `queued_ticks` from the same tick source. Both are
-inside `FiberJobSystem`, so no program has to get them right.
-
-### Profiling in FiberJobSystem (gb_job)
-
-- `gb_job` comes to depend on `gb_profile`, both tier 1, which is the point of
-  the feature.
-- The job system owns the main Profiler, made in `Init()` before the threads,
-  with `threadless` set, and destroyed after the threads are joined.
-- Each `JobThread` owns its joined Profiler, made on the thread before it runs
-  jobs, and destroyed on the thread as it stops. A fiber can move between
-  threads, so the Profiler can't be a local on the thread's first fiber.
-- `Job` gets its job point, found in `DoRun()` from its name. Each thread
-  keeps the points it has found by name, in a thread-local hash map, so only a
-  name's first run on a thread goes to the point registry and its mutex. After
-  that, finding it costs hashing the name, about 15 to 20 ns, with no lock.
-- `Job` gets `queued_ticks`, read in `DoRun()` from the main Profiler.
-- `FiberState` gets `ready_ticks`, read in `EnqueueFibers()` when the counter
-  reaches zero, and the job adds its resume delay when `DoWait()` returns.
-- `WaitForWork()` times only the part of its wait that blocks with a
-  `ProfileIdleTimer`, so a job thread that finds work at once doesn't pay two
-  reads of the ticks for it. The timer starts before the thread marks itself
-  waiting, so a thread `GetIdleThreadCount()` counts is already idle.
-- A job's timer encloses only its callback, so freeing its data and context,
-  and ending its counter, are the job system's own time between jobs.
-- `Create()` moves the Profiler options out of the context, as
-  `on_slow_frame` can't be copied.
-- Performance, in Release: a job that runs the next, on one job thread, takes
-  113 ns without profiling and 154 ns with it. Of the 41 ns, finding the point
-  by name is 15.5 ns, and the rest is the job's timer, its delays, and reading
-  the ticks as it is queued.
-
-**Brittleness:** none for the program, as the job system owns every Profiler
-and destroys them in order. A thread outside the job system that joins
-`GetProfiler()` must be destroyed first, as with any main Profiler, which
-CHECK-fails otherwise.
-
-### Mutex contention (gb_profile)
-
-Abseil reports contended `absl::Mutex` waits through
-`absl::RegisterMutexProfiler()`, which a program can register once. The first
-Profiler registers it, as it sets the fiber switch callbacks. Each report is
-recorded as the wait of a point, "absl::Mutex", on the thread it is reported
-on, counting the contended unlocks.
-
-The hook is called by the thread that unlocks the mutex, with the total that
-the threads it wakes waited, not on the threads that waited. So the time is
-charged to the thread holding the lock, which shows where contended locks are
-released, but not who waited for them.
-
-The wait is in Abseil's cycle clock, which is the timestamp counter shifted
-right by 2 in Debug and 1 in Release, and is converted by
-`absl::base_internal::CycleClock::Frequency()`, an Abseil internal. A unit test
-checks the conversion against the profiler's own tick rate, so an Abseil update
-that changes it fails a test.
-
-- The point is a call, as Abseil is another system. Its count is the contended
-  unlocks, and its self time is zero.
-- The wait was other threads', so it is recorded as outside the frame, even on
-  the frame's own thread, and a frame's own time by kind still adds up. The
-  kinds table's wait row now shows only where there is a wait in the frame, or
-  an "Alongside" column for one outside it.
-- The point is registered, and the cycle clock's rate read, before the hook is
-  registered, so the hook never locks a mutex (the point registry's) or
-  measures the rate, from inside an unlock.
+**Mutex contention:**
+- `RegisterMutexHook()` registers the "absl::Mutex" point before the hook, as
+  registering a point locks the registry's mutex, which the hook can't do from
+  inside an unlock. Each Profiler reads the rate of Abseil's cycle clock as it
+  is made, as `ticks_per_mutex_cycle_`, so the hook never measures it.
+- The rate is `absl::base_internal::CycleClock::Frequency()`, an Abseil
+  internal: the clock is the timestamp counter shifted right by 2 in Debug and
+  1 in Release. A test checks the conversion against the profiler's tick rate,
+  so an Abseil update that changes it fails a test.
 - Contention can't be made to order, so the tests call the hook through
   `ProfilerMutexTest`, a fixture `Profiler` names as a friend. One test
   contends a mutex for real, repeating until Abseil reports it, to show the
   hook is registered.
 
-### To confirm
+**In `FiberJobSystem`** (`fiber_job_system.h`, `fiber_job_system.cc`):
+- The job system owns the main Profiler, made in `Init()` before the threads,
+  and destroyed after they are joined.
+- Each `JobThread` owns its joined Profiler, made on the thread before it runs
+  jobs, and destroyed at the end of `JobMain()`, which returns once per thread,
+  as it stops, on whichever fiber the thread is on by then. A fiber can move
+  between threads, so the Profiler can't be a local on the thread's first
+  fiber.
+- `DoRun()` finds the job's point by name through a thread-local hash map, so
+  only a name's first run on each thread goes to the point registry and its
+  mutex, and reads its `queued_ticks` from the main Profiler.
+- `EnqueueFibers()` stamps each waiting fiber's `ready_ticks` as its counter
+  reaches zero (and `CompleteWait()` as it resumes one at once), and
+  `DoWait()` adds the resume delay once the wait returns.
+- `WaitForWork()` times only the part of its wait that blocks, so a job thread
+  that finds work at once doesn't read the ticks for it. The idle timer starts
+  before the thread marks itself waiting, so a thread `GetIdleThreadCount()`
+  counts is already idle.
+- A job's timer encloses only its callback, so freeing its data and context,
+  and ending its counter, are the job system's own time between jobs.
 
-- Where Abseil calls the mutex profiler hook, and in what units: confirmed
-  above, from `absl/synchronization/mutex.cc` (`Mutex::UnlockSlow()`).
-- That a frame's state is ordered across the threads it starts and ends on:
-  confirmed, as CL2 writes it under the frame mutex at both.
-- What a job's histogram costs in memory with Terra Diem's job names and
-  thread count: CL4 measures it.
+Reusable pieces, should anything else need them: a threadless main Profiler,
+for any set of threads that share frames, `ProfileJobTimer` for another job
+system, and `ProfileIdleTimer` for any thread that waits for work.
 
-## CLs
+## Measurements
 
-### CL1 [x] profile: job points, and a shared fake CPU
+On the development machine (an i9-14900KF), in RelWithDebInfo builds:
 
-Depends on: nothing.
-
-- `ProfilePoint::Kind::kJob`, timed by a `ProfileTimer` as a scope is, and
-  shown in the points table as "job". `ProfileJobTimer` comes with CL4, once
-  a job's timer has delays and a histogram to record.
-- `FakeProfilerCpu` can be used from any thread, and a joined Profiler with no
-  `fake_cpu` uses its main Profiler's.
-- Unused by gb_job, so no visible change there.
-
-**Verify**
-- Standard checks (see CLAUDE.md).
-- Unit tests: a job point is timed and reported; a joined Profiler without a
-  fake reads its main Profiler's.
-
-### CL2 [x] profile: a threadless main Profiler
-
-Depends on: CL1.
-
-- `Options::threadless`, frames on its joined Profilers' threads, one at a
-  time, and frame state under a mutex at frame start and end.
-- Frames still can't span a fiber switch.
-
-**Verify**
-- Standard checks.
-- Unit tests: a threadless main's report of two joined threads; frames on
-  either; a second frame in progress CHECK-fails; `Reset()` between frames;
-  destroying it on another thread.
-- Performance: a timed point and a frame, against today.
-
-### CL3 [x] profile: frames across fiber switches, and busy time per frame
-
-Depends on: CL2.
-
-- A threadless main's frame may span fiber switches, timed from start to end,
-  with the breakdown split into the frame's own points and the rest, and a
-  wait row.
-- An outermost point's run so far is added to busy time at each frame's end,
-  and busy time before a frame is dropped as it starts.
-
-**Verify**
-- Standard checks.
-- Unit tests: a frame that suspends and ends on another thread; its breakdown
-  adds up with its waits; a long outermost point's busy time in each frame.
-- Performance: a timed point, for the in-frame flag.
-
-### CL4 [x] profile: job run times and delays
-
-Depends on: CL1.
-
-- Run-time histograms, start and resume delays for job points, and the jobs
-  table in the report. `Profiler::ReadTicks()` and `AddResumeDelay()`.
-- Folding and `Reset()` cover them.
-
-**Verify**
-- Standard checks.
-- Unit tests: percentiles, delays, a joined thread's jobs in its main
-  Profiler's report and after it is destroyed, and `Reset()`.
-- Memory: a histogram's size, and the total for Terra Diem's job names on 32
-  threads.
-
-### CL5 [x] profile: idle time per thread
-
-Depends on: CL1.
-
-- `ProfileIdleTimer`, and idle time in the threads table, gathered at each
-  frame's end, including a wait in progress.
-
-**Verify**
-- Standard checks.
-- Unit tests: idle in one frame, a wait spanning several frames, and a
-  thread destroyed while idle.
-
-### CL6 [x] job: profile the jobs
-
-Depends on: CL3, CL4, CL5.
-
-- `kConstraintProfileJobs`, `kConstraintProfilerOptions`, and `GetProfiler()`.
-- `Create()` returns once every job thread has made its Profiler, so a test
-  that sets an auto advance afterwards doesn't have it applied to their
-  construction.
-- The threadless main Profiler, a joined Profiler per job thread, each job
-  timed as its point, found by name, with its delays, and each thread's wait
-  for work as idle time.
-
-**Verify**
-- Standard checks.
-- Unit tests, with a fake CPU in the options: a job's count, run time, and
-  start delay; a waiting job's resume delay; idle time on a job thread; a
-  frame in a job that waits on another job and ends on another thread; two
-  names and an unnamed job as their own points; nothing recorded without the
-  constraint; Create fails with `main` set.
-- Performance: a job's cost with and without profiling, including finding its
-  point.
-
-### CL7 [x] profile: mutex contention
-
-Depends on: CL1.
-
-- The first Profiler registers Abseil's mutex profiler hook, recording each
-  report as the wait of "absl::Mutex" on the reporting thread.
-
-**Verify**
-- Standard checks.
-- Unit tests: the hook's recording, given a wait in cycles; the cycle
-  conversion against the profiler's tick rate.
+- **A timed point:** 13.9ns, unchanged by the frame mutex. Inside a frame, 15.4
+  to 16.7ns, for the in-frame flag and point count. An outermost point on a
+  joined thread, 20.4 to 21.8ns during a frame, and 15.8 to 21.6ns outside any
+  frame, as it always reads the class of core.
+- **An empty frame:** 35ns before, 66ns after (75ns on a threadless main), for
+  the frame mutex at its start and end, and gathering busy time as it starts.
+- **A job:** a job that runs the next, on one job thread, takes 113ns without
+  profiling and 154ns with it. Of the 41ns, finding its point by name is
+  15.5ns, and the rest is its timer, its delays, and reading the ticks as it is
+  queued.
+- **Job stats memory:** a job point's stats are 3,976 bytes per thread that
+  runs it, and each Profiler has an 8KB table of pointers to them. Terra Diem's
+  six job names (with the unnamed job) on 32 threads come to about 760KB of
+  stats, and 256KB of tables.

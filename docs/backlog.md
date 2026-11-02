@@ -201,6 +201,46 @@ Without profiling, a job's point would be found by name for each run, which
 *Profiled jobs* does through a thread-local cache. Names built at runtime, one
 per piece of work, would then reach the limit of 1024 points.
 
+## Main-thread busy runs
+
+- **Layers:** profile
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Profiled jobs](worklog/profiled_jobs.md)
+
+A main Profiler with a thread counts its thread's busy time as its frames'
+time, while a joined thread's is the time its outermost timed points ran. That
+is the one remaining reason such a main Profiler's frames can't span a fiber
+switch, and its joined Profilers can't time frames: a frame that waited would
+show the main thread busy during the wait, and twice if it ended on a joined
+thread. Every other part of a frame (its start and end ticks, the in-frame
+flag, its count of timed points, and recording it under the frame mutex) is
+already the same for both kinds of main Profiler. Record the main thread's
+outermost runs as a joined thread's are, gathered with the others at each
+frame's start and end, and drop the checks on what a frame can do, so
+`Options::threadless` only says whether the main Profiler has a thread. The
+main thread's busy time then leaves out the time between its points, which
+changes the threads table of every program with a main Profiler.
+
+## Point slots reset by count
+
+- **Layers:** profile
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Profiled jobs](worklog/profiled_jobs.md)
+
+A main Profiler's `Reset()` clears what its joined Profilers recorded by
+baselines, as only a joined Profiler's own thread writes its slots: it copies
+each one's totals as it resets (`JoinedThread::baseline`), and every gather
+subtracts them. A job point's stats instead hold the count of the reset they
+are for, the first record after a reset clears them, and readers ignore them
+until then, as a slot's frame part already works with its frame number. Do the
+same for slots, removing the baselines and the subtraction in every gather, at
+the cost of a compare as each point is recorded. Measure a timed point before
+and after.
+
 ## Volume textures and storage buffers
 
 - **Layers:** render, render_vulkan
