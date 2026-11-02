@@ -329,13 +329,13 @@ void Profiler::RemoveJoinedThread(int index) {
   }
   thread.profiler->AddOwnTotals(absl::MakeSpan(thread.folded), thread.baseline);
 
-  // The next Profiler under this name starts from no busy time.
-  thread.left_busy_ticks += GatherBusyTicks(thread);
-  thread.gathered_busy_ticks = {};
-
   // If the frame has ended since its number was read, its part is kept but
-  // never captured.
+  // never captured, and its busy time counts in the next frame. The thread is
+  // outside every timed point, so it has no run in progress to read the ticks
+  // for.
   if (frame_number != 0) {
+    thread.left_busy_ticks +=
+        GatherBusyTicks(thread, /*now_ticks=*/0, /*in_frame=*/true);
     if (left_frame_number_ != frame_number) {
       left_frame_number_ = frame_number;
       left_frame_points_.clear();
@@ -343,9 +343,12 @@ void Profiler::RemoveJoinedThread(int index) {
     if (static_cast<int>(left_frame_points_.size()) < point_count) {
       left_frame_points_.resize(point_count);
     }
-    thread.profiler->AddOwnFramePoints(frame_number, /*other_thread=*/true,
+    thread.profiler->AddOwnFramePoints(frame_number,
                                        absl::MakeSpan(left_frame_points_));
   }
+
+  // The next Profiler under this name starts from no busy time.
+  thread.gathered_busy_ticks = {};
   thread.profiler = nullptr;
   thread.baseline.clear();
 }
@@ -360,22 +363,18 @@ void* Profiler::SuspendTimings() {
   if (profiler == nullptr || profiler->top_ == nullptr) {
     return nullptr;
   }
-  CHECK(!profiler->in_frame_) << "A profile frame can't span a fiber switch";
+  CHECK(profiler->frame_profiler_->threadless_ || !profiler->top_->in_frame)
+      << "A profile frame can't span a fiber switch, unless its main Profiler "
+         "is threadless";
   // Each timing keeps its Profiler, so a timer ended on another fiber meanwhile
   // fails EndTiming()'s CHECK, rather than being ignored.
   const int64_t ticks = profiler->ReadTicks();
-  Timing* outermost = nullptr;
   for (Timing* timing = profiler->top_; timing != nullptr;
        timing = timing->parent) {
     timing->start_ticks = ticks - timing->start_ticks;
-    outermost = timing;
   }
-
-  // The outermost timing's run on this thread is this thread's busy time.
-  const int64_t run_ticks = outermost->start_ticks - outermost->prior_run_ticks;
-  outermost->prior_run_ticks = outermost->start_ticks;
   if (profiler->main_ != nullptr) {
-    profiler->AddBusyTime(run_ticks);
+    profiler->EndBusyRun(ticks);
   }
   profiler->top_->suspend_ticks = ticks;
   return std::exchange(profiler->top_, nullptr);
@@ -387,6 +386,15 @@ void Profiler::ResumeTimings(void* state) {
   }
   Timing* const top = static_cast<Timing*>(state);
   Profiler* const profiler = s_current;
+
+  // A frame can only end in a Profiler that records it in a main Profiler with
+  // a frame in progress, which can only be its own. The Profiler the frame
+  // suspended from may be destroyed by now, so it isn't compared.
+  CHECK(!top->in_frame ||
+        (profiler != nullptr &&
+         profiler->frame_profiler_->current_frame_.number.Get() != 0))
+      << "A profile frame's fiber must resume on a thread joined to the "
+         "frame's main Profiler";
   if (profiler == nullptr) {
     for (Timing* timing = top; timing != nullptr; timing = timing->parent) {
       timing->profiler = nullptr;
@@ -400,12 +408,16 @@ void Profiler::ResumeTimings(void* state) {
   // The wait is measured across two threads' ticks, which may disagree by a
   // little, so it is never less than zero.
   profiler->AddWaitTime(top->index,
-                        std::max<int64_t>(ticks - top->suspend_ticks, 0));
+                        std::max<int64_t>(ticks - top->suspend_ticks, 0),
+                        top->in_frame);
   for (Timing* timing = top; timing != nullptr; timing = timing->parent) {
     timing->start_ticks = ticks - timing->start_ticks;
     timing->profiler = profiler;
   }
   profiler->top_ = top;
+  if (profiler->main_ != nullptr) {
+    profiler->StartBusyRun(ticks);
+  }
 }
 
 absl::Duration Profiler::GetPointCost() const {
@@ -523,33 +535,48 @@ void Profiler::StartFrame(int index, Timing& timing) {
   CHECK(main_ == nullptr || main_->threadless_)
       << "A joined Profiler can't time frames, unless its main Profiler is "
          "threadless";
-  CHECK(!in_frame_) << "Profile frames can't nest";
+  CHECK(top_ == nullptr || !top_->in_frame) << "Profile frames can't nest";
   const int start_core = ReadCoreClass();
-  {
-    absl::MutexLock lock(&frame_profiler_->frame_mutex_);
-    CHECK(frame_profiler_->current_frame_.number.Get() == 0)
-        << "Only one profile frame can be in progress at a time";
-    frame_profiler_->current_frame_.number.Set(
-        ++frame_profiler_->last_frame_number_);
-    frame_profiler_->current_frame_start_core_ = start_core;
-  }
-  in_frame_ = true;
-  current_frame_timed_points_ = 0;
   StartTiming(index, timing);
+  timing.in_frame = true;
+  frame_profiler_->OpenFrame(timing.start_ticks, start_core);
 }
 
 void Profiler::EndFrame(Timing& timing) {
-  const int64_t frame_ticks = EndTiming(timing);
-  in_frame_ = false;
-  frame_profiler_->RecordFrame(this, frame_ticks, ReadCoreClass(),
-                               current_frame_timed_points_);
+  // The frame's fiber may have been suspended, so its end is from its start
+  // ticks, which resuming moves on by the time suspended.
+  const int64_t end_ticks = timing.start_ticks + EndTiming(timing);
+  frame_profiler_->RecordFrame(end_ticks, ReadCoreClass(),
+                               timing.child_points + 1);
 }
 
-void Profiler::RecordFrame(const Profiler* frame_thread, int64_t ticks,
-                           int end_core, int64_t timed_points) {
+void Profiler::OpenFrame(int64_t start_ticks, int start_core) {
+  absl::MutexLock lock(&frame_mutex_);
+  CHECK(current_frame_.number.Get() == 0)
+      << "Only one profile frame can be in progress at a time";
+  current_frame_.number.Set(++last_frame_number_);
+  current_frame_start_ticks_ = start_ticks;
+  current_frame_start_core_ = start_core;
+
+  // Busy time before the frame isn't counted.
+  absl::MutexLock joined_lock(&joined_mutex_);
+  for (JoinedThread& thread : joined_threads_) {
+    if (thread.profiler != nullptr) {
+      GatherBusyTicks(thread, start_ticks, /*in_frame=*/false);
+    }
+  }
+}
+
+void Profiler::RecordFrame(int64_t end_ticks, int end_core,
+                           int64_t timed_points) {
   std::optional<FrameBreakdown> slow_frame;
   {
     absl::MutexLock lock(&frame_mutex_);
+
+    // A frame that ended on another thread is timed across two threads'
+    // ticks, which may disagree by a little, so it is never less than zero.
+    const int64_t ticks =
+        std::max<int64_t>(end_ticks - current_frame_start_ticks_, 0);
     FrameTotals& totals = frame_totals_;
     totals.timed_points += timed_points;
     ++totals.frames;
@@ -563,14 +590,13 @@ void Profiler::RecordFrame(const Profiler* frame_thread, int64_t ticks,
     core_frames.max_ticks = std::max(core_frames.max_ticks, ticks);
     const bool is_slowest = ticks > totals.slowest.ticks;
     if (is_slowest) {
-      totals.slowest = CaptureFrame(frame_thread, ticks, core, timed_points);
+      totals.slowest = CaptureFrame(ticks, core, timed_points);
     }
     if (ticks > slow_frame_ticks_ && on_slow_frame_ != nullptr) {
-      slow_frame = is_slowest
-                       ? totals.slowest
-                       : CaptureFrame(frame_thread, ticks, core, timed_points);
+      slow_frame =
+          is_slowest ? totals.slowest : CaptureFrame(ticks, core, timed_points);
     }
-    AddFrameBusyTimes();
+    AddFrameBusyTimes(end_ticks);
     current_frame_.number.Set(0);
   }
 
@@ -584,22 +610,19 @@ void Profiler::RecordFrame(const Profiler* frame_thread, int64_t ticks,
   }
 }
 
-Profiler::FrameBreakdown Profiler::CaptureFrame(const Profiler* frame_thread,
-                                                int64_t ticks, int core,
+Profiler::FrameBreakdown Profiler::CaptureFrame(int64_t ticks, int core,
                                                 int64_t timed_points) const {
   FrameBreakdown frame = {
       .ticks = ticks, .core = core, .timed_points = timed_points};
   const int64_t frame_number = current_frame_.number.Get();
   frame.points.resize(ProfilePoint::GetRegisteredCount());
-  AddOwnFramePoints(frame_number, this != frame_thread,
-                    absl::MakeSpan(frame.points));
+  AddOwnFramePoints(frame_number, absl::MakeSpan(frame.points));
   {
     absl::MutexLock lock(&joined_mutex_);
+    frame.has_joined = !joined_threads_.empty();
     for (const JoinedThread& thread : joined_threads_) {
-      const bool other_thread = thread.profiler != frame_thread;
-      frame.has_other_threads |= other_thread;
       if (thread.profiler != nullptr) {
-        thread.profiler->AddOwnFramePoints(frame_number, other_thread,
+        thread.profiler->AddOwnFramePoints(frame_number,
                                            absl::MakeSpan(frame.points));
       }
     }
@@ -621,19 +644,19 @@ Profiler::FrameBreakdown Profiler::CaptureFrame(const Profiler* frame_thread,
 }
 
 void Profiler::AddOwnFramePoints(
-    int64_t frame_number, bool other_thread,
-    absl::Span<FrameBreakdown::Point> points) const {
+    int64_t frame_number, absl::Span<FrameBreakdown::Point> points) const {
   for (int i = 0; i < static_cast<int>(points.size()); ++i) {
     const Slot& slot = slots_[i];
     if (slot.frame.GetAcquire() != frame_number) {
       continue;
     }
-    const int64_t self_ticks = slot.frame_self_ticks.Get();
-    AddFramePoint(points[i], {.index = i,
-                              .count = slot.frame_count.Get(),
-                              .self_ticks = self_ticks,
-                              .other_self_ticks = other_thread ? self_ticks : 0,
-                              .wait_ticks = slot.frame_wait_ticks.Get()});
+    AddFramePoint(points[i],
+                  {.index = i,
+                   .count = slot.frame_count.Get(),
+                   .self_ticks = slot.frame_self_ticks.Get(),
+                   .wait_ticks = slot.frame_wait_ticks.Get(),
+                   .other_self_ticks = slot.frame_other_self_ticks.Get(),
+                   .other_wait_ticks = slot.frame_other_wait_ticks.Get()});
   }
 }
 
@@ -642,37 +665,69 @@ void Profiler::AddFramePoint(FrameBreakdown::Point& point,
   point.index = part.index;
   point.count += part.count;
   point.self_ticks += part.self_ticks;
-  point.other_self_ticks += part.other_self_ticks;
   point.wait_ticks += part.wait_ticks;
+  point.other_self_ticks += part.other_self_ticks;
+  point.other_wait_ticks += part.other_wait_ticks;
 }
 
-void Profiler::AddBusyTime(int64_t ticks) {
-  if (frame_profiler_->current_frame_.number.Get() != 0) {
-    busy_.core_ticks[ReadCoreClass()].Add(ticks);
+void Profiler::StartBusyRun(int64_t ticks) {
+  // The start is written before the class of core, which says there is a run,
+  // so a reader that sees the class sees the start (see ReadBusyTicks()).
+  busy_.run_start_ticks.Set(ticks);
+  busy_.run_core.SetRelease(ReadCoreClass());
+}
+
+void Profiler::EndBusyRun(int64_t ticks) {
+  // The run is ended before it is added, so a reader that sees it added sees
+  // it ended, and doesn't count it twice (see ReadBusyTicks()).
+  const int core = static_cast<int>(busy_.run_core.Get());
+  DCHECK(core >= 0) << "A busy run ended without starting";
+  busy_.run_core.Set(-1);
+  SingleWriterInt64& core_ticks = busy_.core_ticks[core];
+  core_ticks.SetRelease(core_ticks.Get() + ticks - busy_.run_start_ticks.Get());
+}
+
+Profiler::CoreTicks Profiler::ReadBusyTicks(int64_t now_ticks) const {
+  // The ended runs are read before the run in progress, as EndBusyRun() writes
+  // them in the other order. A run that ends while this reads is either in
+  // the ended runs, or in neither.
+  CoreTicks ticks;
+  for (int core = 0; core < kCoreClasses; ++core) {
+    ticks[core] = busy_.core_ticks[core].GetAcquire();
   }
+  const int run_core = static_cast<int>(busy_.run_core.GetAcquire());
+  if (run_core >= 0) {
+    ticks[run_core] +=
+        std::max<int64_t>(now_ticks - busy_.run_start_ticks.Get(), 0);
+  }
+  return ticks;
 }
 
-int64_t Profiler::GatherBusyTicks(JoinedThread& thread) {
-  // Each class's busy time only grows, so none is gathered twice.
-  const BusyTime& busy = thread.profiler->busy_;
+int64_t Profiler::GatherBusyTicks(JoinedThread& thread, int64_t now_ticks,
+                                  bool in_frame) {
+  // A read can leave out a run that a previous read included, if it ended
+  // while this read, so busy time already gathered is never taken back.
+  const CoreTicks busy = thread.profiler->ReadBusyTicks(now_ticks);
   int64_t added_ticks = 0;
   for (int core = 0; core < kCoreClasses; ++core) {
-    const int64_t ticks = busy.core_ticks[core].Get();
-    const int64_t added = ticks - thread.gathered_busy_ticks[core];
-    thread.gathered_busy_ticks[core] = ticks;
-    thread.busy_core_ticks[core] += added;
-    added_ticks += added;
+    const int64_t added =
+        std::max<int64_t>(busy[core] - thread.gathered_busy_ticks[core], 0);
+    thread.gathered_busy_ticks[core] += added;
+    if (in_frame) {
+      thread.busy_core_ticks[core] += added;
+      added_ticks += added;
+    }
   }
   return added_ticks;
 }
 
-void Profiler::AddFrameBusyTimes() {
+void Profiler::AddFrameBusyTimes(int64_t end_ticks) {
   absl::MutexLock lock(&joined_mutex_);
   for (JoinedThread& thread : joined_threads_) {
     int64_t ticks = thread.left_busy_ticks;
     thread.left_busy_ticks = 0;
     if (thread.profiler != nullptr) {
-      ticks += GatherBusyTicks(thread);
+      ticks += GatherBusyTicks(thread, end_ticks, /*in_frame=*/true);
     }
     thread.max_frame_busy_ticks = std::max(thread.max_frame_busy_ticks, ticks);
   }
@@ -909,12 +964,20 @@ void Profiler::AppendFrame(std::string& report, std::string_view title,
     return IsBeforeInReport(a.first, b.first);
   });
 
-  // The frame's thread's self times of the kinds add up to the frame's time.
-  // Only one frame is in progress, so the other threads have no frame time.
-  // Jobs have a row only in frames that ran one, as most programs have none.
+  // The frame's own self times of the kinds, and its wait, add up to the
+  // frame's time. Only one frame is in progress, so nothing outside it has
+  // frame time. Jobs have a row only in frames that ran one, as most programs
+  // have none, and waits only in frames where a point waited.
+  int64_t wait_ticks = 0;
+  int64_t other_wait_ticks = 0;
+  for (const FrameBreakdown::Point& frame_point : frame.points) {
+    wait_ticks += frame_point.wait_ticks;
+    other_wait_ticks += frame_point.other_wait_ticks;
+  }
+  const bool has_waits = wait_ticks > 0;
   Table kinds = {{"Kind", "Self"}};
-  if (frame.has_other_threads) {
-    kinds[0] = {"Kind", "Frame thread", "Other threads"};
+  if (frame.has_joined) {
+    kinds[0] = {"Kind", "In frame", "Alongside"};
   }
   for (ProfilePoint::Kind kind : kTimedKinds) {
     bool has_kind = false;
@@ -933,19 +996,24 @@ void Profiler::AppendFrame(std::string& report, std::string_view title,
     std::vector<std::string>& row = kinds.emplace_back();
     row.push_back(std::string(GetKindName(kind)));
     row.push_back(FormatTime(TicksToDuration(self_ticks - other_self_ticks)));
-    if (frame.has_other_threads) {
+    if (frame.has_joined) {
       row.push_back(kind == ProfilePoint::Kind::kFrame
                         ? std::string(kNotApplicable)
                         : FormatTime(TicksToDuration(other_self_ticks)));
+    }
+  }
+  if (has_waits) {
+    std::vector<std::string>& row = kinds.emplace_back();
+    row.push_back("wait");
+    row.push_back(FormatTime(TicksToDuration(wait_ticks - other_wait_ticks)));
+    if (frame.has_joined) {
+      row.push_back(FormatTime(TicksToDuration(other_wait_ticks)));
     }
   }
   AppendTable(report, kinds, 1);
   absl::StrAppend(&report, "\n");
 
   Table table = {{"Point", "Kind", "Count", "Self"}};
-  const bool has_waits = absl::c_any_of(
-      frame.points,
-      [](const FrameBreakdown::Point& point) { return point.wait_ticks > 0; });
   if (has_waits) {
     table[0].push_back("Wait");
   }

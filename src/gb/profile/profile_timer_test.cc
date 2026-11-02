@@ -7,6 +7,7 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -240,6 +241,10 @@ struct SwitchingFiber {
 
   // The main Profiler that threads running the fiber join, if any.
   Profiler* main = nullptr;
+
+  // The FakeProfilerCpu every thread shares, if any, with `main`. Threads that
+  // join `main` then use it, rather than their own, so their ticks agree.
+  FakeProfilerCpu* shared_ticks = nullptr;
 };
 
 // Runs `fiber` on the calling thread, with `ticks`, until it switches back.
@@ -642,15 +647,149 @@ TEST_F(ProfileTimerSwitchTest, SwitchingInFrameDies) {
                "can't span a fiber switch");
 }
 
-TEST_F(ProfileTimerSwitchTest, SwitchingInThreadlessFrameDies) {
+// A thread main that runs the fiber on a Profiler named "worker", joined to
+// `fiber.main`, with `fiber.shared_ticks`.
+void RunFiberJoined(void* user_data) {
+  auto& fiber = *static_cast<SwitchingFiber*>(user_data);
+  Profiler profiler({.main = fiber.main, .name = "worker"});
+  RunFiberHere(fiber, *fiber.shared_ticks);
+}
+
+// A threadless main Profiler, whose joined Profilers share its ticks, and
+// which keeps every slow frame's report.
+class ProfileTimerThreadlessSwitchTest : public ProfileTimerSwitchTest {
+ protected:
+  ProfileTimerThreadlessSwitchTest() {
+    fiber_.main = &main_;
+    fiber_.shared_ticks = &ticks_;
+  }
+
+  FakeProfilerCpu ticks_;
+  std::vector<std::string> reports_;
+  Profiler main_{{.fake_cpu = &ticks_,
+                  .threadless = true,
+                  .slow_frame = absl::ZeroDuration(),
+                  .on_slow_frame = [this](std::string_view report) {
+                    reports_.emplace_back(report);
+                  }}};
+};
+
+// The frame's scope waits while another fiber runs a scope alongside the frame
+// on the same thread, and the frame's own times add up to its time with the
+// wait.
+TEST_F(ProfileTimerThreadlessSwitchTest, FrameSpansSwitch) {
+  CreateSwitchingFiber(+[](void* user_data) {
+    auto& fiber = *static_cast<SwitchingFiber*>(user_data);
+    {
+      ProfileScope<"SwitchTest/Alongside"> scope;
+      fiber.ticks->Advance(20);
+    }
+    SwitchBack(fiber);
+  });
+  RunFiberThread(
+      fiber_, +[](void* user_data) {
+        auto& fiber = *static_cast<SwitchingFiber*>(user_data);
+        Profiler profiler({.main = fiber.main});
+        ProfileFrame<"SwitchTest/SpanningFrame"> frame;
+        fiber.shared_ticks->Advance(10);
+        ProfileScope<"SwitchTest/InFrame"> scope;
+        fiber.shared_ticks->Advance(5);
+        RunFiberHere(fiber, *fiber.shared_ticks);
+        fiber.shared_ticks->Advance(1);
+      });
+  EXPECT_EQ(main_.GetFrameSummary().total, absl::Nanoseconds(36));
+  ASSERT_EQ(reports_.size(), 1);
+  EXPECT_EQ(reports_[0], R"(Slow frame: 36.0ns, core class 0, profiler 0
+Kind   In frame  Alongside
+frame    10.0ns          -
+scope    6.00ns     20.0ns
+call          0          0
+wait     20.0ns          0
+
+Point                     Kind   Count    Self    Wait
+SwitchTest/Alongside      scope      1  20.0ns       0
+SwitchTest/SpanningFrame  frame      1  10.0ns       0
+SwitchTest/InFrame        scope      1  6.00ns  20.0ns
+)");
+}
+
+// The frame starts on one joined thread, waits, and ends on another, so its
+// time includes the wait, and its thread's busy time is its run on each.
+TEST_F(ProfileTimerThreadlessSwitchTest, FrameEndsOnAnotherThread) {
+  CreateSwitchingFiber(+[](void* user_data) {
+    auto& fiber = *static_cast<SwitchingFiber*>(user_data);
+    {
+      ProfileFrame<"SwitchTest/MovingFrame"> frame;
+      fiber.ticks->Advance(100);
+      SwitchBack(fiber);
+      fiber.ticks->Advance(50);
+    }
+    SwitchBack(fiber);
+  });
+  RunFiberThread(fiber_, RunFiberJoined);
+  ticks_.Advance(300);
+  RunFiberThread(fiber_, RunFiberJoined);
+
+  const Profiler::FrameSummary summary = main_.GetFrameSummary();
+  EXPECT_EQ(summary.frames, 1);
+  EXPECT_EQ(summary.total, absl::Nanoseconds(450));
+  EXPECT_EQ(main_.GetSelfTime("SwitchTest/MovingFrame"),
+            absl::Nanoseconds(150));
+  EXPECT_EQ(main_.GetWaitTime("SwitchTest/MovingFrame"),
+            absl::Nanoseconds(300));
+  EXPECT_EQ(main_.GetSlowestFrameSelfTime("SwitchTest/MovingFrame"),
+            absl::Nanoseconds(150));
+
+  // The second thread carries on from the first, of the same name.
+  const std::string report = main_.GetReport();
+  EXPECT_NE(report.find(R"(
+Thread  Busy/frame    Max  Share  class 0
+worker       150ns  150ns  33.3%     100%
+)"),
+            std::string::npos)
+      << report;
+}
+
+TEST_F(ProfileTimerThreadlessSwitchTest, FrameResumedWithoutProfilerDies) {
+  CreateSwitchingFiber(+[](void* user_data) {
+    auto& fiber = *static_cast<SwitchingFiber*>(user_data);
+    {
+      ProfileFrame<"SwitchTest/UnprofiledFrame"> frame;
+      SwitchBack(fiber);
+    }
+    SwitchBack(fiber);
+  });
+  RunFiberThread(fiber_, RunFiberJoined);
+  EXPECT_DEATH(RunFiberThread(fiber_, RunWithoutProfiler),
+               "must resume on a thread joined to the frame's main Profiler");
+}
+
+// The profiler's cost per frame counts the frame's own points, and not those
+// of another fiber that ran alongside it. The ticks advance as they are read,
+// so a point has a cost.
+TEST_F(ProfileTimerSwitchTest, ThreadlessFrameCostCountsOnlyItsOwnPoints) {
   FakeProfilerCpu ticks;
+  ticks.SetAutoAdvance(1);
   Profiler main({.fake_cpu = &ticks, .threadless = true});
   fiber_.main = &main;
+  fiber_.shared_ticks = &ticks;
   CreateSwitchingFiber(+[](void* user_data) {
-    SwitchBack(*static_cast<SwitchingFiber*>(user_data));
+    auto& fiber = *static_cast<SwitchingFiber*>(user_data);
+    {
+      ProfileScope<"SwitchTest/AlongsideCost"> scope;
+    }
+    SwitchBack(fiber);
   });
-  EXPECT_DEATH(RunFiberThread(fiber_, RunFiberInFrame),
-               "can't span a fiber switch");
+  RunFiberThread(
+      fiber_, +[](void* user_data) {
+        auto& fiber = *static_cast<SwitchingFiber*>(user_data);
+        Profiler profiler({.main = fiber.main});
+        ProfileFrame<"SwitchTest/CostFrame"> frame;
+        ProfileScope<"SwitchTest/InFrameCost"> scope;
+        RunFiberHere(fiber, *fiber.shared_ticks);
+      });
+  ASSERT_GT(main.GetPointCost(), absl::ZeroDuration());
+  EXPECT_EQ(main.GetFrameSummary().profiler_cost, 2 * main.GetPointCost());
 }
 
 // A timer the thread's own fiber starts, which the switching fiber ends.

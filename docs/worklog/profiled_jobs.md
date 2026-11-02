@@ -66,9 +66,10 @@ on jobs and end on another thread:
 - A frame's time is from its start to its end, including the time its fiber
   was suspended, which is the wait of the innermost point open at the time.
 - Only one frame can be in progress (CHECK).
-- The frame's breakdown shows the points inside the frame, on its fiber,
-  apart from everything else that ran on any thread while it was in progress.
-  The first add up, with their waits, to the frame's time.
+- The frame's breakdown shows the points inside the frame, on its fiber ("In
+  frame"), apart from everything else that ran on any thread while it was in
+  progress ("Alongside"). The first add up, with their waits, to the frame's
+  time, so the kinds table has a wait row in a frame where a point waited.
 - The profiler's own cost per frame counts the timed points inside the frame.
 - `on_slow_frame` is called on the thread the frame ended on.
 - `Reset()` CHECK-fails only inside a frame, as a threadless Profiler has no
@@ -78,10 +79,11 @@ Any other main Profiler works as today, and its frames still can't span a fiber
 switch. A joined Profiler of one still can't time frames.
 
 **Busy time.** A thread's busy time is the time its outermost timed point ran
-on it, which for a job thread is the job it is running. A point's run so far is
-also added to its thread's busy time at each frame's end, as when its fiber
-suspends. So a long job, such as a main loop run as a job, counts in each frame
-it runs in, rather than all of it in the frame it ends in.
+on it during frames, which for a job thread is the job it is running. A point
+still running as a frame ends counts in that frame up to its end. So a long
+job, such as a main loop run as a job, counts in each frame it runs in, rather
+than all of it in the frame it ends in. Each run counts on the class of core it
+started or resumed on (it was the class it ended or suspended on).
 
 **Job names.** Jobs are named as today, by the `std::string_view` passed to
 `Run()`. With profiling on, each distinct name registers a job point the first
@@ -139,13 +141,31 @@ struct Options {
 - A joined Profiler of a threadless main Profiler times frames, recording them
   in the main Profiler. Whether its thread is in a frame is its own flag, which
   the fiber switch callback CHECKs, as the frame number is the main Profiler's.
-- The breakdown's split by thread becomes the frame's thread against the
-  others: the main thread, or for a threadless main, the joined thread that
-  timed the frame. Its column is "Frame thread" for both (it was "Main
-  thread").
+- The breakdown's split is the frame's own points against the rest, with the
+  columns "In frame" and "Alongside" (CL2 had "Frame thread" and "Other
+  threads", and before it "Main thread"). For a main Profiler with a thread,
+  that is the same split as by thread, as its frames can't span a switch.
 - Each timing records whether it is inside a frame, from its parent, so its
-  self time can be split from other threads' in the breakdown. That is a load
-  and a store per timed point.
+  self time and wait can be split from the rest in the breakdown, by slot
+  fields for the part outside the frame. Each also counts the timed points
+  that end inside it, so a frame's own cost is its timing's count, wherever
+  they ended. Neither needs any per-thread frame state.
+- A frame's time is from its start ticks, kept in the main Profiler under the
+  frame mutex, to its end ticks, which are its timing's start ticks (moved on
+  by each resume) plus its elapsed ticks.
+- A joined Profiler publishes its outermost point's run in progress (its start
+  ticks and class of core) beside the runs that have ended, so the main
+  Profiler can read its busy time up to any moment without stopping it. The
+  run is ended before it is added, and read in the other order, so a read
+  racing with a run's end leaves it out, which a later read includes, but
+  never counts it twice. The main Profiler gathers it as each frame starts,
+  dropping what was before the frame, and as it ends, counting the frame's.
+- Performance, in Release, against CL2: a timed point inside a frame goes from
+  15.4 to 16.7 ns, for the in-frame flag and point count. An outermost point
+  on a joined thread goes from 20.4 to 21.8 ns during a frame, but outside any
+  frame from 15.8 to 21.6 ns, as it now always reads the class of core. An
+  empty frame goes from 58 to 66 ns (63 to 75 ns threadless), for gathering
+  busy time as it starts.
 
 **Brittleness:** what a frame can do depends on whether its main Profiler has a
 thread, which is set once, at construction, and CHECKed where it matters.
@@ -283,13 +303,15 @@ Depends on: CL1.
   destroying it on another thread.
 - Performance: a timed point and a frame, against today.
 
-### CL3 [ ] profile: frames across fiber switches, and busy time per frame
+### CL3 [x] profile: frames across fiber switches, and busy time per frame
 
 Depends on: CL2.
 
 - A threadless main's frame may span fiber switches, timed from start to end,
-  with the breakdown split into the frame's own points and the rest.
-- An outermost point's run so far is added to busy time at each frame's end.
+  with the breakdown split into the frame's own points and the rest, and a
+  wait row.
+- An outermost point's run so far is added to busy time at each frame's end,
+  and busy time before a frame is dropped as it starts.
 
 **Verify**
 - Standard checks.

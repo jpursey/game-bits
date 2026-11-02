@@ -113,12 +113,15 @@ using ProfileCall =
 //
 // A frame is a timed point like a scope, charged with its self time, that also
 // records the frame as a whole (see Profiler::GetFrameSummary). Frames can't
-// nest (CHECK), and follow the same rules as other timers (see ProfileTimer),
-// except that a frame can't span a fiber switch (CHECK).
+// nest (CHECK), and follow the same rules as other timers (see ProfileTimer).
 //
-// Frames are timed on the main Profiler's thread, or for a threadless main
-// Profiler (see Profiler::Options::threadless), on any of its joined
-// Profilers' threads, one frame at a time (CHECK).
+// Frames are timed on the main Profiler's thread, where a frame can't span a
+// fiber switch (CHECK). For a threadless main Profiler (see
+// Profiler::Options::threadless), they are timed on any of its joined
+// Profilers' threads, one frame at a time (CHECK), and a frame can span fiber
+// switches, so it can wait on other work, and end on another thread. Its time
+// then includes the time its fiber was suspended. Its fiber must only resume on
+// threads joined to the same main Profiler (CHECK).
 template <ProfileName kName>
 class ProfileFrame final {
  public:

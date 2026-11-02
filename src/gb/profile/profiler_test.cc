@@ -705,8 +705,9 @@ TEST_F(ProfilerTest, ThreadsTable) {
     ProfileFrame<"ThreadBusyTest/Frame"> frame;
     ticks_.Advance(1000);
 
-    // Only the outermost point counts, on the class of core it ends on.
+    // Only the outermost point counts, on the class of core it starts on.
     loader.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+      ticks.SetCoreClass(1);
       ProfileScope<"ThreadBusyTest/Outer"> outer;
       ticks.Advance(100);
       {
@@ -714,7 +715,7 @@ TEST_F(ProfilerTest, ThreadsTable) {
         ticks.Advance(100);
       }
       ticks.Advance(100);
-      ticks.SetCoreClass(1);
+      ticks.SetCoreClass(0);
     });
   }
 
@@ -727,7 +728,6 @@ TEST_F(ProfilerTest, ThreadsTable) {
     ProfileFrame<"ThreadBusyTest/Frame"> frame;
     ticks_.Advance(1000);
     loader.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
-      ticks.SetCoreClass(0);
       ProfileScope<"ThreadBusyTest/Outer"> outer;
       ticks.Advance(100);
     });
@@ -740,6 +740,34 @@ Thread    Busy/frame     Max  Share  class 0  class 1
 loader         200ns   300ns  20.0%    25.0%    75.0%
 main          1.00us  1.00us   100%     100%        -
 thread 1           0       0  0.00%        -        -
+)"),
+            std::string::npos)
+      << report;
+}
+
+// A point still running as frames end counts in each frame, up to its end,
+// and not before or between frames.
+TEST_F(ProfilerTest, LongPointIsBusyInEachFrame) {
+  absl::Notification started;
+  absl::Notification end;
+  std::thread thread([this, &started, &end] {
+    Profiler profiler({.main = &profiler_, .name = "loader"});
+    ProfileScope<"ThreadBusyTest/Long"> scope;
+    started.Notify();
+    end.WaitForNotification();
+  });
+  started.WaitForNotification();
+  ticks_.Advance(500);
+  RecordFrames({1000});
+  ticks_.Advance(200);
+  RecordFrames({400});
+  end.Notify();
+  thread.join();
+  const std::string report = profiler_.GetReport();
+  EXPECT_NE(report.find(R"(
+Thread  Busy/frame     Max  Share  class 0
+loader       700ns  1.00us   100%     100%
+main         700ns  1.00us   100%     100%
 )"),
             std::string::npos)
       << report;
@@ -922,10 +950,10 @@ TEST_F(ProfilerThreadlessTest, FramesOnEitherThread) {
             absl::Nanoseconds(30));
   ASSERT_EQ(reports_.size(), 1);
   EXPECT_EQ(reports_[0], R"(Slow frame: 1.00us, core class 0, profiler 0
-Kind   Frame thread  Other threads
-frame        1.00us              -
-scope             0         30.0ns
-call              0              0
+Kind   In frame  Alongside
+frame    1.00us          -
+scope         0     30.0ns
+call          0          0
 
 Point                 Kind   Count    Self
 ThreadlessTest/Frame  frame      1  1.00us
@@ -939,6 +967,29 @@ Thread  Busy/frame     Max  Share  class 0
 a            500ns  1.00us  76.9%     100%
 b            165ns   300ns  25.4%     100%
 
+)"),
+            std::string::npos)
+      << report;
+}
+
+// A main loop run as a job, timing frames inside it, is busy in each frame for
+// the frame's time, and not before or between them.
+TEST_F(ProfilerThreadlessTest, MainLoopJobIsBusyInEachFrame) {
+  std::thread thread([this] {
+    Profiler profiler({.main = &profiler_, .name = "loop"});
+    ProfileScope<"ThreadlessTest/Loop"> loop;
+    ticks_.Advance(100);
+    for (int64_t frame_ticks : {1000, 400}) {
+      ProfileFrame<"ThreadlessTest/LoopFrame"> frame;
+      ticks_.Advance(frame_ticks);
+    }
+    ticks_.Advance(100);
+  });
+  thread.join();
+  const std::string report = profiler_.GetReport();
+  EXPECT_NE(report.find(R"(
+Thread  Busy/frame     Max  Share  class 0
+loop         700ns  1.00us   100%     100%
 )"),
             std::string::npos)
       << report;
@@ -1400,14 +1451,14 @@ TEST_F(ProfilerSlowFrameTest, BreakdownHasOtherThreadsTime) {
     ticks_.Advance(400);
   }
 
-  // A point's self time is on every thread, and the main thread's adds up to
-  // the frame's time.
+  // A point's self time is on every thread, and the frame's own adds up to the
+  // frame's time.
   ASSERT_EQ(reports_.size(), 1);
   EXPECT_EQ(reports_[0], R"(Slow frame: 1.40us, core class 0, profiler 0
-Kind   Frame thread  Other threads
-frame        1.00us              -
-scope         400ns          300ns
-call              0          200ns
+Kind   In frame  Alongside
+frame    1.00us          -
+scope     400ns      300ns
+call          0      200ns
 
 Point                   Kind   Count    Self
 SlowFrameTest/Frame     frame      1  1.00us
