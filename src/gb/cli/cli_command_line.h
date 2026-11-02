@@ -44,8 +44,17 @@ using CliValue = std::variant<bool, std::string_view, int64_t, double>;
 GB_CONTEXT_CONSTRAINT_DEFAULT(kConstraintCliWriter, kInOptional, CliWriter,
                               CliWriter(WriteCliText));
 
+// The width help is wrapped to, in columns. If the context has none,
+// kDefaultCliHelpWidth is added to it. A program sets its own with
+// `context.SetValue<int>(kKeyCliHelpWidth, width)`.
+inline constexpr const char* kKeyCliHelpWidth = "cli_help_width";
+inline constexpr int kDefaultCliHelpWidth = 80;
+GB_CONTEXT_CONSTRAINT_NAMED_DEFAULT(kConstraintCliHelpWidth, kInOptional, int,
+                                    kKeyCliHelpWidth, kDefaultCliHelpWidth);
+
 // What gb_cli reads from the context a command line is parsed with.
-using CliContract = ContextContract<kConstraintCliWriter>;
+using CliContract =
+    ContextContract<kConstraintCliWriter, kConstraintCliHelpWidth>;
 
 //==============================================================================
 // CliCommandLine
@@ -79,9 +88,9 @@ class CliCommandLine {
   // must, that is reported the same way, and this returns false.
   //
   // If the command line asks for help, with "--help", "-h", or the help command
-  // (see cli_help.h), this writes the command's help (FormatCliHelp()) to the
-  // context's writer instead, and succeeds. It does the same for a command
-  // with no run function.
+  // (see cli_help.h), this writes the command's help (FormatCliHelp()), wrapped
+  // to the context's help width, to the context's writer instead, and succeeds.
+  // It does the same for a command with no run function.
   bool Run();
 
   // Returns whether a bool flag was given.

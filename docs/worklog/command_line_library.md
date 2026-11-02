@@ -201,8 +201,10 @@ class CliCommandLine {
   help`). It has an optional `<command>` argument, which only its own help
   shows.
 - A program's own flags can't be `--help` or `-h` (a definition error).
-- `FormatCliHelp(absl::Span<const CliCommand* const> path)` returns the help
-  text for the command at the end of the command path, wrapped to 80 columns:
+- `FormatCliHelp(absl::Span<const CliCommand* const> path, int width)` returns
+  the help text for the command at the end of the command path, wrapped to
+  `width` columns. `CliCommandLine::Run()` wraps to the context's width (see
+  Context), which is 80 by default:
 
 ```
 Usage: oz3asm [<flags>] <source file> [<program file>]
@@ -230,8 +232,9 @@ Flags:
   empty string as `""`), except for a required argument, which never uses it.
 - Help is beside each entry, in a column shared by all the lists. An entry
   wider than 26 columns has its help start on the next line. Lines are
-  wrapped at words, up to 80 columns; a word longer than a line isn't split.
-  The usage line isn't wrapped.
+  wrapped at words, up to the width; a word longer than a line isn't split.
+  The usage line isn't wrapped. Any width works: a narrow one puts a word on
+  each line, still starting at the help column.
 
 ### Context
 
@@ -262,8 +265,17 @@ using CliWriter = std::function<void(CliText type, std::string_view text)>;
 GB_CONTEXT_CONSTRAINT_DEFAULT(kConstraintCliWriter, kInOptional, CliWriter,
                               CliWriter(WriteCliText));
 
+// The width help is wrapped to, in columns. If the context has none,
+// kDefaultCliHelpWidth is added to it. A program sets its own with
+// `context.SetValue<int>(kKeyCliHelpWidth, width)`.
+inline constexpr const char* kKeyCliHelpWidth = "cli_help_width";
+inline constexpr int kDefaultCliHelpWidth = 80;
+GB_CONTEXT_CONSTRAINT_NAMED_DEFAULT(kConstraintCliHelpWidth, kInOptional, int,
+                                    kKeyCliHelpWidth, kDefaultCliHelpWidth);
+
 // What gb_cli reads from a command line's context.
-using CliContract = ContextContract<kConstraintCliWriter>;
+using CliContract =
+    ContextContract<kConstraintCliWriter, kConstraintCliHelpWidth>;
 
 absl::StatusOr<CliCommandLine> ParseCommandLine(
     CliContract contract, const CliCommand* program,
@@ -317,6 +329,12 @@ struct CliCommand {
   `std::any`), so the writer is a `std::function` rather than a class to
   derive from. That also leaves no derived type for `SetPtr(&writer)` to
   store it under by mistake.
+- **Help width:** `kConstraintCliHelpWidth` is an `int` named
+  `"cli_help_width"`, as `Game`'s `kConstraintMaxFps` is, so a program sets it
+  with `context.SetValue<int>(kKeyCliHelpWidth, 100)`. The `cli_` prefix
+  keeps it apart from other libraries' values in a shared context.
+  `FormatCliHelp()` takes the width rather than a default, so the default is
+  only in the constraint.
 - **Constraints as data:** a command lists pointers to the
   `ContextConstraint`s it needs, which the `GB_CONTEXT_CONSTRAINT` macros
   define as `inline const` globals, so a command stays constant data:
@@ -385,7 +403,7 @@ and nothing in tier 0 needs it.
 - `ParseCommandLine()`, `RunCommandLine()`, `FormatCliHelp()`, and
   `ValidateCliCommand()`.
 - `CliText`, `CliWriter`, `WriteCliText()`, `kConstraintCliWriter`, and
-  `CliContract` (see CL6's names).
+  `CliContract` (see CL6's names), and `kConstraintCliHelpWidth` (see CL7's).
 - `GetMainArgs()`: the arguments `main()` is given. Not `GetCommandLine...`,
   which is a Windows macro family (`GetCommandLineW()`), and not `CliArgs`,
   which reads as a list of `CliArg` definitions.
@@ -399,7 +417,8 @@ and nothing in tier 0 needs it.
   value for any of them, and `GetCliPathName()`, for errors and help.
 - `cli_validators.h`: the common validators.
 - `cli_command_line.h`: `CliCommandLine`, `ParseCommandLine()`,
-  `kConstraintCliWriter`, and `CliContract`.
+  `kConstraintCliWriter`, `kConstraintCliHelpWidth` (with
+  `kKeyCliHelpWidth` and `kDefaultCliHelpWidth`), and `CliContract`.
 - `cli_help.h`: `kCliHelpCommand` and `FormatCliHelp()`.
 - `cli_writer.h`: `CliText`, `CliWriter`, and `WriteCliText()`.
 - `fake_cli_writer.h`: `FakeCliWriter`, which keeps what is written to the
@@ -627,3 +646,31 @@ Depends on: CL5.
   `CliContract` that refers to it, so the writer is still there for an error
   when parsing fails. A null constraint in a command is a definition error,
   rather than a crash when the command runs.
+
+### CL7 [x] gb_cli: help width from the context
+
+Depends on: CL6.
+
+- `kConstraintCliHelpWidth` (see Context), an optional `int` named
+  `"cli_help_width"` that defaults to `kDefaultCliHelpWidth` (80), added to
+  `CliContract`.
+- `FormatCliHelp()` takes the width, and `CliCommandLine::Run()` passes the
+  context's.
+
+**Verify**
+- Standard checks.
+- Unit tests:
+  - Help wraps to a width other than 80.
+  - `Run()` wraps help to a width set in the context.
+  - Parsing adds the default width to a context that has none.
+
+**Names**
+- `kConstraintCliHelpWidth`, `kKeyCliHelpWidth`, and `kDefaultCliHelpWidth`,
+  following `Game`'s `kConstraintMaxFps`, `kKeyMaxFps`, and `kDefaultMaxFps`.
+  Not `kConstraintCliWidth`, which reads as wrapping errors too, and "width"
+  rather than "columns", as the formatter already says.
+
+**Brittleness**
+- A width set under another name or type (`SetValue<int64_t>`) is a different
+  value, so help is wrapped to 80 without an error. `kKeyCliHelpWidth` and
+  `SetValue` needing its type written make this unlikely.

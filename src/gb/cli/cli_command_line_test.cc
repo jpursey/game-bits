@@ -543,6 +543,19 @@ TEST_F(CliCommandLineRunTest, RunWritesHelpForACommandWithNoRunFunction) {
   EXPECT_THAT(RunForHelp(*command_line), StartsWith("Usage: prog [<flags>]\n"));
 }
 
+TEST_F(CliCommandLineRunTest, RunWrapsHelpToTheContextsWidth) {
+  constexpr int kWidth = 40;
+  context_.SetValue<int>(kKeyCliHelpWidth, kWidth);
+  const std::vector<std::string_view> args = {"--help"};
+  absl::StatusOr<CliCommandLine> command_line = Parse(&kTool, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  const std::string help =
+      FormatCliHelp(command_line->GetCommandPath(), kWidth);
+  EXPECT_NE(help, FormatCliHelp(command_line->GetCommandPath(),
+                                kDefaultCliHelpWidth));
+  EXPECT_EQ(RunForHelp(*command_line), help);
+}
+
 TEST_F(CliCommandLineRunTest, HelpFlag) {
   for (const std::string_view flag : {"--help", "-h"}) {
     // The help is for the command so far, and needs nothing that is missing.
@@ -660,13 +673,14 @@ bool RunInner(ValidatedContext& context, const CliCommandLine& command_line) {
   return settings != nullptr && settings->level == 5;
 }
 
-TEST(ParseCommandLineTest, AddsTheDefaultWriter) {
+TEST(ParseCommandLineTest, AddsTheDefaults) {
   Context context;
   const std::vector<std::string_view> args = {"status"};
   absl::StatusOr<CliCommandLine> command_line =
       ParseCommandLine(&context, &kTool, args);
   ASSERT_TRUE(command_line.ok()) << command_line.status();
   EXPECT_TRUE(context.Exists<CliWriter>());
+  EXPECT_EQ(context.GetValue<int>(kKeyCliHelpWidth), kDefaultCliHelpWidth);
 }
 
 TEST_F(CliCommandLineRunTest, RunGetsTheContext) {

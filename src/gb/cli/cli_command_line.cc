@@ -264,8 +264,11 @@ absl::Status CliParser::Error(std::string_view message) const {
 bool CliCommandLine::Run() {
   const CliCommand* command = GetCommand();
   if (is_help_ || command->run == nullptr) {
-    // The context has a writer, as kConstraintCliWriter has a default.
-    (*context_.GetPtr<CliWriter>())(CliText::kHelp, FormatCliHelp(path_));
+    // The context has a writer and a width, as their constraints have
+    // defaults.
+    (*context_.GetPtr<CliWriter>())(
+        CliText::kHelp,
+        FormatCliHelp(path_, context_.GetValue<int>(kKeyCliHelpWidth)));
     return true;
   }
   std::vector<ContextConstraint> constraints = CliContract::GetConstraints();

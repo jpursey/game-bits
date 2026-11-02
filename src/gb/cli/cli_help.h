@@ -24,13 +24,16 @@ namespace gb {
 extern const CliCommand kCliHelpCommand;
 
 // Returns the help for the command at the end of `path`, the commands from the
-// program down to it (CliCommandLine::GetCommandPath()), wrapped to 80
+// program down to it (CliCommandLine::GetCommandPath()), wrapped to `width`
 // columns: how to use it, its help, then its arguments or subcommands, and its
 // flags, followed by those of the commands above it.
 //
 // A definition's help is UTF-8, and is split into paragraphs at blank lines
 // ("\n\n"). A subcommand is listed with the first paragraph of its help.
-std::string FormatCliHelp(absl::Span<const CliCommand* const> path);
+//
+// Any width works, but a narrow one puts a word on each line, and a word wider
+// than a line runs past it.
+std::string FormatCliHelp(absl::Span<const CliCommand* const> path, int width);
 
 }  // namespace gb
 

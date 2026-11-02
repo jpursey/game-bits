@@ -21,15 +21,16 @@ namespace {
 bool RunNothing(ValidatedContext&, const CliCommandLine&) { return true; }
 
 // Returns the help for the command the command line `args` names, which must
-// be valid.
+// be valid, wrapped to `width`.
 std::string GetHelp(const CliCommand* program,
-                    const std::vector<std::string_view>& args) {
+                    const std::vector<std::string_view>& args,
+                    int width = kDefaultCliHelpWidth) {
   absl::StatusOr<CliCommandLine> command_line = ParseCommandLine(program, args);
   if (!command_line.ok()) {
     ADD_FAILURE() << command_line.status();
     return "";
   }
-  return FormatCliHelp(command_line->GetCommandPath());
+  return FormatCliHelp(command_line->GetCommandPath(), width);
 }
 
 //==============================================================================
@@ -301,6 +302,29 @@ TEST(FormatCliHelpTest, WrapsByCodePoint) {
                    "\n"
                    "Flags:\n"
                    "  -h, --help  Writes help for this command.\n"));
+}
+
+TEST(FormatCliHelpTest, WrapsToTheWidth) {
+  static const CliCommand kProgram = {
+      .name = "prog",
+      .help = "One two three four five.",
+  };
+
+  // The usage line isn't wrapped, and the flag's help stays in its column, a
+  // word to a line.
+  EXPECT_EQ(GetHelp(&kProgram, {"--help"}, 10),
+            "Usage: prog [<flags>]\n"
+            "\n"
+            "One two\n"
+            "three four\n"
+            "five.\n"
+            "\n"
+            "Flags:\n"
+            "  -h, --help  Writes\n"
+            "              help\n"
+            "              for\n"
+            "              this\n"
+            "              command.\n");
 }
 
 TEST(FormatCliHelpTest, LongWordIsNotSplit) {

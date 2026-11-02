@@ -44,9 +44,6 @@ const CliCommand kCliHelpCommand = {
 
 namespace {
 
-// The width help is wrapped to.
-constexpr int kWidth = 80;
-
 // The indent of each entry in a list of arguments, commands, or flags.
 constexpr int kIndent = 2;
 
@@ -201,6 +198,9 @@ std::vector<Entry> GetEntries(
 // Writes help text, keeping track of the column it is at.
 class HelpWriter {
  public:
+  // Wraps lines to `width` columns.
+  explicit HelpWriter(int width) : width_(width) {}
+
   std::string Take() { return std::move(text_); }
 
   // Writes `text`, which must not contain a newline.
@@ -210,7 +210,7 @@ class HelpWriter {
   void NewLine();
 
   // Writes `text` a word at a time from `column` (see MoveTo()), wrapping
-  // lines to kWidth, with each new line also starting at `column`.
+  // lines to the width, with each new line also starting at `column`.
   void WriteWrapped(std::string_view text, int column);
 
   // Writes an entry, with its help starting at `column`.
@@ -224,6 +224,7 @@ class HelpWriter {
   // columns past what is written, and otherwise on the next line.
   void MoveTo(int column);
 
+  const int width_;
   std::string text_;
   int column_ = 0;
 };
@@ -241,7 +242,7 @@ void HelpWriter::WriteWrapped(std::string_view text, int column) {
     const int width = GetWidth(word);
     if (first) {
       first = false;
-    } else if (column_ + 1 + width > kWidth) {
+    } else if (column_ + 1 + width > width_) {
       NewLine();
       MoveTo(column);
     } else {
@@ -291,7 +292,7 @@ void HelpWriter::MoveTo(int column) {
 // FormatCliHelp
 //==============================================================================
 
-std::string FormatCliHelp(absl::Span<const CliCommand* const> path) {
+std::string FormatCliHelp(absl::Span<const CliCommand* const> path, int width) {
   const CliCommand* command = path.back();
 
   std::string usage =
@@ -336,7 +337,7 @@ std::string FormatCliHelp(absl::Span<const CliCommand* const> path) {
   }
   const int column = kIndent + max_entry_width + kGap;
 
-  HelpWriter writer;
+  HelpWriter writer(width);
   writer.Write(usage);
   writer.NewLine();
   for (const std::string& paragraph : GetParagraphs(command->help)) {
