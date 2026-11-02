@@ -914,6 +914,23 @@ TEST_F(ProfileTimerSwitchTest, EndingTimerOnAnotherFiberDies) {
                "must end on the fiber it started on");
 }
 
+// A thread main that runs the fiber inside an idle timer.
+void RunFiberInIdleTimer(void* user_data) {
+  auto& fiber = *static_cast<SwitchingFiber*>(user_data);
+  FakeProfilerCpu ticks;
+  Profiler profiler({.fake_cpu = &ticks});
+  ProfileIdleTimer idle;
+  RunFiberHere(fiber, ticks);
+}
+
+TEST_F(ProfileTimerSwitchTest, SwitchInIdleTimerDies) {
+  CreateSwitchingFiber(+[](void* user_data) {
+    SwitchBack(*static_cast<SwitchingFiber*>(user_data));
+  });
+  EXPECT_DEATH(RunFiberThread(fiber_, RunFiberInIdleTimer),
+               "can't switch in an idle timer");
+}
+
 TEST(ProfileTimerNoProfilerTest, JobIgnoredWithoutProfiler) {
   ProfilePoint job(ProfilePoint::Kind::kJob, "TimerTest/NoProfilerJob");
   {

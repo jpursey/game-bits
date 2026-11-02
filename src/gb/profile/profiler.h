@@ -68,7 +68,9 @@ namespace gb {
 // outside any frame are included in the totals, but in no frame's breakdown.
 //
 // Jobs (see ProfileJobTimer) are timed points that also record a histogram of
-// their run times, and the delays before each starts and resumes.
+// their run times, and the delays before each starts and resumes. A joined
+// Profiler's thread can also time its waits for work, as its idle time (see
+// ProfileIdleTimer).
 //
 // Time is read from the CPU's timestamp counter, which must be invariant (true
 // of any x86-64 CPU in the last decade), unless a FakeProfilerCpu is given in
@@ -299,6 +301,12 @@ class Profiler final {
   // the rest in the frames after. The main thread's busy time is its frames'
   // time, by the class of core each frame ran on.
   //
+  // Once a joined thread has been idle in a frame (see ProfileIdleTimer), the
+  // threads table also has each joined thread's idle time per frame, and as a
+  // share of the average frame. It is counted in frames as busy time is, so a
+  // wait in progress as a frame ends counts in that frame up to its end. What
+  // is neither busy nor idle is the thread's time between its timed points.
+  //
   // Once a Profiler has joined a main Profiler, the main Profiler's frame
   // breakdowns include the points that ended on every joined Profiler's thread
   // while the frame was in progress, including on any destroyed by then. The
@@ -349,6 +357,7 @@ class Profiler final {
   friend class ProfilePoint;
   friend class ProfileTimer;
   friend class ProfileJobTimer;
+  friend class ProfileIdleTimer;
   template <ProfileName kName>
   friend class ProfileFrame;
 
@@ -370,8 +379,11 @@ class Profiler final {
     int64_t max_ticks = 0;
   };
 
-  // Ticks by class of core.
-  using CoreTicks = std::array<int64_t, kCoreClasses>;
+  // A joined thread's ticks by what it was doing, its state: running timed
+  // points, by the class of core each started or resumed on, below
+  // kCoreClasses, or waiting for work, as kIdle.
+  static constexpr int kIdle = kCoreClasses;
+  using StateTicks = std::array<int64_t, kCoreClasses + 1>;
 
   // A timed point in progress, kept by whatever times it. Timings running on
   // the thread form a stack, linked through `parent`, which holds only the
@@ -567,33 +579,34 @@ class Profiler final {
     std::vector<PointTotals> folded;
     std::vector<JobTotals> folded_jobs;
 
-    // The busy time in frames since this was last reset, by class of core,
-    // and in the busiest frame, gathered at each frame's end.
-    CoreTicks busy_core_ticks = {};
+    // The busy and idle time in frames since this was last reset, by state,
+    // and the busy time in the busiest frame, gathered at each frame's end.
+    StateTicks state_ticks = {};
     int64_t max_frame_busy_ticks = 0;
 
-    // `profiler`'s busy time (see BusyTime) as far as it has been gathered, by
-    // class of core.
-    CoreTicks gathered_busy_ticks = {};
+    // `profiler`'s time (see ThreadTime) as far as it has been gathered, by
+    // state.
+    StateTicks gathered_ticks = {};
 
     // The busy time the destroyed ones added since the last frame's end,
     // which counts in the frame in progress, or the next one.
     int64_t left_busy_ticks = 0;
   };
 
-  // A joined Profiler's busy time (see GetReport()): the runs of its outermost
-  // points that have ended, or whose fiber suspended, by the class of core
-  // each started or resumed on, and the one running now. Only its thread
-  // writes it, and the main Profiler gathers it as each frame starts and ends,
-  // without stopping the thread (see ReadBusyTicks()). It has a cache line of
-  // its own, as both threads use it.
-  struct alignas(ABSL_CACHELINE_SIZE) BusyTime {
-    std::array<SingleWriterInt64, kCoreClasses> core_ticks;
+  // A joined Profiler's busy and idle time (see GetReport()): its runs, each
+  // a run of an outermost point on one class of core or a wait for work (see
+  // ProfileIdleTimer), that have ended or whose fiber suspended, by state (see
+  // StateTicks), and the one in progress. A thread is in at most one run at a
+  // time. Only its thread writes it, and the main Profiler gathers it as each
+  // frame starts and ends, without stopping the thread (see
+  // ReadThreadTicks()). It has a cache line of its own, as both threads use it.
+  struct alignas(ABSL_CACHELINE_SIZE) ThreadTime {
+    std::array<SingleWriterInt64, kCoreClasses + 1> state_ticks;
 
-    // The run in progress: when it started, and its class of core, which is
-    // -1 when there is none.
+    // The run in progress: when it started, and its state, which is -1 when
+    // there is none.
     SingleWriterInt64 run_start_ticks;
-    SingleWriterInt64 run_core{-1};
+    SingleWriterInt64 run_state{-1};
   };
 
   // A frame's time, and the part each point had in it. The frame's own part is
@@ -653,7 +666,7 @@ class Profiler final {
     top_ = &timing;
     timing.start_ticks = ReadTicks();
     if (parent == nullptr && main_ != nullptr) {
-      StartBusyRun(timing.start_ticks);
+      StartRun(timing.start_ticks, ReadCoreClass());
     }
   }
 
@@ -670,7 +683,7 @@ class Profiler final {
       top_->child_ticks += elapsed_ticks;
       top_->child_points += timing.child_points + 1;
     } else if (main_ != nullptr) {
-      EndBusyRun(end_ticks);
+      EndRun(end_ticks);
     }
     AddTime(timing.index, elapsed_ticks - timing.child_ticks, timing.in_frame);
     return elapsed_ticks;
@@ -683,7 +696,7 @@ class Profiler final {
   // returns it, or null if there are none. When it resumes, ResumeTimings()
   // adds the wait to the innermost's point and makes them the stack of the
   // thread it resumed on, ending in that thread's Profiler, or in none if it
-  // has none.
+  // has none. Suspending in an idle timer CHECK-fails.
   static void* SuspendTimings();
   static void ResumeTimings(void* state);
 
@@ -733,27 +746,33 @@ class Profiler final {
   static void AddFramePoint(FrameBreakdown::Point& point,
                             const FrameBreakdown::Point& part);
 
-  // As a joined Profiler, starts and ends a run of an outermost timed point on
-  // this thread, at `ticks`, in busy_.
-  void StartBusyRun(int64_t ticks);
-  void EndBusyRun(int64_t ticks);
+  // Starts and ends a run on this thread in thread_time_, at `ticks`, in
+  // `state` (see StateTicks). A run of an outermost timed point is recorded
+  // only by a joined Profiler.
+  void StartRun(int64_t ticks, int state);
+  void EndRun(int64_t ticks);
 
-  // As a joined Profiler, returns busy_'s time so far, by class of core,
+  // Starts and ends a wait for work on this thread (see ProfileIdleTimer).
+  void StartIdle();
+  void EndIdle();
+
+  // As a joined Profiler, returns thread_time_'s time so far, by state,
   // including the run in progress up to `now_ticks`. Any thread may call it.
   // A read that races with a run ending can leave out that run, which a later
   // read includes, but never counts it twice.
-  CoreTicks ReadBusyTicks(int64_t now_ticks) const;
+  StateTicks ReadThreadTicks(int64_t now_ticks) const;
 
-  // As a main Profiler, gathers the busy time `thread`'s joined Profiler has
-  // added up to `now_ticks` since it was last gathered, and returns it. The
-  // busy time is also added to `thread`'s totals if `in_frame`, and is
-  // otherwise dropped, as it was between frames.
-  static int64_t GatherBusyTicks(JoinedThread& thread, int64_t now_ticks,
-                                 bool in_frame);
+  // As a main Profiler, gathers the busy and idle time `thread`'s joined
+  // Profiler has added up to `now_ticks` since they were last gathered, and
+  // returns the busy time. Both are also added to `thread`'s totals if
+  // `in_frame`, and are otherwise dropped, as they were between frames.
+  static int64_t GatherThreadTicks(JoinedThread& thread, int64_t now_ticks,
+                                   bool in_frame);
 
-  // As a main Profiler, adds each joined thread's busy time in the frame in
-  // progress, up to `end_ticks`, to its entry in joined_threads_.
-  void AddFrameBusyTimes(int64_t end_ticks) ABSL_LOCKS_EXCLUDED(joined_mutex_);
+  // As a main Profiler, adds each joined thread's busy and idle time in the
+  // frame in progress, up to `end_ticks`, to its entry in joined_threads_.
+  void AddFrameThreadTicks(int64_t end_ticks)
+      ABSL_LOCKS_EXCLUDED(joined_mutex_);
 
   // Returns the slot at `index` (a ProfilePoint's index), with its frame part
   // reset if it was for another frame.
@@ -983,9 +1002,9 @@ class Profiler final {
   // Profiler's joined_threads_.
   const std::string name_;
 
-  // Only a joined Profiler records busy time, as the main thread's is its
-  // frames' time.
-  BusyTime busy_;
+  // Only a joined Profiler's thread time is gathered, as the main thread's
+  // busy time is its frames' time.
+  ThreadTime thread_time_;
 
   // The Profilers joined to this main Profiler, by name (see JoinedThread), in
   // the order they were first used.

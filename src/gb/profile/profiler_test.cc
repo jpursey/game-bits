@@ -879,6 +879,179 @@ main        1.00us  1.00us   100%     100%
       << report;
 }
 
+TEST_F(ProfilerTest, ThreadsTableHasIdleTime) {
+  ProfiledThread loader(&profiler_, "loader");
+  ProfiledThread worker(&profiler_, "worker");
+
+  // Idle time between frames isn't counted.
+  loader.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+    ProfileIdleTimer idle;
+    ticks.Advance(5000);
+  });
+  {
+    ProfileFrame<"ThreadIdleTest/Frame"> frame;
+    ticks_.Advance(1000);
+    loader.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+      {
+        ProfileIdleTimer idle;
+        ticks.Advance(300);
+      }
+      ProfileScope<"ThreadIdleTest/Work"> work;
+      ticks.Advance(100);
+    });
+  }
+
+  // The main thread has no idle time, and a joined thread that wasn't idle has
+  // none.
+  const std::string report = profiler_.GetReport();
+  EXPECT_NE(report.find(R"(
+Thread  Busy/frame     Max  Share  class 0  Idle/frame  Idle share
+loader       100ns   100ns  10.0%     100%       300ns       30.0%
+main        1.00us  1.00us   100%     100%           -           -
+worker           0       0  0.00%        -           0       0.00%
+)"),
+            std::string::npos)
+      << report;
+}
+
+TEST_F(ProfilerTest, NoIdleColumnsUntilIdleInFrame) {
+  ProfiledThread thread(&profiler_, "loader");
+  thread.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+    ProfileIdleTimer idle;
+    ticks.Advance(100);
+  });
+
+  // The main thread's idle time isn't reported.
+  {
+    ProfileIdleTimer idle;
+    ticks_.Advance(100);
+  }
+  RecordFrames({1000});
+  const std::string report = profiler_.GetReport();
+  EXPECT_EQ(report.find("Idle/frame"), std::string::npos) << report;
+}
+
+// A wait still in progress as frames end counts in each frame, up to its end,
+// and not before or between frames.
+TEST_F(ProfilerTest, LongWaitIsIdleInEachFrame) {
+  absl::Notification started;
+  absl::Notification end;
+  std::thread thread([this, &started, &end] {
+    Profiler profiler({.main = &profiler_, .name = "loader"});
+    ProfileIdleTimer idle;
+    started.Notify();
+    end.WaitForNotification();
+  });
+  started.WaitForNotification();
+  ticks_.Advance(500);
+  RecordFrames({1000});
+  ticks_.Advance(200);
+  RecordFrames({400});
+  end.Notify();
+  thread.join();
+  const std::string report = profiler_.GetReport();
+  EXPECT_NE(report.find(R"(
+Thread  Busy/frame     Max  Share  class 0  Idle/frame  Idle share
+loader           0       0  0.00%        -       700ns        100%
+main         700ns  1.00us   100%     100%           -           -
+)"),
+            std::string::npos)
+      << report;
+}
+
+TEST_F(ProfilerTest, DestroyedThreadStaysIdle) {
+  std::optional<ProfiledThread> thread(std::in_place, &profiler_, "loader");
+  {
+    ProfileFrame<"ThreadIdleTest/Frame"> frame;
+    ticks_.Advance(1000);
+    thread->Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+      ProfileIdleTimer idle;
+      ticks.Advance(400);
+    });
+    thread.reset();
+  }
+  std::string report = profiler_.GetReport();
+  EXPECT_NE(report.find("\nloader           0       0  0.00%        -       "
+                        "400ns       40.0%\n"),
+            std::string::npos)
+      << report;
+
+  // A reset clears it, and a thread of the same name carries on after.
+  profiler_.Reset();
+  thread.emplace(&profiler_, "loader");
+  {
+    ProfileFrame<"ThreadIdleTest/Frame"> frame;
+    ticks_.Advance(1000);
+    thread->Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+      ProfileIdleTimer idle;
+      ticks.Advance(100);
+    });
+  }
+  report = profiler_.GetReport();
+  EXPECT_NE(report.find("\nloader           0       0  0.00%        -       "
+                        "100ns       10.0%\n"),
+            std::string::npos)
+      << report;
+}
+
+TEST_F(ProfilerTest, IdleTimerInTimedPointDies) {
+  EXPECT_DEATH(
+      {
+        ProfiledThread thread(&profiler_);
+        thread.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+          ProfileScope<"ThreadIdleTest/Scope"> scope;
+          ProfileIdleTimer idle;
+        });
+      },
+      "outside every timed point");
+
+  // The same holds on the main thread, whose frames are timed points.
+  EXPECT_DEATH(
+      {
+        ProfileFrame<"ThreadIdleTest/Frame"> frame;
+        ProfileIdleTimer idle;
+      },
+      "outside every timed point");
+}
+
+TEST_F(ProfilerTest, TimedPointInIdleTimerDies) {
+  EXPECT_DEATH(
+      {
+        ProfiledThread thread(&profiler_);
+        thread.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+          ProfileIdleTimer idle;
+          ProfileScope<"ThreadIdleTest/Scope"> scope;
+        });
+      },
+      "can't be inside an idle timer");
+}
+
+TEST_F(ProfilerTest, NestedIdleTimersDie) {
+  EXPECT_DEATH(
+      {
+        ProfiledThread thread(&profiler_);
+        thread.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+          ProfileIdleTimer outer;
+          ProfileIdleTimer inner;
+        });
+      },
+      "Idle timers can't nest");
+}
+
+TEST_F(ProfilerTest, DestroyingProfilerInIdleTimerDies) {
+  EXPECT_DEATH(
+      {
+        std::thread thread([this] {
+          std::optional<Profiler> profiler(
+              std::in_place, Profiler::Options{.main = &profiler_});
+          ProfileIdleTimer idle;
+          profiler.reset();
+        });
+        thread.join();
+      },
+      "destroyed in an idle timer");
+}
+
 TEST_F(ProfilerTest, ReadingValueAsSlowestFrameDies) {
   ProfilePoint value(ProfilePoint::Kind::kValue, "ProfilerTest/SlowestValue");
   EXPECT_DEATH(profiler_.GetSlowestFrameCount("ProfilerTest/SlowestValue"),

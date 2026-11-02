@@ -282,6 +282,8 @@ Profiler::~Profiler() {
   CHECK(threadless_ || s_current == this)
       << "A Profiler must be destroyed on the thread that created it";
   CHECK(top_ == nullptr) << "A Profiler must not be destroyed in a timed point";
+  CHECK(thread_time_.run_state.Get() != kIdle)
+      << "A Profiler must not be destroyed in an idle timer";
   if (main_ != nullptr) {
     main_->RemoveJoinedThread(joined_index_);
   }
@@ -338,11 +340,11 @@ void Profiler::RemoveJoinedThread(int index) {
 
   // If the frame has ended since its number was read, its part is kept but
   // never captured, and its busy time counts in the next frame. The thread is
-  // outside every timed point, so it has no run in progress to read the ticks
-  // for.
+  // outside every timed point and idle timer, so it has no run in progress to
+  // read the ticks for.
   if (frame_number != 0) {
     thread.left_busy_ticks +=
-        GatherBusyTicks(thread, /*now_ticks=*/0, /*in_frame=*/true);
+        GatherThreadTicks(thread, /*now_ticks=*/0, /*in_frame=*/true);
     if (left_frame_number_ != frame_number) {
       left_frame_number_ = frame_number;
       left_frame_points_.clear();
@@ -354,8 +356,8 @@ void Profiler::RemoveJoinedThread(int index) {
                                        absl::MakeSpan(left_frame_points_));
   }
 
-  // The next Profiler under this name starts from no busy time.
-  thread.gathered_busy_ticks = {};
+  // The next Profiler under this name starts from no busy or idle time.
+  thread.gathered_ticks = {};
   thread.profiler = nullptr;
   thread.baseline.clear();
 }
@@ -367,7 +369,12 @@ GB_PROFILE_NOINLINE Profiler* Profiler::GetCurrent() { return s_current; }
 // pointer, on the thread it runs on, so they read s_current directly.
 void* Profiler::SuspendTimings() {
   Profiler* const profiler = s_current;
-  if (profiler == nullptr || profiler->top_ == nullptr) {
+  if (profiler == nullptr) {
+    return nullptr;
+  }
+  CHECK(profiler->thread_time_.run_state.Get() != kIdle)
+      << "A fiber can't switch in an idle timer";
+  if (profiler->top_ == nullptr) {
     return nullptr;
   }
   CHECK(profiler->frame_profiler_->threadless_ || !profiler->top_->in_frame)
@@ -381,7 +388,7 @@ void* Profiler::SuspendTimings() {
     timing->start_ticks = ticks - timing->start_ticks;
   }
   if (profiler->main_ != nullptr) {
-    profiler->EndBusyRun(ticks);
+    profiler->EndRun(ticks);
   }
   profiler->top_->suspend_ticks = ticks;
   return std::exchange(profiler->top_, nullptr);
@@ -423,7 +430,7 @@ void Profiler::ResumeTimings(void* state) {
   }
   profiler->top_ = top;
   if (profiler->main_ != nullptr) {
-    profiler->StartBusyRun(ticks);
+    profiler->StartRun(ticks, profiler->ReadCoreClass());
   }
 }
 
@@ -594,7 +601,7 @@ void Profiler::Reset() {
   for (JoinedThread& thread : joined_threads_) {
     thread.folded.clear();
     thread.folded_jobs.clear();
-    thread.busy_core_ticks = {};
+    thread.state_ticks = {};
     thread.max_frame_busy_ticks = 0;
     thread.left_busy_ticks = 0;
     if (thread.profiler != nullptr) {
@@ -613,7 +620,7 @@ void Profiler::ResetOwn() {
     frame_totals_ = {};
   }
   std::fill_n(slots_.get(), kMaxProfilePoints, Slot());
-  busy_ = BusyTime();
+  thread_time_ = ThreadTime();
 }
 
 double Profiler::MeasurePointCost() {
@@ -662,11 +669,11 @@ void Profiler::OpenFrame(int64_t start_ticks, int start_core) {
   current_frame_start_ticks_ = start_ticks;
   current_frame_start_core_ = start_core;
 
-  // Busy time before the frame isn't counted.
+  // Busy and idle time before the frame isn't counted.
   absl::MutexLock joined_lock(&joined_mutex_);
   for (JoinedThread& thread : joined_threads_) {
     if (thread.profiler != nullptr) {
-      GatherBusyTicks(thread, start_ticks, /*in_frame=*/false);
+      GatherThreadTicks(thread, start_ticks, /*in_frame=*/false);
     }
   }
 }
@@ -700,7 +707,7 @@ void Profiler::RecordFrame(int64_t end_ticks, int end_core,
       slow_frame =
           is_slowest ? totals.slowest : CaptureFrame(ticks, core, timed_points);
     }
-    AddFrameBusyTimes(end_ticks);
+    AddFrameThreadTicks(end_ticks);
     numbers_.frame.Set(0);
   }
 
@@ -774,64 +781,81 @@ void Profiler::AddFramePoint(FrameBreakdown::Point& point,
   point.other_wait_ticks += part.other_wait_ticks;
 }
 
-void Profiler::StartBusyRun(int64_t ticks) {
-  // The start is written before the class of core, which says there is a run,
-  // so a reader that sees the class sees the start (see ReadBusyTicks()).
-  busy_.run_start_ticks.Set(ticks);
-  busy_.run_core.SetRelease(ReadCoreClass());
+void Profiler::StartRun(int64_t ticks, int state) {
+  DCHECK(thread_time_.run_state.Get() < 0)
+      << "A timed point can't be inside an idle timer";
+
+  // The start is written before the state, which says there is a run, so a
+  // reader that sees the state sees the start (see ReadThreadTicks()).
+  thread_time_.run_start_ticks.Set(ticks);
+  thread_time_.run_state.SetRelease(state);
 }
 
-void Profiler::EndBusyRun(int64_t ticks) {
+void Profiler::EndRun(int64_t ticks) {
   // The run is ended before it is added, so a reader that sees it added sees
-  // it ended, and doesn't count it twice (see ReadBusyTicks()).
-  const int core = static_cast<int>(busy_.run_core.Get());
-  DCHECK(core >= 0) << "A busy run ended without starting";
-  busy_.run_core.Set(-1);
-  SingleWriterInt64& core_ticks = busy_.core_ticks[core];
-  core_ticks.SetRelease(core_ticks.Get() + ticks - busy_.run_start_ticks.Get());
+  // it ended, and doesn't count it twice (see ReadThreadTicks()).
+  const int state = static_cast<int>(thread_time_.run_state.Get());
+  DCHECK(state >= 0) << "A run ended without starting";
+  thread_time_.run_state.Set(-1);
+  SingleWriterInt64& state_ticks = thread_time_.state_ticks[state];
+  state_ticks.SetRelease(state_ticks.Get() + ticks -
+                         thread_time_.run_start_ticks.Get());
 }
 
-Profiler::CoreTicks Profiler::ReadBusyTicks(int64_t now_ticks) const {
-  // The ended runs are read before the run in progress, as EndBusyRun() writes
+void Profiler::StartIdle() {
+  CHECK(top_ == nullptr) << "An idle timer must be outside every timed point";
+  CHECK(thread_time_.run_state.Get() != kIdle) << "Idle timers can't nest";
+  StartRun(ReadTicks(), kIdle);
+}
+
+void Profiler::EndIdle() {
+  // StartRun() only DCHECKs this, as every outermost point reaches it.
+  CHECK(thread_time_.run_state.Get() == kIdle)
+      << "A timed point can't be inside an idle timer";
+  EndRun(ReadTicks());
+}
+
+Profiler::StateTicks Profiler::ReadThreadTicks(int64_t now_ticks) const {
+  // The ended runs are read before the run in progress, as EndRun() writes
   // them in the other order. A run that ends while this reads is either in
   // the ended runs, or in neither.
-  CoreTicks ticks;
-  for (int core = 0; core < kCoreClasses; ++core) {
-    ticks[core] = busy_.core_ticks[core].GetAcquire();
+  StateTicks ticks;
+  for (int state = 0; state < static_cast<int>(ticks.size()); ++state) {
+    ticks[state] = thread_time_.state_ticks[state].GetAcquire();
   }
-  const int run_core = static_cast<int>(busy_.run_core.GetAcquire());
-  if (run_core >= 0) {
-    ticks[run_core] +=
-        std::max<int64_t>(now_ticks - busy_.run_start_ticks.Get(), 0);
+  const int run_state = static_cast<int>(thread_time_.run_state.GetAcquire());
+  if (run_state >= 0) {
+    ticks[run_state] +=
+        std::max<int64_t>(now_ticks - thread_time_.run_start_ticks.Get(), 0);
   }
   return ticks;
 }
 
-int64_t Profiler::GatherBusyTicks(JoinedThread& thread, int64_t now_ticks,
-                                  bool in_frame) {
+int64_t Profiler::GatherThreadTicks(JoinedThread& thread, int64_t now_ticks,
+                                    bool in_frame) {
   // A read can leave out a run that a previous read included, if it ended
-  // while this read, so busy time already gathered is never taken back.
-  const CoreTicks busy = thread.profiler->ReadBusyTicks(now_ticks);
-  int64_t added_ticks = 0;
-  for (int core = 0; core < kCoreClasses; ++core) {
+  // while this read, so time already gathered is never taken back.
+  const StateTicks ticks = thread.profiler->ReadThreadTicks(now_ticks);
+  int64_t busy_ticks = 0;
+  for (int state = 0; state < static_cast<int>(ticks.size()); ++state) {
     const int64_t added =
-        std::max<int64_t>(busy[core] - thread.gathered_busy_ticks[core], 0);
-    thread.gathered_busy_ticks[core] += added;
+        std::max<int64_t>(ticks[state] - thread.gathered_ticks[state], 0);
+    thread.gathered_ticks[state] += added;
     if (in_frame) {
-      thread.busy_core_ticks[core] += added;
-      added_ticks += added;
+      thread.state_ticks[state] += added;
+      busy_ticks += state != kIdle ? added : 0;
     }
   }
-  return added_ticks;
+  return busy_ticks;
 }
 
-void Profiler::AddFrameBusyTimes(int64_t end_ticks) {
+void Profiler::AddFrameThreadTicks(int64_t end_ticks) {
   absl::MutexLock lock(&joined_mutex_);
   for (JoinedThread& thread : joined_threads_) {
     int64_t ticks = thread.left_busy_ticks;
     thread.left_busy_ticks = 0;
     if (thread.profiler != nullptr) {
-      ticks += GatherBusyTicks(thread, end_ticks, /*in_frame=*/true);
+      ticks += GatherThreadTicks(thread, end_ticks, /*in_frame=*/true);
     }
     thread.max_frame_busy_ticks = std::max(thread.max_frame_busy_ticks, ticks);
   }
@@ -940,11 +964,12 @@ void Profiler::AppendCoreFrames(std::string& report,
 void Profiler::AppendThreads(std::string& report,
                              const FrameTotals& frames) const {
   // A thread's busy time in frames, by class of core, where the main thread's
-  // frames can also be kMixedCores.
+  // frames can also be kMixedCores, and a joined thread's idle time in frames.
   struct ThreadBusy {
     std::string name;
     int64_t max_frame_ticks = 0;
     std::array<int64_t, kCoreClasses + 1> core_ticks = {};
+    std::optional<int64_t> idle_ticks;
   };
   std::vector<ThreadBusy> threads;
   {
@@ -953,9 +978,13 @@ void Profiler::AppendThreads(std::string& report,
       return;
     }
     for (const JoinedThread& thread : joined_threads_) {
-      ThreadBusy& busy = threads.emplace_back(ThreadBusy{
-          .name = thread.name, .max_frame_ticks = thread.max_frame_busy_ticks});
-      absl::c_copy(thread.busy_core_ticks, busy.core_ticks.begin());
+      ThreadBusy& busy = threads.emplace_back(
+          ThreadBusy{.name = thread.name,
+                     .max_frame_ticks = thread.max_frame_busy_ticks,
+                     .idle_ticks = thread.state_ticks[kIdle]});
+      // Only the busy states, as core_ticks' last is kMixedCores, not kIdle.
+      std::copy_n(thread.state_ticks.begin(), kCoreClasses,
+                  busy.core_ticks.begin());
     }
   }
   if (!threadless_) {
@@ -978,10 +1007,16 @@ void Profiler::AppendThreads(std::string& report,
       cores.push_back(core);
     }
   }
+  const bool has_idle = absl::c_any_of(
+      threads, [](const ThreadBusy& busy) { return busy.idle_ticks > 0; });
 
   Table table = {{"Thread", "Busy/frame", "Max", "Share"}};
   for (int core : cores) {
     table[0].push_back(FormatCore(core));
+  }
+  if (has_idle) {
+    table[0].push_back("Idle/frame");
+    table[0].push_back("Idle share");
   }
   const bool has_frames = frames.frames > 0;
   for (const ThreadBusy& busy : threads) {
@@ -1000,6 +1035,18 @@ void Profiler::AppendThreads(std::string& report,
     for (int core : cores) {
       row.push_back(busy.core_ticks[core] > 0
                         ? FormatPercent(busy.core_ticks[core], busy_ticks)
+                        : std::string(kNotApplicable));
+    }
+
+    // The main thread has no idle time.
+    if (has_idle) {
+      const std::optional<int64_t>& idle_ticks = busy.idle_ticks;
+      row.push_back(
+          idle_ticks.has_value() && has_frames
+              ? FormatTime(TicksToDuration(*idle_ticks) / frames.frames)
+              : std::string(kNotApplicable));
+      row.push_back(idle_ticks.has_value()
+                        ? FormatPercent(*idle_ticks, frames.ticks)
                         : std::string(kNotApplicable));
     }
   }

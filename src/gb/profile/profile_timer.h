@@ -117,6 +117,46 @@ class ProfileJobTimer final {
 };
 
 //==============================================================================
+// ProfileIdleTimer
+//==============================================================================
+
+// Times the calling thread waiting for work, as its idle time, from when the
+// timer is created until it is destroyed. A job system (see gb/job) puts one
+// around each job thread's wait for a job to run.
+//
+// The idle time of a thread whose Profiler is joined to a main Profiler is in
+// the main Profiler's threads table (see Profiler::GetReport()). Other threads'
+// idle time isn't reported. With no Profiler on the thread, the timer does
+// nothing.
+//
+// The timer must be outside every timed point on its thread, and can't nest,
+// span a fiber switch, or outlive the thread's Profiler, and on a joined
+// Profiler's thread no timed point can start inside it (CHECK). Timing a wait
+// costs two reads of the CPU's timestamp counter, and a few stores.
+class ProfileIdleTimer final {
+ public:
+  [[nodiscard]] ProfileIdleTimer() {
+    Profiler* const profiler = Profiler::GetCurrent();
+    if (profiler == nullptr) {
+      return;
+    }
+    profiler->StartIdle();
+    profiler_ = profiler;
+  }
+  ProfileIdleTimer(const ProfileIdleTimer&) = delete;
+  ProfileIdleTimer& operator=(const ProfileIdleTimer&) = delete;
+  ~ProfileIdleTimer() {
+    if (profiler_ == nullptr) {
+      return;
+    }
+    profiler_->EndIdle();
+  }
+
+ private:
+  Profiler* profiler_ = nullptr;
+};
+
+//==============================================================================
 // Named timers
 //==============================================================================
 

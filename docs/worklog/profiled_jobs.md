@@ -225,9 +225,14 @@ class Profiler {
 - `ProfileTimer` no longer takes job points, so every job point's run is
   recorded.
 - Idle time is recorded by the joined Profiler, and gathered by the main
-  Profiler at each frame's end with busy time. A wait still in progress at a
-  frame's end counts in that frame up to its end, so a thread asleep for many
-  frames shows idle in each, rather than all of it in the frame it wakes in.
+  Profiler as each frame starts and ends with busy time. A wait still in
+  progress at a frame's end counts in that frame up to its end, so a thread
+  asleep for many frames shows idle in each, rather than all of it in the frame
+  it wakes in.
+- Idle is another state of a thread's runs, beside busy on each class of core,
+  so a thread is never busy and idle at once (an idle timer must be outside
+  every timed point on any thread, and a timed point can't start inside one),
+  and it adds nothing to what gathering busy time reads.
 - Points are recorded as today: about 15 ns for a timed point. A job adds a
   read of the ticks for its start delay, and a histogram add.
 
@@ -251,7 +256,9 @@ inside `FiberJobSystem`, so no program has to get them right.
 - `Job` gets `queued_ticks`, read in `DoRun()` from the main Profiler.
 - `FiberState` gets `ready_ticks`, read in `EnqueueFibers()` when the counter
   reaches zero, and the job adds its resume delay when `DoWait()` returns.
-- `WaitForWork()` times its wait with a `ProfileIdleTimer`.
+- `WaitForWork()` times only the part of its wait that blocks with a
+  `ProfileIdleTimer`, so a job thread that finds work at once doesn't pay two
+  reads of the ticks for it.
 
 **Brittleness:** none for the program, as the job system owns every Profiler
 and destroys them in order. A thread outside the job system that joins
@@ -350,7 +357,7 @@ Depends on: CL1.
 - Memory: a histogram's size, and the total for Terra Diem's job names on 32
   threads.
 
-### CL5 [ ] profile: idle time per thread
+### CL5 [x] profile: idle time per thread
 
 Depends on: CL1.
 
