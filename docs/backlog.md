@@ -659,3 +659,20 @@ the paths of one from `CreateOsRoot()`. Ideally an operating system path
 opens in a `FileSystem` as it is, and the conversion goes. A conversion hook
 on each protocol, or asking the file system how to read a path, were
 considered and set aside, as they work around the drive rather than fix it.
+
+## Command line protocol errors
+
+- **Layers:** gb_cli
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** Command line library
+- **Background:** [Command line library](worklog/command_line_library.md)
+
+If a program's context names a `cli_file_protocol` that its `FileSystem`
+doesn't have, every path a path validator checks reads as missing (`"main.txt"
+doesn't exist`), with nothing pointing at the protocol. It is the program's
+mistake, found on its first run, but the message misleads. Have the path
+validators check that the protocol is registered (`FileSystem::IsRegistered()`,
+or that there is a default protocol when the context names none), and report a
+missing one as the program's mistake rather than the user's, as a missing
+context value is.
