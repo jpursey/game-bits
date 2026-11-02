@@ -18,6 +18,7 @@ set(gb_image_DEPS
   gb_base
   gb_file
   stb_image
+  stb_image_write
 )
 
 set(gb_image_LIBS

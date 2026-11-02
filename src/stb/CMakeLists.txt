@@ -25,6 +25,17 @@ set(stb_image_resize_INCLUDES
 
 gb_add_library(stb_image_resize)
 
+set(stb_image_write_SOURCE
+  ${GB_THIRD_PARTY_DIR}/stb/stb_image_write.h
+  stb_image_write.cc
+)
+
+set(stb_image_write_INCLUDES
+  ${GB_THIRD_PARTY_DIR}/stb
+)
+
+gb_add_library(stb_image_write)
+
 set(stb_perlin_SOURCE
   ${GB_THIRD_PARTY_DIR}/stb/stb_perlin.h
   stb_perlin.cc

@@ -9,6 +9,7 @@
 #include "gb/file/file.h"
 #include "gb/file/file_system.h"
 #include "stb_image.h"
+#include "stb_image_write.h"
 
 namespace gb {
 
@@ -70,6 +71,53 @@ std::unique_ptr<Image> LoadImage(gb::FileSystem* file_system,
     return nullptr;
   }
   return LoadImage(file.get());
+}
+
+bool SaveImage(File* file, const ImageView& image) {
+  // A file opened without write access writes nothing and stays valid, so a
+  // short write is what says writing failed.
+  struct WriteState {
+    File* file;
+    bool failed;
+  };
+  static constexpr stbi_write_func* kWrite = [](void* context, void* data,
+                                                int size) {
+    auto* state = static_cast<WriteState*>(context);
+    if (state->file->Write(data, size) != size) {
+      state->failed = true;
+    }
+  };
+  WriteState state = {file, false};
+  const int result = stbi_write_png_to_func(
+      kWrite, &state, image.GetWidth(), image.GetHeight(), 4,
+      image.GetRawPixels(), image.GetWidth() * static_cast<int>(sizeof(Pixel)));
+  if (result == 0) {
+    LOG(ERROR) << "Failed to encode image as PNG.";
+    return false;
+  }
+  if (state.failed) {
+    LOG(ERROR) << "Failed to save image, as writing the file failed.";
+    return false;
+  }
+  return true;
+}
+
+bool SaveImage(FileSystem* file_system, std::string_view filename,
+               const ImageView& image) {
+  auto file = file_system->OpenFile(filename, kNewFileFlags);
+  if (file == nullptr) {
+    LOG(ERROR) << "Could not create image: " << filename;
+    return false;
+  }
+  if (!SaveImage(file.get(), image)) {
+    return false;
+  }
+  if (!file->Close()) {
+    LOG(ERROR) << "Failed to save image, as closing the file failed: "
+               << filename;
+    return false;
+  }
+  return true;
 }
 
 }  // namespace gb

@@ -14,6 +14,7 @@
 #include "gb/file/file_system.h"
 #include "gb/file/memory_file_protocol.h"
 #include "gb/file/test_protocol.h"
+#include "gb/image/image.h"
 #include "gb/test/log_error_guard.h"
 #include "gb/test/log_recorder.h"
 #include "gmock/gmock.h"
@@ -132,6 +133,85 @@ TEST_F(ImageFileTest, LoadImageWithFailedRead) {
 
   // The read failed part way through the image.
   EXPECT_GT(file_state->bytes_read, static_cast<int64_t>(sizeof(kTgaHeader)));
+}
+
+TEST_F(ImageFileTest, SaveImageToFileSystem) {
+  Image image(2, 2);
+  image.Edit().ModifyRegion().SetAll(kTgaPixels);
+  ASSERT_TRUE(SaveImage(&file_system_, "mem:/image.png", image.View()));
+
+  std::string contents;
+  ASSERT_TRUE(file_system_.ReadFile("mem:/image.png", &contents));
+  EXPECT_TRUE(contents.starts_with("\x89PNG\r\n\x1a\n"));
+  auto loaded = LoadImage(&file_system_, "mem:/image.png");
+  ASSERT_NE(loaded, nullptr);
+  EXPECT_EQ(loaded->GetWidth(), 2);
+  EXPECT_EQ(loaded->GetHeight(), 2);
+  EXPECT_THAT(loaded->GetPixels(), ElementsAreArray(kTgaPixels));
+}
+
+TEST_F(ImageFileTest, SaveImageReplacesFile) {
+  ASSERT_TRUE(file_system_.WriteFile("mem:/image.png", MakeTgaFile()));
+  Image image(1, 1, Pixel(1, 2, 3, 4));
+  ASSERT_TRUE(SaveImage(&file_system_, "mem:/image.png", image.View()));
+  auto loaded = LoadImage(&file_system_, "mem:/image.png");
+  ASSERT_NE(loaded, nullptr);
+  EXPECT_THAT(loaded->GetPixels(), ElementsAre(Pixel(1, 2, 3, 4)));
+}
+
+TEST_F(ImageFileTest, SaveImageToFile) {
+  auto file = file_system_.OpenFile("mem:/image.png", kNewFileFlags);
+  ASSERT_NE(file, nullptr);
+
+  // The PNG is written where the file is positioned.
+  ASSERT_EQ(file->WriteString("abc"), 3);
+  Image image(1, 1, Pixel(1, 2, 3, 4));
+  ASSERT_TRUE(SaveImage(file.get(), image.View()));
+  ASSERT_TRUE(file->Close());
+
+  std::string contents;
+  ASSERT_TRUE(file_system_.ReadFile("mem:/image.png", &contents));
+  EXPECT_TRUE(contents.starts_with("abc\x89PNG"));
+}
+
+TEST_F(ImageFileTest, SaveImageToReadOnlyFile) {
+  ASSERT_TRUE(file_system_.WriteFile("mem:/image.png", "abc"));
+  auto file = file_system_.OpenFile("mem:/image.png", kReadFileFlags);
+  ASSERT_NE(file, nullptr);
+  Image image(1, 1, Pixel(1, 2, 3, 4));
+  EXPECT_FALSE(SaveImage(file.get(), image.View()));
+  EXPECT_THAT(log_error_guard_.TakeMessages(),
+              ElementsAre(Field(&LogRecorder::Message::text,
+                                HasSubstr("writing the file failed"))));
+}
+
+TEST_F(ImageFileTest, SaveImageWhereFileCantBeCreated) {
+  test_state_.open_fail_path = "/image.png";
+  Image image(1, 1, Pixel(1, 2, 3, 4));
+  EXPECT_FALSE(SaveImage(&file_system_, "test:/image.png", image.View()));
+  EXPECT_THAT(log_error_guard_.TakeMessages(),
+              Contains(Field(&LogRecorder::Message::text,
+                             HasSubstr("Could not create image"))));
+}
+
+TEST_F(ImageFileTest, SaveImageWithFailedWrite) {
+  test_state_.paths["/image.png"] = TestProtocol::PathState::NewFile();
+  test_state_.paths["/image.png"].GetFile()->fail_write_after = 10;
+  Image image(1, 1, Pixel(1, 2, 3, 4));
+  EXPECT_FALSE(SaveImage(&file_system_, "test:/image.png", image.View()));
+  EXPECT_THAT(log_error_guard_.TakeMessages(),
+              ElementsAre(Field(&LogRecorder::Message::text,
+                                HasSubstr("writing the file failed"))));
+}
+
+TEST_F(ImageFileTest, SaveImageWithFailedClose) {
+  test_state_.paths["/image.png"] = TestProtocol::PathState::NewFile();
+  test_state_.paths["/image.png"].GetFile()->fail_flush = true;
+  Image image(1, 1, Pixel(1, 2, 3, 4));
+  EXPECT_FALSE(SaveImage(&file_system_, "test:/image.png", image.View()));
+  EXPECT_THAT(log_error_guard_.TakeMessages(),
+              ElementsAre(Field(&LogRecorder::Message::text,
+                                HasSubstr("closing the file failed"))));
 }
 
 TEST_F(ImageFileTest, LoadImageWithFailedFirstRead) {
