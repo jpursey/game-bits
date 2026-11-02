@@ -9,7 +9,7 @@
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "gb/file/file_types.h"
-#include "gb/file/local_file_protocol.h"
+#include "gb/file/path.h"
 
 namespace gb {
 
@@ -37,19 +37,19 @@ absl::Status ValidateProtocol(const ValidatedContext& context) {
 }
 
 // Returns the type of `path`, given on the command line, in the context's file
-// system, or an error if it doesn't exist or can't be converted, or the file
-// system doesn't have the protocol to open it with.
+// system, or an error if it doesn't exist, or the file system doesn't have the
+// protocol to open it with.
 absl::StatusOr<PathType> GetExistingPathType(const ValidatedContext& context,
                                              std::string_view path) {
   const absl::Status status = ValidateProtocol(context);
   if (!status.ok()) {
     return status;
   }
+  // An empty path would otherwise read as the current folder.
   const std::string file_path = GetCliFilePath(context, path);
   const PathType type =
-      file_path.empty()
-          ? PathType::kInvalid
-          : context.GetPtr<FileSystem>()->GetPathInfo(file_path).type;
+      path.empty() ? PathType::kInvalid
+                   : context.GetPtr<FileSystem>()->GetPathInfo(file_path).type;
   if (type == PathType::kInvalid) {
     return absl::InvalidArgumentError(
         absl::StrCat("\"", path, "\" doesn't exist"));
@@ -92,13 +92,14 @@ absl::Status ValidateFolderExists(const ValidatedContext& context,
 
 std::string GetCliFilePath(const ValidatedContext& context,
                            std::string_view path) {
-  const std::string os_root_path = LocalFileProtocol::ToOsRootPath(path);
   const std::string protocol =
       context.GetValue<std::string>(kKeyCliFileProtocol);
-  if (os_root_path.empty() || protocol.empty()) {
-    return os_root_path;
+  std::string path_protocol;
+  RemoveProtocol(NormalizePath(path), &path_protocol);
+  if (path.empty() || protocol.empty() || !path_protocol.empty()) {
+    return std::string(path);
   }
-  return absl::StrCat(protocol, ":", os_root_path);
+  return absl::StrCat(protocol, ":", path);
 }
 
 const CliValidator<std::string_view> kCliPathExists = {

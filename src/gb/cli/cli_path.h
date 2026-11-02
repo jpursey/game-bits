@@ -18,11 +18,12 @@ namespace gb {
 //==============================================================================
 // Paths on the command line
 //
-// A path given on a command line is written the operating system's way,
-// absolute or relative to the current directory. A program opens it in the
-// context's FileSystem, with a protocol that takes the paths of a protocol from
-// LocalFileProtocol::CreateOsRoot(), as GetCliFilePath() converts it: the file
-// system's default protocol, unless the context names another.
+// A path given on a command line is opened as it is written, in the context's
+// FileSystem (see GetCliFilePath()). For paths written the operating system's
+// way, absolute or relative to the current directory, register
+// LocalFileProtocol::CreateOsRoot() and make "file" the default protocol: on
+// Windows, a drive ("C:\src\a") is then a protocol name, and a path without one
+// is opened with the default protocol.
 //
 // The path validators below read the context, as does a command's run function
 // that calls GetCliFilePath(), so each lists both constraints:
@@ -44,22 +45,21 @@ namespace gb {
 GB_CONTEXT_CONSTRAINT(kConstraintCliFileSystem, kInRequired, FileSystem);
 
 // The name of the protocol in kConstraintCliFileSystem that paths on the
-// command line are opened with. If the context has none, or it is empty, they
-// are opened with the file system's default protocol. A program sets its own
-// with `context.SetValue<std::string>(kKeyCliFileProtocol, name)`.
+// command line without a protocol of their own are opened with. If the context
+// has none, or it is empty, they are opened with the file system's default
+// protocol. A program sets its own with
+// `context.SetValue<std::string>(kKeyCliFileProtocol, name)`.
 inline constexpr const char* kKeyCliFileProtocol = "cli_file_protocol";
 GB_CONTEXT_CONSTRAINT_NAMED(kConstraintCliFileProtocol, kInOptional,
                             std::string, kKeyCliFileProtocol);
 
 // Returns the path in kConstraintCliFileSystem of `path`, a path given on the
-// command line: converted by LocalFileProtocol::ToOsRootPath(), and prefixed
-// with the protocol in kConstraintCliFileProtocol if there is one
-// ("file:/c/src/main.txt", or "/c/src/main.txt" for the default protocol).
+// command line: `path` itself, prefixed with the protocol in
+// kConstraintCliFileProtocol if there is one and `path` has no protocol of its
+// own ("src/main.txt" is "mem:src/main.txt", and "C:\src" is unchanged).
 //
-// Returns an empty string if the path can't be converted (an empty path, or a
-// network path). If `context` doesn't allow kConstraintCliFileProtocol to be
-// read, that is reported as a context error, and the path is for the default
-// protocol.
+// If `context` doesn't allow kConstraintCliFileProtocol to be read, that is
+// reported as a context error, and the path is for the default protocol.
 std::string GetCliFilePath(const ValidatedContext& context,
                            std::string_view path);
 

@@ -627,23 +627,6 @@ other six. The field is in the Windows SDK headers but undocumented. Check what
 it means, and what other CPUs (AMD's in particular) report, and if it is
 reliable, order cores by it within a class.
 
-## Command line paths without conversion
-
-- **Layers:** gb_file, gb_cli
-- **Size:** medium
-- **Feature workflow:** no
-- **Depends on:** Command line library
-- **Background:** [Command line library](worklog/command_line_library.md)
-
-A path given on a command line is written the operating system's way, and on
-Windows its drive (`c:\src`) reads as a protocol name, so `gb_cli` converts
-every path with `LocalFileProtocol::ToOsRootPath()` before opening it
-(`GetCliFilePath()`). That ties the path validators to a protocol that takes
-the paths of one from `CreateOsRoot()`. Ideally an operating system path
-opens in a `FileSystem` as it is, and the conversion goes. A conversion hook
-on each protocol, or asking the file system how to read a path, were
-considered and set aside, as they work around the drive rather than fix it.
-
 ## UTF-8 console output on Windows
 
 - **Layers:** gb_cli

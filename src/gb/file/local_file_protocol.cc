@@ -416,19 +416,6 @@ std::unique_ptr<LocalFileProtocol> LocalFileProtocol::CreateOsRoot() {
       new LocalFileProtocol(kDefaultFlags, {}, false, false));
 }
 
-std::string LocalFileProtocol::ToOsRootPath(std::string_view native_path) {
-  const fs::path path = ToPath(native_path);
-  if (path.empty()) {
-    return {};
-  }
-  std::error_code error;
-  const fs::path absolute_path = fs::absolute(path, error);
-  if (error) {
-    return {};
-  }
-  return FullToOsRootPath(ToString(absolute_path));
-}
-
 LocalFileProtocol::LocalFileProtocol(FileProtocolFlags flags,
                                      std::string_view root, bool unique_root,
                                      bool delete_at_exit)

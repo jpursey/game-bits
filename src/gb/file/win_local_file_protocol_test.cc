@@ -113,25 +113,14 @@ TEST_F(WinLocalFileProtocolTest, WriteFails) {
   EXPECT_TRUE(file->Close());
 }
 
-TEST(WinLocalFileProtocolOsRootTest, ToOsRootPath) {
-  // The drive is the first folder, on any drive.
-  EXPECT_EQ(LocalFileProtocol::ToOsRootPath("C:\\src\\Main.txt"),
-            "/c/src/Main.txt");
-  EXPECT_EQ(LocalFileProtocol::ToOsRootPath("q:/src/../lib/"), "/q/lib");
-  EXPECT_EQ(LocalFileProtocol::ToOsRootPath("C:\\"), "/c");
-
-  // Network paths aren't supported.
-  EXPECT_EQ(LocalFileProtocol::ToOsRootPath("\\\\server\\share\\file"), "");
-  EXPECT_EQ(LocalFileProtocol::ToOsRootPath("//server/share/file"), "");
-}
-
 TEST(WinLocalFileProtocolOsRootTest, DriveFolders) {
   std::error_code error;
   const fs::path temp_path = fs::temp_directory_path(error);
   ASSERT_FALSE(error) << error.message();
-  const std::string drive = LocalFileProtocol::ToOsRootPath(
-      ToUtf8(temp_path.root_path().u16string()));
-  ASSERT_EQ(drive.size(), 2) << drive;
+  const std::string root_name = ToUtf8(temp_path.root_name().u16string());
+  ASSERT_EQ(root_name.size(), 2) << root_name;
+  const std::string drive =
+      absl::StrCat("/", absl::AsciiStrToLower(root_name.substr(0, 1)));
 
   // A drive is a folder, but the root that would hold the drives isn't, nor is
   // a first folder that isn't a drive letter.

@@ -119,18 +119,7 @@ class LocalFileProtocol : public FileProtocol {
   // operating system keeps for each drive. Setting a current folder, under any
   // name, sets its drive's, and makes it the process's current folder, which
   // is the current folder of "file". Other drives keep their own.
-  // ToOsRootPath() converts any operating system path to a path for the "file"
-  // name.
   static std::unique_ptr<LocalFileProtocol> CreateOsRoot();
-
-  // Converts an operating system path, absolute or relative to the current
-  // directory, to a path of a protocol from CreateOsRoot(). The path is
-  // normalized and absolute, with no protocol name, so it is opened with that
-  // protocol as the default protocol, or prefixed with its name.
-  //
-  // Returns an empty string if the path is empty, isn't UTF-8, or is a network
-  // path.
-  static std::string ToOsRootPath(std::string_view native_path);
 
   ~LocalFileProtocol() override;
 

@@ -260,24 +260,31 @@ is added to it if it has none:
 
 ### Paths
 
-`cli_path.h` opens paths given on the command line in a `FileSystem`:
+`cli_path.h` opens paths given on the command line in a `FileSystem`, as
+they are written:
 - `kConstraintCliFileSystem`: the `FileSystem`, required.
 - `kConstraintCliFileProtocol`: an optional `std::string` named
   `kKeyCliFileProtocol` (`"cli_file_protocol"`). Without one, or with an empty
-  one, paths use the file system's default protocol.
-- `GetCliFilePath(context, path)` converts a path written the operating
-  system's way, absolute or relative to the current directory, with
-  `LocalFileProtocol::ToOsRootPath()`, and prefixes the context's protocol if
-  it names one (`"file:/c/src/main.txt"`). It returns an empty string for a
-  path that can't be converted (an empty path, or a network path). The
-  protocol must take the paths of one from `CreateOsRoot()`.
+  one, paths without a protocol of their own use the file system's default
+  protocol.
+- `GetCliFilePath(context, path)` returns the path as it is, prefixed with the
+  context's protocol if it names one and the path has no protocol of its own
+  (`"mem:src/main.txt"`).
+- A file system with `LocalFileProtocol::CreateOsRoot()` registered, with
+  `"file"` as the default protocol, opens any path written the operating
+  system's way. On Windows, each drive letter is also a name for that
+  protocol: `C:\src\a` is `c:/src/a`, which is `file:/c/src/a`, and `C:src`
+  is relative to drive C's current folder, as Windows keeps it. A path
+  without a drive is relative to the current folder, through the `"file"`
+  protocol, whose root is above the drives, so an absolute path starts with
+  its drive (`\c\src\a` is `C:\src\a`). A network path (`\\server\share`)
+  can't be opened.
 - `kCliPathExists`, `kCliFileExists`, and `kCliFolderExists` validate that a
   path exists, is a file, or is a folder: `"x" doesn't exist`, `"x" isn't a
   file`, `"x" isn't a folder`. Each reads both constraints, so a context
-  without a `FileSystem` fails parsing. A path that can't be converted doesn't
-  exist, as far as they say. If the file system doesn't have the context's
-  protocol, or a default protocol when the context names none, they fail as
-  the program's mistake.
+  without a `FileSystem` fails parsing. If the file system doesn't have the
+  context's protocol, or a default protocol when the context names none, they
+  fail as the program's mistake.
 - A run function that calls `GetCliFilePath()` lists both constraints in its
   command's constraints, as the example does.
 
@@ -362,9 +369,6 @@ platform-specific.
 - A run function that calls `GetCliFilePath()` must list
   `kConstraintCliFileProtocol`. If it doesn't, reading it is reported as a
   context error on the first run, and the path is for the default protocol.
-- The protocol paths are opened with must take the paths of one from
-  `CreateOsRoot()`. One rooted elsewhere is given paths it reads as under its
-  root, without an error, which the program's first run finds.
 
 ## Deliberate choices
 
@@ -407,12 +411,23 @@ platform-specific.
   so a program can send its text elsewhere (a log, a window), and tests
   collect it.
 - **The default protocol for paths:** paths use the file system's default
-  protocol unless the context names one, so a program that registers its
-  `CreateOsRoot()` protocol as the default sets nothing else.
-- **Converting paths in `gb_cli`:** a conversion hook on each protocol, or
-  asking the file system how to read a path, were set aside, as they work
-  around a Windows drive reading as a protocol name rather than fix it (see
-  Known limitations).
+  protocol unless the context names one, so a program that makes `"file"`
+  the default sets nothing else.
+- **Drives as protocols:** rather than converting each path in `gb_cli`, a
+  Windows drive, which reads as a protocol name, is one, so a path opens as
+  it is written. The `CreateOsRoot()` protocol registers under every letter
+  from a to z as well as `"file"`, rather than only the drives that exist,
+  so a drive added later works, and a missing one reads as a path that
+  doesn't exist. A copy between its names, such as between drives, stays in
+  the protocol (`std::filesystem::copy_file()`) rather than being streamed by
+  `FileSystem`, as a copy passes the name of each path.
+  `FileProtocol::GetCanonicalPath()` gives a path one form under every name,
+  so `FileSystem` still finds a folder copied into itself. Set aside: a
+  separate drive protocol forwarding to the `"file"` one (another protocol
+  for the same files, so copies between them would be streamed, emptying a
+  file copied onto itself), and a conversion hook on each protocol or asking
+  the file system how to read a path (which work around the drive rather
+  than fix it).
 - **Short bool flags don't combine** (`-ml`), which keeps every short flag
   unambiguous.
 
@@ -420,6 +435,5 @@ platform-specific.
 
 Each is a backlog item:
 
-- **Command line paths without conversion:** every path is converted with
-  `ToOsRootPath()`, which ties the path validators to a protocol that takes
-  the paths of one from `CreateOsRoot()`.
+- **UTF-8 console output on Windows:** the default writer writes UTF-8, which
+  a console in another output code page garbles.
