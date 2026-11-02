@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "absl/algorithm/container.h"
+#include "absl/log/check.h"
 #include "absl/strings/ascii.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
@@ -125,7 +126,7 @@ absl::Status ValidateChoice(std::string_view text,
 
 template <typename T>
 absl::StatusOr<CliValue> ParseValue(
-    const ValidatedContext& context, std::string_view text,
+    ValidatedContext* context, std::string_view text,
     std::initializer_list<CliChoice> choices,
     std::initializer_list<const CliValidator<T>*> validators) {
   T value = {};
@@ -138,7 +139,16 @@ absl::StatusOr<CliValue> ParseValue(
     return status;
   }
   for (const CliValidator<T>* validator : validators) {
-    status = validator->validate(context, value);
+    std::vector<ContextConstraint> constraints;
+    for (const ContextConstraint* constraint : validator->constraints) {
+      constraints.push_back(*constraint);
+    }
+    ValidatedContext validator_context(*context, std::move(constraints));
+
+    // The parser validated the context against every validator's constraints
+    // when it reached the command.
+    CHECK(validator_context.IsValid());
+    status = validator->validate(validator_context, value);
     if (!status.ok()) {
       return status;
     }
@@ -148,7 +158,7 @@ absl::StatusOr<CliValue> ParseValue(
 
 // Parses the value of `definition`, a CliFlag<T> or CliArg<T>, from `text`.
 template <typename Definition>
-absl::StatusOr<CliValue> Parse(const ValidatedContext& context,
+absl::StatusOr<CliValue> Parse(ValidatedContext* context,
                                const Definition& definition,
                                std::string_view text) {
   return ParseValue(context, text, definition.choices, definition.validators);
@@ -180,21 +190,21 @@ CliArgFields GetCliArgFields(const CliAnyArg& arg) {
   return std::visit([](const auto* typed) { return GetFields(*typed); }, arg);
 }
 
-absl::StatusOr<CliValue> ParseCliValue(const ValidatedContext& context,
+absl::StatusOr<CliValue> ParseCliValue(ValidatedContext* context,
                                        const CliAnyFlag& flag,
                                        std::string_view text) {
   return std::visit(
-      [&context, text](const auto* typed) {
+      [context, text](const auto* typed) {
         return Parse(context, *typed, text);
       },
       flag);
 }
 
-absl::StatusOr<CliValue> ParseCliValue(const ValidatedContext& context,
+absl::StatusOr<CliValue> ParseCliValue(ValidatedContext* context,
                                        const CliAnyArg& arg,
                                        std::string_view text) {
   return std::visit(
-      [&context, text](const auto* typed) {
+      [context, text](const auto* typed) {
         return Parse(context, *typed, text);
       },
       arg);

@@ -56,12 +56,13 @@ CliArgFields GetCliArgFields(const CliAnyArg& arg);
 
 // Returns the value parsed from `text` and validated, or an error saying what
 // is wrong with it. A bool flag takes no value, so `text` is ignored, and its
-// value is true. The validators get `context`, which must meet their
-// constraints (see AppendCliValidatorConstraints()).
-absl::StatusOr<CliValue> ParseCliValue(const ValidatedContext& context,
+// value is true. Each validator gets a context made from `context` with only
+// its own constraints, so `context` must meet them all (see
+// AppendCliValidatorConstraints()).
+absl::StatusOr<CliValue> ParseCliValue(ValidatedContext* context,
                                        const CliAnyFlag& flag,
                                        std::string_view text);
-absl::StatusOr<CliValue> ParseCliValue(const ValidatedContext& context,
+absl::StatusOr<CliValue> ParseCliValue(ValidatedContext* context,
                                        const CliAnyArg& arg,
                                        std::string_view text);
 

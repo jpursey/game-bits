@@ -69,8 +69,10 @@ class CliParser {
   absl::Status ParseWord(std::string_view word);
 
   // Validates the context against the constraints of the validators of the
-  // flags and arguments of every command in the path, for the validators to
-  // read it.
+  // flags and arguments of every command in the path, so a missing value is
+  // found when the command is reached, whether or not they are given. Each
+  // validator gets its own context, with only its own constraints (see
+  // internal::ParseCliValue()).
   absl::Status ValidateContext();
 
   // Validates that nothing required is missing, once all arguments are
@@ -88,9 +90,6 @@ class CliParser {
   ValidatedContext* const context_;
   std::vector<const CliCommand*> path_;
   absl::flat_hash_map<const void*, internal::CliValue> values_;
-
-  // The context the validators get (see ValidateContext()).
-  ValidatedContext validator_context_;
 
   // The index of the next positional argument of the command at the end of
   // the path.
@@ -177,7 +176,7 @@ absl::Status CliParser::ParseFlag(absl::Span<const std::string_view> args,
     return Error(absl::StrCat("\"", flag_text, "\" needs a value"));
   }
   absl::StatusOr<internal::CliValue> value =
-      internal::ParseCliValue(validator_context_, *flag, text);
+      internal::ParseCliValue(context_, *flag, text);
   if (!value.ok()) {
     return Error(
         absl::StrCat("\"", flag_text, "\": ", value.status().message()));
@@ -214,7 +213,7 @@ absl::Status CliParser::ParseWord(std::string_view word) {
   const CliAnyArg& arg = command->args.begin()[next_arg_];
   const internal::CliArgFields fields = internal::GetCliArgFields(arg);
   absl::StatusOr<internal::CliValue> value =
-      internal::ParseCliValue(validator_context_, arg, word);
+      internal::ParseCliValue(context_, arg, word);
   if (!value.ok()) {
     return Error(
         absl::StrCat("<", fields.name, ">: ", value.status().message()));
@@ -234,8 +233,8 @@ absl::Status CliParser::ValidateContext() {
       internal::AppendCliValidatorConstraints(arg, &constraints);
     }
   }
-  validator_context_ = ValidatedContext(*context_, std::move(constraints));
-  if (!validator_context_.IsValid()) {
+  const ValidatedContext validator_context(*context_, std::move(constraints));
+  if (!validator_context.IsValid()) {
     return absl::FailedPreconditionError(
         absl::StrCat(internal::GetCliPathName(path_),
                      ": the context is missing a value that the validators "

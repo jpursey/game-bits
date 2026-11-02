@@ -802,6 +802,39 @@ TEST_F(CliCommandLineRunTest, ValidatorsWithoutAValueTheyRead) {
   EXPECT_THAT(context_errors_, ElementsAre(HasSubstr("Settings")));
 }
 
+// Reads the Settings in the context without declaring them.
+absl::Status ValidateReadsUndeclared(const ValidatedContext& context,
+                                     const int64_t&) {
+  if (context.GetPtr<Settings>() == nullptr) {
+    return absl::InvalidArgumentError("can't read the settings");
+  }
+  return absl::OkStatus();
+}
+
+const CliValidator<int64_t> kReadsUndeclared = {
+    .validate = ValidateReadsUndeclared,
+};
+
+const CliFlag<int64_t> kBreadth = {.name = "breadth",
+                                   .validators = {&kReadsUndeclared}};
+const CliCommand kBush = {
+    .name = "bush",
+    .flags = {&kDepth, &kBreadth},
+    .run = RunNothing,
+};
+
+TEST_F(CliCommandLineRunTest, ValidatorsOnlyReadWhatTheyDeclare) {
+  Settings settings = {.level = 5};
+  context_.SetPtr<Settings>(&settings);
+
+  // "--depth"'s validator declares Settings, but "--breadth"'s doesn't.
+  EXPECT_TRUE(Parse(&kBush, {"--depth", "5"}).ok());
+  EXPECT_THAT(
+      Parse(&kBush, {"--depth", "5", "--breadth", "1"}).status().message(),
+      StartsWith("bush: \"--breadth\": can't read the settings."));
+  EXPECT_THAT(context_errors_, ElementsAre(HasSubstr("Settings")));
+}
+
 //==============================================================================
 // Value types
 //==============================================================================

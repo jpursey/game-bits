@@ -122,7 +122,10 @@ int main(int argc, char* argv[]) {
   commands above it, whether or not they are given. A value that is missing is
   reported as `ValidatedContext` reports any error, and `ParseCommandLine()`
   returns a `FailedPrecondition` error, as that is the program's mistake, not
-  the user's.
+  the user's. Each validator is then called with a context of its own, with
+  only its own constraints, so it can only read what it declares, rather than
+  working only because another validator in the path declared a value it
+  reads.
 - **Definition errors:** a definition that can't be parsed unambiguously is a
   programmer error, found by `ValidateCliCommand()`: empty or duplicate names
   (a flag's long and short names are unique across the command and the
@@ -800,3 +803,24 @@ Depends on: CL8.
   elsewhere (`LocalFileProtocol::Create(root)`) is given paths it reads as
   under its root, without an error. That is the program's mistake, and found
   on its first run.
+
+### CL10 [x] gb_cli: a context for each validator
+
+Depends on: CL9.
+
+- Each validator call gets its own `ValidatedContext`, made from the parser's
+  context with only that validator's constraints, so a validator can only
+  read what it declares, and never works only because another validator in
+  the command path declared it.
+- When the parser reaches a command, it still validates the context against
+  the constraints of all the validators of its flags and arguments and those
+  of the commands above it, so a missing value fails parsing whether or not
+  the flag is given. That context is only a check, and is no longer passed
+  to the validators.
+
+**Verify**
+- Standard checks.
+- Unit tests:
+  - A validator that reads a value it doesn't declare gets a context error,
+    even when another validator of the same command declares it.
+  - The CL8 tests pass unchanged.
