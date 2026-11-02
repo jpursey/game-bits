@@ -5,14 +5,17 @@
 
 #include "gb/job/fiber_job_system.h"
 
+#include <string>
 #include <utility>
 
+#include "absl/container/flat_hash_map.h"
 #include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "absl/memory/memory.h"
 #include "absl/numeric/bits.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
+#include "gb/profile/profile_timer.h"
 #include "gb/thread/fiber.h"
 #include "gb/thread/thread.h"
 
@@ -76,6 +79,22 @@ bool FiberJobSystem::Init(ValidatedContext context) {
     clock_ = RealtimeClock::GetClock();
   }
 
+  if (context.GetValue<bool>(kKeyProfileJobs)) {
+    Profiler::Options options;
+    if (auto* const given =
+            context.GetPtr<Profiler::Options>(kKeyProfilerOptions);
+        given != nullptr) {
+      options = std::move(*given);
+    }
+    if (options.main != nullptr) {
+      LOG(ERROR) << "FiberJobSystem profiler options cannot set a main "
+                    "Profiler.";
+      return false;
+    }
+    options.threadless = true;
+    profiler_ = std::make_unique<Profiler>(std::move(options));
+  }
+
   ThreadPlacementOptions placement_options = {
       .pinning = context.GetValue<ThreadPinning>(kKeyThreadPinning),
       .reserved_cores = context.GetValue<int>(kKeyReservedCores),
@@ -106,6 +125,7 @@ bool FiberJobSystem::Init(ValidatedContext context) {
         const Fiber fiber = GetThisFiber();
         GB_FIBER_JOB_SYSTEM_LOG << fiber << ": Starting fiber";
         job_system->SetThreadState();
+        job_system->AddThreadProfiler();
         job_system->JobMain(fiber);
         // Nothing can happen as the job system may be in its destructor.
       });
@@ -121,7 +141,13 @@ bool FiberJobSystem::Init(ValidatedContext context) {
   }
   placement_.threads.resize(thread_count);
   total_fiber_count_.store(thread_count, std::memory_order_release);
+  if (profiler_ != nullptr) {
+    thread_profilers_made_.emplace(thread_count);
+  }
   threads_created_.Notify();
+  if (profiler_ != nullptr) {
+    thread_profilers_made_->Wait();
+  }
   GB_FIBER_JOB_SYSTEM_LOG << "Job threads: "
                           << DescribeThreadPlacement(placement_);
   return true;
@@ -191,6 +217,8 @@ const ThreadPlacement& FiberJobSystem::GetPlacement() const {
   return placement_;
 }
 
+Profiler* FiberJobSystem::GetProfiler() const { return profiler_.get(); }
+
 int FiberJobSystem::GetIdleThreadCount() const {
   int count = 0;
   for (const JobThread& job_thread : job_threads_) {
@@ -217,9 +245,11 @@ void FiberJobSystem::EnqueueJob(Job* job) {
 }
 
 void FiberJobSystem::EnqueueFibers(absl::Span<void* const> states) {
+  const int64_t ready_ticks = ReadProfilerTicks();
   for (void* waiter : states) {
     auto* const state = static_cast<FiberState*>(waiter);
     state->wait_counter = nullptr;
+    state->ready_ticks = ready_ticks;
     pending_fibers_.enqueue(state);
   }
   WakeThreadsForWork(static_cast<int>(states.size()));
@@ -292,9 +322,12 @@ FiberJobSystem::Work FiberJobSystem::WaitForWork() {
     if (queued_work_.load(std::memory_order_seq_cst) > 0) {
       WakeIdleThread();
     }
-    job_thread.waiting.store(true, std::memory_order_release);
-    job_thread.wake.wait();
-    job_thread.waiting.store(false, std::memory_order_relaxed);
+    {
+      ProfileIdleTimer idle_timer;
+      job_thread.waiting.store(true, std::memory_order_release);
+      job_thread.wake.wait();
+      job_thread.waiting.store(false, std::memory_order_relaxed);
+    }
   }
   return work;
 }
@@ -327,6 +360,7 @@ void FiberJobSystem::CompleteWait(Fiber fiber) {
     // The state is no longer waiting, so we need to immediately resume it.
     // (which the loop does).
     state->wait_counter = nullptr;
+    state->ready_ticks = ReadProfilerTicks();
     ResumeJobFiber(fiber, state);
 
     // Code may never get to this point. If it does, then fiber was
@@ -352,8 +386,39 @@ void FiberJobSystem::JobMain(Fiber fiber) {
       break;
     }
   }
+
+  // The thread ends once this returns, on whichever fiber it is on by now.
+  job_threads_[GetThisThreadIndex()].profiler.reset();
   unused_fibers_.enqueue(fiber);
   GB_FIBER_JOB_SYSTEM_LOG << fiber << ": Exiting fiber";
+}
+
+void FiberJobSystem::AddThreadProfiler() {
+  if (profiler_ == nullptr) {
+    return;
+  }
+  const int index = GetThisThreadIndex();
+  job_threads_[index].profiler = std::make_unique<Profiler>(Profiler::Options{
+      .main = profiler_.get(),
+      .name = absl::StrCat("job thread ", index + 1),
+  });
+  thread_profilers_made_->DecrementCount();
+}
+
+ProfilePoint FiberJobSystem::FindJobPoint(std::string_view name) {
+  if (name.empty()) {
+    name = "unnamed job";
+  }
+
+  // Only a name's first run on each thread registers its point, which locks
+  // the registry.
+  thread_local absl::flat_hash_map<std::string, ProfilePoint> s_points;
+  auto it = s_points.find(name);
+  if (it == s_points.end()) {
+    it = s_points.emplace(name, ProfilePoint(ProfilePoint::Kind::kJob, name))
+             .first;
+  }
+  return it->second;
 }
 
 void FiberJobSystem::RunJob(Fiber fiber, Job* job) {
@@ -373,7 +438,12 @@ void FiberJobSystem::RunJob(Fiber fiber, Job* job) {
   // thread.
   GB_FIBER_JOB_SYSTEM_LOG << fiber << ": Running job " << GetJobName(job)
                           << " callback";
-  job->callback();
+  if (profiler_ != nullptr) {
+    ProfileJobTimer timer(*job->point, job->queued_ticks);
+    job->callback();
+  } else {
+    job->callback();
+  }
   GB_FIBER_JOB_SYSTEM_LOG << fiber << ": Completed job " << GetJobName(job)
                           << " callback";
 
@@ -438,6 +508,10 @@ bool FiberJobSystem::DoRun(std::string_view name, JobCounter* counter,
     absl::MutexLock lock(&named_jobs_mutex_);
     named_jobs_.insert(job);
   }
+  if (profiler_ != nullptr) {
+    job->point = FindJobPoint(name);
+    job->queued_ticks = profiler_->ReadTicks();
+  }
   EnqueueJob(job);
   return true;
 }
@@ -489,6 +563,9 @@ void FiberJobSystem::DoWait(JobCounter* counter) {
   // unused).
   GB_JOB_CHECK(state->prev_fiber != nullptr);
   unused_fibers_.enqueue(std::exchange(state->prev_fiber, nullptr));
+  if (profiler_ != nullptr) {
+    Profiler::AddResumeDelay(state->ready_ticks);
+  }
 }
 
 Context& FiberJobSystem::DoGetContext() {

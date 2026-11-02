@@ -22,7 +22,6 @@ set(gb_job_TEST_SOURCE
 
 set(gb_job_TEST_DEPS
   absl::str_format
-  gb_profile
   gb_test
 )
 
@@ -31,6 +30,7 @@ set(gb_job_DEPS
   absl::bits
   absl::check
   absl::core_headers
+  absl::flat_hash_map
   absl::flat_hash_set
   absl::inlined_vector
   absl::log
@@ -40,6 +40,7 @@ set(gb_job_DEPS
   absl::time
   gb_alloc
   gb_base
+  gb_profile
   gb_thread
 )
 

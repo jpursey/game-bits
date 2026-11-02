@@ -9,6 +9,7 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -17,6 +18,7 @@
 #include "absl/base/thread_annotations.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/functional/any_invocable.h"
+#include "absl/synchronization/blocking_counter.h"
 #include "absl/synchronization/mutex.h"
 #include "absl/synchronization/notification.h"
 #include "absl/time/time.h"
@@ -28,6 +30,8 @@
 #include "gb/base/validated_context.h"
 #include "gb/job/job_system.h"
 #include "gb/job/job_types.h"
+#include "gb/profile/profile_point.h"
+#include "gb/profile/profiler.h"
 #include "gb/thread/thread_placement.h"
 #include "gb/thread/thread_types.h"
 #include "lightweightsemaphore.h"
@@ -108,10 +112,39 @@ class FiberJobSystem : public JobSystem {
   // the realtime clock is used. It must outlive the job system.
   static GB_CONTEXT_CONSTRAINT(kConstraintClock, kInOptional, Clock);
 
+  // OPTIONAL: If set to true, the job system profiles the jobs it runs (false
+  // by default). It then has a main Profiler of its own (see GetProfiler()),
+  // and each job thread has a Profiler joined to it, named "job thread 1" to
+  // "job thread N" in placement order. Each job is timed as a job point named
+  // after the job, or "unnamed job", with its start and resume delays, and each
+  // job thread's waits for work are its idle time (see gb/profile/profiler.h).
+  // Job code can time frames with ProfileFrame, and a frame can wait on other
+  // jobs, ending on another job thread. Jobs can't make Profilers of their own,
+  // as a thread has at most one.
+  //
+  // Each distinct job name registers a job point the first time a job with it
+  // is run, so job names must come from a fixed set: points are limited to
+  // kMaxProfilePoints, and registering more CHECK-fails, as does a job name
+  // that names another kind of point.
+  static inline constexpr const char* kKeyProfileJobs = "profile_jobs";
+  static GB_CONTEXT_CONSTRAINT_NAMED_DEFAULT(kConstraintProfileJobs,
+                                             kInOptional, bool, kKeyProfileJobs,
+                                             false);
+
+  // OPTIONAL: The options for the main Profiler, used with
+  // kConstraintProfileJobs: its budget, slow frame callback, and a
+  // FakeProfilerCpu for tests, which the job threads' Profilers share. Create()
+  // moves them out of the context, and sets `threadless`. If they set `main`,
+  // Create() fails.
+  static inline constexpr const char* kKeyProfilerOptions = "profiler_options";
+  static GB_CONTEXT_CONSTRAINT_NAMED(kConstraintProfilerOptions, kInOptional,
+                                     Profiler::Options, kKeyProfilerOptions);
+
   using CreateContract =
       ContextContract<kConstraintThreadCount, kConstraintThreadPinning,
                       kConstraintReservedCores, kConstraintSetFiberNames,
-                      kConstraintShutdownTimeout, kConstraintClock>;
+                      kConstraintShutdownTimeout, kConstraintClock,
+                      kConstraintProfileJobs, kConstraintProfilerOptions>;
 
   //----------------------------------------------------------------------------
   // Construction / Destruction
@@ -154,6 +187,12 @@ class FiberJobSystem : public JobSystem {
   // first job thread in GetPlacement().
   int GetIdleThreadCount() const;
 
+  // Returns the main Profiler of the jobs, or null if kConstraintProfileJobs
+  // isn't set. Any thread may read its report (see Profiler::GetReport()). A
+  // thread outside the job system may join it (see Profiler::Options::main),
+  // but its Profiler must be destroyed before the job system.
+  Profiler* GetProfiler() const;
+
  protected:
   bool DoRun(std::string_view name, JobCounter* counter, Context* context,
              absl::AnyInvocable<void()> callback) override;
@@ -181,6 +220,11 @@ class FiberJobSystem : public JobSystem {
 
     // Arbitrary job-specific data.
     JobData data;
+
+    // The job's point, and when it was queued (see Profiler::ReadTicks()), set
+    // only when profiling.
+    std::optional<ProfilePoint> point;
+    int64_t queued_ticks = 0;
   };
 
   struct FiberState {
@@ -196,6 +240,10 @@ class FiberJobSystem : public JobSystem {
 
     // Job this fiber is currently running.
     Job* job = nullptr;
+
+    // When the wait was over (see Profiler::ReadTicks()), set only when
+    // profiling.
+    int64_t ready_ticks = 0;
   };
 
   // Work for a job thread: a job to run, or a waiting fiber to resume. Neither
@@ -216,6 +264,10 @@ class FiberJobSystem : public JobSystem {
 
     // Set while the thread waits on `wake`, past its last check for work.
     std::atomic<bool> waiting = false;
+
+    // Joined to profiler_ while the thread runs, when profiling. It is made
+    // and destroyed on the thread, as a fiber can move between threads.
+    std::unique_ptr<Profiler> profiler;
   };
 
   template <typename Type>
@@ -264,11 +316,27 @@ class FiberJobSystem : public JobSystem {
   // Main routine for a job fiber which runs jobs
   void JobMain(Fiber fiber);
 
+  // Makes the calling job thread's Profiler, when profiling.
+  void AddThreadProfiler();
+
+  // Returns Profiler::ReadTicks() from profiler_, or zero when not profiling.
+  int64_t ReadProfilerTicks() const {
+    return profiler_ != nullptr ? profiler_->ReadTicks() : 0;
+  }
+
+  // Returns the job point for a job named `name`, registering it the first
+  // time.
+  static ProfilePoint FindJobPoint(std::string_view name);
+
   static std::string_view GetJobName(Job* job);
 
   bool set_fiber_names_ = false;
   absl::Duration shutdown_timeout_ = kDefaultShutdownTimeout;
   Clock* clock_ = nullptr;
+
+  // The main Profiler of the jobs, when profiling (see GetProfiler()). It is
+  // destroyed after the job threads' Profilers, which join it.
+  std::unique_ptr<Profiler> profiler_;
 
   // All threads used to run jobs, and where each runs, in placement order.
   std::vector<JobThread> job_threads_;
@@ -277,6 +345,10 @@ class FiberJobSystem : public JobSystem {
   // Notified once job_threads_ holds every job thread, which the job threads
   // wait for before they run jobs, so they can find their own index.
   absl::Notification threads_created_;
+
+  // When profiling, counts down as each job thread makes its Profiler, which
+  // Create() waits for.
+  std::optional<absl::BlockingCounter> thread_profilers_made_;
 
   // Total number of fibers created. This only increases, as fibers are
   // recycled.

@@ -9,6 +9,7 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <string_view>
 #include <thread>
 #include <vector>
@@ -20,6 +21,7 @@
 #include "gb/base/context_builder.h"
 #include "gb/base/fake_clock.h"
 #include "gb/profile/fake_profiler_cpu.h"
+#include "gb/profile/profile_point.h"
 #include "gb/profile/profile_timer.h"
 #include "gb/profile/profiler.h"
 #include "gb/test/log_recorder.h"
@@ -66,6 +68,14 @@ std::vector<int> GetCores(const ThreadPlacement& placement) {
     cores.push_back(thread.core);
   }
   return cores;
+}
+
+// Waits until every job thread is idle. A profiling job system's main Profiler
+// then reads what each recorded.
+void WaitUntilIdle(const FiberJobSystem& job_system) {
+  while (job_system.GetIdleThreadCount() < job_system.GetThreadCount()) {
+    std::this_thread::yield();
+  }
 }
 
 struct TestParams {
@@ -127,13 +137,6 @@ class FiberJobSystemTest : public ::testing::TestWithParam<TestParams> {
                          .thread_count = GetParam().thread_count});
   }
 
-  // Waits until every job thread is idle.
-  void WaitUntilIdle() {
-    while (job_system_->GetIdleThreadCount() < job_system_->GetThreadCount()) {
-      std::this_thread::yield();
-    }
-  }
-
   std::unique_ptr<FiberJobSystem> job_system_;
 };
 
@@ -181,7 +184,7 @@ TEST_P(FiberJobSystemTest, JobsOnAnIdleJobSystemRunOnTheFirstJobThread) {
     GTEST_SKIP() << "Job threads are not pinned, so can't be told apart";
   }
   for (int i = 0; i < 10; ++i) {
-    WaitUntilIdle();
+    WaitUntilIdle(*job_system_);
     uint64_t affinity = 0;
     absl::Notification done;
     EXPECT_TRUE(job_system_->Run([&affinity, &done] {
@@ -205,7 +208,7 @@ TEST_P(FiberJobSystemTest, JobsRunOnTheFirstIdleJobThread) {
   std::vector<uint64_t> affinities(job_count, 0);
   std::atomic<int> started_count = 0;
   absl::Notification release;
-  WaitUntilIdle();
+  WaitUntilIdle(*job_system_);
   for (int i = 0; i < job_count; ++i) {
     EXPECT_TRUE(job_system_->Run([&affinities, &started_count, &release, i] {
       affinities[i] = GetThreadAffinity(GetThisThread());
@@ -741,6 +744,223 @@ TEST(FiberJobSystemProfileTest, TimedScopeLeavesOutWaitedOnJob) {
   EXPECT_EQ(waiting_wait_time, absl::Nanoseconds(10));
   EXPECT_EQ(other_self_time, absl::Nanoseconds(10));
   EXPECT_EQ(other_wait_time, absl::ZeroDuration());
+}
+
+// Job systems whose Profilers all read `cpu_`. Each test declares the locals
+// its jobs use before its job system, which is then destroyed first.
+class ProfiledFiberJobSystemTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    if (!SupportsFibers()) {
+      GTEST_SKIP() << "Fibers are not supported";
+    }
+  }
+
+  std::unique_ptr<FiberJobSystem> CreateJobSystem(int thread_count,
+                                                  bool profile_jobs = true) {
+    return FiberJobSystem::Create(
+        ContextBuilder()
+            .SetValue<int>(FiberJobSystem::kKeyThreadCount, thread_count)
+            .SetValue<ThreadPinning>(FiberJobSystem::kKeyThreadPinning,
+                                     ThreadPinning::kNone)
+            .SetValue<bool>(FiberJobSystem::kKeyProfileJobs, profile_jobs)
+            .SetValue<Profiler::Options>(FiberJobSystem::kKeyProfilerOptions,
+                                         Profiler::Options{.fake_cpu = &cpu_})
+            .Build());
+  }
+
+  FakeProfilerCpu cpu_;
+};
+
+TEST_F(ProfiledFiberJobSystemTest, JobHasRunTimeAndStartDelay) {
+  absl::Notification release;
+  absl::Notification done;
+  auto job_system = CreateJobSystem(1);
+  ASSERT_NE(job_system, nullptr);
+
+  // The job is queued behind one that blocks the only job thread until the
+  // ticks have moved on.
+  EXPECT_TRUE(job_system->Run("ProfiledJobTest/Blocker",
+                              [&release] { release.WaitForNotification(); }));
+  EXPECT_TRUE(job_system->Run("ProfiledJobTest/Job", [this, &done] {
+    cpu_.Advance(30);
+    done.Notify();
+  }));
+  cpu_.Advance(100);
+  release.Notify();
+  done.WaitForNotification();
+  WaitUntilIdle(*job_system);
+
+  const Profiler::JobSummary summary =
+      job_system->GetProfiler()->GetJobSummary("ProfiledJobTest/Job");
+  EXPECT_EQ(summary.runs, 1);
+  EXPECT_EQ(summary.total, absl::Nanoseconds(30));
+  EXPECT_EQ(summary.start_delay, absl::Nanoseconds(100));
+  EXPECT_EQ(summary.resumes, 0);
+}
+
+TEST_F(ProfiledFiberJobSystemTest, WaitingJobsHaveResumeDelays) {
+  absl::Notification release;
+  JobCounter counter;
+  std::atomic<int> resumed_count = 0;
+  absl::Notification done;
+  auto job_system = CreateJobSystem(1);
+  ASSERT_NE(job_system, nullptr);
+
+  // Both waiters wait on the counted job, which is queued after them, and are
+  // ready to resume as it ends. The only job thread runs one, and then the
+  // other, which resumes once the first has moved the ticks on.
+  EXPECT_TRUE(job_system->Run("ProfiledJobTest/Blocker",
+                              [&release] { release.WaitForNotification(); }));
+  for (int i = 0; i < 2; ++i) {
+    EXPECT_TRUE(job_system->Run("ProfiledJobTest/Waiter", [&, this] {
+      JobSystem::Wait(&counter);
+      cpu_.Advance(50);
+      if (++resumed_count == 2) {
+        done.Notify();
+      }
+    }));
+  }
+  EXPECT_TRUE(job_system->Run("ProfiledJobTest/Counted", &counter, [] {}));
+  release.Notify();
+  done.WaitForNotification();
+  WaitUntilIdle(*job_system);
+
+  const Profiler::JobSummary summary =
+      job_system->GetProfiler()->GetJobSummary("ProfiledJobTest/Waiter");
+  EXPECT_EQ(summary.runs, 2);
+  EXPECT_EQ(summary.total, absl::Nanoseconds(100));
+  EXPECT_EQ(summary.resumes, 2);
+  EXPECT_EQ(summary.resume_delay, absl::Nanoseconds(25));
+  EXPECT_EQ(summary.max_resume_delay, absl::Nanoseconds(50));
+}
+
+TEST_F(ProfiledFiberJobSystemTest, IdleJobThreadHasIdleTime) {
+  absl::Notification done;
+  auto job_system = CreateJobSystem(2);
+  ASSERT_NE(job_system, nullptr);
+
+  // With both job threads idle, the job runs on the first, so the second is
+  // idle for the whole frame.
+  WaitUntilIdle(*job_system);
+  EXPECT_TRUE(job_system->Run("ProfiledJobTest/Frame job", [this, &done] {
+    {
+      ProfileFrame<"ProfiledJobTest/Frame"> frame;
+      cpu_.Advance(100);
+    }
+    done.Notify();
+  }));
+  done.WaitForNotification();
+  WaitUntilIdle(*job_system);
+
+  const std::string report = job_system->GetProfiler()->GetReport();
+  EXPECT_THAT(report, HasSubstr(R"(
+Thread        Busy/frame    Max  Share  class 0  Idle/frame  Idle share
+job thread 1       100ns  100ns   100%     100%           0       0.00%
+job thread 2           0      0  0.00%        -       100ns        100%
+)"));
+}
+
+TEST_F(ProfiledFiberJobSystemTest, FrameWaitsOnJobAndEndsOnAnotherThread) {
+  JobCounter counter;
+  absl::Notification counted_started;
+  absl::Notification release_counted;
+  absl::Notification blocked;
+  absl::Notification release_blocked;
+  absl::Notification done;
+  Thread start_thread = nullptr;
+  Thread end_thread = nullptr;
+  auto job_system = CreateJobSystem(2);
+  ASSERT_NE(job_system, nullptr);
+
+  // The frame's job runs a counted job, which starts on the other job thread,
+  // and then a blocker, which takes the frame's thread once the frame waits.
+  // So the frame resumes on the counted job's thread, once it ends.
+  EXPECT_TRUE(job_system->Run("ProfiledJobTest/Frame job", [&, this] {
+    {
+      ProfileFrame<"ProfiledJobTest/Frame"> frame;
+      start_thread = GetThisThread();
+      cpu_.Advance(10);
+      EXPECT_TRUE(
+          JobSystem::Get()->Run("ProfiledJobTest/Counted", &counter, [&] {
+            counted_started.Notify();
+            release_counted.WaitForNotification();
+          }));
+
+      // This blocks the thread, rather than waiting the job, so the counted
+      // job starts on the other thread.
+      counted_started.WaitForNotification();
+      EXPECT_TRUE(JobSystem::Get()->Run("ProfiledJobTest/Blocker", [&] {
+        blocked.Notify();
+        release_blocked.WaitForNotification();
+      }));
+      JobSystem::Wait(&counter);
+      end_thread = GetThisThread();
+      cpu_.Advance(5);
+    }
+    done.Notify();
+  }));
+  blocked.WaitForNotification();
+  cpu_.Advance(20);
+  release_counted.Notify();
+  done.WaitForNotification();
+  release_blocked.Notify();
+  WaitUntilIdle(*job_system);
+
+  // The frame's time includes the time it waited.
+  EXPECT_NE(end_thread, start_thread);
+  const Profiler::FrameSummary summary =
+      job_system->GetProfiler()->GetFrameSummary();
+  EXPECT_EQ(summary.frames, 1);
+  EXPECT_EQ(summary.total, absl::Nanoseconds(35));
+}
+
+TEST_F(ProfiledFiberJobSystemTest, EachNameIsItsOwnPoint) {
+  std::atomic<int> run_count = 0;
+  absl::Notification done;
+  auto job_system = CreateJobSystem(1);
+  ASSERT_NE(job_system, nullptr);
+  auto callback = [&] {
+    if (++run_count == 4) {
+      done.Notify();
+    }
+  };
+  EXPECT_TRUE(job_system->Run("ProfiledJobTest/A", callback));
+  EXPECT_TRUE(job_system->Run("ProfiledJobTest/B", callback));
+  EXPECT_TRUE(job_system->Run("ProfiledJobTest/A", callback));
+  EXPECT_TRUE(job_system->Run(callback));
+  done.WaitForNotification();
+  WaitUntilIdle(*job_system);
+
+  const Profiler* const profiler = job_system->GetProfiler();
+  EXPECT_EQ(profiler->GetJobSummary("ProfiledJobTest/A").runs, 2);
+  EXPECT_EQ(profiler->GetJobSummary("ProfiledJobTest/B").runs, 1);
+  EXPECT_EQ(profiler->GetJobSummary("unnamed job").runs, 1);
+}
+
+TEST_F(ProfiledFiberJobSystemTest, NothingIsRecordedWithoutProfileJobs) {
+  absl::Notification done;
+  auto job_system = CreateJobSystem(1, /*profile_jobs=*/false);
+  ASSERT_NE(job_system, nullptr);
+  EXPECT_EQ(job_system->GetProfiler(), nullptr);
+
+  // No point is registered for the job.
+  EXPECT_TRUE(job_system->Run("ProfiledJobTest/Unprofiled",
+                              [&done] { done.Notify(); }));
+  done.WaitForNotification();
+  EXPECT_FALSE(ProfilePoint::Find("ProfiledJobTest/Unprofiled").has_value());
+}
+
+TEST_F(ProfiledFiberJobSystemTest, CreateFailsWithMainInProfilerOptions) {
+  Profiler main_profiler({.fake_cpu = &cpu_});
+  EXPECT_EQ(FiberJobSystem::Create(
+                ContextBuilder()
+                    .SetValue<bool>(FiberJobSystem::kKeyProfileJobs, true)
+                    .SetValue<Profiler::Options>(
+                        FiberJobSystem::kKeyProfilerOptions,
+                        Profiler::Options{.main = &main_profiler})
+                    .Build()),
+            nullptr);
 }
 
 TEST(FiberJobSystemDeathTest, DestroyTimesOut) {

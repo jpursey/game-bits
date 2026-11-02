@@ -258,7 +258,16 @@ inside `FiberJobSystem`, so no program has to get them right.
   reaches zero, and the job adds its resume delay when `DoWait()` returns.
 - `WaitForWork()` times only the part of its wait that blocks with a
   `ProfileIdleTimer`, so a job thread that finds work at once doesn't pay two
-  reads of the ticks for it.
+  reads of the ticks for it. The timer starts before the thread marks itself
+  waiting, so a thread `GetIdleThreadCount()` counts is already idle.
+- A job's timer encloses only its callback, so freeing its data and context,
+  and ending its counter, are the job system's own time between jobs.
+- `Create()` moves the Profiler options out of the context, as
+  `on_slow_frame` can't be copied.
+- Performance, in Release: a job that runs the next, on one job thread, takes
+  113 ns without profiling and 154 ns with it. Of the 41 ns, finding the point
+  by name is 15.5 ns, and the rest is the job's timer, its delays, and reading
+  the ticks as it is queued.
 
 **Brittleness:** none for the program, as the job system owns every Profiler
 and destroys them in order. A thread outside the job system that joins
@@ -369,7 +378,7 @@ Depends on: CL1.
 - Unit tests: idle in one frame, a wait spanning several frames, and a
   thread destroyed while idle.
 
-### CL6 [ ] job: profile the jobs
+### CL6 [x] job: profile the jobs
 
 Depends on: CL3, CL4, CL5.
 
