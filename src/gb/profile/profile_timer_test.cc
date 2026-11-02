@@ -624,15 +624,28 @@ TEST_F(ProfileTimerSwitchTest, ScopeStartedWithoutProfilerStaysIgnored) {
       });
 }
 
+// A thread main that runs the fiber in a frame, on a Profiler joined to
+// `fiber.main` if it is set.
 void RunFiberInFrame(void* user_data) {
   auto& fiber = *static_cast<SwitchingFiber*>(user_data);
   FakeProfilerCpu ticks;
-  Profiler profiler({.fake_cpu = &ticks});
+  Profiler profiler({.fake_cpu = &ticks, .main = fiber.main});
   ProfileFrame<"SwitchTest/Frame"> frame;
   RunFiberHere(fiber, ticks);
 }
 
 TEST_F(ProfileTimerSwitchTest, SwitchingInFrameDies) {
+  CreateSwitchingFiber(+[](void* user_data) {
+    SwitchBack(*static_cast<SwitchingFiber*>(user_data));
+  });
+  EXPECT_DEATH(RunFiberThread(fiber_, RunFiberInFrame),
+               "can't span a fiber switch");
+}
+
+TEST_F(ProfileTimerSwitchTest, SwitchingInThreadlessFrameDies) {
+  FakeProfilerCpu ticks;
+  Profiler main({.fake_cpu = &ticks, .threadless = true});
+  fiber_.main = &main;
   CreateSwitchingFiber(+[](void* user_data) {
     SwitchBack(*static_cast<SwitchingFiber*>(user_data));
   });

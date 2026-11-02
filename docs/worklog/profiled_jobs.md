@@ -128,11 +128,21 @@ struct Options {
 
 - With `threadless` set, the Profiler doesn't set `s_current`, so it can be
   destroyed on any thread, and has no slots of its own to gather.
-- Frame state (the frame number, start ticks and core, the histogram, the
-  slowest frame) is written by whichever thread starts or ends a frame, which
-  is only ever the one fiber in the frame. A fiber switch orders those writes,
-  as the job system's queues hand the fiber over. It is read under a mutex
-  taken once per frame end, so the report can be read from any thread.
+- Frame state (the frame number, start core, frame count and time, histogram,
+  and slowest frame) is written under a mutex, taken as each frame starts and
+  ends by the thread starting or ending it. So the report can be read from any
+  thread, and a second frame starting while one is in progress reliably
+  CHECK-fails. The report formats a copy, so it holds the mutex only to copy
+  it. The two locks add about 20 ns to a frame (an empty frame went from 35 ns
+  to 56 ns, or 61 ns on a threadless main, in Release), and nothing to a timed
+  point (13.9 ns before and after).
+- A joined Profiler of a threadless main Profiler times frames, recording them
+  in the main Profiler. Whether its thread is in a frame is its own flag, which
+  the fiber switch callback CHECKs, as the frame number is the main Profiler's.
+- The breakdown's split by thread becomes the frame's thread against the
+  others: the main thread, or for a threadless main, the joined thread that
+  timed the frame. Its column is "Frame thread" for both (it was "Main
+  thread").
 - Each timing records whether it is inside a frame, from its parent, so its
   self time can be split from other threads' in the breakdown. That is a load
   and a store per timed point.
@@ -235,10 +245,8 @@ that changes it fails a test.
 
 - Where Abseil calls the mutex profiler hook, and in what units: confirmed
   above, from `absl/synchronization/mutex.cc` (`Mutex::UnlockSlow()`).
-- That a fiber switch through the job system orders a frame's writes on one
-  thread before its reads on the next: the fiber is handed over through a
-  `ConcurrentQueue` and a `JobCounter`, which release and acquire. CL3's
-  fiber tests check frames across a switch.
+- That a frame's state is ordered across the threads it starts and ends on:
+  confirmed, as CL2 writes it under the frame mutex at both.
 - What a job's histogram costs in memory with Terra Diem's job names and
   thread count: CL4 measures it.
 
@@ -260,12 +268,12 @@ Depends on: nothing.
 - Unit tests: a job point is timed and reported; a joined Profiler without a
   fake reads its main Profiler's.
 
-### CL2 [ ] profile: a threadless main Profiler
+### CL2 [x] profile: a threadless main Profiler
 
 Depends on: CL1.
 
 - `Options::threadless`, frames on its joined Profilers' threads, one at a
-  time, and frame state under a mutex at frame end.
+  time, and frame state under a mutex at frame start and end.
 - Frames still can't span a fiber switch.
 
 **Verify**

@@ -224,9 +224,9 @@ Profiler::Profiler(Options options)
                     ? options.main->fake_cpu_
                     : options.fake_cpu),
       slots_(std::make_unique<Slot[]>(kMaxProfilePoints)),
-      frame_(options.main != nullptr ? &options.main->current_frame_.number
-                                     : &current_frame_.number),
+      frame_profiler_(options.main != nullptr ? options.main : this),
       main_(options.main),
+      threadless_(options.threadless),
       ticks_per_second_(fake_cpu_ != nullptr ? fake_cpu_->GetCpuTicksPerSecond()
                                              : GetCpuTicksPerSecond()),
       budget_per_frame_(options.budget_per_frame),
@@ -234,14 +234,18 @@ Profiler::Profiler(Options options)
       slow_frame_ticks_(ToTicks(options.slow_frame, ticks_per_second_)),
       on_slow_frame_(std::move(options.on_slow_frame)),
       name_(options.name.empty() ? "main" : options.name) {
-  CHECK(s_current == nullptr) << "Only one Profiler may exist per thread";
+  if (threadless_) {
+    CHECK(main_ == nullptr) << "A threadless Profiler can't have a main";
+  } else {
+    CHECK(s_current == nullptr) << "Only one Profiler may exist per thread";
+    s_current = this;
+  }
   if (main_ != nullptr) {
     CHECK(main_->main_ == nullptr)
         << "A joined Profiler's main Profiler can't itself be joined";
     CHECK(ticks_per_second_ == main_->ticks_per_second_)
         << "A joined Profiler must have its main Profiler's tick rate";
   }
-  s_current = this;
 
   // No timing is open before the first Profiler, so no switch with one is
   // missed. Setting them again does nothing.
@@ -273,7 +277,7 @@ Profiler::Profiler(Options options)
 }
 
 Profiler::~Profiler() {
-  CHECK(s_current == this)
+  CHECK(threadless_ || s_current == this)
       << "A Profiler must be destroyed on the thread that created it";
   CHECK(top_ == nullptr) << "A Profiler must not be destroyed in a timed point";
   if (main_ != nullptr) {
@@ -287,7 +291,9 @@ Profiler::~Profiler() {
           << thread.name << "\" still exists";
     }
   }
-  s_current = nullptr;
+  if (!threadless_) {
+    s_current = nullptr;
+  }
 }
 
 int Profiler::AddJoinedThread(Profiler* profiler, std::string_view name) {
@@ -337,7 +343,7 @@ void Profiler::RemoveJoinedThread(int index) {
     if (static_cast<int>(left_frame_points_.size()) < point_count) {
       left_frame_points_.resize(point_count);
     }
-    thread.profiler->AddOwnFramePoints(frame_number,
+    thread.profiler->AddOwnFramePoints(frame_number, /*other_thread=*/true,
                                        absl::MakeSpan(left_frame_points_));
   }
   thread.profiler = nullptr;
@@ -354,8 +360,7 @@ void* Profiler::SuspendTimings() {
   if (profiler == nullptr || profiler->top_ == nullptr) {
     return nullptr;
   }
-  CHECK(profiler->current_frame_.number.Get() == 0)
-      << "A profile frame can't span a fiber switch";
+  CHECK(!profiler->in_frame_) << "A profile frame can't span a fiber switch";
   // Each timing keeps its Profiler, so a timer ended on another fiber meanwhile
   // fails EndTiming()'s CHECK, rather than being ignored.
   const int64_t ticks = profiler->ReadTicks();
@@ -408,24 +413,30 @@ absl::Duration Profiler::GetPointCost() const {
 }
 
 Profiler::FrameSummary Profiler::GetFrameSummary() const {
-  if (frames_ == 0) {
+  absl::MutexLock lock(&frame_mutex_);
+  return DoGetFrameSummary(frame_totals_);
+}
+
+Profiler::FrameSummary Profiler::DoGetFrameSummary(
+    const FrameTotals& frames) const {
+  if (frames.frames == 0) {
     return {};
   }
-  const absl::Duration total = TicksToDuration(total_frame_ticks_);
-  const absl::Duration average = total / frames_;
+  const absl::Duration total = TicksToDuration(frames.ticks);
+  const absl::Duration average = total / frames.frames;
   const bool has_budget =
       budget_per_frame_ != absl::ZeroDuration() || budget_fraction_ != 0;
   return {
-      .frames = frames_,
+      .frames = frames.frames,
       .total = total,
       .average = average,
-      .p50 = TicksToDuration(GetFramePercentileTicks(0.5)),
-      .p90 = TicksToDuration(GetFramePercentileTicks(0.9)),
-      .p99 = TicksToDuration(GetFramePercentileTicks(0.99)),
-      .max = TicksToDuration(slowest_frame_.ticks),
+      .p50 = TicksToDuration(GetFramePercentileTicks(frames, 0.5)),
+      .p90 = TicksToDuration(GetFramePercentileTicks(frames, 0.9)),
+      .p99 = TicksToDuration(GetFramePercentileTicks(frames, 0.99)),
+      .max = TicksToDuration(frames.slowest.ticks),
       .profiler_cost =
-          TicksToDuration(static_cast<double>(frame_timed_points_) *
-                          point_cost_ticks_ / frames_),
+          TicksToDuration(static_cast<double>(frames.timed_points) *
+                          point_cost_ticks_ / frames.frames),
       .budget = has_budget
                     ? std::max(budget_per_frame_, average * budget_fraction_)
                     : absl::InfiniteDuration(),
@@ -449,15 +460,11 @@ int64_t Profiler::GetValue(std::string_view name) const {
 }
 
 int64_t Profiler::GetSlowestFrameCount(std::string_view name) const {
-  const FrameBreakdown::Point* point =
-      FindSlowestFramePoint(name, kCountedKinds);
-  return point != nullptr ? point->count : 0;
+  return FindSlowestFramePoint(name, kCountedKinds).count;
 }
 
 absl::Duration Profiler::GetSlowestFrameSelfTime(std::string_view name) const {
-  const FrameBreakdown::Point* point = FindSlowestFramePoint(name, kTimedKinds);
-  return point != nullptr ? TicksToDuration(point->self_ticks)
-                          : absl::ZeroDuration();
+  return TicksToDuration(FindSlowestFramePoint(name, kTimedKinds).self_ticks);
 }
 
 void Profiler::Reset() {
@@ -481,13 +488,15 @@ void Profiler::Reset() {
 }
 
 void Profiler::ResetOwn() {
+  {
+    // Only a threadless Profiler can be outside every timed point here while
+    // a frame is in progress, on another thread.
+    absl::MutexLock lock(&frame_mutex_);
+    CHECK(current_frame_.number.Get() == 0)
+        << "A threadless Profiler can't be reset during a frame";
+    frame_totals_ = {};
+  }
   std::fill_n(slots_.get(), kMaxProfilePoints, Slot());
-  frame_timed_points_ = 0;
-  frames_ = 0;
-  total_frame_ticks_ = 0;
-  frame_buckets_ = {};
-  core_frames_ = {};
-  slowest_frame_ = {};
   busy_ = BusyTime();
 }
 
@@ -511,64 +520,86 @@ double Profiler::MeasurePointCost() {
 }
 
 void Profiler::StartFrame(int index, Timing& timing) {
-  CHECK(main_ == nullptr) << "A joined Profiler can't time frames";
-  CHECK(current_frame_.number.Get() == 0) << "Profile frames can't nest";
-  current_frame_.number.Set(++last_frame_number_);
+  CHECK(main_ == nullptr || main_->threadless_)
+      << "A joined Profiler can't time frames, unless its main Profiler is "
+         "threadless";
+  CHECK(!in_frame_) << "Profile frames can't nest";
+  const int start_core = ReadCoreClass();
+  {
+    absl::MutexLock lock(&frame_profiler_->frame_mutex_);
+    CHECK(frame_profiler_->current_frame_.number.Get() == 0)
+        << "Only one profile frame can be in progress at a time";
+    frame_profiler_->current_frame_.number.Set(
+        ++frame_profiler_->last_frame_number_);
+    frame_profiler_->current_frame_start_core_ = start_core;
+  }
+  in_frame_ = true;
   current_frame_timed_points_ = 0;
-  current_frame_start_core_ = ReadCoreClass();
   StartTiming(index, timing);
 }
 
 void Profiler::EndFrame(Timing& timing) {
   const int64_t frame_ticks = EndTiming(timing);
-  frame_timed_points_ += current_frame_timed_points_;
-  ++frames_;
-  total_frame_ticks_ += frame_ticks;
-  ++frame_buckets_[GetFrameBucket(frame_ticks)];
-  const int end_core = ReadCoreClass();
-  const int core =
-      end_core == current_frame_start_core_ ? end_core : kMixedCores;
-  CoreFrames& core_frames = core_frames_[core];
-  ++core_frames.frames;
-  core_frames.ticks += frame_ticks;
-  core_frames.max_ticks = std::max(core_frames.max_ticks, frame_ticks);
-  const bool is_slowest = frame_ticks > slowest_frame_.ticks;
-  if (is_slowest) {
-    slowest_frame_ = CaptureFrame(frame_ticks, core);
-  }
-  std::string slow_frame_report;
-  if (frame_ticks > slow_frame_ticks_ && on_slow_frame_ != nullptr) {
-    FrameBreakdown slow_frame;
-    if (!is_slowest) {
-      slow_frame = CaptureFrame(frame_ticks, core);
-    }
-    AppendFrame(slow_frame_report, "Slow frame",
-                is_slowest ? slowest_frame_ : slow_frame,
-                ProfilePoint::GetRegisteredPoints());
-  }
-  AddFrameBusyTimes();
-  current_frame_.number.Set(0);
+  in_frame_ = false;
+  frame_profiler_->RecordFrame(this, frame_ticks, ReadCoreClass(),
+                               current_frame_timed_points_);
+}
 
-  // The callback is called after the frame ends, so any points it reaches are
-  // outside the frame.
-  if (!slow_frame_report.empty()) {
-    on_slow_frame_(slow_frame_report);
+void Profiler::RecordFrame(const Profiler* frame_thread, int64_t ticks,
+                           int end_core, int64_t timed_points) {
+  std::optional<FrameBreakdown> slow_frame;
+  {
+    absl::MutexLock lock(&frame_mutex_);
+    FrameTotals& totals = frame_totals_;
+    totals.timed_points += timed_points;
+    ++totals.frames;
+    totals.ticks += ticks;
+    ++totals.buckets[GetFrameBucket(ticks)];
+    const int core =
+        end_core == current_frame_start_core_ ? end_core : kMixedCores;
+    CoreFrames& core_frames = totals.cores[core];
+    ++core_frames.frames;
+    core_frames.ticks += ticks;
+    core_frames.max_ticks = std::max(core_frames.max_ticks, ticks);
+    const bool is_slowest = ticks > totals.slowest.ticks;
+    if (is_slowest) {
+      totals.slowest = CaptureFrame(frame_thread, ticks, core, timed_points);
+    }
+    if (ticks > slow_frame_ticks_ && on_slow_frame_ != nullptr) {
+      slow_frame = is_slowest
+                       ? totals.slowest
+                       : CaptureFrame(frame_thread, ticks, core, timed_points);
+    }
+    AddFrameBusyTimes();
+    current_frame_.number.Set(0);
+  }
+
+  // The report is made outside the lock, and the callback is called after the
+  // frame ends, so any points it reaches are outside the frame.
+  if (slow_frame.has_value()) {
+    std::string report;
+    AppendFrame(report, "Slow frame", *slow_frame,
+                ProfilePoint::GetRegisteredPoints());
+    on_slow_frame_(report);
   }
 }
 
-Profiler::FrameBreakdown Profiler::CaptureFrame(int64_t ticks, int core) const {
-  FrameBreakdown frame = {.ticks = ticks,
-                          .core = core,
-                          .timed_points = current_frame_timed_points_};
+Profiler::FrameBreakdown Profiler::CaptureFrame(const Profiler* frame_thread,
+                                                int64_t ticks, int core,
+                                                int64_t timed_points) const {
+  FrameBreakdown frame = {
+      .ticks = ticks, .core = core, .timed_points = timed_points};
   const int64_t frame_number = current_frame_.number.Get();
   frame.points.resize(ProfilePoint::GetRegisteredCount());
-  AddOwnFramePoints(frame_number, absl::MakeSpan(frame.points));
+  AddOwnFramePoints(frame_number, this != frame_thread,
+                    absl::MakeSpan(frame.points));
   {
     absl::MutexLock lock(&joined_mutex_);
-    frame.has_joined = !joined_threads_.empty();
     for (const JoinedThread& thread : joined_threads_) {
+      const bool other_thread = thread.profiler != frame_thread;
+      frame.has_other_threads |= other_thread;
       if (thread.profiler != nullptr) {
-        thread.profiler->AddOwnFramePoints(frame_number,
+        thread.profiler->AddOwnFramePoints(frame_number, other_thread,
                                            absl::MakeSpan(frame.points));
       }
     }
@@ -590,19 +621,19 @@ Profiler::FrameBreakdown Profiler::CaptureFrame(int64_t ticks, int core) const {
 }
 
 void Profiler::AddOwnFramePoints(
-    int64_t frame_number, absl::Span<FrameBreakdown::Point> points) const {
+    int64_t frame_number, bool other_thread,
+    absl::Span<FrameBreakdown::Point> points) const {
   for (int i = 0; i < static_cast<int>(points.size()); ++i) {
     const Slot& slot = slots_[i];
     if (slot.frame.GetAcquire() != frame_number) {
       continue;
     }
     const int64_t self_ticks = slot.frame_self_ticks.Get();
-    AddFramePoint(points[i],
-                  {.index = i,
-                   .count = slot.frame_count.Get(),
-                   .self_ticks = self_ticks,
-                   .joined_self_ticks = main_ != nullptr ? self_ticks : 0,
-                   .wait_ticks = slot.frame_wait_ticks.Get()});
+    AddFramePoint(points[i], {.index = i,
+                              .count = slot.frame_count.Get(),
+                              .self_ticks = self_ticks,
+                              .other_self_ticks = other_thread ? self_ticks : 0,
+                              .wait_ticks = slot.frame_wait_ticks.Get()});
   }
 }
 
@@ -611,12 +642,12 @@ void Profiler::AddFramePoint(FrameBreakdown::Point& point,
   point.index = part.index;
   point.count += part.count;
   point.self_ticks += part.self_ticks;
-  point.joined_self_ticks += part.joined_self_ticks;
+  point.other_self_ticks += part.other_self_ticks;
   point.wait_ticks += part.wait_ticks;
 }
 
 void Profiler::AddBusyTime(int64_t ticks) {
-  if (frame_->Get() != 0) {
+  if (frame_profiler_->current_frame_.number.Get() != 0) {
     busy_.core_ticks[ReadCoreClass()].Add(ticks);
   }
 }
@@ -659,15 +690,20 @@ std::string Profiler::GetReport() const {
   absl::c_sort(points, [](const ReportPoint& a, const ReportPoint& b) {
     return IsBeforeInReport(a.first, b.first);
   });
+  FrameTotals frames;
+  {
+    absl::MutexLock lock(&frame_mutex_);
+    frames = frame_totals_;
+  }
   std::string report;
   AppendValues(report, points);
-  AppendFrameSummary(report);
-  AppendCoreFrames(report);
-  AppendThreads(report);
-  AppendPoints(report, points);
-  if (frames_ > 0) {
+  AppendFrameSummary(report, frames);
+  AppendCoreFrames(report, frames);
+  AppendThreads(report, frames);
+  AppendPoints(report, frames, points);
+  if (frames.frames > 0) {
     absl::StrAppend(&report, "\n");
-    AppendFrame(report, "Slowest frame", slowest_frame_, registered);
+    AppendFrame(report, "Slowest frame", frames.slowest, registered);
   }
   return report;
 }
@@ -687,8 +723,9 @@ void Profiler::AppendValues(std::string& report,
   }
 }
 
-void Profiler::AppendFrameSummary(std::string& report) const {
-  const FrameSummary summary = GetFrameSummary();
+void Profiler::AppendFrameSummary(std::string& report,
+                                  const FrameTotals& frames) const {
+  const FrameSummary summary = DoGetFrameSummary(frames);
   Table table = {{"Frames", absl::StrCat(summary.frames)}};
   if (summary.frames > 0) {
     std::string profiler =
@@ -712,14 +749,15 @@ void Profiler::AppendFrameSummary(std::string& report) const {
   AppendTable(report, table, 2);
 }
 
-void Profiler::AppendCoreFrames(std::string& report) const {
-  if (frames_ == 0) {
+void Profiler::AppendCoreFrames(std::string& report,
+                                const FrameTotals& frames) const {
+  if (frames.frames == 0) {
     return;
   }
   Table table = {{"Core", "Frames", "Average", "Max"}};
   int cores = 0;
-  for (int core = 0; core < static_cast<int>(core_frames_.size()); ++core) {
-    const CoreFrames& core_frames = core_frames_[core];
+  for (int core = 0; core < static_cast<int>(frames.cores.size()); ++core) {
+    const CoreFrames& core_frames = frames.cores[core];
     if (core_frames.frames == 0) {
       continue;
     }
@@ -738,7 +776,8 @@ void Profiler::AppendCoreFrames(std::string& report) const {
   }
 }
 
-void Profiler::AppendThreads(std::string& report) const {
+void Profiler::AppendThreads(std::string& report,
+                             const FrameTotals& frames) const {
   // A thread's busy time in frames, by class of core, where the main thread's
   // frames can also be kMixedCores.
   struct ThreadBusy {
@@ -758,10 +797,12 @@ void Profiler::AppendThreads(std::string& report) const {
       absl::c_copy(thread.busy_core_ticks, busy.core_ticks.begin());
     }
   }
-  ThreadBusy& main = threads.emplace_back(
-      ThreadBusy{.name = name_, .max_frame_ticks = slowest_frame_.ticks});
-  for (int core = 0; core < static_cast<int>(core_frames_.size()); ++core) {
-    main.core_ticks[core] = core_frames_[core].ticks;
+  if (!threadless_) {
+    ThreadBusy& main = threads.emplace_back(
+        ThreadBusy{.name = name_, .max_frame_ticks = frames.slowest.ticks});
+    for (int core = 0; core < static_cast<int>(frames.cores.size()); ++core) {
+      main.core_ticks[core] = frames.cores[core].ticks;
+    }
   }
   absl::c_stable_sort(threads, [](const ThreadBusy& a, const ThreadBusy& b) {
     return a.name < b.name;
@@ -781,7 +822,7 @@ void Profiler::AppendThreads(std::string& report) const {
   for (int core : cores) {
     table[0].push_back(FormatCore(core));
   }
-  const bool has_frames = frames_ > 0;
+  const bool has_frames = frames.frames > 0;
   for (const ThreadBusy& busy : threads) {
     int64_t busy_ticks = 0;
     for (int64_t ticks : busy.core_ticks) {
@@ -789,11 +830,12 @@ void Profiler::AppendThreads(std::string& report) const {
     }
     std::vector<std::string>& row = table.emplace_back();
     row.push_back(busy.name);
-    row.push_back(has_frames ? FormatTime(TicksToDuration(busy_ticks) / frames_)
-                             : std::string(kNotApplicable));
+    row.push_back(has_frames
+                      ? FormatTime(TicksToDuration(busy_ticks) / frames.frames)
+                      : std::string(kNotApplicable));
     row.push_back(has_frames ? FormatTime(TicksToDuration(busy.max_frame_ticks))
                              : std::string(kNotApplicable));
-    row.push_back(FormatPercent(busy_ticks, total_frame_ticks_));
+    row.push_back(FormatPercent(busy_ticks, frames.ticks));
     for (int core : cores) {
       row.push_back(busy.core_ticks[core] > 0
                         ? FormatPercent(busy.core_ticks[core], busy_ticks)
@@ -804,7 +846,7 @@ void Profiler::AppendThreads(std::string& report) const {
   AppendTable(report, table, 1);
 }
 
-void Profiler::AppendPoints(std::string& report,
+void Profiler::AppendPoints(std::string& report, const FrameTotals& frames,
                             absl::Span<const ReportPoint> points) const {
   Table table = {{"Point", "Kind", "Count", "Count/frame", "Self", "Self/call",
                   "Self/frame", "Share"}};
@@ -815,7 +857,7 @@ void Profiler::AppendPoints(std::string& report,
     table[0].push_back("Wait");
     table[0].push_back("Wait/call");
   }
-  const bool has_frames = frames_ > 0;
+  const bool has_frames = frames.frames > 0;
   for (const auto& [point, totals] : points) {
     if (point.GetKind() == ProfilePoint::Kind::kValue || !totals.IsRecorded()) {
       continue;
@@ -826,14 +868,14 @@ void Profiler::AppendPoints(std::string& report,
     row.push_back(std::string(point.GetName()));
     row.push_back(std::string(GetKindName(kind)));
     row.push_back(absl::StrCat(totals.count));
-    row.push_back(
-        has_frames ? FormatNumber(static_cast<double>(totals.count) / frames_)
-                   : std::string(kNotApplicable));
+    row.push_back(has_frames ? FormatNumber(static_cast<double>(totals.count) /
+                                            frames.frames)
+                             : std::string(kNotApplicable));
     row.push_back(FormatPointTime(kind, self_time));
     row.push_back(FormatPerCall(kind, self_time, totals.count));
-    row.push_back(has_frames ? FormatPointTime(kind, self_time / frames_)
+    row.push_back(has_frames ? FormatPointTime(kind, self_time / frames.frames)
                              : std::string(kNotApplicable));
-    row.push_back(FormatShare(kind, totals.self_ticks, total_frame_ticks_));
+    row.push_back(FormatShare(kind, totals.self_ticks, frames.ticks));
     if (has_waits) {
       const absl::Duration wait_time = TicksToDuration(totals.wait_ticks);
       row.push_back(FormatPointTime(kind, wait_time));
@@ -867,22 +909,22 @@ void Profiler::AppendFrame(std::string& report, std::string_view title,
     return IsBeforeInReport(a.first, b.first);
   });
 
-  // The main thread's self times of the kinds add up to the frame's time.
-  // Joined Profilers can't time frames, so the other threads have none. Jobs
-  // have a row only in frames that ran one, as most programs have none.
+  // The frame's thread's self times of the kinds add up to the frame's time.
+  // Only one frame is in progress, so the other threads have no frame time.
+  // Jobs have a row only in frames that ran one, as most programs have none.
   Table kinds = {{"Kind", "Self"}};
-  if (frame.has_joined) {
-    kinds[0] = {"Kind", "Main thread", "Other threads"};
+  if (frame.has_other_threads) {
+    kinds[0] = {"Kind", "Frame thread", "Other threads"};
   }
   for (ProfilePoint::Kind kind : kTimedKinds) {
     bool has_kind = false;
     int64_t self_ticks = 0;
-    int64_t joined_self_ticks = 0;
+    int64_t other_self_ticks = 0;
     for (const auto& [point, frame_point] : points) {
       if (point.GetKind() == kind) {
         has_kind = true;
         self_ticks += frame_point.self_ticks;
-        joined_self_ticks += frame_point.joined_self_ticks;
+        other_self_ticks += frame_point.other_self_ticks;
       }
     }
     if (kind == ProfilePoint::Kind::kJob && !has_kind) {
@@ -890,11 +932,11 @@ void Profiler::AppendFrame(std::string& report, std::string_view title,
     }
     std::vector<std::string>& row = kinds.emplace_back();
     row.push_back(std::string(GetKindName(kind)));
-    row.push_back(FormatTime(TicksToDuration(self_ticks - joined_self_ticks)));
-    if (frame.has_joined) {
+    row.push_back(FormatTime(TicksToDuration(self_ticks - other_self_ticks)));
+    if (frame.has_other_threads) {
       row.push_back(kind == ProfilePoint::Kind::kFrame
                         ? std::string(kNotApplicable)
-                        : FormatTime(TicksToDuration(joined_self_ticks)));
+                        : FormatTime(TicksToDuration(other_self_ticks)));
     }
   }
   AppendTable(report, kinds, 1);
@@ -997,28 +1039,30 @@ Profiler::PointTotals Profiler::FindPointTotals(
   return index >= 0 ? GatherPointTotals()[index] : PointTotals();
 }
 
-const Profiler::FrameBreakdown::Point* Profiler::FindSlowestFramePoint(
+Profiler::FrameBreakdown::Point Profiler::FindSlowestFramePoint(
     std::string_view name, absl::Span<const ProfilePoint::Kind> kinds) const {
   const int index = FindIndex(name, kinds);
-  for (const FrameBreakdown::Point& point : slowest_frame_.points) {
+  absl::MutexLock lock(&frame_mutex_);
+  for (const FrameBreakdown::Point& point : frame_totals_.slowest.points) {
     if (point.index == index) {
-      return &point;
+      return point;
     }
   }
-  return nullptr;
+  return {};
 }
 
-int64_t Profiler::GetFramePercentileTicks(double fraction) const {
-  const int64_t target =
-      std::max<int64_t>(1, static_cast<int64_t>(std::ceil(fraction * frames_)));
-  int64_t frames = 0;
+int64_t Profiler::GetFramePercentileTicks(const FrameTotals& frames,
+                                          double fraction) {
+  const int64_t target = std::max<int64_t>(
+      1, static_cast<int64_t>(std::ceil(fraction * frames.frames)));
+  int64_t count = 0;
   for (int bucket = 0; bucket < kFrameBuckets; ++bucket) {
-    frames += frame_buckets_[bucket];
-    if (frames >= target) {
-      return std::min(GetFrameBucketMiddle(bucket), slowest_frame_.ticks);
+    count += frames.buckets[bucket];
+    if (count >= target) {
+      return std::min(GetFrameBucketMiddle(bucket), frames.slowest.ticks);
     }
   }
-  return slowest_frame_.ticks;
+  return frames.slowest.ticks;
 }
 
 int Profiler::ReadCoreClass() const {

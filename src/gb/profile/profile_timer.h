@@ -115,6 +115,10 @@ using ProfileCall =
 // records the frame as a whole (see Profiler::GetFrameSummary). Frames can't
 // nest (CHECK), and follow the same rules as other timers (see ProfileTimer),
 // except that a frame can't span a fiber switch (CHECK).
+//
+// Frames are timed on the main Profiler's thread, or for a threadless main
+// Profiler (see Profiler::Options::threadless), on any of its joined
+// Profilers' threads, one frame at a time (CHECK).
 template <ProfileName kName>
 class ProfileFrame final {
  public:

@@ -858,6 +858,173 @@ TEST_F(ProfilerTest, ReadingValueAsSlowestFrameDies) {
 }
 
 //------------------------------------------------------------------------------
+// Threadless main Profiler
+//------------------------------------------------------------------------------
+
+class ProfilerThreadlessTest : public ::testing::Test {
+ protected:
+  FakeProfilerCpu ticks_;
+  std::vector<std::string> reports_;
+  Profiler profiler_{{.fake_cpu = &ticks_,
+                      .threadless = true,
+                      .slow_frame = absl::Nanoseconds(500),
+                      .on_slow_frame = [this](std::string_view report) {
+                        reports_.emplace_back(report);
+                      }}};
+};
+
+TEST_F(ProfilerThreadlessTest, IsNoThreadsProfiler) {
+  {
+    ProfileScope<"ThreadlessTest/Unrecorded"> scope;
+    ticks_.Advance(10);
+  }
+  EXPECT_EQ(profiler_.GetCount("ThreadlessTest/Unrecorded"), 0);
+
+  // So the thread can have a Profiler of its own.
+  Profiler own({.fake_cpu = &ticks_});
+  {
+    ProfileScope<"ThreadlessTest/Unrecorded"> scope;
+    ticks_.Advance(10);
+  }
+  EXPECT_EQ(own.GetCount("ThreadlessTest/Unrecorded"), 1);
+  EXPECT_EQ(profiler_.GetCount("ThreadlessTest/Unrecorded"), 0);
+}
+
+TEST_F(ProfilerThreadlessTest, FramesOnEitherThread) {
+  ProfiledThread thread_a(&profiler_, "a");
+  ProfiledThread thread_b(&profiler_, "b");
+  thread_a.Run([&thread_b](Profiler& profiler, FakeProfilerCpu& ticks) {
+    ProfileFrame<"ThreadlessTest/Frame"> frame;
+    ticks.Advance(1000);
+    thread_b.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+      ProfileScope<"ThreadlessTest/Scope"> scope;
+      ticks.Advance(30);
+    });
+  });
+  thread_b.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+    ProfileFrame<"ThreadlessTest/Frame"> frame;
+    ProfileScope<"ThreadlessTest/Scope"> scope;
+    ticks.Advance(300);
+  });
+
+  const Profiler::FrameSummary summary = profiler_.GetFrameSummary();
+  EXPECT_EQ(summary.frames, 2);
+  EXPECT_EQ(summary.total, absl::Nanoseconds(1300));
+  EXPECT_EQ(profiler_.GetCount("ThreadlessTest/Frame"), 2);
+  EXPECT_EQ(profiler_.GetCount("ThreadlessTest/Scope"), 2);
+  EXPECT_EQ(profiler_.GetSelfTime("ThreadlessTest/Scope"),
+            absl::Nanoseconds(330));
+
+  // The slowest frame is the first, timed on a, with b's time apart from it.
+  EXPECT_EQ(profiler_.GetSlowestFrameSelfTime("ThreadlessTest/Frame"),
+            absl::Microseconds(1));
+  EXPECT_EQ(profiler_.GetSlowestFrameSelfTime("ThreadlessTest/Scope"),
+            absl::Nanoseconds(30));
+  ASSERT_EQ(reports_.size(), 1);
+  EXPECT_EQ(reports_[0], R"(Slow frame: 1.00us, core class 0, profiler 0
+Kind   Frame thread  Other threads
+frame        1.00us              -
+scope             0         30.0ns
+call              0              0
+
+Point                 Kind   Count    Self
+ThreadlessTest/Frame  frame      1  1.00us
+ThreadlessTest/Scope  scope      1  30.0ns
+)");
+
+  // There is no main thread, and each thread is busy with the frames it timed.
+  const std::string report = profiler_.GetReport();
+  EXPECT_NE(report.find(R"(
+Thread  Busy/frame     Max  Share  class 0
+a            500ns  1.00us  76.9%     100%
+b            165ns   300ns  25.4%     100%
+
+)"),
+            std::string::npos)
+      << report;
+}
+
+TEST_F(ProfilerThreadlessTest, OneFrameAtATime) {
+  EXPECT_DEATH(
+      {
+        ProfiledThread thread_a(&profiler_);
+        ProfiledThread thread_b(&profiler_);
+        thread_a.Run([&thread_b](Profiler& profiler, FakeProfilerCpu& ticks) {
+          ProfileFrame<"ThreadlessTest/First"> frame;
+          thread_b.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+            ProfileFrame<"ThreadlessTest/Second"> frame;
+          });
+        });
+      },
+      "Only one profile frame can be in progress at a time");
+}
+
+TEST_F(ProfilerThreadlessTest, FramesCantNest) {
+  EXPECT_DEATH(
+      {
+        ProfiledThread thread(&profiler_);
+        thread.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+          ProfileFrame<"ThreadlessTest/Outer"> outer;
+          ProfileFrame<"ThreadlessTest/Inner"> inner;
+        });
+      },
+      "can't nest");
+}
+
+TEST_F(ProfilerThreadlessTest, ResetBetweenFrames) {
+  ProfiledThread thread_a(&profiler_);
+  ProfiledThread thread_b(&profiler_);
+  thread_a.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+    ProfileFrame<"ThreadlessTest/ResetFrame"> frame;
+    ticks.Advance(1000);
+  });
+  profiler_.Reset();
+  thread_b.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
+    ProfileFrame<"ThreadlessTest/ResetFrame"> frame;
+    ticks.Advance(100);
+  });
+  const Profiler::FrameSummary summary = profiler_.GetFrameSummary();
+  EXPECT_EQ(summary.frames, 1);
+  EXPECT_EQ(summary.max, absl::Nanoseconds(100));
+  EXPECT_EQ(profiler_.GetCount("ThreadlessTest/ResetFrame"), 1);
+}
+
+TEST_F(ProfilerThreadlessTest, ResetDuringFrameDies) {
+  EXPECT_DEATH(
+      {
+        ProfiledThread thread(&profiler_);
+        thread.Run([this](Profiler& profiler, FakeProfilerCpu& ticks) {
+          ProfileFrame<"ThreadlessTest/ResetDuring"> frame;
+          profiler_.Reset();
+        });
+      },
+      "can't be reset during a frame");
+}
+
+TEST_F(ProfilerThreadlessTest, CantHaveMain) {
+  Profiler main({.fake_cpu = &ticks_, .threadless = true});
+  EXPECT_DEATH(
+      Profiler({.fake_cpu = &ticks_, .main = &main, .threadless = true}),
+      "A threadless Profiler can't have a main");
+}
+
+TEST(ProfilerThreadlessSetupTest, MadeAndDestroyedOnAnyThread) {
+  FakeProfilerCpu ticks;
+  std::optional<Profiler> main;
+  std::thread make_thread([&main, &ticks] {
+    main.emplace(Profiler::Options{.fake_cpu = &ticks, .threadless = true});
+  });
+  make_thread.join();
+  std::thread frame_thread([&main] {
+    Profiler profiler({.main = &*main});
+    ProfileFrame<"ThreadlessTest/AnyThreadFrame"> frame;
+  });
+  frame_thread.join();
+  EXPECT_EQ(main->GetFrameSummary().frames, 1);
+  main.reset();
+}
+
+//------------------------------------------------------------------------------
 // Own cost and budget
 //------------------------------------------------------------------------------
 
@@ -1237,10 +1404,10 @@ TEST_F(ProfilerSlowFrameTest, BreakdownHasOtherThreadsTime) {
   // the frame's time.
   ASSERT_EQ(reports_.size(), 1);
   EXPECT_EQ(reports_[0], R"(Slow frame: 1.40us, core class 0, profiler 0
-Kind   Main thread  Other threads
-frame       1.00us              -
-scope        400ns          300ns
-call             0          200ns
+Kind   Frame thread  Other threads
+frame        1.00us              -
+scope         400ns          300ns
+call              0          200ns
 
 Point                   Kind   Count    Self
 SlowFrameTest/Frame     frame      1  1.00us
