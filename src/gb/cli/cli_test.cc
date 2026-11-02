@@ -98,6 +98,12 @@ TEST(ValidateCliCommandTest, ArgsAndCommands) {
             "prog: command has both arguments and commands");
 }
 
+TEST(ValidateCliCommandTest, NullConstraint) {
+  static const CliCommand kProgram = {.name = "prog", .constraints = {nullptr}};
+  EXPECT_EQ(ValidateCliCommand(&kProgram).message(),
+            "prog: command has a null constraint");
+}
+
 TEST(ValidateCliCommandTest, FlagNoName) {
   static const CliFlag<bool> kNoName = {.short_name = 'n'};
   static const CliCommand kProgram = {.name = "prog", .flags = {&kNoName}};

@@ -40,7 +40,8 @@ const gb::CliArg<std::string_view> kProgramFile = {
     .optional = true,
 };
 
-bool Run(const gb::CliCommandLine& command_line);
+bool Run(gb::ValidatedContext& context,
+         const gb::CliCommandLine& command_line);
 
 const gb::CliCommand kProgram = {
     .name = "oz3asm",
@@ -50,7 +51,8 @@ const gb::CliCommand kProgram = {
     .run = Run,
 };
 
-bool Run(const gb::CliCommandLine& command_line) {
+bool Run(gb::ValidatedContext& context,
+         const gb::CliCommandLine& command_line) {
   std::optional<std::string_view> instruction_set =
       command_line.Get(kInstructionSet);
   const bool write_map = command_line.Get(kMap);
@@ -131,7 +133,7 @@ int main(int argc, char* argv[]) {
 
 ```
 absl::StatusOr<CliCommandLine> ParseCommandLine(
-    const CliCommand* program, absl::Span<const std::string> args);
+    const CliCommand* program, absl::Span<const std::string_view> args);
 ```
 
 - `args` are the arguments after the program's name.
@@ -231,48 +233,144 @@ Flags:
   wrapped at words, up to 80 columns; a word longer than a line isn't split.
   The usage line isn't wrapped.
 
+### Context
+
+A command line is parsed and run with a `gb::Context` (see
+`gb/base/validated_context.h`), which holds what `gb_cli` and the program's
+commands need from outside: where text goes, and whatever the program puts
+there (a `gb::FileSystem`, its own settings).
+
+```
+// cli_writer.h
+
+// What a piece of text written to a CliWriter is.
+enum class CliText {
+  kHelp,   // Help that was asked for.
+  kError,  // What is wrong with a command line.
+};
+
+// Writes help to stdout, and errors to stderr. This is the default CliWriter.
+void WriteCliText(CliText type, std::string_view text);
+
+// Where a command line's text goes.
+using CliWriter = std::function<void(CliText type, std::string_view text)>;
+
+// cli_command_line.h
+
+// The writer for a command line's help and errors. If the context has none,
+// WriteCliText() is added to it.
+GB_CONTEXT_CONSTRAINT_DEFAULT(kConstraintCliWriter, kInOptional, CliWriter,
+                              CliWriter(WriteCliText));
+
+// What gb_cli reads from a command line's context.
+using CliContract = ContextContract<kConstraintCliWriter>;
+
+absl::StatusOr<CliCommandLine> ParseCommandLine(
+    CliContract contract, const CliCommand* program,
+    absl::Span<const std::string_view> args);
+
+// As above, with an empty context.
+absl::StatusOr<CliCommandLine> ParseCommandLine(
+    const CliCommand* program, absl::Span<const std::string_view> args);
+
+class CliCommandLine {
+ public:
+  ...
+  // Runs the command, or writes its help to the context's writer.
+  bool Run();
+};
+
+// cli.h
+
+struct CliCommand {
+  ...
+  // The values this command's run function needs from the context, and
+  // those it adds. Those of the commands above it apply too.
+  std::initializer_list<const ContextConstraint*> constraints;
+
+  // Runs the command. `context` is validated against `gb_cli`'s constraints
+  // and those of every command in the path.
+  bool (*run)(ValidatedContext& context, const CliCommandLine& command_line);
+};
+```
+
+- **Parsing:** `ParseCommandLine()` takes the context as a `CliContract`, the
+  same way `gb::Game::Run()` takes a `GameContract`: a `Context*`, or an owned
+  `Context`. The parsed `CliCommandLine` keeps it, so it becomes move-only.
+  Parsing itself reads nothing from it yet; path validators will (see *Path
+  validators for command lines* in the backlog).
+- **Running:** `CliCommandLine::Run()` takes no writer. It writes help to the
+  context's `CliWriter`. To run
+  the command, it validates the context against the constraints of every
+  command in the path, and passes that `ValidatedContext` to the run
+  function. A run function reads the program's values from it
+  (`context.GetPtr<FileSystem>()`), and any `kOut` values it adds are
+  validated when it returns. A required value that is missing is reported as
+  `ValidatedContext` reports any error (`LOG(FATAL)` in debug builds), and
+  `Run()` returns false without running the command. A value the command must
+  add but doesn't is reported the same way, and `Run()` returns false.
+- **Writing:** `CliWriter` is a single function, given what the text is and
+  the text. `kConstraintCliWriter`'s default, `WriteCliText()`, is added to a
+  context that has no writer when it is validated, so the context always has
+  one: a command can write its own errors with it, where `gb_cli`'s go. The
+  default can't be an interface (a default is a copyable value, in a
+  `std::any`), so the writer is a `std::function` rather than a class to
+  derive from. That also leaves no derived type for `SetPtr(&writer)` to
+  store it under by mistake.
+- **Constraints as data:** a command lists pointers to the
+  `ContextConstraint`s it needs, which the `GB_CONTEXT_CONSTRAINT` macros
+  define as `inline const` globals, so a command stays constant data:
+  `.constraints = {&kConstraintFileSystem}`.
+
 ### Running
 
 ```
-// What a piece of text written by RunCommandLine() is.
-enum class CliText {
-  kHelp,   // Help that was asked for.
-  kError,  // What is wrong with the command line.
-};
+// run_command_line.h
 
-// Writes help to stdout, and errors to stderr.
-void WriteCliText(CliText type, std::string_view text);
+// Parses and runs a command line, returning main()'s exit code.
+int RunCommandLine(CliContract contract, const CliCommand* program,
+                   absl::Span<const std::string_view> args);
 
-int RunCommandLine(
-    const CliCommand* program, absl::Span<const std::string> args,
-    absl::FunctionRef<void(CliText type, std::string_view text)> write =
-        WriteCliText);
+// As above, with an empty context.
+int RunCommandLine(const CliCommand* program,
+                   absl::Span<const std::string_view> args);
 
 // Returns main()'s arguments after the program's name.
-std::vector<std::string> GetMainArgs(int argc, char* argv[]);
+std::vector<std::string_view> GetMainArgs(int argc, char* argv[]);
+
+int main(int argc, char* argv[]) {
+  return gb::RunCommandLine(&kProgram, gb::GetMainArgs(argc, argv));
+}
 ```
 
-- `RunCommandLine()` parses the command line, then writes the error if it
-  isn't valid, or else calls `CliCommandLine::Run()`, which writes the help if it
-  was asked for, or runs the command. Text goes only to `write`, so a program can send it elsewhere (a
-  log, a window), and tests can collect it. Returns `main`'s exit code: 0 if
-  the command succeeded or help was written, 1 if the command returned false,
-  and 2 if the command line isn't valid.
+- `RunCommandLine()` parses the command line, writes the error to the
+  context's writer if it isn't valid, and otherwise calls
+  `CliCommandLine::Run()`, which writes the help if it was asked for, or runs
+  the command. Text goes only to the writer, so a program can send it
+  elsewhere (a log, a window), and tests can collect it. Returns `main`'s exit
+  code: 0 if the command succeeded or help was written, 1 if the command
+  returned false, and 2 if the command line isn't valid.
+- A parse error says how to get help for the command so far, as part of the
+  error's message: `tool remote: unknown flag "--x". Run "tool remote
+  --help" for help.` So a program calling `ParseCommandLine()` itself gets
+  the same message.
 - Arguments and definitions are UTF-8, and pass through as bytes. Help wraps
   by code point, not byte. Getting UTF-8 arguments from the operating system
-  is up to the caller: `GetMainArgs()` copies `argv` as it is, which on
+  is up to the caller: `GetMainArgs()` returns `argv` as it is, which on
   Windows is in the ANSI code page (see *UTF-8 command line arguments on
-  Windows* in the backlog). It returns strings rather than views of `argv`
-  so that it can convert them later without changing its API.
-- Arguments are a span of `std::string` rather than `std::string_view`, so
-  that `GetMainArgs()`'s result passes straight in (a vector of strings
-  doesn't convert to a span of views). String values point into them, so the
-  caller keeps them for as long as it uses the values.
+  Windows* in the backlog).
+- Arguments are a span of `std::string_view`, so a caller can pass views of
+  whatever holds them. String values point into them, so the caller keeps
+  them for as long as it uses the values. `GetMainArgs()` returns views that
+  stay valid for the rest of the program: views of `argv` now, and, if it
+  converts to UTF-8 later, of converted strings it keeps for the program's
+  lifetime, without changing its API.
 
 ## Design
 
-`gb_cli` is a new tier 1 library, depending only on Abseil. It
-is a component a program takes on its own, and nothing in tier 0 needs it.
+`gb_cli` is a new tier 1 library, depending on Abseil, and from CL6 on
+`gb_base` for `gb::Context`. It is a component a program takes on its own,
+and nothing in tier 0 needs it.
 
 ### Names
 
@@ -284,8 +382,10 @@ is a component a program takes on its own, and nothing in tier 0 needs it.
   returns. It holds more than values (the command path, whether help was asked
   for, and `Run()`), so not `CliValues`. Not `CliResult`, which reads as the
   outcome of running, and not `ParsedCli`, which breaks the `Cli` prefix.
-- `ParseCommandLine()`, `RunCommandLine()`, `FormatCliHelp()`,
-  `ValidateCliCommand()`, `CliText` and `WriteCliText()`.
+- `ParseCommandLine()`, `RunCommandLine()`, `FormatCliHelp()`, and
+  `ValidateCliCommand()`.
+- `CliText`, `CliWriter`, `WriteCliText()`, `kConstraintCliWriter`, and
+  `CliContract` (see CL6's names).
 - `GetMainArgs()`: the arguments `main()` is given. Not `GetCommandLine...`,
   which is a Windows macro family (`GetCommandLineW()`), and not `CliArgs`,
   which reads as a list of `CliArg` definitions.
@@ -298,10 +398,14 @@ is a component a program takes on its own, and nothing in tier 0 needs it.
   `gb_cli` and its tests: the fields every flag or argument has, parsing a
   value for any of them, and `GetCliPathName()`, for errors and help.
 - `cli_validators.h`: the common validators.
-- `cli_command_line.h`: `CliCommandLine` and `ParseCommandLine()`.
+- `cli_command_line.h`: `CliCommandLine`, `ParseCommandLine()`,
+  `kConstraintCliWriter`, and `CliContract`.
 - `cli_help.h`: `kCliHelpCommand` and `FormatCliHelp()`.
-- `run_command_line.h`: `CliText`, `WriteCliText()`, `RunCommandLine()`, and
-  `GetMainArgs()`. Nothing in the library is platform-specific.
+- `cli_writer.h`: `CliText`, `CliWriter`, and `WriteCliText()`.
+- `fake_cli_writer.h`: `FakeCliWriter`, which keeps what is written to the
+  `CliWriter` it makes, for `gb_cli`'s own tests.
+- `run_command_line.h`: `RunCommandLine()` and `GetMainArgs()`. Nothing in the
+  library is platform-specific.
 
 ### Value types
 
@@ -461,25 +565,65 @@ Depends on: CL4.
 **Verify**
 - Standard checks. The tests carry over, renamed.
 
-### CL6 [ ] gb_cli: context and running a command line
+### CL6 [x] gb_cli: context and running a command line
 
 Depends on: CL5.
 
-- To be designed in this worklog, and reviewed, before it is written. The
-  direction: `ParseCommandLine()` and `RunCommandLine()` take a `gb::Context`,
-  validated against `gb_cli`'s `ContextConstraint`s: an optional `CliWriter`
-  for help and errors (stdout and stderr by default), and later an optional
-  `gb::FileSystem` for path validators. The parsed command line keeps the
-  context, so `Run()` writes help to its writer and takes no `write_help`, and
-  run functions get the context, to which a program adds its own values.
-  `gb_cli` depends on `gb_base` again (tier 0).
-- `run_command_line.h`: `RunCommandLine()` and `GetMainArgs()`, replacing the
-  `CliText` and `WriteCliText()` design above.
+- The context (see Context): `cli_writer.h` (`CliText`, `CliWriter`,
+  `WriteCliText()`), `kConstraintCliWriter` (defaulting to `WriteCliText()`)
+  and `CliContract`, `ParseCommandLine()` taking a
+  `CliContract`, `CliCommandLine::Run()` writing help to the context's writer,
+  and `CliCommand::constraints`, with run functions getting the validated
+  context. `gb_cli` depends on `gb_base` again (tier 0).
+- `run_command_line.h`: `RunCommandLine()` and `GetMainArgs()` (see Running).
+- Parse errors end with how to get help for the command so far.
+- The backlog's *Path validators for command lines* says validators would get
+  the context, which is where the `FileSystem` would be.
 
 **Verify**
 - Standard checks.
-- Unit tests: the exit codes, that the run function gets the values and the
-  context, and the text written for help and errors, collected by a fake
-  writer in the context. `GetMainArgs()` skips the program's name, and returns
-  nothing for an `argc` of 1. The default writer itself (stdout and stderr) is
-  the only part left untested.
+- Unit tests, with a fake `CliWriter` in the context that collects text:
+  - `Run()` writes help to the context's writer, and a run function gets the
+    command line and the context.
+  - A run function reads a value its command's constraints allow, and one
+    allowed by a command above it.
+  - A command's required value that is missing: `Run()` returns false
+    without running it (with the `ValidatedContext` error callback set to
+    collect the error, rather than `LOG(FATAL)`).
+  - `RunCommandLine()`'s exit codes (0, 1, 2), and the text written for help
+    and errors.
+  - Each parse error ends with the right `Run "... --help"` hint.
+  - `GetMainArgs()` skips the program's name, and returns nothing for an
+    `argc` of 1.
+  - Parsing adds the default writer to a context that has none.
+- `WriteCliText()` itself (stdout and stderr) is the only part left untested.
+
+**Names**
+- `CliWriter`: what text is written to. `CliOutput` is vaguer, and
+  `CliConsole` suggests a terminal, when the text may go to a window or a log.
+  Game Bits' other writers (`ChunkWriter`, `ResourceFileWriter`) write files,
+  but have their own prefixes, so they don't collide.
+- `CliText` and `WriteCliText()`: what a piece of text is, and the default
+  writer, which writes to C stdio's stdout and stderr, whatever they are
+  attached to.
+- `kConstraintCliWriter` and `CliContract`, following `Game`'s
+  `kConstraintClock` and `GameContract`.
+
+**Brittleness**
+- A context passed as a `Context*` must outlive the `CliCommandLine`, as the
+  arguments already must. An owned context (`std::make_unique<Context>()`)
+  doesn't.
+- A command's required values are only validated when it runs, as which
+  command runs is only known then. A program's tests of each command find a
+  missing one.
+- A program's writer must be set as a `CliWriter`:
+  `context.SetValue<CliWriter>(WriteToLog)`. `CliWriter` is a `std::function`,
+  so a lambda or function given to `SetValue` without the type would be stored
+  as its own type, which gb_cli doesn't look up. `SetValue` needs its type
+  written, so this is hard to get wrong.
+- The default writer is added to a context passed by pointer, and stays
+  there, as `kInOptional` defaults do throughout Game Bits.
+- `RunCommandLine()` holds the context itself, and parses with a
+  `CliContract` that refers to it, so the writer is still there for an error
+  when parsing fails. A null constraint in a command is a definition error,
+  rather than a crash when the command runs.

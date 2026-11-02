@@ -14,6 +14,7 @@
 #include <variant>
 
 #include "absl/status/status.h"
+#include "gb/base/validated_context.h"
 
 namespace gb {
 
@@ -39,7 +40,8 @@ namespace gb {
 //       .help = "The file to read.",
 //   };
 //
-//   bool Run(const gb::CliCommandLine& command_line);
+//   bool Run(gb::ValidatedContext& context,
+//            const gb::CliCommandLine& command_line);
 //
 //   const gb::CliCommand kProgram = {
 //       .name = "convert",
@@ -215,11 +217,22 @@ struct CliCommand {
   // The command's subcommands.
   std::initializer_list<const CliCommand*> commands;
 
+  // The values the command's run function needs from the context, and those it
+  // adds (see ContextConstraint). Those of the commands above it apply too.
+  // These point to constants, as the GB_CONTEXT_CONSTRAINT macros define:
+  // `{&kConstraintFileSystem}`.
+  std::initializer_list<const ContextConstraint*> constraints;
+
   // Runs the command with the values given on the command line, returning
-  // whether it succeeded. A command with no run function writes its help
-  // instead (see CliCommandLine::Run()), so one with subcommands but no run
-  // function writes its help if none of them is named.
-  bool (*run)(const CliCommandLine& command_line) = nullptr;
+  // whether it succeeded. `context` is the context the command line was parsed
+  // with, validated against gb_cli's constraints (CliContract) and those of
+  // every command in the path.
+  //
+  // A command with no run function writes its help instead (see
+  // CliCommandLine::Run()), so one with subcommands but no run function writes
+  // its help if none of them is named.
+  bool (*run)(ValidatedContext& context,
+              const CliCommandLine& command_line) = nullptr;
 
   // Leave unset. This is here only to prevent the definition from being
   // constexpr.

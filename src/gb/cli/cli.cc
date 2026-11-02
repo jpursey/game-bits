@@ -118,6 +118,9 @@ absl::Status CliCommandValidator::Validate(const CliCommand* command) {
   if (command->args.size() != 0 && command->commands.size() != 0) {
     return Error("command has both arguments and commands");
   }
+  if (absl::c_linear_search(command->constraints, nullptr)) {
+    return Error("command has a null constraint");
+  }
   absl::Status status = ValidateFlags();
   if (!status.ok()) {
     return status;

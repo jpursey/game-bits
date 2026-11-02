@@ -6,7 +6,9 @@
 #include "gb/cli/cli_command_line.h"
 
 #include <cstdint>
+#include <memory>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <variant>
 #include <vector>
@@ -15,6 +17,8 @@
 #include "absl/strings/ascii.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_split.h"
+#include "gb/base/context.h"
+#include "gb/base/validated_context.h"
 #include "gb/cli/cli_help.h"
 #include "gb/cli/cli_internal.h"
 
@@ -45,7 +49,7 @@ class CliParser {
  public:
   explicit CliParser(const CliCommand* program) : path_({program}) {}
 
-  absl::Status Parse(absl::Span<const std::string> args);
+  absl::Status Parse(absl::Span<const std::string_view> args);
 
   bool IsHelp() const { return help_flag_given_ || help_command_given_; }
   std::vector<const CliCommand*> TakePath() { return std::move(path_); }
@@ -56,7 +60,7 @@ class CliParser {
  private:
   // Parses the flag at `args[*index]`, advancing `*index` past its value if it
   // takes the next argument.
-  absl::Status ParseFlag(absl::Span<const std::string> args, int* index);
+  absl::Status ParseFlag(absl::Span<const std::string_view> args, int* index);
 
   // Parses a bare word: a subcommand's name, or a positional argument. After
   // the help command, every word is a subcommand's name.
@@ -93,7 +97,7 @@ class CliParser {
   bool help_command_given_ = false;
 };
 
-absl::Status CliParser::Parse(absl::Span<const std::string> args) {
+absl::Status CliParser::Parse(absl::Span<const std::string_view> args) {
   const int arg_count = static_cast<int>(args.size());
   for (int i = 0; i < arg_count && !help_flag_given_; ++i) {
     const std::string_view arg = args[i];
@@ -115,7 +119,7 @@ absl::Status CliParser::Parse(absl::Span<const std::string> args) {
   return ValidateComplete();
 }
 
-absl::Status CliParser::ParseFlag(absl::Span<const std::string> args,
+absl::Status CliParser::ParseFlag(absl::Span<const std::string_view> args,
                                   int* index) {
   const std::string_view arg = args[*index];
 
@@ -246,8 +250,9 @@ const CliAnyFlag* CliParser::FindFlag(char short_name) const {
 }
 
 absl::Status CliParser::Error(std::string_view message) const {
-  return absl::InvalidArgumentError(
-      absl::StrCat(internal::GetCliPathName(path_), ": ", message));
+  const std::string path_name = internal::GetCliPathName(path_);
+  return absl::InvalidArgumentError(absl::StrCat(
+      path_name, ": ", message, ". Run \"", path_name, " --help\" for help."));
 }
 
 }  // namespace
@@ -256,14 +261,28 @@ absl::Status CliParser::Error(std::string_view message) const {
 // CliCommandLine
 //==============================================================================
 
-bool CliCommandLine::Run(
-    absl::FunctionRef<void(std::string_view help)> write_help) const {
+bool CliCommandLine::Run() {
   const CliCommand* command = GetCommand();
   if (is_help_ || command->run == nullptr) {
-    write_help(FormatCliHelp(path_));
+    // The context has a writer, as kConstraintCliWriter has a default.
+    (*context_.GetPtr<CliWriter>())(CliText::kHelp, FormatCliHelp(path_));
     return true;
   }
-  return command->run(*this);
+  std::vector<ContextConstraint> constraints = CliContract::GetConstraints();
+  for (const CliCommand* path_command : path_) {
+    for (const ContextConstraint* constraint : path_command->constraints) {
+      constraints.push_back(*constraint);
+    }
+  }
+  ValidatedContext command_context(context_, std::move(constraints));
+  if (!command_context.IsValid()) {
+    return false;
+  }
+
+  // The command fails if it doesn't add a value it must. Completing the
+  // context, when it is destroyed, reports which.
+  const bool succeeded = command->run(command_context, *this);
+  return command_context.IsValidToComplete() && succeeded;
 }
 
 bool CliCommandLine::Get(const CliFlag<bool>& flag) const {
@@ -336,15 +355,22 @@ bool CliCommandLine::IsInPath(const void* definition) const {
 //==============================================================================
 
 absl::StatusOr<CliCommandLine> ParseCommandLine(
-    const CliCommand* program, absl::Span<const std::string> args) {
+    CliContract contract, const CliCommand* program,
+    absl::Span<const std::string_view> args) {
   CHECK_OK(ValidateCliCommand(program));
   CliParser parser(program);
   const absl::Status status = parser.Parse(args);
   if (!status.ok()) {
     return status;
   }
-  return CliCommandLine(parser.TakePath(), parser.TakeValues(),
+  return CliCommandLine(ValidatedContext(std::move(contract)),
+                        parser.TakePath(), parser.TakeValues(),
                         parser.IsHelp());
+}
+
+absl::StatusOr<CliCommandLine> ParseCommandLine(
+    const CliCommand* program, absl::Span<const std::string_view> args) {
+  return ParseCommandLine(std::make_unique<Context>(), program, args);
 }
 
 }  // namespace gb

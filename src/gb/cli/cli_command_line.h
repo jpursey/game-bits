@@ -8,17 +8,17 @@
 
 #include <cstdint>
 #include <optional>
-#include <string>
 #include <string_view>
 #include <utility>
 #include <variant>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
-#include "absl/functional/function_ref.h"
 #include "absl/status/statusor.h"
 #include "absl/types/span.h"
+#include "gb/base/validated_context.h"
 #include "gb/cli/cli.h"
+#include "gb/cli/cli_writer.h"
 
 namespace gb {
 
@@ -30,12 +30,30 @@ using CliValue = std::variant<bool, std::string_view, int64_t, double>;
 }  // namespace internal
 
 //==============================================================================
+// Context
+//
+// A command line is parsed and run with a context (see
+// gb/base/validated_context.h), which holds what gb_cli and the program's
+// commands need from outside it.
+//==============================================================================
+
+// The writer for a command line's help and errors. If the context has none,
+// WriteCliText() is added to it. A command's run function can write its own
+// errors with it too (`(*context.GetPtr<CliWriter>())(CliText::kError, ...)`),
+// so that they go where gb_cli's do.
+GB_CONTEXT_CONSTRAINT_DEFAULT(kConstraintCliWriter, kInOptional, CliWriter,
+                              CliWriter(WriteCliText));
+
+// What gb_cli reads from the context a command line is parsed with.
+using CliContract = ContextContract<kConstraintCliWriter>;
+
+//==============================================================================
 // CliCommandLine
 //==============================================================================
 
 // A parsed command line: the command it names, and the values given for that
 // command's flags and arguments and those of the commands above it. This is
-// made by ParseCommandLine().
+// made by ParseCommandLine(), and keeps the context it was parsed with.
 //
 // String values point into the arguments that were parsed, so the arguments
 // must outlive this.
@@ -53,11 +71,18 @@ class CliCommandLine {
 
   // Runs the command with this command line, returning whether it succeeded.
   //
+  // The command's run function gets the context, validated against gb_cli's
+  // constraints (CliContract) and those of every command in the path. If that
+  // fails, as when a required value is missing, the error is reported as
+  // ValidatedContext reports any error, and this returns false without running
+  // the command. If the command doesn't add a value its constraints say it
+  // must, that is reported the same way, and this returns false.
+  //
   // If the command line asks for help, with "--help", "-h", or the help command
-  // (see cli_help.h), this writes the command's help (FormatCliHelp()) to
-  // `write_help` instead, and succeeds. It does the same for a command with no
-  // run function.
-  bool Run(absl::FunctionRef<void(std::string_view help)> write_help) const;
+  // (see cli_help.h), this writes the command's help (FormatCliHelp()) to the
+  // context's writer instead, and succeeds. It does the same for a command
+  // with no run function.
+  bool Run();
 
   // Returns whether a bool flag was given.
   //
@@ -83,12 +108,16 @@ class CliCommandLine {
 
  private:
   friend absl::StatusOr<CliCommandLine> ParseCommandLine(
-      const CliCommand* program, absl::Span<const std::string> args);
+      CliContract contract, const CliCommand* program,
+      absl::Span<const std::string_view> args);
 
-  CliCommandLine(std::vector<const CliCommand*> path,
+  CliCommandLine(ValidatedContext context, std::vector<const CliCommand*> path,
                  absl::flat_hash_map<const void*, internal::CliValue> values,
                  bool is_help)
-      : path_(std::move(path)), values_(std::move(values)), is_help_(is_help) {}
+      : context_(std::move(context)),
+        path_(std::move(path)),
+        values_(std::move(values)),
+        is_help_(is_help) {}
 
   // Returns the value given for `definition`, or null if none was. CHECKs that
   // `definition` belongs to the command path, and that this isn't help.
@@ -97,6 +126,7 @@ class CliCommandLine {
   // Returns whether `definition` belongs to a command in the command path.
   bool IsInPath(const void* definition) const;
 
+  ValidatedContext context_;
   std::vector<const CliCommand*> path_;
   absl::flat_hash_map<const void*, internal::CliValue> values_;
 
@@ -106,19 +136,26 @@ class CliCommandLine {
 };
 
 // Parses `args`, the arguments after the program's name, as a command line for
-// `program`.
+// `program`, with the context `contract` holds.
 //
 // This returns an InvalidArgument error if the command line isn't valid, whose
-// message says what is wrong in terms ready to show the user. `program` must be
-// valid (see ValidateCliCommand(), which this CHECKs).
+// message says what is wrong in terms ready to show the user, and ends by
+// saying how to get help. `program` must be valid (see ValidateCliCommand(),
+// which this CHECKs).
 //
 // A command line that is valid may ask for help rather than for the command to
 // run, so pass it to CliCommandLine::Run(), which handles both, rather than
 // reading its values directly.
 //
-// String values point into `args`, so `args` must outlive the command line.
+// String values point into `args`, so `args` must outlive the command line. A
+// context passed by pointer must outlive it too.
 absl::StatusOr<CliCommandLine> ParseCommandLine(
-    const CliCommand* program, absl::Span<const std::string> args);
+    CliContract contract, const CliCommand* program,
+    absl::Span<const std::string_view> args);
+
+// As above, with an empty context.
+absl::StatusOr<CliCommandLine> ParseCommandLine(
+    const CliCommand* program, absl::Span<const std::string_view> args);
 
 }  // namespace gb
 

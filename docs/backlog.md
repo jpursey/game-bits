@@ -653,9 +653,11 @@ strings it owns.
 A validator that a path given on the command line exists (or is a file, or a
 folder), checked against the program's `gb::FileSystem` rather than
 `std::filesystem`. A validator is a plain function pointer in constant data, so
-the design question is how it gets the `FileSystem`. One way is a template
-taking the program's accessor (`gb::CliPathExists<GetFileSystem>`); another is
-a context that `ParseCommandLine()` passes to every validator. Command line
+the design question is how it gets the `FileSystem`. `ParseCommandLine()` now
+takes a `gb::Context` (a `CliContract`), and the `FileSystem` belongs there:
+validators would be given the context, validated against a
+`kConstraintFileSystem` that a path validator's flag or argument adds, so a
+missing `FileSystem` is found when the command line is parsed. Command line
 paths are written the operating system's way, so the validator converts them
 with `LocalFileProtocol::ToOsRootPath()`, for a `FileSystem` whose default
 protocol is from `CreateOsRoot()`.

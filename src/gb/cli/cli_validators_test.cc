@@ -10,6 +10,7 @@
 #include <string_view>
 #include <vector>
 
+#include "absl/strings/strip.h"
 #include "gb/cli/cli.h"
 #include "gb/cli/cli_command_line.h"
 #include "gtest/gtest.h"
@@ -90,13 +91,18 @@ const CliCommand kProgram = {
     .args = {&kName},
 };
 
-std::string ParseError(const std::vector<std::string>& args) {
+// Returns the error message from parsing `args`, without the hint for help
+// that ends it, or an empty string if they parse.
+std::string ParseError(const std::vector<std::string_view>& args) {
   absl::StatusOr<CliCommandLine> command_line =
       ParseCommandLine(&kProgram, args);
   if (command_line.ok()) {
     return "";
   }
-  return std::string(command_line.status().message());
+  std::string_view message = command_line.status().message();
+  EXPECT_TRUE(absl::ConsumeSuffix(&message, ". Run \"prog --help\" for help."))
+      << message;
+  return std::string(message);
 }
 
 TEST(CliValidatorsTest, InDefinitions) {

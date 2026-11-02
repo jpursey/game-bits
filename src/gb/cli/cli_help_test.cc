@@ -18,15 +18,16 @@
 namespace gb {
 namespace {
 
-bool RunNothing(const CliCommandLine&) { return true; }
+bool RunNothing(ValidatedContext&, const CliCommandLine&) { return true; }
 
-// Returns the help for the command the command line `args` names, or its
-// error.
+// Returns the help for the command the command line `args` names, which must
+// be valid.
 std::string GetHelp(const CliCommand* program,
-                    const std::vector<std::string>& args) {
+                    const std::vector<std::string_view>& args) {
   absl::StatusOr<CliCommandLine> command_line = ParseCommandLine(program, args);
   if (!command_line.ok()) {
-    return std::string(command_line.status().message());
+    ADD_FAILURE() << command_line.status();
+    return "";
   }
   return FormatCliHelp(command_line->GetCommandPath());
 }

@@ -9,6 +9,8 @@ set(gb_cli_SOURCE
   cli_help.cc cli_help.h
   cli_internal.cc cli_internal.h
   cli_validators.cc cli_validators.h
+  cli_writer.cc cli_writer.h
+  run_command_line.cc run_command_line.h
 )
 
 set(gb_cli_DEPS
@@ -17,6 +19,7 @@ set(gb_cli_DEPS
   absl::status
   absl::statusor
   absl::strings
+  gb_base
 )
 
 set(gb_cli_LIBS
@@ -28,6 +31,8 @@ set(gb_cli_TEST_SOURCE
   cli_help_test.cc
   cli_test.cc
   cli_validators_test.cc
+  fake_cli_writer.h
+  run_command_line_test.cc
 )
 
 gb_add_library(gb_cli)
