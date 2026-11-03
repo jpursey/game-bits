@@ -47,6 +47,18 @@ TextureArray* TestRenderBackend::CreateTextureArray(
                               format);
 }
 
+VolumeTexture* TestRenderBackend::CreateVolumeTexture(
+    RenderInternal, ResourceEntry entry, DataVolatility volatility, int width,
+    int height, int depth, const SamplerOptions& options,
+    TextureFormat format) {
+  if (state_->fail_create_volume_texture) {
+    return nullptr;
+  }
+  return new TestVolumeTexture(&state_->volume_texture_config, std::move(entry),
+                               volatility, width, height, depth, options,
+                               format);
+}
+
 std::unique_ptr<ShaderCode> TestRenderBackend::CreateShaderCode(
     RenderInternal, const void* code, int64_t code_size) {
   if (state_->fail_create_shader_code) {

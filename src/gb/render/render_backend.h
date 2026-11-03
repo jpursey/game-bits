@@ -19,6 +19,7 @@
 #include "gb/render/shader_code.h"
 #include "gb/render/texture.h"
 #include "gb/render/texture_array.h"
+#include "gb/render/volume_texture.h"
 #include "gb/resource/resource_entry.h"
 
 namespace gb {
@@ -93,6 +94,23 @@ class RenderBackend {
                                            int width, int height,
                                            const SamplerOptions& options,
                                            TextureFormat format) = 0;
+
+  // Creates a new volume texture of the specified width, height, depth, and
+  // format.
+  //
+  // If options.filter is set, the format is one CanFilter() accepts. Volume
+  // textures have no mipmaps, so options.mipmap is false, and
+  // options.tile_size is zero.
+  //
+  // If the volume texture could not be created, this returns null. On success,
+  // the resulting volume texture is considered uninitialized (all texels are of
+  // unknown value).
+  virtual VolumeTexture* CreateVolumeTexture(RenderInternal,
+                                             ResourceEntry entry,
+                                             DataVolatility volatility,
+                                             int width, int height, int depth,
+                                             const SamplerOptions& options,
+                                             TextureFormat format) = 0;
 
   // Creates the shader code compatible with this backend from the raw shader
   // code data.

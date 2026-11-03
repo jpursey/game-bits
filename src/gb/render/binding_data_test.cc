@@ -146,6 +146,25 @@ TEST_F(BindingDataTest, TextureArrays) {
   EXPECT_THAT(dependencies, ElementsAre(texture_array.Get()));
 }
 
+TEST_F(BindingDataTest, VolumeTextures) {
+  CreateSystem();
+  auto volume_texture = render_system_->CreateVolumeTexture(
+      DataVolatility::kStaticWrite, 4, 4, 4, SamplerOptions().SetMipmap(false));
+  ASSERT_NE(volume_texture, nullptr);
+  const std::vector<Binding> bindings = {Binding()
+                                             .SetShaders(ShaderType::kFragment)
+                                             .SetLocation(BindingSet::kScene, 1)
+                                             .SetVolumeTexture()};
+  TestBindingData binding_data(nullptr, BindingSet::kScene, bindings);
+
+  EXPECT_EQ(binding_data.GetVolumeTexture(1), nullptr);
+  binding_data.SetVolumeTexture(1, volume_texture.Get());
+  EXPECT_EQ(binding_data.GetVolumeTexture(1), volume_texture.Get());
+  ResourceDependencyList dependencies;
+  binding_data.GetDependencies(&dependencies);
+  EXPECT_THAT(dependencies, ElementsAre(volume_texture.Get()));
+}
+
 TEST_F(BindingDataTest, AccessWithWrongTypeOrIndexDies) {
   if (!kRenderAssertsCompiled) {
     GTEST_SKIP() << "Render asserts are compiled out";
@@ -184,6 +203,8 @@ TEST_F(BindingDataTest, AccessWithWrongTypeOrIndexDies) {
   EXPECT_DEATH(binding_data.GetTexture(-1), "Validate");
   EXPECT_DEATH(binding_data.SetTextureArray(1, nullptr), "Validate");
   EXPECT_DEATH(binding_data.GetTextureArray(1), "Validate");
+  EXPECT_DEATH(binding_data.SetVolumeTexture(1, nullptr), "Validate");
+  EXPECT_DEATH(binding_data.GetVolumeTexture(1), "Validate");
 }
 
 }  // namespace

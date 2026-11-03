@@ -67,6 +67,7 @@ void VulkanBindingData::OnRender(VulkanRenderState* state) {
     DataItem& item = data_[binding];
     switch (item.binding_type) {
       case BindingType::kNone:
+      case BindingType::kVolumeTexture:
         break;
       case BindingType::kTexture: {
         auto& info = item.texture;
@@ -155,6 +156,8 @@ bool VulkanBindingData::Validate(int index, gb::TypeKey* type) const {
       return type == texture_type;
     case BindingType::kTextureArray:
       return type == texture_array_type;
+    case BindingType::kVolumeTexture:
+      return false;
     case BindingType::kConstants:
       return item.constants.type->GetType() == type;
   }
@@ -166,6 +169,7 @@ void VulkanBindingData::DoSet(int index, const void* value) {
   auto& item = data_[index];
   switch (item.binding_type) {
     case BindingType::kNone:
+    case BindingType::kVolumeTexture:
       break;
     case BindingType::kConstants:
       item.constants.buffer->SetValue(buffer_offset_index_, value);
@@ -197,6 +201,7 @@ void VulkanBindingData::DoGet(int index, void* value) const {
   const auto& item = data_[index];
   switch (item.binding_type) {
     case BindingType::kNone:
+    case BindingType::kVolumeTexture:
       break;
     case BindingType::kConstants:
       item.constants.buffer->GetValue(buffer_offset_index_, value);
@@ -215,6 +220,7 @@ void VulkanBindingData::DoGetDependencies(
   for (const auto& item : data_) {
     switch (item.binding_type) {
       case BindingType::kNone:
+      case BindingType::kVolumeTexture:
         break;
       case BindingType::kConstants:
         break;

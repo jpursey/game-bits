@@ -67,6 +67,12 @@ struct Binding {
   // binding if it is accessed by a shader.
   Binding& SetTextureArray();
 
+  // Sets the binding to be a volume texture (a sampler3D in GLSL).
+  //
+  // The actual volume texture must be set within a BindingData object for this
+  // binding if it is accessed by a shader.
+  Binding& SetVolumeTexture();
+
   // Sets the binding to be a constants structure.
   //
   // Constants are defined by registering a C++ type that conforms to the
@@ -153,6 +159,13 @@ inline Binding& Binding::SetTextureArray() {
   return *this;
 }
 
+inline Binding& Binding::SetVolumeTexture() {
+  binding_type = BindingType::kVolumeTexture;
+  constants_type = nullptr;
+  volatility = DataVolatility::kStaticReadWrite;
+  return *this;
+}
+
 inline Binding& Binding::SetConstants(const RenderDataType* type,
                                       DataVolatility data_volatility) {
   binding_type = BindingType::kConstants;
@@ -166,7 +179,8 @@ inline bool Binding::IsValid() const {
          Union(shader_types, kAllShaderTypes) == kAllShaderTypes &&
          (binding_type == BindingType::kConstants ||
           binding_type == BindingType::kTexture ||
-          binding_type == BindingType::kTextureArray) &&
+          binding_type == BindingType::kTextureArray ||
+          binding_type == BindingType::kVolumeTexture) &&
          (binding_type != BindingType::kConstants ||
           constants_type != nullptr) &&
          (volatility == DataVolatility::kPerFrame ||

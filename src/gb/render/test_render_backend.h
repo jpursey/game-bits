@@ -19,6 +19,7 @@
 #include "gb/render/test_render_scene.h"
 #include "gb/render/test_texture.h"
 #include "gb/render/test_texture_array.h"
+#include "gb/render/test_volume_texture.h"
 
 namespace gb {
 
@@ -48,6 +49,7 @@ class TestRenderBackend final : public RenderBackend {
     std::vector<DrawCommand> draw_commands;  // From every DrawList drawn.
     TestTexture::Config texture_config;
     TestTextureArray::Config texture_array_config;
+    TestVolumeTexture::Config volume_texture_config;
     TestRenderPipeline::Config render_pipeline_config;
     TestRenderBuffer::Config vertex_buffer_config;
     TestRenderBuffer::Config index_buffer_config;
@@ -57,6 +59,7 @@ class TestRenderBackend final : public RenderBackend {
 
     bool fail_create_texture = false;
     bool fail_create_texture_array = false;
+    bool fail_create_volume_texture = false;
     bool fail_create_shader_code = false;
     bool fail_create_scene_type = false;
     bool fail_create_scene = false;
@@ -90,6 +93,11 @@ class TestRenderBackend final : public RenderBackend {
                                    int width, int height,
                                    const SamplerOptions& options,
                                    TextureFormat format) override;
+  VolumeTexture* CreateVolumeTexture(RenderInternal, ResourceEntry entry,
+                                     DataVolatility volatility, int width,
+                                     int height, int depth,
+                                     const SamplerOptions& options,
+                                     TextureFormat format) override;
   std::unique_ptr<ShaderCode> CreateShaderCode(RenderInternal, const void* code,
                                                int64_t code_size) override;
   std::unique_ptr<RenderSceneType> CreateSceneType(

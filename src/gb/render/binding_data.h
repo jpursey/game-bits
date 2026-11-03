@@ -11,6 +11,7 @@
 #include "gb/render/render_types.h"
 #include "gb/render/texture.h"
 #include "gb/render/texture_array.h"
+#include "gb/render/volume_texture.h"
 
 namespace gb {
 
@@ -86,6 +87,14 @@ class BindingData {
   void SetTextureArray(int index, TextureArray* texture_array);
   const TextureArray* GetTextureArray(int index) const;
 
+  // Get or set volume texture resource.
+  //
+  // Calling this on an undefined binding index for the set, or a binding of a
+  // different binding type is undefined behavior, and likely will result in a
+  // crash.
+  void SetVolumeTexture(int index, VolumeTexture* volume_texture);
+  const VolumeTexture* GetVolumeTexture(int index) const;
+
   //----------------------------------------------------------------------------
   // Operations
   //----------------------------------------------------------------------------
@@ -119,6 +128,7 @@ class BindingData {
   // - BindingType::kTexture: "value" points to a Texture* (aka it is actually a
   //   Texture**).
   // - BindingType::kTextureArray: "value" points to a TextureArray*.
+  // - BindingType::kVolumeTexture: "value" points to a VolumeTexture*.
   virtual void DoSet(int index, const void* value) = 0;
   virtual void DoGet(int index, void* value) const = 0;
 
@@ -161,6 +171,19 @@ inline const TextureArray* BindingData::GetTextureArray(int index) const {
   TextureArray* texture_array = nullptr;
   DoGet(index, &texture_array);
   return texture_array;
+}
+
+inline void BindingData::SetVolumeTexture(int index,
+                                          VolumeTexture* volume_texture) {
+  RENDER_ASSERT(Validate(index, TypeKey::Get<VolumeTexture*>()));
+  DoSet(index, &volume_texture);
+}
+
+inline const VolumeTexture* BindingData::GetVolumeTexture(int index) const {
+  RENDER_ASSERT(Validate(index, TypeKey::Get<VolumeTexture*>()));
+  VolumeTexture* volume_texture = nullptr;
+  DoGet(index, &volume_texture);
+  return volume_texture;
 }
 
 template <typename Type>

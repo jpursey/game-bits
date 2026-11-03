@@ -40,6 +40,7 @@ class Shader;
 class ShaderCode;
 class Texture;
 class TextureArray;
+class VolumeTexture;
 struct Binding;
 struct DrawCommand;
 struct MaterialConfig;
@@ -53,6 +54,7 @@ struct MaterialTypeChunk;
 struct ShaderChunk;
 struct TextureChunk;
 struct TextureArrayChunk;
+struct VolumeTextureChunk;
 }  // namespace fbs
 
 // Internal access token for functions callable by render classes.
@@ -331,10 +333,11 @@ inline void FillTexels(TextureFormat format, const void* texel, int count,
 // A binding type specifies what kind of resource is or may be bound within a
 // binding set.
 enum class BindingType : int {
-  kNone,          // No binding.
-  kConstants,     // Binds structured constant data.
-  kTexture,       // Binds a texture.
-  kTextureArray,  // Binds a texture array.
+  kNone,           // No binding.
+  kConstants,      // Binds structured constant data.
+  kTexture,        // Binds a texture.
+  kTextureArray,   // Binds a texture array.
+  kVolumeTexture,  // Binds a volume texture.
 };
 
 //==============================================================================
@@ -404,6 +407,10 @@ inline constexpr int kMaxTextureHeight = 8192;
 // Maximum count and total pixel count for a texture array.
 inline constexpr int kMaxTextureArrayCount = 2048;
 inline constexpr int kMaxTextureArrayPixels = 512 * 1024 * 1024;
+
+// Maximum size of each side, and total texel count, for a volume texture.
+inline constexpr int kMaxVolumeTextureSize = 2048;
+inline constexpr int kMaxVolumeTextureTexels = 512 * 1024 * 1024;
 
 }  // namespace gb
 

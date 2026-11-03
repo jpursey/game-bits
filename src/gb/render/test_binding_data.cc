@@ -32,6 +32,11 @@ TestBindingData::Value::Value(Binding binding) : binding_(binding) {
       size_ = sizeof(TextureArray*);
       value_ = std::calloc(size_, 1);
       break;
+    case BindingType::kVolumeTexture:
+      type_ = TypeKey::Get<VolumeTexture*>();
+      size_ = sizeof(VolumeTexture*);
+      value_ = std::calloc(size_, 1);
+      break;
     default:
       LOG(FATAL) << "Unhandled binding type in TestBindingData";
   }
@@ -87,6 +92,7 @@ void TestBindingData::DoGetDependencies(
     ResourceDependencyList* dependencies) const {
   static TypeKey* const texture_type = TypeKey::Get<Texture*>();
   static TypeKey* const texture_array_type = TypeKey::Get<TextureArray*>();
+  static TypeKey* const volume_texture_type = TypeKey::Get<VolumeTexture*>();
   for (const auto& value : values_) {
     if (value.GetType() == texture_type) {
       Texture* texture = *static_cast<Texture**>(value.GetValue());
@@ -98,6 +104,12 @@ void TestBindingData::DoGetDependencies(
           *static_cast<TextureArray**>(value.GetValue());
       if (texture_array != nullptr) {
         dependencies->push_back(texture_array);
+      }
+    } else if (value.GetType() == volume_texture_type) {
+      VolumeTexture* volume_texture =
+          *static_cast<VolumeTexture**>(value.GetValue());
+      if (volume_texture != nullptr) {
+        dependencies->push_back(volume_texture);
       }
     }
   }

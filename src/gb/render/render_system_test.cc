@@ -967,6 +967,101 @@ TEST_F(RenderSystemTest, LoadTextureWithTooFewTexels) {
   EXPECT_EQ(resource_system_->Load<Texture>("mem:/image.gbtx"), nullptr);
 }
 
+TEST_F(RenderSystemTest, SaveLoadVolumeTextureInEachFormat) {
+  CreateSystem();
+  const SamplerOptions options =
+      SamplerOptions().SetMipmap(false).SetFilter(false).SetAddressMode(
+          SamplerAddressMode::kClampBorder, Pixel(255, 255, 255));
+  for (TextureFormat format :
+       {TextureFormat::kRgba8Srgb, TextureFormat::kRgba8, TextureFormat::kRg8,
+        TextureFormat::kR8, TextureFormat::kRgba4}) {
+    std::vector<uint8_t> expected_texels(
+        GetTextureSizeInBytes(format, 8, 4, 2));
+    for (int i = 0; i < static_cast<int>(expected_texels.size()); ++i) {
+      expected_texels[i] = static_cast<uint8_t>(i * 7);
+    }
+    auto volume_texture = render_system_->CreateVolumeTexture(
+        DataVolatility::kStaticReadWrite, 8, 4, 2, options, format);
+    ASSERT_NE(volume_texture, nullptr);
+    const ResourceId volume_texture_id = volume_texture->GetResourceId();
+    ASSERT_TRUE(
+        volume_texture->Set(expected_texels.data(), expected_texels.size()));
+    const std::string name =
+        absl::StrCat("mem:/volume_", static_cast<int>(format), ".gbvt");
+    ASSERT_TRUE(render_system_->SaveVolumeTexture(name, volume_texture.Get(),
+                                                  DataVolatility::kPerFrame));
+    EXPECT_EQ(volume_texture->GetResourceName(), name);
+    volume_texture.Reset();
+
+    volume_texture = resource_system_->Load<VolumeTexture>(name);
+    ASSERT_NE(volume_texture, nullptr) << name;
+    EXPECT_EQ(volume_texture->GetResourceId(), volume_texture_id);
+    EXPECT_EQ(volume_texture->GetVolatility(), DataVolatility::kPerFrame);
+    EXPECT_EQ(volume_texture->GetWidth(), 8);
+    EXPECT_EQ(volume_texture->GetHeight(), 4);
+    EXPECT_EQ(volume_texture->GetDepth(), 2);
+    EXPECT_EQ(volume_texture->GetFormat(), format);
+    EXPECT_EQ(volume_texture->GetSamplerOptions(), options);
+    EXPECT_THAT(
+        static_cast<TestVolumeTexture*>(volume_texture.Get())->GetTexels(),
+        ElementsAreArray(expected_texels))
+        << name;
+  }
+}
+
+TEST_F(RenderSystemTest, LoadVolumeTextureOverridingSamplerOptions) {
+  CreateSystem();
+  auto volume_texture = render_system_->CreateVolumeTexture(
+      DataVolatility::kStaticReadWrite, 8, 4, 2,
+      SamplerOptions().SetMipmap(false));
+  ASSERT_NE(volume_texture, nullptr);
+  ASSERT_TRUE(volume_texture->Clear());
+  ASSERT_TRUE(render_system_->SaveVolumeTexture("mem:/volume.gbvt",
+                                                volume_texture.Get()));
+  volume_texture.Reset();
+
+  // The override's mipmap options are for 2D textures, and are ignored.
+  volume_texture = resource_system_->Load<VolumeTexture>(
+      "mem:/volume.gbvt",
+      ContextBuilder()
+          .SetValue<SamplerOptions>(
+              SamplerOptions()
+                  .SetFilter(false)
+                  .SetAddressMode(SamplerAddressMode::kClampEdge)
+                  .SetTileSize(16))
+          .Build());
+  ASSERT_NE(volume_texture, nullptr);
+  EXPECT_EQ(volume_texture->GetSamplerOptions(),
+            SamplerOptions().SetFilter(false).SetMipmap(false).SetAddressMode(
+                SamplerAddressMode::kClampEdge));
+}
+
+TEST_F(RenderSystemTest, LoadVolumeTextureAfterFailedLoad) {
+  CreateSystem();
+  auto volume_texture = render_system_->CreateVolumeTexture(
+      DataVolatility::kStaticReadWrite, 8, 4, 2,
+      SamplerOptions().SetMipmap(false));
+  ASSERT_NE(volume_texture, nullptr);
+  ASSERT_TRUE(volume_texture->Clear());
+  ASSERT_TRUE(render_system_->SaveVolumeTexture("mem:/volume.gbvt",
+                                                volume_texture.Get()));
+  volume_texture.Reset();
+
+  state_.volume_texture_config.fail_set = true;
+  EXPECT_EQ(resource_system_->Load<VolumeTexture>("mem:/volume.gbvt"), nullptr);
+  state_.volume_texture_config.fail_set = false;
+  EXPECT_NE(resource_system_->Load<VolumeTexture>("mem:/volume.gbvt"), nullptr);
+}
+
+TEST_F(RenderSystemTest, SaveVolumeTextureWithStaticWriteFails) {
+  CreateSystem();
+  auto volume_texture = render_system_->CreateVolumeTexture(
+      DataVolatility::kStaticWrite, 8, 4, 2, SamplerOptions().SetMipmap(false));
+  ASSERT_NE(volume_texture, nullptr);
+  EXPECT_FALSE(render_system_->SaveVolumeTexture("mem:/volume.gbvt",
+                                                 volume_texture.Get()));
+}
+
 TEST_F(RenderSystemTest, SaveShaderNotInEditMode) {
   CreateSystem();
   auto shader = render_system_->CreateShader(
@@ -1329,6 +1424,47 @@ TEST_F(RenderSystemTest, SaveLoadMaterialAndDependencies) {
   EXPECT_EQ(constants.x, 1);
   EXPECT_EQ(constants.y, 2);
   EXPECT_NE(material->GetDefaultInstanceBindingData()->GetTexture(1), nullptr);
+}
+
+TEST_F(RenderSystemTest, SaveLoadMaterialWithVolumeTexture) {
+  CreateSystem(true);
+  const std::vector<Binding> bindings = {
+      Binding()
+          .SetShaders(ShaderType::kFragment)
+          .SetLocation(BindingSet::kInstance, 1)
+          .SetVolumeTexture(),
+  };
+  auto* material = CreateMaterial(bindings);
+  auto* material_type = material->GetType();
+  auto volume_texture = render_system_->CreateVolumeTexture(
+      DataVolatility::kStaticReadWrite, 4, 4, 4,
+      SamplerOptions().SetMipmap(false));
+  ASSERT_NE(volume_texture, nullptr);
+  ASSERT_TRUE(volume_texture->Clear());
+  material->GetDefaultInstanceBindingData()->SetVolumeTexture(
+      1, volume_texture.Get());
+
+  ASSERT_TRUE(render_system_->SaveShader("mem:/vertex.gbsh",
+                                         material_type->GetVertexShader()));
+  ASSERT_TRUE(render_system_->SaveShader("mem:/fragment.gbsh",
+                                         material_type->GetFragmentShader()));
+  ASSERT_TRUE(render_system_->SaveVolumeTexture("mem:/volume.gbvt",
+                                                volume_texture.Get()));
+  ASSERT_TRUE(render_system_->SaveMaterialType("mem:/material_type.gbmt",
+                                               material_type));
+  ASSERT_TRUE(render_system_->SaveMaterial("mem:/material.gbma", material));
+  volume_texture.Reset();
+  temp_resource_set_.RemoveAll();
+
+  material = resource_system_->Load<Material>(&temp_resource_set_,
+                                              "mem:/material.gbma");
+  ASSERT_NE(material, nullptr);
+  EXPECT_THAT(material->GetType()->GetBindings(),
+              UnorderedElementsAreArray(bindings));
+  const VolumeTexture* loaded_volume_texture =
+      material->GetDefaultInstanceBindingData()->GetVolumeTexture(1);
+  ASSERT_NE(loaded_volume_texture, nullptr);
+  EXPECT_EQ(loaded_volume_texture->GetResourceName(), "mem:/volume.gbvt");
 }
 
 TEST_F(RenderSystemTest, SaveLoadMeshAndDependencies) {

@@ -65,6 +65,7 @@ class LocalBindingData : public BindingData {
 
   static const RenderDataType* GetTextureDataType();
   static const RenderDataType* GetTextureArrayDataType();
+  static const RenderDataType* GetVolumeTextureDataType();
 
   std::vector<Slot> slots_;
   std::vector<uint8_t> buffer_;

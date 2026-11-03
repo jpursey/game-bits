@@ -21,6 +21,7 @@ inline constexpr ChunkType kChunkTypeMesh = {'G', 'B', 'M', 'E'};
 inline constexpr ChunkType kChunkTypeShader = {'G', 'B', 'S', 'H'};
 inline constexpr ChunkType kChunkTypeTexture = {'G', 'B', 'T', 'X'};
 inline constexpr ChunkType kChunkTypeTextureArray = {'G', 'B', 'T', 'A'};
+inline constexpr ChunkType kChunkTypeVolumeTexture = {'G', 'B', 'V', 'T'};
 
 // The ResourceLoadChunk defines a resource that a chunk file depends on and
 // must be loaded first with the specified name.

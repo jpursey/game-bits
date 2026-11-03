@@ -24,6 +24,7 @@ enum BindingType : uint8 {
   Constants,
   Texture,
   TextureArray,
+  VolumeTexture,
 }
 
 // Must be kept in sync with gb::DataVolatility
@@ -157,6 +158,7 @@ table BindingDataEntry {
   texture_id : uint64;
   texture_array_id : uint64;
   constants_data : [uint8];
+  volume_texture_id : uint64;
 }
 
 // Chunk for mesh resource.
@@ -240,6 +242,20 @@ table TextureArrayChunk {
   width : uint16;
   height : uint16;
   pixels : [uint32];
+  options : SamplerOptions;
+  format : TextureFormat = Rgba8Srgb;
+  texels : [ubyte];
+}
+
+// Chunk for volume texture resource.
+//
+// The texels are in "texels", in the volume's format, ordered x first, then y,
+// then z.
+table VolumeTextureChunk {
+  volatility : DataVolatility;
+  width : uint16;
+  height : uint16;
+  depth : uint16;
   options : SamplerOptions;
   format : TextureFormat = Rgba8Srgb;
   texels : [ubyte];

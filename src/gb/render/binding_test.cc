@@ -42,6 +42,14 @@ TEST_F(BindingTest, Combine) {
 
   EXPECT_FALSE(binding.Combine(MakeTextureBinding(2)));
   EXPECT_FALSE(binding.Combine(Binding(binding).SetTextureArray()));
+  EXPECT_FALSE(binding.Combine(Binding(binding).SetVolumeTexture()));
+}
+
+TEST_F(BindingTest, VolumeTexture) {
+  Binding binding = MakeTextureBinding(1).SetVolumeTexture();
+  EXPECT_TRUE(binding.IsValid());
+  EXPECT_EQ(binding.binding_type, BindingType::kVolumeTexture);
+  EXPECT_TRUE(binding.Combine(MakeTextureBinding(1).SetVolumeTexture()));
 }
 
 TEST_F(BindingTest, ConstantsComparedByTypeKey) {

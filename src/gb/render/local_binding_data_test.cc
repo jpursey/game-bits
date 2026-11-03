@@ -325,5 +325,29 @@ TEST_F(LocalBindingDataTest, TextureArrays) {
   EXPECT_THAT(dependencies, ElementsAre(texture_array.Get()));
 }
 
+TEST_F(LocalBindingDataTest, VolumeTextures) {
+  CreateSystem();
+  auto volume_texture = render_system_->CreateVolumeTexture(
+      DataVolatility::kStaticWrite, 4, 4, 4, SamplerOptions().SetMipmap(false));
+  ASSERT_NE(volume_texture, nullptr);
+  const std::vector<Binding> bindings = {Binding()
+                                             .SetShaders(ShaderType::kFragment)
+                                             .SetLocation(BindingSet::kScene, 1)
+                                             .SetVolumeTexture()};
+  LocalBindingData binding_data(GetAccessToken(), BindingSet::kScene, bindings);
+
+  EXPECT_EQ(binding_data.GetVolumeTexture(1), nullptr);
+  binding_data.SetVolumeTexture(1, volume_texture.Get());
+  EXPECT_EQ(binding_data.GetVolumeTexture(1), volume_texture.Get());
+  ResourceDependencyList dependencies;
+  binding_data.GetDependencies(&dependencies);
+  EXPECT_THAT(dependencies, ElementsAre(volume_texture.Get()));
+
+  // Copies keep the volume texture.
+  TestBindingData copy(nullptr, BindingSet::kScene, bindings);
+  binding_data.CopyTo(&copy);
+  EXPECT_EQ(copy.GetVolumeTexture(1), volume_texture.Get());
+}
+
 }  // namespace
 }  // namespace gb

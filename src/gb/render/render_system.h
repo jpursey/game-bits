@@ -27,6 +27,7 @@
 #include "gb/render/sampler_options.h"
 #include "gb/render/shader.h"
 #include "gb/render/texture.h"
+#include "gb/render/volume_texture.h"
 #include "gb/resource/resource_ptr.h"
 #include "gb/resource/resource_set.h"
 #include "gb/resource/resource_types.h"
@@ -364,6 +365,36 @@ class RenderSystem final {
       std::string_view name, TextureArray* texture_array,
       DataVolatility volatility = DataVolatility::kStaticWrite);
 
+  // Creates a volume texture with the specified parameters.
+  //
+  // Each side is at most kMaxVolumeTextureSize, and the total at most
+  // kMaxVolumeTextureTexels. Volume textures have no mipmaps, so options must
+  // have mipmap unset (SamplerOptions().SetMipmap(false)) and a tile_size of
+  // zero.
+  //
+  // If successful, the volume texture will be created uninitialized (texel
+  // values are undefined). The caller should call Set or Clear to initialize
+  // its contents.
+  ResourcePtr<VolumeTexture> CreateVolumeTexture(
+      DataVolatility volatility, int width, int height, int depth,
+      const SamplerOptions& options,
+      TextureFormat format = TextureFormat::kRgba8Srgb);
+  VolumeTexture* CreateVolumeTexture(
+      ResourceSet* resource_set, DataVolatility volatility, int width,
+      int height, int depth, const SamplerOptions& options,
+      TextureFormat format = TextureFormat::kRgba8Srgb);
+
+  // Saves a volume texture to the specified resource name.
+  //
+  // The volume texture must be readable (not DataVolatility::kStaticWrite).
+  // Optionally, DataVolatility may be specified to indicate what it should be
+  // when it is reloaded later.
+  //
+  // Returns true if the volume texture was successfully saved.
+  bool SaveVolumeTexture(
+      std::string_view name, VolumeTexture* volume_texture,
+      DataVolatility volatility = DataVolatility::kStaticWrite);
+
   //----------------------------------------------------------------------------
   // Rendering
   //
@@ -500,6 +531,23 @@ class RenderSystem final {
                                       ResourceEntry entry);
   bool SaveTextureArrayChunk(Context* context, TextureArray* texture_array,
                              flatbuffers::FlatBufferBuilder* builder);
+
+  // Creates a volume texture in the backend, returning null and logging why if
+  // its size, options, or format are invalid, or the backend fails.
+  VolumeTexture* CreateBackendVolumeTexture(ResourceEntry entry,
+                                            DataVolatility volatility,
+                                            int width, int height, int depth,
+                                            const SamplerOptions& options,
+                                            TextureFormat format);
+  VolumeTexture* DoCreateVolumeTexture(DataVolatility volatility, int width,
+                                       int height, int depth,
+                                       const SamplerOptions& options,
+                                       TextureFormat format);
+  VolumeTexture* LoadVolumeTextureChunk(Context* context,
+                                        const fbs::VolumeTextureChunk* chunk,
+                                        ResourceEntry entry);
+  bool SaveVolumeTextureChunk(Context* context, VolumeTexture* volume_texture,
+                              flatbuffers::FlatBufferBuilder* builder);
 
   const RenderDataType* DoRegisterConstantsType(std::string_view name,
                                                 TypeKey* type, size_t size);
@@ -643,6 +691,22 @@ inline TextureArray* RenderSystem::CreateTextureArray(
       DoCreateTextureArray(volatility, count, width, height, options, format);
   resource_set->Add(texture_array);
   return texture_array;
+}
+
+inline ResourcePtr<VolumeTexture> RenderSystem::CreateVolumeTexture(
+    DataVolatility volatility, int width, int height, int depth,
+    const SamplerOptions& options, TextureFormat format) {
+  return DoCreateVolumeTexture(volatility, width, height, depth, options,
+                               format);
+}
+
+inline VolumeTexture* RenderSystem::CreateVolumeTexture(
+    ResourceSet* resource_set, DataVolatility volatility, int width, int height,
+    int depth, const SamplerOptions& options, TextureFormat format) {
+  VolumeTexture* volume_texture =
+      DoCreateVolumeTexture(volatility, width, height, depth, options, format);
+  resource_set->Add(volume_texture);
+  return volume_texture;
 }
 
 }  // namespace gb

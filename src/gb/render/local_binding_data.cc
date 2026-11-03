@@ -27,6 +27,7 @@ LocalBindingData::LocalBindingData(RenderInternal, BindingSet set,
 
   const RenderDataType* const texture_type = GetTextureDataType();
   const RenderDataType* const texture_array_type = GetTextureArrayDataType();
+  const RenderDataType* const volume_texture_type = GetVolumeTextureDataType();
   for (const auto& binding : bindings) {
     Slot& slot = slots_[binding.index];
     if (slot.type != nullptr) {
@@ -41,6 +42,9 @@ LocalBindingData::LocalBindingData(RenderInternal, BindingSet set,
         break;
       case BindingType::kTextureArray:
         slot.type = texture_array_type;
+        break;
+      case BindingType::kVolumeTexture:
+        slot.type = volume_texture_type;
         break;
       default:
         LOG(FATAL) << "Unhandled binding type in LocalBindingData constructor";
@@ -79,6 +83,12 @@ const RenderDataType* LocalBindingData::GetTextureArrayDataType() {
   return &type;
 }
 
+const RenderDataType* LocalBindingData::GetVolumeTextureDataType() {
+  static RenderDataType type({}, "", TypeKey::Get<VolumeTexture*>(),
+                             sizeof(VolumeTexture*));
+  return &type;
+}
+
 void LocalBindingData::CopyTo(BindingData* binding_data) const {
   const int count = static_cast<int>(slots_.size());
   for (int i = 0; i < count; ++i) {
@@ -113,6 +123,7 @@ void LocalBindingData::DoGetDependencies(
     ResourceDependencyList* dependencies) const {
   const RenderDataType* const texture_type = GetTextureDataType();
   const RenderDataType* const texture_array_type = GetTextureArrayDataType();
+  const RenderDataType* const volume_texture_type = GetVolumeTextureDataType();
   for (const Slot& slot : slots_) {
     if (slot.type == texture_type) {
       Texture* texture = nullptr;
@@ -126,6 +137,13 @@ void LocalBindingData::DoGetDependencies(
                   sizeof(texture_array));
       if (texture_array != nullptr) {
         dependencies->push_back(texture_array);
+      }
+    } else if (slot.type == volume_texture_type) {
+      VolumeTexture* volume_texture = nullptr;
+      std::memcpy(&volume_texture, buffer_.data() + slot.offset,
+                  sizeof(volume_texture));
+      if (volume_texture != nullptr) {
+        dependencies->push_back(volume_texture);
       }
     }
   }

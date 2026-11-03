@@ -87,6 +87,9 @@ bool ReadBindings(RenderSystem* render_system,
       case fbs::BindingType_TextureArray:
         binding.SetTextureArray();
         break;
+      case fbs::BindingType_VolumeTexture:
+        binding.SetVolumeTexture();
+        break;
       case fbs::BindingType_Constants: {
         if (fb_binding->constants_name() == nullptr) {
           LOG(ERROR) << "Unspecified constants name for binding at index " << i;
@@ -123,6 +126,7 @@ fb::Offset<fb::Vector<fb::Offset<fbs::BindingDataEntry>>> WriteBindingData(
     }
     ResourceId texture_id = 0;
     ResourceId texture_array_id = 0;
+    ResourceId volume_texture_id = 0;
     fb::Offset<fb::Vector<uint8_t>> fb_constants_data;
     switch (binding.binding_type) {
       case BindingType::kTexture: {
@@ -136,6 +140,13 @@ fb::Offset<fb::Vector<fb::Offset<fbs::BindingDataEntry>>> WriteBindingData(
             binding_data->GetTextureArray(binding.index);
         if (texture_array != nullptr) {
           texture_array_id = texture_array->GetResourceId();
+        }
+      } break;
+      case BindingType::kVolumeTexture: {
+        const auto* volume_texture =
+            binding_data->GetVolumeTexture(binding.index);
+        if (volume_texture != nullptr) {
+          volume_texture_id = volume_texture->GetResourceId();
         }
       } break;
       case BindingType::kConstants: {
@@ -155,6 +166,7 @@ fb::Offset<fb::Vector<fb::Offset<fbs::BindingDataEntry>>> WriteBindingData(
     binding_entry_builder.add_type(ToFbs(binding.binding_type));
     binding_entry_builder.add_texture_id(texture_id);
     binding_entry_builder.add_texture_array_id(texture_array_id);
+    binding_entry_builder.add_volume_texture_id(volume_texture_id);
     binding_entry_builder.add_constants_data(fb_constants_data);
     fb_binding_data.emplace_back(binding_entry_builder.Finish());
   }
@@ -229,6 +241,22 @@ bool ReadBindingData(
           return false;
         }
         binding_data->SetTextureArray(index, texture_array);
+      } break;
+      case BindingType::kVolumeTexture: {
+        const ResourceId volume_texture_id =
+            fb_binding_data_entry->volume_texture_id();
+        if (volume_texture_id == 0) {
+          // No volume texture is valid.
+          break;
+        }
+        auto* volume_texture =
+            file_resources->GetResource<VolumeTexture>(volume_texture_id);
+        if (volume_texture == nullptr) {
+          LOG(ERROR) << "Referenced binding data volume texture at index "
+                     << index << " not loaded. ID=" << volume_texture_id;
+          return false;
+        }
+        binding_data->SetVolumeTexture(index, volume_texture);
       } break;
       case BindingType::kConstants: {
         const auto* fb_constants_data = fb_binding_data_entry->constants_data();
@@ -364,6 +392,53 @@ const void* GetChunkTexels(std::string_view what,
   return data;
 }
 
+// Returns true if a volume texture of the specified size is within the limits,
+// and logs an error otherwise.
+bool ValidateVolumeTextureSize(int width, int height, int depth) {
+  if (width <= 0 || width > kMaxVolumeTextureSize || height <= 0 ||
+      height > kMaxVolumeTextureSize || depth <= 0 ||
+      depth > kMaxVolumeTextureSize) {
+    LOG(ERROR) << "Invalid volume texture dimensions " << width << " by "
+               << height << " by " << depth << ", which must each be from 1 to "
+               << kMaxVolumeTextureSize;
+    return false;
+  }
+  const int64_t texel_count = int64_t{width} * height * depth;
+  if (texel_count > kMaxVolumeTextureTexels) {
+    LOG(ERROR) << "Invalid volume texture with " << texel_count
+               << " texels, more than the maximum of "
+               << kMaxVolumeTextureTexels;
+    return false;
+  }
+  return true;
+}
+
+fb::Offset<fbs::SamplerOptions> WriteSamplerOptions(
+    FlatBufferBuilder* builder, const SamplerOptions& options) {
+  fbs::SamplerOptionsBuilder sampler_options_builder(*builder);
+  sampler_options_builder.add_filter(options.filter);
+  sampler_options_builder.add_mipmap(options.mipmap);
+  sampler_options_builder.add_border(options.border.Packed());
+  sampler_options_builder.add_tile_size(options.tile_size);
+  sampler_options_builder.add_address_mode(ToFbs(options.address_mode));
+  return sampler_options_builder.Finish();
+}
+
+// Returns the sampler options saved in a chunk, or the default if there are
+// none.
+SamplerOptions ReadSamplerOptions(
+    const fbs::SamplerOptions* fb_sampler_options) {
+  SamplerOptions sampler_options;
+  if (fb_sampler_options != nullptr) {
+    sampler_options.SetFilter(fb_sampler_options->filter());
+    sampler_options.SetMipmap(fb_sampler_options->mipmap());
+    sampler_options.SetTileSize(fb_sampler_options->tile_size());
+    sampler_options.SetAddressMode(FromFbs(fb_sampler_options->address_mode()),
+                                   Pixel(fb_sampler_options->border()));
+  }
+  return sampler_options;
+}
+
 // Adds the bindings for a material type to "bindings": the bindings of its
 // scene type and shaders. Bindings at the same location must be compatible, and
 // are combined into one. Returns false if any are not.
@@ -431,6 +506,12 @@ bool RenderSystem::Init() {
              FlatBufferBuilder* builder) {
         return SaveTextureArrayChunk(context, resource, builder);
       });
+  resource_writer_->RegisterResourceFlatBufferWriter<VolumeTexture>(
+      kChunkTypeVolumeTexture, 1,
+      [this](Context* context, VolumeTexture* resource,
+             FlatBufferBuilder* builder) {
+        return SaveVolumeTextureChunk(context, resource, builder);
+      });
   resource_writer_->RegisterResourceFlatBufferWriter<Shader>(
       kChunkTypeShader, 1,
       [this](Context* context, Shader* resource, FlatBufferBuilder* builder) {
@@ -466,6 +547,13 @@ bool RenderSystem::Init() {
           [this](Context* context, const fbs::TextureArrayChunk* chunk,
                  ResourceEntry entry) {
             return LoadTextureArrayChunk(context, chunk, std::move(entry));
+          });
+  resource_reader_
+      ->RegisterResourceFlatBufferChunk<VolumeTexture, fbs::VolumeTextureChunk>(
+          kChunkTypeVolumeTexture, 1,
+          [this](Context* context, const fbs::VolumeTextureChunk* chunk,
+                 ResourceEntry entry) {
+            return LoadVolumeTextureChunk(context, chunk, std::move(entry));
           });
   resource_reader_->RegisterResourceFlatBufferChunk<Shader, fbs::ShaderChunk>(
       kChunkTypeShader, 1,
@@ -506,13 +594,15 @@ bool RenderSystem::Init() {
 
   TypeKey::Get<Texture>()->SetTypeName("Texture");
   TypeKey::Get<TextureArray>()->SetTypeName("TextureArray");
+  TypeKey::Get<VolumeTexture>()->SetTypeName("VolumeTexture");
   TypeKey::Get<Shader>()->SetTypeName("Shader");
   TypeKey::Get<MaterialType>()->SetTypeName("MaterialType");
   TypeKey::Get<Material>()->SetTypeName("Material");
   TypeKey::Get<Mesh>()->SetTypeName("Mesh");
   auto* resource_system = context_.GetPtr<ResourceSystem>();
-  if (!resource_system->Register<Texture, TextureArray, Shader, MaterialType,
-                                 Material, Mesh>(resource_manager_.get())) {
+  if (!resource_system->Register<Texture, TextureArray, VolumeTexture, Shader,
+                                 MaterialType, Material, Mesh>(
+          resource_manager_.get())) {
     return false;
   }
   return true;
@@ -1546,23 +1636,14 @@ Texture* RenderSystem::LoadTextureChunk(Context* context,
   gb::ValidatedContext validated_context = TextureLoadContract(context);
   DCHECK(validated_context.IsValid())
       << "TextureLoadContext does not have any requirements!";
-  SamplerOptions sampler_options;
-  auto* fb_sampler_options = chunk->options();
-  if (fb_sampler_options != nullptr) {
-    sampler_options.SetFilter(fb_sampler_options->filter());
-    sampler_options.SetMipmap(fb_sampler_options->mipmap());
-    sampler_options.SetTileSize(fb_sampler_options->tile_size());
-    sampler_options.SetAddressMode(FromFbs(fb_sampler_options->address_mode()),
-                                   Pixel(fb_sampler_options->border()));
-  }
-
   DataVolatility volatility = FromFbs(chunk->volatility());
   if (edit_ && volatility == DataVolatility::kStaticWrite) {
     volatility = DataVolatility::kStaticReadWrite;
   }
   Texture* texture = CreateBackendTexture(
       "texture", std::move(entry), volatility, width, height,
-      validated_context.GetValueOrDefault<SamplerOptions>(sampler_options),
+      validated_context.GetValueOrDefault<SamplerOptions>(
+          ReadSamplerOptions(chunk->options())),
       format);
   if (texture == nullptr) {
     return nullptr;
@@ -1626,16 +1707,8 @@ bool RenderSystem::SaveTextureChunk(Context* context, Texture* texture,
     LOG(ERROR) << "Failed to read texture in order to save it";
     return false;
   }
-
-  auto& sampler_options = texture->GetSamplerOptions();
-
-  fbs::SamplerOptionsBuilder sampler_options_builder(*builder);
-  sampler_options_builder.add_filter(sampler_options.filter);
-  sampler_options_builder.add_mipmap(sampler_options.mipmap);
-  sampler_options_builder.add_border(sampler_options.border.Packed());
-  sampler_options_builder.add_tile_size(sampler_options.tile_size);
-  sampler_options_builder.add_address_mode(ToFbs(sampler_options.address_mode));
-  const auto fb_sampler_options = sampler_options_builder.Finish();
+  const auto fb_sampler_options =
+      WriteSamplerOptions(builder, texture->GetSamplerOptions());
 
   fbs::TextureChunkBuilder texture_builder(*builder);
   texture_builder.add_volatility(ToFbs(context->GetValue<DataVolatility>()));
@@ -1677,23 +1750,14 @@ TextureArray* RenderSystem::LoadTextureArrayChunk(
   gb::ValidatedContext validated_context = TextureLoadContract(context);
   DCHECK(validated_context.IsValid())
       << "TextureLoadContext does not have any requirements!";
-  SamplerOptions sampler_options;
-  auto* fb_sampler_options = chunk->options();
-  if (fb_sampler_options != nullptr) {
-    sampler_options.SetFilter(fb_sampler_options->filter());
-    sampler_options.SetMipmap(fb_sampler_options->mipmap());
-    sampler_options.SetTileSize(fb_sampler_options->tile_size());
-    sampler_options.SetAddressMode(FromFbs(fb_sampler_options->address_mode()),
-                                   Pixel(fb_sampler_options->border()));
-  }
-
   DataVolatility volatility = FromFbs(chunk->volatility());
   if (edit_ && volatility == DataVolatility::kStaticWrite) {
     volatility = DataVolatility::kStaticReadWrite;
   }
   TextureArray* texture_array = CreateBackendTextureArray(
       "texture array", std::move(entry), volatility, count, width, height,
-      validated_context.GetValueOrDefault<SamplerOptions>(sampler_options),
+      validated_context.GetValueOrDefault<SamplerOptions>(
+          ReadSamplerOptions(chunk->options())),
       format);
   if (texture_array == nullptr) {
     return nullptr;
@@ -1740,15 +1804,8 @@ bool RenderSystem::SaveTextureArrayChunk(
       return false;
     }
   }
-  auto& sampler_options = texture_array->GetSamplerOptions();
-
-  fbs::SamplerOptionsBuilder sampler_options_builder(*builder);
-  sampler_options_builder.add_filter(sampler_options.filter);
-  sampler_options_builder.add_mipmap(sampler_options.mipmap);
-  sampler_options_builder.add_border(sampler_options.border.Packed());
-  sampler_options_builder.add_tile_size(sampler_options.tile_size);
-  sampler_options_builder.add_address_mode(ToFbs(sampler_options.address_mode));
-  const auto fb_sampler_options = sampler_options_builder.Finish();
+  const auto fb_sampler_options =
+      WriteSamplerOptions(builder, texture_array->GetSamplerOptions());
 
   fbs::TextureArrayChunkBuilder texture_array_builder(*builder);
   texture_array_builder.add_volatility(
@@ -1762,6 +1819,126 @@ bool RenderSystem::SaveTextureArrayChunk(
   const auto fb_texture_array = texture_array_builder.Finish();
 
   builder->Finish(fb_texture_array);
+  return true;
+}
+
+VolumeTexture* RenderSystem::CreateBackendVolumeTexture(
+    ResourceEntry entry, DataVolatility volatility, int width, int height,
+    int depth, const SamplerOptions& options, TextureFormat format) {
+  if (!ValidateVolumeTextureSize(width, height, depth) ||
+      !ValidateTextureFormat("volume texture", format, options)) {
+    return nullptr;
+  }
+  if (options.mipmap || options.tile_size != 0) {
+    LOG(ERROR) << "Invalid volume texture sampler options, as volume textures "
+                  "have no mipmaps (mipmap must be false, and tile_size zero)";
+    return nullptr;
+  }
+  VolumeTexture* volume_texture = backend_->CreateVolumeTexture(
+      {}, std::move(entry), volatility, width, height, depth, options, format);
+  if (volume_texture == nullptr) {
+    LOG(ERROR) << "Failed to create volume texture of dimensions " << width
+               << "x" << height << "x" << depth;
+  }
+  return volume_texture;
+}
+
+VolumeTexture* RenderSystem::DoCreateVolumeTexture(
+    DataVolatility volatility, int width, int height, int depth,
+    const SamplerOptions& options, TextureFormat format) {
+  return CreateBackendVolumeTexture(
+      resource_manager_->NewResourceEntry<VolumeTexture>(), volatility, width,
+      height, depth, options, format);
+}
+
+VolumeTexture* RenderSystem::LoadVolumeTextureChunk(
+    Context* context, const fbs::VolumeTextureChunk* chunk,
+    ResourceEntry entry) {
+  const int width = chunk->width();
+  const int height = chunk->height();
+  const int depth = chunk->depth();
+  const TextureFormat format = FromFbs(chunk->format());
+  const int64_t size_in_bytes =
+      GetTextureSizeInBytes(format, width, height, depth);
+  const void* texels =
+      GetChunkTexels("volume texture", chunk->texels(), nullptr, size_in_bytes);
+  if (texels == nullptr) {
+    return nullptr;
+  }
+
+  gb::ValidatedContext validated_context = TextureLoadContract(context);
+  DCHECK(validated_context.IsValid())
+      << "TextureLoadContext does not have any requirements!";
+  SamplerOptions sampler_options =
+      validated_context.GetValueOrDefault<SamplerOptions>(
+          ReadSamplerOptions(chunk->options()));
+
+  // Sampler options given in the load context are for every texture loaded
+  // with it, so their mipmap options, which volume textures don't have, are
+  // ignored.
+  sampler_options.SetMipmap(false).SetTileSize(0);
+
+  DataVolatility volatility = FromFbs(chunk->volatility());
+  if (edit_ && volatility == DataVolatility::kStaticWrite) {
+    volatility = DataVolatility::kStaticReadWrite;
+  }
+  VolumeTexture* volume_texture =
+      CreateBackendVolumeTexture(std::move(entry), volatility, width, height,
+                                 depth, sampler_options, format);
+  if (volume_texture == nullptr) {
+    return nullptr;
+  }
+  if (!volume_texture->Set(texels, size_in_bytes)) {
+    LOG(ERROR) << "Failed to initialize volume texture with its texels";
+    resource_manager_->MaybeDeleteResource(volume_texture);
+    return nullptr;
+  }
+  return volume_texture;
+}
+
+bool RenderSystem::SaveVolumeTexture(std::string_view name,
+                                     VolumeTexture* volume_texture,
+                                     DataVolatility volatility) {
+  return resource_writer_->Write(
+      name, volume_texture,
+      ContextBuilder().SetValue<DataVolatility>(volatility).Build());
+}
+
+bool RenderSystem::SaveVolumeTextureChunk(
+    Context* context, VolumeTexture* volume_texture,
+    flatbuffers::FlatBufferBuilder* builder) {
+  if (volume_texture->GetVolatility() == DataVolatility::kStaticWrite) {
+    LOG(ERROR) << "Cannot save volume texture with kStaticWrite volatility.";
+    return false;
+  }
+
+  // The texels are read straight into the builder, which must be done before
+  // anything else is built, as building moves its buffer.
+  const int64_t size_in_bytes = GetTextureSizeInBytes(
+      volume_texture->GetFormat(), volume_texture->GetWidth(),
+      volume_texture->GetHeight(), volume_texture->GetDepth());
+  uint8_t* texels = nullptr;
+  const auto fb_texels =
+      builder->CreateUninitializedVector(size_in_bytes, &texels);
+  if (!volume_texture->Get(texels, size_in_bytes)) {
+    LOG(ERROR) << "Failed to read volume texture in order to save it";
+    return false;
+  }
+  const auto fb_sampler_options =
+      WriteSamplerOptions(builder, volume_texture->GetSamplerOptions());
+
+  fbs::VolumeTextureChunkBuilder volume_texture_builder(*builder);
+  volume_texture_builder.add_volatility(
+      ToFbs(context->GetValue<DataVolatility>()));
+  volume_texture_builder.add_width(volume_texture->GetWidth());
+  volume_texture_builder.add_height(volume_texture->GetHeight());
+  volume_texture_builder.add_depth(volume_texture->GetDepth());
+  volume_texture_builder.add_options(fb_sampler_options);
+  volume_texture_builder.add_format(ToFbs(volume_texture->GetFormat()));
+  volume_texture_builder.add_texels(fb_texels);
+  const auto fb_volume_texture = volume_texture_builder.Finish();
+
+  builder->Finish(fb_volume_texture);
   return true;
 }
 

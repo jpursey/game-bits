@@ -33,6 +33,7 @@ set(gb_render_SOURCE
   shader_code.h
   texture.cc texture.h
   texture_array.cc texture_array.h
+  volume_texture.cc volume_texture.h
 )
 
 set(gb_render_FBS
@@ -58,6 +59,7 @@ set(gb_render_TEST_SOURCE
   shader_test.cc
   texture_test.cc
   texture_array_test.cc
+  volume_texture_test.cc
 )
 
 set(gb_render_TEST_DEPS
@@ -98,6 +100,7 @@ set(gb_render_testing_SOURCE
   test_shader_code.cc test_shader_code.h
   test_texture.cc test_texture.h
   test_texture_array.cc test_texture_array.h
+  test_volume_texture.cc test_volume_texture.h
 )
 
 set(gb_render_testing_DEPS

@@ -95,7 +95,9 @@ class VolumeTexture : public Resource {
   `kMaxVolumeTextureTexels` (512M, as for texture arrays).
 - Volume textures have no mipmaps. Creating one with `SamplerOptions::mipmap`
   set fails, logging an error, so a caller passes
-  `SamplerOptions().SetMipmap(false)`. `tile_size` must be zero.
+  `SamplerOptions().SetMipmap(false)`. `tile_size` must be zero. Sampler
+  options given in a load context apply to every texture loaded with it, so
+  loading a volume ignores their `mipmap` and `tile_size`.
 - A `kStaticWrite` volume can't apply a partial update while it is in use,
   just as a `kStaticWrite` texture can't.
 - `Binding::SetVolumeTexture()`, and `BindingData::SetVolumeTexture()` and
@@ -397,7 +399,7 @@ Depends on: nothing.
   checks give their expected results, and the format textures' stripes and
   mipmaps are as in CL2, with no validation errors in the log.
 
-### CL4 [ ] render: Volume textures
+### CL4 [x] render: Volume textures
 
 Depends on: CL1.
 
@@ -408,8 +410,8 @@ Depends on: CL1.
 - `VolumeTextureChunk`, `RenderSystem::SaveVolumeTexture()`, its loader, and
   `volume_texture_id` in saved binding data.
 - Test backend: `TestVolumeTexture`, and binding data that holds one.
-- Vulkan backend: fails to create volume textures, and rejects pipelines with
-  the binding type.
+- Vulkan backend: fails to create volume textures, and rejects scene types and
+  pipelines with the binding type.
 
 **Verify**
 - Standard checks.
