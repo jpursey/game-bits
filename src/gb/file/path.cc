@@ -194,6 +194,35 @@ std::string RemoveFolder(const std::string& path, PathFlags flags,
   return std::string(result.data(), result.size());
 }
 
+std::string_view RemoveExtension(std::string_view path, PathFlags flags,
+                                 std::string_view* extension) {
+  // The filename is always the end of the path.
+  const std::string_view filename = RemoveFolder(path, flags);
+  auto dot_pos = filename.rfind('.');
+  if (dot_pos == std::string_view::npos ||
+      dot_pos < filename.find_first_not_of('.')) {
+    dot_pos = filename.size();
+  }
+  if (extension != nullptr) {
+    *extension = filename.substr(dot_pos);
+  }
+  path.remove_suffix(filename.size() - dot_pos);
+  return path;
+}
+std::string RemoveExtension(const std::string& path, PathFlags flags,
+                            std::string* extension) {
+  std::string_view path_view(path.data(), path.size());
+  std::string_view result;
+  if (extension == nullptr) {
+    result = RemoveExtension(path_view, flags);
+  } else {
+    std::string_view extension_view;
+    result = RemoveExtension(path_view, flags, &extension_view);
+    extension->assign(extension_view.data(), extension_view.size());
+  }
+  return std::string(result.data(), result.size());
+}
+
 std::string JoinPath(std::string_view path_a, std::string_view path_b,
                      PathFlags flags) {
   std::string result;

@@ -191,6 +191,43 @@ inline std::string RemoveFolder(const std::string& path,
   return RemoveFolder(path, kGenericPathFlags, folder);
 }
 
+// Removes any extension from the path's filename.
+//
+// If specified, flags determine whether protocol and/or host are considered in
+// the path (if they are, they are never part of the filename). If no flags are
+// specified, then both the protocol and host are considered if they are present
+// (the same as passing kGenericPathFlags).
+//
+// The extension starts at the filename's last '.', including the '.', unless
+// that '.' only has other '.' characters before it in the filename. So
+// ".hidden" and ".." have no extension, "a.tar.gz" has ".gz", and "a." has ".".
+//
+// Returns the new path and optionally storing the found extension in
+// 'extension'. To replace the extension of a path that names a file, use:
+//   absl::StrCat(RemoveExtension(path), ".new")
+//
+// Input path is expected to be normalized (see NormalizePath).
+std::string_view RemoveExtension(std::string_view path, PathFlags flags,
+                                 std::string_view* extension = nullptr);
+inline std::string_view RemoveExtension(const char* path, PathFlags flags,
+                                        std::string_view* extension = nullptr) {
+  return RemoveExtension(std::string_view(path), flags, extension);
+}
+std::string RemoveExtension(const std::string& path, PathFlags flags,
+                            std::string* extension = nullptr);
+inline std::string_view RemoveExtension(std::string_view path,
+                                        std::string_view* extension = nullptr) {
+  return RemoveExtension(path, kGenericPathFlags, extension);
+}
+inline std::string_view RemoveExtension(const char* path,
+                                        std::string_view* extension = nullptr) {
+  return RemoveExtension(path, kGenericPathFlags, extension);
+}
+inline std::string RemoveExtension(const std::string& path,
+                                   std::string* extension = nullptr) {
+  return RemoveExtension(path, kGenericPathFlags, extension);
+}
+
 // Returns true if the path is an absolute path or false if it is relative.
 //
 // If flags contain kAllowProtocol or kRequireProtocol, then any protocol

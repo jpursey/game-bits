@@ -637,6 +637,46 @@ TEST(PathTest, RemoveFolder) {
   // clang-format on
 }
 
+TEST(PathTest, RemoveExtension) {
+  PATH_TEST_FUNCTIONS(RemoveExtension);
+#define REMOVE_EXTENSION_TEST(path, flags, result, out_result) \
+  EXPECT_TEST_FUNCTIONS(RemoveExtension, path, flags, result, out_result)
+
+  // clang-format off
+  REMOVE_EXTENSION_TEST("", kGenericPathFlags, "", "");
+  REMOVE_EXTENSION_TEST("abc", kGenericPathFlags, "abc", "");
+  REMOVE_EXTENSION_TEST("abc.x", kGenericPathFlags, "abc", ".x");
+  REMOVE_EXTENSION_TEST("abc.tar.gz", kGenericPathFlags, "abc.tar", ".gz");
+  REMOVE_EXTENSION_TEST("abc.", kGenericPathFlags, "abc", ".");
+  REMOVE_EXTENSION_TEST(".abc", kGenericPathFlags, ".abc", "");
+  REMOVE_EXTENSION_TEST(".abc.x", kGenericPathFlags, ".abc", ".x");
+  REMOVE_EXTENSION_TEST("..abc", kGenericPathFlags, "..abc", "");
+  REMOVE_EXTENSION_TEST("..abc.x", kGenericPathFlags, "..abc", ".x");
+  REMOVE_EXTENSION_TEST(".", kGenericPathFlags, ".", "");
+  REMOVE_EXTENSION_TEST("..", kGenericPathFlags, "..", "");
+  REMOVE_EXTENSION_TEST("../..", kGenericPathFlags, "../..", "");
+  REMOVE_EXTENSION_TEST("../abc.x", kGenericPathFlags, "../abc", ".x");
+  REMOVE_EXTENSION_TEST("/", kGenericPathFlags, "/", "");
+  REMOVE_EXTENSION_TEST("/abc.x", kGenericPathFlags, "/abc", ".x");
+  REMOVE_EXTENSION_TEST("/abc/xyz.x", kGenericPathFlags, "/abc/xyz", ".x");
+  REMOVE_EXTENSION_TEST("/abc.d/xyz", kGenericPathFlags, "/abc.d/xyz", "");
+  REMOVE_EXTENSION_TEST("/abc.d/xyz.x", kGenericPathFlags, "/abc.d/xyz", ".x");
+  REMOVE_EXTENSION_TEST("/abc.d/", kGenericPathFlags, "/abc.d/", "");
+  REMOVE_EXTENSION_TEST("/abc/.xyz", kGenericPathFlags, "/abc/.xyz", "");
+  REMOVE_EXTENSION_TEST("//abc.d", kGenericPathFlags, "//abc.d", "");
+  REMOVE_EXTENSION_TEST("//abc.d", kLocalPathFlags, "//abc", ".d");
+  REMOVE_EXTENSION_TEST("//abc.d/xyz.x", kGenericPathFlags, "//abc.d/xyz", ".x");
+  REMOVE_EXTENSION_TEST("abc:", kGenericPathFlags, "abc:", "");
+  REMOVE_EXTENSION_TEST("abc:xyz.x", kGenericPathFlags, "abc:xyz", ".x");
+  REMOVE_EXTENSION_TEST("abc:.xyz", kGenericPathFlags, "abc:.xyz", "");
+  REMOVE_EXTENSION_TEST("abc:.xyz", kLocalPathFlags, "abc:", ".xyz");
+  REMOVE_EXTENSION_TEST("abc:/xyz.x", kGenericPathFlags, "abc:/xyz", ".x");
+  REMOVE_EXTENSION_TEST("abc://xyz.d", kGenericPathFlags, "abc://xyz.d", "");
+  REMOVE_EXTENSION_TEST("abc://xyz.d", kLocalPathFlags, "abc://xyz", ".d");
+  REMOVE_EXTENSION_TEST("abc://xyz.d/ijk.x", kGenericPathFlags, "abc://xyz.d/ijk", ".x");
+  // clang-format on
+}
+
 bool TestGetHostName(const char* path, PathFlags flags,
                      const std::string& result) {
   std::string_view path_view(path);
