@@ -13,6 +13,8 @@ function(gb_external_libraries)
   set_target_properties(sdl2 PROPERTIES
     IMPORTED_IMPLIB
       "${GB_THIRD_PARTY_DIR}/SDL2-2.0.10/lib/x64/SDL2.lib"
+    IMPORTED_LOCATION
+      "${GB_THIRD_PARTY_DIR}/SDL2-2.0.10/lib/x64/SDL2.dll"
   )
 
   add_library(sdl2_main STATIC IMPORTED)

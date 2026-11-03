@@ -184,8 +184,9 @@ With "pilot", the pieces are:
 the steps in code and in a file have the same name. "Step" also names the
 fixed time step, but always as "time step".
 
-Other new names: `AddCommand()`, `AddCondition()`, and `AddItemFinder()` (the
-caller registers and the pilot keeps them, so "Add"), `PilotHandle`
+Other new names: `AddCommand()`, `AddCondition()`, `AddItemFinder()`, and
+`AddFrameListener()` (the caller registers and the pilot keeps them, so "Add"),
+`PilotHandle`
 (what each returns), and `SaveImage()` in `gb_image`, matching `LoadImage()`.
 
 ### Tiers
@@ -229,7 +230,8 @@ run), and can be driven from code with a `StepPilot` without
   `FakePilot` doesn't.
 - Where a lower tier needs something from a higher one, it is given it: GUIs
   register item finders, the render system hands over frames, and
-  `PilotSdl` pulls each frame's input.
+  `PilotSdl` registers a frame listener, which the pilot calls as each frame
+  begins.
 - Nothing goes in `gb_base`. The lowest library that takes part is `gb_game`.
   A `Clock` can't stand in for the pilot: `GameLoop()` spins on `Now()`
   for the last millisecond, so a clock that only advances when slept on never
@@ -259,6 +261,10 @@ class Pilot {
 
   // Registered by GUIs, to say where a labelled item is.
   [[nodiscard]] PilotHandle AddItemFinder(ItemFinder finder);
+
+  // Registered by code that acts as each frame begins, such as SDL input.
+  // BeginFrame() calls each once the frame is set up.
+  [[nodiscard]] PilotHandle AddFrameListener(FrameListener listener);
 
   // Called by the loop around each frame, in pairs.
   void BeginFrame();
@@ -362,11 +368,14 @@ and a program does the rest itself.
   while the state is active, and a GUI's while the GUI exists. They may also
   be added and removed later, at any time, but a pilot only finds what is
   registered when it looks. *The program; `ImGuiInstance` for its finder.*
+- Register a frame listener (`AddFrameListener()`) for code that acts as each
+  frame begins, from outside the program's frame (such as applying input by
+  adding events to a queue the program reads). *`PilotSdl`.*
 
 **Each frame, in this order:**
 1. Stop if `IsDone()`, ending the run. *`Game`.*
-2. Call `BeginFrame()`. The rest of the frame's functions are only called
-   between this and `EndFrame()`. *`Game`.*
+2. Call `BeginFrame()`, which calls the frame listeners. The rest of the
+   frame's functions are only called between this and `EndFrame()`. *`Game`.*
 3. Run the frame:
    - Apply `GetInput()` in order, as if the user had given it, and ignore the
      user's real keyboard and mouse. Code that polls the mouse rather than
@@ -652,24 +661,37 @@ class PilotSdl final {
 };
 ```
 
-- At each `BeginFrame()`, it adds the frame's input to SDL's queue as SDL
-  events (key, text, mouse motion, button, and wheel), with
-  `SDL_PeepEvents(SDL_ADDEVENT)`, which bypasses the event filter.
+- It registers a frame listener (`AddFrameListener()`), which `BeginFrame()`
+  calls once the frame is set up. The listener adds the frame's input to SDL's
+  queue as SDL events (key, text, mouse motion, button, and wheel), with
+  `SDL_PeepEvents(SDL_ADDEVENT)`, which bypasses the event filter. Text longer
+  than an SDL text event holds is split between UTF-8 characters.
 - Its event filter (`SDL_SetEventFilter()`) drops the user's real input
-  (keyboard, mouse, text, and focus changes), so the user's mouse and keys
-  can't change a run. Window and quit events still pass, so closing the
-  window still ends the program.
+  (keyboard, mouse, touch, text, and keyboard and mouse focus changes), so the
+  user's mouse and keys can't change a run. Everything else passes, including
+  window and quit events, so closing the window still ends the program. An
+  event filter the program set first still sees what passes, and is set again
+  when `PilotSdl` is destroyed. Setting a filter makes SDL discard the queued
+  events, so `PilotSdl` takes them first and adds them back (dropping the
+  user's input when it is created).
 - Programs that poll SDL's state see the script's: it sets the modifier state
   (`SDL_SetModState()`, which ImGui reads for shift, ctrl, and alt), and the
   key state array that `SDL_GetKeyboardState()` returns (which BlockWorld's
-  movement reads). Polling the mouse (`SDL_GetMouseState()`) still sees the
-  real mouse, so programs read mouse input from events.
+  movement reads), each frame. Caps lock and num lock are off, so a run doesn't
+  depend on the user's. SDL changes the state for a real key before filtering
+  its event, so the filter sets the script's state again. Polling the mouse
+  (`SDL_GetMouseState()`) still sees the real mouse, so programs read mouse
+  input from events.
 - A `hide window` step (at the top of a script) hides the window, so a run
   doesn't disturb the desktop.
 
 **Brittleness:** `SDL_GetKeyboardState()` returns a `const` pointer to SDL's
 own array, which this writes. It works because SDL 2 keeps the array in
-writable memory and only reads it, but it relies on that.
+writable memory and only reads it, but it relies on that. A program that sets
+its own event filter while `PilotSdl` exists must remove it before `PilotSdl`
+is destroyed (a `DCHECK`). SDL can also change the modifier state without a
+key event (caps lock and num lock as the window gains focus), which lasts until
+the next frame begins.
 
 ### Session tools
 
@@ -695,8 +717,9 @@ CLAUDE.md's "Run an example" says so.
 - Vulkan keeps presenting to a window hidden with `SDL_HideWindow()`, at its
   size (CL9). If not, `hide window` moves it off screen instead.
 - The surface supports `eTransferSrc` swap chain images on this GPU (CL9).
-- `SDL_PeepEvents(SDL_ADDEVENT)` skips the event filter in SDL 2.0.10, and
-  writing SDL's key state array works (CL5).
+- Confirmed in CL5, by `gb_pilot_sdl`'s tests: `SDL_PeepEvents(SDL_ADDEVENT)`
+  skips the event filter in SDL 2.0.10, and writing SDL's key state array
+  works.
 - Mouse coordinates in SDL window pixels match the saved frame's pixels,
   including on a display scaled above 100% (CL11).
 - The rest of the step grammar holds in `gb_parse` as it did for `wait` and
@@ -783,10 +806,12 @@ Depends on: CL2.
   pilot is done; `Run()` returns false when it failed, and true
   otherwise; without a pilot, nothing changes.
 
-### CL5 [ ] pilot_sdl: Input through SDL
+### CL5 [x] pilot_sdl: Input through SDL
 
 Depends on: CL2.
 
+- `gb_pilot`: `AddFrameListener()`, so `PilotSdl` learns when each frame
+  begins.
 - New `gb_pilot_sdl` library: `PilotSdl`, with the event filter, the
   injected events, key and modifier state, and `hide window`.
 
@@ -797,6 +822,10 @@ Depends on: CL2.
   its frame; pushed real input is dropped; quit events pass;
   `SDL_GetKeyboardState()` and `SDL_GetModState()` match the input given; an
   unknown key name fails `Create()`.
+- Unit tests, with `FakePilot`: `BeginFrame()` calls frame listeners in order
+  once the frame's input is set; a listener can add and remove listeners.
+- Can't be unit tested: hiding the window, which needs SDL's video subsystem
+  and a window on screen. CL11 checks it.
 
 ### CL6 [ ] pilot_script: Read scripts
 

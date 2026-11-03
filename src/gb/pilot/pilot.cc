@@ -43,7 +43,8 @@ void PilotHandle::Remove() {
 //==============================================================================
 
 Pilot::~Pilot() {
-  DCHECK(commands_.empty() && conditions_.empty() && item_finders_.empty())
+  DCHECK(commands_.empty() && conditions_.empty() && item_finders_.empty() &&
+         frame_listeners_.empty())
       << "A PilotHandle outlived its pilot.";
 }
 
@@ -88,11 +89,43 @@ PilotHandle Pilot::AddItemFinder(ItemFinder finder) {
   return PilotHandle(this, id);
 }
 
+PilotHandle Pilot::AddFrameListener(FrameListener listener) {
+  const int id = next_id_++;
+  frame_listeners_.push_back(
+      {id, std::string(),
+       std::make_shared<FrameListener>(std::move(listener))});
+  return PilotHandle(this, id);
+}
+
+template <typename Callback, typename Call>
+void Pilot::CallEach(const std::vector<Registration<Callback>>& registrations,
+                     Call call) {
+  // A callback may add or remove registrations, so the callbacks to call are
+  // taken first, and each is looked up again before it is called, in case it
+  // was removed.
+  std::vector<int> ids;
+  ids.reserve(registrations.size());
+  for (const auto& registration : registrations) {
+    ids.push_back(registration.id);
+  }
+  for (int id : ids) {
+    auto it = std::find_if(
+        registrations.begin(), registrations.end(),
+        [id](const auto& registration) { return registration.id == id; });
+    if (it == registrations.end()) {
+      continue;
+    }
+    std::shared_ptr<Callback> callback = it->callback;
+    call(*callback);
+  }
+}
+
 void Pilot::BeginFrame() {
   DCHECK(!in_frame_) << "BeginFrame() called again before EndFrame().";
   in_frame_ = true;
   frame_saved_ = false;
   DoBeginFrame();
+  CallEach(frame_listeners_, [](FrameListener& listener) { listener(); });
 }
 
 void Pilot::EndFrame() {
@@ -129,26 +162,11 @@ absl::StatusOr<bool> Pilot::CheckCondition(std::string_view name) {
 }
 
 absl::StatusOr<PilotPoint> Pilot::FindItem(std::string_view label) {
-  // A finder may add or remove finders, so the finders to ask are taken first,
-  // and each is looked up again before it is asked, in case it was removed.
-  std::vector<int> ids;
-  ids.reserve(item_finders_.size());
-  for (const auto& registration : item_finders_) {
-    ids.push_back(registration.id);
-  }
-
   std::vector<PilotPoint> found;
-  for (int id : ids) {
-    auto it = std::find_if(
-        item_finders_.begin(), item_finders_.end(),
-        [id](const auto& registration) { return registration.id == id; });
-    if (it == item_finders_.end()) {
-      continue;
-    }
-    std::shared_ptr<ItemFinder> finder = it->callback;
-    std::vector<PilotPoint> points = (*finder)(label);
+  CallEach(item_finders_, [label, &found](ItemFinder& finder) {
+    std::vector<PilotPoint> points = finder(label);
     found.insert(found.end(), points.begin(), points.end());
-  }
+  });
   if (found.empty()) {
     return absl::NotFoundError(
         absl::StrCat("No item is labelled \"", label, "\""));
@@ -184,6 +202,9 @@ void Pilot::Remove(int id) {
   }
   if (callback == nullptr) {
     callback = Take(item_finders_, id);
+  }
+  if (callback == nullptr) {
+    callback = Take(frame_listeners_, id);
   }
 }
 

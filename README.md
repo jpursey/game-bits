@@ -149,6 +149,9 @@ sub-libraries (organized as subdirectories).
       program names, the GUI items it can press, and the frames it saves.
       `StepPilot` drives a program through a list of steps given to it in
       code, and there is a fake for testing code that takes part.
+      *  [`gb_pilot_sdl`](src/gb/pilot/sdl): Library that gives an SDL
+         program the pilot's input, as SDL events and keyboard state, and
+         keeps the user's real keyboard and mouse from reaching it.
    *  [`gb_profile`](src/gb/profile): A profiler cheap enough to leave on all
       the time in a realtime program. It times scopes in the program and calls
       out to other systems (each charged only for its own time), and records

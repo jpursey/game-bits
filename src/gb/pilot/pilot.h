@@ -157,11 +157,15 @@ class PilotHandle final {
 //   active, and a GUI's while the GUI exists. They may also be added and
 //   removed later, at any time, but a pilot only finds what is registered when
 //   it looks.
+// - Register a frame listener with AddFrameListener() for code that acts as
+//   each frame begins, from outside the program's frame (such as applying input
+//   by adding events to a queue the program reads).
 //
 // Each frame, in this order:
 // 1. Stop if IsDone(), ending the run.
-// 2. Call BeginFrame(). The rest of the frame's functions are only called
-//    between this and EndFrame().
+// 2. Call BeginFrame(), which calls the frame listeners. The rest of the
+// frame's
+//    functions are only called between this and EndFrame().
 // 3. Run the frame:
 //    - Apply GetInput() in order, as if the user had given it, and ignore the
 //      user's real keyboard and mouse. Code that polls the mouse rather than
@@ -192,8 +196,9 @@ class PilotHandle final {
 //
 // This class is thread-compatible. Everything that takes part in a run is
 // expected to use it on the thread running the loop, and commands, conditions,
-// and item finders are called on that thread, during BeginFrame() or
-// EndFrame(), so they can use the program's state without locking.
+// item finders, and frame listeners are called on that thread, during
+// BeginFrame() or EndFrame(), so they can use the program's state without
+// locking.
 class Pilot {
  public:
   // Runs a program command with the values given to it, returning an error if
@@ -209,6 +214,9 @@ class Pilot {
   using ItemFinder =
       absl::AnyInvocable<std::vector<PilotPoint>(std::string_view label)>;
 
+  // Called as each frame begins, once it is set up.
+  using FrameListener = absl::AnyInvocable<void()>;
+
   //----------------------------------------------------------------------------
   // Construction / Destruction
   //----------------------------------------------------------------------------
@@ -223,8 +231,8 @@ class Pilot {
   // Registration
   //
   // Each registration lasts until its handle is destroyed. A command,
-  // condition, or item finder may add and remove registrations (its own
-  // included) while it runs.
+  // condition, item finder, or frame listener may add and remove registrations
+  // (its own included) while it runs.
   //----------------------------------------------------------------------------
 
   // Adds a command or condition that the pilot can name. Each name may only be
@@ -239,6 +247,11 @@ class Pilot {
   // Every item finder is asked about a label, and only one item in all of them
   // may have it.
   [[nodiscard]] PilotHandle AddItemFinder(ItemFinder finder);
+
+  // Adds a frame listener, which BeginFrame() calls once the frame is set up,
+  // before the rest of the frame runs (such as to apply the frame's input).
+  // Frame listeners are called in the order they were added.
+  [[nodiscard]] PilotHandle AddFrameListener(FrameListener listener);
 
   //----------------------------------------------------------------------------
   // Frames
@@ -337,7 +350,7 @@ class Pilot {
   friend class PilotHandle;
 
   // A registered callback, held by shared pointer so it outlives its removal
-  // while it runs. Item finders have no name.
+  // while it runs. Item finders and frame listeners have no name.
   template <typename Callback>
   struct Registration {
     int id;
@@ -350,6 +363,12 @@ class Pilot {
   static std::shared_ptr<Callback> Find(
       const std::vector<Registration<Callback>>& registrations,
       std::string_view name);
+
+  // Calls `call` with each callback registered when this is called, in order,
+  // skipping any removed by an earlier call.
+  template <typename Callback, typename Call>
+  static void CallEach(const std::vector<Registration<Callback>>& registrations,
+                       Call call);
 
   // Removes the registration with the ID, returning its callback, or null if
   // it isn't in `registrations`.
@@ -367,6 +386,7 @@ class Pilot {
   std::vector<Registration<Command>> commands_;
   std::vector<Registration<Condition>> conditions_;
   std::vector<Registration<ItemFinder>> item_finders_;
+  std::vector<Registration<FrameListener>> frame_listeners_;
 };
 
 }  // namespace gb

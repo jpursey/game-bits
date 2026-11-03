@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "absl/status/status.h"
+#include "absl/strings/str_cat.h"
 #include "absl/types/span.h"
 #include "gb/image/image.h"
 #include "gb/pilot/fake_pilot.h"
@@ -197,6 +198,9 @@ TEST(PilotTest, DestroyingHandlesRemovesRegistrations) {
   PilotHandle command = pilot.AddCommand("record", RecordArgs(&args));
   PilotHandle condition = pilot.AddCondition("loaded", [] { return true; });
   PilotHandle finder = pilot.AddItemFinder(FindLabels({"Open"}, {10, 20}));
+  int listener_calls = 0;
+  PilotHandle frame_listener =
+      pilot.AddFrameListener([&] { ++listener_calls; });
   PilotHandle other_command = pilot.AddCommand("other", RecordArgs(&args));
 
   command = {};
@@ -212,6 +216,14 @@ TEST(PilotTest, DestroyingHandlesRemovesRegistrations) {
   finder = {};
   EXPECT_EQ(pilot.FindItem("Open").status().code(),
             absl::StatusCode::kNotFound);
+  pilot.BeginFrame();
+  pilot.EndFrame();
+  EXPECT_EQ(listener_calls, 1);
+
+  frame_listener = {};
+  pilot.BeginFrame();
+  pilot.EndFrame();
+  EXPECT_EQ(listener_calls, 1);
   EXPECT_TRUE(pilot.RunCommand("other", {}).ok());
 }
 
@@ -307,6 +319,49 @@ TEST(PilotTest, ItemFinderCanAddAndRemoveFinders) {
   const absl::StatusOr<PilotPoint> point = pilot.FindItem("Open");
   ASSERT_TRUE(point.ok()) << point.status();
   EXPECT_EQ(*point, (PilotPoint{50, 60}));
+}
+
+TEST(PilotTest, BeginFrameCallsFrameListenersInOrderWithTheFrameSetUp) {
+  FakePilot pilot;
+  std::vector<std::string> calls;
+  PilotHandle first = pilot.AddFrameListener([&] {
+    calls.push_back(absl::StrCat("first ", pilot.GetInput().size()));
+  });
+  PilotHandle second = pilot.AddFrameListener([&] {
+    calls.push_back(absl::StrCat("second ", pilot.GetInput().size()));
+  });
+  EXPECT_THAT(calls, IsEmpty());
+
+  pilot.SetNextFrameInput({PilotTextEvent{.text = "a"}});
+  pilot.BeginFrame();
+  EXPECT_THAT(calls, ElementsAre("first 1", "second 1"));
+  pilot.EndFrame();
+  EXPECT_THAT(calls, ElementsAre("first 1", "second 1"));
+}
+
+TEST(PilotTest, FrameListenerCanAddAndRemoveListeners) {
+  FakePilot pilot;
+  int removed_calls = 0;
+  int added_calls = 0;
+  PilotHandle changer;
+  PilotHandle removed;
+  PilotHandle added;
+  changer = pilot.AddFrameListener([&] {
+    changer = {};
+    removed = {};
+    added = pilot.AddFrameListener([&] { ++added_calls; });
+  });
+  removed = pilot.AddFrameListener([&] { ++removed_calls; });
+
+  // A listener removed during a frame isn't called, and one added isn't called
+  // until the next frame.
+  pilot.BeginFrame();
+  pilot.EndFrame();
+  EXPECT_EQ(removed_calls, 0);
+  EXPECT_EQ(added_calls, 0);
+  pilot.BeginFrame();
+  pilot.EndFrame();
+  EXPECT_EQ(added_calls, 1);
 }
 
 TEST(PilotTest, CountsFrames) {
