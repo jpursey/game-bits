@@ -5,22 +5,21 @@
 
 #include "gb/render/test_texture_array.h"
 
+#include <cstring>
+
 namespace gb {
 
 TestTextureArray::TestTextureArray(Config* config, ResourceEntry entry,
                                    DataVolatility volatility, int count,
                                    int width, int height,
-                                   const SamplerOptions& options)
-    : TextureArray(std::move(entry), volatility, count, width, height, options),
-      config_(config) {
-  const size_t size = count * width * height * sizeof(Pixel);
-  pixels_ = static_cast<Pixel*>(std::malloc(size));
-  std::memset(pixels_, 0xFF, size);
-}
+                                   const SamplerOptions& options,
+                                   TextureFormat format)
+    : TextureArray(std::move(entry), volatility, count, width, height, options,
+                   format),
+      config_(config),
+      texels_(GetTextureSizeInBytes(format, width, height, count), 0xFF) {}
 
-TestTextureArray::~TestTextureArray() { std::free(pixels_); }
-
-bool TestTextureArray::DoClear(int index, Pixel pixel) {
+bool TestTextureArray::DoClear(int index, const void* texel) {
   if (config_->fail_clear) {
     return false;
   }
@@ -31,15 +30,16 @@ bool TestTextureArray::DoClear(int index, Pixel pixel) {
     return false;
   }
 
-  const int pixel_count = GetWidth() * GetHeight();
-  Pixel* dst_pixels = pixels_ + (index * pixel_count);
-  for (int i = 0; i < pixel_count; ++i) {
-    dst_pixels[i] = pixel;
+  const int texel_size = GetTexelSize(GetFormat());
+  const int texel_count = GetWidth() * GetHeight();
+  uint8_t* dst_texels = texels_.data() + index * texel_count * texel_size;
+  for (int i = 0; i < texel_count; ++i) {
+    std::memcpy(dst_texels + i * texel_size, texel, texel_size);
   }
   return true;
 }
 
-bool TestTextureArray::DoSet(int index, const void* pixels) {
+bool TestTextureArray::DoSet(int index, const void* texels) {
   if (config_->fail_set) {
     return false;
   }
@@ -50,13 +50,13 @@ bool TestTextureArray::DoSet(int index, const void* pixels) {
     return false;
   }
 
-  const int pixel_count = GetWidth() * GetHeight();
-  std::memcpy(pixels_ + (index * pixel_count),
-              static_cast<const Pixel*>(pixels), pixel_count * sizeof(Pixel));
+  const int64_t texture_size =
+      GetTextureSizeInBytes(GetFormat(), GetWidth(), GetHeight());
+  std::memcpy(texels_.data() + index * texture_size, texels, texture_size);
   return true;
 }
 
-bool TestTextureArray::DoGet(int index, void* out_pixels) {
+bool TestTextureArray::DoGet(int index, void* out_texels) {
   if (config_->fail_get) {
     return false;
   }
@@ -66,9 +66,9 @@ bool TestTextureArray::DoGet(int index, void* out_pixels) {
     return false;
   }
 
-  const int pixel_count = GetWidth() * GetHeight();
-  std::memcpy(out_pixels, pixels_ + (index * pixel_count),
-              pixel_count * sizeof(Pixel));
+  const int64_t texture_size =
+      GetTextureSizeInBytes(GetFormat(), GetWidth(), GetHeight());
+  std::memcpy(out_texels, texels_.data() + index * texture_size, texture_size);
   return true;
 }
 

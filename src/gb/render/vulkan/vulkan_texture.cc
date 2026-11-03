@@ -37,9 +37,10 @@ class VulkanStaticWriteTexture final : public VulkanTexture {
 
  protected:
   bool Init() override;
-  bool DoClear(int x, int y, int width, int height, Pixel pixel) override;
+  bool DoClear(int x, int y, int width, int height, const void* texel) override;
   bool DoSet(int x, int y, int width, int height, const void* pixels,
              int stride) override;
+  bool DoGet(void* out_texels) override;
   void* DoEditBegin() override;
   void OnEditEnd(bool modified) override;
   void DoRender(VulkanRenderState* state) override;
@@ -105,11 +106,12 @@ bool VulkanStaticWriteTexture::PrepForWrite(int x, int y, int width,
 }
 
 bool VulkanStaticWriteTexture::DoClear(int x, int y, int width, int height,
-                                       Pixel pixel) {
+                                       const void* texel) {
   if (!PrepForWrite(x, y, width, height)) {
     return false;
   }
-  ClearRegion(host_buffer_->GetData(), x, y, width, height, pixel);
+  ClearRegion(host_buffer_->GetData(), x, y, width, height,
+              *static_cast<const Pixel*>(texel));
   AddDirtyRegion(x, y, width, height);
   return true;
 }
@@ -124,6 +126,7 @@ bool VulkanStaticWriteTexture::DoSet(int x, int y, int width, int height,
   return true;
 }
 
+bool VulkanStaticWriteTexture::DoGet(void* out_texels) { return false; }
 void* VulkanStaticWriteTexture::DoEditBegin() { return nullptr; }
 void VulkanStaticWriteTexture::OnEditEnd(bool modified) {}
 
@@ -185,9 +188,10 @@ class VulkanStaticReadWriteTexture final : public VulkanTexture {
 
  protected:
   bool Init() override;
-  bool DoClear(int x, int y, int width, int height, Pixel pixel) override;
+  bool DoClear(int x, int y, int width, int height, const void* texel) override;
   bool DoSet(int x, int y, int width, int height, const void* pixels,
              int stride) override;
+  bool DoGet(void* out_texels) override;
   void* DoEditBegin() override;
   void OnEditEnd(bool modified) override;
   void DoRender(VulkanRenderState* state) override;
@@ -223,7 +227,7 @@ bool VulkanStaticReadWriteTexture::Init() {
 }
 
 bool VulkanStaticReadWriteTexture::DoClear(int x, int y, int width, int height,
-                                           Pixel pixel) {
+                                           const void* texel) {
   if (const bool copy_contents =
           x != 0 || y != 0 || width != GetWidth() || height != GetHeight();
       !EnsureHostBufferIsWritable(copy_contents)) {
@@ -232,7 +236,8 @@ bool VulkanStaticReadWriteTexture::DoClear(int x, int y, int width, int height,
   if (!MarkDirty(x, y, width, height)) {
     return false;
   }
-  ClearRegion(host_buffer_->GetData(), x, y, width, height, pixel);
+  ClearRegion(host_buffer_->GetData(), x, y, width, height,
+              *static_cast<const Pixel*>(texel));
   return true;
 }
 
@@ -247,6 +252,13 @@ bool VulkanStaticReadWriteTexture::DoSet(int x, int y, int width, int height,
     return false;
   }
   CopyRegion(host_buffer_->GetData(), x, y, width, height, pixels, stride);
+  return true;
+}
+
+bool VulkanStaticReadWriteTexture::DoGet(void* out_texels) {
+  // The host buffer holds the texture first, then its mipmaps.
+  std::memcpy(out_texels, host_buffer_->GetData(),
+              GetWidth() * GetHeight() * sizeof(Pixel));
   return true;
 }
 
@@ -348,9 +360,10 @@ class VulkanPerFrameTexture final : public VulkanTexture {
 
  protected:
   bool Init() override;
-  bool DoClear(int x, int y, int width, int height, Pixel pixel) override;
+  bool DoClear(int x, int y, int width, int height, const void* texel) override;
   bool DoSet(int x, int y, int width, int height, const void* pixels,
              int stride) override;
+  bool DoGet(void* out_texels) override;
   void* DoEditBegin() override;
   void OnEditEnd(bool modified) override;
   void DoRender(VulkanRenderState* state) override;
@@ -391,8 +404,9 @@ bool VulkanPerFrameTexture::Init() {
 }
 
 bool VulkanPerFrameTexture::DoClear(int x, int y, int width, int height,
-                                    Pixel pixel) {
-  ClearRegion(local_buffer_, x, y, width, height, pixel);
+                                    const void* texel) {
+  ClearRegion(local_buffer_, x, y, width, height,
+              *static_cast<const Pixel*>(texel));
   for (auto& frame_data : frame_data_) {
     if (frame_data.dirty) {
       UnionDirtyRegion(&frame_data.dirty_region, x, y, width, height);
@@ -415,6 +429,12 @@ bool VulkanPerFrameTexture::DoSet(int x, int y, int width, int height,
       frame_data.dirty = true;
     }
   }
+  return true;
+}
+
+bool VulkanPerFrameTexture::DoGet(void* out_texels) {
+  std::memcpy(out_texels, local_buffer_,
+              GetWidth() * GetHeight() * sizeof(Pixel));
   return true;
 }
 
@@ -452,7 +472,8 @@ VulkanTexture::VulkanTexture(gb::ResourceEntry entry, VulkanBackend* backend,
                              vk::Sampler sampler, DataVolatility volatility,
                              int width, int height,
                              const SamplerOptions& options)
-    : Texture(std::move(entry), volatility, width, height, options),
+    : Texture(std::move(entry), volatility, width, height, options,
+              TextureFormat::kRgba8Srgb),
       backend_(backend),
       sampler_(sampler) {
   host_size_ = width * height * sizeof(Pixel);

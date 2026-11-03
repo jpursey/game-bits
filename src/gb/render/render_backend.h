@@ -57,6 +57,9 @@ class RenderBackend {
   // (for instance, a window resize or resolution change).
   virtual FrameDimensions GetFrameDimensions(RenderInternal) const = 0;
 
+  // Returns true if textures in the format can be sampled with filtering.
+  virtual bool CanFilter(RenderInternal, TextureFormat format) const = 0;
+
   //----------------------------------------------------------------------------
   // Factory methods
   //
@@ -65,25 +68,31 @@ class RenderBackend {
   // referenced by a call.
   //----------------------------------------------------------------------------
 
-  // Creates a new 2D RGBA texture of the specified width and height.
+  // Creates a new 2D texture of the specified width, height, and format.
+  //
+  // If options.filter is set, the format is one CanFilter() accepts.
   //
   // If the texture could not be created, this returns null. On success, the
-  // resulting texture is considered uninitialized (all pixels are of unknown
+  // resulting texture is considered uninitialized (all texels are of unknown
   // value).
   virtual Texture* CreateTexture(RenderInternal, ResourceEntry entry,
                                  DataVolatility volatility, int width,
-                                 int height, const SamplerOptions& options) = 0;
+                                 int height, const SamplerOptions& options,
+                                 TextureFormat format) = 0;
 
-  // Creates a new 2D RGBA texture array of the specified count, width, and
-  // height.
+  // Creates a new 2D texture array of the specified count, width, height, and
+  // format.
+  //
+  // If options.filter is set, the format is one CanFilter() accepts.
   //
   // If the texture array could not be created, this returns null. On success,
-  // the resulting texture array is considered uninitialized (all pixels are of
+  // the resulting texture array is considered uninitialized (all texels are of
   // unknown value).
   virtual TextureArray* CreateTextureArray(RenderInternal, ResourceEntry entry,
                                            DataVolatility volatility, int count,
                                            int width, int height,
-                                           const SamplerOptions& options) = 0;
+                                           const SamplerOptions& options,
+                                           TextureFormat format) = 0;
 
   // Creates the shader code compatible with this backend from the raw shader
   // code data.

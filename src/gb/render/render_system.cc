@@ -339,6 +339,31 @@ bool IsValidTextureArraySize(std::string_view what, int count, int width,
   return true;
 }
 
+// Returns the texels saved in a texture chunk: its "texels", or for one saved
+// before formats were added, its "pixels". Returns null, and logs an error
+// naming "what", if there are fewer than "size_in_bytes" bytes.
+const void* GetChunkTexels(std::string_view what,
+                           const fb::Vector<uint8_t>* texels,
+                           const fb::Vector<uint32_t>* pixels,
+                           int64_t size_in_bytes) {
+  const void* data = nullptr;
+  int64_t data_size = 0;
+  if (texels != nullptr) {
+    data = texels->data();
+    data_size = texels->size();
+  } else if (pixels != nullptr) {
+    data = pixels->data();
+    data_size =
+        int64_t{pixels->size()} * static_cast<int64_t>(sizeof(uint32_t));
+  }
+  if (data == nullptr || data_size < size_in_bytes) {
+    LOG(ERROR) << "Failed to create " << what << " as it contains " << data_size
+               << " bytes of texels, but " << size_in_bytes << " are required.";
+    return nullptr;
+  }
+  return data;
+}
+
 // Adds the bindings for a material type to "bindings": the bindings of its
 // scene type and shaders. Bindings at the same location must be compatible, and
 // are combined into one. Returns false if any are not.
@@ -730,6 +755,61 @@ RenderSceneType* RenderSystem::GetSceneType(std::string_view name) const {
 
 FrameDimensions RenderSystem::GetFrameDimensions() {
   return backend_->GetFrameDimensions({});
+}
+
+bool RenderSystem::CanFilter(TextureFormat format) const {
+  return GetTexelSize(format) != 0 && backend_->CanFilter({}, format);
+}
+
+bool RenderSystem::ValidateTextureFormat(std::string_view name,
+                                         TextureFormat format,
+                                         const SamplerOptions& options) const {
+  if (GetTexelSize(format) == 0) {
+    LOG(ERROR) << "Invalid " << name << " format " << static_cast<int>(format);
+    return false;
+  }
+  if (options.filter && !backend_->CanFilter({}, format)) {
+    LOG(ERROR) << "Cannot create " << name << " with filtering, as format "
+               << static_cast<int>(format) << " cannot be filtered";
+    return false;
+  }
+  return true;
+}
+
+Texture* RenderSystem::CreateBackendTexture(std::string_view name,
+                                            ResourceEntry entry,
+                                            DataVolatility volatility,
+                                            int width, int height,
+                                            const SamplerOptions& options,
+                                            TextureFormat format) {
+  if (!IsValidTextureSize(name, width, height) ||
+      !ValidateTextureFormat(name, format, options)) {
+    return nullptr;
+  }
+  Texture* texture = backend_->CreateTexture({}, std::move(entry), volatility,
+                                             width, height, options, format);
+  if (texture == nullptr) {
+    LOG(ERROR) << "Failed to create " << name << " of dimensions " << width
+               << "x" << height;
+  }
+  return texture;
+}
+
+TextureArray* RenderSystem::CreateBackendTextureArray(
+    std::string_view name, ResourceEntry entry, DataVolatility volatility,
+    int count, int width, int height, const SamplerOptions& options,
+    TextureFormat format) {
+  if (!IsValidTextureArraySize(name, count, width, height) ||
+      !ValidateTextureFormat(name, format, options)) {
+    return nullptr;
+  }
+  TextureArray* texture_array = backend_->CreateTextureArray(
+      {}, std::move(entry), volatility, count, width, height, options, format);
+  if (texture_array == nullptr) {
+    LOG(ERROR) << "Failed to create " << name << " of count " << count
+               << " and dimensions " << width << "x" << height;
+  }
+  return texture_array;
 }
 
 void RenderSystem::SetClearColor(Pixel color) {
@@ -1419,13 +1499,11 @@ std::unique_ptr<ShaderCode> RenderSystem::LoadShaderCode(
 
 Texture* RenderSystem::DoCreateTexture(DataVolatility volatility, int width,
                                        int height,
-                                       const SamplerOptions& options) {
-  if (!IsValidTextureSize("texture", width, height)) {
-    return nullptr;
-  }
-  return backend_->CreateTexture({},
-                                 resource_manager_->NewResourceEntry<Texture>(),
-                                 volatility, width, height, options);
+                                       const SamplerOptions& options,
+                                       TextureFormat format) {
+  return CreateBackendTexture("texture",
+                              resource_manager_->NewResourceEntry<Texture>(),
+                              volatility, width, height, options, format);
 }
 
 Texture* RenderSystem::LoadTexture(Context* context, std::string_view name) {
@@ -1457,15 +1535,11 @@ Texture* RenderSystem::LoadTextureChunk(Context* context,
                                         ResourceEntry entry) {
   const int width = chunk->width();
   const int height = chunk->height();
-  if (!IsValidTextureSize("texture", width, height)) {
-    return nullptr;
-  }
-  const int pixel_count = width * height;
-  const auto* pixels = chunk->pixels();
-  if (pixels == nullptr || static_cast<int64_t>(pixels->size()) < pixel_count) {
-    LOG(ERROR) << "Failed to create texture as it contains "
-               << (pixels != nullptr ? pixels->size() : 0) << " pixels, but "
-               << pixel_count << " are required.";
+  const TextureFormat format = FromFbs(chunk->format());
+  const int64_t size_in_bytes = GetTextureSizeInBytes(format, width, height);
+  const void* texels = GetChunkTexels("texture", chunk->texels(),
+                                      chunk->pixels(), size_in_bytes);
+  if (texels == nullptr) {
     return nullptr;
   }
 
@@ -1486,15 +1560,14 @@ Texture* RenderSystem::LoadTextureChunk(Context* context,
   if (edit_ && volatility == DataVolatility::kStaticWrite) {
     volatility = DataVolatility::kStaticReadWrite;
   }
-  Texture* texture = backend_->CreateTexture(
-      {}, std::move(entry), volatility, width, height,
-      validated_context.GetValueOrDefault<SamplerOptions>(sampler_options));
+  Texture* texture = CreateBackendTexture(
+      "texture", std::move(entry), volatility, width, height,
+      validated_context.GetValueOrDefault<SamplerOptions>(sampler_options),
+      format);
   if (texture == nullptr) {
-    LOG(ERROR) << "Failed to create texture of dimensions " << width << "x"
-               << height;
     return nullptr;
   }
-  if (!texture->Set(pixels->data(), pixel_count * sizeof(Pixel))) {
+  if (!texture->Set(texels, size_in_bytes)) {
     LOG(ERROR) << "Failed to initialize texture with image data";
     return nullptr;
   }
@@ -1508,23 +1581,16 @@ Texture* RenderSystem::LoadTextureFile(TextureLoadContract contract,
     LOG(ERROR) << "Failed to read texture file";
     return nullptr;
   }
-  if (!IsValidTextureSize("texture file", image->GetWidth(),
-                          image->GetHeight())) {
-    return nullptr;
-  }
 
   gb::ValidatedContext validated_context = std::move(contract);
   DCHECK(validated_context.IsValid())
       << "TextureLoadContext does not have any requirements!";
-
-  Texture* texture = backend_->CreateTexture(
-      {}, resource_manager_->NewResourceEntry<Texture>(),
+  Texture* texture = CreateBackendTexture(
+      "texture file", resource_manager_->NewResourceEntry<Texture>(),
       (edit_ ? DataVolatility::kStaticReadWrite : DataVolatility::kStaticWrite),
       image->GetWidth(), image->GetHeight(),
-      validated_context.GetValue<SamplerOptions>());
+      validated_context.GetValue<SamplerOptions>(), TextureFormat::kRgba8Srgb);
   if (texture == nullptr) {
-    LOG(ERROR) << "Failed to create texture of dimensions " << image->GetWidth()
-               << "x" << image->GetHeight();
     return nullptr;
   }
   if (!texture->Set(image->GetPixels())) {
@@ -1548,11 +1614,19 @@ bool RenderSystem::SaveTextureChunk(Context* context, Texture* texture,
     LOG(ERROR) << "Cannot save texture with kStaticWrite volatility.";
     return false;
   }
-  auto view = texture->Edit();
-  if (view == nullptr) {
+
+  // The texels are read straight into the builder, which must be done before
+  // anything else is built, as building moves its buffer.
+  const int64_t size_in_bytes = GetTextureSizeInBytes(
+      texture->GetFormat(), texture->GetWidth(), texture->GetHeight());
+  uint8_t* texels = nullptr;
+  const auto fb_texels =
+      builder->CreateUninitializedVector(size_in_bytes, &texels);
+  if (!texture->Get(texels, size_in_bytes)) {
     LOG(ERROR) << "Failed to read texture in order to save it";
     return false;
   }
+
   auto& sampler_options = texture->GetSamplerOptions();
 
   fbs::SamplerOptionsBuilder sampler_options_builder(*builder);
@@ -1563,31 +1637,27 @@ bool RenderSystem::SaveTextureChunk(Context* context, Texture* texture,
   sampler_options_builder.add_address_mode(ToFbs(sampler_options.address_mode));
   const auto fb_sampler_options = sampler_options_builder.Finish();
 
-  const auto packed_pixels = view->GetPackedPixels();
-  const auto fb_pixels = builder->CreateVector<uint32_t>(packed_pixels.data(),
-                                                         packed_pixels.size());
-
   fbs::TextureChunkBuilder texture_builder(*builder);
   texture_builder.add_volatility(ToFbs(context->GetValue<DataVolatility>()));
   texture_builder.add_width(texture->GetWidth());
   texture_builder.add_height(texture->GetHeight());
   texture_builder.add_options(fb_sampler_options);
-  texture_builder.add_pixels(fb_pixels);
+  texture_builder.add_format(ToFbs(texture->GetFormat()));
+  texture_builder.add_texels(fb_texels);
   const auto fb_texture = texture_builder.Finish();
 
   builder->Finish(fb_texture);
   return true;
 }
 
-TextureArray* RenderSystem::DoCreateTextureArray(
-    DataVolatility volatility, int count, int width, int height,
-    const SamplerOptions& options) {
-  if (!IsValidTextureArraySize("texture array", count, width, height)) {
-    return nullptr;
-  }
-  return backend_->CreateTextureArray(
-      {}, resource_manager_->NewResourceEntry<TextureArray>(), volatility,
-      count, width, height, options);
+TextureArray* RenderSystem::DoCreateTextureArray(DataVolatility volatility,
+                                                 int count, int width,
+                                                 int height,
+                                                 const SamplerOptions& options,
+                                                 TextureFormat format) {
+  return CreateBackendTextureArray(
+      "texture array", resource_manager_->NewResourceEntry<TextureArray>(),
+      volatility, count, width, height, options, format);
 }
 
 TextureArray* RenderSystem::LoadTextureArrayChunk(
@@ -1596,16 +1666,11 @@ TextureArray* RenderSystem::LoadTextureArrayChunk(
   const int count = chunk->count();
   const int width = chunk->width();
   const int height = chunk->height();
-  if (!IsValidTextureArraySize("texture array", count, width, height)) {
-    return nullptr;
-  }
-  const int total_pixel_count = count * width * height;
-  const auto* pixels = chunk->pixels();
-  if (pixels == nullptr ||
-      static_cast<int64_t>(pixels->size()) < total_pixel_count) {
-    LOG(ERROR) << "Failed to create texture array as it contains "
-               << (pixels != nullptr ? pixels->size() : 0) << " pixels, but "
-               << total_pixel_count << " are required.";
+  const TextureFormat format = FromFbs(chunk->format());
+  const int64_t texture_size = GetTextureSizeInBytes(format, width, height);
+  const uint8_t* texels = static_cast<const uint8_t*>(GetChunkTexels(
+      "texture array", chunk->texels(), chunk->pixels(), texture_size * count));
+  if (texels == nullptr) {
     return nullptr;
   }
 
@@ -1626,24 +1691,20 @@ TextureArray* RenderSystem::LoadTextureArrayChunk(
   if (edit_ && volatility == DataVolatility::kStaticWrite) {
     volatility = DataVolatility::kStaticReadWrite;
   }
-  TextureArray* texture_array = backend_->CreateTextureArray(
-      {}, std::move(entry), volatility, count, width, height,
-      validated_context.GetValueOrDefault<SamplerOptions>(sampler_options));
+  TextureArray* texture_array = CreateBackendTextureArray(
+      "texture array", std::move(entry), volatility, count, width, height,
+      validated_context.GetValueOrDefault<SamplerOptions>(sampler_options),
+      format);
   if (texture_array == nullptr) {
-    LOG(ERROR) << "Failed to create texture array of count " << count
-               << " and dimensions " << width << "x" << height;
     return nullptr;
   }
-  const int image_pixel_count = width * height;
-  const uint32_t* pixel_data = pixels->data();
   for (int i = 0; i < count; ++i) {
-    if (!texture_array->Set(i, pixel_data, image_pixel_count * sizeof(Pixel))) {
+    if (!texture_array->Set(i, texels + i * texture_size, texture_size)) {
       LOG(ERROR)
           << "Failed to initialize texture array with image data at index: "
           << i;
       return nullptr;
     }
-    pixel_data += image_pixel_count;
   }
   return texture_array;
 }
@@ -1663,14 +1724,17 @@ bool RenderSystem::SaveTextureArrayChunk(
     LOG(ERROR) << "Cannot save texture array with kStaticWrite volatility.";
     return false;
   }
-  const int texture_pixel_count =
-      texture_array->GetWidth() * texture_array->GetHeight();
-  const int total_pixel_count = texture_array->GetCount() * texture_pixel_count;
-  std::vector<uint32_t> pixels(total_pixel_count);
+
+  // The texels are read straight into the builder, which must be done before
+  // anything else is built, as building moves its buffer.
+  const int64_t texture_size = GetTextureSizeInBytes(
+      texture_array->GetFormat(), texture_array->GetWidth(),
+      texture_array->GetHeight());
+  uint8_t* texels = nullptr;
+  const auto fb_texels = builder->CreateUninitializedVector(
+      texture_size * texture_array->GetCount(), &texels);
   for (int i = 0; i < texture_array->GetCount(); ++i) {
-    if (!texture_array->Get(i, pixels.data() + (i * texture_pixel_count),
-                            int64_t{texture_pixel_count} *
-                                static_cast<int64_t>(sizeof(uint32_t)))) {
+    if (!texture_array->Get(i, texels + i * texture_size, texture_size)) {
       LOG(ERROR) << "Failed to read texture " << i
                  << " from texture array in order to save it";
       return false;
@@ -1686,9 +1750,6 @@ bool RenderSystem::SaveTextureArrayChunk(
   sampler_options_builder.add_address_mode(ToFbs(sampler_options.address_mode));
   const auto fb_sampler_options = sampler_options_builder.Finish();
 
-  const auto fb_pixels =
-      builder->CreateVector<uint32_t>(pixels.data(), total_pixel_count);
-
   fbs::TextureArrayChunkBuilder texture_array_builder(*builder);
   texture_array_builder.add_volatility(
       ToFbs(context->GetValue<DataVolatility>()));
@@ -1696,7 +1757,8 @@ bool RenderSystem::SaveTextureArrayChunk(
   texture_array_builder.add_width(texture_array->GetWidth());
   texture_array_builder.add_height(texture_array->GetHeight());
   texture_array_builder.add_options(fb_sampler_options);
-  texture_array_builder.add_pixels(fb_pixels);
+  texture_array_builder.add_format(ToFbs(texture_array->GetFormat()));
+  texture_array_builder.add_texels(fb_texels);
   const auto fb_texture_array = texture_array_builder.Finish();
 
   builder->Finish(fb_texture_array);

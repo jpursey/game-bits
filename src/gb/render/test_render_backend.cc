@@ -19,25 +19,32 @@ FrameDimensions TestRenderBackend::GetFrameDimensions(RenderInternal) const {
   return state_->frame_dimensions;
 }
 
+bool TestRenderBackend::CanFilter(RenderInternal, TextureFormat format) const {
+  return !state_->unfilterable_formats.contains(format);
+}
+
 Texture* TestRenderBackend::CreateTexture(RenderInternal, ResourceEntry entry,
                                           DataVolatility volatility, int width,
                                           int height,
-                                          const SamplerOptions& options) {
+                                          const SamplerOptions& options,
+                                          TextureFormat format) {
   if (state_->fail_create_texture) {
     return nullptr;
   }
   return new TestTexture(&state_->texture_config, std::move(entry), volatility,
-                         width, height, options);
+                         width, height, options, format);
 }
 
 TextureArray* TestRenderBackend::CreateTextureArray(
     RenderInternal, ResourceEntry entry, DataVolatility volatility, int count,
-    int width, int height, const SamplerOptions& options) {
+    int width, int height, const SamplerOptions& options,
+    TextureFormat format) {
   if (state_->fail_create_texture_array) {
     return nullptr;
   }
   return new TestTextureArray(&state_->texture_array_config, std::move(entry),
-                              volatility, count, width, height, options);
+                              volatility, count, width, height, options,
+                              format);
 }
 
 std::unique_ptr<ShaderCode> TestRenderBackend::CreateShaderCode(

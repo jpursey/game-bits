@@ -34,6 +34,15 @@ enum DataVolatility : uint8 {
   PerFrame,
 }
 
+// Must be kept in sync with gb::TextureFormat
+enum TextureFormat : uint8 {
+  Rgba8Srgb,
+  Rgba8,
+  Rg8,
+  R8,
+  Rgba4,
+}
+
 // Must be kept in sync with gb::DepthMode
 enum DepthMode : uint8 {
   None,
@@ -207,15 +216,24 @@ table SamplerOptions {
 }
 
 // Chunk for texture resource.
+//
+// The texture's texels are in "texels", in its format. Textures saved before
+// formats were added have only "pixels", and are Rgba8Srgb.
 table TextureChunk {
   volatility : DataVolatility;
   width : uint16;
   height : uint16;
   pixels : [uint32];
   options : SamplerOptions;
+  format : TextureFormat = Rgba8Srgb;
+  texels : [ubyte];
 }
 
 // Chunk for texture array resource.
+//
+// The texels of every texture in the array, in order, are in "texels", in the
+// array's format. Texture arrays saved before formats were added have only
+// "pixels", and are Rgba8Srgb.
 table TextureArrayChunk {
   volatility : DataVolatility;
   count : uint16;
@@ -223,4 +241,6 @@ table TextureArrayChunk {
   height : uint16;
   pixels : [uint32];
   options : SamplerOptions;
+  format : TextureFormat = Rgba8Srgb;
+  texels : [ubyte];
 }

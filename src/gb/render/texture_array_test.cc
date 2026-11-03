@@ -358,5 +358,96 @@ TEST_F(TextureArrayTest, InvalidIndex) {
   EXPECT_EQ(test_texture_array->GetModifyCount(), 0);
 }
 
+TEST_F(TextureArrayTest, CreateInEachFormat) {
+  CreateSystem();
+  for (TextureFormat format :
+       {TextureFormat::kRgba8Srgb, TextureFormat::kRgba8, TextureFormat::kRg8,
+        TextureFormat::kR8, TextureFormat::kRgba4}) {
+    auto texture_array = render_system_->CreateTextureArray(
+        DataVolatility::kStaticReadWrite, kTextureCount, kTextureWidth,
+        kTextureHeight, SamplerOptions(), format);
+    ASSERT_NE(texture_array, nullptr) << static_cast<int>(format);
+    EXPECT_EQ(texture_array->GetFormat(), format);
+    auto* test_texture_array =
+        static_cast<TestTextureArray*>(texture_array.Get());
+    EXPECT_EQ(test_texture_array->GetTexels(1).size(),
+              kTextureWidth * kTextureHeight * GetTexelSize(format));
+  }
+  EXPECT_EQ(state_.invalid_call_count, 0);
+}
+
+TEST_F(TextureArrayTest, FilterOnlyFilterableFormats) {
+  state_.unfilterable_formats.insert(TextureFormat::kRgba4);
+  CreateSystem();
+  EXPECT_EQ(render_system_->CreateTextureArray(
+                DataVolatility::kStaticReadWrite, kTextureCount, kTextureWidth,
+                kTextureHeight, SamplerOptions().SetFilter(true),
+                TextureFormat::kRgba4),
+            nullptr);
+  EXPECT_NE(render_system_->CreateTextureArray(
+                DataVolatility::kStaticReadWrite, kTextureCount, kTextureWidth,
+                kTextureHeight, SamplerOptions().SetFilter(false),
+                TextureFormat::kRgba4),
+            nullptr);
+}
+
+TEST_F(TextureArrayTest, TexelsOfFormat) {
+  CreateSystem();
+  auto texture_array = render_system_->CreateTextureArray(
+      DataVolatility::kStaticReadWrite, kTextureCount, kTextureWidth,
+      kTextureHeight, SamplerOptions(), TextureFormat::kRg8);
+  ASSERT_NE(texture_array, nullptr);
+  auto* test_texture_array =
+      static_cast<TestTextureArray*>(texture_array.Get());
+
+  EXPECT_TRUE(texture_array->Clear(0, Pixel(1, 2, 3, 4)));
+  const auto cleared = test_texture_array->GetTexels(0);
+  for (int i = 0; i < kTextureWidth * kTextureHeight; ++i) {
+    ASSERT_EQ(cleared[i * 2], 1) << i;
+    ASSERT_EQ(cleared[i * 2 + 1], 2) << i;
+  }
+
+  std::vector<uint8_t> texels(kTextureWidth * kTextureHeight * 2);
+  for (int i = 0; i < static_cast<int>(texels.size()); ++i) {
+    texels[i] = static_cast<uint8_t>(i);
+  }
+  EXPECT_FALSE(texture_array->Set(1, texels.data(), texels.size() - 1));
+  EXPECT_TRUE(texture_array->Set(1, texels.data(), texels.size()));
+  EXPECT_THAT(test_texture_array->GetTexels(1), ElementsAreArray(texels));
+
+  std::vector<uint8_t> read(texels.size());
+  EXPECT_FALSE(texture_array->Get(1, read.data(), read.size() - 1));
+  EXPECT_TRUE(texture_array->Get(1, read.data(), read.size()));
+  EXPECT_THAT(read, ElementsAreArray(texels));
+
+  EXPECT_EQ(state_.invalid_call_count, 0);
+  EXPECT_EQ(test_texture_array->GetInvalidCallCount(), 0);
+}
+
+TEST_F(TextureArrayTest, PixelsOnlyForPixelFormats) {
+  CreateSystem();
+  auto texture_array = render_system_->CreateTextureArray(
+      DataVolatility::kStaticReadWrite, kTextureCount, kTextureWidth,
+      kTextureHeight, SamplerOptions(), TextureFormat::kR8);
+  ASSERT_NE(texture_array, nullptr);
+  auto* test_texture_array =
+      static_cast<TestTextureArray*>(texture_array.Get());
+
+  EXPECT_FALSE(texture_array->Set(
+      0, MakePixels(kTextureWidth * kTextureHeight, {1, 2, 3, 4})));
+  EXPECT_FALSE(texture_array->Set(
+      0, MakePackedPixels(kTextureWidth * kTextureHeight, 0x01020304)));
+  std::vector<Pixel> pixels = {Pixel(1, 2, 3, 4)};
+  EXPECT_FALSE(texture_array->Get(0, &pixels));
+  EXPECT_EQ(pixels, std::vector<Pixel>{Pixel(1, 2, 3, 4)});
+  std::vector<uint32_t> packed_pixels = {0xdeadbeef};
+  EXPECT_FALSE(texture_array->Get(0, &packed_pixels));
+  EXPECT_EQ(packed_pixels, std::vector<uint32_t>{0xdeadbeef});
+  EXPECT_EQ(test_texture_array->GetModifyCount(), 0);
+
+  EXPECT_EQ(state_.invalid_call_count, 0);
+  EXPECT_EQ(test_texture_array->GetInvalidCallCount(), 0);
+}
+
 }  // namespace
 }  // namespace gb

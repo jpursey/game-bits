@@ -18,7 +18,7 @@ Texture::~Texture() {
 }
 
 bool Texture::Clip(int* x, int* y, int* width, int* height,
-                   const void** pixels) {
+                   const void** texels) {
   // The ends are computed in 64 bits, as the region may be as large as an int
   // allows.
   const int64_t end_x = int64_t{*x} + *width;
@@ -27,6 +27,7 @@ bool Texture::Clip(int* x, int* y, int* width, int* height,
       end_x <= 0 || end_y <= 0) {
     return true;
   }
+  const int texel_size = GetTexelSize(format_);
   const int stride = *width;
   if (end_x > width_) {
     *width = width_ - *x;
@@ -35,15 +36,16 @@ bool Texture::Clip(int* x, int* y, int* width, int* height,
     *height = height_ - *y;
   }
   if (*x < 0) {
-    if (pixels != nullptr) {
-      *pixels = static_cast<const Pixel*>(*pixels) - *x;
+    if (texels != nullptr) {
+      *texels = static_cast<const uint8_t*>(*texels) - int64_t{*x} * texel_size;
     }
     *width += *x;
     *x = 0;
   }
   if (*y < 0) {
-    if (pixels != nullptr) {
-      *pixels = static_cast<const Pixel*>(*pixels) - int64_t{*y} * stride;
+    if (texels != nullptr) {
+      *texels = static_cast<const uint8_t*>(*texels) -
+                int64_t{*y} * stride * texel_size;
     }
     *height += *y;
     *y = 0;
@@ -51,60 +53,80 @@ bool Texture::Clip(int* x, int* y, int* width, int* height,
   return false;
 }
 
-bool Texture::Clear(Pixel pixel) {
-  if (editing_) {
-    LOG(ERROR) << "Failed to clear pixels, as an ImageView is still active";
-    return false;
+bool Texture::ValidatePixelFormat(std::string_view operation) const {
+  if (IsPixelFormat(format_)) {
+    return true;
   }
-  return DoClear(0, 0, width_, height_, pixel);
+  LOG(ERROR) << "Texture " << operation
+             << " of pixels failed, as its texels are not pixels";
+  return false;
 }
 
-bool Texture::Set(const void* pixels, int64_t size_in_bytes) {
+bool Texture::Clear(Pixel pixel) {
+  return ClearRegion(0, 0, width_, height_, pixel);
+}
+
+bool Texture::Set(const void* texels, int64_t size_in_bytes) {
   if (editing_) {
-    LOG(ERROR) << "Failed to set pixels, as an ImageView is still active";
+    LOG(ERROR) << "Failed to set texels, as an ImageView is still active";
     return false;
   }
-  if (size_in_bytes <
-      int64_t{width_} * height_ * static_cast<int64_t>(sizeof(Pixel))) {
-    LOG(ERROR) << "Failed to set pixels, as provided buffer is too small";
+  if (size_in_bytes < GetTextureSizeInBytes(format_, width_, height_)) {
+    LOG(ERROR) << "Failed to set texels, as provided buffer is too small";
     return false;
   }
 
-  return DoSet(0, 0, width_, height_, pixels, width_);
+  return DoSet(0, 0, width_, height_, texels, width_);
+}
+
+bool Texture::Get(void* out_texels, int64_t size_in_bytes) {
+  if (editing_) {
+    LOG(ERROR) << "Failed to get texels, as an ImageView is still active";
+    return false;
+  }
+  if (volatility_ == DataVolatility::kStaticWrite) {
+    LOG(ERROR) << "Texture cannot be read as its volatility is kStaticWrite";
+    return false;
+  }
+  if (size_in_bytes < GetTextureSizeInBytes(format_, width_, height_)) {
+    LOG(ERROR) << "Failed to get texels, as provided buffer is too small";
+    return false;
+  }
+  return DoGet(out_texels);
 }
 
 bool Texture::ClearRegion(int x, int y, int width, int height, Pixel pixel) {
   if (editing_) {
-    LOG(ERROR) << "Failed to clear pixels, as an ImageView is still active";
+    LOG(ERROR) << "Failed to clear texels, as an ImageView is still active";
     return false;
   }
 
   if (Clip(&x, &y, &width, &height)) {
     return true;
   }
-  return DoClear(x, y, width, height, pixel);
+  const uint32_t texel = PixelToTexel(format_, pixel);
+  return DoClear(x, y, width, height, &texel);
 }
 
-bool Texture::SetRegion(int x, int y, int width, int height, const void* pixels,
+bool Texture::SetRegion(int x, int y, int width, int height, const void* texels,
                         int64_t size_in_bytes) {
   if (editing_) {
-    LOG(ERROR) << "Failed to set pixels, as an ImageView is still active";
+    LOG(ERROR) << "Failed to set texels, as an ImageView is still active";
     return false;
   }
   if (width <= 0 || height <= 0) {
     return true;
   }
-  if (size_in_bytes <
-      int64_t{width} * height * static_cast<int64_t>(sizeof(Pixel))) {
-    LOG(ERROR) << "Failed to set pixels, as provided buffer is too small";
+  if (size_in_bytes < GetTextureSizeInBytes(format_, width, height)) {
+    LOG(ERROR) << "Failed to set texels, as provided buffer is too small";
     return false;
   }
 
   const int stride = width;
-  if (Clip(&x, &y, &width, &height, &pixels)) {
+  if (Clip(&x, &y, &width, &height, &texels)) {
     return true;
   }
-  return DoSet(x, y, width, height, pixels, stride);
+  return DoSet(x, y, width, height, texels, stride);
 }
 
 std::unique_ptr<ImageView> Texture::Edit() {
@@ -116,6 +138,10 @@ std::unique_ptr<ImageView> Texture::Edit() {
 
   if (volatility_ == DataVolatility::kStaticWrite) {
     LOG(ERROR) << "Texture cannot be edited as its volatility is kStaticWrite";
+    return nullptr;
+  }
+
+  if (!ValidatePixelFormat("Edit")) {
     return nullptr;
   }
 

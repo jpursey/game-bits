@@ -186,6 +186,11 @@ class RenderSystem final {
   // Return frame dimensions in pixels or null otherwise.
   FrameDimensions GetFrameDimensions();
 
+  // Returns true if textures in the format can be sampled with filtering
+  // (SamplerOptions::filter). Creating a texture with filtering in a format
+  // that can't be filtered fails.
+  bool CanFilter(TextureFormat format) const;
+
   //----------------------------------------------------------------------------
   // Resource / Scene creation
   //
@@ -313,14 +318,16 @@ class RenderSystem final {
 
   // Creates a texture with the specified parameters.
   //
-  // If successful, the texture will be created uninitialized (pixel values are
+  // If successful, the texture will be created uninitialized (texel values are
   // undefined). The caller should call Set or Edit to initialize its contents.
   ResourcePtr<Texture> CreateTexture(
       DataVolatility volatility, int width, int height,
-      const SamplerOptions& options = SamplerOptions());
+      const SamplerOptions& options = SamplerOptions(),
+      TextureFormat format = TextureFormat::kRgba8Srgb);
   Texture* CreateTexture(ResourceSet* resource_set, DataVolatility volatility,
                          int width, int height,
-                         const SamplerOptions& options = SamplerOptions());
+                         const SamplerOptions& options = SamplerOptions(),
+                         TextureFormat format = TextureFormat::kRgba8Srgb);
 
   // Saves a texture to the specified resource name.
   //
@@ -334,15 +341,17 @@ class RenderSystem final {
 
   // Creates a texture array with the specified parameters.
   //
-  // If successful, the texture array will be created uninitialized (pixel
+  // If successful, the texture array will be created uninitialized (texel
   // values are undefined). The caller should call Set or Clear initialize its
   // contents.
   ResourcePtr<TextureArray> CreateTextureArray(
       DataVolatility volatility, int count, int width, int height,
-      const SamplerOptions& options = SamplerOptions());
+      const SamplerOptions& options = SamplerOptions(),
+      TextureFormat format = TextureFormat::kRgba8Srgb);
   TextureArray* CreateTextureArray(
       ResourceSet* resource_set, DataVolatility volatility, int count,
-      int width, int height, const SamplerOptions& options = SamplerOptions());
+      int width, int height, const SamplerOptions& options = SamplerOptions(),
+      TextureFormat format = TextureFormat::kRgba8Srgb);
 
   // Saves a texture array to the specified resource name.
   //
@@ -454,8 +463,27 @@ class RenderSystem final {
   bool SaveShaderChunk(Context* context, Shader* shader,
                        flatbuffers::FlatBufferBuilder* builder);
 
+  // Returns true if a texture in the format can be created with the options,
+  // logging why if it can't. "name" names the kind of texture.
+  bool ValidateTextureFormat(std::string_view name, TextureFormat format,
+                             const SamplerOptions& options) const;
+
+  // Creates a texture or texture array in the backend, returning null and
+  // logging why if its size or format is invalid, or the backend fails. Every
+  // texture is created through these. "name" names the kind of texture.
+  Texture* CreateBackendTexture(std::string_view name, ResourceEntry entry,
+                                DataVolatility volatility, int width,
+                                int height, const SamplerOptions& options,
+                                TextureFormat format);
+  TextureArray* CreateBackendTextureArray(std::string_view name,
+                                          ResourceEntry entry,
+                                          DataVolatility volatility, int count,
+                                          int width, int height,
+                                          const SamplerOptions& options,
+                                          TextureFormat format);
+
   Texture* DoCreateTexture(DataVolatility volatility, int width, int height,
-                           const SamplerOptions& options);
+                           const SamplerOptions& options, TextureFormat format);
   Texture* LoadTexture(Context* context, std::string_view name);
   Texture* LoadTextureChunk(Context* context, const fbs::TextureChunk* chunk,
                             ResourceEntry entry);
@@ -465,7 +493,8 @@ class RenderSystem final {
 
   TextureArray* DoCreateTextureArray(DataVolatility volatility, int count,
                                      int width, int height,
-                                     const SamplerOptions& options);
+                                     const SamplerOptions& options,
+                                     TextureFormat format);
   TextureArray* LoadTextureArrayChunk(Context* context,
                                       const fbs::TextureArrayChunk* chunk,
                                       ResourceEntry entry);
@@ -585,30 +614,33 @@ inline Shader* RenderSystem::CreateShader(
 
 inline ResourcePtr<Texture> RenderSystem::CreateTexture(
     DataVolatility volatility, int width, int height,
-    const SamplerOptions& options) {
-  return DoCreateTexture(volatility, width, height, options);
+    const SamplerOptions& options, TextureFormat format) {
+  return DoCreateTexture(volatility, width, height, options, format);
 }
 
 inline Texture* RenderSystem::CreateTexture(ResourceSet* resource_set,
                                             DataVolatility volatility,
                                             int width, int height,
-                                            const SamplerOptions& options) {
-  Texture* texture = DoCreateTexture(volatility, width, height, options);
+                                            const SamplerOptions& options,
+                                            TextureFormat format) {
+  Texture* texture =
+      DoCreateTexture(volatility, width, height, options, format);
   resource_set->Add(texture);
   return texture;
 }
 
 inline ResourcePtr<TextureArray> RenderSystem::CreateTextureArray(
     DataVolatility volatility, int count, int width, int height,
-    const SamplerOptions& options) {
-  return DoCreateTextureArray(volatility, count, width, height, options);
+    const SamplerOptions& options, TextureFormat format) {
+  return DoCreateTextureArray(volatility, count, width, height, options,
+                              format);
 }
 
 inline TextureArray* RenderSystem::CreateTextureArray(
     ResourceSet* resource_set, DataVolatility volatility, int count, int width,
-    int height, const SamplerOptions& options) {
+    int height, const SamplerOptions& options, TextureFormat format) {
   TextureArray* texture_array =
-      DoCreateTextureArray(volatility, count, width, height, options);
+      DoCreateTextureArray(volatility, count, width, height, options, format);
   resource_set->Add(texture_array);
   return texture_array;
 }

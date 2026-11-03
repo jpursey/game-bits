@@ -6,12 +6,19 @@
 #ifndef GB_RENDER_TEST_TEXTURE_ARRAY_H_
 #define GB_RENDER_TEST_TEXTURE_ARRAY_H_
 
+#include <cstdint>
+#include <vector>
+
 #include "absl/types/span.h"
 #include "gb/render/render_types.h"
 #include "gb/render/texture_array.h"
 
 namespace gb {
 
+// A texture array whose texels are kept in memory.
+//
+// The Pixel accessors are only valid for texture arrays in a Pixel format (see
+// IsPixelFormat).
 class TestTextureArray final : public TextureArray {
  public:
   struct Config {
@@ -24,35 +31,39 @@ class TestTextureArray final : public TextureArray {
 
   TestTextureArray(Config* config, ResourceEntry entry,
                    DataVolatility volatility, int count, int width, int height,
-                   const SamplerOptions& options);
-  ~TestTextureArray() override;
+                   const SamplerOptions& options, TextureFormat format);
 
-  Pixel* GetPixelData() const { return pixels_; }
+  absl::Span<const uint8_t> GetTexels(int index) const {
+    const int64_t texture_size =
+        GetTextureSizeInBytes(GetFormat(), GetWidth(), GetHeight());
+    return absl::MakeConstSpan(texels_.data() + index * texture_size,
+                               texture_size);
+  }
   Pixel GetPixel(int index, int x, int y) const {
-    return pixels_[(index * GetHeight() + y) * GetWidth() + x];
+    return GetPixels(index)[y * GetWidth() + x];
   }
   absl::Span<const Pixel> GetPixels(int index) const {
-    const int pixel_count = GetWidth() * GetHeight();
-    return absl::MakeConstSpan(pixels_ + (index * pixel_count), pixel_count);
+    return absl::MakeConstSpan(
+        reinterpret_cast<const Pixel*>(GetTexels(index).data()),
+        GetWidth() * GetHeight());
   }
   absl::Span<const uint32_t> GetPackedPixels(int index) const {
-    const int pixel_count = GetWidth() * GetHeight();
     return absl::MakeConstSpan(
-        reinterpret_cast<uint32_t*>(pixels_ + (index * pixel_count)),
-        pixel_count);
+        reinterpret_cast<const uint32_t*>(GetTexels(index).data()),
+        GetWidth() * GetHeight());
   }
 
   int GetModifyCount() const { return modify_count_; }
   int GetInvalidCallCount() const { return invalid_call_count_; }
 
  protected:
-  bool DoClear(int index, Pixel pixel) override;
-  bool DoSet(int index, const void* pixels) override;
-  bool DoGet(int index, void* out_pixels) override;
+  bool DoClear(int index, const void* texel) override;
+  bool DoSet(int index, const void* texels) override;
+  bool DoGet(int index, void* out_texels) override;
 
  private:
   Config* const config_;
-  Pixel* pixels_ = nullptr;
+  std::vector<uint8_t> texels_;
   int modify_count_ = 0;
   int invalid_call_count_ = 0;
 };

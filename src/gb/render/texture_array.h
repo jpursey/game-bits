@@ -7,6 +7,7 @@
 #define GB_RENDER_TEXTURE_ARRAY_H_
 
 #include <cstdint>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -18,11 +19,15 @@
 
 namespace gb {
 
-// A texture array defines an array of 2D images of RGBA pixels, all the same
-// size, accessible by the graphics card.
+// A texture array defines an array of 2D images, all the same size and in the
+// same TextureFormat, accessible by the graphics card.
 //
 // Texture arrays are bound to shaders via binding data (see BindingData), and
 // can also be changed depending on their data volatility.
+//
+// Functions that take texels as bytes take them in the texture array's format.
+// Those that take Pixel or uint32_t pixels work only for formats whose texels
+// are Pixels (see IsPixelFormat), and fail for the others.
 //
 // This class and all derived classes must be thread-compatible.
 class TextureArray : public Resource {
@@ -38,9 +43,12 @@ class TextureArray : public Resource {
   // Returns the number of textures in the array.
   int GetCount() const { return count_; }
 
-  // Returns the width and height in pixels.
+  // Returns the width and height in texels.
   int GetWidth() const { return width_; }
   int GetHeight() const { return height_; }
+
+  // Returns the format of each texel.
+  TextureFormat GetFormat() const { return format_; }
 
   // Returns the sampler options used with this texture array.
   const SamplerOptions& GetSamplerOptions() const { return options_; }
@@ -50,13 +58,13 @@ class TextureArray : public Resource {
   //----------------------------------------------------------------------------
 
   // Clears a texture in the array with a specific color (by default,
-  // transparent black).
+  // transparent black), converted to the format (see PixelToTexel).
   bool Clear(int index, Pixel pixel = {0, 0, 0, 0});
   bool Clear(int index, uint32_t pixel);
 
-  // Replaces a texture in the array with the specified colors.
+  // Replaces a texture in the array with the specified texels.
   //
-  // The pixels array must contain at least GetWidth() * GetHeight() pixels.
+  // The texels must contain at least GetWidth() * GetHeight() texels.
   //
   // Note: A kStaticWrite texture array's data may not be readable, so calling
   // Clear or Set may not be supported for an array of more than one texture if
@@ -64,7 +72,7 @@ class TextureArray : public Resource {
   // return false.
   bool Set(int index, absl::Span<const Pixel> pixels);
   bool Set(int index, absl::Span<const uint32_t> pixels);
-  bool Set(int index, const void* pixels, int64_t size_in_bytes);
+  bool Set(int index, const void* texels, int64_t size_in_bytes);
 
   // Reads the entirety of a texture into a provided buffer.
   //
@@ -72,28 +80,31 @@ class TextureArray : public Resource {
   // vector passed in is left unchanged for an invalid index or volatility.
   bool Get(int index, std::vector<Pixel>* out_pixels);
   bool Get(int index, std::vector<uint32_t>* out_pixels);
-  bool Get(int index, void* out_pixels, int64_t size_in_bytes);
+  bool Get(int index, void* out_texels, int64_t size_in_bytes);
 
  protected:
   TextureArray(ResourceEntry entry, DataVolatility volatility, int count,
-               int width, int height, const SamplerOptions& options)
+               int width, int height, const SamplerOptions& options,
+               TextureFormat format)
       : Resource(std::move(entry)),
         volatility_(volatility),
         count_(count),
         width_(width),
         height_(height),
-        options_(options) {}
+        options_(options),
+        format_(format) {}
   virtual ~TextureArray() = default;
 
-  // Clear the texture at the specified index with the specified color,
-  // returning true if the write was begun successfully.
+  // Clear the texture at the specified index with the specified texel,
+  // returning true if the write was begun successfully. "texel" points to
+  // GetTexelSize() bytes in the texture array's format.
   //
   // If this returns true, and the texture array is readable (it isn't
   // kStaticWrite volatility), then it must reflect the data written if queried
   // via DoGet(). Returning true also requires that the data will be transferred
   // to the GPU before this texture is used in rendering -- although it does not
   // imply the transfer has happened yet.
-  virtual bool DoClear(int index, Pixel pixel) = 0;
+  virtual bool DoClear(int index, const void* texel) = 0;
 
   // Write new data to the texture at the specified index, returning true if the
   // write was begun successfully.
@@ -103,26 +114,31 @@ class TextureArray : public Resource {
   // via DoGet(). Returning true also requires that the data will be transferred
   // to the GPU before this texture is used in rendering -- although it does not
   // imply the transfer has happened yet.
-  virtual bool DoSet(int index, const void* pixels) = 0;
+  virtual bool DoSet(int index, const void* texels) = 0;
 
-  // Reads data from the texture at the specified index into out_pixels,
+  // Reads data from the texture at the specified index into out_texels,
   // returning true if the read was completed successfully.
   //
-  // "out_pixels" is preallocated to be width*height pixels (so row stride is
+  // "out_texels" is preallocated to be width*height texels (so row stride is
   // the width). This is never called if the texture array is kStaticWrite
   // volatility.
-  virtual bool DoGet(int index, void* out_pixels) = 0;
+  virtual bool DoGet(int index, void* out_texels) = 0;
 
  private:
   // Returns true if the texture at the index can be read, logging why not if it
   // can't.
   bool CanGet(int index) const;
 
+  // Returns true if the texture array's texels are Pixels, logging why
+  // "operation" fails if not.
+  bool ValidatePixelFormat(std::string_view operation) const;
+
   const DataVolatility volatility_;
   const int count_;
   const int width_;
   const int height_;
   const SamplerOptions options_;
+  const TextureFormat format_;
 };
 
 inline bool TextureArray::Clear(int index, uint32_t pixel) {
@@ -130,17 +146,23 @@ inline bool TextureArray::Clear(int index, uint32_t pixel) {
 }
 
 inline bool TextureArray::Set(int index, absl::Span<const Pixel> pixels) {
+  if (!ValidatePixelFormat("Set")) {
+    return false;
+  }
   return Set(index, pixels.data(),
              static_cast<int64_t>(pixels.size() * sizeof(Pixel)));
 }
 
 inline bool TextureArray::Set(int index, absl::Span<const uint32_t> pixels) {
+  if (!ValidatePixelFormat("Set")) {
+    return false;
+  }
   return Set(index, pixels.data(),
              static_cast<int64_t>(pixels.size() * sizeof(uint32_t)));
 }
 
 inline bool TextureArray::Get(int index, std::vector<Pixel>* out_pixels) {
-  if (!CanGet(index)) {
+  if (!ValidatePixelFormat("Get") || !CanGet(index)) {
     return false;
   }
   out_pixels->resize(width_ * height_);
@@ -148,7 +170,7 @@ inline bool TextureArray::Get(int index, std::vector<Pixel>* out_pixels) {
 }
 
 inline bool TextureArray::Get(int index, std::vector<uint32_t>* out_pixels) {
-  if (!CanGet(index)) {
+  if (!ValidatePixelFormat("Get") || !CanGet(index)) {
     return false;
   }
   out_pixels->resize(width_ * height_);

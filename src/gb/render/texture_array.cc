@@ -17,22 +17,22 @@ bool TextureArray::Clear(int index, Pixel pixel) {
                << " (count is " << count_ << ").";
     return false;
   }
-  return DoClear(index, pixel);
+  const uint32_t texel = PixelToTexel(format_, pixel);
+  return DoClear(index, &texel);
 }
 
-bool TextureArray::Set(int index, const void* pixels, int64_t size_in_bytes) {
+bool TextureArray::Set(int index, const void* texels, int64_t size_in_bytes) {
   if (index < 0 || index >= count_) {
     LOG(ERROR) << "Invalid index for texture array Set: " << index
                << " (count is " << count_ << ").";
     return false;
   }
-  if (size_in_bytes <
-      int64_t{width_} * height_ * static_cast<int64_t>(sizeof(Pixel))) {
-    LOG(ERROR) << "Failed to set pixels, as provided buffer is too small";
+  if (size_in_bytes < GetTextureSizeInBytes(format_, width_, height_)) {
+    LOG(ERROR) << "Failed to set texels, as provided buffer is too small";
     return false;
   }
 
-  return DoSet(index, pixels);
+  return DoSet(index, texels);
 }
 
 bool TextureArray::CanGet(int index) const {
@@ -49,16 +49,24 @@ bool TextureArray::CanGet(int index) const {
   return true;
 }
 
-bool TextureArray::Get(int index, void* out_pixels, int64_t size_in_bytes) {
+bool TextureArray::ValidatePixelFormat(std::string_view operation) const {
+  if (IsPixelFormat(format_)) {
+    return true;
+  }
+  LOG(ERROR) << "Texture array " << operation
+             << " of pixels failed, as its texels are not pixels";
+  return false;
+}
+
+bool TextureArray::Get(int index, void* out_texels, int64_t size_in_bytes) {
   if (!CanGet(index)) {
     return false;
   }
-  if (size_in_bytes <
-      int64_t{width_} * height_ * static_cast<int64_t>(sizeof(Pixel))) {
-    LOG(ERROR) << "Failed to get pixels, as provided buffer is too small";
+  if (size_in_bytes < GetTextureSizeInBytes(format_, width_, height_)) {
+    LOG(ERROR) << "Failed to get texels, as provided buffer is too small";
     return false;
   }
-  return DoGet(index, out_pixels);
+  return DoGet(index, out_texels);
 }
 
 }  // namespace gb

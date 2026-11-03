@@ -186,14 +186,17 @@ class VulkanBackend final : public RenderBackend {
   //----------------------------------------------------------------------------
 
   FrameDimensions GetFrameDimensions(RenderInternal) const override;
+  bool CanFilter(RenderInternal, TextureFormat format) const override;
 
   Texture* CreateTexture(RenderInternal, gb::ResourceEntry entry,
                          DataVolatility volatility, int width, int height,
-                         const SamplerOptions& options) override;
+                         const SamplerOptions& options,
+                         TextureFormat format) override;
   TextureArray* CreateTextureArray(RenderInternal, ResourceEntry entry,
                                    DataVolatility volatility, int count,
                                    int width, int height,
-                                   const SamplerOptions& options) override;
+                                   const SamplerOptions& options,
+                                   TextureFormat format) override;
   std::unique_ptr<ShaderCode> CreateShaderCode(RenderInternal, const void* code,
                                                int64_t code_size) override;
   std::unique_ptr<RenderSceneType> CreateSceneType(

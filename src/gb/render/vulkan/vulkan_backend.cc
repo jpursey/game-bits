@@ -862,10 +862,18 @@ void VulkanBackend::AddFrameCallback(RenderStage stage,
   }
 }
 
+bool VulkanBackend::CanFilter(RenderInternal, TextureFormat format) const {
+  return format == TextureFormat::kRgba8Srgb;
+}
+
 Texture* VulkanBackend::CreateTexture(RenderInternal, gb::ResourceEntry entry,
                                       DataVolatility volatility, int width,
-                                      int height,
-                                      const SamplerOptions& options) {
+                                      int height, const SamplerOptions& options,
+                                      TextureFormat format) {
+  if (format != TextureFormat::kRgba8Srgb) {
+    LOG(ERROR) << "Unsupported texture format: " << static_cast<int>(format);
+    return nullptr;
+  }
   auto sampler = GetSamplerWithValidation(options, width, height);
   if (!sampler) {
     return nullptr;
@@ -876,7 +884,13 @@ Texture* VulkanBackend::CreateTexture(RenderInternal, gb::ResourceEntry entry,
 
 TextureArray* VulkanBackend::CreateTextureArray(
     RenderInternal, ResourceEntry entry, DataVolatility volatility, int count,
-    int width, int height, const SamplerOptions& options) {
+    int width, int height, const SamplerOptions& options,
+    TextureFormat format) {
+  if (format != TextureFormat::kRgba8Srgb) {
+    LOG(ERROR) << "Unsupported texture array format: "
+               << static_cast<int>(format);
+    return nullptr;
+  }
   auto sampler = GetSamplerWithValidation(options, width, height);
   if (!sampler) {
     return nullptr;

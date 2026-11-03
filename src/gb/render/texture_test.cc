@@ -748,5 +748,208 @@ TEST_F(TextureTest, SetRegionWithUnevenClipping) {
   EXPECT_EQ(test_texture->GetInvalidCallCount(), 0);
 }
 
+TEST_F(TextureTest, TexelSize) {
+  EXPECT_EQ(GetTexelSize(TextureFormat::kRgba8Srgb), 4);
+  EXPECT_EQ(GetTexelSize(TextureFormat::kRgba8), 4);
+  EXPECT_EQ(GetTexelSize(TextureFormat::kRg8), 2);
+  EXPECT_EQ(GetTexelSize(TextureFormat::kR8), 1);
+  EXPECT_EQ(GetTexelSize(TextureFormat::kRgba4), 2);
+  EXPECT_EQ(GetTexelSize(static_cast<TextureFormat>(100)), 0);
+}
+
+TEST_F(TextureTest, PixelToTexel) {
+  // Only the first GetTexelSize() bytes of each texel are compared.
+  const Pixel pixel(0x12, 0x34, 0x56, 0x78);
+  EXPECT_EQ(PixelToTexel(TextureFormat::kRgba8Srgb, pixel), pixel.Packed());
+  EXPECT_EQ(PixelToTexel(TextureFormat::kRgba8, pixel), pixel.Packed());
+  EXPECT_EQ(PixelToTexel(TextureFormat::kRg8, pixel) & 0xFFFF, 0x3412u);
+  EXPECT_EQ(PixelToTexel(TextureFormat::kR8, pixel) & 0xFF, 0x12u);
+  EXPECT_EQ(PixelToTexel(TextureFormat::kRgba4, pixel) & 0xFFFF, 0x1357u);
+}
+
+TEST_F(TextureTest, TextureSizeInBytes) {
+  EXPECT_EQ(GetTextureSizeInBytes(TextureFormat::kRgba8, 3, 5), 3 * 5 * 4);
+  EXPECT_EQ(GetTextureSizeInBytes(TextureFormat::kRg8, 3, 5, 7), 3 * 5 * 7 * 2);
+
+  // The size of the largest texture array is more than an int holds.
+  EXPECT_EQ(GetTextureSizeInBytes(TextureFormat::kRgba8, kMaxTextureWidth,
+                                  kMaxTextureHeight, kMaxTextureArrayCount),
+            int64_t{kMaxTextureWidth} * kMaxTextureHeight *
+                kMaxTextureArrayCount * 4);
+}
+
+TEST_F(TextureTest, CreateInEachFormat) {
+  CreateSystem();
+  for (TextureFormat format :
+       {TextureFormat::kRgba8Srgb, TextureFormat::kRgba8, TextureFormat::kRg8,
+        TextureFormat::kR8, TextureFormat::kRgba4}) {
+    auto texture = render_system_->CreateTexture(
+        DataVolatility::kStaticReadWrite, kTextureWidth, kTextureHeight,
+        SamplerOptions(), format);
+    ASSERT_NE(texture, nullptr) << static_cast<int>(format);
+    EXPECT_EQ(texture->GetFormat(), format);
+    auto* test_texture = static_cast<TestTexture*>(texture.Get());
+    EXPECT_EQ(test_texture->GetTexels().size(),
+              kTextureWidth * kTextureHeight * GetTexelSize(format));
+  }
+  EXPECT_EQ(state_.invalid_call_count, 0);
+}
+
+TEST_F(TextureTest, CreateWithInvalidFormat) {
+  CreateSystem();
+  EXPECT_EQ(render_system_->CreateTexture(
+                DataVolatility::kStaticReadWrite, kTextureWidth, kTextureHeight,
+                SamplerOptions(), static_cast<TextureFormat>(100)),
+            nullptr);
+}
+
+TEST_F(TextureTest, FilterOnlyFilterableFormats) {
+  state_.unfilterable_formats.insert(TextureFormat::kR8);
+  CreateSystem();
+  EXPECT_TRUE(render_system_->CanFilter(TextureFormat::kRg8));
+  EXPECT_FALSE(render_system_->CanFilter(TextureFormat::kR8));
+
+  EXPECT_EQ(render_system_->CreateTexture(
+                DataVolatility::kStaticReadWrite, kTextureWidth, kTextureHeight,
+                SamplerOptions().SetFilter(true), TextureFormat::kR8),
+            nullptr);
+  EXPECT_NE(render_system_->CreateTexture(
+                DataVolatility::kStaticReadWrite, kTextureWidth, kTextureHeight,
+                SamplerOptions().SetFilter(false), TextureFormat::kR8),
+            nullptr);
+  EXPECT_NE(render_system_->CreateTexture(
+                DataVolatility::kStaticReadWrite, kTextureWidth, kTextureHeight,
+                SamplerOptions().SetFilter(true), TextureFormat::kRg8),
+            nullptr);
+}
+
+TEST_F(TextureTest, ClearConvertsToFormat) {
+  CreateSystem();
+  auto texture = render_system_->CreateTexture(
+      DataVolatility::kStaticReadWrite, kTextureWidth, kTextureHeight,
+      SamplerOptions(), TextureFormat::kRgba4);
+  ASSERT_NE(texture, nullptr);
+  auto* test_texture = static_cast<TestTexture*>(texture.Get());
+
+  EXPECT_TRUE(texture->Clear(Pixel(0x12, 0x34, 0x56, 0x78)));
+  const auto texels = test_texture->GetTexels();
+  for (int i = 0; i < kTextureWidth * kTextureHeight; ++i) {
+    ASSERT_EQ(texels[i * 2], 0x57) << i;
+    ASSERT_EQ(texels[i * 2 + 1], 0x13) << i;
+  }
+
+  EXPECT_TRUE(texture->ClearRegion(1, 1, 1, 1, Pixel(0xF0, 0, 0, 0)));
+  const int index = (kTextureWidth + 1) * 2;
+  EXPECT_EQ(texels[index], 0x00);
+  EXPECT_EQ(texels[index + 1], 0xF0);
+
+  EXPECT_EQ(state_.invalid_call_count, 0);
+  EXPECT_EQ(test_texture->GetInvalidCallCount(), 0);
+}
+
+TEST_F(TextureTest, SetInTexelsOfFormat) {
+  CreateSystem();
+  auto texture = render_system_->CreateTexture(
+      DataVolatility::kStaticReadWrite, kTextureWidth, kTextureHeight,
+      SamplerOptions(), TextureFormat::kR8);
+  ASSERT_NE(texture, nullptr);
+  auto* test_texture = static_cast<TestTexture*>(texture.Get());
+
+  std::vector<uint8_t> texels(kTextureWidth * kTextureHeight);
+  for (int i = 0; i < static_cast<int>(texels.size()); ++i) {
+    texels[i] = static_cast<uint8_t>(i);
+  }
+  EXPECT_FALSE(texture->Set(texels.data(), texels.size() - 1));
+  EXPECT_TRUE(texture->Set(texels.data(), texels.size()));
+  EXPECT_THAT(test_texture->GetTexels(), ElementsAreArray(texels));
+
+  std::vector<uint8_t> read(texels.size());
+  EXPECT_FALSE(texture->Get(read.data(), read.size() - 1));
+  EXPECT_TRUE(texture->Get(read.data(), read.size()));
+  EXPECT_THAT(read, ElementsAreArray(texels));
+
+  EXPECT_EQ(state_.invalid_call_count, 0);
+  EXPECT_EQ(test_texture->GetInvalidCallCount(), 0);
+}
+
+TEST_F(TextureTest, SetRegionInTexelsOfFormat) {
+  CreateSystem();
+  auto texture = render_system_->CreateTexture(
+      DataVolatility::kStaticReadWrite, kTextureWidth, kTextureHeight,
+      SamplerOptions(), TextureFormat::kRg8);
+  ASSERT_NE(texture, nullptr);
+  auto* test_texture = static_cast<TestTexture*>(texture.Get());
+  ASSERT_TRUE(texture->Clear());
+
+  // A 3x2 region of two byte texels, with only the bottom right 2x1 in the
+  // texture.
+  const std::vector<uint8_t> texels = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
+  EXPECT_FALSE(
+      texture->SetRegion(-1, -1, 3, 2, texels.data(), texels.size() - 1));
+  EXPECT_TRUE(texture->SetRegion(-1, -1, 3, 2, texels.data(), texels.size()));
+  const auto result = test_texture->GetTexels();
+  EXPECT_EQ(result[0], 9);
+  EXPECT_EQ(result[1], 10);
+  EXPECT_EQ(result[2], 11);
+  EXPECT_EQ(result[3], 12);
+  EXPECT_EQ(result[4], 0);
+  EXPECT_EQ(result[kTextureWidth * 2], 0);
+
+  EXPECT_EQ(state_.invalid_call_count, 0);
+  EXPECT_EQ(test_texture->GetInvalidCallCount(), 0);
+}
+
+TEST_F(TextureTest, PixelsOnlyForPixelFormats) {
+  CreateSystem();
+  auto texture = render_system_->CreateTexture(
+      DataVolatility::kStaticReadWrite, kTextureWidth, kTextureHeight,
+      SamplerOptions(), TextureFormat::kRg8);
+  ASSERT_NE(texture, nullptr);
+  auto* test_texture = static_cast<TestTexture*>(texture.Get());
+  const int modify_count = test_texture->GetModifyCount();
+
+  const auto pixels = MakePixels(kTextureWidth * kTextureHeight, {});
+  const auto packed_pixels =
+      MakePackedPixels(kTextureWidth * kTextureHeight, 0);
+  EXPECT_FALSE(texture->Set(pixels));
+  EXPECT_FALSE(texture->Set(packed_pixels));
+  EXPECT_FALSE(texture->SetRegion(0, 0, 1, 1, pixels));
+  EXPECT_FALSE(texture->SetRegion(0, 0, 1, 1, packed_pixels));
+  EXPECT_EQ(texture->Edit(), nullptr);
+  EXPECT_EQ(test_texture->GetModifyCount(), modify_count);
+
+  auto rgba8_texture = render_system_->CreateTexture(
+      DataVolatility::kStaticReadWrite, kTextureWidth, kTextureHeight,
+      SamplerOptions(), TextureFormat::kRgba8);
+  ASSERT_NE(rgba8_texture, nullptr);
+  EXPECT_TRUE(rgba8_texture->Set(pixels));
+  EXPECT_NE(rgba8_texture->Edit(), nullptr);
+
+  EXPECT_EQ(state_.invalid_call_count, 0);
+  EXPECT_EQ(test_texture->GetInvalidCallCount(), 0);
+}
+
+TEST_F(TextureTest, CannotGetStaticWrite) {
+  CreateSystem();
+  auto texture = render_system_->CreateTexture(DataVolatility::kStaticWrite,
+                                               kTextureWidth, kTextureHeight);
+  ASSERT_NE(texture, nullptr);
+  std::vector<Pixel> pixels(kTextureWidth * kTextureHeight);
+  EXPECT_FALSE(texture->Get(pixels.data(), pixels.size() * sizeof(Pixel)));
+}
+
+TEST_F(TextureTest, CannotGetWhileEditing) {
+  CreateSystem();
+  auto texture = render_system_->CreateTexture(DataVolatility::kStaticReadWrite,
+                                               kTextureWidth, kTextureHeight);
+  ASSERT_NE(texture, nullptr);
+  std::vector<Pixel> pixels(kTextureWidth * kTextureHeight);
+  auto view = texture->Edit();
+  ASSERT_NE(view, nullptr);
+  EXPECT_FALSE(texture->Get(pixels.data(), pixels.size() * sizeof(Pixel)));
+  view.reset();
+  EXPECT_TRUE(texture->Get(pixels.data(), pixels.size() * sizeof(Pixel)));
+}
+
 }  // namespace
 }  // namespace gb

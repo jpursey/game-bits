@@ -6,9 +6,11 @@
 #include "gb/render/render_system.h"
 
 #include <cstdint>
+#include <string>
 #include <string_view>
 #include <vector>
 
+#include "absl/strings/str_cat.h"
 #include "absl/types/span.h"
 #include "flatbuffers/flatbuffers.h"
 #include "gb/base/context_builder.h"
@@ -809,6 +811,160 @@ TEST_F(RenderSystemTest, LoadTextureArrayWithInvalidCount) {
 
   EXPECT_EQ(resource_system_->Load<TextureArray>("mem:/texture_array.gbta"),
             nullptr);
+}
+
+TEST_F(RenderSystemTest, SaveLoadTextureInEachFormat) {
+  CreateSystem();
+  for (TextureFormat format :
+       {TextureFormat::kRgba8Srgb, TextureFormat::kRgba8, TextureFormat::kRg8,
+        TextureFormat::kR8, TextureFormat::kRgba4}) {
+    std::vector<uint8_t> expected_texels(16 * 8 * GetTexelSize(format));
+    for (int i = 0; i < static_cast<int>(expected_texels.size()); ++i) {
+      expected_texels[i] = static_cast<uint8_t>(i * 7);
+    }
+    auto texture = render_system_->CreateTexture(
+        DataVolatility::kStaticReadWrite, 16, 8, SamplerOptions(), format);
+    ASSERT_NE(texture, nullptr);
+    ASSERT_TRUE(texture->Set(expected_texels.data(), expected_texels.size()));
+    const std::string name =
+        absl::StrCat("mem:/texture_", static_cast<int>(format), ".gbtx");
+    ASSERT_TRUE(render_system_->SaveTexture(name, texture.Get()));
+    texture.Reset();
+
+    texture = resource_system_->Load<Texture>(name);
+    ASSERT_NE(texture, nullptr) << name;
+    EXPECT_EQ(texture->GetFormat(), format);
+    EXPECT_EQ(texture->GetWidth(), 16);
+    EXPECT_EQ(texture->GetHeight(), 8);
+    auto* test_texture = static_cast<TestTexture*>(texture.Get());
+    EXPECT_THAT(test_texture->GetTexels(), ElementsAreArray(expected_texels))
+        << name;
+  }
+}
+
+TEST_F(RenderSystemTest, SaveLoadTextureArrayInEachFormat) {
+  CreateSystem();
+  for (TextureFormat format :
+       {TextureFormat::kRgba8Srgb, TextureFormat::kRgba8, TextureFormat::kRg8,
+        TextureFormat::kR8, TextureFormat::kRgba4}) {
+    const int texture_size = 16 * 8 * GetTexelSize(format);
+    std::vector<uint8_t> expected_texels(texture_size * 2);
+    for (int i = 0; i < static_cast<int>(expected_texels.size()); ++i) {
+      expected_texels[i] = static_cast<uint8_t>(i * 7);
+    }
+    auto texture_array = render_system_->CreateTextureArray(
+        DataVolatility::kStaticReadWrite, 2, 16, 8, SamplerOptions(), format);
+    ASSERT_NE(texture_array, nullptr);
+    ASSERT_TRUE(texture_array->Set(0, expected_texels.data(), texture_size));
+    ASSERT_TRUE(texture_array->Set(1, expected_texels.data() + texture_size,
+                                   texture_size));
+    const std::string name =
+        absl::StrCat("mem:/texture_array_", static_cast<int>(format), ".gbta");
+    ASSERT_TRUE(render_system_->SaveTextureArray(name, texture_array.Get()));
+    texture_array.Reset();
+
+    texture_array = resource_system_->Load<TextureArray>(name);
+    ASSERT_NE(texture_array, nullptr) << name;
+    EXPECT_EQ(texture_array->GetFormat(), format);
+    auto* test_texture_array =
+        static_cast<TestTextureArray*>(texture_array.Get());
+    EXPECT_THAT(test_texture_array->GetTexels(0),
+                ElementsAreArray(expected_texels.data(), texture_size))
+        << name;
+    EXPECT_THAT(
+        test_texture_array->GetTexels(1),
+        ElementsAreArray(expected_texels.data() + texture_size, texture_size))
+        << name;
+  }
+}
+
+TEST_F(RenderSystemTest, LoadTextureSavedAsPixels) {
+  CreateSystem();
+  const auto expected_pixels = MakeImageData();
+  auto texture =
+      render_system_->CreateTexture(DataVolatility::kStaticReadWrite, 16, 16);
+  ASSERT_NE(texture, nullptr);
+  ASSERT_TRUE(WriteResource<Texture>(
+      "mem:/image.gbtx", texture.Get(), kChunkTypeTexture,
+      [&expected_pixels](Context*, Texture*,
+                         flatbuffers::FlatBufferBuilder* builder) {
+        std::vector<uint32_t> packed_pixels;
+        for (const Pixel& pixel : expected_pixels) {
+          packed_pixels.push_back(pixel.Packed());
+        }
+        const auto fb_pixels = builder->CreateVector(packed_pixels);
+        fbs::TextureChunkBuilder chunk_builder(*builder);
+        chunk_builder.add_width(16);
+        chunk_builder.add_height(16);
+        chunk_builder.add_pixels(fb_pixels);
+        builder->Finish(chunk_builder.Finish());
+        return true;
+      }));
+  texture.Reset();
+
+  texture = resource_system_->Load<Texture>("mem:/image.gbtx");
+  ASSERT_NE(texture, nullptr);
+  EXPECT_EQ(texture->GetFormat(), TextureFormat::kRgba8Srgb);
+  auto* test_texture = static_cast<TestTexture*>(texture.Get());
+  EXPECT_THAT(test_texture->GetPixels(), ElementsAreArray(expected_pixels));
+}
+
+TEST_F(RenderSystemTest, LoadTextureArraySavedAsPixels) {
+  CreateSystem();
+  const auto expected_pixels = MakeImageData();
+  auto texture_array = render_system_->CreateTextureArray(
+      DataVolatility::kStaticReadWrite, 1, 16, 16);
+  ASSERT_NE(texture_array, nullptr);
+  ASSERT_TRUE(WriteResource<TextureArray>(
+      "mem:/texture_array.gbta", texture_array.Get(), kChunkTypeTextureArray,
+      [&expected_pixels](Context*, TextureArray*,
+                         flatbuffers::FlatBufferBuilder* builder) {
+        std::vector<uint32_t> packed_pixels;
+        for (const Pixel& pixel : expected_pixels) {
+          packed_pixels.push_back(pixel.Packed());
+        }
+        const auto fb_pixels = builder->CreateVector(packed_pixels);
+        fbs::TextureArrayChunkBuilder chunk_builder(*builder);
+        chunk_builder.add_count(1);
+        chunk_builder.add_width(16);
+        chunk_builder.add_height(16);
+        chunk_builder.add_pixels(fb_pixels);
+        builder->Finish(chunk_builder.Finish());
+        return true;
+      }));
+  texture_array.Reset();
+
+  texture_array =
+      resource_system_->Load<TextureArray>("mem:/texture_array.gbta");
+  ASSERT_NE(texture_array, nullptr);
+  EXPECT_EQ(texture_array->GetFormat(), TextureFormat::kRgba8Srgb);
+  auto* test_texture_array =
+      static_cast<TestTextureArray*>(texture_array.Get());
+  EXPECT_THAT(test_texture_array->GetPixels(0),
+              ElementsAreArray(expected_pixels));
+}
+
+TEST_F(RenderSystemTest, LoadTextureWithTooFewTexels) {
+  CreateSystem();
+  auto texture =
+      render_system_->CreateTexture(DataVolatility::kStaticReadWrite, 16, 16);
+  ASSERT_NE(texture, nullptr);
+  ASSERT_TRUE(WriteResource<Texture>(
+      "mem:/image.gbtx", texture.Get(), kChunkTypeTexture,
+      [](Context*, Texture*, flatbuffers::FlatBufferBuilder* builder) {
+        const auto fb_texels =
+            builder->CreateVector(std::vector<uint8_t>(16 * 16 * 2 - 1));
+        fbs::TextureChunkBuilder chunk_builder(*builder);
+        chunk_builder.add_width(16);
+        chunk_builder.add_height(16);
+        chunk_builder.add_format(fbs::TextureFormat_Rg8);
+        chunk_builder.add_texels(fb_texels);
+        builder->Finish(chunk_builder.Finish());
+        return true;
+      }));
+  texture.Reset();
+
+  EXPECT_EQ(resource_system_->Load<Texture>("mem:/image.gbtx"), nullptr);
 }
 
 TEST_F(RenderSystemTest, SaveShaderNotInEditMode) {

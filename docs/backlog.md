@@ -191,45 +191,6 @@ same for slots, removing the baselines and the subtraction in every gather, at
 the cost of a compare as each point is recorded. Measure a timed point before
 and after.
 
-## Volume textures and storage buffers
-
-- **Layers:** render, render_vulkan
-- **Size:** medium
-- **Feature workflow:** yes
-- **Depends on:** nothing
-- **Requested by:** Terra Diem *Chunk light volumes*
-- **Background:** Terra Diem's meshing assessment
-  (`docs/tech/meshing-assessment.md` there)
-
-Shaders can read only constants, 2D textures, and texture arrays
-(`BindingType`), and every texture is RGBA at 8 bits per channel. Data that
-varies through a volume, or is an array too large or too variable for a
-constants type, has nowhere to go. Add:
-- **3D textures**, with width, height, and depth, the usual sampler options
-  (filtering, wrap or clamp), and updates of a box at a time, so a program can
-  update part of a large volume or keep many small ones, for every
-  `DataVolatility`.
-- **Texel formats** for every kind of texture: at least one, two, and four
-  8-bit channels, and a packed 16-bit format of four 4-bit channels, besides
-  today's RGBA8. Small volumes are often one or two bytes per texel. The
-  backend reports which formats it can filter.
-- **Storage buffers:** arrays of structured data that shaders read (writing
-  can come later), bound in any binding set like constants, but sized when
-  created rather than by a constants type, and updated in ranges. Data for
-  each of thousands of draws (see *Shared mesh buffers and indirect draws*)
-  lives in one, indexed in the shader.
-- A binding type for each, checked against a shader's bindings as today's are,
-  with support in the test backend so `gb_render`'s tests cover them.
-
-Check by hand in `examples/render-check`: a 3D texture sampled with filtering
-by a quad that moves through it, and a storage buffer giving each of several
-draws its color.
-
-Terra Diem would keep a small volume of light for each chunk of its world
-(18^3 texels of one or two bytes), sample it with filtering in its block
-shaders, and update it when light changes, instead of rebuilding meshes with
-light in their vertices.
-
 ## Shared mesh buffers and indirect draws
 
 - **Layers:** render, render_vulkan

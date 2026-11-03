@@ -8,6 +8,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -16,6 +17,7 @@
 #include "gb/base/access_token.h"
 #include "gb/base/flags.h"
 #include "gb/base/type_info.h"
+#include "gb/image/pixel.h"
 
 namespace gb {
 
@@ -240,6 +242,66 @@ enum class DataVolatility : int {
   kPerFrame,         // Data is often changed per-frame. May require up to
                      // 3x or more memory over kStaticWrite.
 };
+
+//==============================================================================
+// TextureFormat
+//==============================================================================
+
+// The format of each texel in a texture.
+//
+// kRgba8Srgb is color, which shaders read converted from sRGB to linear. The
+// rest are read as stored, with each channel scaled to [0, 1].
+enum class TextureFormat : uint8_t {
+  kRgba8Srgb,  // Four 8-bit channels, sRGB color, as Pixel. 4 bytes.
+  kRgba8,      // Four 8-bit channels, as Pixel. 4 bytes.
+  kRg8,        // Two 8-bit channels, red first. 2 bytes.
+  kR8,         // One 8-bit channel. 1 byte.
+  kRgba4,      // Four 4-bit channels in a uint16_t: red in the top 4 bits,
+               // then green, blue, and alpha. 2 bytes.
+};
+
+// Returns the size of one texel in bytes, or zero for an invalid format.
+inline constexpr int GetTexelSize(TextureFormat format) {
+  switch (format) {
+    case TextureFormat::kRgba8Srgb:
+    case TextureFormat::kRgba8:
+      return 4;
+    case TextureFormat::kRg8:
+    case TextureFormat::kRgba4:
+      return 2;
+    case TextureFormat::kR8:
+      return 1;
+  }
+  return 0;
+}
+
+// Returns the size in bytes of a texture's texels.
+inline constexpr int64_t GetTextureSizeInBytes(TextureFormat format, int width,
+                                               int height, int depth = 1) {
+  return int64_t{width} * height * depth * GetTexelSize(format);
+}
+
+// Returns true if texels in the format are Pixels.
+inline constexpr bool IsPixelFormat(TextureFormat format) {
+  return format == TextureFormat::kRgba8Srgb || format == TextureFormat::kRgba8;
+}
+
+// Returns the texel for a pixel in the format, in the first
+// GetTexelSize(format) bytes of the result. kR8 and kRg8 take the pixel's
+// first channels, and kRgba4 the top 4 bits of each.
+inline uint32_t PixelToTexel(TextureFormat format, Pixel pixel) {
+  if (format == TextureFormat::kRgba4) {
+    const uint16_t value =
+        static_cast<uint16_t>(((pixel.r >> 4) << 12) | ((pixel.g >> 4) << 8) |
+                              ((pixel.b >> 4) << 4) | (pixel.a >> 4));
+    uint32_t texel = 0;
+    std::memcpy(&texel, &value, sizeof(value));
+    return texel;
+  }
+
+  // The 8-bit formats are a Pixel's first channels, in order.
+  return pixel.Packed();
+}
 
 //==============================================================================
 // BindingType

@@ -8,6 +8,7 @@
 
 #include <vector>
 
+#include "absl/container/flat_hash_set.h"
 #include "absl/log/check.h"
 #include "gb/render/draw_list.h"
 #include "gb/render/render_backend.h"
@@ -51,6 +52,9 @@ class TestRenderBackend final : public RenderBackend {
     TestRenderBuffer::Config vertex_buffer_config;
     TestRenderBuffer::Config index_buffer_config;
 
+    // Formats CanFilter() says can't be filtered.
+    absl::flat_hash_set<TextureFormat> unfilterable_formats;
+
     bool fail_create_texture = false;
     bool fail_create_texture_array = false;
     bool fail_create_shader_code = false;
@@ -76,13 +80,16 @@ class TestRenderBackend final : public RenderBackend {
   // Implementation of RenderBackend
   void SetClearColor(RenderInternal, Pixel color) override {}
   FrameDimensions GetFrameDimensions(RenderInternal) const override;
+  bool CanFilter(RenderInternal, TextureFormat format) const override;
   Texture* CreateTexture(RenderInternal, ResourceEntry entry,
                          DataVolatility volatility, int width, int height,
-                         const SamplerOptions& options) override;
+                         const SamplerOptions& options,
+                         TextureFormat format) override;
   TextureArray* CreateTextureArray(RenderInternal, ResourceEntry entry,
                                    DataVolatility volatility, int count,
                                    int width, int height,
-                                   const SamplerOptions& options) override;
+                                   const SamplerOptions& options,
+                                   TextureFormat format) override;
   std::unique_ptr<ShaderCode> CreateShaderCode(RenderInternal, const void* code,
                                                int64_t code_size) override;
   std::unique_ptr<RenderSceneType> CreateSceneType(

@@ -46,7 +46,8 @@ VulkanTextureArray::VulkanTextureArray(gb::ResourceEntry entry,
                                        DataVolatility volatility, int count,
                                        int width, int height,
                                        const SamplerOptions& options)
-    : TextureArray(std::move(entry), volatility, count, width, height, options),
+    : TextureArray(std::move(entry), volatility, count, width, height, options,
+                   TextureFormat::kRgba8Srgb),
       backend_(backend),
       sampler_(sampler) {
   host_layer_size_ = width * height * sizeof(Pixel);
@@ -198,12 +199,13 @@ void* VulkanTextureArray::ModifyHostData(int index) {
          (host_layer_size_ * index);
 }
 
-bool VulkanTextureArray::DoClear(int index, Pixel pixel) {
+bool VulkanTextureArray::DoClear(int index, const void* texel) {
   void* host_data = ModifyHostData(index);
   if (host_data == nullptr) {
     return false;
   }
 
+  const Pixel pixel = *static_cast<const Pixel*>(texel);
   if (pixel.Packed() == 0) {
     std::memset(host_data, 0, host_layer_size_);
   } else {

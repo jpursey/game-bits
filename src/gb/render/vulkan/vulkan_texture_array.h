@@ -69,7 +69,7 @@ class VulkanTextureArray : public TextureArray {
   void* ModifyHostData(int index);
 
   // TextureArray implementation.
-  bool DoClear(int index, Pixel pixel) override;
+  bool DoClear(int index, const void* texel) override;
   bool DoSet(int index, const void* pixels) override;
   bool DoGet(int index, void* out_pixels) override;
 

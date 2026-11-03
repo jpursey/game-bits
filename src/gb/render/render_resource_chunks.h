@@ -54,6 +54,13 @@ inline gb::DataVolatility FromFbs(fbs::DataVolatility type) {
   return RenderEnumFromFbs<fbs::DataVolatility, gb::DataVolatility>(type);
 }
 
+inline fbs::TextureFormat ToFbs(gb::TextureFormat type) {
+  return RenderEnumToFbs<fbs::TextureFormat, gb::TextureFormat>(type);
+}
+inline gb::TextureFormat FromFbs(fbs::TextureFormat type) {
+  return RenderEnumFromFbs<fbs::TextureFormat, gb::TextureFormat>(type);
+}
+
 inline fbs::DepthMode ToFbs(gb::DepthMode type) {
   return RenderEnumToFbs<fbs::DepthMode, gb::DepthMode>(type);
 }
