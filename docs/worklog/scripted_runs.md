@@ -83,9 +83,9 @@ pilot.AddSteps({gb::PilotWaitStep{.frames = 30},
 
 ### Scripts
 
-One step per line; `#` starts a comment. Names (of steps, keys, commands,
-conditions, and saved frames) are identifiers, as in C. Strings with spaces
-are quoted.
+One step per line; `#` starts a comment. Names (of keys, commands,
+conditions, and saved frames) are identifiers as in C, or integers. Other
+names, text, and labels are quoted.
 
 ```
 # Waits for the program to settle, then presses a button by its label.
@@ -526,9 +526,10 @@ struct PilotScript {
   std::vector<PilotStep> steps;
 };
 
-// Reads a script. Returns an error giving the line and column of each
-// problem.
-absl::StatusOr<PilotScript> ReadPilotScript(std::string text);
+// Reads a script. Returns an error giving the line and column of the first
+// problem, after the filename if there is one.
+absl::StatusOr<PilotScript> ReadPilotScript(std::string text,
+                                            std::string_view filename = {});
 
 // Creates a StepPilot from the command line's --pilot flags, with a frame
 // saver that writes PNGs to the output folder. Returns null if --pilot isn't
@@ -538,45 +539,55 @@ absl::StatusOr<std::unique_ptr<Pilot>> CreateCliPilot(
 ```
 
 - **Script reading** is a `gb_parse` `ParserProgram`: a lexer config (C
-  identifiers, strings, and integers including negative ones, `#` line
-  comments, and line breaks as tokens) and a grammar, so a step that doesn't
-  match fails with its line and column, and a new step is a new line of
-  grammar. `ReadPilotScript()` turns each matched step into a `PilotStep` by
-  the name of the alternative that matched. `hide window` becomes
-  `hide_window`, and is only allowed before every other step. Command and
-  condition names are checked as each step runs, as the program may add them
-  late (in a game state, say). Key names are kept as written; `PilotSdl`
-  checks them.
+  identifiers, double quoted strings with `\n`, `\t`, and `\xHH` escapes,
+  32-bit integers including negative ones, `#` line comments, and line breaks
+  as tokens) and a grammar, so a step that doesn't match fails with its line
+  and column, and a new step is a new line of grammar. `ReadPilotScript()`
+  turns each matched step into a `PilotStep` by the name of the alternative
+  that matched. `hide window` becomes `hide_window`, and is only allowed
+  before every other step. Frames can't be negative. Command and condition
+  names are checked as each step runs, as the program may add them late (in a
+  game state, say). Key names are kept as written; `PilotSdl` checks them.
+  Every name may be an identifier, an integer (kept as written, so `key 1`
+  and `save 007` work), or a string.
 
   ```
-  script { ([$steps=step] %linebreak)* [$steps=step] %end ; }
-  step {
-    $hide_window=("hide" "window") ;
-    $wait_for=("wait" "for" $condition=%ident [$frames=%int]) ;
-    $wait=("wait" $frames=%int) ;
-    $key=("key" $key=key_name) ;
-    $hold=("hold" $key=key_name $frames=%int) ;
-    $text=("text" $text=%string) ;
-    $move=("move" $x=%int $y=%int) ;
-    $click=("click" [$button=button] [$label=%string | $x=%int $y=%int]) ;
-    $wheel=("wheel" $amount=%int) ;
-    $run=("run" $command=%ident $args=value*) ;
-    $expect=("expect" $condition=%ident) ;
-    $save=("save" $name=%ident) ;
+  line {
+    %linebreak;
+    $step=step:"Unknown step" end_of_line:"Expected end of line";
   }
-  key_name { %ident ; %string ; }
-  button { "left" ; "middle" ; "right" ; }
-  value { %ident ; %int ; %string ; }
+  end_of_line { %linebreak; %end; }
+  step {
+    $hide_window=("hide" "window");
+    $wait_for=("wait" "for" $condition=name [$frames=%int]);
+    $wait=("wait" $frames=%int);
+    $key=("key" $key=name);
+    $hold=("hold" $key=name $frames=%int);
+    $text=("text" $text=%string);
+    $move=("move" $x=%int $y=%int);
+    $click=("click" [$button=button] [$label=%string | $x=%int $y=%int]);
+    $wheel=("wheel" $amount=%int);
+    $run=("run" $command=name $args=name*);
+    $expect=("expect" $condition=name);
+    $save=("save" $name=name);
+  }
+  name { %ident; %int; %string; }
+  button { "left"; "middle"; "right"; }
   ```
 
-  `Parser::Parse()` succeeds when the root rule matches, whether or not it
-  reached the end of the content, so the final `%end` is what makes a bad
-  line an error rather than the end of the script. A trial of this rule in
-  `gb_parse` found it parses blank lines, a last step without a line break,
-  and an empty script, rejects two steps on a line, and collects both
-  `$steps` in order, each telling which step it is by its name. A misspelled
-  step is reported as "Expected end of file" at the step's name, so CL6 gives
-  it a clearer message.
+  Each line is a `Parse()` of `line`, until the next token is the end of the
+  script, as OZ-3 parses its programs. So errors come in file order, and the
+  last line needs no line break. The parser reports the error at the furthest
+  token it reached, and of those the last one set, and a `:"..."` message is
+  set at the token where its item starts. So a line that isn't a step is
+  "Unknown step" at its first token, and values left over are "Expected end of
+  line" at the first extra one. Missing values are reported by the step, at
+  the token where the value should be.
+- **Steps as text** read back as themselves, so a logged step can be pasted
+  into a script. `gb_pilot` writes a name bare only if it is a C identifier or
+  an integer as written in decimal, and escapes text only as the script reads
+  it (`\"`, `\\`, `\n`, `\t`, and `\xHH` for other control characters,
+  leaving UTF-8 as it is).
 - **Saving:** `CreateCliPilot()`'s frame saver writes each frame as
   `<output>/<name>.png`, with `gb_image`'s `SaveImage()`.
 - **Command line:** `kCliPilotScript` (`--pilot <script>`, validated
@@ -722,9 +733,9 @@ CLAUDE.md's "Run an example" says so.
   works.
 - Mouse coordinates in SDL window pixels match the saved frame's pixels,
   including on a display scaled above 100% (CL11).
-- The rest of the step grammar holds in `gb_parse` as it did for `wait` and
-  `save` in the trial: `wait for` beside `wait`, `click`'s optional forms, and
-  `run`'s values stopping at the line break (CL6).
+- Confirmed in CL6, by `gb_pilot_script`'s tests: the step grammar holds in
+  `gb_parse`, with `wait for` beside `wait`, `click`'s optional forms, and
+  `run`'s values stopping at the line break.
 
 ## CLs
 
@@ -827,23 +838,26 @@ Depends on: CL2.
 - Can't be unit tested: hiding the window, which needs SDL's video subsystem
   and a window on screen. CL11 checks it.
 
-### CL6 [ ] pilot_script: Read scripts
+### CL6 [x] pilot_script: Read scripts
 
 Depends on: CL3.
 
 - New `gb_pilot_script` library: `PilotScript` and `ReadPilotScript()`, which
   reads a script into `PilotStep`s with a `ParserProgram` and the script
   grammar, with errors by line and column.
+- `gb_pilot`: steps convert to text that reads back as the same step.
 - Unused, so no visible change.
 
 **Verify**
 - Standard checks.
 - Unit tests: every step and its values, including `click`'s forms and `run`
-  with no values and with several; comments, blank lines, and a last step
-  with no line break after it; quoted key names, labels, and window-qualified
-  labels; `hide window` at the top, and failing after another step; a step
-  that doesn't match, an unknown step, and a step with values missing or left
-  over, each failing with its position.
+  with no values and with several; comments, blank lines, CRLF line breaks,
+  and a last step with no line break after it; quoted and integer names,
+  labels, window-qualified labels, and string escapes; `hide window` at the
+  top, and failing after another step; a step that doesn't match, an unknown
+  step, a step with values missing or left over, negative frames, and bad
+  tokens, each failing with its position; steps from code read back from
+  their text.
 
 ### CL7 [ ] pilot_script: Scripts from the command line
 

@@ -14,14 +14,30 @@
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/ascii.h"
-#include "absl/strings/escaping.h"
+#include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/str_format.h"
 
 namespace gb {
 namespace {
 
 // A save step fails if no frame is drawn within this many frames.
 constexpr int kMaxSaveFrames = 600;
+
+// Returns true if a name reads back as itself without quotes: a C identifier,
+// or an integer as it is written in decimal.
+bool IsBareName(std::string_view name) {
+  if (name.empty()) {
+    return false;
+  }
+  if (absl::ascii_isalpha(name[0]) || name[0] == '_') {
+    return std::all_of(name.begin(), name.end(), [](char ch) {
+      return absl::ascii_isalnum(ch) || ch == '_';
+    });
+  }
+  int value = 0;
+  return absl::SimpleAtoi(name, &value) && absl::StrCat(value) == name;
+}
 
 }  // namespace
 
@@ -32,15 +48,27 @@ constexpr int kMaxSaveFrames = 600;
 namespace internal {
 
 std::string FormatPilotName(std::string_view name) {
-  const bool is_word =
-      !name.empty() && std::all_of(name.begin(), name.end(), [](char ch) {
-        return absl::ascii_isalnum(ch) || ch == '_' || ch == '-';
-      });
-  return is_word ? std::string(name) : QuotePilotText(name);
+  return IsBareName(name) ? std::string(name) : QuotePilotText(name);
 }
 
 std::string QuotePilotText(std::string_view text) {
-  return absl::StrCat("\"", absl::CEscape(text), "\"");
+  std::string quoted = "\"";
+  for (const char ch : text) {
+    if (ch == '"' || ch == '\\') {
+      quoted.push_back('\\');
+      quoted.push_back(ch);
+    } else if (ch == '\n') {
+      quoted += "\\n";
+    } else if (ch == '\t') {
+      quoted += "\\t";
+    } else if (absl::ascii_iscntrl(ch)) {
+      absl::StrAppendFormat(&quoted, "\\x%02x", static_cast<unsigned char>(ch));
+    } else {
+      quoted.push_back(ch);
+    }
+  }
+  quoted.push_back('"');
+  return quoted;
 }
 
 }  // namespace internal

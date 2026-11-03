@@ -183,6 +183,8 @@ sub-libraries (organized as subdirectories).
       resource support, font loading, and a rendering implementation.
       *  [`gb_imgui_sdl`](src/gb/imgui/sdl): Library that implements SDL
          integration with the `gb_imgui` implementation.
+   *  [`gb_pilot_script`](src/gb/pilot/script): Reads pilot scripts, text
+      files of one step per line, into the steps a `StepPilot` runs.
 
 # Getting started
 

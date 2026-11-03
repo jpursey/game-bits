@@ -3,6 +3,7 @@
 ## Use of this source code is governed by an MIT-style License that can be found
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
+add_subdirectory(script)
 add_subdirectory(sdl)
 
 set(gb_pilot_SOURCE

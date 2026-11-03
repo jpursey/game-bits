@@ -33,16 +33,18 @@ namespace gb {
 // Each step, and PilotStep, converts to the script line it stands for wherever
 // Abseil converts a value to text (AbslStringify), such as absl::StrCat(),
 // absl::StrFormat()'s "%v", and LOG(): `click right "OK"`. Names are written
-// bare if they are one word, and quoted otherwise.
+// bare if they are a C identifier or an integer, and quoted otherwise. A script
+// reads each line back as the same step (see gb_pilot_script).
 //==============================================================================
 
 namespace internal {
 
-// Returns a name bare if it is one word (letters, digits, '_', and '-'), and
-// quoted otherwise.
+// Returns a name bare if it is a C identifier or an integer as written in
+// decimal, and quoted otherwise.
 std::string FormatPilotName(std::string_view name);
 
-// Returns text quoted, with C escapes.
+// Returns text quoted, escaping '"' and '\' with a '\', and control characters
+// as \n, \t, or \xHH.
 std::string QuotePilotText(std::string_view text);
 
 }  // namespace internal
