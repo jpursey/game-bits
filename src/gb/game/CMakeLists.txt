@@ -28,6 +28,7 @@ set(gb_game_DEPS
   absl::synchronization
   absl::time
   gb_base
+  gb_pilot
 )
 
 gb_add_library(gb_game)

@@ -177,7 +177,8 @@ class PilotHandle final {
 // 4. Call EndFrame().
 //
 // After the last frame:
-// - Exit with an error if HasFailed().
+// - Exit with an error if HasFailed(), or if the loop stopped before IsDone()
+//   (such as when the window was closed), as the run didn't finish.
 //
 // Throughout, log what goes wrong as errors, which a pilot may count as
 // failures.

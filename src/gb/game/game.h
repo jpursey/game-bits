@@ -15,11 +15,21 @@
 #include "gb/base/clock.h"
 #include "gb/base/context.h"
 #include "gb/base/validated_context.h"
+#include "gb/pilot/pilot.h"
 
 namespace gb {
 
 // The class provides a framework for the most basic game loop. It provides
 // support for a fixed or variable frame rate game loop.
+//
+// With a Pilot in its context, the game runs the pilot's frames instead (see
+// Pilot for the phases of a run): it stops once the pilot is done, calls
+// BeginFrame() and EndFrame() around each Update(), and passes the pilot's
+// delta time to every Update() without waiting on real time, so the clock and
+// max frame rate are unused. Run() returns false if the run failed, or if the
+// game stopped before the pilot was done. The rest of what a piloted program
+// does (input, the window, and saving frames) is left to the parts of the
+// program that handle each.
 //
 // This class is thread-safe.
 class Game {
@@ -36,13 +46,18 @@ class Game {
   // is not set, then the realtime clock will be used.
   static GB_CONTEXT_CONSTRAINT(kConstraintClock, kInOptional, Clock);
 
+  // Optional pilot that drives the game frame by frame (see the class comment).
+  // It must be stored as a Pilot, not as its subclass (such as with
+  // SetOwned<Pilot>()), or it isn't found.
+  static GB_CONTEXT_CONSTRAINT(kConstraintPilot, kInOptional, Pilot);
+
   // Pointer to this class. This is always set while the game is running.
   static GB_CONTEXT_CONSTRAINT(kConstraintGame, kScoped, Game);
 
   // Contract guaranteed by this class. Derived classes may provide additional
   // constraints.
-  using GameContract =
-      gb::ContextContract<kConstraintMaxFps, kConstraintClock, kConstraintGame>;
+  using GameContract = gb::ContextContract<kConstraintMaxFps, kConstraintClock,
+                                           kConstraintPilot, kConstraintGame>;
 
   // Default constructor and destructor.
   explicit Game() = default;
@@ -57,7 +72,7 @@ class Game {
 
   // Runs the game with the specified arguments and optional contract. Returns
   // true if the game exited normally, or false if an error occurred during
-  // initialization.
+  // initialization, or a pilot's run didn't pass (see the class comment).
   bool Run(GameContract contract, const std::vector<std::string_view>& args);
   bool Run(GameContract contract, int argc, char** argv) {
     // argv[0] is the program name, and argc may be zero.
@@ -91,7 +106,11 @@ class Game {
  private:
   void GameLoop();
 
+  // Runs the pilot's frames, returning whether its run passed.
+  bool PilotLoop();
+
   Clock* clock_ = nullptr;
+  Pilot* pilot_ = nullptr;
   ValidatedContext context_;
 };
 

@@ -383,7 +383,9 @@ and a program does the rest itself.
 4. Call `EndFrame()`. *`Game`.*
 
 **After the last frame:**
-- Exit with an error if `HasFailed()`. *`Game` (`Run()` returns false).*
+- Exit with an error if `HasFailed()`, or if the loop stopped before
+  `IsDone()` (such as when the window was closed), as the run didn't finish.
+  *`Game` (`Run()` returns false).*
 
 Throughout, log what goes wrong as errors. A `StepPilot` fails the run on any
 error logged while it runs, so a program's own errors fail it.
@@ -578,10 +580,20 @@ absl::StatusOr<std::unique_ptr<Pilot>> CreateCliPilot(
 ### Frames (gb_game)
 
 `Game` takes the pilot from its context (`kConstraintPilot`,
-optional). With one, `GameLoop()` passes the pilot's delta time as every
-`delta_time`, skips its sleep and spin, calls `BeginFrame()` and `EndFrame()`
-around `Update()`, and stops once `IsDone()`. `Run()` returns false if the
-pilot failed, which the programs already turn into exit code 1.
+optional). With one, `Run()` uses `PilotLoop()` in place of `GameLoop()`,
+which passes the pilot's delta time as every `delta_time`, never uses the
+clock (so there is no sleep or spin, and the max frame rate is unused), calls
+`BeginFrame()` and `EndFrame()` around `Update()`, and stops once `IsDone()`.
+`Run()` returns false if the pilot failed, which the programs already turn
+into exit code 1. It also returns false, logging an error, if `Update()` stops
+the game before the pilot is done (such as the window being closed), as the
+run didn't finish. A game that stops in the frame the pilot finishes (a last
+step that runs a quit command) passes.
+
+The loop stays in `Game`, rather than in a `Pilot::RunFrames()` given a frame
+callback: the pilot never runs the program's frames itself, it is only told
+where each one begins and ends. So the pilot doesn't learn that a run was cut
+short, and `Game`'s error is what reports it.
 
 ### Saving frames (gb_render, gb_render_vulkan)
 
@@ -756,7 +768,7 @@ Depends on: CL2.
   including by a command; done after the last step; an error logged from
   another thread failing the run; the key names of every step added.
 
-### CL4 [ ] game: Run frames for the pilot
+### CL4 [x] game: Run frames for the pilot
 
 Depends on: CL2.
 

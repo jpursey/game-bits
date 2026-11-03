@@ -21,12 +21,31 @@ bool Game::Run(GameContract contract,
   if (clock_ == nullptr) {
     clock_ = RealtimeClock::GetClock();
   }
-  bool init_succeeded = Init(args);
-  if (init_succeeded) {
-    GameLoop();
+  pilot_ = context_.GetPtr<Pilot>();
+  bool succeeded = Init(args);
+  if (succeeded) {
+    if (pilot_ != nullptr) {
+      succeeded = PilotLoop();
+    } else {
+      GameLoop();
+    }
   }
   CleanUp();
-  return init_succeeded;
+  return succeeded;
+}
+
+bool Game::PilotLoop() {
+  bool running = true;
+  while (running && !pilot_->IsDone()) {
+    pilot_->BeginFrame();
+    running = Update(pilot_->GetDeltaTime());
+    pilot_->EndFrame();
+  }
+  if (!pilot_->IsDone()) {
+    LOG(ERROR) << "The game stopped before its pilot was done.";
+    return false;
+  }
+  return !pilot_->HasFailed();
 }
 
 void Game::GameLoop() {

@@ -5,14 +5,28 @@
 
 #include "gb/game/game.h"
 
+#include <string_view>
+#include <vector>
+
+#include "absl/time/time.h"
+#include "gb/base/clock.h"
+#include "gb/base/context.h"
 #include "gb/base/fake_clock.h"
+#include "gb/pilot/fake_pilot.h"
+#include "gb/pilot/pilot.h"
+#include "gb/test/log_error_guard.h"
+#include "gb/test/log_recorder.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
 namespace gb {
 namespace {
 
+using ::testing::ElementsAre;
+using ::testing::Field;
+using ::testing::HasSubstr;
 using ::testing::IsEmpty;
+using ::testing::SizeIs;
 
 class TestGame : public Game {
  public:
@@ -235,6 +249,152 @@ TEST_F(GameTest, GameFrameRateRecoversAfterSlowFrame) {
   EXPECT_GE(game.GetLastDeltaTime(), absl::Milliseconds(10));
   EXPECT_LE(game.GetLastDeltaTime(),
             absl::Milliseconds(10) + absl::Microseconds(100));
+}
+
+//------------------------------------------------------------------------------
+// Piloted games
+//------------------------------------------------------------------------------
+
+// A clock that fails the test if it is used, as a piloted game never waits on
+// real time.
+class UnusedClock final : public Clock {
+ public:
+  absl::Time Now() override {
+    ADD_FAILURE() << "Now() called";
+    return absl::UnixEpoch();
+  }
+  void SleepFor(absl::Duration duration) override {
+    ADD_FAILURE() << "SleepFor() called";
+  }
+};
+
+// A game that records each update, and sets its pilot done after a number of
+// updates.
+class PilotTestGame final : public Game {
+ public:
+  // `pilot` must outlive this.
+  PilotTestGame(FakePilot* pilot, int done_after_updates)
+      : pilot_(pilot), done_after_updates_(done_after_updates) {}
+
+  // Stops the game itself at an update, before the pilot is done.
+  void SetStopAtUpdate(int update) { stop_at_update_ = update; }
+
+  // What each update saw: its delta time, the pilot's frame, and how many
+  // input events the frame had.
+  struct UpdateInfo {
+    bool operator==(const UpdateInfo&) const = default;
+
+    absl::Duration delta_time;
+    int frame = 0;
+    int input_count = 0;
+  };
+  const std::vector<UpdateInfo>& GetUpdates() const { return updates_; }
+
+  bool InitRun() const { return init_run_; }
+  bool CleanupRun() const { return cleanup_run_; }
+
+ protected:
+  bool Init(const std::vector<std::string_view>& args) override {
+    init_run_ = true;
+    return true;
+  }
+
+  bool Update(absl::Duration delta_time) override {
+    updates_.push_back(
+        {.delta_time = delta_time,
+         .frame = pilot_->GetFrame(),
+         .input_count = static_cast<int>(pilot_->GetInput().size())});
+    const int update = static_cast<int>(updates_.size());
+    if (update == done_after_updates_) {
+      pilot_->SetDone(true);
+    }
+    return update != stop_at_update_;
+  }
+
+  void CleanUp() override { cleanup_run_ = true; }
+
+ private:
+  FakePilot* const pilot_;
+  const int done_after_updates_;
+  int stop_at_update_ = 0;
+  bool init_run_ = false;
+  bool cleanup_run_ = false;
+  std::vector<UpdateInfo> updates_;
+};
+
+class GamePilotTest : public ::testing::Test {
+ protected:
+  GamePilotTest() {
+    pilot_.SetDeltaTime(absl::Milliseconds(10));
+    context_.SetPtr<Clock>(&clock_);
+    context_.SetPtr<Pilot>(&pilot_);
+  }
+
+  LogErrorGuard log_error_guard_;
+  UnusedClock clock_;
+  FakePilot pilot_;
+  Context context_;
+};
+
+TEST_F(GamePilotTest, RunsAFrameForEachUpdateUntilThePilotIsDone) {
+  pilot_.SetNextFrameInput({PilotTextEvent{.text = "a"}});
+  PilotTestGame game(&pilot_, 3);
+  EXPECT_TRUE(game.Run(&context_, {}));
+  using UpdateInfo = PilotTestGame::UpdateInfo;
+  EXPECT_THAT(game.GetUpdates(),
+              ElementsAre(UpdateInfo{absl::Milliseconds(10), 0, 1},
+                          UpdateInfo{absl::Milliseconds(10), 1, 0},
+                          UpdateInfo{absl::Milliseconds(10), 2, 0}));
+  EXPECT_EQ(pilot_.GetFrame(), 3);
+  EXPECT_TRUE(game.CleanupRun());
+}
+
+TEST_F(GamePilotTest, RunsNoFramesIfThePilotIsAlreadyDone) {
+  pilot_.SetDone(true);
+  PilotTestGame game(&pilot_, 0);
+  EXPECT_TRUE(game.Run(&context_, {}));
+  EXPECT_TRUE(game.InitRun());
+  EXPECT_THAT(game.GetUpdates(), IsEmpty());
+  EXPECT_TRUE(game.CleanupRun());
+}
+
+TEST_F(GamePilotTest, RunsNoFramesIfInitFails) {
+  class FailingInitGame final : public Game {
+   protected:
+    bool Init(const std::vector<std::string_view>& args) override {
+      return false;
+    }
+  };
+  FailingInitGame game;
+  EXPECT_FALSE(game.Run(&context_, {}));
+  EXPECT_EQ(pilot_.GetFrame(), 0);
+}
+
+TEST_F(GamePilotTest, ReturnsFalseIfThePilotFailed) {
+  pilot_.SetFailed(true);
+  PilotTestGame game(&pilot_, 2);
+  EXPECT_FALSE(game.Run(&context_, {}));
+  EXPECT_THAT(game.GetUpdates(), SizeIs(2));
+  EXPECT_TRUE(game.CleanupRun());
+}
+
+TEST_F(GamePilotTest, ReturnsFalseIfTheGameStopsBeforeThePilotIsDone) {
+  PilotTestGame game(&pilot_, 3);
+  game.SetStopAtUpdate(2);
+  EXPECT_FALSE(game.Run(&context_, {}));
+  EXPECT_THAT(game.GetUpdates(), SizeIs(2));
+  EXPECT_EQ(pilot_.GetFrame(), 2);
+  EXPECT_TRUE(game.CleanupRun());
+  EXPECT_THAT(log_error_guard_.TakeMessages(),
+              ElementsAre(Field(&LogRecorder::Message::text,
+                                HasSubstr("stopped before its pilot"))));
+}
+
+TEST_F(GamePilotTest, PassesIfTheGameStopsAsThePilotIsDone) {
+  PilotTestGame game(&pilot_, 2);
+  game.SetStopAtUpdate(2);
+  EXPECT_TRUE(game.Run(&context_, {}));
+  EXPECT_THAT(game.GetUpdates(), SizeIs(2));
 }
 
 }  // namespace
