@@ -6,6 +6,7 @@
 #ifndef GB_RENDER_VULKAN_VULKAN_TEXTURE_ARRAY_H_
 #define GB_RENDER_VULKAN_VULKAN_TEXTURE_ARRAY_H_
 
+#include <cstdint>
 #include <memory>
 
 #include "absl/container/flat_hash_set.h"
@@ -39,7 +40,8 @@ class VulkanTextureArray : public TextureArray {
                                     VulkanBackend* backend, vk::Sampler sampler,
                                     DataVolatility volatility, int count,
                                     int width, int height,
-                                    const SamplerOptions& options);
+                                    const SamplerOptions& options,
+                                    TextureFormat format);
 
   //----------------------------------------------------------------------------
   // Properties
@@ -57,29 +59,39 @@ class VulkanTextureArray : public TextureArray {
  protected:
   VulkanTextureArray(gb::ResourceEntry entry, VulkanBackend* backend,
                      vk::Sampler sampler, DataVolatility volatility, int count,
-                     int width, int height, const SamplerOptions& options);
+                     int width, int height, const SamplerOptions& options,
+                     TextureFormat format);
   ~VulkanTextureArray() override;
 
   bool FrameInUse(int frame) const { return backend_->IsFrameInUse(frame); }
   bool CreateImage();
   std::unique_ptr<VulkanBuffer> CreateHostBuffer();
   bool EnsureHostBufferIsWritable();
-  void GenerateMipmaps(int index);
   void UploadTexture(VulkanRenderState* state, int index);
-  void* ModifyHostData(int index);
+
+  // Returns the size in bytes of one texture, without its mipmaps.
+  int64_t GetLayerSizeInBytes() const {
+    return GetTextureSizeInBytes(GetFormat(), GetWidth(), GetHeight());
+  }
+
+  // Returns the host data of a texture, followed by its mipmaps.
+  uint8_t* GetHostData(int index);
+
+  // Returns the host data of a texture to modify, or null if it can't be.
+  uint8_t* ModifyHostData(int index);
 
   // TextureArray implementation.
   bool DoClear(int index, const void* texel) override;
-  bool DoSet(int index, const void* pixels) override;
-  bool DoGet(int index, void* out_pixels) override;
+  bool DoSet(int index, const void* texels) override;
+  bool DoGet(int index, void* out_texels) override;
 
  private:
   static constexpr int kNeverUsedFrame = -1000;
 
   VulkanBackend* const backend_ = nullptr;
   const vk::Sampler sampler_;
-  int mip_levels_ = 1;
-  int host_layer_size_ = 0;
+  const int mip_levels_;
+  const int64_t host_layer_size_;
 
   ImageHandle image_handle_ = {};
   int render_frame_ = kNeverUsedFrame;

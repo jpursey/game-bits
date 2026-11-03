@@ -6,6 +6,7 @@
 #ifndef GB_RENDER_RENDER_TYPES_H_
 #define GB_RENDER_RENDER_TYPES_H_
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -301,6 +302,26 @@ inline uint32_t PixelToTexel(TextureFormat format, Pixel pixel) {
 
   // The 8-bit formats are a Pixel's first channels, in order.
   return pixel.Packed();
+}
+
+// Writes "count" copies of "texel", which is GetTexelSize(format) bytes, to
+// "out_texels".
+inline void FillTexels(TextureFormat format, const void* texel, int count,
+                       void* out_texels) {
+  if (count <= 0) {
+    return;
+  }
+  uint8_t* const out = static_cast<uint8_t*>(out_texels);
+  const int64_t size = int64_t{count} * GetTexelSize(format);
+  int64_t filled = GetTexelSize(format);
+  std::memcpy(out, texel, filled);
+
+  // Each copy doubles what is filled, so there are few calls of any size.
+  while (filled < size) {
+    const int64_t copy_size = std::min(filled, size - filled);
+    std::memcpy(out + filled, out, copy_size);
+    filled += copy_size;
+  }
 }
 
 //==============================================================================

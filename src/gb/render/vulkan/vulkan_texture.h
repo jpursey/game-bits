@@ -7,6 +7,7 @@
 #define GB_RENDER_VULKAN_VULKAN_TEXTURE_H_
 
 #include <algorithm>
+#include <cstdint>
 #include <memory>
 
 #include "gb/render/texture.h"
@@ -38,7 +39,8 @@ class VulkanTexture : public Texture {
   static VulkanTexture* Create(gb::ResourceEntry entry, VulkanBackend* backend,
                                vk::Sampler sampler, DataVolatility volatility,
                                int width, int height,
-                               const SamplerOptions& options);
+                               const SamplerOptions& options,
+                               TextureFormat format);
 
   //----------------------------------------------------------------------------
   // Properties
@@ -58,7 +60,8 @@ class VulkanTexture : public Texture {
  protected:
   VulkanTexture(gb::ResourceEntry entry, VulkanBackend* backend,
                 vk::Sampler sampler, DataVolatility volatility, int width,
-                int height, const SamplerOptions& options);
+                int height, const SamplerOptions& options,
+                TextureFormat format);
   ~VulkanTexture() override;
 
   struct DirtyRegion {
@@ -85,10 +88,23 @@ class VulkanTexture : public Texture {
   bool FrameInUse(int frame) const { return backend_->IsFrameInUse(frame); }
   std::unique_ptr<VulkanBuffer> CreateHostBuffer();
   std::unique_ptr<VulkanImage> CreateImage();
+
+  // Returns the size in bytes of the texture's texels, without its mipmaps.
+  int64_t GetSizeInBytes() const {
+    return GetTextureSizeInBytes(GetFormat(), GetWidth(), GetHeight());
+  }
+
+  // Returns the offset in bytes of texel (x, y) in a host buffer.
+  int64_t GetRegionOffset(int x, int y) const {
+    return (static_cast<int64_t>(y) * GetWidth() + x) *
+           GetTexelSize(GetFormat());
+  }
+
+  // Clears or copies a region of a host buffer, in texels of the format.
   void ClearRegion(void* buffer, int x, int y, int width, int height,
-                   Pixel pixel);
+                   const void* texel);
   void CopyRegion(void* buffer, int x, int y, int width, int height,
-                  const void* pixels, int stride);
+                  const void* texels, int stride);
   void SetAllImageHandles(VulkanImage* image) {
     for (ImageHandle& handle : image_handles_) {
       handle.version += 1;
@@ -111,8 +127,8 @@ class VulkanTexture : public Texture {
  private:
   VulkanBackend* const backend_ = nullptr;
   const vk::Sampler sampler_;
-  int mip_levels_ = 1;
-  int host_size_ = 0;
+  const int mip_levels_;
+  const int64_t host_size_;
   ImageHandle image_handles_[kMaxFramesInFlight] = {};
 };
 

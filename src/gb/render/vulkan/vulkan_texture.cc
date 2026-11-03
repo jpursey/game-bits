@@ -13,9 +13,10 @@
 
 #include "absl/container/inlined_vector.h"
 #include "absl/log/log.h"
+#include "gb/render/mipmaps.h"
 #include "gb/render/vulkan/vulkan_backend.h"
 #include "gb/render/vulkan/vulkan_buffer.h"
-#include "stb_image_resize.h"
+#include "gb/render/vulkan/vulkan_format.h"
 
 namespace gb {
 
@@ -31,14 +32,15 @@ class VulkanStaticWriteTexture final : public VulkanTexture {
  public:
   VulkanStaticWriteTexture(gb::ResourceEntry entry, VulkanBackend* backend,
                            vk::Sampler sampler, int width, int height,
-                           const SamplerOptions& options)
+                           const SamplerOptions& options, TextureFormat format)
       : VulkanTexture(std::move(entry), backend, sampler,
-                      DataVolatility::kStaticWrite, width, height, options) {}
+                      DataVolatility::kStaticWrite, width, height, options,
+                      format) {}
 
  protected:
   bool Init() override;
   bool DoClear(int x, int y, int width, int height, const void* texel) override;
-  bool DoSet(int x, int y, int width, int height, const void* pixels,
+  bool DoSet(int x, int y, int width, int height, const void* texels,
              int stride) override;
   bool DoGet(void* out_texels) override;
   void* DoEditBegin() override;
@@ -110,18 +112,17 @@ bool VulkanStaticWriteTexture::DoClear(int x, int y, int width, int height,
   if (!PrepForWrite(x, y, width, height)) {
     return false;
   }
-  ClearRegion(host_buffer_->GetData(), x, y, width, height,
-              *static_cast<const Pixel*>(texel));
+  ClearRegion(host_buffer_->GetData(), x, y, width, height, texel);
   AddDirtyRegion(x, y, width, height);
   return true;
 }
 
 bool VulkanStaticWriteTexture::DoSet(int x, int y, int width, int height,
-                                     const void* pixels, int stride) {
+                                     const void* texels, int stride) {
   if (!PrepForWrite(x, y, width, height)) {
     return false;
   }
-  CopyRegion(host_buffer_->GetData(), x, y, width, height, pixels, stride);
+  CopyRegion(host_buffer_->GetData(), x, y, width, height, texels, stride);
   AddDirtyRegion(x, y, width, height);
   return true;
 }
@@ -181,15 +182,16 @@ class VulkanStaticReadWriteTexture final : public VulkanTexture {
  public:
   VulkanStaticReadWriteTexture(gb::ResourceEntry entry, VulkanBackend* backend,
                                vk::Sampler sampler, int width, int height,
-                               const SamplerOptions& options)
+                               const SamplerOptions& options,
+                               TextureFormat format)
       : VulkanTexture(std::move(entry), backend, sampler,
-                      DataVolatility::kStaticReadWrite, width, height,
-                      options) {}
+                      DataVolatility::kStaticReadWrite, width, height, options,
+                      format) {}
 
  protected:
   bool Init() override;
   bool DoClear(int x, int y, int width, int height, const void* texel) override;
-  bool DoSet(int x, int y, int width, int height, const void* pixels,
+  bool DoSet(int x, int y, int width, int height, const void* texels,
              int stride) override;
   bool DoGet(void* out_texels) override;
   void* DoEditBegin() override;
@@ -236,13 +238,12 @@ bool VulkanStaticReadWriteTexture::DoClear(int x, int y, int width, int height,
   if (!MarkDirty(x, y, width, height)) {
     return false;
   }
-  ClearRegion(host_buffer_->GetData(), x, y, width, height,
-              *static_cast<const Pixel*>(texel));
+  ClearRegion(host_buffer_->GetData(), x, y, width, height, texel);
   return true;
 }
 
 bool VulkanStaticReadWriteTexture::DoSet(int x, int y, int width, int height,
-                                         const void* pixels, int stride) {
+                                         const void* texels, int stride) {
   if (const bool copy_contents =
           x != 0 || y != 0 || width != GetWidth() || height != GetHeight();
       !EnsureHostBufferIsWritable(copy_contents)) {
@@ -251,14 +252,13 @@ bool VulkanStaticReadWriteTexture::DoSet(int x, int y, int width, int height,
   if (!MarkDirty(x, y, width, height)) {
     return false;
   }
-  CopyRegion(host_buffer_->GetData(), x, y, width, height, pixels, stride);
+  CopyRegion(host_buffer_->GetData(), x, y, width, height, texels, stride);
   return true;
 }
 
 bool VulkanStaticReadWriteTexture::DoGet(void* out_texels) {
   // The host buffer holds the texture first, then its mipmaps.
-  std::memcpy(out_texels, host_buffer_->GetData(),
-              GetWidth() * GetHeight() * sizeof(Pixel));
+  std::memcpy(out_texels, host_buffer_->GetData(), GetSizeInBytes());
   return true;
 }
 
@@ -354,14 +354,15 @@ class VulkanPerFrameTexture final : public VulkanTexture {
  public:
   VulkanPerFrameTexture(gb::ResourceEntry entry, VulkanBackend* backend,
                         vk::Sampler sampler, int width, int height,
-                        const SamplerOptions& options)
+                        const SamplerOptions& options, TextureFormat format)
       : VulkanTexture(std::move(entry), backend, sampler,
-                      DataVolatility::kPerFrame, width, height, options) {}
+                      DataVolatility::kPerFrame, width, height, options,
+                      format) {}
 
  protected:
   bool Init() override;
   bool DoClear(int x, int y, int width, int height, const void* texel) override;
-  bool DoSet(int x, int y, int width, int height, const void* pixels,
+  bool DoSet(int x, int y, int width, int height, const void* texels,
              int stride) override;
   bool DoGet(void* out_texels) override;
   void* DoEditBegin() override;
@@ -393,7 +394,7 @@ bool VulkanPerFrameTexture::Init() {
       return false;
     }
   }
-  local_buffer_ = std::calloc(GetWidth() * GetHeight() * sizeof(Pixel), 1);
+  local_buffer_ = std::calloc(GetSizeInBytes(), 1);
   if (local_buffer_ == nullptr) {
     return false;
   }
@@ -405,8 +406,7 @@ bool VulkanPerFrameTexture::Init() {
 
 bool VulkanPerFrameTexture::DoClear(int x, int y, int width, int height,
                                     const void* texel) {
-  ClearRegion(local_buffer_, x, y, width, height,
-              *static_cast<const Pixel*>(texel));
+  ClearRegion(local_buffer_, x, y, width, height, texel);
   for (auto& frame_data : frame_data_) {
     if (frame_data.dirty) {
       UnionDirtyRegion(&frame_data.dirty_region, x, y, width, height);
@@ -419,8 +419,8 @@ bool VulkanPerFrameTexture::DoClear(int x, int y, int width, int height,
 }
 
 bool VulkanPerFrameTexture::DoSet(int x, int y, int width, int height,
-                                  const void* pixels, int stride) {
-  CopyRegion(local_buffer_, x, y, width, height, pixels, stride);
+                                  const void* texels, int stride) {
+  CopyRegion(local_buffer_, x, y, width, height, texels, stride);
   for (auto& frame_data : frame_data_) {
     if (frame_data.dirty) {
       UnionDirtyRegion(&frame_data.dirty_region, x, y, width, height);
@@ -433,8 +433,7 @@ bool VulkanPerFrameTexture::DoSet(int x, int y, int width, int height,
 }
 
 bool VulkanPerFrameTexture::DoGet(void* out_texels) {
-  std::memcpy(out_texels, local_buffer_,
-              GetWidth() * GetHeight() * sizeof(Pixel));
+  std::memcpy(out_texels, local_buffer_, GetSizeInBytes());
   return true;
 }
 
@@ -458,8 +457,8 @@ void VulkanPerFrameTexture::DoRender(VulkanRenderState* state) {
   const auto& region = frame_data.dirty_region;
   CopyRegion(frame_data.host->GetData(), region.x, region.y, region.width,
              region.height,
-             static_cast<const Pixel*>(local_buffer_) +
-                 (region.y * GetWidth() + region.x),
+             static_cast<const uint8_t*>(local_buffer_) +
+                 GetRegionOffset(region.x, region.y),
              GetWidth());
   UpdateImage(state, frame_data.host.get(), frame_data.image.get(), region);
   frame_data.dirty_region = {};
@@ -471,26 +470,13 @@ void VulkanPerFrameTexture::DoRender(VulkanRenderState* state) {
 VulkanTexture::VulkanTexture(gb::ResourceEntry entry, VulkanBackend* backend,
                              vk::Sampler sampler, DataVolatility volatility,
                              int width, int height,
-                             const SamplerOptions& options)
-    : Texture(std::move(entry), volatility, width, height, options,
-              TextureFormat::kRgba8Srgb),
+                             const SamplerOptions& options,
+                             TextureFormat format)
+    : Texture(std::move(entry), volatility, width, height, options, format),
       backend_(backend),
-      sampler_(sampler) {
-  host_size_ = width * height * sizeof(Pixel);
-  if (options.mipmap) {
-    int size = options.tile_size;
-    if (size == 0) {
-      size = std::min(GetWidth(), GetHeight());
-    }
-    size >>= 1;
-    while (size != 0) {
-      host_size_ +=
-          (width >> mip_levels_) * (height >> mip_levels_) * sizeof(Pixel);
-      size >>= 1;
-      ++mip_levels_;
-    }
-  }
-}
+      sampler_(sampler),
+      mip_levels_(GetMipLevelCount(width, height, options)),
+      host_size_(GetMipChainSizeInBytes(format, width, height, mip_levels_)) {}
 
 VulkanTexture::~VulkanTexture() {}
 
@@ -498,21 +484,21 @@ VulkanTexture* VulkanTexture::Create(gb::ResourceEntry entry,
                                      VulkanBackend* backend,
                                      vk::Sampler sampler,
                                      DataVolatility volatility, int width,
-                                     int height,
-                                     const SamplerOptions& options) {
+                                     int height, const SamplerOptions& options,
+                                     TextureFormat format) {
   VulkanTexture* texture = nullptr;
   switch (volatility) {
     case DataVolatility::kStaticWrite:
       texture = new VulkanStaticWriteTexture(std::move(entry), backend, sampler,
-                                             width, height, options);
+                                             width, height, options, format);
       break;
     case DataVolatility::kStaticReadWrite:
       texture = new VulkanStaticReadWriteTexture(
-          std::move(entry), backend, sampler, width, height, options);
+          std::move(entry), backend, sampler, width, height, options, format);
       break;
     case DataVolatility::kPerFrame:
       texture = new VulkanPerFrameTexture(std::move(entry), backend, sampler,
-                                          width, height, options);
+                                          width, height, options, format);
       break;
     default:
       LOG(ERROR) << "Unhandled data volatility for texture";
@@ -526,10 +512,13 @@ VulkanTexture* VulkanTexture::Create(gb::ResourceEntry entry,
 }
 
 std::unique_ptr<VulkanImage> VulkanTexture::CreateImage() {
+  const VulkanTextureFormat format = GetVulkanTextureFormat(GetFormat());
   return VulkanImage::Create(
-      backend_, GetWidth(), GetHeight(), 1, vk::Format::eR8G8B8A8Srgb,
+      backend_, GetWidth(), GetHeight(), 1, format.format,
       vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
-      VulkanImage::Options().SetMipLevels(mip_levels_));
+      VulkanImage::Options()
+          .SetMipLevels(mip_levels_)
+          .SetComponents(format.components));
 }
 
 std::unique_ptr<VulkanBuffer> VulkanTexture::CreateHostBuffer() {
@@ -546,8 +535,9 @@ void VulkanTexture::UpdateImage(VulkanRenderState* state,
                                 VulkanBuffer* host_buffer, VulkanImage* image,
                                 const DirtyRegion& region, bool update_mips) {
   state->image_updates.emplace_back(
-      host_buffer->Get(), /*src_offset=*/0, image->Get(), /*mip_level=*/0,
-      GetWidth(), GetHeight(),
+      host_buffer->Get(),
+      static_cast<uint32_t>(GetRegionOffset(region.x, region.y)), image->Get(),
+      /*mip_level=*/0, GetWidth(), GetHeight(),
       /*image_layer=*/0, region.x, region.y, region.width, region.height);
   if (update_mips) {
     // A texture updated in several regions has none that covers the whole
@@ -562,71 +552,42 @@ void VulkanTexture::UpdateImage(VulkanRenderState* state,
     return;
   }
 
-  int src_tile_size = GetSamplerOptions().tile_size;
-  int src_width = GetWidth();
-  int src_height = GetHeight();
-  uint32_t offset = src_width * src_height * sizeof(Pixel);
-  unsigned char* src = static_cast<unsigned char*>(host_buffer->GetData());
-  unsigned char* dst = src + offset;
+  GenerateMipmaps(GetFormat(), GetWidth(), GetHeight(), mip_levels_,
+                  GetSamplerOptions().tile_size, host_buffer->GetData());
   for (int mip = 1; mip < mip_levels_; ++mip) {
-    int dst_width = src_width >> 1;
-    int dst_height = src_height >> 1;
-    uint32_t mip_byte_size = dst_width * dst_height * sizeof(Pixel);
-
-    if (src_tile_size == 0) {
-      stbir_resize_uint8_srgb(src, src_width, src_height, 0, dst, dst_width,
-                              dst_height, 0, 4, 3, 0);
-    } else {
-      int dst_tile_size = src_tile_size >> 1;
-      int src_tile_stride = src_width * sizeof(Pixel);
-      int dst_tile_stride = dst_width * sizeof(Pixel);
-      for (int y = 0; y < src_height; y += src_tile_size) {
-        unsigned char* tile_src = src + (src_tile_stride * y);
-        unsigned char* tile_dst = dst + (dst_tile_stride * y / 2);
-        for (int x = 0; x < src_width; x += src_tile_size) {
-          stbir_resize_uint8_srgb(tile_src, src_tile_size, src_tile_size,
-                                  src_tile_stride, tile_dst, dst_tile_size,
-                                  dst_tile_size, dst_tile_stride, 4, 3, 0);
-          tile_src += src_tile_size * sizeof(Pixel);
-          tile_dst += dst_tile_size * sizeof(Pixel);
-        }
-      }
-      src_tile_size = dst_tile_size;
-    }
-
-    state->image_updates.emplace_back(host_buffer->Get(), offset, image->Get(),
-                                      mip, dst_width, dst_height);
-
-    src = dst;
-    src_width = dst_width;
-    src_height = dst_height;
-
-    offset += mip_byte_size;
-    dst += mip_byte_size;
+    state->image_updates.emplace_back(
+        host_buffer->Get(),
+        static_cast<uint32_t>(
+            GetMipLevelOffset(GetFormat(), GetWidth(), GetHeight(), mip)),
+        image->Get(), mip, GetWidth() >> mip, GetHeight() >> mip);
   }
 }
 
 void VulkanTexture::ClearRegion(void* buffer, int x, int y, int width,
-                                int height, Pixel pixel) {
-  Pixel* dst = static_cast<Pixel*>(buffer) + (y * GetWidth() + x);
+                                int height, const void* texel) {
+  const int row_size = GetWidth() * GetTexelSize(GetFormat());
+  uint8_t* dst = static_cast<uint8_t*>(buffer) + GetRegionOffset(x, y);
   for (int row = 0; row < height; ++row) {
-    std::fill_n(dst, width, pixel);
-    dst += GetWidth();
+    FillTexels(GetFormat(), texel, width, dst);
+    dst += row_size;
   }
 }
 
 void VulkanTexture::CopyRegion(void* buffer, int x, int y, int width,
-                               int height, const void* pixels, int stride) {
-  Pixel* dst = static_cast<Pixel*>(buffer) + (y * GetWidth() + x);
-  const Pixel* src = static_cast<const Pixel*>(pixels);
+                               int height, const void* texels, int stride) {
+  uint8_t* dst = static_cast<uint8_t*>(buffer) + GetRegionOffset(x, y);
+  const uint8_t* src = static_cast<const uint8_t*>(texels);
   if (stride == width && width == GetWidth()) {
-    std::memcpy(dst, src, width * height * sizeof(Pixel));
+    std::memcpy(dst, src, GetTextureSizeInBytes(GetFormat(), width, height));
     return;
   }
+  const int texel_size = GetTexelSize(GetFormat());
+  const int dst_row_size = GetWidth() * texel_size;
+  const int src_row_size = stride * texel_size;
   for (int row = 0; row < height; ++row) {
-    std::memcpy(dst, src, width * sizeof(Pixel));
-    dst += GetWidth();
-    src += stride;
+    std::memcpy(dst, src, width * texel_size);
+    dst += dst_row_size;
+    src += src_row_size;
   }
 }
 

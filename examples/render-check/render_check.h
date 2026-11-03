@@ -58,8 +58,8 @@ class LogCounter final : public absl::LogSink {
 //==============================================================================
 
 // Exercises the Vulkan backend by hand: window resizing, binding data churn,
-// texture and texture array updates while they are drawn, and each material
-// blend mode.
+// texture and texture array updates while they are drawn, each texture format,
+// and each material blend mode.
 class RenderCheck final {
  public:
   RenderCheck() = default;
@@ -101,6 +101,7 @@ class RenderCheck final {
   bool InitQuads();
   bool InitTextures();
   bool InitBlendQuads();
+  bool InitFormatTextures();
   void CleanUp();
 
   bool ProcessEvents();
@@ -114,8 +115,11 @@ class RenderCheck final {
   void DrawTextureArrayGui();
   void DrawGuiCheckGui();
   void DrawBlendGui();
+  void DrawFormatGui();
   void DrawLogGui();
   void DrawExtraRects();
+  void DrawFormatTextures();
+  void AddFormatStripes();
   void DrawQuads();
 
   void CreateInstances();
@@ -181,6 +185,14 @@ class RenderCheck final {
   bool cycle_layer_ = false;
   std::string read_write_array_result_;
   std::string static_write_array_result_;
+
+  // A texture in each format, drawn by DrawFormatTextures().
+  struct FormatTexture {
+    const char* name;
+    gb::Texture* texture;
+    ImTextureID id;
+  };
+  std::vector<FormatTexture> format_textures_;
 
   // GUI.
   int extra_rects_ = 0;

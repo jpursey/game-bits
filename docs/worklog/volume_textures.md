@@ -198,13 +198,20 @@ textures and storage buffers it uses, so authored content can carry them.
   devices to support it, while it requires `B4G4R4A4_UNORM_PACK16` (sampled
   and filtered). That format's bits are blue, green, red, alpha from the top,
   so the image view swaps red and blue, and the shader reads ours.
-- `CanFilter()` asks the device for `eSampledImageFilterLinear` on each
-  format, once.
+- `CanFilter()` asks the device whether the format's Vulkan format has
+  `eSampledImageFilterLinear` with optimal tiling.
 - Mipmaps resize with `stb_image_resize`: sRGB-aware for `kRgba8Srgb` (as
-  today), and linear with the format's channel count for the 8-bit formats.
-  `kRgba4` is unpacked to RGBA8, resized, and packed again.
+  before), and linear with the format's channel count for the 8-bit formats.
+  `kRgba4` is unpacked to RGBA8, resized, and packed again. The mip level
+  count, each level's offset, and their generation are free functions in
+  `gb/render/mipmaps.h`, as nothing in them is Vulkan's. `VulkanTexture` and
+  `VulkanTextureArray` share them, and so can any other backend.
 - `VulkanTexture` and `VulkanTextureArray` do their host buffer arithmetic in
-  texels of the format's size, rather than `Pixel`s.
+  texels of the format's size, rather than `Pixel`s. Each
+  `VulkanRenderState::ImageUpdate` gives the offset of its region's first
+  texel, so the backend needs no texel size.
+- `GetVulkanTextureFormat()` returns the Vulkan format with the view's
+  component mapping, so no image can take one without the other.
 
 ### Volume textures (gb_render)
 
@@ -304,9 +311,9 @@ class VulkanTexels {
 
 - The Vulkan formats above can be 3D, optimally tiled, sampled images on this
   machine's device, and at the sizes we allow (CL5).
-- `B4G4R4A4_UNORM_PACK16` with a swizzled view reads back as our bit order
-  (CL2, in render-check).
-- `stb_image_resize` resizes 1 and 2 channel 8-bit images linearly (CL2).
+- Confirmed in CL2: `B4G4R4A4_UNORM_PACK16` with a swizzled view reads back
+  as our bit order (render-check), and `stb_image_resize` resizes 1 and 2
+  channel 8-bit images (unit tests).
 - `std430` arrays of a struct with a `vec4` have no padding the C++ struct
   lacks (CL8).
 
@@ -339,7 +346,7 @@ Depends on: nothing.
   fails; a texture and texture array in each format save and load; a chunk
   written without `format` or `texels` loads as `kRgba8Srgb`.
 
-### CL2 [ ] render_vulkan: Texture formats in Vulkan
+### CL2 [x] render_vulkan: Texture formats in Vulkan
 
 Depends on: CL1.
 
@@ -350,6 +357,9 @@ Depends on: CL1.
 
 **Verify**
 - Standard checks.
+- Unit tests (`mipmaps_test.cc` in `gb_render_test`): mip level counts and
+  chain sizes; a uniform texture keeps its texel in every mip level in each
+  format; tiles don't blend; channels resize independently.
 - render-check, run with `tools\run-program.ps1`: each format's quad shows its
   gradient in the expected channels (red only for `kR8`, red and green for
   `kRg8`, and `kRgba4` matching `kRgba8` but banded), with no validation

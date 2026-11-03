@@ -56,9 +56,7 @@ bool TestTexture::DoClear(int x, int y, int width, int height,
   const int texel_size = GetTexelSize(GetFormat());
   uint8_t* dst_texels = texels_.data() + (y * GetWidth() + x) * texel_size;
   for (int row = 0; row < height; ++row) {
-    for (int i = 0; i < width; ++i) {
-      std::memcpy(dst_texels + i * texel_size, texel, texel_size);
-    }
+    FillTexels(GetFormat(), texel, width, dst_texels);
     dst_texels += GetWidth() * texel_size;
   }
   return true;

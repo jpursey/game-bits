@@ -16,6 +16,7 @@
 #include "absl/log/log.h"
 #include "absl/memory/memory.h"
 #include "gb/render/vulkan/vulkan_binding_data.h"
+#include "gb/render/vulkan/vulkan_format.h"
 #include "gb/render/vulkan/vulkan_render_buffer.h"
 #include "gb/render/vulkan/vulkan_render_pipeline.h"
 #include "gb/render/vulkan/vulkan_scene.h"
@@ -863,40 +864,35 @@ void VulkanBackend::AddFrameCallback(RenderStage stage,
 }
 
 bool VulkanBackend::CanFilter(RenderInternal, TextureFormat format) const {
-  return format == TextureFormat::kRgba8Srgb;
+  const vk::FormatProperties properties = physical_device_.getFormatProperties(
+      GetVulkanTextureFormat(format).format);
+  return static_cast<bool>(
+      properties.optimalTilingFeatures &
+      vk::FormatFeatureFlagBits::eSampledImageFilterLinear);
 }
 
 Texture* VulkanBackend::CreateTexture(RenderInternal, gb::ResourceEntry entry,
                                       DataVolatility volatility, int width,
                                       int height, const SamplerOptions& options,
                                       TextureFormat format) {
-  if (format != TextureFormat::kRgba8Srgb) {
-    LOG(ERROR) << "Unsupported texture format: " << static_cast<int>(format);
-    return nullptr;
-  }
   auto sampler = GetSamplerWithValidation(options, width, height);
   if (!sampler) {
     return nullptr;
   }
   return VulkanTexture::Create(std::move(entry), this, sampler, volatility,
-                               width, height, options);
+                               width, height, options, format);
 }
 
 TextureArray* VulkanBackend::CreateTextureArray(
     RenderInternal, ResourceEntry entry, DataVolatility volatility, int count,
     int width, int height, const SamplerOptions& options,
     TextureFormat format) {
-  if (format != TextureFormat::kRgba8Srgb) {
-    LOG(ERROR) << "Unsupported texture array format: "
-               << static_cast<int>(format);
-    return nullptr;
-  }
   auto sampler = GetSamplerWithValidation(options, width, height);
   if (!sampler) {
     return nullptr;
   }
   return VulkanTextureArray::Create(std::move(entry), this, sampler, volatility,
-                                    count, width, height, options);
+                                    count, width, height, options, format);
 }
 
 std::unique_ptr<ShaderCode> VulkanBackend::CreateShaderCode(RenderInternal,
@@ -1171,18 +1167,12 @@ void VulkanBackend::EndFrameUpdateImages() {
 
   // Copy the new data to the images.
   for (const auto& update : render_state_.image_updates) {
-    const vk::DeviceSize buffer_offset =
-        update.src_offset +
-        (update.region_y * update.image_width + update.region_x) *
-            sizeof(Pixel);
-    const uint32_t buffer_row_length =
-        static_cast<uint32_t>(update.image_width);
     frame.commands.copyBufferToImage(
         update.src_buffer, update.dst_image,
         vk::ImageLayout::eTransferDstOptimal,
         {vk::BufferImageCopy()
-             .setBufferOffset(buffer_offset)
-             .setBufferRowLength(buffer_row_length)
+             .setBufferOffset(update.src_offset)
+             .setBufferRowLength(update.image_width)
              .setBufferImageHeight(0)
              .setImageSubresource(
                  vk::ImageSubresourceLayers()

@@ -17,6 +17,7 @@ set(gb_render_SOURCE
   material_type.cc material_type.h
   mesh.cc mesh.h
   mesh_view.cc mesh_view.h
+  mipmaps.cc mipmaps.h
   render_assert.cc render_assert.h
   render_backend.h
   render_buffer.cc render_buffer.h
@@ -47,6 +48,7 @@ set(gb_render_TEST_SOURCE
   material_type_test.cc
   mesh_test.cc
   mesh_view_test.cc
+  mipmaps_test.cc
   render_assert_test.cc
   render_buffer_test.cc
   render_buffer_view_test.cc
@@ -73,6 +75,7 @@ set(gb_render_DEPS
   gb_file
   gb_image
   gb_resource
+  stb_image_resize
 )
 
 set(gb_render_LIBS

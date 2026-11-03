@@ -51,6 +51,8 @@ struct VulkanRenderState {
     bool keep_contents;
   };
 
+  // Copies a region of a mip level from src_buffer, where the region's first
+  // texel is at src_offset, and each row is image_width texels after the last.
   struct ImageUpdate {
     ImageUpdate(vk::Buffer src_buffer, uint32_t src_offset, vk::Image dst_image,
                 uint32_t mip_level, uint32_t image_width, uint32_t image_height,

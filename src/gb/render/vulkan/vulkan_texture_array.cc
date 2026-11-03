@@ -5,24 +5,22 @@
 
 #include "gb/render/vulkan/vulkan_texture_array.h"
 
-#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <memory>
 
 #include "absl/log/log.h"
+#include "gb/render/mipmaps.h"
 #include "gb/render/vulkan/vulkan_backend.h"
 #include "gb/render/vulkan/vulkan_buffer.h"
-#include "stb_image_resize.h"
+#include "gb/render/vulkan/vulkan_format.h"
 
 namespace gb {
 
-VulkanTextureArray* VulkanTextureArray::Create(gb::ResourceEntry entry,
-                                               VulkanBackend* backend,
-                                               vk::Sampler sampler,
-                                               DataVolatility volatility,
-                                               int count, int width, int height,
-                                               const SamplerOptions& options) {
+VulkanTextureArray* VulkanTextureArray::Create(
+    gb::ResourceEntry entry, VulkanBackend* backend, vk::Sampler sampler,
+    DataVolatility volatility, int count, int width, int height,
+    const SamplerOptions& options, TextureFormat format) {
   VulkanTextureArray* texture_array = nullptr;
   if (volatility != DataVolatility::kStaticWrite &&
       volatility != DataVolatility::kStaticReadWrite) {
@@ -31,7 +29,7 @@ VulkanTextureArray* VulkanTextureArray::Create(gb::ResourceEntry entry,
   }
   texture_array =
       new VulkanTextureArray(std::move(entry), backend, sampler, volatility,
-                             count, width, height, options);
+                             count, width, height, options, format);
   texture_array->host_buffer_ = texture_array->CreateHostBuffer();
   if (texture_array->host_buffer_ == nullptr || !texture_array->CreateImage()) {
     texture_array->Delete();
@@ -40,41 +38,29 @@ VulkanTextureArray* VulkanTextureArray::Create(gb::ResourceEntry entry,
   return texture_array;
 }
 
-VulkanTextureArray::VulkanTextureArray(gb::ResourceEntry entry,
-                                       VulkanBackend* backend,
-                                       vk::Sampler sampler,
-                                       DataVolatility volatility, int count,
-                                       int width, int height,
-                                       const SamplerOptions& options)
+VulkanTextureArray::VulkanTextureArray(
+    gb::ResourceEntry entry, VulkanBackend* backend, vk::Sampler sampler,
+    DataVolatility volatility, int count, int width, int height,
+    const SamplerOptions& options, TextureFormat format)
     : TextureArray(std::move(entry), volatility, count, width, height, options,
-                   TextureFormat::kRgba8Srgb),
+                   format),
       backend_(backend),
-      sampler_(sampler) {
-  host_layer_size_ = width * height * sizeof(Pixel);
-  if (options.mipmap) {
-    int size = options.tile_size;
-    if (size == 0) {
-      size = std::min(GetWidth(), GetHeight());
-    }
-    size >>= 1;
-    while (size != 0) {
-      host_layer_size_ +=
-          (width >> mip_levels_) * (height >> mip_levels_) * sizeof(Pixel);
-      size >>= 1;
-      ++mip_levels_;
-    }
-  }
-}
+      sampler_(sampler),
+      mip_levels_(GetMipLevelCount(width, height, options)),
+      host_layer_size_(
+          GetMipChainSizeInBytes(format, width, height, mip_levels_)) {}
 
 VulkanTextureArray::~VulkanTextureArray() {}
 
 bool VulkanTextureArray::CreateImage() {
+  const VulkanTextureFormat format = GetVulkanTextureFormat(GetFormat());
   auto image = VulkanImage::Create(
-      backend_, GetWidth(), GetHeight(), GetCount(), vk::Format::eR8G8B8A8Srgb,
+      backend_, GetWidth(), GetHeight(), GetCount(), format.format,
       vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
       VulkanImage::Options()
           .SetMipLevels(mip_levels_)
-          .SetViewType(vk::ImageViewType::e2DArray));
+          .SetViewType(vk::ImageViewType::e2DArray)
+          .SetComponents(format.components));
   if (image == nullptr) {
     return false;
   }
@@ -121,59 +107,22 @@ bool VulkanTextureArray::EnsureHostBufferIsWritable() {
 void VulkanTextureArray::UploadTexture(VulkanRenderState* state, int index) {
   state->image_barriers.emplace_back(image_.get(), mip_levels_, index,
                                      /*keep_contents=*/false);
-  uint32_t offset = index * host_layer_size_;
-  int width = GetWidth();
-  int height = GetHeight();
   for (int mip = 0; mip < mip_levels_; ++mip) {
-    state->image_updates.emplace_back(host_buffer_->Get(), offset,
-                                      image_->Get(), mip, width, height, index);
-    offset += width * height * sizeof(Pixel);
-    width >>= 1;
-    height >>= 1;
+    const int64_t offset =
+        index * host_layer_size_ +
+        GetMipLevelOffset(GetFormat(), GetWidth(), GetHeight(), mip);
+    state->image_updates.emplace_back(
+        host_buffer_->Get(), static_cast<uint32_t>(offset), image_->Get(), mip,
+        GetWidth() >> mip, GetHeight() >> mip, index);
   }
 }
 
-void VulkanTextureArray::GenerateMipmaps(int index) {
-  int src_tile_size = GetSamplerOptions().tile_size;
-  int src_width = GetWidth();
-  int src_height = GetHeight();
-  unsigned char* src = static_cast<unsigned char*>(host_buffer_->GetData()) +
-                       index * host_layer_size_;
-  unsigned char* dst = src + (src_width * src_height * sizeof(Pixel));
-  for (int mip = 1; mip < mip_levels_; ++mip) {
-    int dst_width = src_width >> 1;
-    int dst_height = src_height >> 1;
-    uint32_t mip_byte_size = dst_width * dst_height * sizeof(Pixel);
-
-    if (src_tile_size == 0) {
-      stbir_resize_uint8_srgb(src, src_width, src_height, 0, dst, dst_width,
-                              dst_height, 0, 4, 3, 0);
-    } else {
-      int dst_tile_size = src_tile_size >> 1;
-      int src_tile_stride = src_width * sizeof(Pixel);
-      int dst_tile_stride = dst_width * sizeof(Pixel);
-      for (int y = 0; y < src_height; y += src_tile_size) {
-        unsigned char* tile_src = src + (src_tile_stride * y);
-        unsigned char* tile_dst = dst + (dst_tile_stride * y / 2);
-        for (int x = 0; x < src_width; x += src_tile_size) {
-          stbir_resize_uint8_srgb(tile_src, src_tile_size, src_tile_size,
-                                  src_tile_stride, tile_dst, dst_tile_size,
-                                  dst_tile_size, dst_tile_stride, 4, 3, 0);
-          tile_src += src_tile_size * sizeof(Pixel);
-          tile_dst += dst_tile_size * sizeof(Pixel);
-        }
-      }
-      src_tile_size = dst_tile_size;
-    }
-
-    src = dst;
-    src_width = dst_width;
-    src_height = dst_height;
-    dst += mip_byte_size;
-  }
+uint8_t* VulkanTextureArray::GetHostData(int index) {
+  return static_cast<uint8_t*>(host_buffer_->GetData()) +
+         (host_layer_size_ * index);
 }
 
-void* VulkanTextureArray::ModifyHostData(int index) {
+uint8_t* VulkanTextureArray::ModifyHostData(int index) {
   // An image in use is replaced by a new one, which needs every texture. The
   // textures of a kStaticWrite array can't be read back, so unless there is
   // only the one being modified, it can't be replaced.
@@ -195,52 +144,39 @@ void* VulkanTextureArray::ModifyHostData(int index) {
     upload_all_ = true;
   }
 
-  return static_cast<uint8_t*>(host_buffer_->GetData()) +
-         (host_layer_size_ * index);
+  return GetHostData(index);
 }
 
 bool VulkanTextureArray::DoClear(int index, const void* texel) {
-  void* host_data = ModifyHostData(index);
+  uint8_t* host_data = ModifyHostData(index);
   if (host_data == nullptr) {
     return false;
   }
 
-  const Pixel pixel = *static_cast<const Pixel*>(texel);
-  if (pixel.Packed() == 0) {
-    std::memset(host_data, 0, host_layer_size_);
-  } else {
-    const int width = GetWidth();
-    const int height = GetHeight();
-    Pixel* dst = static_cast<Pixel*>(host_data);
-    for (int i = 0; i < width * height; ++i) {
-      dst[i] = pixel;
-    }
-  }
+  FillTexels(GetFormat(), texel, GetWidth() * GetHeight(), host_data);
   updates_.insert(index);
   return true;
 }
 
-bool VulkanTextureArray::DoSet(int index, const void* pixels) {
-  void* host_data = ModifyHostData(index);
+bool VulkanTextureArray::DoSet(int index, const void* texels) {
+  uint8_t* host_data = ModifyHostData(index);
   if (host_data == nullptr) {
     return false;
   }
 
-  std::memcpy(host_data, pixels, GetWidth() * GetHeight() * sizeof(Pixel));
+  std::memcpy(host_data, texels, GetLayerSizeInBytes());
   updates_.insert(index);
   return true;
 }
 
-bool VulkanTextureArray::DoGet(int index, void* out_pixels) {
+bool VulkanTextureArray::DoGet(int index, void* out_texels) {
   if (GetVolatility() == DataVolatility::kStaticWrite) {
     return false;
   }
 
   // The host data for each texture is followed by its mipmaps, which aren't
   // returned.
-  const void* host_data = static_cast<uint8_t*>(host_buffer_->GetData()) +
-                          (host_layer_size_ * index);
-  std::memcpy(out_pixels, host_data, GetWidth() * GetHeight() * sizeof(Pixel));
+  std::memcpy(out_texels, GetHostData(index), GetLayerSizeInBytes());
   return true;
 }
 
@@ -253,7 +189,8 @@ void VulkanTextureArray::OnRender(VulkanRenderState* state) {
   // The mipmaps of textures that weren't modified are already in the host
   // buffer.
   for (int index : updates_) {
-    GenerateMipmaps(index);
+    GenerateMipmaps(GetFormat(), GetWidth(), GetHeight(), mip_levels_,
+                    GetSamplerOptions().tile_size, GetHostData(index));
   }
   if (upload_all_) {
     for (int index = 0; index < GetCount(); ++index) {

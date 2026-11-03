@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <utility>
 
 #include "absl/base/log_severity.h"
@@ -81,6 +82,19 @@ constexpr float kBlendCellSize = 100.0f;
 constexpr float kBlendQuadWidth = 60.0f;
 constexpr float kBlendQuadHeight = 80.0f;
 constexpr float kBlendHoleSize = 30.0f;
+
+// The texture formats are a row right of the extra rectangles, each texture
+// drawn at full size above a small copy that shows its mipmaps. A few frames
+// in, a white stripe is written at an odd x, so in the 1 and 2 byte formats it
+// is uploaded from an offset that isn't a multiple of 4.
+constexpr float kFormatLeft = kGridLeft + kExtraRectColumns * 2.0f + 40.0f;
+constexpr float kFormatTop = kExtraRectTop + 20.0f;
+constexpr int kFormatSize = 64;
+constexpr int kFormatStripeX = 33;
+constexpr int kFormatStripeWidth = 2;
+constexpr int kFormatStripeFrame = 10;
+constexpr float kFormatSmallSize = 16.0f;
+constexpr float kFormatSpacing = 72.0f;
 
 // Converts a hue in [0, 1) to a fully saturated color.
 gb::Pixel HueColor(float hue) {
@@ -165,7 +179,7 @@ RenderCheck::~RenderCheck() { CleanUp(); }
 bool RenderCheck::Init() {
   absl::AddLogSink(&log_counter_);
   return InitWindow() && InitRenderSystem() && InitGui() && InitQuads() &&
-         InitTextures() && InitBlendQuads();
+         InitTextures() && InitBlendQuads() && InitFormatTextures();
 }
 
 bool RenderCheck::InitWindow() {
@@ -444,6 +458,46 @@ bool RenderCheck::InitBlendQuads() {
   return true;
 }
 
+bool RenderCheck::InitFormatTextures() {
+  struct Format {
+    gb::TextureFormat format;
+    const char* name;
+  };
+  const Format formats[] = {
+      {gb::TextureFormat::kRgba8Srgb, "Rgba8Srgb"},
+      {gb::TextureFormat::kRgba8, "Rgba8"},
+      {gb::TextureFormat::kRg8, "Rg8"},
+      {gb::TextureFormat::kR8, "R8"},
+      {gb::TextureFormat::kRgba4, "Rgba4"},
+  };
+  for (const Format& format : formats) {
+    // Red increases to the right, green downward, and blue to the left.
+    const int texel_size = gb::GetTexelSize(format.format);
+    std::vector<uint8_t> texels(kFormatSize * kFormatSize * texel_size);
+    for (int y = 0; y < kFormatSize; ++y) {
+      for (int x = 0; x < kFormatSize; ++x) {
+        const gb::Pixel pixel(static_cast<uint8_t>(x * 4),
+                              static_cast<uint8_t>(y * 4),
+                              static_cast<uint8_t>(255 - x * 4));
+        const uint32_t texel = gb::PixelToTexel(format.format, pixel);
+        std::memcpy(&texels[(y * kFormatSize + x) * texel_size], &texel,
+                    texel_size);
+      }
+    }
+    gb::Texture* texture = render_system_->CreateTexture(
+        &resources_, gb::DataVolatility::kPerFrame, kFormatSize, kFormatSize,
+        gb::SamplerOptions(), format.format);
+    if (texture == nullptr ||
+        !texture->Set(texels.data(), static_cast<int64_t>(texels.size()))) {
+      LOG(ERROR) << "Could not create " << format.name << " texture";
+      return false;
+    }
+    format_textures_.push_back(
+        {format.name, texture, gui_instance_->AddTexture(texture)});
+  }
+  return true;
+}
+
 void RenderCheck::CleanUp() {
   instances_.clear();
   blend_instances_.clear();
@@ -535,6 +589,9 @@ void RenderCheck::UpdateTextures() {
     PaintSquare(per_frame_texture_.texture, paint_step_);
     ++paint_step_;
   }
+  if (frame_ == kFormatStripeFrame) {
+    AddFormatStripes();
+  }
   if (cycle_layer_) {
     SetArrayLayer(read_write_array_, 0, HueColor(frame_ / 120.0f));
   }
@@ -552,9 +609,11 @@ void RenderCheck::DrawGui() {
   DrawTextureArrayGui();
   DrawGuiCheckGui();
   DrawBlendGui();
+  DrawFormatGui();
   DrawLogGui();
   ImGui::End();
   DrawExtraRects();
+  DrawFormatTextures();
 }
 
 void RenderCheck::DrawFrameGui() {
@@ -720,6 +779,52 @@ void RenderCheck::DrawBlendGui() {
       "kAdditive matches them over black and is brighter over grey. Last is a "
       "blue quad with a square hole, cut by a depth-only quad drawn before "
       "it.");
+}
+
+void RenderCheck::DrawFormatGui() {
+  if (!ImGui::CollapsingHeader("Texture formats",
+                               ImGuiTreeNodeFlags_DefaultOpen)) {
+    return;
+  }
+  ImGui::TextWrapped(
+      "Right of the grid's lower half, a texture in each format, above a "
+      "mipmapped copy. Red increases to the right, green downward, and blue "
+      "to the left. Rgba8 is brighter than Rgba8Srgb, Rg8 has no blue, R8 is "
+      "red alone, and Rgba4 matches Rgba8 in bands. Each has a white stripe "
+      "(red for R8, yellow for Rg8) just right of its middle.");
+}
+
+void RenderCheck::AddFormatStripes() {
+  for (const FormatTexture& format : format_textures_) {
+    const gb::TextureFormat texture_format = format.texture->GetFormat();
+    const uint32_t white =
+        gb::PixelToTexel(texture_format, gb::PixelColor::kWhite);
+    std::vector<uint8_t> texels(kFormatStripeWidth * kFormatSize *
+                                gb::GetTexelSize(texture_format));
+    gb::FillTexels(texture_format, &white, kFormatStripeWidth * kFormatSize,
+                   texels.data());
+    if (!format.texture->SetRegion(kFormatStripeX, 0, kFormatStripeWidth,
+                                   kFormatSize, texels.data(),
+                                   static_cast<int64_t>(texels.size()))) {
+      LOG(ERROR) << "Could not add a stripe to the " << format.name
+                 << " texture";
+    }
+  }
+}
+
+void RenderCheck::DrawFormatTextures() {
+  ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
+  const int count = static_cast<int>(format_textures_.size());
+  for (int i = 0; i < count; ++i) {
+    const FormatTexture& format = format_textures_[i];
+    const float x = kFormatLeft + i * kFormatSpacing;
+    draw_list->AddText({x, kFormatTop - 16.0f}, IM_COL32_WHITE, format.name);
+    draw_list->AddImage(format.id, {x, kFormatTop},
+                        {x + kFormatSize, kFormatTop + kFormatSize});
+    const float small_top = kFormatTop + kFormatSize + 8.0f;
+    draw_list->AddImage(format.id, {x, small_top},
+                        {x + kFormatSmallSize, small_top + kFormatSmallSize});
+  }
 }
 
 void RenderCheck::DrawExtraRects() {

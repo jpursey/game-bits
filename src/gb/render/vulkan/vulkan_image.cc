@@ -65,6 +65,7 @@ bool VulkanImage::Init(vk::ImageUsageFlags usage, const Options& options) {
           .setImage(image_)
           .setViewType(options.view_type)
           .setFormat(format_)
+          .setComponents(options.components)
           .setSubresourceRange(vk::ImageSubresourceRange()
                                    .setAspectMask(aspect_flags)
                                    .setBaseMipLevel(0)

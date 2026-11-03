@@ -41,11 +41,18 @@ class VulkanImage final {
       view_type = in_view_type;
       return *this;
     }
+    Options& SetComponents(vk::ComponentMapping in_components) {
+      components = in_components;
+      return *this;
+    }
 
     int mip_levels = 1;
     vk::ImageTiling tiling = vk::ImageTiling::eOptimal;
     vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1;
     vk::ImageViewType view_type = vk::ImageViewType::e2D;
+
+    // How the view reads each channel from the image.
+    vk::ComponentMapping components = {};
   };
 
   static std::unique_ptr<VulkanImage> Create(VulkanBackend* backend, int width,

@@ -767,6 +767,19 @@ TEST_F(TextureTest, PixelToTexel) {
   EXPECT_EQ(PixelToTexel(TextureFormat::kRgba4, pixel) & 0xFFFF, 0x1357u);
 }
 
+TEST_F(TextureTest, FillTexels) {
+  // Each count fills exactly that many texels, and nothing after them.
+  const uint16_t texel = 0x1234;
+  for (int count : {0, 1, 2, 3, 7, 8, 9}) {
+    std::vector<uint16_t> texels(10, 0xFFFF);
+    FillTexels(TextureFormat::kRg8, &texel, count, texels.data());
+    for (int i = 0; i < 10; ++i) {
+      EXPECT_EQ(texels[i], i < count ? texel : 0xFFFF)
+          << "count " << count << ", texel " << i;
+    }
+  }
+}
+
 TEST_F(TextureTest, TextureSizeInBytes) {
   EXPECT_EQ(GetTextureSizeInBytes(TextureFormat::kRgba8, 3, 5), 3 * 5 * 4);
   EXPECT_EQ(GetTextureSizeInBytes(TextureFormat::kRg8, 3, 5, 7), 3 * 5 * 7 * 2);

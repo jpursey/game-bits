@@ -32,10 +32,8 @@ bool TestTextureArray::DoClear(int index, const void* texel) {
 
   const int texel_size = GetTexelSize(GetFormat());
   const int texel_count = GetWidth() * GetHeight();
-  uint8_t* dst_texels = texels_.data() + index * texel_count * texel_size;
-  for (int i = 0; i < texel_count; ++i) {
-    std::memcpy(dst_texels + i * texel_size, texel, texel_size);
-  }
+  FillTexels(GetFormat(), texel, texel_count,
+             texels_.data() + index * texel_count * texel_size);
   return true;
 }
 
