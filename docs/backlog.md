@@ -352,6 +352,25 @@ which also has `Cancel()` and `Invoke()`. Switch Game Bits' own uses to
 Removing `ScopedCall` breaks every project that uses it, so each one switches
 first, and it is removed once they have.
 
+## Typed values in gb_base
+
+- **Layers:** base, cli, pilot
+- **Size:** medium
+- **Feature workflow:** no
+- **Depends on:** *Scripted runs of graphical programs*
+- **Background:** [Scripted runs](worklog/scripted_runs.md)
+
+`gb_cli` keeps each value given on the command line as
+`internal::CliValue`, a `std::variant<bool, std::string_view, int64_t,
+double>`, and `gb_pilot` passes a command's values as the text written in
+the script (`absl::Span<const std::string>`), so each command converts them
+itself. The script grammar already tells integers, identifiers, and strings
+apart. A small value type in `gb_base` (a variant of the scalar types, with
+conversions that fail cleanly) could serve both, without either depending on
+`gb_parse`'s `Token` or `gb_config`'s `Config`. Changing `Pilot::Command`'s
+values breaks every program's commands, which each project fixes as it
+updates.
+
 ## Explicit resource bool conversions
 
 - **Layers:** resource

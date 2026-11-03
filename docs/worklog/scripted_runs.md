@@ -24,45 +24,62 @@ that create their systems with `SetParent(context)` get most of it from the
 context:
 
 ```
-// main(): the flags come from gb_autopilot_script, parsed by gb_cli.
+// main(): the flags come from gb_pilot_script, parsed by gb_cli.
 const gb::CliCommand kProgram = {
     .name = "render_check",
-    .flags = {&gb::kCliAutopilotScript, &gb::kCliAutopilotOutput},
+    .flags = {&gb::kCliPilotScript, &gb::kCliPilotOutput},
     .constraints = {&gb::kConstraintCliFileSystem},
     .run = Run,
 };
 
 bool Run(gb::ValidatedContext& context, const gb::CliCommandLine& line) {
-  // Null with no --autopilot flag, so the program runs as usual. Everything
-  // else sees only the Autopilot interface.
-  std::unique_ptr<gb::Autopilot> autopilot =
-      gb::CreateCliAutopilot(context, line);
+  // Null with no --pilot flag, so the program runs as usual, and an error if
+  // the script has errors. Everything else sees only the Pilot interface.
+  absl::StatusOr<std::unique_ptr<gb::Pilot>> pilot =
+      gb::CreateCliPilot(context, line);
+  if (!pilot.ok()) {
+    return false;
+  }
   ...
   RenderCheck game;
-  return game.Run(gb::ContextBuilder().SetOwned(std::move(autopilot)).Build(),
+  return game.Run(gb::ContextBuilder().SetOwned(*std::move(pilot)).Build(),
                   {});
 }
 
-// Game::Init(): after creating the window, if there is an autopilot.
-autopilot_sdl_ = gb::AutopilotSdl::Create(autopilot, window_);
+// Game::Init(): after creating the window, if there is a pilot.
+pilot_sdl_ = gb::PilotSdl::Create(pilot, window_);
 
 // Anywhere, through the interface: commands and conditions the script can
 // name.
-commands_ = autopilot->AddCommand("reset_peaks", [this](auto args) { ... });
-loaded_ = autopilot->AddCondition("world_loaded", [this] { return ...; });
+commands_ = pilot->AddCommand("reset_peaks", [this](auto args) { ... });
+loaded_ = pilot->AddCondition("world_loaded", [this] { return ...; });
 ```
 
-- `Game` runs a frame per autopilot frame, on a fixed time step, without
+- `Game` runs a frame per pilot frame, on a fixed time step, without
   sleeping, and stops when the script ends. `Run()` returns false if a step
   failed.
-- `RenderSystem` and `ImGuiInstance` find the autopilot in their contexts.
+- `RenderSystem` and `ImGuiInstance` find the pilot in their contexts.
   The render system saves the frames the script asks for, and the GUI takes
-  its mouse and frame time from the script and reports its items' places.
-- `AutopilotSdl` adds the script's input to SDL's event queue each frame and
+  its mouse and delta time from the script and reports its items' places.
+- `PilotSdl` adds the script's input to SDL's event queue each frame and
   drops the user's real input, so a run is the same whatever the user does.
 
-A program with its own loop calls `autopilot->BeginFrame()` and
-`EndFrame()` around each frame and stops when `IsDone()`, as `Game` does.
+None of these libraries is needed. A program with its own loop, renderer, GUI,
+or input does for itself what each of them does, as listed in Taking part in
+a run. A program can also drive itself from code, with no script file, by
+giving a `StepPilot` its steps:
+
+```
+gb::StepPilot pilot({.save_frame = [&](std::string_view name,
+                                        const gb::Image& image) {
+  return gb::SaveImage(&file_system, absl::StrCat("out/", name, ".png"),
+                       image.View());
+}});
+pilot.AddSteps({gb::PilotWaitStep{.frames = 30},
+                gb::PilotMouseClickStep{.target = "Get layer 1"},
+                gb::PilotWaitStep{.frames = 2},
+                gb::PilotSaveStep{.name = "get_layer_1"}});
+```
 
 ### Scripts
 
@@ -120,7 +137,7 @@ expect world_loaded        # Fails if the condition doesn't hold now
 .\tools\run-program.ps1 -Exe bin\render_check.exe -Script examples\render-check\scripts\textures.txt
 ```
 
-The script launches the program with `--autopilot <script> --autopilot-output
+The script launches the program with `--pilot <script> --pilot-output
 out\run\<program>`, waits for it to exit, and fails if it exits with an error
 code or runs longer than `-TimeoutSecs`, saving every thread's stack first, as
 today. The frames and the log are in `out\run\<program>\`.
@@ -132,106 +149,133 @@ today. The frames and the log are in `out\run\<program>\`.
 The backlog calls this "scripted runs". The library and class need a name of
 their own:
 
-- **Autopilot** (`gb_autopilot`, `Autopilot`, `AutopilotSdl`, "autopilot
-  script"). Plain, and nothing in Game Bits uses it. *Recommended.*
+- **Pilot** (`gb_pilot`, `Pilot`, `PilotSdl`, "pilot script"). Plain, short
+  enough that the names built on it can say exactly what they are
+  (`PilotMouseButtonEvent`), and nothing in Game Bits or the projects on it
+  uses it. *Chosen.*
+- **Autopilot** (`gb_autopilot`). The same meaning, but long enough that the
+  names built on it were pulled shorter, and less clear.
+- **Driver** (`ScriptDriver`). Collides with GPU and device drivers.
+- **Bot** (`ScriptBot`). In games, a bot is an AI player.
 - **Run script** (`gb_run_script`, `RunScript`). Says what it is, but "run"
   is already `Game::Run()`, `CliCommand::run`, and `RunCommandLine()`.
 - **Playback** (`gb_playback`, `Playback`). Suggests replaying recorded input,
   which this isn't (yet), and audio.
 
 "Script" alone is avoided: README.md offers `gb_parse` for "game scripting
-languages".
+languages". "Rig" is a skeletal rig in games.
 
-With "autopilot", the pieces are:
-- `Autopilot` (`gb_autopilot`): the interface everything else is given.
-- `ScriptAutopilot` (`gb_autopilot_script`): the autopilot that runs a
-  script, and `AutopilotScript`, the steps read from one.
-- `FakeAutopilot` (`gb_autopilot`): for tests, like `gb_job`'s
+Input names say which device they are from (`PilotMouseButton`, not
+`PilotButton`), so gamepads can be added beside them. Keys are only on the
+keyboard, so "key" is enough.
+
+With "pilot", the pieces are:
+- `Pilot` (`gb_pilot`): the interface everything else is given.
+- `StepPilot` (`gb_pilot`): the pilot that runs a list of steps (`PilotStep`)
+  given to it in code, with nothing else needed.
+- `FakePilot` (`gb_pilot`): for tests, like `gb_job`'s
   `FakeJobSystem`.
-- `AutopilotSdl` (`gb_autopilot_sdl`): SDL input.
+- `PilotScript` (`gb_pilot_script`): the steps read from a script file, run
+  by a `StepPilot`.
+- `PilotSdl` (`gb_pilot_sdl`): SDL input.
+
+`StepPilot` was chosen over `QueuePilot` (`gb_container` has a `Queue`) and
+`ListPilot` (says how, not what). A script is already "one step per line", so
+the steps in code and in a file have the same name. "Step" also names the
+fixed time step, but always as "time step".
 
 Other new names: `AddCommand()`, `AddCondition()`, and `AddItemFinder()` (the
-caller registers and the autopilot keeps them, so "Add"), `AutopilotHandle`
+caller registers and the pilot keeps them, so "Add"), `PilotHandle`
 (what each returns), and `SaveImage()` in `gb_image`, matching `LoadImage()`.
 
 ### Tiers
 
 The libraries that take part in a run (the game loop, the renderer, the GUI,
-and SDL input) depend only on the `Autopilot` interface, which they find in
-their contexts. The script runner implements it, and only programs link it.
-So no Game Bits library depends on script reading, `gb_parse`, or `gb_cli`
-for this, and their tests use `FakeAutopilot` rather than script files.
+and SDL input) depend only on the `Pilot` interface, which they find in
+their contexts. `StepPilot`, in `gb_pilot` itself, implements it, and
+`gb_pilot_script` reads script files into its steps, which only programs
+link. So no Game Bits library depends on script reading, `gb_parse`, or
+`gb_cli` for this, and their tests use `FakePilot` rather than script files.
 
-| Library                         | Tier | Depends on                                                  |
-| ------------------------------- | ---- | ----------------------------------------------------------- |
-| `stb_image_write`               | 0    | the `stb` submodule (already vendored)                      |
-| `gb_image`                      | 1    | adds `stb_image_write`                                      |
-| `gb_autopilot`                  | 1    | `gb_base`, `gb_image`                                       |
-| `gb_autopilot_sdl`              | 1    | `gb_autopilot`, SDL                                         |
-| `gb_game`                       | 1    | adds `gb_autopilot`                                         |
-| `gb_autopilot_script`           | 2    | `gb_autopilot`, `gb_cli`, `gb_file`, `gb_image`, `gb_parse` |
-| `gb_render`, `gb_render_vulkan` | 2    | adds `gb_autopilot`                                         |
-| `gb_imgui`                      | 2    | adds `gb_autopilot`                                         |
+Each of these libraries is optional. A program that uses none of them can
+still be piloted, by doing for itself what they do (see Taking part in a
+run), and can be driven from code with a `StepPilot` without
+`gb_pilot_script`.
 
-- Every edge points to a lower tier, except two within tier 1: `gb_autopilot`
-  on `gb_image`, and `gb_game` on `gb_autopilot` (and through it `gb_image`,
+| Library                         | Tier | Depends on                                              |
+| ------------------------------- | ---- | ------------------------------------------------------- |
+| `stb_image_write`               | 0    | the `stb` submodule (already vendored)                  |
+| `gb_image`                      | 1    | adds `stb_image_write`                                  |
+| `gb_pilot`                      | 1    | `gb_image`                                              |
+| `gb_pilot_sdl`                  | 1    | `gb_pilot`, SDL                                         |
+| `gb_game`                       | 1    | adds `gb_pilot`                                         |
+| `gb_pilot_script`               | 2    | `gb_pilot`, `gb_cli`, `gb_file`, `gb_image`, `gb_parse` |
+| `gb_render`, `gb_render_vulkan` | 2    | adds `gb_pilot`                                         |
+| `gb_imgui`                      | 2    | adds `gb_pilot`                                         |
+
+- Every edge points to a lower tier, except two within tier 1: `gb_pilot`
+  on `gb_image`, and `gb_game` on `gb_pilot` (and through it `gb_image`,
   with `gb_file` and `stb`), for `SaveFrame(const Image&)`. Passing raw RGBA
-  bytes instead would keep `gb_autopilot` on `gb_base` alone, at the cost of
+  bytes instead would keep `gb_pilot` on `gb_base` alone, at the cost of
   the `Image` type; `gb_image` is small and low enough not to be worth it.
-- `gb_autopilot_script` is tier 2: it combines four tier 1 libraries
-  (`gb_autopilot`, `gb_cli`, `gb_image`, and `gb_parse`), and no tier 1
+- `gb_pilot_script` is tier 2: it combines four tier 1 libraries
+  (`gb_pilot`, `gb_cli`, `gb_image`, and `gb_parse`), and no tier 1
   library depends on it, so placing it there costs nothing.
-  `gb_autopilot_sdl` stays in tier 1 with `gb_autopilot`, as an integration
+  `gb_pilot_sdl` stays in tier 1 with `gb_pilot`, as an integration
   with SDL, as `gb_render_vulkan_sdl` is with `gb_render_vulkan`.
-- `FakeAutopilot` is in `gb_autopilot` itself, as `FakeJobSystem` is in
+- `FakePilot` is in `gb_pilot` itself, as `FakeJobSystem` is in
   `gb_job` and `FakeClock` in `gb_base`. `gb_render_testing` is a library of
   its own because its `RenderTest` fixture needs GoogleTest, which
-  `FakeAutopilot` doesn't.
+  `FakePilot` doesn't.
 - Where a lower tier needs something from a higher one, it is given it: GUIs
   register item finders, the render system hands over frames, and
-  `AutopilotSdl` pulls each frame's input.
+  `PilotSdl` pulls each frame's input.
 - Nothing goes in `gb_base`. The lowest library that takes part is `gb_game`.
-  A `Clock` can't stand in for the autopilot: `GameLoop()` spins on `Now()`
+  A `Clock` can't stand in for the pilot: `GameLoop()` spins on `Now()`
   for the last millisecond, so a clock that only advances when slept on never
   ends the spin, and the loop has to begin and end frames anyway. Counting
   logged errors is an absl log sink.
-- `gb_autopilot` is in `src/gb/autopilot`, with `gb_autopilot_sdl` in
-  `src/gb/autopilot/sdl` and `gb_autopilot_script` in
-  `src/gb/autopilot/script`, as `gb_render_vulkan` is in `src/gb/render`.
-  README.md lists `gb_autopilot` (with `gb_autopilot_sdl` under it) in tier 1,
-  and `gb_autopilot_script` in tier 2.
+- `gb_pilot` is in `src/gb/pilot`, with `gb_pilot_sdl` in
+  `src/gb/pilot/sdl` and `gb_pilot_script` in
+  `src/gb/pilot/script`, as `gb_render_vulkan` is in `src/gb/render`.
+  README.md lists `gb_pilot` (with `gb_pilot_sdl` under it) in tier 1,
+  and `gb_pilot_script` in tier 2.
 
-### Autopilot interface (gb_autopilot)
+### Pilot interface (gb_pilot)
 
 ```
 // Drives a program frame by frame. A program creates one (such as a
-// ScriptAutopilot) and puts it in its context, where the game loop, render
+// StepPilot) and puts it in its context, where the game loop, render
 // system, GUI, and SDL input find it.
-class Autopilot {
+class Pilot {
  public:
-  virtual ~Autopilot();
+  virtual ~Pilot();
 
   // Registered by the program, so a step can name them. Each lasts until its
   // handle is destroyed.
-  [[nodiscard]] AutopilotHandle AddCommand(std::string_view name,
-                                           Command command);
-  [[nodiscard]] AutopilotHandle AddCondition(std::string_view name,
-                                             Condition condition);
+  [[nodiscard]] PilotHandle AddCommand(std::string_view name, Command command);
+  [[nodiscard]] PilotHandle AddCondition(std::string_view name,
+                                         Condition condition);
 
   // Registered by GUIs, to say where a labelled item is.
-  [[nodiscard]] AutopilotHandle AddItemFinder(ItemFinder finder);
+  [[nodiscard]] PilotHandle AddItemFinder(ItemFinder finder);
 
   // Called by the loop around each frame, in pairs.
   void BeginFrame();
   void EndFrame();
   bool IsDone() const;
   bool HasFailed() const;
-  absl::Duration GetFrameTime() const;
+  absl::Duration GetDeltaTime() const;
   int GetFrame() const;
 
+  // Read by the SDL input before the first frame: whether to hide the window,
+  // and every key name the input uses, so it can check them.
+  bool IsWindowHidden() const;
+  absl::Span<const std::string> GetKeyNames() const;
+
   // Input for the current frame, in order, and the mouse after it.
-  absl::Span<const AutopilotInput> GetInput() const;
-  AutopilotMouse GetMouse() const;
+  absl::Span<const PilotInput> GetInput() const;
+  PilotMouse GetMouse() const;
 
   // Called by the render system: whether this frame is to be saved, and its
   // image if so.
@@ -239,14 +283,14 @@ class Autopilot {
   void SaveFrame(const Image& image);
 
  protected:
-  Autopilot() = default;
+  Pilot() = default;
 
   // Looked up by the subclass as steps run. Each fails, with an error saying
   // so, if nothing by that name is registered.
   absl::Status RunCommand(std::string_view name,
                           absl::Span<const std::string> args);
   absl::StatusOr<bool> CheckCondition(std::string_view name);
-  absl::StatusOr<AutopilotPoint> FindItem(std::string_view label);
+  absl::StatusOr<PilotPoint> FindItem(std::string_view label);
 
   // What the subclass implements, behind the public functions above.
   virtual void DoBeginFrame() = 0;
@@ -256,62 +300,232 @@ class Autopilot {
 ```
 
 - **Shared and specific:** the registries of commands, conditions, and item
-  finders are the same for every autopilot, so the base class keeps them, and
+  finders are the same for every pilot, so the base class keeps them, and
   subclasses look them up as steps run. Frames, input, and saving are each
   subclass's own. The public functions are not virtual, so the base class
   checks what every caller must get right in one place: `BeginFrame()` and
   `EndFrame()` in pairs (a `DCHECK`), and `SaveFrame()` only when
-  `IsSavingFrame()`.
-- **Input** is in the autopilot's own types (`AutopilotInput`: key down, key
-  up, text, mouse move, button down and up, wheel), so it has no SDL in it.
-  Keys are named as SDL names scancodes (`SDL_GetScancodeFromName()`), the
-  names a reader of the script knows.
-- **Handles** (`AutopilotHandle`) are RAII: a command, condition, or finder
+  `IsSavingFrame()`, once a frame.
+- **Input** is in the pilot's own types, so it has no SDL in it. `PilotInput`
+  is a `std::variant` of one struct per kind of event, each with only its own
+  fields: `PilotKeyEvent` (a key down or up), `PilotTextEvent`,
+  `PilotMouseMoveEvent`, `PilotMouseButtonEvent` (down or up), and
+  `PilotMouseWheelEvent`. Keys are named as SDL names scancodes
+  (`SDL_GetScancodeFromName()`), the names a reader of the script knows.
+- **Command values** are passed as the text written in the script
+  (`absl::Span<const std::string>`), which the runner already holds, and each
+  command converts what it needs. A typed value is a backlog item.
+- **Delta time:** `GetDeltaTime()` is the game time each frame stands for.
+  `Game` passes it to `Update()` as `delta_time` in place of the time it
+  measured, and ImGui takes it as `io.DeltaTime`, so a run is the same however
+  fast the machine is. The pilot owns it, as scripts count time in frames.
+- **Names** of commands and conditions are each registered once at a time.
+  Registering one again logs an error (failing a script run) and returns a
+  handle that holds nothing.
+- **Handles** (`PilotHandle`) are RAII: a command, condition, or finder
   is removed when its handle is destroyed, so a game state's commands go with
   it, and nothing is left calling into a destroyed object. A handle must not
-  outlive its autopilot, which owns the registration (a `DCHECK` in the
-  autopilot's destructor that none are left).
-- Thread-compatible: it is used on the thread running the loop.
+  outlive its pilot, which owns the registration (a `DCHECK` in the
+  pilot's destructor that none are left).
+- Thread-compatible: everything that takes part (the loop, the render system,
+  ImGui, and SDL events) runs on the loop thread, and commands, conditions, and
+  item finders are called there, during `BeginFrame()` or `EndFrame()`, so they
+  can use the program's state without locking. Callbacks already run outside
+  the registries, so registering from another thread could be made safe with
+  a mutex, without changing the interface, once something needs it.
 
-**Brittleness:** a loop must call `BeginFrame()` and `EndFrame()` in pairs.
-`Game` does this for every program on it; a program with its own loop must
-remember, and the base class `DCHECK`s it.
+**Brittleness:** a program is only piloted as far as its code does what the
+pilot asks (see Taking part in a run). The Game Bits libraries do it for the
+programs that use them; a program with its own loop, renderer, GUI, or input
+must do it itself. Of these, only pairing `BeginFrame()` and `EndFrame()`, and
+saving only when asked and once a frame, are checked (by `DCHECK`s); the rest
+show up as a run
+that doesn't do what its steps say.
 
-### Fake autopilot (gb_autopilot)
+### Taking part in a run (gb_pilot)
 
-`FakeAutopilot` holds state that a test sets and reads: the frame time, when
+Nothing in `gb_pilot` reaches into the program: a program is piloted only as
+far as its code does what the pilot asks. `pilot.h` lists what that is, in
+three phases, so the library stands on its own. Each Game Bits library that
+takes part says in its own docs which parts it does (they are noted here),
+and a program does the rest itself.
+
+**Before the first frame:**
+- Hide the window if `IsWindowHidden()`, while still drawing every frame at
+  the window's size. *`PilotSdl`.*
+- Check the names in `GetKeyNames()`, logging an error for any that can't be
+  mapped to a key. *`PilotSdl`.*
+- Register the program's commands and conditions (`AddCommand()`,
+  `AddCondition()`), and an item finder for each GUI (`AddItemFinder()`),
+  giving the center of each item with the label, in window pixels, as drawn
+  in the last frame. Each is kept while it means something: a game state's
+  while the state is active, and a GUI's while the GUI exists. They may also
+  be added and removed later, at any time, but a pilot only finds what is
+  registered when it looks. *The program; `ImGuiInstance` for its finder.*
+
+**Each frame, in this order:**
+1. Stop if `IsDone()`, ending the run. *`Game`.*
+2. Call `BeginFrame()`. The rest of the frame's functions are only called
+   between this and `EndFrame()`. *`Game`.*
+3. Run the frame:
+   - Apply `GetInput()` in order, as if the user had given it, and ignore the
+     user's real keyboard and mouse. Code that polls the mouse rather than
+     reading events reads `GetMouse()`. Log an error for a key name that
+     wasn't checked before the first frame and can't be mapped, as a pilot
+     may learn of more keys as it runs. *`PilotSdl`, for SDL programs.*
+   - Advance game time by `GetDeltaTime()`, rather than by the time measured,
+     and don't wait on real time (vsync only slows a run down). A GUI that
+     keeps its own frame time and mouse takes them from `GetDeltaTime()` and
+     `GetMouse()`. *`Game`; `ImGuiInstance`.*
+   - If `IsSavingFrame()`, read back the frame once drawn (RGBA, as
+     presented, one pixel per window pixel), and give it to `SaveFrame()`.
+     *`RenderSystem`.*
+4. Call `EndFrame()`. *`Game`.*
+
+**After the last frame:**
+- Exit with an error if `HasFailed()`. *`Game` (`Run()` returns false).*
+
+Throughout, log what goes wrong as errors. A `StepPilot` fails the run on any
+error logged while it runs, so a program's own errors fail it.
+
+Window pixels are the pixels of the saved frames, so a click at a point seen in
+a saved frame lands on what is drawn there.
+
+### Implementing a pilot (gb_pilot)
+
+Driving a program needs no implementation: a `StepPilot` is given the steps
+to run as plain structs (the same ones a script is read into), and does all
+of the work of running them (see Steps from code). A new subclass is only for
+a new way of deciding what happens each frame, beyond a list of steps (such as
+one that reacts to what it sees). A subclass decides what happens each frame;
+the base class keeps the registrations and checks the calls. `pilot.h` says
+what each `Do*` function must give, which every program relies on:
+- `DoBeginFrame()` sets up the frame: its input, the mouse, and whether it is
+  saved. `DoEndFrame()` finishes it. The pilot does its own work (running
+  commands, checking conditions, finding items) in these, so it happens on the
+  loop thread, between frames of the program.
+- `DoGetInput()`, `DoGetMouse()`, and `DoIsSavingFrame()` don't change between
+  `BeginFrame()` and `EndFrame()`, as the program may read them any number of
+  times, in any order.
+- `DoIsDone()` stays true once true. `DoHasFailed()` may become true at any
+  time, and a pilot that has failed is done by the end of that frame.
+- `DoGetDeltaTime()`, `DoIsWindowHidden()`, and the key names already given by
+  `DoGetKeyNames()` hold for the whole run, from before the first frame.
+- `DoSaveFrame()` is called at most once a frame, only when saving.
+- `RunCommand()`, `CheckCondition()`, and `FindItem()` reach the program. Their
+  errors are the pilot's to report, as failures of the run.
+
+`FakePilot` is the smallest implementation (it leaves being done and failing
+to the test), and `StepPilot` the complete one.
+
+### Steps from code (StepPilot, gb_pilot)
+
+`StepPilot` runs a list of steps given to it in code. It needs nothing beyond
+`gb_pilot`, so a program can be driven by a list of steps it builds itself, or
+from any source, with no script file, `gb_parse`, or `gb_cli`. Script files are
+one source of its steps (`gb_pilot_script`).
+
+```
+// One step of a run, as in a script (see Scripts).
+struct PilotWaitStep { int frames; };
+struct PilotWaitForStep { std::string condition; int max_frames = 600; };
+struct PilotKeyStep { std::string key; };              // Down, then up.
+struct PilotHoldStep { std::string key; int frames; };
+struct PilotTextStep { std::string text; };
+struct PilotMouseMoveStep { PilotPoint position; };
+struct PilotMouseClickStep {
+  PilotMouseButton button = PilotMouseButton::kLeft;
+
+  // At the mouse, at a point, or at the item with a label.
+  std::variant<std::monostate, PilotPoint, std::string> target;
+};
+struct PilotMouseWheelStep { int amount; };
+struct PilotRunStep { std::string command; std::vector<std::string> args; };
+struct PilotExpectStep { std::string condition; };
+struct PilotSaveStep { std::string name; };
+using PilotStep = std::variant<PilotWaitStep, ..., PilotSaveStep>;
+
+class StepPilot final : public Pilot {
+ public:
+  // Keeps a saved frame under its name. Returns false, having logged why, if
+  // it can't, which fails the run.
+  using FrameSaver =
+      absl::AnyInvocable<bool(std::string_view name, const Image& image)>;
+
+  struct Options {
+    absl::Duration delta_time = absl::Seconds(1) / 60;
+    bool hide_window = false;
+
+    // Needed only if a step saves a frame.
+    FrameSaver save_frame;
+  };
+
+  explicit StepPilot(Options options);
+
+  // Adds steps to run after those already added. Steps may be added until the
+  // pilot is done, including by a command while it runs.
+  void AddSteps(std::vector<PilotStep> steps);
+};
+```
+
+- **Timing** is as in Scripts: each frame runs steps in order until one that
+  takes time (a wait, a hold, the release of a key or click, or a save), which
+  finishes in a later frame.
+- **Done** once every step has finished, or at the first failure. A program
+  that adds steps as it goes must add them before the last one finishes.
+- **Failures:** a failed command, a missing command or condition, an `expect`
+  that doesn't hold, a `wait for` that times out, a label that no item or more
+  than one has, a `save` with no `save_frame`, a frame not saved within 600
+  frames or that `save_frame` couldn't keep, and any error logged while it
+  runs, from any thread (an absl log sink counts them). The first ends the
+  run.
+- **Logging:** each step is logged as it runs, with its frame, and a failure
+  as an error. A summary is logged once done: passed or failed, the frames
+  run, and the frames saved.
+- **Key names** from every step added so far are in `GetKeyNames()`.
+- **Hiding the window** is an option rather than a step, as it only means
+  something before the first frame.
+- Thread-compatible, like `Pilot`. Only the log sink is thread-safe.
+
+### Fake pilot (gb_pilot)
+
+`FakePilot` holds state that a test sets and reads: the delta time, when
 it is done or failed, the input and mouse for the next frame, whether to save
 a frame, and the frames it was given. Its `RunCommand()`, `CheckCondition()`,
 and `FindItem()` are public, so a test can check what a program or GUI
 registered. The tests for `Game`, `RenderSystem`, `ImGuiInstance`, and
-`AutopilotSdl` use it.
+`PilotSdl` use it.
 
-### Script runner (gb_autopilot_script)
+### Script files (gb_pilot_script)
 
 ```
-class ScriptAutopilot final : public Autopilot {
- public:
-  // OPTIONAL: Frames per second of the fixed time step. 60 by default.
-  static GB_CONTEXT_CONSTRAINT_NAMED_DEFAULT(kConstraintFrameRate, ...);
-  // REQUIRED: The file system the script is read from and frames saved to.
-  static GB_CONTEXT_CONSTRAINT(kConstraintFileSystem, kInRequired, FileSystem);
-
-  // Reads and checks the script. Returns null, logging each error with its
-  // line and column, if it can't be read or has errors.
-  static std::unique_ptr<ScriptAutopilot> Create(Contract contract,
-                                                 std::string_view script_path,
-                                                 std::string_view output_path);
+// The steps read from a script file.
+struct PilotScript {
+  bool hide_window = false;
+  std::vector<PilotStep> steps;
 };
+
+// Reads a script. Returns an error giving the line and column of each
+// problem.
+absl::StatusOr<PilotScript> ReadPilotScript(std::string text);
+
+// Creates a StepPilot from the command line's --pilot flags, with a frame
+// saver that writes PNGs to the output folder. Returns null if --pilot isn't
+// given, or an error (logged) if the script can't be read.
+absl::StatusOr<std::unique_ptr<Pilot>> CreateCliPilot(
+    const ValidatedContext& context, const CliCommandLine& line);
 ```
 
-- **Script reading** (`AutopilotScript`) is a `gb_parse` `ParserProgram`: a
-  lexer config (C identifiers, strings, and integers including negative ones,
-  `#` line comments, and line breaks as tokens) and a grammar, so a step that
-  doesn't match fails with its line and column, and a new step is a new line
-  of grammar. `AutopilotScript` turns each matched step into a `Step` by the
-  name of the alternative that matched. Command and condition names are
-  checked as each step runs, as the program may add them late (in a game
-  state, say). Key names are kept as written; `AutopilotSdl` checks them.
+- **Script reading** is a `gb_parse` `ParserProgram`: a lexer config (C
+  identifiers, strings, and integers including negative ones, `#` line
+  comments, and line breaks as tokens) and a grammar, so a step that doesn't
+  match fails with its line and column, and a new step is a new line of
+  grammar. `ReadPilotScript()` turns each matched step into a `PilotStep` by
+  the name of the alternative that matched. `hide window` becomes
+  `hide_window`, and is only allowed before every other step. Command and
+  condition names are checked as each step runs, as the program may add them
+  late (in a game state, say). Key names are kept as written; `PilotSdl`
+  checks them.
 
   ```
   script { ([$steps=step] %linebreak)* [$steps=step] %end ; }
@@ -340,28 +554,24 @@ class ScriptAutopilot final : public Autopilot {
   `gb_parse` found it parses blank lines, a last step without a line break,
   and an empty script, rejects two steps on a line, and collects both
   `$steps` in order, each telling which step it is by its name. A misspelled
-  step is reported as "Expected end of file" at the step's name, so CL5 gives
+  step is reported as "Expected end of file" at the step's name, so CL6 gives
   it a clearer message.
-- **Saving** writes each frame it is given as a PNG with `gb_image`'s
-  `SaveImage()`, in the output folder.
-- **Failures:** a failed step, a wait that times out, a condition or command
-  that doesn't exist, a frame that wasn't saved, and any error logged while
-  running (a log sink counts them, from any thread). The first ends the
-  script.
-- **Command line:** `kCliAutopilotScript` (`--autopilot <script>`, validated
-  as an existing file) and `kCliAutopilotOutput` (`--autopilot-output
-  <folder>`, `out/autopilot` by default), and `CreateCliAutopilot()`, which
-  creates the autopilot from them, or returns null if the script flag isn't
-  given.
-- Thread-compatible, like `Autopilot`. Only the log sink is thread-safe.
+- **Saving:** `CreateCliPilot()`'s frame saver writes each frame as
+  `<output>/<name>.png`, with `gb_image`'s `SaveImage()`.
+- **Command line:** `kCliPilotScript` (`--pilot <script>`, validated
+  as an existing file) and `kCliPilotOutput` (`--pilot-output
+  <folder>`, `out/pilot` by default), read and written through the command
+  line's file system.
+- Running, failures, and the summary are all `StepPilot`'s, so a script runs
+  exactly as the same steps given in code would.
 
 ### Frames (gb_game)
 
-`Game` takes the autopilot from its context (`kConstraintAutopilot`,
-optional). With one, `GameLoop()` passes the autopilot's frame time as every
+`Game` takes the pilot from its context (`kConstraintPilot`,
+optional). With one, `GameLoop()` passes the pilot's delta time as every
 `delta_time`, skips its sleep and spin, calls `BeginFrame()` and `EndFrame()`
 around `Update()`, and stops once `IsDone()`. `Run()` returns false if the
-autopilot failed, which the programs already turn into exit code 1.
+pilot failed, which the programs already turn into exit code 1.
 
 ### Saving frames (gb_render, gb_render_vulkan)
 
@@ -374,9 +584,10 @@ virtual std::unique_ptr<Image> EndFrameAndReadImage(RenderInternal) = 0;
 std::unique_ptr<Image> EndFrameAndReadImage();
 ```
 
-- `RenderSystem::EndFrame()` reads the image when its context's autopilot
-  `IsSavingFrame()`, and gives it to `SaveFrame()`. The script runner writes
-  the PNG, so `gb_render` writes no files for this.
+- `RenderSystem::EndFrame()` reads the image when its context's pilot
+  `IsSavingFrame()`, and gives it to `SaveFrame()`. The pilot decides what to
+  do with it (`StepPilot` hands it to its frame saver), so `gb_render` writes
+  no files for this.
 - `VulkanBackend` creates the swap chain with `eTransferSrc` usage too, when
   the surface supports it. To read a frame, it records a copy of the swap
   chain image to a host-visible buffer after the render pass (with layout
@@ -390,31 +601,31 @@ std::unique_ptr<Image> EndFrameAndReadImage();
 
 ### GUI (gb_imgui)
 
-- `ImGuiInstance` takes the autopilot from its context. With one, it adds an
+- `ImGuiInstance` takes the pilot from its context. With one, it adds an
   ImGui context hook (`ImGuiContextHookType_NewFramePre`, run at the start of
   `ImGui::NewFrame()`, after the platform backend has set up `ImGuiIO`) that
   sets `io.MousePos` and `io.MouseDown` from `GetMouse()`, and
-  `io.DeltaTime` from the frame time. The SDL backend reads the real cursor
+  `io.DeltaTime` from the delta time. The SDL backend reads the real cursor
   in `ImGui_ImplSDL2_NewFrame()`, so this replaces what it read, and programs
   call both as they do today.
 - `gb_imconfig.h` defines `IMGUI_ENABLE_TEST_ENGINE`, and `gb_imgui`
   implements its hooks (`ImGuiTestEngineHook_ItemAdd()` and `ItemInfo()`,
   which ImGui calls for every item with its rectangle and label). With an
-  autopilot, the instance turns them on (`TestEngineHookItems`) and keeps
+  pilot, the instance turns them on (`TestEngineHookItems`) and keeps
   each frame's labelled items, and its item finder answers `click "<label>"`
   from the last frame's. Without one, they are off, and each item costs ImGui
   one branch.
 - Keys and text reach ImGui as SDL events, through the program's own
   `ImGui_ImplSDL2_ProcessEvent()` calls.
 
-### SDL input (gb_autopilot_sdl)
+### SDL input (gb_pilot_sdl)
 
 ```
-class AutopilotSdl final {
+class PilotSdl final {
  public:
   // Checks the script's key names, hides the window if the script asks, and
   // starts filtering input. Returns null if a key name is unknown.
-  static std::unique_ptr<AutopilotSdl> Create(Autopilot* autopilot,
+  static std::unique_ptr<PilotSdl> Create(Pilot* pilot,
                                               SDL_Window* window);
 };
 ```
@@ -442,7 +653,7 @@ writable memory and only reads it, but it relies on that.
 
 `tools/run-program.ps1` loses its key and screenshot steps. It takes
 `-Script` (or `-Steps`, a script written inline with `;` between steps, saved
-to `out\run\<program>\steps.txt`), launches the program with the autopilot
+to `out\run\<program>\steps.txt`), launches the program with the pilot
 flags, and keeps its hang detection and stack dump, now on a run timeout.
 CLAUDE.md's "Run an example" says so.
 
@@ -451,30 +662,32 @@ CLAUDE.md's "Run an example" says so.
 - **Steps over a pipe**, which a session would write to and read results
   from. Runs are repeatable, so a session that wants to look at a frame
   before choosing the next step can run the script again with the step
-  added. The script reader and runner don't care where steps come from, so a
-  pipe can be added later as a source of steps.
+  added. `StepPilot` takes steps from anywhere, and more while it runs, so a
+  pipe can be added later as a source of steps. It would need an option to
+  wait for more steps rather than be done when they run out.
 - **Resizing the window** from a step, and polled mouse state
   (`SDL_GetMouseState()`) for programs other than ImGui.
 
 ### To confirm
 
 - Vulkan keeps presenting to a window hidden with `SDL_HideWindow()`, at its
-  size (CL8). If not, `hide window` moves it off screen instead.
-- The surface supports `eTransferSrc` swap chain images on this GPU (CL8).
+  size (CL9). If not, `hide window` moves it off screen instead.
+- The surface supports `eTransferSrc` swap chain images on this GPU (CL9).
 - `SDL_PeepEvents(SDL_ADDEVENT)` skips the event filter in SDL 2.0.10, and
-  writing SDL's key state array works (CL4).
+  writing SDL's key state array works (CL5).
 - Mouse coordinates in SDL window pixels match the saved frame's pixels,
-  including on a display scaled above 100% (CL10).
+  including on a display scaled above 100% (CL11).
 - The rest of the step grammar holds in `gb_parse` as it did for `wait` and
   `save` in the trial: `wait for` beside `wait`, `click`'s optional forms, and
-  `run`'s values stopping at the line break (CL5).
+  `run`'s values stopping at the line break (CL6).
 
 ## CLs
 
-The interface comes first, then the tier 1 libraries that use it (CL3 and
-CL4), then tier 2: the script runner (CL5 and CL6), and the render system and
-GUI (CL7 to CL9). Each library that uses the interface is tested against
-`FakeAutopilot`, so after CL2 they can be built in any order.
+The interface comes first, then `StepPilot` beside it (CL3), then the tier 1
+libraries that take part (CL4 and CL5), then tier 2: script files (CL6 and
+CL7), and the render system and GUI (CL8 to CL10). Each library that takes
+part is tested against `FakePilot`, so after CL2 they can be built in any
+order.
 
 ### CL1 [x] stb, image: Save PNGs
 
@@ -491,60 +704,85 @@ Depends on: nothing.
 - Unit tests: an image saved to a memory file system loads back with the same
   pixels; saving to a file that can't be written fails.
 
-### CL2 [ ] autopilot: The interface, and a fake
+### CL2 [x] pilot: The interface, and a fake
 
 Depends on: nothing.
 
-- New `gb_autopilot` library: `Autopilot`, `AutopilotInput`,
-  `AutopilotMouse`, and `AutopilotHandle`, with the registries of commands,
-  conditions, and item finders, and `FakeAutopilot`.
+- New `gb_pilot` library: `Pilot`, `PilotInput` and its events, `PilotMouse`,
+  and `PilotHandle`, with the registries of commands, conditions, and item
+  finders, and `FakePilot`.
+- `pilot.h` documents what a piloted program must do (Taking part in a run),
+  and what an implementation must give (Implementing a pilot).
 - Unused, so no visible change.
 
 **Verify**
 - Standard checks.
-- Unit tests, through `FakeAutopilot`: commands run with their values, and a
-  missing one fails; conditions likewise; item finders are asked in turn, and
-  a label two of them find is ambiguous; destroying a handle removes what it
-  registered; unpaired `BeginFrame()` and `EndFrame()` fail their `DCHECK`
-  (death tests, in Debug).
+- Unit tests, through `FakePilot`: commands run with their values, and a
+  missing one fails; conditions likewise; a name registered twice logs an
+  error; item finders are asked in turn, and a label two of them find is
+  ambiguous; destroying a handle removes what it registered, and a callback
+  can remove registrations (its own included) while it runs; unpaired
+  `BeginFrame()` and `EndFrame()`, and saving a frame not being saved or
+  twice, fail their `DCHECK` (death tests, in Debug).
 
-### CL3 [ ] game: Run frames for the autopilot
+### CL3 [ ] pilot: Steps from code
 
 Depends on: CL2.
 
-- `Game`: `kConstraintAutopilot`, the fixed time step, no sleeping,
+- `gb_pilot`: `PilotStep` and its steps, and `StepPilot`: frames, input,
+  commands, conditions, waits and timeouts, clicks on items, saving frames
+  through `save_frame`, failures (with the log sink), the step log, and the
+  summary.
+- Unused, so no visible change.
+
+**Verify**
+- Standard checks.
+- Unit tests, driving frames by hand as a program would: input by frame for
+  each step; commands with values, a missing command, a failing command;
+  `wait for` that passes and that times out; `expect`; a click at the place
+  an item finder gives, and at a missing or ambiguous label; `save` giving
+  `save_frame` the next frame drawn, and failing with no saver, when the
+  saver fails, and when no frame is drawn; steps added while running,
+  including by a command; done after the last step; an error logged from
+  another thread failing the run; the key names of every step added.
+
+### CL4 [ ] game: Run frames for the pilot
+
+Depends on: CL2.
+
+- `Game`: `kConstraintPilot`, the fixed time step, no sleeping,
   `BeginFrame()` and `EndFrame()` around `Update()`, stopping when done, and
   `Run()` returning false on failure.
 
 **Verify**
 - Standard checks.
-- Unit tests, with `FakeAutopilot` and a `FakeClock` that would fail the test
-  if slept on: every `delta_time` is the frame time; the game stops when the
-  autopilot is done; `Run()` returns false when it failed, and true
-  otherwise; without an autopilot, nothing changes.
+- Unit tests, with `FakePilot` and a `FakeClock` that would fail the test
+  if slept on: every `delta_time` is the pilot's; the game stops when the
+  pilot is done; `Run()` returns false when it failed, and true
+  otherwise; without a pilot, nothing changes.
 
-### CL4 [ ] autopilot_sdl: Input through SDL
+### CL5 [ ] pilot_sdl: Input through SDL
 
 Depends on: CL2.
 
-- New `gb_autopilot_sdl` library: `AutopilotSdl`, with the event filter, the
+- New `gb_pilot_sdl` library: `PilotSdl`, with the event filter, the
   injected events, key and modifier state, and `hide window`.
 
 **Verify**
 - Standard checks.
-- Unit tests, with `FakeAutopilot` and SDL's events subsystem alone (no
+- Unit tests, with `FakePilot` and SDL's events subsystem alone (no
   video, so no window): each kind of input arrives as the right SDL events in
   its frame; pushed real input is dropped; quit events pass;
   `SDL_GetKeyboardState()` and `SDL_GetModState()` match the input given; an
   unknown key name fails `Create()`.
 
-### CL5 [ ] autopilot_script: Read scripts
+### CL6 [ ] pilot_script: Read scripts
 
-Depends on: CL2.
+Depends on: CL3.
 
-- New `gb_autopilot_script` library: `AutopilotScript`, the steps read from a
-  script by a `ParserProgram` with the script grammar, with errors by line and
-  column.
+- New `gb_pilot_script` library: `PilotScript` and `ReadPilotScript()`, which
+  reads a script into `PilotStep`s with a `ParserProgram` and the script
+  grammar, with errors by line and column.
 - Unused, so no visible change.
 
 **Verify**
@@ -552,45 +790,43 @@ Depends on: CL2.
 - Unit tests: every step and its values, including `click`'s forms and `run`
   with no values and with several; comments, blank lines, and a last step
   with no line break after it; quoted key names, labels, and window-qualified
-  labels; a step that doesn't match, an unknown step, and a step with values
-  missing or left over, each failing with its position.
+  labels; `hide window` at the top, and failing after another step; a step
+  that doesn't match, an unknown step, and a step with values missing or left
+  over, each failing with its position.
 
-### CL6 [ ] autopilot_script: Run scripts
+### CL7 [ ] pilot_script: Scripts from the command line
 
-Depends on: CL1, CL5.
+Depends on: CL1, CL6.
 
-- `ScriptAutopilot`: frames, input, commands, conditions, waits and timeouts,
-  saving frames, failures (with the log sink), and the summary.
-- `kCliAutopilotScript`, `kCliAutopilotOutput`, and `CreateCliAutopilot()`.
+- `kCliPilotScript`, `kCliPilotOutput`, and `CreateCliPilot()`, with its frame
+  saver writing PNGs.
 - Unused, so no visible change.
 
 **Verify**
 - Standard checks.
-- Unit tests, driving frames by hand: input by frame for each step; commands
-  with values, a missing command, a failing command; `wait for` that passes
-  and that times out; `expect`; `click "<label>"` at the place an item finder
-  gives; `save` writing a PNG to a memory file system, and failing when no
-  frame is drawn; an error logged from another thread failing the run;
-  parsing the flags.
+- Unit tests, with a memory file system: no `--pilot` gives null; a script
+  with errors gives an error; a script runs through the pilot created, driven
+  frame by frame, and its `save` step writes `<output>/<name>.png`, which
+  loads back as the frame given; a frame that can't be written fails the run.
 
-### CL7 [ ] render: Save frames
+### CL8 [ ] render: Save frames
 
 Depends on: CL2.
 
 - `RenderBackend::EndFrameAndReadImage()`, `RenderSystem::EndFrameAndReadImage()`,
-  and `RenderSystem::EndFrame()` saving for the autopilot in its context.
+  and `RenderSystem::EndFrame()` saving for the pilot in its context.
 - `TestRenderBackend` returns a frame of the clear color.
-- `VulkanBackend` gets a stub returning null, so it builds; CL8 does the real
+- `VulkanBackend` gets a stub returning null, so it builds; CL9 does the real
   one.
 
 **Verify**
 - Standard checks.
-- Unit tests, with `FakeAutopilot`: `EndFrameAndReadImage()` returns the
-  frame; the autopilot is given the frame it asked for, and only that frame.
+- Unit tests, with `FakePilot`: `EndFrameAndReadImage()` returns the
+  frame; the pilot is given the frame it asked for, and only that frame.
 
-### CL8 [ ] render_vulkan: Read back presented frames
+### CL9 [ ] render_vulkan: Read back presented frames
 
-Depends on: CL7.
+Depends on: CL8.
 
 - `VulkanBackend`: transfer source swap chain images, the copy, the wait, and
   the format conversion.
@@ -603,7 +839,7 @@ Depends on: CL7.
   window shown and hidden, and with the validation layer reporting no errors.
   Removed before review.
 
-### CL9 [ ] imgui: Mouse, time, and items from the autopilot
+### CL10 [ ] imgui: Mouse, time, and items from the pilot
 
 Depends on: CL2.
 
@@ -613,19 +849,19 @@ Depends on: CL2.
 
 **Verify**
 - Standard checks.
-- Unit tests, with `FakeAutopilot` and the test render backend: the item
+- Unit tests, with `FakePilot` and the test render backend: the item
   finder gives the centers of a button and a check box drawn in the last
   frame; a missing label fails, and so does one used in two windows unless
   qualified by its window; the fake's mouse, pressed there, presses the
-  button and toggles the check box; `io.DeltaTime` is the frame time; without
-  an autopilot the test engine hooks are off.
+  button and toggles the check box; `io.DeltaTime` is the pilot's delta time; without
+  a pilot the test engine hooks are off.
 
-### CL10 [ ] render-check: Scripted checks
+### CL11 [ ] render-check: Scripted checks
 
-Depends on: CL3, CL4, CL6, CL8, CL9.
+Depends on: CL4, CL5, CL7, CL9, CL10.
 
-- render-check runs on `gb::Game`, takes the autopilot flags through `gb_cli`,
-  and creates `AutopilotSdl`.
+- render-check runs on `gb::Game`, takes the pilot flags through `gb_cli`,
+  and creates `PilotSdl`.
 - Scripts in `examples/render-check/scripts/` for its hand checks: resizing
   is left out (no step resizes), and each other section's buttons and check
   boxes are pressed by label, with frames saved before and after.
@@ -640,9 +876,9 @@ Depends on: CL3, CL4, CL6, CL8, CL9.
 - By hand (the user): the program runs as before without the flags, and
   moving the mouse over the window during a run changes nothing.
 
-### CL11 [ ] tools, docs: Run scripts from a session
+### CL12 [ ] tools, docs: Run scripts from a session
 
-Depends on: CL10.
+Depends on: CL11.
 
 - `tools/run-program.ps1` as described in Session tools.
 - CLAUDE.md "Run an example", and README.md's library list (the new
@@ -654,12 +890,12 @@ Depends on: CL10.
   and with `-Steps`. A script that hangs the program (a `wait for` with a
   timeout longer than `-TimeoutSecs`) saves the stacks and fails.
 
-### CL12 [ ] block-world: Scripted runs
+### CL13 [ ] block-world: Scripted runs
 
-Depends on: CL11.
+Depends on: CL12.
 
 - BlockWorld takes its arguments through `gb_cli` (its starting state becomes
-  a flag), and creates `AutopilotSdl`.
+  a flag), and creates `PilotSdl`.
 - A script that walks forward with `w` and saves frames before and after.
 
 **Verify**
