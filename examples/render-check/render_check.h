@@ -105,6 +105,11 @@ class RenderCheck final {
   void CleanUp();
 
   bool ProcessEvents();
+
+  // Keys run the checks a script can't reach with the mouse (see
+  // tools\run-program.ps1).
+  void OnKeyDown(SDL_Keycode key);
+
   void UpdateFrameStats();
   void UpdateInstances();
   void UpdateTextures();
@@ -139,6 +144,8 @@ class RenderCheck final {
   void SetArrayLayer(gb::TextureArray* texture_array, int index,
                      gb::Pixel color);
   void TwoRegionUpdate();
+  void UpdatePartOfDrawnTexture();
+  void UpdatePartOfMipmappedTexture();
 
   SDL_Window* window_ = nullptr;
   LogCounter log_counter_;

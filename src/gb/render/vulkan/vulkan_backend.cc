@@ -1173,15 +1173,15 @@ void VulkanBackend::EndFrameUpdateImages() {
         {vk::BufferImageCopy()
              .setBufferOffset(update.src_offset)
              .setBufferRowLength(update.image_width)
-             .setBufferImageHeight(0)
+             .setBufferImageHeight(update.image_height)
              .setImageSubresource(
                  vk::ImageSubresourceLayers()
                      .setAspectMask(vk::ImageAspectFlagBits::eColor)
                      .setMipLevel(update.mip_level)
                      .setBaseArrayLayer(update.image_layer)
                      .setLayerCount(1))
-             .setImageOffset({update.region_x, update.region_y, 0})
-             .setImageExtent({update.region_width, update.region_height, 1})});
+             .setImageOffset(update.region_offset)
+             .setImageExtent(update.region_extent)});
   }
 
   // Prep the images for rendering.

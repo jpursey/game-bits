@@ -551,10 +551,30 @@ bool RenderCheck::ProcessEvents() {
     if (event.type == SDL_QUIT) {
       return false;
     }
+    if (event.type == SDL_KEYDOWN && event.key.repeat == 0) {
+      OnKeyDown(event.key.keysym.sym);
+    }
     ImGui_ImplSDL2_ProcessEvent(&event);
     message_system_->Send<SDL_Event>(sdl_channel_, event);
   }
   return true;
+}
+
+void RenderCheck::OnKeyDown(SDL_Keycode key) {
+  switch (key) {
+    case SDLK_p:
+      paint_ = !paint_;
+      break;
+    case SDLK_1:
+      TwoRegionUpdate();
+      break;
+    case SDLK_2:
+      UpdatePartOfDrawnTexture();
+      break;
+    case SDLK_3:
+      UpdatePartOfMipmappedTexture();
+      break;
+  }
 }
 
 void RenderCheck::UpdateFrameStats() {
@@ -652,7 +672,7 @@ void RenderCheck::DrawTextureGui() {
   if (!ImGui::CollapsingHeader("Textures", ImGuiTreeNodeFlags_DefaultOpen)) {
     return;
   }
-  ImGui::Checkbox("Paint a square each frame", &paint_);
+  ImGui::Checkbox("Paint a square each frame (P)", &paint_);
   ImGui::SameLine();
   if (ImGui::Button("Reset checkerboards")) {
     ResetCheckerboard(read_write_texture_.texture);
@@ -675,33 +695,14 @@ void RenderCheck::DrawTextureGui() {
   ImGui::Image(static_write_texture_.id, {96, 96});
   ImGui::SameLine();
   ImGui::BeginGroup();
-  if (ImGui::Button("New texture, two regions")) {
+  if (ImGui::Button("New texture, two regions (1)")) {
     TwoRegionUpdate();
   }
-  if (ImGui::Button("Update part of the drawn texture")) {
-    const std::vector<gb::Pixel> pixels(kSquareSize * kSquareSize,
-                                        gb::Pixel(255, 255, 255));
-    static_write_texture_.result =
-        absl::StrCat("Update drawn: ",
-                     ResultString(static_write_texture_.texture->SetRegion(
-                                      0, 0, kSquareSize, kSquareSize, pixels),
-                                  /*expected=*/false));
+  if (ImGui::Button("Update part of the drawn texture (2)")) {
+    UpdatePartOfDrawnTexture();
   }
-  if (ImGui::Button("Update part of a mipmapped texture")) {
-    gb::Texture* texture = render_system_->CreateTexture(
-        &resources_, gb::DataVolatility::kStaticWrite, 128, 128);
-    const std::vector<gb::Pixel> square(kSquareSize * kSquareSize,
-                                        gb::Pixel(255, 255, 255));
-    const std::vector<gb::Pixel> all(128 * 128, gb::Pixel(255, 255, 255));
-
-    // The partial update must come first: once a whole update is pending, a
-    // partial one succeeds.
-    const bool partial_result =
-        texture->SetRegion(0, 0, kSquareSize, kSquareSize, square);
-    const bool whole_result = texture->Set(all);
-    static_write_texture_.result = absl::StrCat(
-        "Mipmapped partial: ", ResultString(partial_result, /*expected=*/false),
-        ", whole: ", ResultString(whole_result, /*expected=*/true));
+  if (ImGui::Button("Update part of a mipmapped texture (3)")) {
+    UpdatePartOfMipmappedTexture();
   }
   ImGui::TextWrapped("%s", static_write_texture_.result.c_str());
   ImGui::EndGroup();
@@ -1014,4 +1015,38 @@ void RenderCheck::TwoRegionUpdate() {
   static_write_texture_.result =
       absl::StrCat("Regions: ", ResultString(failed == 0, /*expected=*/true),
                    " (a red square on grey, above a blue band)");
+}
+
+void RenderCheck::UpdatePartOfDrawnTexture() {
+  if (static_write_texture_.texture == nullptr) {
+    return;
+  }
+  const std::vector<gb::Pixel> pixels(kSquareSize * kSquareSize,
+                                      gb::Pixel(255, 255, 255));
+  static_write_texture_.result =
+      absl::StrCat("Update drawn: ",
+                   ResultString(static_write_texture_.texture->SetRegion(
+                                    0, 0, kSquareSize, kSquareSize, pixels),
+                                /*expected=*/false));
+}
+
+void RenderCheck::UpdatePartOfMipmappedTexture() {
+  gb::Texture* texture = render_system_->CreateTexture(
+      &resources_, gb::DataVolatility::kStaticWrite, 128, 128);
+  if (texture == nullptr) {
+    static_write_texture_.result = "Could not create texture";
+    return;
+  }
+  const std::vector<gb::Pixel> square(kSquareSize * kSquareSize,
+                                      gb::Pixel(255, 255, 255));
+  const std::vector<gb::Pixel> all(128 * 128, gb::Pixel(255, 255, 255));
+
+  // The partial update must come first: once a whole update is pending, a
+  // partial one succeeds.
+  const bool partial_result =
+      texture->SetRegion(0, 0, kSquareSize, kSquareSize, square);
+  const bool whole_result = texture->Set(all);
+  static_write_texture_.result = absl::StrCat(
+      "Mipmapped partial: ", ResultString(partial_result, /*expected=*/false),
+      ", whole: ", ResultString(whole_result, /*expected=*/true));
 }

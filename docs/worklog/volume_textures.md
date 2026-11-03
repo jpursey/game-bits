@@ -234,35 +234,49 @@ The three volatility strategies in `VulkanTexture` (`kStaticWrite` uploads
 from a temporary host buffer, `kStaticReadWrite` keeps one host buffer,
 `kPerFrame` keeps an image per frame in flight) are the same for a volume,
 with regions in three dimensions. So they move out of `VulkanTexture` into a
-`VulkanTexels` object that works on 3D regions (a 2D texture has a depth of
-1), which `VulkanTexture` and `VulkanVolumeTexture` each own. Mipmap
-generation stays in `VulkanTexture`, the only one with mipmaps.
+`VulkanTexels` object that works on 3D regions (a 2D texture's regions have a
+z of zero and a depth of one), which `VulkanTexture` and `VulkanVolumeTexture`
+each own. `VulkanTexels` also generates a 2D texture's mipmaps, as it holds
+the host buffers they are generated in, and has the sampler options.
 
 ```
-// Holds a texture's images and host buffers for its data volatility, and
-// queues the uploads of the regions written. A 2D texture has a depth of one.
+// Holds the texels of a texture: its images, and the host buffers its data
+// volatility needs. It queues the uploads of the regions written each frame,
+// generating mipmaps when the texture has them.
 class VulkanTexels {
  public:
-  static std::unique_ptr<VulkanTexels> Create(
+  // A 2D texture, with mipmaps if options asks for them. CL5 adds
+  // CreateVolume(), for a 3D texture, which has no mipmaps.
+  static std::unique_ptr<VulkanTexels> CreateTexture(
       VulkanBackend* backend, DataVolatility volatility, TextureFormat format,
-      int width, int height, int depth, int mip_levels);
+      int width, int height, const SamplerOptions& options);
+
+  const ImageHandle& GetImageHandle(int frame) const;
 
   bool Clear(const Region& region, const void* texel);
-  bool Set(const Region& region, const void* texels, int stride, int slice);
+
+  // The source's rows are stride texels apart, and its slices slice_height
+  // rows apart, as a clipped region keeps the caller's layout.
+  bool Set(const Region& region, const void* texels, int stride,
+           int slice_height);
   bool Get(void* out_texels) const;
   void* EditBegin();
   void EditEnd(bool modified);
 
-  // Queues the uploads, calling update_mips with the host buffer after each
-  // upload that needs its mipmaps generated.
-  void OnRender(VulkanRenderState* state, MipFunction update_mips);
-  const ImageHandle& GetImageHandle(int frame) const;
+  void OnRender(VulkanRenderState* state);
 };
 ```
 
-- `VulkanImage` takes a depth, creating an `e3D` image and view when it is
-  more than one.
-- `VulkanRenderState::ImageUpdate` gains a z offset and depth.
+- Each strategy implements `PrepareWrite(region)`, which marks the region to
+  upload and returns the host texels to write it to, so `Clear()` and `Set()`
+  are written once for every strategy.
+- An `e3D` view type makes a `VulkanImage` 3D, with
+  `VulkanImage::Options::SetDepth()` giving its depth, so a volume one texel
+  deep is still 3D. It asserts that a 3D image has one layer, and any other
+  image a depth of one.
+- `VulkanRenderState::ImageUpdate` gives its region as a `vk::Offset3D` and
+  `vk::Extent3D`, and the copy's buffer image height is the image's, so a
+  region's slices are a whole slice apart in the host buffer.
 - `VulkanBindingData` writes a volume texture's descriptor as a combined image
   sampler, as for textures, rewriting it when its image handle changes.
 
@@ -365,19 +379,23 @@ Depends on: CL1.
   `kRg8`, and `kRgba4` matching `kRgba8` but banded), with no validation
   errors in the log.
 
-### CL3 [ ] render_vulkan: Texture volatility on 3D regions
+### CL3 [x] render_vulkan: Texture volatility on 3D regions
 
 Depends on: nothing.
 
 - `VulkanTexels`, taking the three volatility strategies out of
   `VulkanTexture`, with regions in three dimensions.
 - `VulkanImage` and `ImageUpdate` with a depth.
-- No visible change.
+- No visible change. render-check gains keys for its texture checks, which a
+  script can't click: P paints a square each frame, and 1, 2, and 3 press the
+  `kStaticWrite` buttons.
 
 **Verify**
 - Standard checks.
-- render-check's existing texture checks behave as before: the textures draw,
-  "Paint a square each frame" paints, and the region updates succeed.
+- render-check, run with `tools\run-program.ps1`: the textures draw, P paints
+  in the `kStaticReadWrite` and `kPerFrame` textures, the `kStaticWrite`
+  checks give their expected results, and the format textures' stripes and
+  mipmaps are as in CL2, with no validation errors in the log.
 
 ### CL4 [ ] render: Volume textures
 

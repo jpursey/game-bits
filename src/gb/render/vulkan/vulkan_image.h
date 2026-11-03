@@ -45,6 +45,10 @@ class VulkanImage final {
       components = in_components;
       return *this;
     }
+    Options& SetDepth(int in_depth) {
+      depth = in_depth;
+      return *this;
+    }
 
     int mip_levels = 1;
     vk::ImageTiling tiling = vk::ImageTiling::eOptimal;
@@ -53,6 +57,10 @@ class VulkanImage final {
 
     // How the view reads each channel from the image.
     vk::ComponentMapping components = {};
+
+    // The depth of a 3D image, which is one for any other image. An image
+    // with an e3D view_type is a 3D image, and has one layer.
+    int depth = 1;
   };
 
   static std::unique_ptr<VulkanImage> Create(VulkanBackend* backend, int width,

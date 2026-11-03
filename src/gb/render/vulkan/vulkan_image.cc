@@ -6,6 +6,7 @@
 #include "gb/render/vulkan/vulkan_image.h"
 
 #include "absl/memory/memory.h"
+#include "gb/render/render_assert.h"
 #include "gb/render/vulkan/vulkan_backend.h"
 #include "gb/render/vulkan/vulkan_format.h"
 
@@ -32,10 +33,15 @@ VulkanImage::~VulkanImage() {
 
 bool VulkanImage::Init(vk::ImageUsageFlags usage, const Options& options) {
   auto device = backend_->GetDevice();
+  const bool is_3d = options.view_type == vk::ImageViewType::e3D;
+  RENDER_ASSERT(is_3d ? layers_ == 1 : options.depth == 1);
+  const vk::ImageType image_type =
+      is_3d ? vk::ImageType::e3D : vk::ImageType::e2D;
   auto create_info = vk::ImageCreateInfo()
-                         .setImageType(vk::ImageType::e2D)
+                         .setImageType(image_type)
                          .setExtent({static_cast<uint32_t>(width_),
-                                     static_cast<uint32_t>(height_), 1})
+                                     static_cast<uint32_t>(height_),
+                                     static_cast<uint32_t>(options.depth)})
                          .setMipLevels(mip_levels_)
                          .setArrayLayers(layers_)
                          .setFormat(format_)

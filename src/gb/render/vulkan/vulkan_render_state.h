@@ -52,7 +52,8 @@ struct VulkanRenderState {
   };
 
   // Copies a region of a mip level from src_buffer, where the region's first
-  // texel is at src_offset, and each row is image_width texels after the last.
+  // texel is at src_offset, each row is image_width texels after the last, and
+  // each slice (in a 3D image) is image_height rows after the last.
   struct ImageUpdate {
     ImageUpdate(vk::Buffer src_buffer, uint32_t src_offset, vk::Image dst_image,
                 uint32_t mip_level, uint32_t image_width, uint32_t image_height,
@@ -64,14 +65,12 @@ struct VulkanRenderState {
           image_width(image_width),
           image_height(image_height),
           image_layer(image_layer),
-          region_x(0),
-          region_y(0),
-          region_width(image_width),
-          region_height(image_height) {}
+          region_offset(0, 0, 0),
+          region_extent(image_width, image_height, 1) {}
     ImageUpdate(vk::Buffer src_buffer, uint32_t src_offset, vk::Image dst_image,
                 uint32_t mip_level, uint32_t image_width, uint32_t image_height,
-                uint32_t image_layer, int32_t region_x, int32_t region_y,
-                uint32_t region_width, uint32_t region_height)
+                uint32_t image_layer, vk::Offset3D region_offset,
+                vk::Extent3D region_extent)
         : src_buffer(src_buffer),
           src_offset(src_offset),
           dst_image(dst_image),
@@ -79,10 +78,8 @@ struct VulkanRenderState {
           image_width(image_width),
           image_height(image_height),
           image_layer(image_layer),
-          region_x(region_x),
-          region_y(region_y),
-          region_width(region_width),
-          region_height(region_height) {}
+          region_offset(region_offset),
+          region_extent(region_extent) {}
     vk::Buffer src_buffer;
     uint32_t src_offset;
     vk::Image dst_image;
@@ -90,10 +87,8 @@ struct VulkanRenderState {
     uint32_t image_width;
     uint32_t image_height;
     uint32_t image_layer;
-    int32_t region_x;
-    int32_t region_y;
-    uint32_t region_width;
-    uint32_t region_height;
+    vk::Offset3D region_offset;
+    vk::Extent3D region_extent;
   };
 
   // Copies copy_size bytes at copy_offset in src_buffer to the same offset in
