@@ -282,6 +282,41 @@ of small decorations at once. Once *Shared mesh buffers and indirect draws* is
 done, its indirect draws take an instance count too. Check by hand in
 `examples/render-check` with a field of instanced quads.
 
+## Job priorities and cancellation
+
+- **Layers:** job
+- **Size:** medium
+- **Feature workflow:** yes
+- **Depends on:** nothing
+- **Requested by:** Terra Diem *Scheduler for derived work*
+- **Background:** Terra Diem's world parallelism assessment
+  (`docs/tech/parallelism-assessment.md` there)
+
+`FiberJobSystem` takes new jobs from one queue (`pending_jobs_`), roughly first
+come, first served, and once `Run()` accepts a job, it will run. A program
+with work of differing urgency (what the camera sees now against what it may
+see later, or a frame's work against background loading) can't have the urgent
+work run first, and can't take back work that's no longer wanted. Add:
+- **A few priority bands**, chosen when a job is queued, with job threads
+  taking work from the highest band that has some. A job that waits and resumes
+  keeps its band. Decide whether bands are strict, or weighted so low bands
+  can't starve, and say which in the contract.
+- **Cancellation** of queued jobs, cheap and from any thread: a cancelled job
+  never runs, and its job counter is still decremented, so waiters aren't left
+  hanging. A running job isn't interrupted, but can check whether it has been
+  cancelled.
+- The same in `FakeJobSystem`, so tests can check order and cancellation.
+
+Moving a queued job between bands isn't needed: a program whose priorities
+change continuously (with the camera, say) can keep its own ordered queue and
+hand the job system work a band at a time as threads free up. Test the order
+of jobs across bands with one job thread, starvation under the chosen rule,
+and that cancelled jobs never run while their counters still complete.
+
+Terra Diem would queue work for the chunks near the camera and in view in a
+higher band than for those farther away or behind it, and cancel work for
+chunks that leave range.
+
 ## Allocator overrides
 
 - **Layers:** base, alloc
