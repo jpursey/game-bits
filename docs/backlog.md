@@ -698,3 +698,22 @@ case in the path itself can't match Windows: NTFS compares names with an
 uppercase table of its own, and a folder can be made case-sensitive. A link
 under a rooted protocol that leads outside its root falls back to the path
 as written.
+
+## Path extensions
+
+- **Layers:** gb_file
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Requested by:** OZ-3 *Path extensions from Game Bits*
+- **Background:** `RemoveFilename()` and `RemoveFolder()` in `path.h`
+
+`path.h` can take a path apart into its protocol, host, folder, and file name,
+but not the file name's extension, so a program that writes a file beside
+another with a different extension (`a.oza` to `a.oz3`) splits it by hand.
+Add `RemoveExtension()`, in the same form and overloads as `RemoveFilename()`:
+it returns the normalized path without its extension, and optionally stores
+the extension, with its `.`. The extension is only ever in the file name, from
+its last `.`, so a `.` in a folder (`v1.2/notes`) isn't one, and neither is a
+leading `.` (`.hidden` has none). Replacing an extension is then
+`absl::StrCat(RemoveExtension(path), ".oz3")`.
