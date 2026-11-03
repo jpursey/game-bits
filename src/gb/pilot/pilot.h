@@ -139,12 +139,12 @@ class PilotHandle final {
 // Drives a program frame by frame, giving it input, and saving the frames it
 // draws.
 //
-// A program creates one and puts it in its context, where the parts of the
-// program that take part in a run find it. Nothing here reaches into the
-// program: it is piloted only as far as its code does what the pilot asks, in
-// the three phases below. Game Bits libraries that take part do some of this
-// for the programs that use them, as each one says, and a program does the rest
-// itself.
+// A program creates one (such as a StepPilot, which runs a list of steps) and
+// puts it in its context, where the parts of the program that take part in a
+// run find it. Nothing here reaches into the program: it is piloted only as far
+// as its code does what the pilot asks, in the three phases below. Game Bits
+// libraries that take part do some of this for the programs that use them, as
+// each one says, and a program does the rest itself.
 //
 // Before the first frame:
 // - Hide the window if IsWindowHidden(), while still drawing every frame at the
@@ -294,7 +294,7 @@ class Pilot {
   //
   // A subclass decides what happens each frame, and the base class keeps the
   // registrations and checks the calls made by the program. FakePilot is the
-  // smallest subclass.
+  // smallest subclass, and StepPilot a complete one.
   //----------------------------------------------------------------------------
 
   // Run what is registered under the name, or find the item with the label.

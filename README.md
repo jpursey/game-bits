@@ -146,8 +146,9 @@ sub-libraries (organized as subdirectories).
    *  [`gb_pilot`](src/gb/pilot): This library defines the interface through
       which a program is driven frame by frame (as by a script), without a
       user: the input it gets each frame, the commands and conditions the
-      program names, the GUI items it can press, and the frames it saves. It
-      also has a fake for testing code that takes part.
+      program names, the GUI items it can press, and the frames it saves.
+      `StepPilot` drives a program through a list of steps given to it in
+      code, and there is a fake for testing code that takes part.
    *  [`gb_profile`](src/gb/profile): A profiler cheap enough to leave on all
       the time in a realtime program. It times scopes in the program and calls
       out to other systems (each charged only for its own time), and records

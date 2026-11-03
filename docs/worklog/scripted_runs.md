@@ -460,19 +460,29 @@ class StepPilot final : public Pilot {
     FrameSaver save_frame;
   };
 
+  StepPilot();
   explicit StepPilot(Options options);
 
   // Adds steps to run after those already added. Steps may be added until the
-  // pilot is done, including by a command while it runs.
+  // run is done, including by a command or condition as it runs. Steps added
+  // once it is done log an error, and are ignored.
   void AddSteps(std::vector<PilotStep> steps);
 };
 ```
 
-- **Timing** is as in Scripts: each frame runs steps in order until one that
-  takes time (a wait, a hold, the release of a key or click, or a save), which
-  finishes in a later frame.
-- **Done** once every step has finished, or at the first failure. A program
-  that adds steps as it goes must add them before the last one finishes.
+- **Timing** is as in Scripts: at the start of each frame (in
+  `BeginFrame()`), steps run in order until one that takes time. A key or
+  click is released at the start of the next frame, and a hold `frames`
+  frames later, and the steps after it run in that frame. A wait, `wait for`,
+  or save finishes at the end of a frame (in `EndFrame()`): once its frames
+  have passed, its condition holds (checked when it starts, and after each
+  frame), or its frame was saved. The steps after it run from the next frame.
+  So the step after one that takes N frames always starts N frames later, and
+  no frame is run after the last step needs it.
+- **Done** once every step has finished, or at the first failure, decided at
+  the end of a frame. A program that adds steps as it goes must add them
+  before the end of the frame in which the last one finishes. With no steps,
+  the run is done after one frame.
 - **Failures:** a failed command, a missing command or condition, an `expect`
   that doesn't hold, a `wait for` that times out, a label that no item or more
   than one has, a `save` with no `save_frame`, a frame not saved within 600
@@ -725,7 +735,7 @@ Depends on: nothing.
   `BeginFrame()` and `EndFrame()`, and saving a frame not being saved or
   twice, fail their `DCHECK` (death tests, in Debug).
 
-### CL3 [ ] pilot: Steps from code
+### CL3 [x] pilot: Steps from code
 
 Depends on: CL2.
 

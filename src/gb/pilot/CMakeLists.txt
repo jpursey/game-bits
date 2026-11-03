@@ -6,11 +6,13 @@
 set(gb_pilot_SOURCE
   pilot.cc pilot.h
   fake_pilot.cc fake_pilot.h
+  step_pilot.cc step_pilot.h
 )
 
 set(gb_pilot_TEST_SOURCE
   pilot_test.cc
   fake_pilot_test.cc
+  step_pilot_test.cc
 )
 
 set(gb_pilot_TEST_DEPS
@@ -21,9 +23,14 @@ set(gb_pilot_DEPS
   absl::any_invocable
   absl::check
   absl::log
+  absl::log_entry
+  absl::log_severity
+  absl::log_sink
+  absl::log_sink_registry
   absl::span
   absl::status
   absl::statusor
+  absl::str_format
   absl::strings
   absl::time
   gb_image
