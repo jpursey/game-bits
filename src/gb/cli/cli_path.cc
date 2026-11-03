@@ -15,10 +15,15 @@ namespace gb {
 
 namespace {
 
-// Validates that the context's file system has the protocol that paths given on
-// the command line are opened with. A missing one is the program's mistake, so
-// this returns a FailedPrecondition error.
-absl::Status ValidateProtocol(const ValidatedContext& context) {
+// Returns the path in the context's file system of `path`, given on the
+// command line: `path` itself, prefixed with the context's protocol if it names
+// one and `path` has no protocol of its own.
+//
+// If the file system doesn't have the protocol that paths given on the command
+// line are opened with, this returns a FailedPrecondition error, as that is the
+// program's mistake.
+absl::StatusOr<std::string> GetFilePath(const ValidatedContext& context,
+                                        std::string_view path) {
   const FileSystem* file_system = context.GetPtr<FileSystem>();
   const std::string protocol =
       context.GetValue<std::string>(kKeyCliFileProtocol);
@@ -33,7 +38,15 @@ absl::Status ValidateProtocol(const ValidatedContext& context) {
         absl::StrCat("paths are opened with the \"", protocol,
                      "\" protocol, which the file system doesn't have"));
   }
-  return absl::OkStatus();
+  if (protocol.empty()) {
+    return std::string(path);
+  }
+  std::string path_protocol;
+  RemoveProtocol(NormalizePath(path), &path_protocol);
+  if (!path_protocol.empty()) {
+    return std::string(path);
+  }
+  return absl::StrCat(protocol, ":", path);
 }
 
 // Returns the type of `path`, given on the command line, in the context's file
@@ -41,15 +54,15 @@ absl::Status ValidateProtocol(const ValidatedContext& context) {
 // protocol to open it with.
 absl::StatusOr<PathType> GetExistingPathType(const ValidatedContext& context,
                                              std::string_view path) {
-  const absl::Status status = ValidateProtocol(context);
-  if (!status.ok()) {
-    return status;
+  const absl::StatusOr<std::string> file_path = GetFilePath(context, path);
+  if (!file_path.ok()) {
+    return file_path.status();
   }
+
   // An empty path would otherwise read as the current folder.
-  const std::string file_path = GetCliFilePath(context, path);
   const PathType type =
       path.empty() ? PathType::kInvalid
-                   : context.GetPtr<FileSystem>()->GetPathInfo(file_path).type;
+                   : context.GetPtr<FileSystem>()->GetPathInfo(*file_path).type;
   if (type == PathType::kInvalid) {
     return absl::InvalidArgumentError(
         absl::StrCat("\"", path, "\" doesn't exist"));
@@ -88,19 +101,65 @@ absl::Status ValidateFolderExists(const ValidatedContext& context,
   return absl::OkStatus();
 }
 
-}  // namespace
-
-std::string GetCliFilePath(const ValidatedContext& context,
-                           std::string_view path) {
-  const std::string protocol =
-      context.GetValue<std::string>(kKeyCliFileProtocol);
-  std::string path_protocol;
-  RemoveProtocol(NormalizePath(path), &path_protocol);
-  if (path.empty() || protocol.empty() || !path_protocol.empty()) {
-    return std::string(path);
+absl::Status ValidateFileWritable(const ValidatedContext& context,
+                                  const std::string_view& path) {
+  const absl::StatusOr<std::string> path_in_file_system =
+      GetFilePath(context, path);
+  if (!path_in_file_system.ok()) {
+    return path_in_file_system.status();
   }
-  return absl::StrCat(protocol, ":", path);
+
+  // A trailing separator is kept, as it says the path is a folder.
+  PathFlags failed_flag;
+  const std::string file_path = NormalizePath(
+      *path_in_file_system, kGenericPathFlags + PathFlag::kAllowTrailingSlash,
+      &failed_flag);
+  if (!failed_flag.IsEmpty()) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("\"", path, "\" isn't a path"));
+  }
+
+  // A path that normalizes to nothing ("", "." or "a/..") is the current
+  // folder.
+  std::string_view filename;
+  const std::string_view folder =
+      RemoveFilename(std::string_view(file_path), &filename);
+  if (file_path.ends_with('/') || filename.empty() || filename == "..") {
+    return absl::InvalidArgumentError(
+        absl::StrCat("\"", path, "\" has no file name"));
+  }
+  FileSystem* file_system = context.GetPtr<FileSystem>();
+  const PathType type = file_system->GetPathInfo(file_path).type;
+  if (type == PathType::kFolder) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("\"", path, "\" is a folder"));
+  }
+
+  // Writing a file that doesn't exist yet creates it. A protocol the file
+  // system doesn't have has no flags.
+  std::string protocol;
+  RemoveProtocol(file_path, &protocol);
+  if (protocol.empty()) {
+    protocol = file_system->GetDefaultProtocolName();
+  }
+  const FileProtocolFlags flags = file_system->GetFlags(protocol);
+  if (!flags.IsSet(FileProtocolFlag::kFileWrite) ||
+      (type != PathType::kFile &&
+       !flags.IsSet(FileProtocolFlag::kFileCreate))) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("\"", path, "\" can't be written"));
+  }
+
+  // An existing file's folder exists. A bare file name's folder is empty, which
+  // is the current folder.
+  if (type != PathType::kFile && !file_system->IsValidFolder(folder)) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("\"", path, "\"'s folder doesn't exist"));
+  }
+  return absl::OkStatus();
 }
+
+}  // namespace
 
 const CliValidator<std::string_view> kCliPathExists = {
     .validate = ValidatePathExists,
@@ -114,6 +173,11 @@ const CliValidator<std::string_view> kCliFileExists = {
 
 const CliValidator<std::string_view> kCliFolderExists = {
     .validate = ValidateFolderExists,
+    .constraints = {&kConstraintCliFileSystem, &kConstraintCliFileProtocol},
+};
+
+const CliValidator<std::string_view> kCliFileWritable = {
+    .validate = ValidateFileWritable,
     .constraints = {&kConstraintCliFileSystem, &kConstraintCliFileProtocol},
 };
 

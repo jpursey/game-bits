@@ -43,6 +43,7 @@ const gb::CliArg<std::string_view> kProgramFile = {
     .help = "Where to write the program. Defaults to the source file's path "
             "with the extension .oz3.",
     .optional = true,
+    .validators = {&gb::kCliFileWritable},
 };
 
 bool Run(gb::ValidatedContext& context,
@@ -53,17 +54,23 @@ const gb::CliCommand kProgram = {
     .help = "Assembles a program, and writes its program file.",
     .flags = {&kInstructionSet, &kMap},
     .args = {&kSourceFile, &kProgramFile},
-    .constraints = {&gb::kConstraintCliFileSystem,
-                    &gb::kConstraintCliFileProtocol},
+    .constraints = {&gb::kConstraintCliFileSystem},
     .run = Run,
 };
 
 bool Run(gb::ValidatedContext& context,
          const gb::CliCommandLine& command_line) {
   gb::FileSystem* file_system = context.GetPtr<gb::FileSystem>();
-  const std::string source_path =
-      gb::GetCliFilePath(context, *command_line.Get(kSourceFile));
+  const std::string_view source_path = *command_line.Get(kSourceFile);
   const bool write_map = command_line.Get(kMap);
+  ...
+  if (program_path == source_path) {
+    // Written as gb_cli writes its own errors, pointing at the help.
+    context.SetValue<std::string>(
+        gb::kKeyCliUsageError,
+        "<program file> is the same file as <source file>");
+    return false;
+  }
   ...
 }
 
@@ -213,6 +220,14 @@ class CliCommandLine {
   the run function with that `ValidatedContext`, returning its result. A
   missing value, or a `kOut` value the command didn't add, is reported as a
   context error, and `Run()` returns false.
+- A run function reports a mistake on the command line that only running
+  finds, such as two arguments naming the same file, which no validator sees
+  as each sees one value, by setting `kConstraintCliUsageError` and returning
+  false. `Run()` writes it in the form of parsing's errors (`prog: <message>.
+  Run "prog --help" for help.`) and returns false, even if the run function
+  returned true. It clears any earlier value before running, so only this
+  run's is seen. Any other error is the run function's to write, as not every
+  failure should point at the help.
 
 ### Help
 
@@ -249,27 +264,30 @@ Flags:
 
 ### The context
 
-`CliContract` is what `gb_cli` reads from the context, and each optional value
-is added to it if it has none:
+`CliContract` is what `gb_cli` reads from the context and adds to it, and each
+optional input with a default is added to it if it has none:
 - `kConstraintCliWriter`: a `CliWriter`, `std::function<void(CliText type,
   std::string_view text)>`, where help (`CliText::kHelp`) and errors
   (`CliText::kError`) go. It defaults to `WriteCliText()`, which writes help
   to stdout and errors to stderr. A command can write its own errors with it.
 - `kConstraintCliHelpWidth`: an `int` named `kKeyCliHelpWidth`
   (`"cli_help_width"`), defaulting to `kDefaultCliHelpWidth` (80).
+- `kConstraintCliUsageError`: an optional output, a `std::string` named
+  `kKeyCliUsageError` (`"cli_usage_error"`), which a run function sets for a
+  mistake on the command line (see `CliCommandLine` above).
 
 ### Paths
 
-`cli_path.h` opens paths given on the command line in a `FileSystem`, as
+`cli_path.h` validates paths given on the command line in a `FileSystem`, as
 they are written:
 - `kConstraintCliFileSystem`: the `FileSystem`, required.
 - `kConstraintCliFileProtocol`: an optional `std::string` named
-  `kKeyCliFileProtocol` (`"cli_file_protocol"`). Without one, or with an empty
-  one, paths without a protocol of their own use the file system's default
-  protocol.
-- `GetCliFilePath(context, path)` returns the path as it is, prefixed with the
-  context's protocol if it names one and the path has no protocol of its own
-  (`"mem:src/main.txt"`).
+  `kKeyCliFileProtocol` (`"cli_file_protocol"`). The validators check a path
+  without a protocol of its own under it (`"src/main.txt"` as
+  `"mem:src/main.txt"`), or under the file system's default protocol without
+  one, or with an empty one. A program that sets one only has it because it
+  chose it, so it opens its paths under it itself, or makes it the file
+  system's default instead.
 - A file system with `LocalFileProtocol::CreateOsRoot()` registered, with
   `"file"` as the default protocol, opens any path written the operating
   system's way. On Windows, each drive letter is also a name for that
@@ -285,7 +303,19 @@ they are written:
   without a `FileSystem` fails parsing. If the file system doesn't have the
   context's protocol, or a default protocol when the context names none, they
   fail as the program's mistake.
-- A run function that calls `GetCliFilePath()` lists both constraints in its
+- `kCliFileWritable` validates that a file can be written at a path without
+  creating any folders, which is what a program's output paths need:
+  - `"x" isn't a path`: the path can't be normalized.
+  - `"x" has no file name`: the path is empty, ends with a separator, or
+    names a root, a bare protocol (`c:`), `.`, or `..`.
+  - `"x" is a folder`: the path is an existing folder.
+  - `"x"'s folder doesn't exist`: the path with its file name removed isn't
+    a folder (the current folder for a bare file name).
+  - `"x" can't be written`: the path's protocol can't write files, or can't
+    create them when the file doesn't exist yet.
+
+  It reads the context as the others do. The file may or may not exist.
+- A run function that opens the paths lists `kConstraintCliFileSystem` in its
   command's constraints, as the example does.
 
 ### Running a program
@@ -301,9 +331,10 @@ std::vector<std::string_view> GetMainArgs(int argc, char* argv[]);
 - `RunCommandLine()` parses the command line, writes the error to the
   context's writer if it isn't valid, and otherwise calls
   `CliCommandLine::Run()`. It returns `main`'s exit code: 0 if the command
-  succeeded or help was written, 1 if the command returned false or the
+  succeeded or help was written, 1 if the command failed otherwise or the
   program made a mistake (`FailedPrecondition`), and 2 if the command line
-  isn't valid. A context that fails `gb_cli`'s own constraints may have no
+  isn't valid, as parsing or the command found (`kConstraintCliUsageError`).
+  A context that fails `gb_cli`'s own constraints may have no
   writer, so nothing is written for it beyond what `ValidatedContext` reports.
 - `GetMainArgs()` returns views of `main()`'s arguments after the program's
   name, which stay valid for the rest of the program.
@@ -321,8 +352,8 @@ platform-specific.
 |---|---|
 | `cli.h` | The definitions (`CliCommand`, `CliFlag`, `CliArg`, `CliChoice`, `CliValidator`, `CliAnyFlag`, `CliAnyArg`) and `ValidateCliCommand()` |
 | `cli_validators.h` | The common validators |
-| `cli_path.h` | `kConstraintCliFileSystem`, `kConstraintCliFileProtocol`, `GetCliFilePath()`, and the path validators |
-| `cli_command_line.h` | `CliCommandLine`, `ParseCommandLine()`, `kConstraintCliWriter`, `kConstraintCliHelpWidth`, and `CliContract` |
+| `cli_path.h` | `kConstraintCliFileSystem`, `kConstraintCliFileProtocol`, and the path validators |
+| `cli_command_line.h` | `CliCommandLine`, `ParseCommandLine()`, `kConstraintCliWriter`, `kConstraintCliHelpWidth`, `kConstraintCliUsageError`, and `CliContract` |
 | `cli_help.h` | `kCliHelpCommand` and `FormatCliHelp()` |
 | `cli_writer.h` | `CliText`, `CliWriter`, and `WriteCliText()` |
 | `run_command_line.h` | `RunCommandLine()` and `GetMainArgs()` |
@@ -366,9 +397,6 @@ platform-specific.
 - A command's required context values are only validated when it runs, as
   which command runs is only known then. A program's tests of each command
   find a missing one.
-- A run function that calls `GetCliFilePath()` must list
-  `kConstraintCliFileProtocol`. If it doesn't, reading it is reported as a
-  context error on the first run, and the path is for the default protocol.
 
 ## Deliberate choices
 

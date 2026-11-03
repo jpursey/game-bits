@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <variant>
@@ -52,9 +53,25 @@ inline constexpr int kDefaultCliHelpWidth = 80;
 GB_CONTEXT_CONSTRAINT_NAMED_DEFAULT(kConstraintCliHelpWidth, kInOptional, int,
                                     kKeyCliHelpWidth, kDefaultCliHelpWidth);
 
-// What gb_cli reads from the context a command line is parsed with.
+// A mistake on the command line that a command's run function finds, as only
+// running can find some, such as two arguments naming the same file. Its
+// message says what is wrong as a validator's does. A run function sets it with
+// `context.SetValue<std::string>(kKeyCliUsageError, message)` and returns
+// false, and gb_cli writes it as it writes the mistakes parsing finds (see
+// CliCommandLine::Run()). The command fails if it is set, even if the run
+// function returns true.
+//
+// A run function writes its other errors itself, as not every failure should
+// point at the help.
+inline constexpr const char* kKeyCliUsageError = "cli_usage_error";
+GB_CONTEXT_CONSTRAINT_NAMED(kConstraintCliUsageError, kOutOptional, std::string,
+                            kKeyCliUsageError);
+
+// What gb_cli reads from the context a command line is parsed with, and adds to
+// it.
 using CliContract =
-    ContextContract<kConstraintCliWriter, kConstraintCliHelpWidth>;
+    ContextContract<kConstraintCliWriter, kConstraintCliHelpWidth,
+                    kConstraintCliUsageError>;
 
 //==============================================================================
 // CliCommandLine
@@ -86,6 +103,11 @@ class CliCommandLine {
   // ValidatedContext reports any error, and this returns false without running
   // the command. If the command doesn't add a value its constraints say it
   // must, that is reported the same way, and this returns false.
+  //
+  // If the run function sets kConstraintCliUsageError, this writes it to the
+  // context's writer as ParseCommandLine() words its errors (`prog: <message>.
+  // Run "prog --help" for help.`), and returns false. Any value already in the
+  // context is cleared first, so only this run's is seen.
   //
   // If the command line asks for help, with "--help", "-h", or the help command
   // (see cli_help.h), this writes the command's help (FormatCliHelp()), wrapped

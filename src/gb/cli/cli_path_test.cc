@@ -12,11 +12,13 @@
 
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "absl/strings/str_cat.h"
 #include "gb/base/context.h"
 #include "gb/base/validated_context.h"
 #include "gb/cli/cli.h"
 #include "gb/cli/cli_command_line.h"
 #include "gb/file/file_system.h"
+#include "gb/file/file_types.h"
 #include "gb/file/memory_file_protocol.h"
 #include "gb/file/path.h"
 #include "gmock/gmock.h"
@@ -29,15 +31,26 @@ using ::testing::ElementsAre;
 using ::testing::HasSubstr;
 using ::testing::StartsWith;
 
+// A memory protocol whose current folder is "/data".
+class CurrentFolderProtocol : public MemoryFileProtocol {
+ public:
+  CurrentFolderProtocol()
+      : MemoryFileProtocol(kReadWriteFileProtocolFlags +
+                           FileProtocolFlag::kCurrentPath) {}
+
+ protected:
+  std::string DoGetCurrentPath(std::string_view) override { return "/data"; }
+};
+
 // Holds a file system with memory protocols registered as "file", which is the
-// default protocol, "mem", and "c", which stands in for a drive (see
-// LocalFileProtocol::CreateOsRoot()). The context holds the file system, and
-// the fixture keeps the errors ValidatedContext reports.
+// default protocol and has a current folder, "mem", and "c", which stands in
+// for a drive (see LocalFileProtocol::CreateOsRoot()). The context holds the
+// file system, and the fixture keeps the errors ValidatedContext reports.
 class CliPathTest : public ::testing::Test {
  protected:
   CliPathTest() {
-    EXPECT_TRUE(
-        file_system_.Register(std::make_unique<MemoryFileProtocol>(), "file"));
+    EXPECT_TRUE(file_system_.Register(std::make_unique<CurrentFolderProtocol>(),
+                                      "file"));
     EXPECT_TRUE(
         file_system_.Register(std::make_unique<MemoryFileProtocol>(), "mem"));
     EXPECT_TRUE(
@@ -74,43 +87,6 @@ class CliPathTest : public ::testing::Test {
 };
 
 //==============================================================================
-// GetCliFilePath()
-//==============================================================================
-
-TEST_F(CliPathTest, GetCliFilePathForTheDefaultProtocol) {
-  ValidatedContext context(&context_, {kConstraintCliFileProtocol});
-  EXPECT_EQ(GetCliFilePath(context, "data\\input.txt"), "data\\input.txt");
-  EXPECT_EQ(GetCliFilePath(context, "C:\\src"), "C:\\src");
-  EXPECT_EQ(GetCliFilePath(context, ""), "");
-}
-
-TEST_F(CliPathTest, GetCliFilePathUsesTheContextsProtocol) {
-  context_.SetValue<std::string>(kKeyCliFileProtocol, "mem");
-  ValidatedContext context(&context_, {kConstraintCliFileProtocol});
-  EXPECT_EQ(GetCliFilePath(context, "data\\input.txt"), "mem:data\\input.txt");
-  EXPECT_EQ(GetCliFilePath(context, "/data"), "mem:/data");
-
-  // A path with a protocol of its own keeps it.
-  EXPECT_EQ(GetCliFilePath(context, "C:\\src"), "C:\\src");
-  EXPECT_EQ(GetCliFilePath(context, "c:src"), "c:src");
-  EXPECT_EQ(GetCliFilePath(context, "file:/data"), "file:/data");
-  EXPECT_EQ(GetCliFilePath(context, ""), "");
-}
-
-TEST_F(CliPathTest, GetCliFilePathWithAnEmptyProtocol) {
-  context_.SetValue<std::string>(kKeyCliFileProtocol, "");
-  ValidatedContext context(&context_, {kConstraintCliFileProtocol});
-  EXPECT_EQ(GetCliFilePath(context, "data\\input.txt"), "data\\input.txt");
-}
-
-TEST_F(CliPathTest, GetCliFilePathWithoutTheProtocolConstraint) {
-  context_.SetValue<std::string>(kKeyCliFileProtocol, "mem");
-  ValidatedContext context(&context_, {kConstraintCliFileSystem});
-  EXPECT_EQ(GetCliFilePath(context, "data\\input.txt"), "data\\input.txt");
-  EXPECT_THAT(context_errors_, ElementsAre(HasSubstr(kKeyCliFileProtocol)));
-}
-
-//==============================================================================
 // Validators
 //==============================================================================
 
@@ -142,6 +118,53 @@ TEST_F(CliPathTest, FolderExists) {
             "\"/missing\" doesn't exist");
 }
 
+TEST_F(CliPathTest, FileWritable) {
+  EXPECT_TRUE(Validate(kCliFileWritable, "/data/output.bin").ok());
+  EXPECT_TRUE(Validate(kCliFileWritable, "/data/input.txt").ok());
+  EXPECT_TRUE(Validate(kCliFileWritable, "/output.bin").ok());
+  EXPECT_TRUE(Validate(kCliFileWritable, "C:\\src\\output.bin").ok());
+  EXPECT_EQ(Validate(kCliFileWritable, "/missing/output.bin").message(),
+            "\"/missing/output.bin\"'s folder doesn't exist");
+  EXPECT_EQ(Validate(kCliFileWritable, "/data/input.txt/output.bin").message(),
+            "\"/data/input.txt/output.bin\"'s folder doesn't exist");
+}
+
+TEST_F(CliPathTest, FileWritableForARelativePath) {
+  EXPECT_TRUE(Validate(kCliFileWritable, "output.bin").ok());
+  EXPECT_TRUE(Validate(kCliFileWritable, "../output.bin").ok());
+  EXPECT_EQ(Validate(kCliFileWritable, "missing\\output.bin").message(),
+            "\"missing\\output.bin\"'s folder doesn't exist");
+}
+
+TEST_F(CliPathTest, FileWritableForAFolder) {
+  EXPECT_EQ(Validate(kCliFileWritable, "/data").message(),
+            "\"/data\" is a folder");
+  EXPECT_EQ(Validate(kCliFileWritable, "C:\\src").message(),
+            "\"C:\\src\" is a folder");
+}
+
+TEST_F(CliPathTest, FileWritableWithoutAFileName) {
+  for (const std::string_view path :
+       {"", "/", "C:\\", "c:", ".", "..", "a/..", "/data/", "output\\"}) {
+    EXPECT_EQ(Validate(kCliFileWritable, path).message(),
+              absl::StrCat("\"", path, "\" has no file name"));
+  }
+}
+
+TEST_F(CliPathTest, FileWritableForAnInvalidPath) {
+  EXPECT_EQ(Validate(kCliFileWritable, "proto-call:/a/b").message(),
+            "\"proto-call:/a/b\" isn't a path");
+}
+
+TEST_F(CliPathTest, FileWritableForAReadOnlyProtocol) {
+  EXPECT_TRUE(file_system_.Register(
+      std::make_unique<MemoryFileProtocol>(kReadOnlyFileProtocolFlags), "ro"));
+  EXPECT_EQ(Validate(kCliFileWritable, "ro:/output.bin").message(),
+            "\"ro:/output.bin\" can't be written");
+  EXPECT_EQ(Validate(kCliFileWritable, "zz:/output.bin").message(),
+            "\"zz:/output.bin\" can't be written");
+}
+
 TEST_F(CliPathTest, ValidatorsUseTheContextsProtocol) {
   EXPECT_FALSE(Validate(kCliFileExists, "/mem_only.txt").ok());
   context_.SetValue<std::string>(kKeyCliFileProtocol, "mem");
@@ -151,12 +174,21 @@ TEST_F(CliPathTest, ValidatorsUseTheContextsProtocol) {
   // A path with a protocol of its own keeps it.
   EXPECT_TRUE(Validate(kCliFileExists, "file:/data/input.txt").ok());
   EXPECT_TRUE(Validate(kCliFileExists, "C:\\src\\input.txt").ok());
+  EXPECT_FALSE(Validate(kCliFileWritable, "/data/output.bin").ok());
+  EXPECT_TRUE(Validate(kCliFileWritable, "file:/data/output.bin").ok());
+}
+
+TEST_F(CliPathTest, ValidatorsWithAnEmptyProtocol) {
+  context_.SetValue<std::string>(kKeyCliFileProtocol, "");
+  EXPECT_TRUE(Validate(kCliFileExists, "/data/input.txt").ok());
+  EXPECT_FALSE(Validate(kCliFileExists, "/mem_only.txt").ok());
 }
 
 TEST_F(CliPathTest, ValidatorsWithAMissingProtocol) {
   context_.SetValue<std::string>(kKeyCliFileProtocol, "missing");
   for (const CliValidator<std::string_view>* validator :
-       {&kCliPathExists, &kCliFileExists, &kCliFolderExists}) {
+       {&kCliPathExists, &kCliFileExists, &kCliFolderExists,
+        &kCliFileWritable}) {
     const absl::Status status = Validate(*validator, "/data/input.txt");
     EXPECT_TRUE(absl::IsFailedPrecondition(status)) << status;
     EXPECT_EQ(status.message(),

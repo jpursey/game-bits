@@ -18,15 +18,16 @@ namespace gb {
 //==============================================================================
 // Paths on the command line
 //
-// A path given on a command line is opened as it is written, in the context's
-// FileSystem (see GetCliFilePath()). For paths written the operating system's
-// way, absolute or relative to the current directory, register
+// A path given on a command line is validated as it is written, in the
+// context's FileSystem. For paths written the operating system's way, absolute
+// or relative to the current directory, register
 // LocalFileProtocol::CreateOsRoot() and make "file" the default protocol: on
 // Windows, a drive ("C:\src\a") is then a protocol name, and a path without one
 // is opened with the default protocol.
 //
-// The path validators below read the context, as does a command's run function
-// that calls GetCliFilePath(), so each lists both constraints:
+// The path validators below read the context, and list what they read in
+// their own constraints. A command's run function that opens the paths lists
+// the file system in its command's constraints:
 //
 //   const gb::CliArg<std::string_view> kSourceFile = {
 //       .name = "source file",
@@ -35,8 +36,7 @@ namespace gb {
 //   const gb::CliCommand kProgram = {
 //       .name = "oz3asm",
 //       .args = {&kSourceFile},
-//       .constraints = {&gb::kConstraintCliFileSystem,
-//                       &gb::kConstraintCliFileProtocol},
+//       .constraints = {&gb::kConstraintCliFileSystem},
 //       .run = Run,
 //   };
 //==============================================================================
@@ -44,24 +44,16 @@ namespace gb {
 // The file system paths on the command line are opened in.
 GB_CONTEXT_CONSTRAINT(kConstraintCliFileSystem, kInRequired, FileSystem);
 
-// The name of the protocol in kConstraintCliFileSystem that paths on the
-// command line without a protocol of their own are opened with. If the context
-// has none, or it is empty, they are opened with the file system's default
+// The name of the protocol in kConstraintCliFileSystem that the path
+// validators check paths without a protocol of their own in ("src/main.txt" is
+// checked as "mem:src/main.txt", and "C:\src" as it is). If the context has
+// none, or it is empty, they are checked with the file system's default
 // protocol. A program sets its own with
-// `context.SetValue<std::string>(kKeyCliFileProtocol, name)`.
+// `context.SetValue<std::string>(kKeyCliFileProtocol, name)`, and opens its
+// paths under it too, as gb_cli doesn't change the paths it gives a command.
 inline constexpr const char* kKeyCliFileProtocol = "cli_file_protocol";
 GB_CONTEXT_CONSTRAINT_NAMED(kConstraintCliFileProtocol, kInOptional,
                             std::string, kKeyCliFileProtocol);
-
-// Returns the path in kConstraintCliFileSystem of `path`, a path given on the
-// command line: `path` itself, prefixed with the protocol in
-// kConstraintCliFileProtocol if there is one and `path` has no protocol of its
-// own ("src/main.txt" is "mem:src/main.txt", and "C:\src" is unchanged).
-//
-// If `context` doesn't allow kConstraintCliFileProtocol to be read, that is
-// reported as a context error, and the path is for the default protocol.
-std::string GetCliFilePath(const ValidatedContext& context,
-                           std::string_view path);
 
 // Validate that a path given on the command line exists in
 // kConstraintCliFileSystem, is a file, or is a folder. Each reads
@@ -72,6 +64,15 @@ std::string GetCliFilePath(const ValidatedContext& context,
 extern const CliValidator<std::string_view> kCliPathExists;
 extern const CliValidator<std::string_view> kCliFileExists;
 extern const CliValidator<std::string_view> kCliFolderExists;
+
+// Validates that a file can be written at a path given on the command line,
+// in kConstraintCliFileSystem, without creating any folders: the path names a
+// file rather than a folder (it has a file name, doesn't end with a separator,
+// and isn't an existing folder), its folder exists (the current folder for a
+// bare file name), and its protocol can write the file, and create it if it
+// doesn't exist. The file may or may not exist already. This reads the context
+// as the validators above do, and fails parsing the same way.
+extern const CliValidator<std::string_view> kCliFileWritable;
 
 }  // namespace gb
 

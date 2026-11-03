@@ -29,15 +29,21 @@ using ::testing::IsEmpty;
 using ::testing::StartsWith;
 
 const CliFlag<bool> kFail = {.name = "fail"};
+const CliFlag<bool> kMistake = {.name = "mistake"};
 
-bool Run(ValidatedContext&, const CliCommandLine& command_line) {
+bool Run(ValidatedContext& context, const CliCommandLine& command_line) {
+  if (command_line.Get(kMistake)) {
+    context.SetValue<std::string>(kKeyCliUsageError,
+                                  "<input> and <output> are the same file");
+    return false;
+  }
   return !command_line.Get(kFail);
 }
 
 const CliCommand kProgram = {
     .name = "prog",
     .help = "Does nothing.",
-    .flags = {&kFail},
+    .flags = {&kFail, &kMistake},
     .run = Run,
 };
 
@@ -75,6 +81,18 @@ TEST_F(RunCommandLineTest, Succeeds) {
 TEST_F(RunCommandLineTest, CommandFails) {
   EXPECT_EQ(RunWith({"--fail"}), 1);
   EXPECT_EQ(writer_.TakeHelp(), "");
+  EXPECT_EQ(writer_.TakeError(), "");
+}
+
+TEST_F(RunCommandLineTest, CommandFindsAUsageError) {
+  EXPECT_EQ(RunWith({"--mistake"}), 2);
+  EXPECT_EQ(writer_.TakeHelp(), "");
+  EXPECT_EQ(writer_.TakeError(),
+            "prog: <input> and <output> are the same file. Run \"prog --help\" "
+            "for help.");
+
+  // The next run doesn't see this run's mistake.
+  EXPECT_EQ(RunWith({"--fail"}), 1);
   EXPECT_EQ(writer_.TakeError(), "");
 }
 

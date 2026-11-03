@@ -6,6 +6,7 @@
 #include "gb/cli/run_command_line.h"
 
 #include <memory>
+#include <string>
 #include <utility>
 
 #include "absl/status/status.h"
@@ -46,7 +47,14 @@ int RunCommandLine(CliContract contract, const CliCommand* program,
                ? kExitInvalidCommandLine
                : kExitFailure;
   }
-  return command_line->Run() ? kExitSuccess : kExitFailure;
+  if (command_line->Run()) {
+    return kExitSuccess;
+  }
+
+  // Run() wrote the mistake the command found, if there is one.
+  return context.Exists<std::string>(kKeyCliUsageError)
+             ? kExitInvalidCommandLine
+             : kExitFailure;
 }
 
 int RunCommandLine(const CliCommand* program,

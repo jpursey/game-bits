@@ -259,6 +259,10 @@ struct CliCommand {
   // with, validated against gb_cli's constraints (CliContract) and those of
   // every command in the path.
   //
+  // A mistake on the command line that only running finds is set as
+  // kConstraintCliUsageError (see cli_command_line.h), which gb_cli writes. The
+  // run function writes any other error itself.
+  //
   // A command with no run function writes its help instead (see
   // CliCommandLine::Run()), so one with subcommands but no run function writes
   // its help if none of them is named.

@@ -34,6 +34,17 @@ using ::testing::StartsWith;
 bool RunNothing(ValidatedContext&, const CliCommandLine&) { return true; }
 bool RunFails(ValidatedContext&, const CliCommandLine&) { return false; }
 
+bool RunWithAMistake(ValidatedContext& context, const CliCommandLine&) {
+  context.SetValue<std::string>(kKeyCliUsageError,
+                                "<input> and <output> are the same file");
+  return false;
+}
+bool RunSucceedsWithAMistake(ValidatedContext& context, const CliCommandLine&) {
+  context.SetValue<std::string>(kKeyCliUsageError,
+                                "<input> and <output> are the same file");
+  return true;
+}
+
 // Parses command lines with a context, which holds a writer that keeps what is
 // written to it, and keeps the errors ValidatedContext reports.
 class CliCommandLineRunTest : public ::testing::Test {
@@ -551,6 +562,41 @@ TEST_F(CliCommandLineRunTest, RunReturnsWhetherTheCommandSucceeded) {
   ASSERT_TRUE(command_line.ok()) << command_line.status();
   EXPECT_FALSE(command_line->Run());
   EXPECT_EQ(writer_.TakeHelp(), "");
+}
+
+TEST_F(CliCommandLineRunTest, RunWritesAUsageError) {
+  static const CliCommand kCopy = {.name = "copy", .run = RunWithAMistake};
+  static const CliCommand kProgram = {.name = "prog", .commands = {&kCopy}};
+  const std::vector<std::string_view> args = {"copy"};
+  absl::StatusOr<CliCommandLine> command_line = Parse(&kProgram, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_FALSE(command_line->Run());
+  EXPECT_EQ(writer_.TakeError(),
+            "prog copy: <input> and <output> are the same file. Run \"prog "
+            "copy --help\" for help.");
+  EXPECT_EQ(writer_.TakeHelp(), "");
+}
+
+TEST_F(CliCommandLineRunTest, RunFailsWithAUsageErrorEvenIfTheCommandSucceeds) {
+  static const CliCommand kProgram = {.name = "prog",
+                                      .run = RunSucceedsWithAMistake};
+  const std::vector<std::string_view> args = {};
+  absl::StatusOr<CliCommandLine> command_line = Parse(&kProgram, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_FALSE(command_line->Run());
+  EXPECT_EQ(writer_.TakeError(),
+            "prog: <input> and <output> are the same file. Run \"prog --help\" "
+            "for help.");
+}
+
+TEST_F(CliCommandLineRunTest, RunClearsAPreviousUsageError) {
+  context_.SetValue<std::string>(kKeyCliUsageError, "an old mistake");
+  const std::vector<std::string_view> args = {"status"};
+  absl::StatusOr<CliCommandLine> command_line = Parse(&kTool, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_TRUE(command_line->Run());
+  EXPECT_FALSE(context_.Exists<std::string>(kKeyCliUsageError));
+  EXPECT_EQ(writer_.TakeError(), "");
 }
 
 TEST_F(CliCommandLineRunTest, RunWritesHelpForACommandWithNoRunFunction) {

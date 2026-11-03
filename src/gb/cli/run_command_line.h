@@ -33,7 +33,8 @@ namespace gb {
 // Returns main()'s exit code: 0 if the command succeeded or help was written,
 // 1 if the command failed or the program made a mistake, such as a context
 // that isn't valid (see ParseCommandLine()), and 2 if the command line isn't
-// valid.
+// valid, as parsing finds or the command finds when it runs (see
+// kConstraintCliUsageError).
 int RunCommandLine(CliContract contract, const CliCommand* program,
                    absl::Span<const std::string_view> args);
 

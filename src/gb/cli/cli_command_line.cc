@@ -40,6 +40,15 @@ bool IsWord(std::string_view arg) {
   return absl::ascii_isdigit(arg[1]) || arg[1] == '.';
 }
 
+// Returns `message`, a mistake on the command line of the command at the end of
+// `path`, in the form it is shown to the user.
+std::string FormatUsageError(absl::Span<const CliCommand* const> path,
+                             std::string_view message) {
+  const std::string path_name = internal::GetCliPathName(path);
+  return absl::StrCat(path_name, ": ", message, ". Run \"", path_name,
+                      " --help\" for help.");
+}
+
 // The help flag, as every command lists it.
 const CliAnyFlag kHelpFlag = &internal::kCliHelpFlag;
 
@@ -288,9 +297,7 @@ const CliAnyFlag* CliParser::FindFlag(char short_name) const {
 }
 
 absl::Status CliParser::Error(std::string_view message) const {
-  const std::string path_name = internal::GetCliPathName(path_);
-  return absl::InvalidArgumentError(absl::StrCat(
-      path_name, ": ", message, ". Run \"", path_name, " --help\" for help."));
+  return absl::InvalidArgumentError(FormatUsageError(path_, message));
 }
 
 absl::Status CliParser::ValueError(std::string_view label,
@@ -309,6 +316,7 @@ absl::Status CliParser::ValueError(std::string_view label,
 //==============================================================================
 
 bool CliCommandLine::Run() {
+  context_.Clear<std::string>(kKeyCliUsageError);
   const CliCommand* command = GetCommand();
   if (is_help_ || command->run == nullptr) {
     // The context has a writer and a width, as their constraints have
@@ -329,9 +337,17 @@ bool CliCommandLine::Run() {
     return false;
   }
 
-  // The command fails if it doesn't add a value it must. Completing the
-  // context, when it is destroyed, reports which.
   const bool succeeded = command->run(command_context, *this);
+  const std::string* usage_error =
+      command_context.GetPtr<std::string>(kKeyCliUsageError);
+  if (usage_error != nullptr) {
+    (*command_context.GetPtr<CliWriter>())(
+        CliText::kError, FormatUsageError(path_, *usage_error));
+    return false;
+  }
+
+  // The command also fails if it doesn't add a value it must. Completing the
+  // context, when it is destroyed, reports which.
   return command_context.IsValidToComplete() && succeeded;
 }
 
