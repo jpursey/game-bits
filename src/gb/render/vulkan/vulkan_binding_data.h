@@ -34,6 +34,10 @@ class VulkanBindingData : public BindingData {
     VulkanTextureArray* texture_array;
     int bound[kMaxFramesInFlight];
   };
+  struct VolumeTextureInfo {
+    VulkanVolumeTexture* volume_texture;
+    int bound[kMaxFramesInFlight];
+  };
   struct ConstantsInfo {
     const RenderDataType* type;
     VulkanRenderBuffer* buffer;
@@ -62,6 +66,7 @@ class VulkanBindingData : public BindingData {
     union {
       TextureInfo texture;
       TextureArrayInfo texture_array;
+      VolumeTextureInfo volume_texture;
       ConstantsInfo constants;
     };
   };

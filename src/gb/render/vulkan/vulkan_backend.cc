@@ -24,6 +24,7 @@
 #include "gb/render/vulkan/vulkan_shader_code.h"
 #include "gb/render/vulkan/vulkan_texture.h"
 #include "gb/render/vulkan/vulkan_texture_array.h"
+#include "gb/render/vulkan/vulkan_volume_texture.h"
 #include "gb/render/vulkan/vulkan_window.h"
 
 //------------------------------------------------------------------------------
@@ -60,20 +61,6 @@ namespace {
 static const vk::ClearColorValue kColorClearValue(std::array<float, 4>{
     0.0f, 0.0f, 0.0f, 1.0f});
 static const vk::ClearDepthStencilValue kDepthClearValue(1.0f, 0);
-
-// Returns true if every binding is of a type this backend can bind, logging
-// why not otherwise. Volume textures can't be bound.
-bool ValidateBindingTypes(absl::Span<const Binding> bindings) {
-  for (const Binding& binding : bindings) {
-    if (binding.binding_type == BindingType::kVolumeTexture) {
-      LOG(ERROR) << "Volume texture bindings are not supported, at set "
-                 << static_cast<int>(binding.set) << ", index "
-                 << binding.index;
-      return false;
-    }
-  }
-  return true;
-}
 
 }  // namespace
 
@@ -913,8 +900,13 @@ VolumeTexture* VulkanBackend::CreateVolumeTexture(
     RenderInternal, ResourceEntry entry, DataVolatility volatility, int width,
     int height, int depth, const SamplerOptions& options,
     TextureFormat format) {
-  LOG(ERROR) << "Volume textures are not supported";
-  return nullptr;
+  auto sampler = GetSampler(options, width, height);
+  if (!sampler) {
+    return nullptr;
+  }
+  return VulkanVolumeTexture::Create(std::move(entry), this, sampler,
+                                     volatility, width, height, depth, options,
+                                     format);
 }
 
 std::unique_ptr<ShaderCode> VulkanBackend::CreateShaderCode(RenderInternal,
@@ -925,9 +917,6 @@ std::unique_ptr<ShaderCode> VulkanBackend::CreateShaderCode(RenderInternal,
 
 std::unique_ptr<RenderSceneType> VulkanBackend::CreateSceneType(
     RenderInternal, absl::Span<const Binding> bindings) {
-  if (!ValidateBindingTypes(bindings)) {
-    return nullptr;
-  }
   return VulkanSceneType::Create({}, this, bindings);
 }
 
@@ -941,9 +930,6 @@ std::unique_ptr<RenderPipeline> VulkanBackend::CreatePipeline(
     RenderInternal, RenderSceneType* scene_type, const VertexType* vertex_type,
     absl::Span<const Binding> bindings, ShaderCode* vertex_shader,
     ShaderCode* fragment_shader, const MaterialConfig& config) {
-  if (!ValidateBindingTypes(bindings)) {
-    return nullptr;
-  }
   return VulkanRenderPipeline::Create(
       {}, this, static_cast<VulkanSceneType*>(scene_type), vertex_type,
       bindings, static_cast<VulkanShaderCode*>(vertex_shader),
@@ -1120,6 +1106,9 @@ void VulkanBackend::EndFrameProcessUpdates() {
   }
   for (VulkanTextureArray* texture_array : render_state_.texture_arrays) {
     texture_array->OnRender(&render_state_);
+  }
+  for (VulkanVolumeTexture* volume_texture : render_state_.volume_textures) {
+    volume_texture->OnRender(&render_state_);
   }
 
   // Update all changed resources.

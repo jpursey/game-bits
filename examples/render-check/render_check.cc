@@ -32,6 +32,7 @@
 
 // Game includes
 #include "quad_shaders.h"
+#include "volume_shaders.h"
 
 // Windows is included last, as its macros rename functions declared above.
 #ifndef NOMINMAX
@@ -95,6 +96,26 @@ constexpr int kFormatStripeWidth = 2;
 constexpr int kFormatStripeFrame = 10;
 constexpr float kFormatSmallSize = 16.0f;
 constexpr float kFormatSpacing = 72.0f;
+
+// The volume textures are below the texture formats, a row for each format.
+// Each slice has its own pattern, and a row's quads sample from the first
+// slice's center to the last one's in steps of half a slice, so with filtering
+// every other quad is an even blend of two slices. The last quad moves through
+// every depth, wrapping from the last slice to the first. A few frames in, a
+// square is written to the middle two slices, at an odd x as for the stripes.
+// It is written as texels rather than cleared, so it is copied a row and a
+// slice at a time.
+constexpr int kVolumeSize = 32;
+constexpr int kVolumeDepth = 4;
+constexpr int kVolumeQuads = kVolumeDepth * 2;
+constexpr float kVolumeTop = kFormatTop + 130.0f;
+constexpr float kVolumeQuadSize = 32.0f;
+constexpr float kVolumeSpacing = 36.0f;
+constexpr float kVolumeRowSpacing = 56.0f;
+constexpr int kVolumeRegionX = 9;
+constexpr int kVolumeRegionY = 8;
+constexpr int kVolumeRegionSize = 14;
+constexpr float kVolumeFramesPerCycle = 480.0f;
 
 // Converts a hue in [0, 1) to a fully saturated color.
 gb::Pixel HueColor(float hue) {
@@ -179,7 +200,8 @@ RenderCheck::~RenderCheck() { CleanUp(); }
 bool RenderCheck::Init() {
   absl::AddLogSink(&log_counter_);
   return InitWindow() && InitRenderSystem() && InitGui() && InitQuads() &&
-         InitTextures() && InitBlendQuads() && InitFormatTextures();
+         InitTextures() && InitBlendQuads() && InitFormatTextures() &&
+         InitVolumes();
 }
 
 bool RenderCheck::InitWindow() {
@@ -498,9 +520,110 @@ bool RenderCheck::InitFormatTextures() {
   return true;
 }
 
+bool RenderCheck::InitVolumes() {
+  // The volume quads are drawn in the quads' scene, with the same scene and
+  // instance bindings.
+  const gb::MaterialType* quad_type = quad_material_->GetType();
+  const gb::Binding volume_binding =
+      gb::Binding()
+          .SetShaders(gb::ShaderType::kFragment)
+          .SetLocation(gb::BindingSet::kMaterial, 0)
+          .SetVolumeTexture();
+  gb::Shader* vertex_shader = render_system_->CreateShader(
+      &resources_, gb::ShaderType::kVertex,
+      render_system_->CreateShaderCode(kVolumeVertexShader,
+                                       sizeof(kVolumeVertexShader)),
+      quad_type->GetVertexShader()->GetBindings(),
+      {gb::ShaderParam(gb::ShaderValue::kVec2, 0)},
+      {gb::ShaderParam(gb::ShaderValue::kVec3, 0)});
+  gb::Shader* fragment_shader = render_system_->CreateShader(
+      &resources_, gb::ShaderType::kFragment,
+      render_system_->CreateShaderCode(kVolumeFragmentShader,
+                                       sizeof(kVolumeFragmentShader)),
+      {volume_binding}, {gb::ShaderParam(gb::ShaderValue::kVec3, 0)},
+      {gb::ShaderParam(gb::ShaderValue::kVec4, 0)});
+  if (vertex_shader == nullptr || fragment_shader == nullptr) {
+    LOG(ERROR) << "Could not create volume shaders";
+    return false;
+  }
+
+  gb::MaterialType* material_type = render_system_->CreateMaterialType(
+      &resources_, quad_type->GetSceneType(), quad_type->GetVertexType(),
+      vertex_shader, fragment_shader, QuadConfig());
+  if (material_type == nullptr) {
+    LOG(ERROR) << "Could not create volume material type";
+    return false;
+  }
+
+  // Each slice is lit in its own color, all with full red, so R8 shows every
+  // pattern.
+  const gb::Pixel slice_colors[kVolumeDepth] = {
+      gb::Pixel(255, 0, 0), gb::Pixel(255, 255, 0), gb::Pixel(255, 0, 255),
+      gb::Pixel(255, 255, 255)};
+  struct Format {
+    gb::TextureFormat format;
+    gb::DataVolatility volatility;
+    const char* name;
+  };
+  const Format formats[] = {
+      {gb::TextureFormat::kR8, gb::DataVolatility::kStaticReadWrite,
+       "R8, kStaticReadWrite"},
+      {gb::TextureFormat::kRgba4, gb::DataVolatility::kPerFrame,
+       "Rgba4, kPerFrame"},
+  };
+  for (const Format& format : formats) {
+    const int texel_size = gb::GetTexelSize(format.format);
+    std::vector<uint8_t> texels(kVolumeSize * kVolumeSize * kVolumeDepth *
+                                texel_size);
+    for (int z = 0; z < kVolumeDepth; ++z) {
+      for (int y = 0; y < kVolumeSize; ++y) {
+        for (int x = 0; x < kVolumeSize; ++x) {
+          // Horizontal stripes, vertical stripes, a checkerboard, and a
+          // square, in blocks of 8 texels.
+          const int bx = x / 8;
+          const int by = y / 8;
+          const bool lit[kVolumeDepth] = {
+              by % 2 == 0, bx % 2 == 0, (bx + by) % 2 == 0,
+              (bx == 1 || bx == 2) && (by == 1 || by == 2)};
+          const uint32_t texel = gb::PixelToTexel(
+              format.format, lit[z] ? slice_colors[z] : gb::PixelColor::kBlack);
+          std::memcpy(
+              &texels[((z * kVolumeSize + y) * kVolumeSize + x) * texel_size],
+              &texel, texel_size);
+        }
+      }
+    }
+    gb::VolumeTexture* volume = render_system_->CreateVolumeTexture(
+        &resources_, format.volatility, kVolumeSize, kVolumeSize, kVolumeDepth,
+        gb::SamplerOptions().SetMipmap(false), format.format);
+    gb::Material* material =
+        render_system_->CreateMaterial(&resources_, material_type);
+    if (volume == nullptr ||
+        !volume->Set(texels.data(), static_cast<int64_t>(texels.size())) ||
+        material == nullptr) {
+      LOG(ERROR) << "Could not create " << format.name << " volume texture";
+      return false;
+    }
+    material->GetMaterialBindingData()->SetVolumeTexture(0, volume);
+
+    VolumeRow row = {format.name, volume, material, {}};
+    for (int i = 0; i < kVolumeQuads; ++i) {
+      auto quad = material->CreateInstanceBindingData();
+      if (quad == nullptr) {
+        LOG(ERROR) << "Could not create " << format.name << " volume quad";
+        return false;
+      }
+      row.quads.emplace_back(std::move(quad));
+    }
+    volume_rows_.emplace_back(std::move(row));
+  }
+  return true;
+}
+
 void RenderCheck::CleanUp() {
   instances_.clear();
   blend_instances_.clear();
+  volume_rows_.clear();
   scene_.reset();
   if (gui_instance_ != nullptr) {
     ImGui_ImplSDL2_Shutdown();
@@ -611,6 +734,7 @@ void RenderCheck::UpdateTextures() {
   }
   if (frame_ == kFormatStripeFrame) {
     AddFormatStripes();
+    AddVolumeRegions();
   }
   if (cycle_layer_) {
     SetArrayLayer(read_write_array_, 0, HueColor(frame_ / 120.0f));
@@ -630,10 +754,12 @@ void RenderCheck::DrawGui() {
   DrawGuiCheckGui();
   DrawBlendGui();
   DrawFormatGui();
+  DrawVolumeGui();
   DrawLogGui();
   ImGui::End();
   DrawExtraRects();
   DrawFormatTextures();
+  DrawVolumeLabels();
 }
 
 void RenderCheck::DrawFrameGui() {
@@ -795,6 +921,48 @@ void RenderCheck::DrawFormatGui() {
       "(red for R8, yellow for Rg8) just right of its middle.");
 }
 
+void RenderCheck::DrawVolumeGui() {
+  if (!ImGui::CollapsingHeader("Volume textures",
+                               ImGuiTreeNodeFlags_DefaultOpen)) {
+    return;
+  }
+  ImGui::TextWrapped(
+      "Below the texture formats, a volume texture in each of two formats, "
+      "whose slices hold red horizontal stripes, yellow vertical stripes, a "
+      "magenta checkerboard, and a white square (all red in R8). The quads "
+      "sample from the first slice to the last, every other one an even blend "
+      "of the slices either side, and the last quad moves smoothly through "
+      "them. The middle two slices have a blue-grey square (dark red in R8) "
+      "over their pattern, which the first and last quads lack.");
+}
+
+void RenderCheck::DrawVolumeLabels() {
+  ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
+  const int count = static_cast<int>(volume_rows_.size());
+  for (int i = 0; i < count; ++i) {
+    draw_list->AddText(
+        {kFormatLeft, kVolumeTop + i * kVolumeRowSpacing - 16.0f},
+        IM_COL32_WHITE, volume_rows_[i].name);
+  }
+}
+
+void RenderCheck::AddVolumeRegions() {
+  for (const VolumeRow& row : volume_rows_) {
+    const gb::TextureFormat format = row.volume->GetFormat();
+    const uint32_t texel = gb::PixelToTexel(format, gb::Pixel(128, 128, 255));
+    const int count = kVolumeRegionSize * kVolumeRegionSize * 2;
+    std::vector<uint8_t> texels(count * gb::GetTexelSize(format));
+    gb::FillTexels(format, &texel, count, texels.data());
+    if (!row.volume->SetRegion(kVolumeRegionX, kVolumeRegionY, 1,
+                               kVolumeRegionSize, kVolumeRegionSize, 2,
+                               texels.data(),
+                               static_cast<int64_t>(texels.size()))) {
+      LOG(ERROR) << "Could not add a region to the " << row.name
+                 << " volume texture";
+    }
+  }
+}
+
 void RenderCheck::AddFormatStripes() {
   for (const FormatTexture& format : format_textures_) {
     const gb::TextureFormat texture_format = format.texture->GetFormat();
@@ -870,6 +1038,28 @@ void RenderCheck::DrawQuads() {
                          instance.get());
   }
   render_system_->Draw(scene_.get(), blend_draw_list_);
+  DrawVolumes();
+}
+
+void RenderCheck::DrawVolumes() {
+  const int row_count = static_cast<int>(volume_rows_.size());
+  for (int row = 0; row < row_count; ++row) {
+    const VolumeRow& volume_row = volume_rows_[row];
+    const float y = kVolumeTop + row * kVolumeRowSpacing;
+    for (int i = 0; i < kVolumeQuads; ++i) {
+      float x = kFormatLeft + i * kVolumeSpacing;
+      float depth = (i + 1) / (2.0f * kVolumeDepth);
+      if (i == kVolumeQuads - 1) {
+        x += kVolumeSpacing / 2.0f;
+        depth = std::fmod(frame_ / kVolumeFramesPerCycle, 1.0f);
+      }
+      const InstanceData data = {{x, y, kVolumeQuadSize, kVolumeQuadSize},
+                                 {depth, 0.0f, 0.0f, 0.0f}};
+      gb::BindingData* quad = volume_row.quads[i].get();
+      quad->SetConstants<InstanceData>(0, data);
+      render_system_->Draw(scene_.get(), quad_mesh_, volume_row.material, quad);
+    }
+  }
 }
 
 void RenderCheck::CreateInstances() {

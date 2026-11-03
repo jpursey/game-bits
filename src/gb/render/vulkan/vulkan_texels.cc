@@ -380,6 +380,25 @@ std::unique_ptr<VulkanTexels> VulkanTexels::CreateTexture(
       .mip_levels = GetMipLevelCount(width, height, options),
       .tile_size = options.tile_size,
   };
+  return Create(backend, volatility, properties);
+}
+
+std::unique_ptr<VulkanTexels> VulkanTexels::CreateVolume(
+    VulkanBackend* backend, DataVolatility volatility, TextureFormat format,
+    int width, int height, int depth) {
+  const Properties properties = {
+      .format = format,
+      .width = width,
+      .height = height,
+      .depth = depth,
+      .view_type = vk::ImageViewType::e3D,
+  };
+  return Create(backend, volatility, properties);
+}
+
+std::unique_ptr<VulkanTexels> VulkanTexels::Create(
+    VulkanBackend* backend, DataVolatility volatility,
+    const Properties& properties) {
   std::unique_ptr<VulkanTexels> texels;
   switch (volatility) {
     case DataVolatility::kStaticWrite:

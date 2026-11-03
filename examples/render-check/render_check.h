@@ -23,6 +23,7 @@
 #include "gb/render/draw_list.h"
 #include "gb/render/material_config.h"
 #include "gb/render/render_system.h"
+#include "gb/render/volume_texture.h"
 #include "gb/render/vulkan/vulkan_backend.h"
 #include "gb/resource/resource_set.h"
 #include "gb/resource/resource_system.h"
@@ -59,7 +60,7 @@ class LogCounter final : public absl::LogSink {
 
 // Exercises the Vulkan backend by hand: window resizing, binding data churn,
 // texture and texture array updates while they are drawn, each texture format,
-// and each material blend mode.
+// volume textures, and each material blend mode.
 class RenderCheck final {
  public:
   RenderCheck() = default;
@@ -77,15 +78,25 @@ class RenderCheck final {
     float y;
   };
 
-  // Matches SceneData in shaders/quad.vert.
+  // Matches SceneData in shaders/quad.vert and shaders/volume.vert.
   struct SceneData {
     float pixel_to_clip[4];
   };
 
-  // Matches InstanceData in shaders/quad.vert.
+  // Matches InstanceData in shaders/quad.vert and shaders/volume.vert, which
+  // reads the color's x as the depth to sample at.
   struct InstanceData {
     float rect[4];
     float color[4];
+  };
+
+  // A volume texture in one format, drawn by a row of quads that sample it at
+  // different depths.
+  struct VolumeRow {
+    const char* name;
+    gb::VolumeTexture* volume;
+    gb::Material* material;
+    std::vector<std::unique_ptr<gb::BindingData>> quads;
   };
 
   // A texture shown in the GUI, with the result of the last action on it.
@@ -102,6 +113,7 @@ class RenderCheck final {
   bool InitTextures();
   bool InitBlendQuads();
   bool InitFormatTextures();
+  bool InitVolumes();
   void CleanUp();
 
   bool ProcessEvents();
@@ -121,11 +133,15 @@ class RenderCheck final {
   void DrawGuiCheckGui();
   void DrawBlendGui();
   void DrawFormatGui();
+  void DrawVolumeGui();
   void DrawLogGui();
   void DrawExtraRects();
   void DrawFormatTextures();
   void AddFormatStripes();
+  void DrawVolumeLabels();
+  void AddVolumeRegions();
   void DrawQuads();
+  void DrawVolumes();
 
   void CreateInstances();
   void SetInstanceData(int index, gb::BindingData* instance);
@@ -200,6 +216,9 @@ class RenderCheck final {
     ImTextureID id;
   };
   std::vector<FormatTexture> format_textures_;
+
+  // Volume textures, drawn by DrawVolumes().
+  std::vector<VolumeRow> volume_rows_;
 
   // GUI.
   int extra_rects_ = 0;

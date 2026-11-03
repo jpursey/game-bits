@@ -281,6 +281,12 @@ class VulkanTexels {
   region's slices are a whole slice apart in the host buffer.
 - `VulkanBindingData` writes a volume texture's descriptor as a combined image
   sampler, as for textures, rewriting it when its image handle changes.
+- `VulkanImage::Create()` asks the device for the limits on images of its
+  format, type, tiling, and usage (`getImageFormatProperties()`), and fails if
+  the image is larger than they allow, in extent, mip levels, layers, samples,
+  or memory. Vulkan only requires devices to support 3D images 256 texels on a
+  side, below `kMaxVolumeTextureSize`, and 256 array layers, below
+  `kMaxTextureArrayCount`, so this covers texture arrays too.
 
 ### Storage buffers (gb_render)
 
@@ -325,8 +331,9 @@ class VulkanTexels {
 
 ### To confirm
 
-- The Vulkan formats above can be 3D, optimally tiled, sampled images on this
-  machine's device, and at the sizes we allow (CL5).
+- Confirmed in CL5: `kR8` and `kRgba4` volumes draw with filtering between
+  slices on this machine's device (render-check). Any format or size a device
+  can't support fails to create, rather than failing when drawn.
 - Confirmed in CL2: `B4G4R4A4_UNORM_PACK16` with a swizzled view reads back
   as our bit order (render-check), and `stb_image_resize` resizes 1 and 2
   channel 8-bit images (unit tests).
@@ -424,7 +431,7 @@ Depends on: CL1.
   with the binding saves and loads it, and a material bound to a volume saves
   and loads with that volume.
 
-### CL5 [ ] render_vulkan: Volume textures in Vulkan
+### CL5 [x] render_vulkan: Volume textures in Vulkan
 
 Depends on: CL2, CL3, CL4.
 

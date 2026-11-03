@@ -142,6 +142,7 @@ struct VulkanRenderState {
   absl::flat_hash_set<VulkanRenderBuffer*> buffers;
   absl::flat_hash_set<VulkanTexture*> textures;
   absl::flat_hash_set<VulkanTextureArray*> texture_arrays;
+  absl::flat_hash_set<VulkanVolumeTexture*> volume_textures;
 
   // Accumulates all updates to resources in a frame.
   std::vector<ImageBarrier> image_barriers;

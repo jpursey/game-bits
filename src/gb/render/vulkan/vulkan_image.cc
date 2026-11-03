@@ -5,12 +5,56 @@
 
 #include "gb/render/vulkan/vulkan_image.h"
 
+#include "absl/log/log.h"
 #include "absl/memory/memory.h"
 #include "gb/render/render_assert.h"
 #include "gb/render/vulkan/vulkan_backend.h"
 #include "gb/render/vulkan/vulkan_format.h"
 
 namespace gb {
+
+namespace {
+
+// Returns true if the device supports images like create_info describes,
+// logging why not otherwise. The device's limits depend on the image's format,
+// type, tiling, and usage. As the size of an image's memory isn't known until
+// it is created, this sets max_resource_size to the limit on it.
+bool ValidateImage(vk::PhysicalDevice physical_device,
+                   const vk::ImageCreateInfo& create_info,
+                   vk::DeviceSize* max_resource_size) {
+  auto [result, properties] = physical_device.getImageFormatProperties(
+      create_info.format, create_info.imageType, create_info.tiling,
+      create_info.usage, create_info.flags);
+  if (result != vk::Result::eSuccess) {
+    LOG(ERROR) << "Images in format " << vk::to_string(create_info.format)
+               << " with usage " << vk::to_string(create_info.usage)
+               << " are not supported";
+    return false;
+  }
+  const vk::Extent3D& extent = create_info.extent;
+  const vk::Extent3D& max_extent = properties.maxExtent;
+  if (extent.width > max_extent.width || extent.height > max_extent.height ||
+      extent.depth > max_extent.depth) {
+    LOG(ERROR) << "Image size " << extent.width << "," << extent.height << ","
+               << extent.depth << " exceeds the device's limit of "
+               << max_extent.width << "," << max_extent.height << ","
+               << max_extent.depth;
+    return false;
+  }
+  if (create_info.mipLevels > properties.maxMipLevels ||
+      create_info.arrayLayers > properties.maxArrayLayers ||
+      !(properties.sampleCounts & create_info.samples)) {
+    LOG(ERROR) << "Image with " << create_info.mipLevels << " mip levels, "
+               << create_info.arrayLayers << " layers, and "
+               << vk::to_string(create_info.samples)
+               << " samples exceeds the device's limits";
+    return false;
+  }
+  *max_resource_size = properties.maxResourceSize;
+  return true;
+}
+
+}  // namespace
 
 std::unique_ptr<VulkanImage> VulkanImage::Create(VulkanBackend* backend,
                                                  int width, int height,
@@ -51,6 +95,11 @@ bool VulkanImage::Init(vk::ImageUsageFlags usage, const Options& options) {
                          .setSharingMode(vk::SharingMode::eExclusive)
                          .setSamples(options.sample_count)
                          .setFlags({});
+  vk::DeviceSize max_resource_size = 0;
+  if (!ValidateImage(backend_->GetPhysicalDevice(), create_info,
+                     &max_resource_size)) {
+    return false;
+  }
 
   VmaAllocationCreateInfo alloc_info = {};
   alloc_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
@@ -62,6 +111,11 @@ bool VulkanImage::Init(vk::ImageUsageFlags usage, const Options& options) {
     return false;
   }
   image_ = image;
+  if (allocation_info.size > max_resource_size) {
+    LOG(ERROR) << "Image size of " << allocation_info.size
+               << " bytes exceeds the device's limit of " << max_resource_size;
+    return false;
+  }
 
   const vk::ImageAspectFlags aspect_flags =
       (IsDepthFormat(format_) ? vk::ImageAspectFlagBits::eDepth

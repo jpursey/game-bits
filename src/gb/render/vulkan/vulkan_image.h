@@ -63,6 +63,9 @@ class VulkanImage final {
     int depth = 1;
   };
 
+  // Creates an image and its view. Returns null if the device can't create
+  // the image, such as when it is larger than the device supports for its
+  // format and usage, logging why.
   static std::unique_ptr<VulkanImage> Create(VulkanBackend* backend, int width,
                                              int height, int layers,
                                              vk::Format format,

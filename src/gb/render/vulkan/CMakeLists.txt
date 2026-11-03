@@ -26,6 +26,7 @@ set(gb_render_vulkan_SOURCE
   vulkan_texture.cc vulkan_texture.h
   vulkan_texture_array.cc vulkan_texture_array.h
   vulkan_types.h
+  vulkan_volume_texture.cc vulkan_volume_texture.h
   vulkan_window.h
 )
 

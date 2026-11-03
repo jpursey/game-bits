@@ -66,6 +66,15 @@ class VulkanTexels {
       VulkanBackend* backend, DataVolatility volatility, TextureFormat format,
       int width, int height, const SamplerOptions& options);
 
+  // Creates the texels of a 3D texture in the format, which has no mipmaps.
+  //
+  // Returns null if the images or host buffers can't be created.
+  static std::unique_ptr<VulkanTexels> CreateVolume(VulkanBackend* backend,
+                                                    DataVolatility volatility,
+                                                    TextureFormat format,
+                                                    int width, int height,
+                                                    int depth);
+
   VulkanTexels(const VulkanTexels&) = delete;
   VulkanTexels& operator=(const VulkanTexels&) = delete;
   virtual ~VulkanTexels() = default;
@@ -173,6 +182,11 @@ class VulkanTexels {
   virtual void DoRender(VulkanRenderState* state) = 0;
 
  private:
+  // Creates the texels for the volatility's strategy.
+  static std::unique_ptr<VulkanTexels> Create(VulkanBackend* backend,
+                                              DataVolatility volatility,
+                                              const Properties& properties);
+
   // Returns the offset in bytes of a region's first texel in a host buffer.
   int64_t GetRegionOffset(const Region& region) const;
 

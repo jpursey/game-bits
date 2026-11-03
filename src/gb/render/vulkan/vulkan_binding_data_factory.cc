@@ -166,6 +166,12 @@ bool VulkanBindingDataFactory::AddBindingGroup() {
       for (auto& bound : info.bound) {
         bound = false;
       }
+    } else if (binding.binding_type == BindingType::kVolumeTexture) {
+      auto& info = item.volume_texture;
+      info.volume_texture = nullptr;
+      for (auto& bound : info.bound) {
+        bound = false;
+      }
     } else if (binding.binding_type == BindingType::kConstants) {
       const int value_size = binding.constants_type->GetSize();
       auto buffer = VulkanRenderBuffer::Create(
