@@ -184,7 +184,9 @@ sub-libraries (organized as subdirectories).
       *  [`gb_imgui_sdl`](src/gb/imgui/sdl): Library that implements SDL
          integration with the `gb_imgui` implementation.
    *  [`gb_pilot_script`](src/gb/pilot/script): Reads pilot scripts, text
-      files of one step per line, into the steps a `StepPilot` runs.
+      files of one step per line, into the steps a `StepPilot` runs, and
+      creates the pilot from a program's `gb_cli` command line, saving its
+      frames as PNGs.
 
 # Getting started
 

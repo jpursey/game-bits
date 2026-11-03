@@ -28,13 +28,14 @@ context:
 const gb::CliCommand kProgram = {
     .name = "render_check",
     .flags = {&gb::kCliPilotScript, &gb::kCliPilotOutput},
-    .constraints = {&gb::kConstraintCliFileSystem},
     .run = Run,
 };
 
 bool Run(gb::ValidatedContext& context, const gb::CliCommandLine& line) {
   // Null with no --pilot flag, so the program runs as usual, and an error if
-  // the script has errors. Everything else sees only the Pilot interface.
+  // the script has errors. The context is passed as a CliPilotContract, which
+  // validates that it has the file system. Everything else sees only the Pilot
+  // interface.
   absl::StatusOr<std::unique_ptr<gb::Pilot>> pilot =
       gb::CreateCliPilot(context, line);
   if (!pilot.ok()) {
@@ -531,11 +532,16 @@ struct PilotScript {
 absl::StatusOr<PilotScript> ReadPilotScript(std::string text,
                                             std::string_view filename = {});
 
+// cli_pilot.h: `--pilot <script>` and `--pilot-output <folder>`.
+extern const CliFlag<std::string_view> kCliPilotScript;
+extern const CliFlag<std::string_view> kCliPilotOutput;
+
 // Creates a StepPilot from the command line's --pilot flags, with a frame
 // saver that writes PNGs to the output folder. Returns null if --pilot isn't
 // given, or an error (logged) if the script can't be read.
+using CliPilotContract = ContextContract<kConstraintCliFileSystem>;
 absl::StatusOr<std::unique_ptr<Pilot>> CreateCliPilot(
-    const ValidatedContext& context, const CliCommandLine& line);
+    CliPilotContract contract, const CliCommandLine& command_line);
 ```
 
 - **Script reading** is a `gb_parse` `ParserProgram`: a lexer config (C
@@ -589,11 +595,18 @@ absl::StatusOr<std::unique_ptr<Pilot>> CreateCliPilot(
   it (`\"`, `\\`, `\n`, `\t`, and `\xHH` for other control characters,
   leaving UTF-8 as it is).
 - **Saving:** `CreateCliPilot()`'s frame saver writes each frame as
-  `<output>/<name>.png`, with `gb_image`'s `SaveImage()`.
+  `<output>/<name>.png`, with `gb_image`'s `SaveImage()`, creating the output
+  folder (and those above it) when it saves a frame, so a run that saves none
+  creates nothing.
 - **Command line:** `kCliPilotScript` (`--pilot <script>`, validated
   as an existing file) and `kCliPilotOutput` (`--pilot-output
   <folder>`, `out/pilot` by default), read and written through the command
-  line's file system.
+  line's file system (`kConstraintCliFileSystem`). `CreateCliPilot()` takes
+  its context as a `CliPilotContract`, so the command needn't list the file
+  system in its own constraints, and a context without one fails there.
+  The paths are opened as given, as `gb_cli` leaves opening paths to the
+  program, so a program using these makes its protocol the file system's
+  default rather than setting `cli_file_protocol`.
 - Running, failures, and the summary are all `StepPilot`'s, so a script runs
   exactly as the same steps given in code would.
 
@@ -859,20 +872,22 @@ Depends on: CL3.
   tokens, each failing with its position; steps from code read back from
   their text.
 
-### CL7 [ ] pilot_script: Scripts from the command line
+### CL7 [x] pilot_script: Scripts from the command line
 
 Depends on: CL1, CL6.
 
-- `kCliPilotScript`, `kCliPilotOutput`, and `CreateCliPilot()`, with its frame
-  saver writing PNGs.
+- `gb_pilot_script`: `cli_pilot.h`, with `kCliPilotScript`, `kCliPilotOutput`,
+  and `CreateCliPilot()`, with its frame saver writing PNGs.
 - Unused, so no visible change.
 
 **Verify**
 - Standard checks.
-- Unit tests, with a memory file system: no `--pilot` gives null; a script
-  with errors gives an error; a script runs through the pilot created, driven
-  frame by frame, and its `save` step writes `<output>/<name>.png`, which
-  loads back as the frame given; a frame that can't be written fails the run.
+- Unit tests, with a memory file system: no `--pilot` gives null; a context
+  without a file system fails; a missing script fails parsing; a script with errors gives an error, logged; a script
+  runs through the pilot created, driven frame by frame, hiding the window,
+  and its `save` steps write `<output>/<name>.png`, which load back as the
+  frame given, in `out/pilot` by default; a frame that can't be written fails
+  the run.
 
 ### CL8 [ ] render: Save frames
 
