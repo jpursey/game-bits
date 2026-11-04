@@ -31,7 +31,7 @@ class TestRenderBuffer final : public RenderBuffer {
 
  protected:
   bool DoClear(int offset, int size) override;
-  bool DoSet(const void* data, int size) override;
+  bool DoSet(int offset, const void* data, int size) override;
   void* DoEditBegin() override;
   void OnEditEnd(bool modified) override;
 

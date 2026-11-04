@@ -79,6 +79,18 @@ class RenderBuffer {
   // currently exists for this buffer.
   bool Set(const void* data, int size);
 
+  // Sets `size` values starting at the value at `offset`, keeping the rest.
+  //
+  // Offset and size are in number of values (not bytes), and must be within
+  // the buffer's current size, which this doesn't change, or this returns
+  // false. This will do nothing if a RenderBufferView currently exists for
+  // this buffer.
+  //
+  // Note: A kStaticWrite buffer's data may not be readable, so unless this sets
+  // every value, it may not be supported if the buffer is currently being (or
+  // was recently) rendered, in which case this will return false.
+  bool SetRange(int offset, const void* data, int size);
+
   // Attempts to lock the buffer, allowing the data to be modified on the CPU.
   //
   // When the view is destructed, the modified data will become visible to the
@@ -98,24 +110,27 @@ class RenderBuffer {
   // Derived class interface
   //----------------------------------------------------------------------------
 
-  // Implementation for Clear() and Resize()
+  // Implementation for Clear() and Resize(), which sets `size` values starting
+  // at `offset` to zero.
   //
   // This will never be called if editing is in progress (DoEdit was called but
-  // OnEditEnd was not).
+  // OnEditEnd was not). GetSize() returns the size the buffer has if this
+  // succeeds, and values outside the range up to that size are kept.
   virtual bool DoClear(int offset, int size) = 0;
 
-  // Write new data to the buffer, returning true if the write was begun
-  // successfully.
+  // Implementation for Set() and SetRange(), which writes `size` values
+  // starting at `offset`, returning true if the write was begun successfully.
   //
   // This will never be called if editing is in progress (DoEdit was called but
-  // OnEditEnd was not).
+  // OnEditEnd was not). GetSize() returns the size the buffer has if this
+  // succeeds, and values outside the range up to that size are kept.
   //
   // If this returns true, and the buffer is readable (it isn't kStaticWrite
   // volatility), then it must reflect the data written. Returning true also
   // requires that the data will be transferred to the GPU before this buffer is
   // used in rendering -- although it does not imply the transfer has happened
   // yet.
-  virtual bool DoSet(const void* data, int size) = 0;
+  virtual bool DoSet(int offset, const void* data, int size) = 0;
 
   // Return an editable pointer to the buffer.
   //

@@ -20,10 +20,12 @@ bool RenderBuffer::Clear(int size) {
   if (IsEditing()) {
     return false;
   }
+  const int old_size = size_;
+  size_ = size;
   if (size > 0 && !DoClear(0, size)) {
+    size_ = old_size;
     return false;
   }
-  size_ = size;
   return true;
 }
 
@@ -32,10 +34,12 @@ bool RenderBuffer::Resize(int size) {
   if (IsEditing()) {
     return false;
   }
-  if (size > size_ && !DoClear(size_, size - size_)) {
+  const int old_size = size_;
+  size_ = size;
+  if (size > old_size && !DoClear(old_size, size - old_size)) {
+    size_ = old_size;
     return false;
   }
-  size_ = size;
   return true;
 }
 
@@ -45,11 +49,21 @@ bool RenderBuffer::Set(const void* data, int size) {
   if (IsEditing()) {
     return false;
   }
-  if (size > 0 && !DoSet(data, size)) {
+  const int old_size = size_;
+  size_ = size;
+  if (size > 0 && !DoSet(0, data, size)) {
+    size_ = old_size;
     return false;
   }
-  size_ = size;
   return true;
+}
+
+bool RenderBuffer::SetRange(int offset, const void* data, int size) {
+  RENDER_ASSERT(size == 0 || data != nullptr);
+  if (IsEditing() || offset < 0 || size < 0 || size > size_ - offset) {
+    return false;
+  }
+  return size == 0 || DoSet(offset, data, size);
 }
 
 std::unique_ptr<RenderBufferView> RenderBuffer::Edit() {

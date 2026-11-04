@@ -180,6 +180,53 @@ TEST_F(RenderBufferTest, Set) {
   EXPECT_EQ(test_render_buffer.GetInvalidCallCount(), 0);
 }
 
+TEST_F(RenderBufferTest, SetRange) {
+  const uint32_t kData[kCapacity] = {
+      0x00000000, 0x11111111, 0x22222222, 0x33333333, 0x44444444, 0x55555555,
+      0x66666666, 0x77777777, 0x88888888, 0x99999999, 0xAAAAAAAA, 0xBBBBBBBB,
+      0xCCCCCCCC, 0xDDDDDDDD, 0xEEEEEEEE, 0xFFFFFFFF,
+  };
+  const uint32_t kExpected[8] = {
+      0x00000000, 0x11111111, 0xCCCCCCCC, 0xDDDDDDDD,
+      0xEEEEEEEE, 0x55555555, 0x66666666, 0x77777777,
+  };
+
+  TestRenderBuffer test_render_buffer(&config, DataVolatility::kStaticWrite,
+                                      kValueSize, kCapacity);
+  RenderBuffer& render_buffer = test_render_buffer;
+
+  ASSERT_TRUE(render_buffer.Set(kData, 8));
+  EXPECT_TRUE(render_buffer.SetRange(2, kData + 12, 3));
+  EXPECT_EQ(render_buffer.GetSize(), 8);
+  EXPECT_EQ(
+      std::memcmp(kExpected, test_render_buffer.GetData(), sizeof(kExpected)),
+      0);
+  EXPECT_TRUE(test_render_buffer.CheckBytes(8 * kValueSize, kByteSize, 0xFF));
+  EXPECT_EQ(test_render_buffer.GetModifyCount(), 2);
+
+  // The last values, and none.
+  EXPECT_TRUE(render_buffer.SetRange(7, kData + 7, 1));
+  EXPECT_TRUE(render_buffer.SetRange(8, nullptr, 0));
+  EXPECT_EQ(test_render_buffer.GetModifyCount(), 3);
+
+  // Ranges past the size fail, even within the capacity.
+  EXPECT_FALSE(render_buffer.SetRange(6, kData, 3));
+  EXPECT_FALSE(render_buffer.SetRange(8, kData, 1));
+  EXPECT_FALSE(render_buffer.SetRange(-1, kData, 1));
+  EXPECT_FALSE(render_buffer.SetRange(0, kData, -1));
+
+  config.fail_set = true;
+  EXPECT_FALSE(render_buffer.SetRange(0, kData, 1));
+
+  EXPECT_EQ(render_buffer.GetSize(), 8);
+  EXPECT_EQ(
+      std::memcmp(kExpected, test_render_buffer.GetData(), sizeof(kExpected)),
+      0);
+  EXPECT_TRUE(test_render_buffer.CheckBytes(8 * kValueSize, kByteSize, 0xFF));
+  EXPECT_EQ(test_render_buffer.GetModifyCount(), 3);
+  EXPECT_EQ(test_render_buffer.GetInvalidCallCount(), 0);
+}
+
 TEST_F(RenderBufferTest, EditPreventsModification) {
   TestRenderBuffer test_render_buffer(&config, DataVolatility::kStaticReadWrite,
                                       kValueSize, kCapacity);
@@ -198,7 +245,14 @@ TEST_F(RenderBufferTest, EditPreventsModification) {
   EXPECT_EQ(render_buffer.Edit(), nullptr);
   view.reset();
 
-  EXPECT_EQ(test_render_buffer.GetModifyCount(), 0);
+  ASSERT_TRUE(render_buffer.Resize(1));
+  view = render_buffer.Edit();
+  ASSERT_NE(view, nullptr);
+  EXPECT_FALSE(render_buffer.SetRange(0, &data, 1));
+  view.reset();
+
+  // Only Resize() modified the buffer.
+  EXPECT_EQ(test_render_buffer.GetModifyCount(), 1);
   EXPECT_EQ(test_render_buffer.GetInvalidCallCount(), 0);
 }
 

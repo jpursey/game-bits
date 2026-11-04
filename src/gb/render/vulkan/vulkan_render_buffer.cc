@@ -9,10 +9,11 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <limits>
 
+#include "absl/container/inlined_vector.h"
 #include "absl/log/log.h"
 #include "absl/memory/memory.h"
+#include "absl/types/span.h"
 #include "gb/render/vulkan/vulkan_render_state.h"
 
 namespace gb {
@@ -20,7 +21,63 @@ namespace gb {
 namespace {
 
 constexpr int kNeverUsedFrame = -1000;
-constexpr int kNotDirty = std::numeric_limits<int>::max();
+
+//==============================================================================
+// WrittenRanges
+//==============================================================================
+
+// The ranges of values written to a buffer since they were last copied to the
+// device. The ranges are sorted, and none overlap or touch.
+class WrittenRanges final {
+ public:
+  // The values from begin up to (but not including) end.
+  struct Range {
+    int begin;
+    int end;
+  };
+
+  // If `can_copy_gaps` is true, the buffer copied from holds every value, so
+  // values between the ranges may be copied too. Then more than kMaxRanges
+  // ranges are merged into one, which bounds the copies scattered writes make.
+  explicit WrittenRanges(bool can_copy_gaps) : can_copy_gaps_(can_copy_gaps) {}
+
+  bool IsEmpty() const { return ranges_.empty(); }
+  absl::Span<const Range> Get() const { return ranges_; }
+
+  // Adds the `size` values starting at `offset`, merging them with any range
+  // they overlap or touch.
+  void Add(int offset, int size);
+
+  void Clear() { ranges_.clear(); }
+
+ private:
+  static constexpr int kMaxRanges = 8;
+
+  const bool can_copy_gaps_;
+  absl::InlinedVector<Range, 1> ranges_;
+};
+
+void WrittenRanges::Add(int offset, int size) {
+  int begin = offset;
+  int end = offset + size;
+  const int count = static_cast<int>(ranges_.size());
+  int first = 0;
+  while (first < count && ranges_[first].end < begin) {
+    ++first;
+  }
+  int last = first;
+  while (last < count && ranges_[last].begin <= end) {
+    begin = std::min(begin, ranges_[last].begin);
+    end = std::max(end, ranges_[last].end);
+    ++last;
+  }
+  ranges_.erase(ranges_.begin() + first, ranges_.begin() + last);
+  ranges_.insert(ranges_.begin() + first, {begin, end});
+  if (can_copy_gaps_ && static_cast<int>(ranges_.size()) > kMaxRanges) {
+    const Range all = {ranges_.front().begin, ranges_.back().end};
+    ranges_.assign(1, all);
+  }
+}
 
 //==============================================================================
 // VulkanStaticWriteBuffer
@@ -37,7 +94,7 @@ class VulkanStaticWriteBuffer final : public VulkanRenderBuffer {
 
  protected:
   bool DoClear(int offset, int size) override;
-  bool DoSet(const void* data, int size) override;
+  bool DoSet(int offset, const void* data, int size) override;
   void* DoEditBegin() override;
   void OnEditEnd(bool modified) override;
   void DoRender(VulkanRenderState* state) override;
@@ -50,16 +107,15 @@ class VulkanStaticWriteBuffer final : public VulkanRenderBuffer {
                            value_size, capacity, align_size) {}
 
   bool Init();
-  bool PrepForWrite(int offset);
+  bool PrepForWrite(int offset, int size);
 
-  // The first value written since the last transfer. Values before it are
-  // only on the device.
-  int dirty_offset_ = kNotDirty;
+  // The values written since the last transfer, which only the host buffer
+  // holds. Other values are only on the device.
+  WrittenRanges written_{/*can_copy_gaps=*/false};
   int render_frame_ = kNeverUsedFrame;
   std::unique_ptr<VulkanBuffer> device_buffer_;
 
-  // Holds the values written since the last transfer, and is null if there
-  // are none.
+  // Null while no values are written.
   std::unique_ptr<VulkanBuffer> host_buffer_;
 };
 
@@ -85,15 +141,15 @@ bool VulkanStaticWriteBuffer::Init() {
 
 VulkanStaticWriteBuffer::~VulkanStaticWriteBuffer() {}
 
-bool VulkanStaticWriteBuffer::PrepForWrite(int offset) {
+bool VulkanStaticWriteBuffer::PrepForWrite(int offset, int size) {
   if (host_buffer_ != nullptr) {
     return true;
   }
 
-  // A device buffer in use is replaced, which loses the values before offset,
-  // as they can't be read back.
+  // A device buffer in use is replaced, which loses the values the write
+  // doesn't set, as they can't be read back.
   const bool in_use = FrameInUse(render_frame_);
-  if (in_use && offset > 0) {
+  if (in_use && !SetsAllValues(offset, size)) {
     return false;
   }
 
@@ -117,10 +173,10 @@ bool VulkanStaticWriteBuffer::PrepForWrite(int offset) {
 
 bool VulkanStaticWriteBuffer::DoClear(int offset, int size) {
   RENDER_ASSERT(offset == 0 || GetValueSize() == GetAlignSize());
-  if (!PrepForWrite(offset)) {
+  if (!PrepForWrite(offset, size)) {
     return false;
   }
-  dirty_offset_ = std::min(dirty_offset_, offset);
+  written_.Add(offset, size);
 
   std::memset(static_cast<uint8_t*>(host_buffer_->GetData()) +
                   (offset * GetAlignSize()),
@@ -128,14 +184,16 @@ bool VulkanStaticWriteBuffer::DoClear(int offset, int size) {
   return true;
 }
 
-bool VulkanStaticWriteBuffer::DoSet(const void* data, int size) {
+bool VulkanStaticWriteBuffer::DoSet(int offset, const void* data, int size) {
   RENDER_ASSERT(size == 1 || GetValueSize() == GetAlignSize());
-  if (!PrepForWrite(0)) {
+  if (!PrepForWrite(offset, size)) {
     return false;
   }
-  dirty_offset_ = 0;
+  written_.Add(offset, size);
 
-  std::memcpy(host_buffer_->GetData(), data, size * GetValueSize());
+  std::memcpy(static_cast<uint8_t*>(host_buffer_->GetData()) +
+                  (offset * GetAlignSize()),
+              data, size * GetValueSize());
   return true;
 }
 
@@ -145,13 +203,16 @@ void VulkanStaticWriteBuffer::OnEditEnd(bool modified) {}
 void VulkanStaticWriteBuffer::DoRender(VulkanRenderState* state) {
   render_frame_ = state->frame;
 
-  if (host_buffer_ == nullptr) {
+  if (written_.IsEmpty()) {
     return;
   }
 
-  CopyBuffer(host_buffer_->Get(), device_buffer_->Get(), state, dirty_offset_);
+  for (const WrittenRanges::Range& range : written_.Get()) {
+    CopyBuffer(host_buffer_->Get(), device_buffer_->Get(), state, range.begin,
+               range.end);
+  }
   host_buffer_.reset();
-  dirty_offset_ = kNotDirty;
+  written_.Clear();
 }
 
 const void* VulkanStaticWriteBuffer::DoGetData() const { return nullptr; }
@@ -169,7 +230,7 @@ class VulkanStaticReadWriteBuffer final : public VulkanRenderBuffer {
 
  protected:
   bool DoClear(int offset, int size) override;
-  bool DoSet(const void* data, int size) override;
+  bool DoSet(int offset, const void* data, int size) override;
   void* DoEditBegin() override;
   void OnEditEnd(bool modified) override;
   void DoRender(VulkanRenderState* state) override;
@@ -185,10 +246,15 @@ class VulkanStaticReadWriteBuffer final : public VulkanRenderBuffer {
   bool EnsureHostBufferIsWritable(bool copy_contents);
   bool EnsureDeviceBufferIsWritable();
 
+  // Notes that values were written to the host buffer, to copy them to the
+  // device buffer when it is next rendered.
+  bool AddWritten(int offset, int size);
+
   std::unique_ptr<VulkanBuffer> device_buffer_;
   std::unique_ptr<VulkanBuffer> host_buffer_;
-  bool was_dirty_ = false;
-  bool dirty_ = false;
+
+  // The values in the host buffer that the device buffer doesn't have yet.
+  WrittenRanges written_{/*can_copy_gaps=*/true};
   int render_frame_ = kNeverUsedFrame;
   int transfer_frame_ = kNeverUsedFrame;
 };
@@ -219,77 +285,60 @@ VulkanStaticReadWriteBuffer::~VulkanStaticReadWriteBuffer() {}
 
 bool VulkanStaticReadWriteBuffer::DoClear(int offset, int size) {
   RENDER_ASSERT(offset == 0 || GetValueSize() == GetAlignSize());
-
-  // Values before the offset are kept.
-  if (!EnsureHostBufferIsWritable(/*copy_contents=*/offset > 0)) {
+  if (!EnsureHostBufferIsWritable(
+          /*copy_contents=*/!SetsAllValues(offset, size))) {
     return false;
   }
   std::memset(static_cast<uint8_t*>(host_buffer_->GetData()) +
                   (offset * GetAlignSize()),
               0, size * GetValueSize());
-
-  if (dirty_) {
-    return true;
-  }
-
-  if (!EnsureDeviceBufferIsWritable()) {
-    return false;
-  }
-  dirty_ = true;
-  return true;
+  return AddWritten(offset, size);
 }
 
-bool VulkanStaticReadWriteBuffer::DoSet(const void* data, int size) {
+bool VulkanStaticReadWriteBuffer::DoSet(int offset, const void* data,
+                                        int size) {
   RENDER_ASSERT(size == 1 || GetValueSize() == GetAlignSize());
-  if (!EnsureHostBufferIsWritable(false)) {
+  if (!EnsureHostBufferIsWritable(
+          /*copy_contents=*/!SetsAllValues(offset, size))) {
     return false;
   }
-  std::memcpy(host_buffer_->GetData(), data, size * GetValueSize());
-
-  if (dirty_) {
-    return true;
-  }
-
-  if (!EnsureDeviceBufferIsWritable()) {
-    return false;
-  }
-  dirty_ = true;
-  return true;
+  std::memcpy(static_cast<uint8_t*>(host_buffer_->GetData()) +
+                  (offset * GetAlignSize()),
+              data, size * GetValueSize());
+  return AddWritten(offset, size);
 }
 
 void* VulkanStaticReadWriteBuffer::DoEditBegin() {
   if (!EnsureHostBufferIsWritable(true)) {
     return nullptr;
   }
-
-  // Explicitly clear the dirty flag, as we do not want to initiate a transfer
-  // until OnEditEnd is called.
-  was_dirty_ = dirty_;
-  dirty_ = false;
   return host_buffer_->GetData();
 }
 
 void VulkanStaticReadWriteBuffer::OnEditEnd(bool modified) {
-  if (!modified) {
-    dirty_ = was_dirty_;
-    return;
+  if (modified) {
+    AddWritten(0, GetCapacity());
+  } else if (!written_.IsEmpty()) {
+    // Values written before editing weren't copied while it was in progress,
+    // and the device buffer may have been rendered since.
+    EnsureDeviceBufferIsWritable();
   }
-  if (!EnsureDeviceBufferIsWritable()) {
-    return;
-  }
-  dirty_ = true;
 }
 
 void VulkanStaticReadWriteBuffer::DoRender(VulkanRenderState* state) {
   render_frame_ = state->frame;
 
-  if (!dirty_) {
+  // Values aren't copied while the host buffer is being edited.
+  if (written_.IsEmpty() || IsEditing()) {
     return;
   }
 
-  CopyBuffer(host_buffer_->Get(), device_buffer_->Get(), state);
+  for (const WrittenRanges::Range& range : written_.Get()) {
+    CopyBuffer(host_buffer_->Get(), device_buffer_->Get(), state, range.begin,
+               range.end);
+  }
   transfer_frame_ = render_frame_;
-  dirty_ = false;
+  written_.Clear();
 }
 
 const void* VulkanStaticReadWriteBuffer::DoGetData() const {
@@ -329,8 +378,17 @@ bool VulkanStaticReadWriteBuffer::EnsureDeviceBufferIsWritable() {
   device_buffer_ = std::move(device_buffer);
   SetAllBufferHandles(device_buffer_->Get());
 
-  // This device buffer has never been rendered.
+  // This device buffer has never been rendered, and has none of the values.
   render_frame_ = kNeverUsedFrame;
+  written_.Add(0, GetCapacity());
+  return true;
+}
+
+bool VulkanStaticReadWriteBuffer::AddWritten(int offset, int size) {
+  if (!EnsureDeviceBufferIsWritable()) {
+    return false;
+  }
+  written_.Add(offset, size);
   return true;
 }
 
@@ -349,7 +407,7 @@ class VulkanPerFrameBuffer : public VulkanRenderBuffer {
 
  protected:
   bool DoClear(int offset, int size) override;
-  bool DoSet(const void* data, int size) override;
+  bool DoSet(int offset, const void* data, int size) override;
   void* DoEditBegin() override;
   void OnEditEnd(bool modified) override;
   void DoRender(VulkanRenderState* state) override;
@@ -358,7 +416,9 @@ class VulkanPerFrameBuffer : public VulkanRenderBuffer {
  private:
   struct Buffers {
     Buffers() = default;
-    bool dirty = false;
+
+    // The values in the local buffer that this buffer doesn't have yet.
+    WrittenRanges written{/*can_copy_gaps=*/true};
     std::unique_ptr<VulkanBuffer> buffer;
   };
 
@@ -368,6 +428,10 @@ class VulkanPerFrameBuffer : public VulkanRenderBuffer {
                            capacity, align_size) {}
 
   bool Init();
+
+  // Notes that values were written to the local buffer, to copy them to each
+  // frame's buffer when it is next rendered.
+  void AddWritten(int offset, int size);
 
   void* local_buffer_ = nullptr;
   Buffers buffers_[kMaxFramesInFlight];
@@ -407,18 +471,15 @@ bool VulkanPerFrameBuffer::DoClear(int offset, int size) {
   RENDER_ASSERT(offset == 0 || GetValueSize() == GetAlignSize());
   std::memset(static_cast<uint8_t*>(local_buffer_) + (offset * GetAlignSize()),
               0, size * GetValueSize());
-  for (auto& buffers : buffers_) {
-    buffers.dirty = true;
-  }
+  AddWritten(offset, size);
   return true;
 }
 
-bool VulkanPerFrameBuffer::DoSet(const void* data, int size) {
+bool VulkanPerFrameBuffer::DoSet(int offset, const void* data, int size) {
   RENDER_ASSERT(size == 1 || GetValueSize() == GetAlignSize());
-  std::memcpy(local_buffer_, data, size * GetValueSize());
-  for (auto& buffers : buffers_) {
-    buffers.dirty = true;
-  }
+  std::memcpy(static_cast<uint8_t*>(local_buffer_) + (offset * GetAlignSize()),
+              data, size * GetValueSize());
+  AddWritten(offset, size);
   return true;
 }
 
@@ -426,15 +487,13 @@ void* VulkanPerFrameBuffer::DoEditBegin() { return local_buffer_; }
 
 void VulkanPerFrameBuffer::OnEditEnd(bool modified) {
   if (modified) {
-    for (auto& buffers : buffers_) {
-      buffers.dirty = true;
-    }
+    AddWritten(0, GetCapacity());
   }
 }
 
 void VulkanPerFrameBuffer::DoRender(VulkanRenderState* state) {
   auto& buffers = buffers_[state->frame % kMaxFramesInFlight];
-  if (!buffers.dirty) {
+  if (buffers.written.IsEmpty()) {
     return;
   }
 
@@ -442,10 +501,24 @@ void VulkanPerFrameBuffer::DoRender(VulkanRenderState* state) {
   // vmaFlushAllocation after the memory is written, or add it to a list of
   // allocations to flush in RenderState.
   if (buffers.buffer->MapData()) {
-    std::memcpy(buffers.buffer->GetData(), local_buffer_,
-                GetSize() * GetAlignSize());
-    buffers.dirty = false;
+    for (const WrittenRanges::Range& range : buffers.written.Get()) {
+      const int end = std::min(range.end, GetSize());
+      if (range.begin < end) {
+        const int byte_offset = range.begin * GetAlignSize();
+        std::memcpy(
+            static_cast<uint8_t*>(buffers.buffer->GetData()) + byte_offset,
+            static_cast<const uint8_t*>(local_buffer_) + byte_offset,
+            (end - range.begin) * GetAlignSize());
+      }
+    }
+    buffers.written.Clear();
     buffers.buffer->UnmapData();
+  }
+}
+
+void VulkanPerFrameBuffer::AddWritten(int offset, int size) {
+  for (auto& buffers : buffers_) {
+    buffers.written.Add(offset, size);
   }
 }
 
@@ -534,9 +607,10 @@ std::unique_ptr<VulkanBuffer> VulkanRenderBuffer::CreateHostBuffer() {
 
 void VulkanRenderBuffer::CopyBuffer(vk::Buffer host_buffer,
                                     vk::Buffer device_buffer,
-                                    VulkanRenderState* state, int offset) {
-  const vk::DeviceSize copy_offset = offset * align_size_;
-  const vk::DeviceSize copy_end = GetSize() * align_size_;
+                                    VulkanRenderState* state, int begin,
+                                    int end) {
+  const vk::DeviceSize copy_offset = begin * align_size_;
+  const vk::DeviceSize copy_end = std::min(end, GetSize()) * align_size_;
   if (copy_end <= copy_offset) {
     return;
   }

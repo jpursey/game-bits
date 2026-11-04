@@ -446,7 +446,7 @@ Depends on: CL2, CL3, CL4.
   between slices (filtered, not stepped), and a region update changes only
   its region, with no validation errors.
 
-### CL6 [ ] render, render_vulkan: Writes to part of a render buffer
+### CL6 [x] render, render_vulkan: Writes to part of a render buffer
 
 Depends on: nothing.
 

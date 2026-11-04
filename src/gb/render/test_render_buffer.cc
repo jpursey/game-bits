@@ -43,7 +43,7 @@ bool TestRenderBuffer::DoClear(int offset, int size) {
   }
   modify_count_ += 1;
 
-  if (editing_ || offset < 0 || size < 0 || offset + size > GetCapacity()) {
+  if (editing_ || offset < 0 || size <= 0 || offset + size > GetSize()) {
     invalid_call_count_ += 1;
     return false;
   }
@@ -53,20 +53,19 @@ bool TestRenderBuffer::DoClear(int offset, int size) {
   return true;
 }
 
-bool TestRenderBuffer::DoSet(const void* data, int size) {
+bool TestRenderBuffer::DoSet(int offset, const void* data, int size) {
   if (config_->fail_set) {
     return false;
   }
   modify_count_ += 1;
 
-  if (size == 0) {
-    return true;
-  }
-  if (editing_ || data == nullptr || size < 0 || size > GetCapacity()) {
+  if (editing_ || data == nullptr || offset < 0 || size <= 0 ||
+      offset + size > GetSize()) {
     invalid_call_count_ += 1;
     return false;
   }
-  std::memcpy(data_, data, size * GetValueSize());
+  std::memcpy(static_cast<uint8_t*>(data_) + (offset * GetValueSize()), data,
+              size * GetValueSize());
   return true;
 }
 

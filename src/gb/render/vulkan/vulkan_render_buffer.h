@@ -80,14 +80,21 @@ class VulkanRenderBuffer : public RenderBuffer {
   // Properties.
   bool FrameInUse(int frame) const { return backend_->IsFrameInUse(frame); }
 
+  // Returns true if writing `size` values at `offset` sets every value the
+  // buffer holds, so no other values need to be kept.
+  bool SetsAllValues(int offset, int size) const {
+    return offset == 0 && size >= GetSize();
+  }
+
   // Buffer operations.
   std::unique_ptr<VulkanBuffer> CreateDeviceBuffer(
       VmaMemoryUsage memory_usage = VMA_MEMORY_USAGE_GPU_ONLY);
   std::unique_ptr<VulkanBuffer> CreateHostBuffer();
-  // Copies the values from offset to GetSize() from the host buffer to the
-  // device buffer.
+
+  // Copies the values from begin up to end, or GetSize() if that is less,
+  // from the host buffer to the device buffer.
   void CopyBuffer(vk::Buffer host_buffer, vk::Buffer device_buffer,
-                  VulkanRenderState* state, int offset = 0);
+                  VulkanRenderState* state, int begin, int end);
   void SetAllBufferHandles(vk::Buffer buffer) {
     for (BufferHandle& handle : buffer_handles_) {
       handle.version += 1;
