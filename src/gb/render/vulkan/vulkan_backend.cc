@@ -1084,6 +1084,13 @@ void VulkanBackend::EndFrame(RenderInternal) {
   EndFramePresent();
 }
 
+std::unique_ptr<Image> VulkanBackend::EndFrameAndReadImage(
+    RenderInternal access_token) {
+  EndFrame(access_token);
+  LOG(ERROR) << "The Vulkan backend can't read back frames yet";
+  return nullptr;
+}
+
 void VulkanBackend::CallFrameCallbacks(std::vector<FrameCallback>* callbacks) {
   auto& frame = frames_[frame_index_];
   std::erase_if(*callbacks,

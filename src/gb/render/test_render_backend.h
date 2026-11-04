@@ -44,6 +44,11 @@ class TestRenderBackend final : public RenderBackend {
     TestRenderBackend* backend = nullptr;  // Non-null when part of a backend.
 
     FrameDimensions frame_dimensions = {0, 0};
+
+    // The color of every pixel EndFrameAndReadImage() returns, as nothing is
+    // drawn.
+    Pixel clear_color = {0, 0, 0, 255};
+
     bool rendering = false;
     std::vector<DrawItem> draw_list;
     std::vector<DrawCommand> draw_commands;  // From every DrawList drawn.
@@ -67,8 +72,10 @@ class TestRenderBackend final : public RenderBackend {
     bool fail_create_vertex_buffer = false;
     bool fail_create_index_buffer = false;
     bool fail_begin_frame = false;
+    bool fail_read_image = false;
 
     int invalid_call_count = 0;
+    int read_image_count = 0;  // Calls to EndFrameAndReadImage().
   };
 
   TestRenderBackend(State* state) : state_(state) {
@@ -81,7 +88,9 @@ class TestRenderBackend final : public RenderBackend {
   }
 
   // Implementation of RenderBackend
-  void SetClearColor(RenderInternal, Pixel color) override {}
+  void SetClearColor(RenderInternal, Pixel color) override {
+    state_->clear_color = color;
+  }
   FrameDimensions GetFrameDimensions(RenderInternal) const override;
   bool CanFilter(RenderInternal, TextureFormat format) const override;
   Texture* CreateTexture(RenderInternal, ResourceEntry entry,
@@ -123,6 +132,7 @@ class TestRenderBackend final : public RenderBackend {
   void Draw(RenderInternal, RenderScene* scene,
             absl::Span<const DrawCommand> commands) override;
   void EndFrame(RenderInternal) override;
+  std::unique_ptr<Image> EndFrameAndReadImage(RenderInternal) override;
 
  private:
   State* state_ = nullptr;

@@ -420,6 +420,23 @@ TEST(PilotTest, SaveFrameTwiceIsDebugFatal) {
   pilot.EndFrame();
 }
 
+TEST(PilotTest, SavingOnlyInAFrameUntilSaved) {
+  FakePilot pilot;
+  pilot.SetSavingFrames(true);
+  Image image(1, 1);
+  EXPECT_FALSE(pilot.IsSavingFrame());
+  pilot.BeginFrame();
+  EXPECT_TRUE(pilot.IsSavingFrame());
+  pilot.SaveFrame(image);
+  EXPECT_FALSE(pilot.IsSavingFrame());
+  pilot.EndFrame();
+  EXPECT_FALSE(pilot.IsSavingFrame());
+
+  pilot.BeginFrame();
+  EXPECT_TRUE(pilot.IsSavingFrame());
+  pilot.EndFrame();
+}
+
 #ifndef NDEBUG
 TEST(PilotTest, HandleOutlivingPilotIsDebugFatal) {
   EXPECT_DEATH(

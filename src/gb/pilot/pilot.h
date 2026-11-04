@@ -141,10 +141,13 @@ class PilotHandle final {
 //
 // A program creates one (such as a StepPilot, which runs a list of steps) and
 // puts it in its context, where the parts of the program that take part in a
-// run find it. Nothing here reaches into the program: it is piloted only as far
-// as its code does what the pilot asks, in the three phases below. Game Bits
-// libraries that take part do some of this for the programs that use them, as
-// each one says, and a program does the rest itself.
+// run find it. It must be stored as a Pilot, not as its subclass (such as with
+// SetOwned<Pilot>()), or it isn't found.
+//
+// Nothing here reaches into the program: it is piloted only as far as its code
+// does what the pilot asks, in the three phases below. Game Bits libraries that
+// take part do some of this for the programs that use them, as each one says,
+// and a program does the rest itself.
 //
 // Before the first frame:
 // - Hide the window if IsWindowHidden(), while still drawing every frame at the
@@ -177,7 +180,8 @@ class PilotHandle final {
 //      keeps its own frame time and mouse takes them from GetDeltaTime() and
 //      GetMouse().
 //    - If IsSavingFrame(), read back the frame once drawn, as presented and
-//      one pixel per window pixel, and give it to SaveFrame().
+//      one pixel per window pixel, and give it to SaveFrame(). If more than
+//      one is drawn, the first is saved, as IsSavingFrame() is then false.
 // 4. Call EndFrame().
 //
 // After the last frame:
@@ -294,10 +298,13 @@ class Pilot {
   // Saving frames
   //----------------------------------------------------------------------------
 
-  // Called by the render system during a frame: whether the frame is to be
-  // saved, and if so, its image once drawn. SaveFrame() may only be called
-  // when IsSavingFrame(), and once a frame.
-  bool IsSavingFrame() const { return DoIsSavingFrame(); }
+  // Called by the render system: whether a frame drawn now is to be saved, and
+  // if so, its image once drawn. Only one image is saved a frame, so
+  // IsSavingFrame() is false outside a frame, and once SaveFrame() has been
+  // called in it. SaveFrame() may only be called when IsSavingFrame().
+  bool IsSavingFrame() const {
+    return in_frame_ && !frame_saved_ && DoIsSavingFrame();
+  }
   void SaveFrame(const Image& image);
 
  protected:

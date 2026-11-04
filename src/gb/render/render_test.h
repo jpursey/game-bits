@@ -11,6 +11,7 @@
 
 #include "absl/types/span.h"
 #include "gb/file/file_system.h"
+#include "gb/pilot/pilot.h"
 #include "gb/render/material_config.h"
 #include "gb/render/render_system.h"
 #include "gb/render/render_types.h"
@@ -72,8 +73,9 @@ class RenderTest : public ::testing::Test {
   RenderInternal GetAccessToken() { return {}; }
 
   // Creates a RenderSystem with a resource system, memory-backed file system
-  // and test backend, storing in render_system_.
-  void CreateSystem(bool edit_mode = false);
+  // and test backend, storing in render_system_. If `pilot` isn't null, it is
+  // in the context too, and must outlive render_system_.
+  void CreateSystem(bool edit_mode = false, Pilot* pilot = nullptr);
 
   // Creates a test pipeline with the Vector3 vertex data and the requested
   // bindings.

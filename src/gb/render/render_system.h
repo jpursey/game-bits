@@ -15,6 +15,7 @@
 #include "flatbuffers/flatbuffers.h"
 #include "gb/base/validated_context.h"
 #include "gb/file/file_types.h"
+#include "gb/pilot/pilot.h"
 #include "gb/render/binding.h"
 #include "gb/render/draw_list.h"
 #include "gb/render/material.h"
@@ -89,11 +90,16 @@ class RenderSystem final {
   static GB_CONTEXT_CONSTRAINT_NAMED_DEFAULT(kConstraintEnableEdit, kInOptional,
                                              bool, kKeyEnableEdit, false);
 
+  // OPTIONAL: Pilot driving the program (see Pilot for how it is stored). With
+  // one, each frame the pilot is saving is read back as it ends, and given to
+  // the pilot. It must outlive the render system.
+  static GB_CONTEXT_CONSTRAINT(kConstraintPilot, kInOptional, Pilot);
+
   // Contract for render system creation.
   using Contract =
       ContextContract<kConstraintBackend, kConstraintFileSystem,
                       kConstraintResourceSystem, kConstraintEnableDebug,
-                      kConstraintEnableEdit>;
+                      kConstraintEnableEdit, kConstraintPilot>;
 
   // OPTIONAL: Specifies sampler options for the texture load contract. If the
   // sampler options are not specified, then either the sampler options in the
@@ -449,6 +455,9 @@ class RenderSystem final {
 
   // End frame will transfer all registered commands to the graphics card and
   // present the frame.
+  //
+  // If the context's pilot is saving this frame, the frame is read back once
+  // presented, and given to the pilot. If it can't be read, an error is logged.
   void EndFrame();
 
  private:
@@ -559,6 +568,7 @@ class RenderSystem final {
   // additional synchronization.
   ValidatedContext context_;
   RenderBackend* backend_;
+  Pilot* pilot_;  // Null without a pilot.
   std::unique_ptr<ResourceManager> resource_manager_;
   bool debug_ = false;
   bool edit_ = false;

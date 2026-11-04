@@ -634,15 +634,21 @@ short, and `Game`'s error is what reports it.
 // RenderBackend: ends the frame as EndFrame() does, then waits for the GPU
 // and returns the presented image as RGBA. Null if it can't be read.
 virtual std::unique_ptr<Image> EndFrameAndReadImage(RenderInternal) = 0;
-
-// RenderSystem: the same, for programs that want a screenshot themselves.
-std::unique_ptr<Image> EndFrameAndReadImage();
 ```
 
-- `RenderSystem::EndFrame()` reads the image when its context's pilot
-  `IsSavingFrame()`, and gives it to `SaveFrame()`. The pilot decides what to
-  do with it (`StepPilot` hands it to its frame saver), so `gb_render` writes
-  no files for this.
+- `RenderSystem::EndFrame()` reads the image, through the backend's
+  `EndFrameAndReadImage()`, when its context's pilot
+  (`RenderSystem::kConstraintPilot`, optional) `IsSavingFrame()`, and gives
+  it to `SaveFrame()`. The pilot decides what to do with it (`StepPilot`
+  hands it to its frame saver), so `gb_render` writes no files for this.
+  Programs keep calling `EndFrame()` as they do now, and nothing else in
+  `RenderSystem` reads back a frame.
+- A frame that can't be read isn't given to the pilot. The backend logs
+  why, which fails a `StepPilot` run.
+- `Pilot::IsSavingFrame()` is false outside a frame, and once the frame is
+  saved, so a program that draws twice in a pilot frame saves the first, and
+  only it is read back. The once-a-frame `DCHECK` only catches a caller that
+  saves without asking.
 - `VulkanBackend` creates the swap chain with `eTransferSrc` usage too, when
   the surface supports it. To read a frame, it records a copy of the swap
   chain image to a host-visible buffer after the render pass (with layout
@@ -889,20 +895,25 @@ Depends on: CL1, CL6.
   frame given, in `out/pilot` by default; a frame that can't be written fails
   the run.
 
-### CL8 [ ] render: Save frames
+### CL8 [x] render: Save frames
 
 Depends on: CL2.
 
-- `RenderBackend::EndFrameAndReadImage()`, `RenderSystem::EndFrameAndReadImage()`,
-  and `RenderSystem::EndFrame()` saving for the pilot in its context.
+- `RenderBackend::EndFrameAndReadImage()`, and `RenderSystem::EndFrame()`
+  saving for the pilot in its context.
 - `TestRenderBackend` returns a frame of the clear color.
 - `VulkanBackend` gets a stub returning null, so it builds; CL9 does the real
   one.
+- `gb_pilot`: `IsSavingFrame()` is false outside a frame and once the frame
+  is saved, so every caller saves at most once a frame.
 
 **Verify**
 - Standard checks.
-- Unit tests, with `FakePilot`: `EndFrameAndReadImage()` returns the
-  frame; the pilot is given the frame it asked for, and only that frame.
+- Unit tests, with `FakePilot`: `EndFrame()` reads nothing without a pilot,
+  or unless the pilot is saving; the pilot is given the frame it asked for,
+  at its size and in the clear color, and only that frame, and the first of
+  two drawn in a pilot frame; a frame that can't be read isn't given to it.
+- `gb_pilot`: `IsSavingFrame()` is false outside a frame and once saved.
 
 ### CL9 [ ] render_vulkan: Read back presented frames
 
@@ -913,11 +924,12 @@ Depends on: CL8.
 
 **Verify**
 - Standard checks.
-- Can't be unit tested: checked with render-check, by a temporary key that
-  saves a frame through `RenderSystem::EndFrameAndReadImage()`, run with
-  `run-program.ps1` and compared with its `PrintWindow()` screenshot, with the
-  window shown and hidden, and with the validation layer reporting no errors.
-  Removed before review.
+- Can't be unit tested: checked with render-check, by temporary code that
+  puts a `StepPilot` with save steps in its render system's context and
+  calls the pilot's `BeginFrame()` and `EndFrame()` around each frame, run
+  with `run-program.ps1` and its saved frames compared with its
+  `PrintWindow()` screenshot, with the window shown and hidden, and with the
+  validation layer reporting no errors. Removed before review.
 
 ### CL10 [ ] imgui: Mouse, time, and items from the pilot
 

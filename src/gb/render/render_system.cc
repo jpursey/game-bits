@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <string_view>
 #include <tuple>
 #include <utility>
@@ -22,6 +23,7 @@
 #include "gb/base/context_builder.h"
 #include "gb/file/file.h"
 #include "gb/file/file_system.h"
+#include "gb/image/image.h"
 #include "gb/image/image_file.h"
 #include "gb/render/render_backend.h"
 #include "gb/render/render_pipeline.h"
@@ -488,6 +490,7 @@ std::unique_ptr<RenderSystem> RenderSystem::Create(Contract contract) {
 RenderSystem::RenderSystem(ValidatedContext context)
     : context_(std::move(context)) {
   backend_ = context_.GetPtr<RenderBackend>();
+  pilot_ = context_.GetPtr<Pilot>();
   debug_ = context_.GetValue<bool>(kKeyEnableDebug);
   SetRenderAssertEnabled(debug_);
   edit_ = context_.GetValue<bool>(kKeyEnableEdit);
@@ -1986,11 +1989,19 @@ void RenderSystem::EndFrame() {
     LOG(ERROR) << "Not rendering when EndFrame called";
     return;
   }
-
-  // Draw the frame.
-  backend_->EndFrame({});
-
   is_rendering_ = false;
+
+  if (pilot_ == nullptr || !pilot_->IsSavingFrame()) {
+    backend_->EndFrame({});
+    return;
+  }
+
+  // A frame that can't be read isn't saved. The backend has logged why, which
+  // fails a pilot that counts errors.
+  std::unique_ptr<Image> image = backend_->EndFrameAndReadImage({});
+  if (image != nullptr) {
+    pilot_->SaveFrame(*image);
+  }
 }
 
 }  // namespace gb

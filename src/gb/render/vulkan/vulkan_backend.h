@@ -20,6 +20,7 @@
 #include "absl/types/span.h"
 #include "gb/base/callback_scope.h"
 #include "gb/base/validated_context.h"
+#include "gb/image/image.h"
 #include "gb/render/render_backend.h"
 #include "gb/render/vulkan/vulkan_allocator.h"
 #include "gb/render/vulkan/vulkan_garbage_collector.h"
@@ -229,6 +230,7 @@ class VulkanBackend final : public RenderBackend {
   void Draw(RenderInternal, RenderScene* scene,
             absl::Span<const DrawCommand> commands) override;
   void EndFrame(RenderInternal) override;
+  std::unique_ptr<Image> EndFrameAndReadImage(RenderInternal) override;
 
  private:
   struct Queues {

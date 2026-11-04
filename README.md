@@ -169,7 +169,8 @@ sub-libraries (organized as subdirectories).
    Dependencies within this tier are still minimized, but cross dependencies are
    allowed and so are more common.
    *  [`gb_render`](src/gb/render): Graphics API independent interface to
-      support basic rendering, with resource system integration.
+      support basic rendering, with resource system integration. It reads
+      back the frames a pilot saves.
       *  [`gb_render_vulkan`](src/gb/render/vulkan): An implementation of the
          `gb_render` system in terms of Vulkan.
          *  [`gb_render_vulkan_sdl`](src/gb/render/vulkan/sdl): Library that

@@ -46,9 +46,8 @@ class Game {
   // is not set, then the realtime clock will be used.
   static GB_CONTEXT_CONSTRAINT(kConstraintClock, kInOptional, Clock);
 
-  // Optional pilot that drives the game frame by frame (see the class comment).
-  // It must be stored as a Pilot, not as its subclass (such as with
-  // SetOwned<Pilot>()), or it isn't found.
+  // Optional pilot that drives the game frame by frame (see the class comment,
+  // and Pilot for how it is stored).
   static GB_CONTEXT_CONSTRAINT(kConstraintPilot, kInOptional, Pilot);
 
   // Pointer to this class. This is always set while the game is running.

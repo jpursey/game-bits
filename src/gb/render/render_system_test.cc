@@ -6,6 +6,7 @@
 #include "gb/render/render_system.h"
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -14,22 +15,49 @@
 #include "absl/types/span.h"
 #include "flatbuffers/flatbuffers.h"
 #include "gb/base/context_builder.h"
+#include "gb/image/image.h"
+#include "gb/image/pixel.h"
+#include "gb/pilot/fake_pilot.h"
+#include "gb/pilot/pilot.h"
 #include "gb/render/render_resource_generated.h"
 #include "gb/render/render_test.h"
 #include "gb/resource/resource_chunks.h"
 #include "gb/resource/resource_file_writer.h"
+#include "gb/test/log_error_guard.h"
+#include "gb/test/log_recorder.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
 namespace gb {
 namespace {
 
+using ::testing::Each;
 using ::testing::ElementsAre;
 using ::testing::ElementsAreArray;
+using ::testing::Field;
+using ::testing::HasSubstr;
+using ::testing::IsEmpty;
+using ::testing::SizeIs;
 using ::testing::UnorderedElementsAreArray;
+
+auto LogTextHas(std::string_view text) {
+  return Field(&LogRecorder::Message::text, HasSubstr(std::string(text)));
+}
 
 class RenderSystemTest : public RenderTest {
  protected:
+  // Runs a pilot frame in which the render system draws a frame, as a program
+  // would.
+  void RenderPilotFrame(Pilot* pilot) {
+    pilot->BeginFrame();
+    if (render_system_->BeginFrame()) {
+      render_system_->EndFrame();
+    } else {
+      ADD_FAILURE() << "The render system's BeginFrame() failed";
+    }
+    pilot->EndFrame();
+  }
+
   // Writes "resource" to "name" with "writer" writing its chunk in place of
   // the render system, to make files the render system wouldn't write.
   template <typename Type>
@@ -352,6 +380,72 @@ TEST_F(RenderSystemTest, FrameDimensions) {
   state_.frame_dimensions = {300, 400};
   EXPECT_EQ(render_system_->GetFrameDimensions().width, 300);
   EXPECT_EQ(render_system_->GetFrameDimensions().height, 400);
+}
+
+TEST_F(RenderSystemTest, EndFrameWithoutAPilotDoesntReadTheImage) {
+  CreateSystem();
+  ASSERT_TRUE(render_system_->BeginFrame());
+  render_system_->EndFrame();
+  EXPECT_FALSE(state_.rendering);
+  EXPECT_EQ(state_.read_image_count, 0);
+}
+
+TEST_F(RenderSystemTest, PilotIsGivenOnlyTheFramesItSaves) {
+  state_.frame_dimensions = {3, 2};
+  FakePilot pilot;
+  CreateSystem(false, &pilot);
+  render_system_->SetClearColor(Pixel(10, 20, 30));
+
+  RenderPilotFrame(&pilot);
+  EXPECT_EQ(state_.read_image_count, 0);
+  EXPECT_THAT(pilot.TakeSavedFrames(), IsEmpty());
+
+  pilot.SetSavingFrames(true);
+  RenderPilotFrame(&pilot);
+  EXPECT_FALSE(state_.rendering);
+  EXPECT_EQ(state_.invalid_call_count, 0);
+  std::vector<std::unique_ptr<Image>> saved = pilot.TakeSavedFrames();
+  ASSERT_THAT(saved, SizeIs(1));
+  EXPECT_EQ(saved[0]->GetWidth(), 3);
+  EXPECT_EQ(saved[0]->GetHeight(), 2);
+  EXPECT_THAT(saved[0]->GetPixels(), Each(Pixel(10, 20, 30)));
+
+  pilot.SetSavingFrames(false);
+  RenderPilotFrame(&pilot);
+  EXPECT_EQ(state_.read_image_count, 1);
+  EXPECT_THAT(pilot.TakeSavedFrames(), IsEmpty());
+}
+
+TEST_F(RenderSystemTest, PilotIsGivenTheFirstFrameDrawnInItsFrame) {
+  state_.frame_dimensions = {3, 2};
+  FakePilot pilot;
+  pilot.SetSavingFrames(true);
+  CreateSystem(false, &pilot);
+  pilot.BeginFrame();
+  render_system_->SetClearColor(Pixel(10, 20, 30));
+  ASSERT_TRUE(render_system_->BeginFrame());
+  render_system_->EndFrame();
+  render_system_->SetClearColor(Pixel(40, 50, 60));
+  ASSERT_TRUE(render_system_->BeginFrame());
+  render_system_->EndFrame();
+  pilot.EndFrame();
+  EXPECT_EQ(state_.read_image_count, 1);
+  std::vector<std::unique_ptr<Image>> saved = pilot.TakeSavedFrames();
+  ASSERT_THAT(saved, SizeIs(1));
+  EXPECT_THAT(saved[0]->GetPixels(), Each(Pixel(10, 20, 30)));
+}
+
+TEST_F(RenderSystemTest, PilotFrameThatCantBeReadIsntSaved) {
+  LogErrorGuard log_error_guard;
+  state_.fail_read_image = true;
+  FakePilot pilot;
+  pilot.SetSavingFrames(true);
+  CreateSystem(false, &pilot);
+  RenderPilotFrame(&pilot);
+  EXPECT_FALSE(state_.rendering);
+  EXPECT_THAT(pilot.TakeSavedFrames(), IsEmpty());
+  EXPECT_THAT(log_error_guard.TakeMessages(),
+              ElementsAre(LogTextHas("set to fail")));
 }
 
 TEST_F(RenderSystemTest, LoadPngTexture) {

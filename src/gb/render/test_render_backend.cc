@@ -5,9 +5,17 @@
 
 #include "gb/render/test_render_backend.h"
 
+#include <memory>
+
+#include "absl/log/log.h"
+#include "gb/image/image.h"
+
 namespace gb {
 
-void TestRenderBackend::State::ResetCounts() { invalid_call_count = 0; }
+void TestRenderBackend::State::ResetCounts() {
+  invalid_call_count = 0;
+  read_image_count = 0;
+}
 
 void TestRenderBackend::State::ResetState() {
   State state;
@@ -160,6 +168,19 @@ void TestRenderBackend::EndFrame(RenderInternal) {
     state_->invalid_call_count += 1;
   }
   state_->rendering = false;
+}
+
+std::unique_ptr<Image> TestRenderBackend::EndFrameAndReadImage(
+    RenderInternal access_token) {
+  EndFrame(access_token);
+  state_->read_image_count += 1;
+  if (state_->fail_read_image) {
+    LOG(ERROR) << "The test backend's image read was set to fail";
+    return nullptr;
+  }
+  return std::make_unique<Image>(state_->frame_dimensions.width,
+                                 state_->frame_dimensions.height,
+                                 state_->clear_color);
 }
 
 }  // namespace gb

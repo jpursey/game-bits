@@ -65,6 +65,7 @@ set(gb_render_TEST_SOURCE
 set(gb_render_TEST_DEPS
   gb_render_fbs_generated
   gb_render_testing
+  gb_test
 )
 
 set(gb_render_DEPS
@@ -76,6 +77,7 @@ set(gb_render_DEPS
   gb_base
   gb_file
   gb_image
+  gb_pilot
   gb_resource
   stb_image_resize
 )
@@ -107,6 +109,8 @@ set(gb_render_testing_DEPS
   absl::span
   gb_base
   gb_file
+  gb_image
+  gb_pilot
   gb_render
   gb_resource
   gtest

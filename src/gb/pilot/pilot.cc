@@ -137,8 +137,9 @@ void Pilot::EndFrame() {
 
 void Pilot::SaveFrame(const Image& image) {
   DCHECK(in_frame_) << "SaveFrame() called outside a frame.";
-  DCHECK(IsSavingFrame()) << "SaveFrame() called for a frame not being saved.";
   DCHECK(!frame_saved_) << "SaveFrame() called again in the same frame.";
+  DCHECK(DoIsSavingFrame())
+      << "SaveFrame() called for a frame not being saved.";
   frame_saved_ = true;
   DoSaveFrame(image);
 }

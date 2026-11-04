@@ -11,7 +11,7 @@
 
 namespace gb {
 
-void RenderTest::CreateSystem(bool edit_mode) {
+void RenderTest::CreateSystem(bool edit_mode, Pilot* pilot) {
   CHECK(resource_system_ = ResourceSystem::Create());
   CHECK(file_system_ = std::make_unique<FileSystem>());
   CHECK(file_system_->Register(std::make_unique<MemoryFileProtocol>()));
@@ -22,6 +22,7 @@ void RenderTest::CreateSystem(bool edit_mode) {
                 .SetPtr(resource_system_.get())
                 .SetPtr(file_system_.get())
                 .SetValue<bool>(RenderSystem::kKeyEnableEdit, edit_mode)
+                .SetPtr<Pilot>(pilot)
                 .Build()));
 }
 

@@ -47,7 +47,11 @@ TEST(FakePilotTest, ReportsState) {
   EXPECT_TRUE(pilot.IsWindowHidden());
   EXPECT_THAT(pilot.GetKeyNames(), ElementsAre("a", "Left Shift"));
   EXPECT_EQ(pilot.GetMouse(), (PilotMouse{.position = {1, 2}, .right = true}));
+
+  // Frames are only saved during a frame.
+  pilot.BeginFrame();
   EXPECT_TRUE(pilot.IsSavingFrame());
+  pilot.EndFrame();
 }
 
 TEST(FakePilotTest, InputIsForOneFrame) {

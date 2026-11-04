@@ -10,6 +10,7 @@
 #include <memory>
 
 #include "absl/types/span.h"
+#include "gb/image/image.h"
 #include "gb/image/pixel.h"
 #include "gb/render/binding.h"
 #include "gb/render/binding_data.h"
@@ -220,6 +221,12 @@ class RenderBackend {
   // Completes draw operations, then renders and presents the frame to the
   // screen.
   virtual void EndFrame(RenderInternal) = 0;
+
+  // Ends the frame as EndFrame() does, then waits for the GPU to finish it and
+  // returns the image presented, as RGBA, at the frame's dimensions. Returns
+  // null, having logged why, if the image can't be read. The frame is still
+  // ended either way.
+  virtual std::unique_ptr<Image> EndFrameAndReadImage(RenderInternal) = 0;
 
  protected:
   RenderBackend() = default;
