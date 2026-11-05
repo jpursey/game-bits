@@ -97,10 +97,11 @@ wait 2
 save get_layer_1           # <output>/get_layer_1.png
 key f1                     # Down this frame, up the next
 key "Left Shift"           # SDL's name for a key, quoted if it has spaces
-hold w 20                  # Down for 20 frames
+key w for 20               # Down for 20 frames, up the next
 move 640 400               # Mouse, in window pixels
 click right                # At the mouse
 click 700 120              # Moves there first
+click "Get layer 1" for 30 # Holds the button for 30 frames
 wheel -2
 text "hello"
 run reset_peaks            # A program command, with any further values
@@ -110,8 +111,12 @@ expect error "cannot be edited" 10  # Errors with this text pass, for 10 frames
 ```
 
 - Time passes only in steps that wait or hold input: `wait`, `wait for`,
-  `key` and `click` (one frame each, for the release), and `hold`. Every other
-  step happens in the current frame, in order.
+  `key`, and `click`. Every other step happens in the current frame, in order.
+- A key or button is held for one frame unless given a number of frames, and
+  then released in a frame with no other input, so `key` and `click` take two
+  frames by default. A program that polls input (as ImGui does the mouse) sees
+  only how it stands in each frame, so it would miss a release followed by
+  another press or a move in the same frame.
 - `wait for` waits at most 600 frames (10 seconds) unless given a limit.
 - `expect error` goes before the step that logs the error, for a check that
   is meant to fail. Errors whose message contains its text don't fail the
@@ -449,8 +454,7 @@ one source of its steps (`gb_pilot_script`).
 // One step of a run, as in a script (see Scripts).
 struct PilotWaitStep { int frames; };
 struct PilotWaitForStep { std::string condition; int max_frames = 600; };
-struct PilotKeyStep { std::string key; };              // Down, then up.
-struct PilotHoldStep { std::string key; int frames; };
+struct PilotKeyStep { std::string key; int frames = 1; };  // Frames held.
 struct PilotTextStep { std::string text; };
 struct PilotMouseMoveStep { PilotPoint position; };
 struct PilotMouseClickStep {
@@ -458,6 +462,7 @@ struct PilotMouseClickStep {
 
   // At the mouse, at a point, or at the item with a label.
   std::variant<std::monostate, PilotPoint, std::string> target;
+  int frames = 1;  // Frames held.
 };
 struct PilotMouseWheelStep { int amount; };
 struct PilotRunStep { std::string command; std::vector<std::string> args; };
@@ -493,11 +498,12 @@ class StepPilot final : public Pilot {
 
 - **Timing** is as in Scripts: at the start of each frame (in
   `BeginFrame()`), steps run in order until one that takes time. A key or
-  click is released at the start of the next frame, and a hold `frames`
-  frames later, and the steps after it run in that frame. A wait, `wait for`,
-  or save finishes at the end of a frame (in `EndFrame()`): once its frames
-  have passed, its condition holds (checked when it starts, and after each
-  frame), or its frame was saved. The steps after it run from the next frame.
+  click presses in the frame it starts in, releases at the start of the frame
+  `frames` (at least 1) later, and finishes at the end of that frame, so the
+  release has a frame to itself. A wait, `wait for`, or save finishes at the
+  end of a frame (in `EndFrame()`): once its frames have passed, its condition
+  holds (checked when it starts, and after each frame), or its frame was
+  saved. The steps after any of these run from the next frame.
   So the step after one that takes N frames always starts N frames later, and
   no frame is run after the last step needs it.
 - **Done** once every step has finished, or at the first failure, decided at
@@ -586,11 +592,11 @@ absl::StatusOr<std::unique_ptr<Pilot>> CreateCliPilot(
     $hide_window=("hide" "window");
     $wait_for=("wait" "for" $condition=name [$frames=%int]);
     $wait=("wait" $frames=%int);
-    $key=("key" $key=name);
-    $hold=("hold" $key=name $frames=%int);
+    $key=("key" $key=name ["for" $frames=%int]);
     $text=("text" $text=%string);
     $move=("move" $x=%int $y=%int);
-    $click=("click" [$button=button] [$label=%string | $x=%int $y=%int]);
+    $click=("click" [$button=button] [$label=%string | $x=%int $y=%int]
+            ["for" $frames=%int]);
     $wheel=("wheel" $amount=%int);
     $run=("run" $command=name $args=name*);
     $expect_error=("expect" "error" $text=%string [$frames=%int]);
@@ -772,7 +778,7 @@ CLAUDE.md's "Run an example" says so.
   skips the event filter in SDL 2.0.10, and writing SDL's key state array
   works.
 - Mouse coordinates in SDL window pixels match the saved frame's pixels,
-  including on a display scaled above 100% (CL12).
+  including on a display scaled above 100% (CL13).
 - Confirmed in CL6, by `gb_pilot_script`'s tests: the step grammar holds in
   `gb_parse`, with `wait for` beside `wait`, `click`'s optional forms, and
   `run`'s values stopping at the line break.
@@ -783,8 +789,8 @@ The interface comes first, then `StepPilot` beside it (CL3), then the tier 1
 libraries that take part (CL4 and CL5), then tier 2: script files (CL6 and
 CL7), and the render system and GUI (CL8 to CL10). Each library that takes
 part is tested against `FakePilot`, so after CL2 they can be built in any
-order. Expected errors (CL11) were added once render-check's scripts needed
-them.
+order. Expected errors (CL11) and held keys and clicks (CL12) were added once
+render-check's scripts needed them.
 
 ### CL1 [x] stb, image: Save PNGs
 
@@ -877,7 +883,7 @@ Depends on: CL2.
 - Unit tests, with `FakePilot`: `BeginFrame()` calls frame listeners in order
   once the frame's input is set; a listener can add and remove listeners.
 - Can't be unit tested: hiding the window, which needs SDL's video subsystem
-  and a window on screen. CL12 checks it.
+  and a window on screen. CL13 checks it.
 
 ### CL6 [x] pilot_script: Read scripts
 
@@ -988,9 +994,31 @@ Depends on: CL3, CL6.
   once; errors from another thread; the step reads back from its text, and a
   script reads it with and without frames, beside a condition named `error`.
 
-### CL12 [ ] render-check: Scripted checks
+### CL12 [x] pilot, pilot_script: Held keys and clicks
 
-Depends on: CL4, CL5, CL7, CL9, CL10, CL11.
+Depends on: CL3, CL6.
+
+- `gb_pilot`: `PilotKeyStep` and `PilotMouseClickStep` take the frames they
+  are held for, and release in a frame with no other input. `PilotHoldStep`
+  is removed, as a key step held for its frames replaces it.
+- `gb_pilot_script`: `key` and `click` take `for <frames>`, and `hold` is
+  removed.
+- Found by render-check's first scripts: two clicks in a row both did nothing,
+  as ImGui 1.84 reads the mouse once a frame, and saw the second press in the
+  frame of the first release.
+
+**Verify**
+- Standard checks.
+- Unit tests: a key or click held for its frames, and for at least one; two
+  keys, and two clicks, in a row each release in a frame of their own, and a
+  step after a click runs in the frame after the release; the steps convert to
+  text with `for` only when held for other than one frame, and read back; a
+  script reads `for` on each form of `click`, and fails on a missing or
+  negative count.
+
+### CL13 [ ] render-check: Scripted checks
+
+Depends on: CL4, CL5, CL7, CL9, CL10, CL11, CL12.
 
 - render-check runs on `gb::Game`, takes the pilot flags through `gb_cli`,
   and creates `PilotSdl`.
@@ -1009,9 +1037,9 @@ Depends on: CL4, CL5, CL7, CL9, CL10, CL11.
 - By hand (the user): the program runs as before without the flags, and
   moving the mouse over the window during a run changes nothing.
 
-### CL13 [ ] tools, docs: Run scripts from a session
+### CL14 [ ] tools, docs: Run scripts from a session
 
-Depends on: CL12.
+Depends on: CL13.
 
 - `tools/run-program.ps1` as described in Session tools.
 - CLAUDE.md "Run an example", and README.md's library list (the new
@@ -1023,9 +1051,9 @@ Depends on: CL12.
   and with `-Steps`. A script that hangs the program (a `wait for` with a
   timeout longer than `-TimeoutSecs`) saves the stacks and fails.
 
-### CL14 [ ] block-world: Scripted runs
+### CL15 [ ] block-world: Scripted runs
 
-Depends on: CL13.
+Depends on: CL14.
 
 - BlockWorld takes its arguments through `gb_cli` (its starting state becomes
   a flag), and creates `PilotSdl`.

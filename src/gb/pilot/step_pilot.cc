@@ -114,15 +114,15 @@ void StepPilot::AddSteps(std::vector<PilotStep> steps) {
     return;
   }
   for (PilotStep& step : steps) {
-    std::string_view key;
-    if (const auto* key_step = std::get_if<PilotKeyStep>(&step)) {
-      key = key_step->key;
-    } else if (const auto* hold_step = std::get_if<PilotHoldStep>(&step)) {
-      key = hold_step->key;
-    }
-    if (!key.empty() && std::find(key_names_.begin(), key_names_.end(), key) ==
-                            key_names_.end()) {
-      key_names_.emplace_back(key);
+    // What is pressed is held for at least one frame.
+    if (auto* key_step = std::get_if<PilotKeyStep>(&step)) {
+      key_step->frames = std::max(key_step->frames, 1);
+      if (std::find(key_names_.begin(), key_names_.end(), key_step->key) ==
+          key_names_.end()) {
+        key_names_.push_back(key_step->key);
+      }
+    } else if (auto* click_step = std::get_if<PilotMouseClickStep>(&step)) {
+      click_step->frames = std::max(click_step->frames, 1);
     }
     steps_.push_back(std::move(step));
   }
@@ -199,6 +199,10 @@ void StepPilot::EndStepFrame() {
     finished = step_frames_ >= wait->frames;
   } else if (const auto* wait_for = std::get_if<PilotWaitForStep>(&step)) {
     finished = CheckWaitFor(*wait_for);
+  } else if (const auto* key = std::get_if<PilotKeyStep>(&step)) {
+    finished = step_frames_ > key->frames;
+  } else if (const auto* click = std::get_if<PilotMouseClickStep>(&step)) {
+    finished = step_frames_ > click->frames;
   } else if (std::holds_alternative<PilotSaveStep>(step)) {
     finished = step_frame_saved_;
     if (!finished && step_frames_ >= kMaxSaveFrames) {
@@ -223,11 +227,14 @@ bool StepPilot::RunStep(const PilotWaitForStep& step) {
 }
 
 bool StepPilot::RunStep(const PilotKeyStep& step) {
-  return PressKey(step.key, 1);
-}
-
-bool StepPilot::RunStep(const PilotHoldStep& step) {
-  return PressKey(step.key, step.frames);
+  // Once started, it finishes at the end of the frame it is released in (in
+  // EndStepFrame()).
+  if (step_frames_ == 0) {
+    input_.push_back(PilotKeyEvent{.key = step.key, .down = true});
+  } else if (step_frames_ == step.frames) {
+    input_.push_back(PilotKeyEvent{.key = step.key, .down = false});
+  }
+  return false;
 }
 
 bool StepPilot::RunStep(const PilotTextStep& step) {
@@ -241,9 +248,13 @@ bool StepPilot::RunStep(const PilotMouseMoveStep& step) {
 }
 
 bool StepPilot::RunStep(const PilotMouseClickStep& step) {
+  // Once started, it finishes at the end of the frame it is released in (in
+  // EndStepFrame()).
   if (step_frames_ > 0) {
-    SetMouseButton(step.button, false);
-    return true;
+    if (step_frames_ == step.frames) {
+      SetMouseButton(step.button, false);
+    }
+    return false;
   }
   if (const auto* point = std::get_if<PilotPoint>(&step.target)) {
     MoveMouse(*point);
@@ -324,17 +335,6 @@ bool StepPilot::CheckWaitFor(const PilotWaitForStep& step) {
                           " frames"));
   }
   return false;
-}
-
-bool StepPilot::PressKey(std::string_view key, int frames) {
-  if (step_frames_ == 0) {
-    input_.push_back(PilotKeyEvent{.key = std::string(key), .down = true});
-  }
-  if (step_frames_ < frames) {
-    return false;
-  }
-  input_.push_back(PilotKeyEvent{.key = std::string(key), .down = false});
-  return true;
 }
 
 void StepPilot::MoveMouse(PilotPoint position) {

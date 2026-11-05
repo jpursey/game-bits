@@ -110,8 +110,9 @@ TEST(PilotStepTest, StepsAreWrittenAsScriptLines) {
   EXPECT_EQ(absl::StrCat(PilotWaitForStep{.condition = "loaded"}),
             "wait for loaded 600");
   EXPECT_EQ(absl::StrCat(PilotKeyStep{.key = "f1"}), "key f1");
-  EXPECT_EQ(absl::StrCat(PilotHoldStep{.key = "Left Shift", .frames = 20}),
-            "hold \"Left Shift\" 20");
+  EXPECT_EQ(absl::StrCat(PilotKeyStep{.key = "Left Shift", .frames = 20}),
+            "key \"Left Shift\" for 20");
+  EXPECT_EQ(absl::StrCat(PilotKeyStep{.key = "a", .frames = 0}), "key a for 0");
   EXPECT_EQ(absl::StrCat(PilotTextStep{.text = "say \"hi\"\n"}),
             "text \"say \\\"hi\\\"\\n\"");
   EXPECT_EQ(absl::StrCat(PilotMouseMoveStep{.position = {640, 400}}),
@@ -124,6 +125,10 @@ TEST(PilotStepTest, StepsAreWrittenAsScriptLines) {
   EXPECT_EQ(absl::StrCat(PilotMouseClickStep{.button = PilotMouseButton::kRight,
                                              .target = "OK"}),
             "click right \"OK\"");
+  EXPECT_EQ(absl::StrCat(PilotMouseClickStep{.frames = 5}), "click for 5");
+  EXPECT_EQ(absl::StrCat(
+                PilotMouseClickStep{.target = PilotPoint{7, 8}, .frames = 30}),
+            "click 7 8 for 30");
   EXPECT_EQ(absl::StrCat(PilotMouseWheelStep{.amount = -2}), "wheel -2");
   EXPECT_EQ(absl::StrCat(PilotRunStep{.command = "reset"}), "run reset");
   EXPECT_EQ(absl::StrCat(PilotRunStep{.command = "set",
@@ -200,34 +205,38 @@ TEST_F(StepPilotTest, LastWaitRunsOnlyItsFrames) {
   EXPECT_FALSE(pilot.HasFailed());
 }
 
-TEST_F(StepPilotTest, KeyIsReleasedInTheNextFrame) {
+TEST_F(StepPilotTest, KeyIsReleasedInAFrameOfItsOwn) {
   StepPilot pilot;
-  pilot.AddSteps({PilotKeyStep{.key = "a"}, PilotTextStep{.text = "b"}});
+  pilot.AddSteps({PilotKeyStep{.key = "a"}, PilotKeyStep{.key = "a"},
+                  PilotTextStep{.text = "b"}});
   EXPECT_THAT(RunUntilDone(&pilot),
-              ElementsAre(ElementsAre(KeyDown("a")),
-                          ElementsAre(KeyUp("a"), Text("b"))));
+              ElementsAre(ElementsAre(KeyDown("a")), ElementsAre(KeyUp("a")),
+                          ElementsAre(KeyDown("a")), ElementsAre(KeyUp("a")),
+                          ElementsAre(Text("b"))));
 }
 
-TEST_F(StepPilotTest, HoldReleasesAfterItsFrames) {
+TEST_F(StepPilotTest, KeyIsHeldForItsFrames) {
   StepPilot pilot;
-  pilot.AddSteps({PilotHoldStep{.key = "Left Shift", .frames = 3}});
+  pilot.AddSteps({PilotKeyStep{.key = "Left Shift", .frames = 3}});
   EXPECT_THAT(RunUntilDone(&pilot),
               ElementsAre(ElementsAre(KeyDown("Left Shift")), IsEmpty(),
                           IsEmpty(), ElementsAre(KeyUp("Left Shift"))));
+  EXPECT_FALSE(pilot.HasFailed());
 }
 
-TEST_F(StepPilotTest, HoldOfNoFramesReleasesInTheSameFrame) {
+TEST_F(StepPilotTest, KeyIsHeldForAtLeastOneFrame) {
   StepPilot pilot;
-  pilot.AddSteps(
-      {PilotHoldStep{.key = "a", .frames = 0}, PilotTextStep{.text = "b"}});
+  pilot.AddSteps({PilotKeyStep{.key = "a", .frames = 0},
+                  PilotKeyStep{.key = "b", .frames = -1}});
   EXPECT_THAT(RunUntilDone(&pilot),
-              ElementsAre(ElementsAre(KeyDown("a"), KeyUp("a"), Text("b"))));
+              ElementsAre(ElementsAre(KeyDown("a")), ElementsAre(KeyUp("a")),
+                          ElementsAre(KeyDown("b")), ElementsAre(KeyUp("b"))));
 }
 
 TEST_F(StepPilotTest, HasKeyNamesOfEveryStepAdded) {
   StepPilot pilot;
   pilot.AddSteps({PilotKeyStep{.key = "a"},
-                  PilotHoldStep{.key = "Left Shift", .frames = 2},
+                  PilotKeyStep{.key = "Left Shift", .frames = 2},
                   PilotKeyStep{.key = "a"}});
   EXPECT_THAT(pilot.GetKeyNames(), ElementsAre("a", "Left Shift"));
   pilot.AddSteps({PilotKeyStep{.key = "b"}});
@@ -285,6 +294,38 @@ TEST_F(StepPilotTest, ClicksAtAnItem) {
       ElementsAre(ElementsAre(Move(30, 40),
                               Button(PilotMouseButton::kLeft, true, 30, 40)),
                   ElementsAre(Button(PilotMouseButton::kLeft, false, 30, 40))));
+  EXPECT_FALSE(pilot.HasFailed());
+}
+
+TEST_F(StepPilotTest, ClickIsReleasedInAFrameOfItsOwn) {
+  StepPilot pilot;
+  pilot.AddSteps({PilotMouseClickStep{.target = PilotPoint{1, 2}},
+                  PilotMouseClickStep{.target = PilotPoint{3, 4}},
+                  PilotMouseMoveStep{.position = {5, 6}}});
+  EXPECT_THAT(
+      RunUntilDone(&pilot),
+      ElementsAre(
+          ElementsAre(Move(1, 2), Button(PilotMouseButton::kLeft, true, 1, 2)),
+          ElementsAre(Button(PilotMouseButton::kLeft, false, 1, 2)),
+          ElementsAre(Move(3, 4), Button(PilotMouseButton::kLeft, true, 3, 4)),
+          ElementsAre(Button(PilotMouseButton::kLeft, false, 3, 4)),
+          ElementsAre(Move(5, 6))));
+}
+
+TEST_F(StepPilotTest, ClickIsHeldForItsFrames) {
+  StepPilot pilot;
+  pilot.AddSteps({PilotMouseClickStep{.button = PilotMouseButton::kRight,
+                                      .target = PilotPoint{1, 2},
+                                      .frames = 3},
+                  PilotMouseClickStep{.frames = 0}});
+  EXPECT_THAT(
+      RunUntilDone(&pilot),
+      ElementsAre(
+          ElementsAre(Move(1, 2), Button(PilotMouseButton::kRight, true, 1, 2)),
+          IsEmpty(), IsEmpty(),
+          ElementsAre(Button(PilotMouseButton::kRight, false, 1, 2)),
+          ElementsAre(Button(PilotMouseButton::kLeft, true, 1, 2)),
+          ElementsAre(Button(PilotMouseButton::kLeft, false, 1, 2))));
   EXPECT_FALSE(pilot.HasFailed());
 }
 
@@ -535,7 +576,7 @@ TEST_F(StepPilotTest, RunsStepsAddedBetweenFrames) {
   EXPECT_THAT(RunFrame(&pilot), ElementsAre(KeyDown("a")));
   pilot.AddSteps({PilotTextStep{.text = "b"}});
   EXPECT_THAT(RunUntilDone(&pilot),
-              ElementsAre(ElementsAre(KeyUp("a"), Text("b"))));
+              ElementsAre(ElementsAre(KeyUp("a")), ElementsAre(Text("b"))));
 }
 
 TEST_F(StepPilotTest, RunsStepsAddedByACommand) {
@@ -774,22 +815,22 @@ TEST_F(StepPilotTest, LogsEachStepAndASummary) {
   LogRecorder log_recorder;
   StepPilot pilot;
   pilot.AddSteps({PilotKeyStep{.key = "a"}, PilotTextStep{.text = "hi there"},
-                  PilotHoldStep{.key = "Left Shift", .frames = 1},
+                  PilotKeyStep{.key = "Left Shift", .frames = 2},
                   PilotMouseMoveStep{.position = {1, 2}},
                   PilotMouseClickStep{.button = PilotMouseButton::kRight,
                                       .target = PilotPoint{3, 4}},
                   PilotMouseWheelStep{.amount = -1},
                   PilotWaitStep{.frames = 1}});
-  EXPECT_THAT(RunUntilDone(&pilot), SizeIs(4));
+  EXPECT_THAT(RunUntilDone(&pilot), SizeIs(8));
   EXPECT_THAT(log_recorder.TakeMessages(),
               ElementsAre(LogText("Pilot frame 0: key a"),
-                          LogText("Pilot frame 1: text \"hi there\""),
-                          LogText("Pilot frame 1: hold \"Left Shift\" 1"),
-                          LogText("Pilot frame 2: move 1 2"),
-                          LogText("Pilot frame 2: click right 3 4"),
-                          LogText("Pilot frame 3: wheel -1"),
-                          LogText("Pilot frame 3: wait 1"),
-                          LogText("Pilot run passed. Frames run: 4. Frames "
+                          LogText("Pilot frame 2: text \"hi there\""),
+                          LogText("Pilot frame 2: key \"Left Shift\" for 2"),
+                          LogText("Pilot frame 5: move 1 2"),
+                          LogText("Pilot frame 5: click right 3 4"),
+                          LogText("Pilot frame 7: wheel -1"),
+                          LogText("Pilot frame 7: wait 1"),
+                          LogText("Pilot run passed. Frames run: 8. Frames "
                                   "saved: 0.")));
 }
 

@@ -34,11 +34,10 @@ struct PilotScript {
 //   hide window                         Only before every other step.
 //   wait <frames>                       PilotWaitStep
 //   wait for <condition> [<frames>]     PilotWaitForStep
-//   key <key>                           PilotKeyStep
-//   hold <key> <frames>                 PilotHoldStep
+//   key <key> [for <frames>]            PilotKeyStep
 //   text "<text>"                       PilotTextStep
 //   move <x> <y>                        PilotMouseMoveStep
-//   click [left|middle|right] ["<label>" | <x> <y>]
+//   click [left|middle|right] ["<label>" | <x> <y>] [for <frames>]
 //                                       PilotMouseClickStep
 //   wheel <amount>                      PilotMouseWheelStep
 //   run <command> <value>...            PilotRunStep

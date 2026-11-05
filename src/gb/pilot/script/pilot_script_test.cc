@@ -64,7 +64,7 @@ TEST(PilotScriptTest, ReadsEveryStep) {
                 "wait for loaded\n"
                 "wait for loaded 20\n"
                 "key f1\n"
-                "hold w 20\n"
+                "key w for 20\n"
                 "text \"hello\"\n"
                 "move 640 -400\n"
                 "click\n"
@@ -75,10 +75,22 @@ TEST(PilotScriptTest, ReadsEveryStep) {
                 "expect error \"cannot be edited\" 10\n"
                 "save get_layer_1\n"),
       ElementsAre("wait 30", "wait for loaded 600", "wait for loaded 20",
-                  "key f1", "hold w 20", "text \"hello\"", "move 640 -400",
+                  "key f1", "key w for 20", "text \"hello\"", "move 640 -400",
                   "click", "wheel -2", "run reset_peaks", "expect loaded",
                   "expect error \"cannot be edited\" 600",
                   "expect error \"cannot be edited\" 10", "save get_layer_1"));
+}
+
+TEST(PilotScriptTest, ReadsHeldFrames) {
+  EXPECT_THAT(ReadLines("key w for 0\n"
+                        "key \"Left Shift\" for 1\n"
+                        "click for 5\n"
+                        "click right for 2\n"
+                        "click 700 120 for 3\n"
+                        "click \"OK\" for 30\n"),
+              ElementsAre("key w for 0", "key \"Left Shift\"", "click for 5",
+                          "click right for 2", "click 700 120 for 3",
+                          "click \"OK\" for 30"));
 }
 
 TEST(PilotScriptTest, ExpectErrorIsBesideAConditionNamedError) {
@@ -109,16 +121,17 @@ TEST(PilotScriptTest, ReadsRunValues) {
 }
 
 TEST(PilotScriptTest, NamesCanBeQuotedOrIntegers) {
-  EXPECT_THAT(ReadLines("key \"Left Shift\"\n"
-                        "key 1\n"
-                        "hold \"Keypad 1\" 2\n"
-                        "wait for \"is loaded\" 5\n"
-                        "expect \"is loaded\"\n"
-                        "run \"do it\" now\n"
-                        "save \"frame 1\"\n"),
-              ElementsAre("key \"Left Shift\"", "key 1", "hold \"Keypad 1\" 2",
-                          "wait for \"is loaded\" 5", "expect \"is loaded\"",
-                          "run \"do it\" now", "save \"frame 1\""));
+  EXPECT_THAT(
+      ReadLines("key \"Left Shift\"\n"
+                "key 1\n"
+                "key \"Keypad 1\" for 2\n"
+                "wait for \"is loaded\" 5\n"
+                "expect \"is loaded\"\n"
+                "run \"do it\" now\n"
+                "save \"frame 1\"\n"),
+      ElementsAre("key \"Left Shift\"", "key 1", "key \"Keypad 1\" for 2",
+                  "wait for \"is loaded\" 5", "expect \"is loaded\"",
+                  "run \"do it\" now", "save \"frame 1\""));
 }
 
 TEST(PilotScriptTest, ReadsStringEscapes) {
@@ -131,9 +144,10 @@ TEST(PilotScriptTest, StepsReadBackFromTheirText) {
   const PilotStep steps[] = {
       PilotKeyStep{.key = "1"},
       PilotKeyStep{.key = "Left Shift"},
-      PilotHoldStep{.key = "_x9", .frames = 0},
+      PilotKeyStep{.key = "_x9", .frames = 0},
       PilotTextStep{.text = "say \"hi\"\\\r\n\t\x01\x7f é"},
       PilotMouseClickStep{.button = PilotMouseButton::kRight, .target = "a\"b"},
+      PilotMouseClickStep{.button = PilotMouseButton::kMiddle, .frames = 7},
       PilotRunStep{.command = "set",
                    .args = {"-2", "007", "-0", "a-b", "", "99999999999"}},
       PilotExpectErrorStep{.text = "can't \"edit\"", .max_frames = 0},
@@ -191,8 +205,10 @@ TEST(PilotScriptTest, UnknownStepFails) {
 TEST(PilotScriptTest, MissingValuesFail) {
   EXPECT_EQ(ReadError("wait\n"),
             "(1:5): Parse error at \"\": Expected integer value");
-  EXPECT_EQ(ReadError("hold w"),
-            "(1:7): Parse error at \"\": Expected integer value");
+  EXPECT_EQ(ReadError("key w for"),
+            "(1:10): Parse error at \"\": Expected integer value");
+  EXPECT_EQ(ReadError("click \"OK\" for\n"),
+            "(1:15): Parse error at \"\": Expected integer value");
   EXPECT_EQ(ReadError("click 700\n"),
             "(1:10): Parse error at \"\": Expected integer value");
   EXPECT_EQ(ReadError("text hello"),
@@ -217,8 +233,10 @@ TEST(PilotScriptTest, NegativeFramesFail) {
             "(1:6): Parse error at \"-1\": Frames can't be negative");
   EXPECT_EQ(ReadError("wait for loaded -1"),
             "(1:17): Parse error at \"-1\": Frames can't be negative");
-  EXPECT_EQ(ReadError("hold w -1"),
-            "(1:8): Parse error at \"-1\": Frames can't be negative");
+  EXPECT_EQ(ReadError("key w for -1"),
+            "(1:11): Parse error at \"-1\": Frames can't be negative");
+  EXPECT_EQ(ReadError("click 1 2 for -1"),
+            "(1:15): Parse error at \"-1\": Frames can't be negative");
   EXPECT_EQ(ReadError("expect error \"edited\" -1"),
             "(1:23): Parse error at \"-1\": Frames can't be negative");
 }

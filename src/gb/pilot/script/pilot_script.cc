@@ -59,11 +59,11 @@ constexpr std::string_view kScriptProgram = R"---(
     $hide_window=("hide" "window");
     $wait_for=("wait" "for" $condition=name [$frames=%int]);
     $wait=("wait" $frames=%int);
-    $key=("key" $key=name);
-    $hold=("hold" $key=name $frames=%int);
+    $key=("key" $key=name ["for" $frames=%int]);
     $text=("text" $text=%string);
     $move=("move" $x=%int $y=%int);
-    $click=("click" [$button=button] [$label=%string | $x=%int $y=%int]);
+    $click=("click" [$button=button] [$label=%string | $x=%int $y=%int]
+            ["for" $frames=%int]);
     $wheel=("wheel" $amount=%int);
     $run=("run" $command=name $args=name*);
     $expect_error=("expect" "error" $text=%string [$frames=%int]);
@@ -136,11 +136,11 @@ absl::StatusOr<PilotStep> ReadStep(const Lexer& lexer, const ParsedItem& item) {
     return step;
   }
   if (type == "key") {
-    return PilotKeyStep{.key = ReadName(lexer, values->GetToken("key"))};
-  }
-  if (type == "hold") {
-    return PilotHoldStep{.key = ReadName(lexer, values->GetToken("key")),
-                         .frames = frame_count};
+    PilotKeyStep step = {.key = ReadName(lexer, values->GetToken("key"))};
+    if (frames != nullptr) {
+      step.frames = frame_count;
+    }
+    return step;
   }
   if (type == "text") {
     return PilotTextStep{.text = std::string(values->GetString("text"))};
@@ -160,6 +160,9 @@ absl::StatusOr<PilotStep> ReadStep(const Lexer& lexer, const ParsedItem& item) {
       step.target = std::string(label->GetToken().GetString());
     } else if (values->GetItem("x") != nullptr) {
       step.target = ReadPoint(*values);
+    }
+    if (frames != nullptr) {
+      step.frames = frame_count;
     }
     return step;
   }
