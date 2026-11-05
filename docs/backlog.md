@@ -65,6 +65,40 @@ component, as the MSVC standard library rejects older clang versions. Fix them,
 build and test both clang configurations, and consider building one in CI so it
 stays working.
 
+## Embedded files
+
+- **Layers:** CMake
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Requested by:** OZ-3 *Ozzy machine*
+- **Background:** `gb_embed_manifest` in `CMake/GameBitsTargetCommands.cmake`;
+  the SPIR-V pasted into `examples/render-check/*_shaders.h`
+
+A CMake function that embeds a file's bytes in a target at build time, such as
+`gb_embed_file(<target> <file> <name>)`, so a library carries its own text or
+data (source it assembles, a default config, a shader) with nothing to find or
+open at run time. That matters most where opening a file is different on each
+platform: Android's assets, an iOS bundle, or Emscripten's virtual file system.
+- It works on every platform Game Bits means to support (Windows, Linux, Mac,
+  mobile, and the web): only CMake script, run with `cmake -P` on the build
+  host (so cross-compiling works), generating standard C++. No resource
+  compilers, linker tricks (`ld -b binary`, `.incbin`), or `#embed` until every
+  compiler has it.
+- It generates a source file into the build tree, and adds it to the target,
+  rebuilding it only when the embedded file changes. It generates the
+  declaration too, so nothing is kept in step with it by hand.
+- The bytes are exact: an array of values rather than a string literal, so
+  nothing is escaped or has its line endings changed, and MSVC's limits on a
+  literal's size don't apply.
+- The caller reads them as text (`std::string_view`) or bytes
+  (`absl::Span<const uint8_t>`). They are aligned to 4 bytes, so SPIR-V can be
+  read as `uint32_t` words.
+
+Shaders could then be compiled by the build rather than pasted in by hand
+(`glslc -mfmt=c` today), but that adds `glslc` to the build, so it is an item
+of its own once this lands.
+
 ## Profile timelines
 
 - **Layers:** profile, job
