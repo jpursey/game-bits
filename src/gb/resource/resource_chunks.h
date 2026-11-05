@@ -19,6 +19,7 @@ inline constexpr ChunkType kChunkTypeMaterial = {'G', 'B', 'M', 'A'};
 inline constexpr ChunkType kChunkTypeMaterialType = {'G', 'B', 'M', 'T'};
 inline constexpr ChunkType kChunkTypeMesh = {'G', 'B', 'M', 'E'};
 inline constexpr ChunkType kChunkTypeShader = {'G', 'B', 'S', 'H'};
+inline constexpr ChunkType kChunkTypeStorageBuffer = {'G', 'B', 'S', 'B'};
 inline constexpr ChunkType kChunkTypeTexture = {'G', 'B', 'T', 'X'};
 inline constexpr ChunkType kChunkTypeTextureArray = {'G', 'B', 'T', 'A'};
 inline constexpr ChunkType kChunkTypeVolumeTexture = {'G', 'B', 'V', 'T'};

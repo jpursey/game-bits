@@ -25,6 +25,7 @@ enum BindingType : uint8 {
   Texture,
   TextureArray,
   VolumeTexture,
+  StorageBuffer,
 }
 
 // Must be kept in sync with gb::DataVolatility
@@ -148,7 +149,8 @@ table Binding {
   index : int32;
   type : BindingType;
   volatility : DataVolatility;
-  constants_name : string;
+  // The name of the constants type, for Constants and StorageBuffer.
+  data_type_name : string;
 }
 
 // Entry for scene, material, or instance binding data chunk.
@@ -159,6 +161,7 @@ table BindingDataEntry {
   texture_array_id : uint64;
   constants_data : [uint8];
   volume_texture_id : uint64;
+  storage_buffer_id : uint64;
 }
 
 // Chunk for mesh resource.
@@ -259,4 +262,15 @@ table VolumeTextureChunk {
   options : SamplerOptions;
   format : TextureFormat = Rgba8Srgb;
   texels : [ubyte];
+}
+
+// Chunk for storage buffer resource.
+//
+// The values are in "values" as bytes, in the C++ layout of the constants type
+// named "type_name", which is "count" values.
+table StorageBufferChunk {
+  volatility : DataVolatility;
+  type_name : string;
+  count : int32;
+  values : [ubyte];
 }

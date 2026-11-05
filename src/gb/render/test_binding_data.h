@@ -46,6 +46,7 @@ class TestBindingData final : public BindingData {
 
  protected:
   bool Validate(int index, TypeKey* type) const override;
+  bool ValidateDataType(int index, const RenderDataType* type) const override;
   void DoSet(int index, const void* value) override;
   void DoGet(int index, void* value) const override;
   void DoGetDependencies(ResourceDependencyList* dependencies) const override;

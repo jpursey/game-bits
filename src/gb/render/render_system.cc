@@ -45,10 +45,10 @@ fb::Offset<fb::Vector<fb::Offset<fbs::Binding>>> WriteBindings(
     FlatBufferBuilder* builder, absl::Span<const Binding> bindings) {
   return builder->CreateVector<fb::Offset<fbs::Binding>>(
       bindings.size(), [builder, &bindings](size_t i) {
-        fb::Offset<fb::String> fb_constants_name;
-        if (bindings[i].constants_type != nullptr) {
-          fb_constants_name = builder->CreateSharedString(
-              bindings[i].constants_type->GetName());
+        fb::Offset<fb::String> fb_data_type_name;
+        if (bindings[i].data_type != nullptr) {
+          fb_data_type_name =
+              builder->CreateSharedString(bindings[i].data_type->GetName());
         }
 
         fbs::BindingBuilder binding_builder(*builder);
@@ -58,13 +58,31 @@ fb::Offset<fb::Vector<fb::Offset<fbs::Binding>>> WriteBindings(
         binding_builder.add_index(bindings[i].index);
         binding_builder.add_type(ToFbs(bindings[i].binding_type));
         binding_builder.add_volatility(ToFbs(bindings[i].volatility));
-        binding_builder.add_constants_name(fb_constants_name);
+        binding_builder.add_data_type_name(fb_data_type_name);
         return binding_builder.Finish();
       });
 }
 
+// Returns the registered data type named by a binding, logging why if there is
+// none.
+const RenderDataType* ReadDataType(RenderSystem* render_system,
+                                   const fbs::Binding* fb_binding, int index) {
+  if (fb_binding->data_type_name() == nullptr) {
+    LOG(ERROR) << "Unspecified data type name for binding at index " << index;
+    return nullptr;
+  }
+  const char* data_type_name = fb_binding->data_type_name()->c_str();
+  const RenderDataType* data_type =
+      render_system->GetConstantsType(data_type_name);
+  if (data_type == nullptr) {
+    LOG(ERROR) << "Data type \"" << data_type_name << "\" for binding at index "
+               << index << " is not registered";
+  }
+  return data_type;
+}
+
 // Reads "fb_bindings" into "bindings", returning false if any binding has an
-// unknown type or constants type. The bindings are not otherwise validated.
+// unknown type or data type. The bindings are not otherwise validated.
 bool ReadBindings(RenderSystem* render_system,
                   const fb::Vector<fb::Offset<fbs::Binding>>* fb_bindings,
                   std::vector<Binding>* bindings) {
@@ -93,19 +111,20 @@ bool ReadBindings(RenderSystem* render_system,
         binding.SetVolumeTexture();
         break;
       case fbs::BindingType_Constants: {
-        if (fb_binding->constants_name() == nullptr) {
-          LOG(ERROR) << "Unspecified constants name for binding at index " << i;
+        const RenderDataType* data_type =
+            ReadDataType(render_system, fb_binding, i);
+        if (data_type == nullptr) {
           return false;
         }
-        const char* constants_name = fb_binding->constants_name()->c_str();
-        const RenderDataType* constants_type =
-            render_system->GetConstantsType(constants_name);
-        if (constants_type == nullptr) {
-          LOG(ERROR) << "Constants type \"" << constants_name
-                     << "\" for binding at index " << i << " is not registered";
+        binding.SetConstants(data_type, FromFbs(fb_binding->volatility()));
+      } break;
+      case fbs::BindingType_StorageBuffer: {
+        const RenderDataType* data_type =
+            ReadDataType(render_system, fb_binding, i);
+        if (data_type == nullptr) {
           return false;
         }
-        binding.SetConstants(constants_type, FromFbs(fb_binding->volatility()));
+        binding.SetStorageBuffer(data_type);
       } break;
       default:
         LOG(ERROR) << "Unhandled binding type: "
@@ -129,6 +148,7 @@ fb::Offset<fb::Vector<fb::Offset<fbs::BindingDataEntry>>> WriteBindingData(
     ResourceId texture_id = 0;
     ResourceId texture_array_id = 0;
     ResourceId volume_texture_id = 0;
+    ResourceId storage_buffer_id = 0;
     fb::Offset<fb::Vector<uint8_t>> fb_constants_data;
     switch (binding.binding_type) {
       case BindingType::kTexture: {
@@ -151,11 +171,17 @@ fb::Offset<fb::Vector<fb::Offset<fbs::BindingDataEntry>>> WriteBindingData(
           volume_texture_id = volume_texture->GetResourceId();
         }
       } break;
+      case BindingType::kStorageBuffer: {
+        const auto* storage_buffer =
+            binding_data->GetStorageBuffer(binding.index);
+        if (storage_buffer != nullptr) {
+          storage_buffer_id = storage_buffer->GetResourceId();
+        }
+      } break;
       case BindingType::kConstants: {
-        std::vector<uint8_t> buffer(binding.constants_type->GetSize());
+        std::vector<uint8_t> buffer(binding.data_type->GetSize());
         binding_data->GetInternal(access_token, binding.index,
-                                  binding.constants_type->GetType(),
-                                  buffer.data());
+                                  binding.data_type->GetType(), buffer.data());
         fb_constants_data = builder->CreateVector(buffer);
       } break;
       default:
@@ -169,6 +195,7 @@ fb::Offset<fb::Vector<fb::Offset<fbs::BindingDataEntry>>> WriteBindingData(
     binding_entry_builder.add_texture_id(texture_id);
     binding_entry_builder.add_texture_array_id(texture_array_id);
     binding_entry_builder.add_volume_texture_id(volume_texture_id);
+    binding_entry_builder.add_storage_buffer_id(storage_buffer_id);
     binding_entry_builder.add_constants_data(fb_constants_data);
     fb_binding_data.emplace_back(binding_entry_builder.Finish());
   }
@@ -260,13 +287,38 @@ bool ReadBindingData(
         }
         binding_data->SetVolumeTexture(index, volume_texture);
       } break;
+      case BindingType::kStorageBuffer: {
+        const ResourceId storage_buffer_id =
+            fb_binding_data_entry->storage_buffer_id();
+        if (storage_buffer_id == 0) {
+          // No storage buffer is valid.
+          break;
+        }
+        auto* storage_buffer =
+            file_resources->GetResource<StorageBuffer>(storage_buffer_id);
+        if (storage_buffer == nullptr) {
+          LOG(ERROR) << "Referenced binding data storage buffer at index "
+                     << index << " not loaded. ID=" << storage_buffer_id;
+          return false;
+        }
+        if (storage_buffer->GetType()->GetType() !=
+            binding->data_type->GetType()) {
+          LOG(ERROR) << "Referenced binding data storage buffer at index "
+                     << index << " is of type "
+                     << storage_buffer->GetType()->GetName()
+                     << ", which does not match the binding's type "
+                     << binding->data_type->GetName();
+          return false;
+        }
+        binding_data->SetStorageBuffer(index, storage_buffer);
+      } break;
       case BindingType::kConstants: {
         const auto* fb_constants_data = fb_binding_data_entry->constants_data();
         if (fb_constants_data == nullptr) {
           // No constants data is valid. This results in default values.
           break;
         }
-        const RenderDataType* constants_type = binding->constants_type;
+        const RenderDataType* constants_type = binding->data_type;
         if (static_cast<int>(fb_constants_data->size()) !=
             constants_type->GetSize()) {
           LOG(ERROR) << "Constants size " << fb_constants_data->size()
@@ -515,6 +567,12 @@ bool RenderSystem::Init() {
              FlatBufferBuilder* builder) {
         return SaveVolumeTextureChunk(context, resource, builder);
       });
+  resource_writer_->RegisterResourceFlatBufferWriter<StorageBuffer>(
+      kChunkTypeStorageBuffer, 1,
+      [this](Context* context, StorageBuffer* resource,
+             FlatBufferBuilder* builder) {
+        return SaveStorageBufferChunk(context, resource, builder);
+      });
   resource_writer_->RegisterResourceFlatBufferWriter<Shader>(
       kChunkTypeShader, 1,
       [this](Context* context, Shader* resource, FlatBufferBuilder* builder) {
@@ -558,6 +616,13 @@ bool RenderSystem::Init() {
                  ResourceEntry entry) {
             return LoadVolumeTextureChunk(context, chunk, std::move(entry));
           });
+  resource_reader_
+      ->RegisterResourceFlatBufferChunk<StorageBuffer, fbs::StorageBufferChunk>(
+          kChunkTypeStorageBuffer, 1,
+          [this](Context* context, const fbs::StorageBufferChunk* chunk,
+                 ResourceEntry entry) {
+            return LoadStorageBufferChunk(context, chunk, std::move(entry));
+          });
   resource_reader_->RegisterResourceFlatBufferChunk<Shader, fbs::ShaderChunk>(
       kChunkTypeShader, 1,
       [this](Context* context, const fbs::ShaderChunk* chunk,
@@ -598,14 +663,15 @@ bool RenderSystem::Init() {
   TypeKey::Get<Texture>()->SetTypeName("Texture");
   TypeKey::Get<TextureArray>()->SetTypeName("TextureArray");
   TypeKey::Get<VolumeTexture>()->SetTypeName("VolumeTexture");
+  TypeKey::Get<StorageBuffer>()->SetTypeName("StorageBuffer");
   TypeKey::Get<Shader>()->SetTypeName("Shader");
   TypeKey::Get<MaterialType>()->SetTypeName("MaterialType");
   TypeKey::Get<Material>()->SetTypeName("Material");
   TypeKey::Get<Mesh>()->SetTypeName("Mesh");
   auto* resource_system = context_.GetPtr<ResourceSystem>();
-  if (!resource_system->Register<Texture, TextureArray, VolumeTexture, Shader,
-                                 MaterialType, Material, Mesh>(
-          resource_manager_.get())) {
+  if (!resource_system->Register<Texture, TextureArray, VolumeTexture,
+                                 StorageBuffer, Shader, MaterialType, Material,
+                                 Mesh>(resource_manager_.get())) {
     return false;
   }
   return true;
@@ -1942,6 +2008,116 @@ bool RenderSystem::SaveVolumeTextureChunk(
   const auto fb_volume_texture = volume_texture_builder.Finish();
 
   builder->Finish(fb_volume_texture);
+  return true;
+}
+
+StorageBuffer* RenderSystem::CreateBackendStorageBuffer(
+    ResourceEntry entry, const RenderDataType* type, DataVolatility volatility,
+    int count, const void* values) {
+  if (type == nullptr) {
+    LOG(ERROR) << "Null type passed in to CreateStorageBuffer";
+    return nullptr;
+  }
+  if (count < 1 ||
+      int64_t{count} * type->GetSize() > int64_t{kMaxStorageBufferBytes}) {
+    LOG(ERROR) << "Invalid storage buffer of " << count << " values of "
+               << type->GetName() << ", which must be at least one, and at "
+               << "most " << kMaxStorageBufferBytes << " bytes in total";
+    return nullptr;
+  }
+  auto buffer =
+      backend_->CreateStorageBuffer({}, volatility, type->GetSize(), count);
+  if (buffer == nullptr) {
+    LOG(ERROR) << "Failed to create storage buffer of " << count
+               << " values of " << type->GetName();
+    return nullptr;
+  }
+  const bool initialized =
+      (values != nullptr ? buffer->Set(values, count) : buffer->Clear(count));
+  if (!initialized) {
+    LOG(ERROR) << "Failed to initialize storage buffer values";
+    return nullptr;
+  }
+  return new StorageBuffer({}, std::move(entry), type, std::move(buffer));
+}
+
+StorageBuffer* RenderSystem::DoCreateStorageBuffer(const RenderDataType* type,
+                                                   DataVolatility volatility,
+                                                   int count) {
+  return CreateBackendStorageBuffer(
+      resource_manager_->NewResourceEntry<StorageBuffer>(), type, volatility,
+      count, nullptr);
+}
+
+StorageBuffer* RenderSystem::LoadStorageBufferChunk(
+    Context* context, const fbs::StorageBufferChunk* chunk,
+    ResourceEntry entry) {
+  std::string_view type_name =
+      (chunk->type_name() != nullptr ? chunk->type_name()->c_str() : "");
+  const RenderDataType* type = GetConstantsType(type_name);
+  if (type == nullptr) {
+    LOG(ERROR) << "Cannot load storage buffer because type \"" << type_name
+               << "\" is not registered";
+    return nullptr;
+  }
+  const int count = chunk->count();
+  const auto* fb_values = chunk->values();
+  if (fb_values == nullptr ||
+      int64_t{fb_values->size()} != int64_t{count} * type->GetSize()) {
+    LOG(ERROR) << "Storage buffer values of "
+               << (fb_values != nullptr ? fb_values->size() : 0)
+               << " bytes do not match " << count << " values of type \""
+               << type_name << "\", which is " << type->GetSize()
+               << " bytes each";
+    return nullptr;
+  }
+
+  DataVolatility volatility = FromFbs(chunk->volatility());
+  if (edit_ && volatility == DataVolatility::kStaticWrite) {
+    volatility = DataVolatility::kStaticReadWrite;
+  }
+  return CreateBackendStorageBuffer(std::move(entry), type, volatility, count,
+                                    fb_values->data());
+}
+
+bool RenderSystem::SaveStorageBuffer(std::string_view name,
+                                     StorageBuffer* storage_buffer,
+                                     DataVolatility volatility) {
+  return resource_writer_->Write(
+      name, storage_buffer,
+      ContextBuilder().SetValue<DataVolatility>(volatility).Build());
+}
+
+bool RenderSystem::SaveStorageBufferChunk(Context* context,
+                                          StorageBuffer* storage_buffer,
+                                          FlatBufferBuilder* builder) {
+  if (storage_buffer->GetVolatility() == DataVolatility::kStaticWrite) {
+    LOG(ERROR) << "Cannot save storage buffer with kStaticWrite volatility.";
+    return false;
+  }
+
+  // The values are read straight into the builder, which must be done before
+  // anything else is built, as building moves its buffer.
+  const RenderDataType* type = storage_buffer->GetType();
+  const int count = storage_buffer->GetCount();
+  uint8_t* values = nullptr;
+  const auto fb_values =
+      builder->CreateUninitializedVector(count * type->GetSize(), &values);
+  if (!storage_buffer->GetBuffer({})->Get(0, values, count)) {
+    LOG(ERROR) << "Failed to read storage buffer in order to save it";
+    return false;
+  }
+  const auto fb_type_name = builder->CreateSharedString(type->GetName());
+
+  fbs::StorageBufferChunkBuilder storage_buffer_builder(*builder);
+  storage_buffer_builder.add_volatility(
+      ToFbs(context->GetValue<DataVolatility>()));
+  storage_buffer_builder.add_type_name(fb_type_name);
+  storage_buffer_builder.add_count(count);
+  storage_buffer_builder.add_values(fb_values);
+  const auto fb_storage_buffer = storage_buffer_builder.Finish();
+
+  builder->Finish(fb_storage_buffer);
   return true;
 }
 

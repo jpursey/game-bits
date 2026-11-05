@@ -106,6 +106,9 @@ class VulkanRenderBuffer : public RenderBuffer {
     buffer_handles_[index].buffer = buffer;
   }
 
+  // Reads from DoGetData(), which is only null for kStaticWrite volatility.
+  bool DoGet(int offset, void* data, int size) const override;
+
   // Derived class implementation.
   virtual void DoRender(VulkanRenderState* state) = 0;
   virtual const void* DoGetData() const = 0;

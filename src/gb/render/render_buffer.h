@@ -91,6 +91,14 @@ class RenderBuffer {
   // was recently) rendered, in which case this will return false.
   bool SetRange(int offset, const void* data, int size);
 
+  // Reads `size` values starting at the value at `offset` into `data`.
+  //
+  // Offset and size are in number of values (not bytes), and must be within
+  // the buffer's current size, or this returns false. This also returns false
+  // for kStaticWrite volatility, whose data is not readable, or if a
+  // RenderBufferView currently exists for this buffer.
+  bool Get(int offset, void* data, int size) const;
+
   // Attempts to lock the buffer, allowing the data to be modified on the CPU.
   //
   // When the view is destructed, the modified data will become visible to the
@@ -131,6 +139,13 @@ class RenderBuffer {
   // used in rendering -- although it does not imply the transfer has happened
   // yet.
   virtual bool DoSet(int offset, const void* data, int size) = 0;
+
+  // Implementation for Get(), which reads `size` values starting at `offset`,
+  // returning true if they were read.
+  //
+  // This will never be called for kStaticWrite volatility buffers, or if
+  // editing is in progress. The range is not empty, and is within GetSize().
+  virtual bool DoGet(int offset, void* data, int size) const = 0;
 
   // Return an editable pointer to the buffer.
   //

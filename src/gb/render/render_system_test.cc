@@ -107,6 +107,35 @@ class RenderSystemTest : public RenderTest {
         });
   }
 
+  // Writes a storage buffer chunk to "name" of "count" values of the type named
+  // "type_name", with "value_bytes" bytes of zeros for each value. A storage
+  // buffer of "type" stands in for the resource being written.
+  bool WriteStorageBufferChunk(std::string_view name,
+                               const RenderDataType* type,
+                               std::string_view type_name, int count,
+                               int value_bytes) {
+    auto storage_buffer = render_system_->CreateStorageBuffer(
+        type, DataVolatility::kStaticReadWrite, 1);
+    if (storage_buffer == nullptr) {
+      return false;
+    }
+    return WriteResource<StorageBuffer>(
+        name, storage_buffer.Get(), kChunkTypeStorageBuffer,
+        [type_name, count, value_bytes](
+            Context*, StorageBuffer*, flatbuffers::FlatBufferBuilder* builder) {
+          const auto fb_values =
+              builder->CreateVector(std::vector<uint8_t>(count * value_bytes));
+          const auto fb_type_name = builder->CreateString(type_name);
+          fbs::StorageBufferChunkBuilder chunk_builder(*builder);
+          chunk_builder.add_volatility(fbs::DataVolatility_StaticReadWrite);
+          chunk_builder.add_type_name(fb_type_name);
+          chunk_builder.add_count(count);
+          chunk_builder.add_values(fb_values);
+          builder->Finish(chunk_builder.Finish());
+          return true;
+        });
+  }
+
   // Writes a vertex shader chunk to "name" with a single material binding at
   // "index". The binding is a texture if "constants_name" is empty, and
   // constants of that type otherwise.
@@ -1559,6 +1588,125 @@ TEST_F(RenderSystemTest, SaveLoadMaterialWithVolumeTexture) {
       material->GetDefaultInstanceBindingData()->GetVolumeTexture(1);
   ASSERT_NE(loaded_volume_texture, nullptr);
   EXPECT_EQ(loaded_volume_texture->GetResourceName(), "mem:/volume.gbvt");
+}
+
+TEST_F(RenderSystemTest, SaveLoadStorageBuffer) {
+  CreateSystem();
+  auto* vector2_type = render_system_->RegisterConstantsType<Vector2>("vec2");
+  ASSERT_NE(vector2_type, nullptr);
+  auto storage_buffer = render_system_->CreateStorageBuffer(
+      vector2_type, DataVolatility::kStaticReadWrite, 3);
+  ASSERT_NE(storage_buffer, nullptr);
+  const ResourceId storage_buffer_id = storage_buffer->GetResourceId();
+  const std::vector<Vector2> values = {{1, 2}, {3, 4}, {5, 6}};
+  ASSERT_TRUE(storage_buffer->Set<Vector2>(0, values));
+  ASSERT_TRUE(render_system_->SaveStorageBuffer(
+      "mem:/buffer.gbsb", storage_buffer.Get(), DataVolatility::kPerFrame));
+  EXPECT_EQ(storage_buffer->GetResourceName(), "mem:/buffer.gbsb");
+  storage_buffer.Reset();
+
+  storage_buffer = resource_system_->Load<StorageBuffer>("mem:/buffer.gbsb");
+  ASSERT_NE(storage_buffer, nullptr);
+  EXPECT_EQ(storage_buffer->GetResourceId(), storage_buffer_id);
+  EXPECT_EQ(storage_buffer->GetVolatility(), DataVolatility::kPerFrame);
+  EXPECT_EQ(storage_buffer->GetType(), vector2_type);
+  EXPECT_EQ(storage_buffer->GetCount(), 3);
+  std::vector<Vector2> loaded_values(3);
+  ASSERT_TRUE(storage_buffer->Get<Vector2>(0, absl::MakeSpan(loaded_values)));
+  EXPECT_THAT(loaded_values, ElementsAreArray(values));
+}
+
+TEST_F(RenderSystemTest, LoadStorageBufferAfterFailedLoad) {
+  CreateSystem();
+  auto* vector2_type = render_system_->RegisterConstantsType<Vector2>("vec2");
+  ASSERT_NE(vector2_type, nullptr);
+  auto storage_buffer = render_system_->CreateStorageBuffer(
+      vector2_type, DataVolatility::kStaticReadWrite, 3);
+  ASSERT_NE(storage_buffer, nullptr);
+  ASSERT_TRUE(render_system_->SaveStorageBuffer("mem:/buffer.gbsb",
+                                                storage_buffer.Get()));
+  storage_buffer.Reset();
+
+  state_.storage_buffer_config.fail_set = true;
+  EXPECT_EQ(resource_system_->Load<StorageBuffer>("mem:/buffer.gbsb"), nullptr);
+  state_.storage_buffer_config.fail_set = false;
+  EXPECT_NE(resource_system_->Load<StorageBuffer>("mem:/buffer.gbsb"), nullptr);
+}
+
+TEST_F(RenderSystemTest, SaveStorageBufferWithStaticWriteFails) {
+  CreateSystem();
+  auto* vector2_type = render_system_->RegisterConstantsType<Vector2>("vec2");
+  ASSERT_NE(vector2_type, nullptr);
+  auto storage_buffer = render_system_->CreateStorageBuffer(
+      vector2_type, DataVolatility::kStaticWrite, 3);
+  ASSERT_NE(storage_buffer, nullptr);
+  EXPECT_FALSE(render_system_->SaveStorageBuffer("mem:/buffer.gbsb",
+                                                 storage_buffer.Get()));
+}
+
+TEST_F(RenderSystemTest, LoadStorageBufferValidatesType) {
+  CreateSystem();
+  auto* vector2_type = render_system_->RegisterConstantsType<Vector2>("vec2");
+  ASSERT_NE(vector2_type, nullptr);
+  const int vector2_bytes = static_cast<int>(sizeof(Vector2));
+  ASSERT_TRUE(WriteStorageBufferChunk("mem:/valid.gbsb", vector2_type, "vec2",
+                                      3, vector2_bytes));
+  ASSERT_TRUE(WriteStorageBufferChunk("mem:/unknown.gbsb", vector2_type,
+                                      "unknown", 3, vector2_bytes));
+  ASSERT_TRUE(WriteStorageBufferChunk("mem:/wrong_size.gbsb", vector2_type,
+                                      "vec2", 3,
+                                      static_cast<int>(sizeof(Vector3))));
+  ASSERT_TRUE(WriteStorageBufferChunk("mem:/empty.gbsb", vector2_type, "vec2",
+                                      0, vector2_bytes));
+
+  EXPECT_NE(resource_system_->Load<StorageBuffer>("mem:/valid.gbsb"), nullptr);
+  EXPECT_EQ(resource_system_->Load<StorageBuffer>("mem:/unknown.gbsb"),
+            nullptr);
+  EXPECT_EQ(resource_system_->Load<StorageBuffer>("mem:/wrong_size.gbsb"),
+            nullptr);
+  EXPECT_EQ(resource_system_->Load<StorageBuffer>("mem:/empty.gbsb"), nullptr);
+}
+
+TEST_F(RenderSystemTest, SaveLoadMaterialWithStorageBuffer) {
+  CreateSystem(true);
+  auto* vector2_type = render_system_->RegisterConstantsType<Vector2>("vec2");
+  ASSERT_NE(vector2_type, nullptr);
+  const std::vector<Binding> bindings = {
+      Binding()
+          .SetShaders(ShaderType::kFragment)
+          .SetLocation(BindingSet::kInstance, 1)
+          .SetStorageBuffer(vector2_type),
+  };
+  auto* material = CreateMaterial(bindings);
+  auto* material_type = material->GetType();
+  auto storage_buffer = render_system_->CreateStorageBuffer(
+      vector2_type, DataVolatility::kStaticReadWrite, 4);
+  ASSERT_NE(storage_buffer, nullptr);
+  material->GetDefaultInstanceBindingData()->SetStorageBuffer(
+      1, storage_buffer.Get());
+
+  ASSERT_TRUE(render_system_->SaveShader("mem:/vertex.gbsh",
+                                         material_type->GetVertexShader()));
+  ASSERT_TRUE(render_system_->SaveShader("mem:/fragment.gbsh",
+                                         material_type->GetFragmentShader()));
+  ASSERT_TRUE(render_system_->SaveStorageBuffer("mem:/buffer.gbsb",
+                                                storage_buffer.Get()));
+  ASSERT_TRUE(render_system_->SaveMaterialType("mem:/material_type.gbmt",
+                                               material_type));
+  ASSERT_TRUE(render_system_->SaveMaterial("mem:/material.gbma", material));
+  storage_buffer.Reset();
+  temp_resource_set_.RemoveAll();
+
+  material = resource_system_->Load<Material>(&temp_resource_set_,
+                                              "mem:/material.gbma");
+  ASSERT_NE(material, nullptr);
+  EXPECT_THAT(material->GetType()->GetBindings(),
+              UnorderedElementsAreArray(bindings));
+  const StorageBuffer* loaded_storage_buffer =
+      material->GetDefaultInstanceBindingData()->GetStorageBuffer(1);
+  ASSERT_NE(loaded_storage_buffer, nullptr);
+  EXPECT_EQ(loaded_storage_buffer->GetResourceName(), "mem:/buffer.gbsb");
+  EXPECT_EQ(loaded_storage_buffer->GetType(), vector2_type);
 }
 
 TEST_F(RenderSystemTest, SaveLoadMeshAndDependencies) {

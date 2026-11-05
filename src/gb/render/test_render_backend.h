@@ -58,6 +58,7 @@ class TestRenderBackend final : public RenderBackend {
     TestRenderPipeline::Config render_pipeline_config;
     TestRenderBuffer::Config vertex_buffer_config;
     TestRenderBuffer::Config index_buffer_config;
+    TestRenderBuffer::Config storage_buffer_config;
 
     // Formats CanFilter() says can't be filtered.
     absl::flat_hash_set<TextureFormat> unfilterable_formats;
@@ -71,6 +72,7 @@ class TestRenderBackend final : public RenderBackend {
     bool fail_create_pipeline = false;
     bool fail_create_vertex_buffer = false;
     bool fail_create_index_buffer = false;
+    bool fail_create_storage_buffer = false;
     bool fail_begin_frame = false;
     bool fail_read_image = false;
 
@@ -125,6 +127,10 @@ class TestRenderBackend final : public RenderBackend {
   std::unique_ptr<RenderBuffer> CreateIndexBuffer(RenderInternal,
                                                   DataVolatility volatility,
                                                   int index_capacity) override;
+  std::unique_ptr<RenderBuffer> CreateStorageBuffer(RenderInternal,
+                                                    DataVolatility volatility,
+                                                    int value_size,
+                                                    int capacity) override;
   bool BeginFrame(RenderInternal) override;
   void Draw(RenderInternal, RenderScene* scene, RenderPipeline* pipeline,
             BindingData* material_data, BindingData* instance_data,

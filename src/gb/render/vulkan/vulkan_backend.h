@@ -221,6 +221,10 @@ class VulkanBackend final : public RenderBackend {
   std::unique_ptr<RenderBuffer> CreateIndexBuffer(RenderInternal,
                                                   DataVolatility volatility,
                                                   int index_capacity) override;
+  std::unique_ptr<RenderBuffer> CreateStorageBuffer(RenderInternal,
+                                                    DataVolatility volatility,
+                                                    int value_size,
+                                                    int capacity) override;
 
   void SetClearColor(RenderInternal, Pixel color) override;
   bool BeginFrame(RenderInternal) override;

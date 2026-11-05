@@ -16,6 +16,7 @@ class TestRenderBuffer final : public RenderBuffer {
   struct Config {
     bool fail_clear = false;
     bool fail_set = false;
+    bool fail_get = false;
     bool fail_edit_begin = false;
   };
 
@@ -32,6 +33,7 @@ class TestRenderBuffer final : public RenderBuffer {
  protected:
   bool DoClear(int offset, int size) override;
   bool DoSet(int offset, const void* data, int size) override;
+  bool DoGet(int offset, void* data, int size) const override;
   void* DoEditBegin() override;
   void OnEditEnd(bool modified) override;
 
@@ -40,7 +42,7 @@ class TestRenderBuffer final : public RenderBuffer {
   void* data_ = nullptr;
   bool editing_ = false;
   int modify_count_ = 0;
-  int invalid_call_count_ = 0;
+  mutable int invalid_call_count_ = 0;
 };
 
 }  // namespace gb

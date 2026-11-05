@@ -38,6 +38,7 @@ class RenderSceneType;
 class RenderTest;
 class Shader;
 class ShaderCode;
+class StorageBuffer;
 class Texture;
 class TextureArray;
 class VolumeTexture;
@@ -52,6 +53,7 @@ struct MeshChunk;
 struct MaterialChunk;
 struct MaterialTypeChunk;
 struct ShaderChunk;
+struct StorageBufferChunk;
 struct TextureChunk;
 struct TextureArrayChunk;
 struct VolumeTextureChunk;
@@ -338,6 +340,7 @@ enum class BindingType : int {
   kTexture,        // Binds a texture.
   kTextureArray,   // Binds a texture array.
   kVolumeTexture,  // Binds a volume texture.
+  kStorageBuffer,  // Binds a storage buffer.
 };
 
 //==============================================================================
@@ -411,6 +414,10 @@ inline constexpr int kMaxTextureArrayPixels = 512 * 1024 * 1024;
 // Maximum size of each side, and total texel count, for a volume texture.
 inline constexpr int kMaxVolumeTextureSize = 2048;
 inline constexpr int kMaxVolumeTextureTexels = 512 * 1024 * 1024;
+
+// Maximum size in bytes of a storage buffer's values, which is the least any
+// Vulkan device supports.
+inline constexpr int kMaxStorageBufferBytes = 128 * 1024 * 1024;
 
 }  // namespace gb
 

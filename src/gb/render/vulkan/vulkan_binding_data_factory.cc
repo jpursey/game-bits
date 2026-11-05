@@ -62,7 +62,7 @@ VulkanBindingDataFactory::VulkanBindingDataFactory(
     if (binding.binding_type == BindingType::kConstants) {
       ++buffer_count_;
       max_constants_size =
-          std::max(max_constants_size, binding.constants_type->GetSize());
+          std::max(max_constants_size, binding.data_type->GetSize());
     }
   }
 
@@ -173,7 +173,7 @@ bool VulkanBindingDataFactory::AddBindingGroup() {
         bound = false;
       }
     } else if (binding.binding_type == BindingType::kConstants) {
-      const int value_size = binding.constants_type->GetSize();
+      const int value_size = binding.data_type->GetSize();
       auto buffer = VulkanRenderBuffer::Create(
           {}, backend_, VulkanBufferType::kUniform, binding.volatility,
           value_size, buffer_slots_,
@@ -186,7 +186,7 @@ bool VulkanBindingDataFactory::AddBindingGroup() {
 
       auto& info = item.constants;
       info.buffer = buffer.get();
-      info.type = binding.constants_type;
+      info.type = binding.data_type;
       for (auto& bound : info.bound) {
         bound = -1;
       }

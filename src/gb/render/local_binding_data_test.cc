@@ -8,6 +8,7 @@
 #include <memory>
 #include <vector>
 
+#include "gb/render/render_assert.h"
 #include "gb/render/render_test.h"
 #include "gb/render/test_binding_data.h"
 #include "gmock/gmock.h"
@@ -347,6 +348,55 @@ TEST_F(LocalBindingDataTest, VolumeTextures) {
   TestBindingData copy(nullptr, BindingSet::kScene, bindings);
   binding_data.CopyTo(&copy);
   EXPECT_EQ(copy.GetVolumeTexture(1), volume_texture.Get());
+}
+
+TEST_F(LocalBindingDataTest, StorageBuffers) {
+  CreateSystem();
+  auto* vector2_type = render_system_->RegisterConstantsType<Vector2>("vec2");
+  ASSERT_NE(vector2_type, nullptr);
+  auto storage_buffer = render_system_->CreateStorageBuffer(
+      vector2_type, DataVolatility::kStaticWrite, 4);
+  ASSERT_NE(storage_buffer, nullptr);
+  const std::vector<Binding> bindings = {Binding()
+                                             .SetShaders(ShaderType::kFragment)
+                                             .SetLocation(BindingSet::kScene, 1)
+                                             .SetStorageBuffer(vector2_type)};
+  LocalBindingData binding_data(GetAccessToken(), BindingSet::kScene, bindings);
+
+  EXPECT_EQ(binding_data.GetStorageBuffer(1), nullptr);
+  binding_data.SetStorageBuffer(1, storage_buffer.Get());
+  EXPECT_EQ(binding_data.GetStorageBuffer(1), storage_buffer.Get());
+  ResourceDependencyList dependencies;
+  binding_data.GetDependencies(&dependencies);
+  EXPECT_THAT(dependencies, ElementsAre(storage_buffer.Get()));
+
+  // Copies keep the storage buffer.
+  TestBindingData copy(nullptr, BindingSet::kScene, bindings);
+  binding_data.CopyTo(&copy);
+  EXPECT_EQ(copy.GetStorageBuffer(1), storage_buffer.Get());
+}
+
+TEST_F(LocalBindingDataTest, StorageBufferOfWrongTypeDies) {
+  if (!kRenderAssertsCompiled) {
+    GTEST_SKIP() << "Render asserts are compiled out";
+  }
+  CreateSystem();
+  SetRenderAssertEnabled(true);
+  auto* vector2_type = render_system_->RegisterConstantsType<Vector2>("vec2");
+  auto* vector3_type = render_system_->RegisterConstantsType<Vector3>("vec3");
+  ASSERT_NE(vector2_type, nullptr);
+  ASSERT_NE(vector3_type, nullptr);
+  auto storage_buffer = render_system_->CreateStorageBuffer(
+      vector3_type, DataVolatility::kStaticWrite, 4);
+  ASSERT_NE(storage_buffer, nullptr);
+  LocalBindingData binding_data(GetAccessToken(), BindingSet::kScene,
+                                {Binding()
+                                     .SetShaders(ShaderType::kFragment)
+                                     .SetLocation(BindingSet::kScene, 1)
+                                     .SetStorageBuffer(vector2_type)});
+
+  EXPECT_DEATH(binding_data.SetStorageBuffer(1, storage_buffer.Get()),
+               "ValidateDataType");
 }
 
 }  // namespace

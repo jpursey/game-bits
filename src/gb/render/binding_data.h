@@ -9,6 +9,7 @@
 #include "gb/base/type_info.h"
 #include "gb/render/render_assert.h"
 #include "gb/render/render_types.h"
+#include "gb/render/storage_buffer.h"
 #include "gb/render/texture.h"
 #include "gb/render/texture_array.h"
 #include "gb/render/volume_texture.h"
@@ -95,6 +96,15 @@ class BindingData {
   void SetVolumeTexture(int index, VolumeTexture* volume_texture);
   const VolumeTexture* GetVolumeTexture(int index) const;
 
+  // Get or set storage buffer resource.
+  //
+  // Calling this on an undefined binding index for the set, a binding of a
+  // different binding type, or setting a storage buffer of a different type
+  // than the binding's data type is undefined behavior, and likely will result
+  // in a crash.
+  void SetStorageBuffer(int index, StorageBuffer* storage_buffer);
+  const StorageBuffer* GetStorageBuffer(int index) const;
+
   //----------------------------------------------------------------------------
   // Operations
   //----------------------------------------------------------------------------
@@ -122,6 +132,12 @@ class BindingData {
   // parameters.
   virtual bool Validate(int index, TypeKey* type) const = 0;
 
+  // Called when render asserts are enabled, this should validate that the
+  // binding at the index has a data type (see Binding::data_type) with the
+  // same TypeKey as "type".
+  virtual bool ValidateDataType(int index,
+                                const RenderDataType* type) const = 0;
+
   // Implementation functions for all Set/Get* functions. The derived class
   // can assume parameters are validated and of the right type as follows:
   // - BindingType::kConstants: "value" points to the actual constants type.
@@ -129,6 +145,7 @@ class BindingData {
   //   Texture**).
   // - BindingType::kTextureArray: "value" points to a TextureArray*.
   // - BindingType::kVolumeTexture: "value" points to a VolumeTexture*.
+  // - BindingType::kStorageBuffer: "value" points to a StorageBuffer*.
   virtual void DoSet(int index, const void* value) = 0;
   virtual void DoGet(int index, void* value) const = 0;
 
@@ -184,6 +201,21 @@ inline const VolumeTexture* BindingData::GetVolumeTexture(int index) const {
   VolumeTexture* volume_texture = nullptr;
   DoGet(index, &volume_texture);
   return volume_texture;
+}
+
+inline void BindingData::SetStorageBuffer(int index,
+                                          StorageBuffer* storage_buffer) {
+  RENDER_ASSERT(Validate(index, TypeKey::Get<StorageBuffer*>()));
+  RENDER_ASSERT(storage_buffer == nullptr ||
+                ValidateDataType(index, storage_buffer->GetType()));
+  DoSet(index, &storage_buffer);
+}
+
+inline const StorageBuffer* BindingData::GetStorageBuffer(int index) const {
+  RENDER_ASSERT(Validate(index, TypeKey::Get<StorageBuffer*>()));
+  StorageBuffer* storage_buffer = nullptr;
+  DoGet(index, &storage_buffer);
+  return storage_buffer;
 }
 
 template <typename Type>

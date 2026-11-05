@@ -31,6 +31,7 @@ set(gb_render_SOURCE
   sampler_options.h
   shader.h
   shader_code.h
+  storage_buffer.cc storage_buffer.h
   texture.cc texture.h
   texture_array.cc texture_array.h
   volume_texture.cc volume_texture.h
@@ -57,6 +58,7 @@ set(gb_render_TEST_SOURCE
   render_scene_type_test.cc
   render_system_test.cc
   shader_test.cc
+  storage_buffer_test.cc
   texture_test.cc
   texture_array_test.cc
   volume_texture_test.cc

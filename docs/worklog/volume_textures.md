@@ -293,9 +293,12 @@ class VulkanTexels {
 - `StorageBuffer` is a final `Resource` that owns a `RenderBuffer`, which the
   backend creates with `RenderBackend::CreateStorageBuffer(volatility,
   value_size, count)`, as `Mesh` owns its vertex and index buffers. The test
-  backend's `TestRenderBuffer` serves for storage buffers unchanged.
+  backend's `TestRenderBuffer` serves for storage buffers.
 - `RenderBuffer` gains writes to part of the buffer: `DoSet()` takes an
   offset. *Shared mesh buffers and indirect draws* needs the same for meshes.
+- `RenderBuffer::Get()` reads a range of values, which `StorageBuffer::Get()`
+  and saving use. Reading through `Edit()` instead could copy a whole host
+  buffer that a transfer is still using.
 - `BindingType::kStorageBuffer`, with `fbs::BindingType::StorageBuffer`, and
   `Binding::constants_type` holds the storage buffer's type (renamed
   `data_type`, as it no longer describes only constants). This breaks the
@@ -460,7 +463,7 @@ Depends on: nothing.
   a range past the size fails.
 - render-check's meshes still draw.
 
-### CL7 [ ] render: Storage buffers
+### CL7 [x] render: Storage buffers
 
 Depends on: CL6.
 
@@ -491,6 +494,9 @@ Depends on: CL6, CL7.
 
 - `VulkanBufferType::kStorage`, `CreateStorageBuffer()`, and the
   `eStorageBuffer` descriptor.
+- Removes CL7's `ValidateBindingTypes()`, which rejects storage buffer
+  bindings, and gives `VulkanBindingData` real storage buffer cases and
+  `ValidateDataType()`.
 - render-check: a storage buffer of colors, which each of a row of quads
   indexes by an instance constant. One color changes every second, written
   with a one-value `Set()`.

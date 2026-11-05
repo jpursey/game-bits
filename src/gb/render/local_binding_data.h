@@ -51,21 +51,25 @@ class LocalBindingData : public BindingData {
 
  protected:
   bool Validate(int index, TypeKey* type) const override;
+  bool ValidateDataType(int index, const RenderDataType* type) const override;
   void DoSet(int index, const void* value) override;
   void DoGet(int index, void* value) const override;
   void DoGetDependencies(ResourceDependencyList* dependencies) const override;
 
  private:
   // A binding index's value, at "offset" in buffer_. The type is null if there
-  // is no binding at the index.
+  // is no binding at the index, and the data type is the binding's (see
+  // Binding::data_type).
   struct Slot {
     const RenderDataType* type = nullptr;
+    const RenderDataType* data_type = nullptr;
     int offset = 0;
   };
 
   static const RenderDataType* GetTextureDataType();
   static const RenderDataType* GetTextureArrayDataType();
   static const RenderDataType* GetVolumeTextureDataType();
+  static const RenderDataType* GetStorageBufferDataType();
 
   std::vector<Slot> slots_;
   std::vector<uint8_t> buffer_;

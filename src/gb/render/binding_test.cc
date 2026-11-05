@@ -79,5 +79,28 @@ TEST_F(BindingTest, ConstantsComparedByTypeKey) {
   EXPECT_TRUE(no_type.IsCompatible(no_type));
 }
 
+TEST_F(BindingTest, StorageBufferComparedByTypeKey) {
+  const RenderDataType vector2_type(GetAccessToken(), "vector2",
+                                    TypeKey::Get<Vector2>(), sizeof(Vector2));
+  const RenderDataType other_vector2_type(GetAccessToken(), "other_vector2",
+                                          TypeKey::Get<Vector2>(),
+                                          sizeof(Vector2));
+  const RenderDataType vector3_type(GetAccessToken(), "vector3",
+                                    TypeKey::Get<Vector3>(), sizeof(Vector3));
+  const Binding binding = MakeTextureBinding(1).SetStorageBuffer(&vector2_type);
+  EXPECT_TRUE(binding.IsValid());
+  EXPECT_EQ(binding.binding_type, BindingType::kStorageBuffer);
+  EXPECT_EQ(binding.data_type, &vector2_type);
+  EXPECT_FALSE(Binding(binding).SetStorageBuffer(nullptr).IsValid());
+
+  EXPECT_TRUE(binding.IsCompatible(
+      Binding(binding).SetStorageBuffer(&other_vector2_type)));
+  EXPECT_FALSE(
+      binding.IsCompatible(Binding(binding).SetStorageBuffer(&vector3_type)));
+  EXPECT_FALSE(
+      binding.IsCompatible(Binding(binding).SetConstants(&vector2_type)));
+  EXPECT_EQ(Binding(binding).SetTexture().data_type, nullptr);
+}
+
 }  // namespace
 }  // namespace gb

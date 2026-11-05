@@ -107,6 +107,7 @@ class VulkanBindingData : public BindingData {
 
  protected:
   bool Validate(int index, gb::TypeKey* type) const override;
+  bool ValidateDataType(int index, const RenderDataType* type) const override;
   void DoSet(int index, const void* value) override;
   void DoGet(int index, void* value) const override;
   void DoGetDependencies(

@@ -181,6 +181,18 @@ class RenderBackend {
   virtual std::unique_ptr<RenderBuffer> CreateIndexBuffer(
       RenderInternal, DataVolatility volatility, int index_capacity) = 0;
 
+  // Creates a new storage buffer compatible with this backend, for a
+  // StorageBuffer.
+  //
+  // value_size is the size in bytes of a single value, and capacity is the
+  // number of values the buffer must be able to hold, which is at most
+  // kMaxStorageBufferBytes in total.
+  //
+  // If the RenderBuffer could not be created, this returns null.
+  virtual std::unique_ptr<RenderBuffer> CreateStorageBuffer(
+      RenderInternal, DataVolatility volatility, int value_size,
+      int capacity) = 0;
+
   //----------------------------------------------------------------------------
   // Rendering
   //

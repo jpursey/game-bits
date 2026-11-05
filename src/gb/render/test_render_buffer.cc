@@ -69,6 +69,21 @@ bool TestRenderBuffer::DoSet(int offset, const void* data, int size) {
   return true;
 }
 
+bool TestRenderBuffer::DoGet(int offset, void* data, int size) const {
+  if (config_->fail_get) {
+    return false;
+  }
+  if (editing_ || GetVolatility() == DataVolatility::kStaticWrite ||
+      data == nullptr || offset < 0 || size <= 0 || offset + size > GetSize()) {
+    invalid_call_count_ += 1;
+    return false;
+  }
+  std::memcpy(data,
+              static_cast<const uint8_t*>(data_) + (offset * GetValueSize()),
+              size * GetValueSize());
+  return true;
+}
+
 void* TestRenderBuffer::DoEditBegin() {
   if (config_->fail_edit_begin) {
     return nullptr;

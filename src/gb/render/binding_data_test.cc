@@ -165,6 +165,52 @@ TEST_F(BindingDataTest, VolumeTextures) {
   EXPECT_THAT(dependencies, ElementsAre(volume_texture.Get()));
 }
 
+TEST_F(BindingDataTest, StorageBuffers) {
+  CreateSystem();
+  auto* vector2_type = render_system_->RegisterConstantsType<Vector2>("vec2");
+  ASSERT_NE(vector2_type, nullptr);
+  auto storage_buffer = render_system_->CreateStorageBuffer(
+      vector2_type, DataVolatility::kStaticWrite, 4);
+  ASSERT_NE(storage_buffer, nullptr);
+  const std::vector<Binding> bindings = {Binding()
+                                             .SetShaders(ShaderType::kFragment)
+                                             .SetLocation(BindingSet::kScene, 1)
+                                             .SetStorageBuffer(vector2_type)};
+  TestBindingData binding_data(nullptr, BindingSet::kScene, bindings);
+
+  EXPECT_EQ(binding_data.GetStorageBuffer(1), nullptr);
+  binding_data.SetStorageBuffer(1, storage_buffer.Get());
+  EXPECT_EQ(binding_data.GetStorageBuffer(1), storage_buffer.Get());
+  ResourceDependencyList dependencies;
+  binding_data.GetDependencies(&dependencies);
+  EXPECT_THAT(dependencies, ElementsAre(storage_buffer.Get()));
+  binding_data.SetStorageBuffer(1, nullptr);
+  EXPECT_EQ(binding_data.GetStorageBuffer(1), nullptr);
+}
+
+TEST_F(BindingDataTest, StorageBufferOfWrongTypeDies) {
+  if (!kRenderAssertsCompiled) {
+    GTEST_SKIP() << "Render asserts are compiled out";
+  }
+  CreateSystem();
+  SetRenderAssertEnabled(true);
+  auto* vector2_type = render_system_->RegisterConstantsType<Vector2>("vec2");
+  auto* vector3_type = render_system_->RegisterConstantsType<Vector3>("vec3");
+  ASSERT_NE(vector2_type, nullptr);
+  ASSERT_NE(vector3_type, nullptr);
+  auto storage_buffer = render_system_->CreateStorageBuffer(
+      vector3_type, DataVolatility::kStaticWrite, 4);
+  ASSERT_NE(storage_buffer, nullptr);
+  TestBindingData binding_data(nullptr, BindingSet::kScene,
+                               {Binding()
+                                    .SetShaders(ShaderType::kFragment)
+                                    .SetLocation(BindingSet::kScene, 1)
+                                    .SetStorageBuffer(vector2_type)});
+
+  EXPECT_DEATH(binding_data.SetStorageBuffer(1, storage_buffer.Get()),
+               "ValidateDataType");
+}
+
 TEST_F(BindingDataTest, AccessWithWrongTypeOrIndexDies) {
   if (!kRenderAssertsCompiled) {
     GTEST_SKIP() << "Render asserts are compiled out";
@@ -205,6 +251,8 @@ TEST_F(BindingDataTest, AccessWithWrongTypeOrIndexDies) {
   EXPECT_DEATH(binding_data.GetTextureArray(1), "Validate");
   EXPECT_DEATH(binding_data.SetVolumeTexture(1, nullptr), "Validate");
   EXPECT_DEATH(binding_data.GetVolumeTexture(1), "Validate");
+  EXPECT_DEATH(binding_data.SetStorageBuffer(1, nullptr), "Validate");
+  EXPECT_DEATH(binding_data.GetStorageBuffer(1), "Validate");
 }
 
 }  // namespace

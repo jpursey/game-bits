@@ -90,6 +90,14 @@ struct Binding {
       const RenderDataType* type,
       DataVolatility data_volatility = DataVolatility::kStaticReadWrite);
 
+  // Sets the binding to be a storage buffer of values of the type (a readonly
+  // buffer block in GLSL), which is registered with
+  // RenderSystem::RegisterConstantsType.
+  //
+  // The actual storage buffer must be set within a BindingData object for this
+  // binding if it is accessed by a shader.
+  Binding& SetStorageBuffer(const RenderDataType* type);
+
   // Returns true if the Binding is valid.
   //
   // Only valid Bindings may be used with other render types.
@@ -98,14 +106,21 @@ struct Binding {
   // Returns true if the binding is compatible.
   //
   // Compatible bindings have the same set, index, and binding type (and for
-  // constants, the same constants TypeKey), but may have different shader
-  // types or data volatility.
+  // constants and storage buffers, the same data type TypeKey), but may have
+  // different shader types or data volatility.
   bool IsCompatible(const Binding& other) const;
 
   // Combines the other binding into this one, if it is compatible.
   //
   // Returns false if the binding could not be combined into this binding.
   bool Combine(const Binding& other);
+
+  // Returns true if the binding type has a data type (kConstants or
+  // kStorageBuffer).
+  bool HasDataType() const {
+    return binding_type == BindingType::kConstants ||
+           binding_type == BindingType::kStorageBuffer;
+  }
 
   // Defines which shader the binding applies to.
   ShaderTypes shader_types;
@@ -119,9 +134,10 @@ struct Binding {
   // Defines the type of binding.
   BindingType binding_type = BindingType::kNone;
 
-  // If the type is kConstants, this must specify a previously registered
-  // constants type. See RenderSystem::RegisterConstantsType.
-  const RenderDataType* constants_type = nullptr;
+  // If the type is kConstants or kStorageBuffer, this must specify a previously
+  // registered constants type: the constants, or the type of each value in the
+  // storage buffer. See RenderSystem::RegisterConstantsType.
+  const RenderDataType* data_type = nullptr;
 
   // Render data volatility determines when binding data will be changed.
   //
@@ -147,21 +163,21 @@ inline Binding& Binding::SetLocation(BindingSet binding_set,
 
 inline Binding& Binding::SetTexture() {
   binding_type = BindingType::kTexture;
-  constants_type = nullptr;
+  data_type = nullptr;
   volatility = DataVolatility::kStaticReadWrite;
   return *this;
 }
 
 inline Binding& Binding::SetTextureArray() {
   binding_type = BindingType::kTextureArray;
-  constants_type = nullptr;
+  data_type = nullptr;
   volatility = DataVolatility::kStaticReadWrite;
   return *this;
 }
 
 inline Binding& Binding::SetVolumeTexture() {
   binding_type = BindingType::kVolumeTexture;
-  constants_type = nullptr;
+  data_type = nullptr;
   volatility = DataVolatility::kStaticReadWrite;
   return *this;
 }
@@ -169,8 +185,15 @@ inline Binding& Binding::SetVolumeTexture() {
 inline Binding& Binding::SetConstants(const RenderDataType* type,
                                       DataVolatility data_volatility) {
   binding_type = BindingType::kConstants;
-  constants_type = type;
+  data_type = type;
   volatility = data_volatility;
+  return *this;
+}
+
+inline Binding& Binding::SetStorageBuffer(const RenderDataType* type) {
+  binding_type = BindingType::kStorageBuffer;
+  data_type = type;
+  volatility = DataVolatility::kStaticReadWrite;
   return *this;
 }
 
@@ -180,9 +203,9 @@ inline bool Binding::IsValid() const {
          (binding_type == BindingType::kConstants ||
           binding_type == BindingType::kTexture ||
           binding_type == BindingType::kTextureArray ||
-          binding_type == BindingType::kVolumeTexture) &&
-         (binding_type != BindingType::kConstants ||
-          constants_type != nullptr) &&
+          binding_type == BindingType::kVolumeTexture ||
+          binding_type == BindingType::kStorageBuffer) &&
+         (!HasDataType() || data_type != nullptr) &&
          (volatility == DataVolatility::kPerFrame ||
           volatility == DataVolatility::kStaticReadWrite ||
           volatility == DataVolatility::kStaticWrite) &&
@@ -194,10 +217,9 @@ inline bool Binding::IsValid() const {
 inline bool Binding::IsCompatible(const Binding& other) const {
   return set == other.set && index == other.index &&
          binding_type == other.binding_type &&
-         (binding_type != BindingType::kConstants ||
-          constants_type == other.constants_type ||
-          (constants_type != nullptr && other.constants_type != nullptr &&
-           constants_type->GetType() == other.constants_type->GetType()));
+         (!HasDataType() || data_type == other.data_type ||
+          (data_type != nullptr && other.data_type != nullptr &&
+           data_type->GetType() == other.data_type->GetType()));
 }
 
 inline bool Binding::Combine(const Binding& other) {

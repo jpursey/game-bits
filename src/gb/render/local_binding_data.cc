@@ -28,6 +28,7 @@ LocalBindingData::LocalBindingData(RenderInternal, BindingSet set,
   const RenderDataType* const texture_type = GetTextureDataType();
   const RenderDataType* const texture_array_type = GetTextureArrayDataType();
   const RenderDataType* const volume_texture_type = GetVolumeTextureDataType();
+  const RenderDataType* const storage_buffer_type = GetStorageBufferDataType();
   for (const auto& binding : bindings) {
     Slot& slot = slots_[binding.index];
     if (slot.type != nullptr) {
@@ -35,7 +36,7 @@ LocalBindingData::LocalBindingData(RenderInternal, BindingSet set,
     }
     switch (binding.binding_type) {
       case BindingType::kConstants:
-        slot.type = binding.constants_type;
+        slot.type = binding.data_type;
         break;
       case BindingType::kTexture:
         slot.type = texture_type;
@@ -46,9 +47,13 @@ LocalBindingData::LocalBindingData(RenderInternal, BindingSet set,
       case BindingType::kVolumeTexture:
         slot.type = volume_texture_type;
         break;
+      case BindingType::kStorageBuffer:
+        slot.type = storage_buffer_type;
+        break;
       default:
         LOG(FATAL) << "Unhandled binding type in LocalBindingData constructor";
     }
+    slot.data_type = binding.data_type;
   }
 
   // Values are only accessed with memcpy, so they are packed without
@@ -89,6 +94,12 @@ const RenderDataType* LocalBindingData::GetVolumeTextureDataType() {
   return &type;
 }
 
+const RenderDataType* LocalBindingData::GetStorageBufferDataType() {
+  static RenderDataType type({}, "", TypeKey::Get<StorageBuffer*>(),
+                             sizeof(StorageBuffer*));
+  return &type;
+}
+
 void LocalBindingData::CopyTo(BindingData* binding_data) const {
   const int count = static_cast<int>(slots_.size());
   for (int i = 0; i < count; ++i) {
@@ -109,6 +120,15 @@ bool LocalBindingData::Validate(int index, TypeKey* type) const {
   return actual_type != nullptr && actual_type->GetType() == type;
 }
 
+bool LocalBindingData::ValidateDataType(int index,
+                                        const RenderDataType* type) const {
+  if (index < 0 || index >= static_cast<int>(slots_.size())) {
+    return false;
+  }
+  const auto* data_type = slots_[index].data_type;
+  return data_type != nullptr && data_type->GetType() == type->GetType();
+}
+
 void LocalBindingData::DoSet(int index, const void* value) {
   const Slot& slot = slots_[index];
   std::memcpy(buffer_.data() + slot.offset, value, slot.type->GetSize());
@@ -124,6 +144,7 @@ void LocalBindingData::DoGetDependencies(
   const RenderDataType* const texture_type = GetTextureDataType();
   const RenderDataType* const texture_array_type = GetTextureArrayDataType();
   const RenderDataType* const volume_texture_type = GetVolumeTextureDataType();
+  const RenderDataType* const storage_buffer_type = GetStorageBufferDataType();
   for (const Slot& slot : slots_) {
     if (slot.type == texture_type) {
       Texture* texture = nullptr;
@@ -144,6 +165,13 @@ void LocalBindingData::DoGetDependencies(
                   sizeof(volume_texture));
       if (volume_texture != nullptr) {
         dependencies->push_back(volume_texture);
+      }
+    } else if (slot.type == storage_buffer_type) {
+      StorageBuffer* storage_buffer = nullptr;
+      std::memcpy(&storage_buffer, buffer_.data() + slot.offset,
+                  sizeof(storage_buffer));
+      if (storage_buffer != nullptr) {
+        dependencies->push_back(storage_buffer);
       }
     }
   }

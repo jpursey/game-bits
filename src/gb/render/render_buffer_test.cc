@@ -227,6 +227,51 @@ TEST_F(RenderBufferTest, SetRange) {
   EXPECT_EQ(test_render_buffer.GetInvalidCallCount(), 0);
 }
 
+TEST_F(RenderBufferTest, Get) {
+  const uint32_t kData[4] = {0x00000000, 0x11111111, 0x22222222, 0x33333333};
+
+  TestRenderBuffer test_render_buffer(&config, DataVolatility::kStaticReadWrite,
+                                      kValueSize, kCapacity);
+  RenderBuffer& render_buffer = test_render_buffer;
+  ASSERT_TRUE(render_buffer.Set(kData, 4));
+
+  uint32_t data[4] = {};
+  EXPECT_TRUE(render_buffer.Get(1, data, 3));
+  EXPECT_EQ(data[0], 0x11111111);
+  EXPECT_EQ(data[1], 0x22222222);
+  EXPECT_EQ(data[2], 0x33333333);
+  EXPECT_TRUE(render_buffer.Get(4, nullptr, 0));
+
+  // Ranges past the size fail, even within the capacity.
+  EXPECT_FALSE(render_buffer.Get(2, data, 3));
+  EXPECT_FALSE(render_buffer.Get(4, data, 1));
+  EXPECT_FALSE(render_buffer.Get(-1, data, 1));
+  EXPECT_FALSE(render_buffer.Get(0, data, -1));
+
+  // Reading fails while a view exists.
+  auto view = render_buffer.Edit();
+  ASSERT_NE(view, nullptr);
+  EXPECT_FALSE(render_buffer.Get(0, data, 1));
+  view.reset();
+
+  config.fail_get = true;
+  EXPECT_FALSE(render_buffer.Get(0, data, 1));
+  EXPECT_EQ(test_render_buffer.GetInvalidCallCount(), 0);
+}
+
+TEST_F(RenderBufferTest, CannotGetStaticWrite) {
+  const uint32_t kData[4] = {0x00000000, 0x11111111, 0x22222222, 0x33333333};
+
+  TestRenderBuffer test_render_buffer(&config, DataVolatility::kStaticWrite,
+                                      kValueSize, kCapacity);
+  RenderBuffer& render_buffer = test_render_buffer;
+  ASSERT_TRUE(render_buffer.Set(kData, 4));
+
+  uint32_t data = 0;
+  EXPECT_FALSE(render_buffer.Get(0, &data, 1));
+  EXPECT_EQ(test_render_buffer.GetInvalidCallCount(), 0);
+}
+
 TEST_F(RenderBufferTest, EditPreventsModification) {
   TestRenderBuffer test_render_buffer(&config, DataVolatility::kStaticReadWrite,
                                       kValueSize, kCapacity);

@@ -27,6 +27,7 @@
 #include "gb/render/render_types.h"
 #include "gb/render/sampler_options.h"
 #include "gb/render/shader.h"
+#include "gb/render/storage_buffer.h"
 #include "gb/render/texture.h"
 #include "gb/render/volume_texture.h"
 #include "gb/resource/resource_ptr.h"
@@ -138,7 +139,11 @@ class RenderSystem final {
   // Registers a constants type with a name, to allow serialization of material
   // types and provide type safety when setting constant data. This must be a
   // trivially copyable type that conforms to the layout specification of the
-  // underlying graphics API (stb140 for OpenGL or Vulkan).
+  // underlying graphics API (std140 for OpenGL or Vulkan).
+  //
+  // The type may also be the type of each value in a storage buffer, which
+  // must conform to the layout for storage buffers instead (std430 for OpenGL
+  // or Vulkan). Nothing can check that a C++ type matches a shader's layout.
   //
   // If the name is already registered, this returns the existing type if it
   // is for the same Type, and fails (returning null) otherwise.
@@ -401,6 +406,37 @@ class RenderSystem final {
       std::string_view name, VolumeTexture* volume_texture,
       DataVolatility volatility = DataVolatility::kStaticWrite);
 
+  // Creates a storage buffer of "count" values of the type, which is registered
+  // with RegisterConstantsType() (and whose C++ layout matches GLSL's std430
+  // layout).
+  //
+  // The count is at least one, and the values are at most
+  // kMaxStorageBufferBytes in total.
+  //
+  // If successful, every value in the storage buffer is zero.
+  ResourcePtr<StorageBuffer> CreateStorageBuffer(const RenderDataType* type,
+                                                 DataVolatility volatility,
+                                                 int count);
+  StorageBuffer* CreateStorageBuffer(ResourceSet* resource_set,
+                                     const RenderDataType* type,
+                                     DataVolatility volatility, int count);
+
+  // Saves a storage buffer to the specified resource name.
+  //
+  // The storage buffer must be readable (not DataVolatility::kStaticWrite).
+  // Optionally, DataVolatility may be specified to indicate what it should be
+  // when it is reloaded later.
+  //
+  // The values are saved as bytes in the C++ layout of the type, with the
+  // type's name. Loading fails if no type of that name is registered, or its
+  // size no longer matches. A type whose fields change without changing its
+  // size loads the old bytes as the new fields.
+  //
+  // Returns true if the storage buffer was successfully saved.
+  bool SaveStorageBuffer(
+      std::string_view name, StorageBuffer* storage_buffer,
+      DataVolatility volatility = DataVolatility::kStaticWrite);
+
   //----------------------------------------------------------------------------
   // Rendering
   //
@@ -556,6 +592,21 @@ class RenderSystem final {
                                         const fbs::VolumeTextureChunk* chunk,
                                         ResourceEntry entry);
   bool SaveVolumeTextureChunk(Context* context, VolumeTexture* volume_texture,
+                              flatbuffers::FlatBufferBuilder* builder);
+
+  // Creates a storage buffer in the backend, returning null and logging why if
+  // its type or count are invalid, or the backend fails. Its values are set
+  // from "values" if it isn't null, and are zero otherwise.
+  StorageBuffer* CreateBackendStorageBuffer(ResourceEntry entry,
+                                            const RenderDataType* type,
+                                            DataVolatility volatility,
+                                            int count, const void* values);
+  StorageBuffer* DoCreateStorageBuffer(const RenderDataType* type,
+                                       DataVolatility volatility, int count);
+  StorageBuffer* LoadStorageBufferChunk(Context* context,
+                                        const fbs::StorageBufferChunk* chunk,
+                                        ResourceEntry entry);
+  bool SaveStorageBufferChunk(Context* context, StorageBuffer* storage_buffer,
                               flatbuffers::FlatBufferBuilder* builder);
 
   const RenderDataType* DoRegisterConstantsType(std::string_view name,
@@ -717,6 +768,20 @@ inline VolumeTexture* RenderSystem::CreateVolumeTexture(
       DoCreateVolumeTexture(volatility, width, height, depth, options, format);
   resource_set->Add(volume_texture);
   return volume_texture;
+}
+
+inline ResourcePtr<StorageBuffer> RenderSystem::CreateStorageBuffer(
+    const RenderDataType* type, DataVolatility volatility, int count) {
+  return DoCreateStorageBuffer(type, volatility, count);
+}
+
+inline StorageBuffer* RenderSystem::CreateStorageBuffer(
+    ResourceSet* resource_set, const RenderDataType* type,
+    DataVolatility volatility, int count) {
+  StorageBuffer* storage_buffer =
+      DoCreateStorageBuffer(type, volatility, count);
+  resource_set->Add(storage_buffer);
+  return storage_buffer;
 }
 
 }  // namespace gb

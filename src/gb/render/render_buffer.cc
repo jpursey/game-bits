@@ -66,6 +66,15 @@ bool RenderBuffer::SetRange(int offset, const void* data, int size) {
   return size == 0 || DoSet(offset, data, size);
 }
 
+bool RenderBuffer::Get(int offset, void* data, int size) const {
+  RENDER_ASSERT(size == 0 || data != nullptr);
+  if (IsEditing() || volatility_ == DataVolatility::kStaticWrite ||
+      offset < 0 || size < 0 || size > size_ - offset) {
+    return false;
+  }
+  return size == 0 || DoGet(offset, data, size);
+}
+
 std::unique_ptr<RenderBufferView> RenderBuffer::Edit() {
   if (IsEditing() || volatility_ == DataVolatility::kStaticWrite) {
     return nullptr;

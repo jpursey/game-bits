@@ -554,6 +554,21 @@ VulkanRenderBuffer::~VulkanRenderBuffer() {
       << "View still active in VulkanRenderBuffer destructor.";
 }
 
+bool VulkanRenderBuffer::DoGet(int offset, void* data, int size) const {
+  const uint8_t* buffer_data = static_cast<const uint8_t*>(DoGetData());
+  const int value_size = GetValueSize();
+  if (align_size_ == value_size) {
+    std::memcpy(data, buffer_data + (offset * value_size), size * value_size);
+    return true;
+  }
+  uint8_t* out = static_cast<uint8_t*>(data);
+  for (int i = 0; i < size; ++i) {
+    std::memcpy(out + (i * value_size),
+                buffer_data + ((offset + i) * align_size_), value_size);
+  }
+  return true;
+}
+
 void VulkanRenderBuffer::GetValue(int offset, void* data) {
   RENDER_ASSERT(align_size_ >= GetValueSize());
   const uint8_t* buffer_data = static_cast<const uint8_t*>(DoGetData());

@@ -125,6 +125,15 @@ std::unique_ptr<RenderBuffer> TestRenderBackend::CreateIndexBuffer(
       static_cast<int>(sizeof(uint16_t)), index_capacity);
 }
 
+std::unique_ptr<RenderBuffer> TestRenderBackend::CreateStorageBuffer(
+    RenderInternal, DataVolatility volatility, int value_size, int capacity) {
+  if (state_->fail_create_storage_buffer) {
+    return nullptr;
+  }
+  return std::make_unique<TestRenderBuffer>(&state_->storage_buffer_config,
+                                            volatility, value_size, capacity);
+}
+
 bool TestRenderBackend::BeginFrame(RenderInternal) {
   if (state_->fail_begin_frame) {
     return false;

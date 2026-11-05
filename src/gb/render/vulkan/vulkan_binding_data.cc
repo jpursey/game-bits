@@ -68,6 +68,7 @@ void VulkanBindingData::OnRender(VulkanRenderState* state) {
     DataItem& item = data_[binding];
     switch (item.binding_type) {
       case BindingType::kNone:
+      case BindingType::kStorageBuffer:
         break;
       case BindingType::kTexture: {
         auto& info = item.texture;
@@ -143,7 +144,7 @@ bool VulkanBindingData::ValidateBindings(
     }
     if (binding->binding_type == BindingType::kConstants &&
         data_[index].constants.type->GetType() !=
-            binding->constants_type->GetType()) {
+            binding->data_type->GetType()) {
       return false;
     }
   }
@@ -170,6 +171,8 @@ bool VulkanBindingData::Validate(int index, gb::TypeKey* type) const {
       return type == texture_array_type;
     case BindingType::kVolumeTexture:
       return type == volume_texture_type;
+    case BindingType::kStorageBuffer:
+      return false;
     case BindingType::kConstants:
       return item.constants.type->GetType() == type;
   }
@@ -177,10 +180,17 @@ bool VulkanBindingData::Validate(int index, gb::TypeKey* type) const {
   return false;
 }
 
+bool VulkanBindingData::ValidateDataType(int index,
+                                         const RenderDataType* type) const {
+  // Storage buffers can't be bound.
+  return false;
+}
+
 void VulkanBindingData::DoSet(int index, const void* value) {
   auto& item = data_[index];
   switch (item.binding_type) {
     case BindingType::kNone:
+    case BindingType::kStorageBuffer:
       break;
     case BindingType::kConstants:
       item.constants.buffer->SetValue(buffer_offset_index_, value);
@@ -222,6 +232,7 @@ void VulkanBindingData::DoGet(int index, void* value) const {
   const auto& item = data_[index];
   switch (item.binding_type) {
     case BindingType::kNone:
+    case BindingType::kStorageBuffer:
       break;
     case BindingType::kConstants:
       item.constants.buffer->GetValue(buffer_offset_index_, value);
@@ -244,6 +255,7 @@ void VulkanBindingData::DoGetDependencies(
     switch (item.binding_type) {
       case BindingType::kNone:
       case BindingType::kConstants:
+      case BindingType::kStorageBuffer:
         break;
       case BindingType::kTexture:
         if (item.texture.texture != nullptr) {
