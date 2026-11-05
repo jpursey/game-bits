@@ -12,6 +12,7 @@
 
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
+#include "absl/time/time.h"
 #include "absl/types/span.h"
 #include "gb/image/image.h"
 #include "gb/pilot/fake_pilot.h"
@@ -375,6 +376,16 @@ TEST(PilotTest, CountsFrames) {
   EXPECT_EQ(pilot.GetFrame(), 1);
   pilot.EndFrame();
   EXPECT_EQ(pilot.GetFrame(), 2);
+}
+
+TEST(PilotTest, DeltaTimeIsAtLeastMinimum) {
+  FakePilot pilot;
+  pilot.SetDeltaTime(Pilot::kMinDeltaTime * 2);
+  EXPECT_EQ(pilot.GetDeltaTime(), Pilot::kMinDeltaTime * 2);
+  pilot.SetDeltaTime(absl::ZeroDuration());
+  EXPECT_EQ(pilot.GetDeltaTime(), Pilot::kMinDeltaTime);
+  pilot.SetDeltaTime(-absl::Seconds(1));
+  EXPECT_EQ(pilot.GetDeltaTime(), Pilot::kMinDeltaTime);
 }
 
 TEST(PilotTest, BeginFrameTwiceIsDebugFatal) {

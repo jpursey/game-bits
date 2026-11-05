@@ -459,6 +459,36 @@ lists across several meshes instead, checked by hand with
 `examples/render-check`'s "Go over the vertex limit" button, which should then
 keep drawing.
 
+## Pilot items behind modal popups
+
+- **Layers:** imgui
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Scripted runs](worklog/scripted_runs.md)
+
+With a pilot, `ImGuiInstance` only reports an item where a click at its center
+reaches it, but it doesn't account for modal popups. While one is open, ImGui
+ignores clicks outside it, yet an item behind it is still found, so a script's
+click on it does nothing, rather than the script failing to find it. Leave out
+items outside the open modal's window and its children, as ImGui's own hover
+test does (`GetTopMostPopupModal()`).
+
+## Pilot items behind other ImGui instances
+
+- **Layers:** imgui
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Scripted runs](worklog/scripted_runs.md)
+
+With a pilot, `ImGuiInstance` leaves out items behind another of its own
+windows, but only looks at its own context's windows. When two instances share
+a render system and one draws on top of the other, an item covered by the
+other instance's window is still found, though a click reaches the window on
+top. Order the instances by their scene order, and leave out an item that a
+window of a later instance covers.
+
 ## Deterministic concurrency tests
 
 - **Layers:** game, job, message, resource

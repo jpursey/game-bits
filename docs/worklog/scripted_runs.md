@@ -325,7 +325,9 @@ class Pilot {
 - **Delta time:** `GetDeltaTime()` is the game time each frame stands for.
   `Game` passes it to `Update()` as `delta_time` in place of the time it
   measured, and ImGui takes it as `io.DeltaTime`, so a run is the same however
-  fast the machine is. The pilot owns it, as scripts count time in frames.
+  fast the machine is. The pilot owns it, as scripts count time in frames. It
+  is never less than `Pilot::kMinDeltaTime` (1 ms), as ImGui asserts that time
+  passes each frame.
 - **Names** of commands and conditions are each registered once at a time.
   Registering one again logs an error (failing a script run) and returns a
   handle that holds nothing.

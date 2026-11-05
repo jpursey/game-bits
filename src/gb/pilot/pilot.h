@@ -6,6 +6,7 @@
 #ifndef GB_PILOT_PILOT_H_
 #define GB_PILOT_PILOT_H_
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -272,8 +273,12 @@ class Pilot {
 
   // The game time each frame stands for. The loop passes it to the game as its
   // delta time in place of the time measured, and the GUI uses it too, so a run
-  // is the same however fast the program runs.
-  absl::Duration GetDeltaTime() const { return DoGetDeltaTime(); }
+  // is the same however fast the program runs. It is never less than
+  // kMinDeltaTime, as ImGui and game code rely on time passing each frame.
+  static constexpr absl::Duration kMinDeltaTime = absl::Milliseconds(1);
+  absl::Duration GetDeltaTime() const {
+    return std::max(DoGetDeltaTime(), kMinDeltaTime);
+  }
 
   // The frame in progress, counting from 0, or between frames, the next one.
   int GetFrame() const { return frame_; }
