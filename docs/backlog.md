@@ -194,44 +194,6 @@ same for slots, removing the baselines and the subtraction in every gather, at
 the cost of a compare as each point is recorded. Measure a timed point before
 and after.
 
-## Shared mesh buffers and indirect draws
-
-- **Layers:** render, render_vulkan
-- **Size:** large
-- **Feature workflow:** yes
-- **Depends on:** *Volume textures and storage buffers*
-- **Requested by:** Terra Diem *Chunk meshes in shared buffers*
-- **Background:** Terra Diem's meshing assessment
-  (`docs/tech/meshing-assessment.md` there)
-
-Every `Mesh` owns a vertex buffer and an index buffer (two GPU allocations),
-its indices are 16 bits (`kMaxMeshVertices` is 65,535), and every draw is a
-command of its own, with instance binding data of its own. A voxel world draws
-thousands of small meshes (Terra Diem had 4,212 chunk meshes within its default
-view distance) and rebuilds them often, from job threads, so the cost per mesh
-and per draw dominates. Add:
-- **Mesh pools:** large vertex and index buffers for one vertex type, from which
-  meshes allocate and free ranges. Allocating is cheap and safe from any
-  thread, with no lock the render loop also needs, and uploads are batched
-  through staging buffers. A pool reports how fragmented it is, and can grow
-  or compact.
-- **32-bit indices**, as an option per pool, so large meshes needn't be split.
-- **Drawing ranges** of a mesh (first index, count, and base vertex), so a mesh
-  can hold groups (by direction, or material) drawn or skipped separately.
-  `DrawPartial()` does part of this.
-- **Indirect draws:** draws whose ranges come from a buffer, many in one call
-  (multi-draw), each able to find its own data in a storage buffer by its draw
-  index. A program fills the buffer, or later a compute pass.
-- A fallback in the backend for GPUs without multi-draw, and the test backend
-  recording what was drawn.
-
-Check in `examples/block-world` by drawing all of its chunks from one pool with
-an indirect draw, and compare its frame time with drawing them one by one.
-
-Terra Diem would allocate each chunk's mesh from a pool, as ranges grouped by
-face direction, and draw every visible chunk in a few indirect draws, skipping
-the directions that face away from the camera.
-
 ## Render passes and targets
 
 - **Layers:** render, render_vulkan

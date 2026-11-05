@@ -12,6 +12,7 @@ set(gb_container_SOURCE
   container_stub.cc
   offset_array.h
   queue.h
+  range_packer.cc range_packer.h
 )
 
 set(gb_container_TEST_SOURCE
@@ -22,12 +23,14 @@ set(gb_container_TEST_SOURCE
   buffer_view_3d_test.cc
   offset_array_test.cc
   queue_test.cc
+  range_packer_test.cc
 )
 set(gb_container_TEST_DEPS
   absl::strings
 )
 
 set(gb_container_DEPS
+  absl::btree
   gb_base
 )
 
