@@ -131,6 +131,8 @@ TEST(PilotStepTest, StepsAreWrittenAsScriptLines) {
             "run set speed -2 \"two words\"");
   EXPECT_EQ(absl::StrCat(PilotExpectStep{.condition = "loaded"}),
             "expect loaded");
+  EXPECT_EQ(absl::StrCat(PilotExpectErrorStep{.text = "can't \"edit\""}),
+            "expect error \"can't \\\"edit\\\"\" 600");
   EXPECT_EQ(absl::StrCat(PilotSaveStep{.name = "start"}), "save start");
 }
 
@@ -558,6 +560,186 @@ TEST_F(StepPilotTest, IgnoresStepsAddedOnceDone) {
 }
 
 //------------------------------------------------------------------------------
+// Expected errors
+//------------------------------------------------------------------------------
+
+TEST_F(StepPilotTest, ExpectedErrorInTheStepsFramePasses) {
+  LogRecorder log_recorder;
+  StepPilot pilot;
+  pilot.AddSteps({PilotExpectErrorStep{.text = "edited", .max_frames = 1},
+                  PilotWaitStep{.frames = 1}});
+  pilot.BeginFrame();
+  LOG(ERROR) << "Texture cannot be edited";
+  pilot.EndFrame();
+  EXPECT_TRUE(pilot.IsDone());
+  EXPECT_FALSE(pilot.HasFailed());
+  EXPECT_THAT(log_error_guard_.TakeMessages(),
+              ElementsAre(LogText("Texture cannot be edited")));
+  EXPECT_THAT(log_recorder.TakeMessages(),
+              ElementsAre(LogText("Pilot frame 0: expect error \"edited\" 1"),
+                          LogText("Pilot frame 0: wait 1"),
+                          LogText("Texture cannot be edited"),
+                          LogText("Pilot frame 0: The error was expected, by "
+                                  "expect error \"edited\" 1"),
+                          LogTextHas("Pilot run passed")));
+}
+
+TEST_F(StepPilotTest, ExpectedErrorsInLaterFramesPass) {
+  StepPilot pilot;
+  pilot.AddSteps({PilotExpectErrorStep{.text = "edited", .max_frames = 3},
+                  PilotWaitStep{.frames = 3}});
+  RunFrame(&pilot);
+  pilot.BeginFrame();
+  LOG(ERROR) << "Texture cannot be edited";
+  pilot.EndFrame();
+  LOG(ERROR) << "Texture cannot be edited, again";
+  RunFrame(&pilot);
+  EXPECT_TRUE(pilot.IsDone());
+  EXPECT_FALSE(pilot.HasFailed());
+  EXPECT_THAT(log_error_guard_.TakeMessages(), SizeIs(2));
+}
+
+TEST_F(StepPilotTest, ExpectedErrorOnAnotherThreadPasses) {
+  StepPilot pilot;
+  pilot.AddSteps({PilotExpectErrorStep{.text = "edited", .max_frames = 2},
+                  PilotWaitStep{.frames = 2}});
+  RunFrame(&pilot);
+  std::thread([] { LOG(ERROR) << "Texture cannot be edited"; }).join();
+  RunFrame(&pilot);
+  EXPECT_TRUE(pilot.IsDone());
+  EXPECT_FALSE(pilot.HasFailed());
+  EXPECT_THAT(log_error_guard_.TakeMessages(), SizeIs(1));
+}
+
+TEST_F(StepPilotTest, ExpectedErrorWithNoFramesLastsItsFrame) {
+  StepPilot pilot;
+  pilot.AddSteps({PilotExpectErrorStep{.text = "edited", .max_frames = 0},
+                  PilotWaitStep{.frames = 1}});
+  pilot.BeginFrame();
+  LOG(ERROR) << "Texture cannot be edited";
+  pilot.EndFrame();
+  EXPECT_TRUE(pilot.IsDone());
+  EXPECT_FALSE(pilot.HasFailed());
+  EXPECT_THAT(log_error_guard_.TakeMessages(), SizeIs(1));
+}
+
+TEST_F(StepPilotTest, ErrorBeforeTheExpectErrorStepFails) {
+  StepPilot pilot;
+  PilotHandle command =
+      pilot.AddCommand("edit", [](absl::Span<const std::string>) {
+        LOG(ERROR) << "Texture cannot be edited";
+        return absl::OkStatus();
+      });
+  pilot.AddSteps({PilotRunStep{.command = "edit"},
+                  PilotExpectErrorStep{.text = "edited"},
+                  PilotWaitStep{.frames = 1}});
+  EXPECT_THAT(RunUntilDone(&pilot), SizeIs(1));
+  EXPECT_TRUE(pilot.HasFailed());
+  EXPECT_THAT(log_error_guard_.TakeMessages(),
+              ElementsAre(LogText("Texture cannot be edited"),
+                          LogText("Pilot frame 0: An error was logged: "
+                                  "Texture cannot be edited")));
+}
+
+TEST_F(StepPilotTest, ErrorAfterTheExpectationsFramesFails) {
+  StepPilot pilot;
+  pilot.AddSteps({PilotExpectErrorStep{.text = "edited", .max_frames = 1},
+                  PilotWaitStep{.frames = 3}});
+  pilot.BeginFrame();
+  LOG(ERROR) << "Texture cannot be edited";
+  pilot.EndFrame();
+  pilot.BeginFrame();
+  LOG(ERROR) << "Texture cannot be edited";
+  pilot.EndFrame();
+  EXPECT_TRUE(pilot.IsDone());
+  EXPECT_TRUE(pilot.HasFailed());
+  EXPECT_THAT(log_error_guard_.TakeMessages(),
+              ElementsAre(LogText("Texture cannot be edited"),
+                          LogText("Texture cannot be edited"),
+                          LogText("Pilot frame 1: An error was logged: "
+                                  "Texture cannot be edited")));
+}
+
+TEST_F(StepPilotTest, ErrorWithOtherTextFails) {
+  StepPilot pilot;
+  pilot.AddSteps(
+      {PilotExpectErrorStep{.text = "edited"}, PilotWaitStep{.frames = 2}});
+  pilot.BeginFrame();
+  LOG(ERROR) << "Broken";
+  pilot.EndFrame();
+  EXPECT_TRUE(pilot.IsDone());
+  EXPECT_TRUE(pilot.HasFailed());
+  EXPECT_THAT(
+      log_error_guard_.TakeMessages(),
+      ElementsAre(LogText("Broken"),
+                  LogText("Pilot frame 0: An error was logged: Broken")));
+}
+
+TEST_F(StepPilotTest, ExpectedErrorNotLoggedInItsFramesFails) {
+  StepPilot pilot;
+  pilot.AddSteps({PilotExpectErrorStep{.text = "edited", .max_frames = 2},
+                  PilotWaitStep{.frames = 5}});
+  EXPECT_THAT(RunUntilDone(&pilot), SizeIs(2));
+  EXPECT_TRUE(pilot.HasFailed());
+  EXPECT_THAT(log_error_guard_.TakeMessages(),
+              ElementsAre(LogText("Pilot frame 1: expect error \"edited\" 2 "
+                                  "failed: No error with its text was logged "
+                                  "in 2 frames")));
+}
+
+TEST_F(StepPilotTest, ExpectedErrorNotLoggedBeforeTheRunEndsFails) {
+  StepPilot pilot;
+  pilot.AddSteps(
+      {PilotExpectErrorStep{.text = "edited"}, PilotWaitStep{.frames = 1}});
+  EXPECT_THAT(RunUntilDone(&pilot), SizeIs(1));
+  EXPECT_TRUE(pilot.HasFailed());
+  EXPECT_THAT(log_error_guard_.TakeMessages(),
+              ElementsAre(LogText("Pilot frame 0: expect error \"edited\" 600 "
+                                  "failed: No error with its text was logged "
+                                  "before the run ended")));
+}
+
+TEST_F(StepPilotTest, ExpectedErrorWithNoTextFails) {
+  StepPilot pilot;
+  pilot.AddSteps({PilotExpectErrorStep{}, PilotWaitStep{.frames = 1}});
+  EXPECT_THAT(RunUntilDone(&pilot), SizeIs(1));
+  EXPECT_TRUE(pilot.HasFailed());
+  EXPECT_THAT(log_error_guard_.TakeMessages(),
+              ElementsAre(LogText("Pilot frame 0: expect error \"\" 600 "
+                                  "failed: No text to expect")));
+}
+
+TEST_F(StepPilotTest, ExpectationsCanOverlap) {
+  StepPilot pilot;
+  pilot.AddSteps({PilotExpectErrorStep{.text = "edited", .max_frames = 2},
+                  PilotWaitStep{.frames = 1},
+                  PilotExpectErrorStep{.text = "vertices", .max_frames = 2},
+                  PilotWaitStep{.frames = 2}});
+  RunFrame(&pilot);
+  pilot.BeginFrame();
+  LOG(ERROR) << "Texture cannot be edited";
+  LOG(ERROR) << "GUI has too many vertices";
+  pilot.EndFrame();
+  RunFrame(&pilot);
+  EXPECT_TRUE(pilot.IsDone());
+  EXPECT_FALSE(pilot.HasFailed());
+  EXPECT_THAT(log_error_guard_.TakeMessages(), SizeIs(2));
+}
+
+TEST_F(StepPilotTest, OneErrorMeetsEveryExpectationItMatches) {
+  StepPilot pilot;
+  pilot.AddSteps({PilotExpectErrorStep{.text = "cannot", .max_frames = 1},
+                  PilotExpectErrorStep{.text = "edited", .max_frames = 1},
+                  PilotWaitStep{.frames = 1}});
+  pilot.BeginFrame();
+  LOG(ERROR) << "Texture cannot be edited";
+  pilot.EndFrame();
+  EXPECT_TRUE(pilot.IsDone());
+  EXPECT_FALSE(pilot.HasFailed());
+  EXPECT_THAT(log_error_guard_.TakeMessages(), SizeIs(1));
+}
+
+//------------------------------------------------------------------------------
 // Logging
 //------------------------------------------------------------------------------
 
@@ -571,7 +753,8 @@ TEST_F(StepPilotTest, ErrorLoggedOnAnotherThreadFailsTheRun) {
   EXPECT_TRUE(pilot.HasFailed());
   EXPECT_THAT(log_error_guard_.TakeMessages(),
               ElementsAre(LogText("Broken"),
-                          LogText("Pilot frame 1: An error was logged")));
+                          LogText("Pilot frame 1: An error was logged: "
+                                  "Broken")));
 }
 
 TEST_F(StepPilotTest, ErrorLoggedInTheLastFrameFailsTheRun) {

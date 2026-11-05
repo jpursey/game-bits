@@ -43,6 +43,7 @@ struct PilotScript {
 //   wheel <amount>                      PilotMouseWheelStep
 //   run <command> <value>...            PilotRunStep
 //   expect <condition>                  PilotExpectStep
+//   expect error "<text>" [<frames>]    PilotExpectErrorStep
 //   save <name>                         PilotSaveStep
 //
 // Frames can't be negative. Each step converts to the line that reads back as

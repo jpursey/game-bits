@@ -106,12 +106,17 @@ text "hello"
 run reset_peaks            # A program command, with any further values
 wait for world_loaded 600  # A program condition, failing after 600 frames
 expect world_loaded        # Fails if the condition doesn't hold now
+expect error "cannot be edited" 10  # Errors with this text pass, for 10 frames
 ```
 
 - Time passes only in steps that wait or hold input: `wait`, `wait for`,
   `key` and `click` (one frame each, for the release), and `hold`. Every other
   step happens in the current frame, in order.
 - `wait for` waits at most 600 frames (10 seconds) unless given a limit.
+- `expect error` goes before the step that logs the error, for a check that
+  is meant to fail. Errors whose message contains its text don't fail the
+  run, for 600 frames unless given a limit, and it fails if none is logged by
+  then or by the end of the run.
 - `save` saves the next frame drawn, as RenderSystem draws nothing while the
   window is minimized. It fails if none is drawn within 600 frames.
 - `click "<label>"` presses the ImGui item with that label (the text shown,
@@ -400,7 +405,8 @@ and a program does the rest itself.
   *`Game` (`Run()` returns false).*
 
 Throughout, log what goes wrong as errors. A `StepPilot` fails the run on any
-error logged while it runs, so a program's own errors fail it.
+error logged while it runs that an `expect error` step doesn't expect, so a
+program's own errors fail it.
 
 Window pixels are the pixels of the saved frames, so a click at a point seen in
 a saved frame lands on what is drawn there.
@@ -456,6 +462,7 @@ struct PilotMouseClickStep {
 struct PilotMouseWheelStep { int amount; };
 struct PilotRunStep { std::string command; std::vector<std::string> args; };
 struct PilotExpectStep { std::string condition; };
+struct PilotExpectErrorStep { std::string text; int max_frames = 600; };
 struct PilotSaveStep { std::string name; };
 using PilotStep = std::variant<PilotWaitStep, ..., PilotSaveStep>;
 
@@ -500,9 +507,19 @@ class StepPilot final : public Pilot {
 - **Failures:** a failed command, a missing command or condition, an `expect`
   that doesn't hold, a `wait for` that times out, a label that no item or more
   than one has, a `save` with no `save_frame`, a frame not saved within 600
-  frames or that `save_frame` couldn't keep, and any error logged while it
-  runs, from any thread (an absl log sink counts them). The first ends the
-  run.
+  frames or that `save_frame` couldn't keep, an expected error that isn't
+  logged, and any other error logged while it runs, from any thread (an absl
+  log sink keeps them). The first ends the run.
+- **Expected errors:** the log sink keeps each error's message, under a
+  mutex, and the pilot takes them on the loop thread: at the start and end of
+  each frame, and as each step starts, so errors logged before an
+  `expect error` step are judged without it. An error whose message contains the text of an
+  expectation still in its frames is expected, and logged as such; any other
+  fails the run. An expectation lasts its `max_frames` frames, counting the
+  one it starts in, even once met, as a check may log its error more than
+  once. It fails when its frames end, or when the run ends, if no error met
+  it. Several may be in effect at once, and one error meets every
+  expectation it matches.
 - **Logging:** each step is logged as it runs, with its frame, and a failure
   as an error. A summary is logged once done: passed or failed, the frames
   run, and the frames saved.
@@ -576,6 +593,7 @@ absl::StatusOr<std::unique_ptr<Pilot>> CreateCliPilot(
     $click=("click" [$button=button] [$label=%string | $x=%int $y=%int]);
     $wheel=("wheel" $amount=%int);
     $run=("run" $command=name $args=name*);
+    $expect_error=("expect" "error" $text=%string [$frames=%int]);
     $expect=("expect" $condition=name);
     $save=("save" $name=name);
   }
@@ -754,7 +772,7 @@ CLAUDE.md's "Run an example" says so.
   skips the event filter in SDL 2.0.10, and writing SDL's key state array
   works.
 - Mouse coordinates in SDL window pixels match the saved frame's pixels,
-  including on a display scaled above 100% (CL11).
+  including on a display scaled above 100% (CL12).
 - Confirmed in CL6, by `gb_pilot_script`'s tests: the step grammar holds in
   `gb_parse`, with `wait for` beside `wait`, `click`'s optional forms, and
   `run`'s values stopping at the line break.
@@ -765,7 +783,8 @@ The interface comes first, then `StepPilot` beside it (CL3), then the tier 1
 libraries that take part (CL4 and CL5), then tier 2: script files (CL6 and
 CL7), and the render system and GUI (CL8 to CL10). Each library that takes
 part is tested against `FakePilot`, so after CL2 they can be built in any
-order.
+order. Expected errors (CL11) were added once render-check's scripts needed
+them.
 
 ### CL1 [x] stb, image: Save PNGs
 
@@ -858,7 +877,7 @@ Depends on: CL2.
 - Unit tests, with `FakePilot`: `BeginFrame()` calls frame listeners in order
   once the frame's input is set; a listener can add and remove listeners.
 - Can't be unit tested: hiding the window, which needs SDL's video subsystem
-  and a window on screen. CL11 checks it.
+  and a window on screen. CL12 checks it.
 
 ### CL6 [x] pilot_script: Read scripts
 
@@ -951,15 +970,34 @@ Depends on: CL2.
   button and toggles the check box; `io.DeltaTime` is the pilot's delta time; without
   a pilot the test engine hooks are off.
 
-### CL11 [ ] render-check: Scripted checks
+### CL11 [x] pilot, pilot_script: Expected errors
 
-Depends on: CL4, CL5, CL7, CL9, CL10.
+Depends on: CL3, CL6.
+
+- `gb_pilot`: `PilotExpectErrorStep`, and `StepPilot` keeping the errors
+  logged so it can match them to expected ones (see Expected errors).
+- `gb_pilot_script`: the `expect error` step.
+- Unused, so no visible change.
+
+**Verify**
+- Standard checks.
+- Unit tests: an expected error logged after the step, in its frame or a
+  later one within its frames, passes, as do several; one logged before the
+  step, after its frames, or with other text fails the run, as does none
+  being logged in its frames or before the run ends; several expectations at
+  once; errors from another thread; the step reads back from its text, and a
+  script reads it with and without frames, beside a condition named `error`.
+
+### CL12 [ ] render-check: Scripted checks
+
+Depends on: CL4, CL5, CL7, CL9, CL10, CL11.
 
 - render-check runs on `gb::Game`, takes the pilot flags through `gb_cli`,
   and creates `PilotSdl`.
 - Scripts in `examples/render-check/scripts/` for its hand checks: resizing
   is left out (no step resizes), and each other section's buttons and check
-  boxes are pressed by label, with frames saved before and after.
+  boxes are pressed by label, with frames saved before and after. The checks
+  meant to fail, which log an error, expect it.
 
 **Verify**
 - Standard checks.
@@ -971,9 +1009,9 @@ Depends on: CL4, CL5, CL7, CL9, CL10.
 - By hand (the user): the program runs as before without the flags, and
   moving the mouse over the window during a run changes nothing.
 
-### CL12 [ ] tools, docs: Run scripts from a session
+### CL13 [ ] tools, docs: Run scripts from a session
 
-Depends on: CL11.
+Depends on: CL12.
 
 - `tools/run-program.ps1` as described in Session tools.
 - CLAUDE.md "Run an example", and README.md's library list (the new
@@ -985,9 +1023,9 @@ Depends on: CL11.
   and with `-Steps`. A script that hangs the program (a `wait for` with a
   timeout longer than `-TimeoutSecs`) saves the stacks and fails.
 
-### CL13 [ ] block-world: Scripted runs
+### CL14 [ ] block-world: Scripted runs
 
-Depends on: CL12.
+Depends on: CL13.
 
 - BlockWorld takes its arguments through `gb_cli` (its starting state becomes
   a flag), and creates `PilotSdl`.

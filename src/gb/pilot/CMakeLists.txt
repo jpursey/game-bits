@@ -35,6 +35,7 @@ set(gb_pilot_DEPS
   absl::statusor
   absl::str_format
   absl::strings
+  absl::synchronization
   absl::time
   gb_image
 )

@@ -6,17 +6,18 @@
 #ifndef GB_PILOT_STEP_PILOT_H_
 #define GB_PILOT_STEP_PILOT_H_
 
-#include <atomic>
 #include <deque>
 #include <string>
 #include <string_view>
 #include <variant>
 #include <vector>
 
+#include "absl/base/thread_annotations.h"
 #include "absl/functional/any_invocable.h"
 #include "absl/log/log_entry.h"
 #include "absl/log/log_sink.h"
 #include "absl/strings/str_format.h"
+#include "absl/synchronization/mutex.h"
 #include "absl/time/time.h"
 #include "absl/types/span.h"
 #include "gb/image/image.h"
@@ -178,6 +179,23 @@ struct PilotExpectStep {
   std::string condition;
 };
 
+// Expects errors whose message contains some text, for a check that is meant
+// to fail. From when the step starts, for `max_frames` frames (counting the one
+// it starts in, and at least that one), such errors are logged as expected
+// rather than failing the run. The step fails if none is logged in those
+// frames, or before the run ends, and if the text is empty. It takes no time,
+// so it goes just before the step whose check logs the error.
+struct PilotExpectErrorStep {
+  template <typename Sink>
+  friend void AbslStringify(Sink& sink, const PilotExpectErrorStep& step) {
+    absl::Format(&sink, "expect error %s %d",
+                 internal::QuotePilotText(step.text), step.max_frames);
+  }
+
+  std::string text;
+  int max_frames = 600;
+};
+
 // Saves the next frame drawn, giving it to the frame saver under a name.
 struct PilotSaveStep {
   template <typename Sink>
@@ -189,10 +207,11 @@ struct PilotSaveStep {
 };
 
 // One step of a run.
-using PilotStep = std::variant<PilotWaitStep, PilotWaitForStep, PilotKeyStep,
-                               PilotHoldStep, PilotTextStep, PilotMouseMoveStep,
-                               PilotMouseClickStep, PilotMouseWheelStep,
-                               PilotRunStep, PilotExpectStep, PilotSaveStep>;
+using PilotStep =
+    std::variant<PilotWaitStep, PilotWaitForStep, PilotKeyStep, PilotHoldStep,
+                 PilotTextStep, PilotMouseMoveStep, PilotMouseClickStep,
+                 PilotMouseWheelStep, PilotRunStep, PilotExpectStep,
+                 PilotExpectErrorStep, PilotSaveStep>;
 
 // Writes whichever step it holds. Abseil finds this through the steps' own
 // namespace, as PilotStep is a std::variant of them.
@@ -244,17 +263,19 @@ void AbslStringify(Sink& sink, const PilotStep& step) {
 // - A save has no frame saver, the frame saver fails, or no frame is drawn
 //   within 600 frames.
 // - An error is logged, on any thread, from when the pilot is created until it
-//   is done. The program's own errors fail the run, as do the errors of
-//   whatever takes part in it (such as a key name that can't be mapped).
+//   is done, that no PilotExpectErrorStep expects. The program's own errors
+//   fail the run, as do the errors of whatever takes part in it (such as a key
+//   name that can't be mapped).
+// - An expected error isn't logged.
 //
 // Each step is logged as it starts, with its frame, and a failure is logged as
 // an error. A summary is logged once the run is done: whether it passed, the
 // frames run, and the frames saved.
 //
-// Errors are counted from the whole program, so only one StepPilot should run
-// at a time: each fails on the errors of any other, including its failures.
+// Errors are kept from the whole program, so only one StepPilot should run at
+// a time: each fails on the errors of any other, including its failures.
 //
-// This class is thread-compatible, like Pilot. Only the counting of logged
+// This class is thread-compatible, like Pilot. Only the keeping of logged
 // errors is thread-safe.
 class StepPilot final : public Pilot {
  public:
@@ -307,15 +328,24 @@ class StepPilot final : public Pilot {
   void DoSaveFrame(const Image& image) override;
 
  private:
-  // Counts the errors logged, on any thread.
-  class ErrorCounter final : public absl::LogSink {
+  // Keeps the messages of the errors logged, on any thread.
+  class ErrorLog final : public absl::LogSink {
    public:
-    int GetCount() const { return count_.load(); }
+    // Returns the errors logged since the last call, oldest first.
+    std::vector<std::string> TakeErrors();
 
     void Send(const absl::LogEntry& entry) override;
 
    private:
-    std::atomic<int> count_ = 0;
+    absl::Mutex mutex_;
+    std::vector<std::string> errors_ ABSL_GUARDED_BY(mutex_);
+  };
+
+  // A PilotExpectErrorStep's expectation, which lasts beyond the step.
+  struct ErrorExpectation {
+    PilotExpectErrorStep step;
+    int last_frame = 0;  // The frame it ends with.
+    bool met = false;
   };
 
   // Runs the step in progress at the start of a frame, starting it if it
@@ -331,6 +361,7 @@ class StepPilot final : public Pilot {
   bool RunStep(const PilotMouseWheelStep& step);
   bool RunStep(const PilotRunStep& step);
   bool RunStep(const PilotExpectStep& step);
+  bool RunStep(const PilotExpectErrorStep& step);
   bool RunStep(const PilotSaveStep& step);
 
   // Runs steps from the one in progress, until one takes time.
@@ -349,13 +380,21 @@ class StepPilot final : public Pilot {
   void MoveMouse(PilotPoint position);
   void SetMouseButton(PilotMouseButton button, bool down);
 
+  // Fails the run on an error logged since the last call that no expectation
+  // in its frames expects, and marks the expectations each error meets.
+  void ValidateLoggedErrors();
+
+  // Ends the frame for each expectation, failing the run on one whose frames
+  // have ended, or on any if the run is ending, that no error met.
+  void EndExpectationFrames(bool run_ending);
+
   void FinishStep();
-  void FailOnLoggedError();
   void FailStep(std::string_view reason);
   void Fail(std::string_view reason);
 
   Options options_;
-  ErrorCounter error_counter_;
+  ErrorLog error_log_;
+  std::vector<ErrorExpectation> expectations_;
 
   // Steps still to finish, the first being the one in progress. Steps may be
   // added while one runs, and a deque keeps references to them valid.

@@ -71,11 +71,20 @@ TEST(PilotScriptTest, ReadsEveryStep) {
                 "wheel -2\n"
                 "run reset_peaks\n"
                 "expect loaded\n"
+                "expect error \"cannot be edited\"\n"
+                "expect error \"cannot be edited\" 10\n"
                 "save get_layer_1\n"),
       ElementsAre("wait 30", "wait for loaded 600", "wait for loaded 20",
                   "key f1", "hold w 20", "text \"hello\"", "move 640 -400",
                   "click", "wheel -2", "run reset_peaks", "expect loaded",
-                  "save get_layer_1"));
+                  "expect error \"cannot be edited\" 600",
+                  "expect error \"cannot be edited\" 10", "save get_layer_1"));
+}
+
+TEST(PilotScriptTest, ExpectErrorIsBesideAConditionNamedError) {
+  EXPECT_THAT(ReadLines("expect error\n"), ElementsAre("expect error"));
+  EXPECT_EQ(ReadError("expect error edited"),
+            "(1:14): Parse error at \"edited\": Expected end of line");
 }
 
 TEST(PilotScriptTest, ReadsClickForms) {
@@ -127,6 +136,7 @@ TEST(PilotScriptTest, StepsReadBackFromTheirText) {
       PilotMouseClickStep{.button = PilotMouseButton::kRight, .target = "a\"b"},
       PilotRunStep{.command = "set",
                    .args = {"-2", "007", "-0", "a-b", "", "99999999999"}},
+      PilotExpectErrorStep{.text = "can't \"edit\"", .max_frames = 0},
       PilotSaveStep{.name = "2x"},
       PilotSaveStep{.name = "_"},
       PilotSaveStep{.name = "_1"},
@@ -209,6 +219,8 @@ TEST(PilotScriptTest, NegativeFramesFail) {
             "(1:17): Parse error at \"-1\": Frames can't be negative");
   EXPECT_EQ(ReadError("hold w -1"),
             "(1:8): Parse error at \"-1\": Frames can't be negative");
+  EXPECT_EQ(ReadError("expect error \"edited\" -1"),
+            "(1:23): Parse error at \"-1\": Frames can't be negative");
 }
 
 TEST(PilotScriptTest, BadTokensFail) {

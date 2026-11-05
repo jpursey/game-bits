@@ -66,6 +66,7 @@ constexpr std::string_view kScriptProgram = R"---(
     $click=("click" [$button=button] [$label=%string | $x=%int $y=%int]);
     $wheel=("wheel" $amount=%int);
     $run=("run" $command=name $args=name*);
+    $expect_error=("expect" "error" $text=%string [$frames=%int]);
     $expect=("expect" $condition=name);
     $save=("save" $name=name);
   }
@@ -171,6 +172,14 @@ absl::StatusOr<PilotStep> ReadStep(const Lexer& lexer, const ParsedItem& item) {
                              ReadName(lexer, values->GetToken("command"))};
     for (const ParsedItem& arg : values->GetItems("args")) {
       step.args.push_back(ReadName(lexer, arg.GetToken()));
+    }
+    return step;
+  }
+  if (type == "expect_error") {
+    PilotExpectErrorStep step = {.text =
+                                     std::string(values->GetString("text"))};
+    if (frames != nullptr) {
+      step.max_frames = frame_count;
     }
     return step;
   }

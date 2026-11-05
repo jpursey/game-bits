@@ -14,6 +14,7 @@
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/ascii.h"
+#include "absl/strings/match.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
@@ -74,13 +75,21 @@ std::string QuotePilotText(std::string_view text) {
 }  // namespace internal
 
 //==============================================================================
-// StepPilot::ErrorCounter
+// StepPilot::ErrorLog
 //==============================================================================
 
-void StepPilot::ErrorCounter::Send(const absl::LogEntry& entry) {
-  if (entry.log_severity() >= absl::LogSeverity::kError) {
-    ++count_;
+std::vector<std::string> StepPilot::ErrorLog::TakeErrors() {
+  absl::MutexLock lock(&mutex_);
+  return std::exchange(errors_, {});
+}
+
+void StepPilot::ErrorLog::Send(const absl::LogEntry& entry) {
+  if (entry.log_severity() < absl::LogSeverity::kError) {
+    return;
   }
+  std::string error(entry.text_message());
+  absl::MutexLock lock(&mutex_);
+  errors_.push_back(std::move(error));
 }
 
 //==============================================================================
@@ -90,12 +99,12 @@ void StepPilot::ErrorCounter::Send(const absl::LogEntry& entry) {
 StepPilot::StepPilot() : StepPilot(Options()) {}
 
 StepPilot::StepPilot(Options options) : options_(std::move(options)) {
-  absl::AddLogSink(&error_counter_);
+  absl::AddLogSink(&error_log_);
 }
 
 StepPilot::~StepPilot() {
-  // Removing the sink waits for any error being counted on another thread.
-  absl::RemoveLogSink(&error_counter_);
+  // Removing the sink waits for any error being kept on another thread.
+  absl::RemoveLogSink(&error_log_);
 }
 
 void StepPilot::AddSteps(std::vector<PilotStep> steps) {
@@ -122,7 +131,7 @@ void StepPilot::AddSteps(std::vector<PilotStep> steps) {
 void StepPilot::DoBeginFrame() {
   input_.clear();
   saving_ = false;
-  FailOnLoggedError();
+  ValidateLoggedErrors();
   RunSteps();
 }
 
@@ -130,9 +139,12 @@ void StepPilot::DoEndFrame() {
   if (done_) {
     return;
   }
-  FailOnLoggedError();
+  ValidateLoggedErrors();
   if (!failed_ && step_started_) {
     EndStepFrame();
+  }
+  if (!failed_) {
+    EndExpectationFrames(/*run_ending=*/steps_.empty());
   }
   if (failed_ || steps_.empty()) {
     done_ = true;
@@ -161,6 +173,12 @@ void StepPilot::RunSteps() {
   while (!failed_ && !steps_.empty()) {
     const PilotStep& step = steps_.front();
     if (!step_started_) {
+      // Errors logged before a step are judged without it, so an expect error
+      // step only expects errors that follow it.
+      ValidateLoggedErrors();
+      if (failed_) {
+        return;
+      }
       LOG(INFO) << "Pilot frame " << GetFrame() << ": " << step;
       step_started_ = true;
     }
@@ -268,6 +286,20 @@ bool StepPilot::RunStep(const PilotExpectStep& step) {
   return true;
 }
 
+bool StepPilot::RunStep(const PilotExpectErrorStep& step) {
+  // Empty text would expect every error.
+  if (step.text.empty()) {
+    FailStep("No text to expect");
+    return false;
+  }
+
+  // It lasts at least the frame it starts in.
+  expectations_.push_back(
+      {.step = step,
+       .last_frame = GetFrame() + std::max(step.max_frames, 1) - 1});
+  return true;
+}
+
 bool StepPilot::RunStep(const PilotSaveStep& step) {
   // A save finishes at the end of the frame saved (in EndStepFrame()).
   if (options_.save_frame == nullptr) {
@@ -333,10 +365,47 @@ void StepPilot::FinishStep() {
   step_frame_saved_ = false;
 }
 
-void StepPilot::FailOnLoggedError() {
-  if (!done_ && !failed_ && error_counter_.GetCount() > 0) {
-    Fail("An error was logged");
+void StepPilot::ValidateLoggedErrors() {
+  if (done_ || failed_) {
+    return;
   }
+  for (const std::string& error : error_log_.TakeErrors()) {
+    const ErrorExpectation* expected_by = nullptr;
+    for (ErrorExpectation& expectation : expectations_) {
+      if (absl::StrContains(error, expectation.step.text)) {
+        expectation.met = true;
+        expected_by = &expectation;
+      }
+    }
+    if (expected_by == nullptr) {
+      Fail(absl::StrCat("An error was logged: ", error));
+      return;
+    }
+    LOG(INFO) << "Pilot frame " << GetFrame() << ": The error was expected, by "
+              << expected_by->step;
+  }
+}
+
+void StepPilot::EndExpectationFrames(bool run_ending) {
+  const int frame = GetFrame();
+  for (const ErrorExpectation& expectation : expectations_) {
+    if (expectation.met) {
+      continue;
+    }
+    const bool ended = frame >= expectation.last_frame;
+    if (!ended && !run_ending) {
+      continue;
+    }
+    const std::string when =
+        ended ? absl::StrCat("in ", expectation.step.max_frames, " frames")
+              : "before the run ended";
+    Fail(absl::StrCat(expectation.step,
+                      " failed: No error with its text was logged ", when));
+    return;
+  }
+  std::erase_if(expectations_, [frame](const ErrorExpectation& expectation) {
+    return frame >= expectation.last_frame;
+  });
 }
 
 void StepPilot::FailStep(std::string_view reason) {
