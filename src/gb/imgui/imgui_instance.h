@@ -12,7 +12,9 @@
 #include "absl/container/flat_hash_map.h"
 #include "gb/base/validated_context.h"
 #include "gb/file/file_types.h"
+#include "gb/imgui/imgui_pilot_hooks.h"
 #include "gb/imgui/imgui_types.h"
+#include "gb/pilot/pilot.h"
 #include "gb/render/render_types.h"
 #include "gb/resource/resource.h"
 #include "gb/resource/resource_set.h"
@@ -41,12 +43,23 @@ class ImGuiInstance final {
   static GB_CONTEXT_CONSTRAINT_NAMED_DEFAULT(kConstraintSceneOrder, kInOptional,
                                              int, kKeySceneOrder, 100);
 
+  // OPTIONAL: Pilot driving the program (see Pilot for how it is stored). With
+  // one, each ImGui::NewFrame() takes the mouse and delta time from the pilot,
+  // in place of what the platform backend set, and the pilot can find the
+  // labelled items drawn in the last frame, where a click at their center
+  // reaches them (not clipped, or behind another window). An item is found by
+  // its label as shown (before any "##"), or after its top level window's name
+  // and a "/" ("Settings/Save"), if more than one item has the label. The pilot
+  // must outlive the instance.
+  static GB_CONTEXT_CONSTRAINT(kConstraintPilot, kInOptional, Pilot);
+
   // SCOPED: The ImGuiContext that this instance is managing.
   static GB_CONTEXT_CONSTRAINT(kConstraintImGuiContext, kScoped, ImGuiContext);
 
   using CreateContract =
       ContextContract<kConstraintFileSystem, kConstraintRenderSystem,
-                      kConstraintSceneOrder, kConstraintImGuiContext>;
+                      kConstraintSceneOrder, kConstraintPilot,
+                      kConstraintImGuiContext>;
 
   //----------------------------------------------------------------------------
   // Construction / Destruction
@@ -148,6 +161,7 @@ class ImGuiInstance final {
   Mesh* mesh_ = nullptr;
   std::unique_ptr<BindingData> instance_data_;
   bool fonts_initialized_ = false;
+  std::unique_ptr<internal::ImGuiPilotHooks> pilot_hooks_;  // Null without one.
 
   // Materials from AddTexture(), keyed by the texture and texture array index
   // (-1 for a texture).

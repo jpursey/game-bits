@@ -410,10 +410,17 @@ ImGuiInstance::ImGuiInstance(ValidatedContext context)
 }
 
 ImGuiInstance::~ImGuiInstance() {
+  // The hooks are removed from the context, so before it is destroyed.
+  pilot_hooks_.reset();
   ImGui::DestroyContext(context_.GetPtr<ImGuiContext>());
 }
 
 bool ImGuiInstance::Init() {
+  if (Pilot* pilot = context_.GetPtr<Pilot>(); pilot != nullptr) {
+    pilot_hooks_ = std::make_unique<internal::ImGuiPilotHooks>(
+        pilot, context_.GetPtr<ImGuiContext>());
+  }
+
   auto* render_system = context_.GetPtr<RenderSystem>();
 
   const RenderDataType* scene_constants_type =

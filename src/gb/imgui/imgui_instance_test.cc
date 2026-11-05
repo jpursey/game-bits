@@ -6,12 +6,18 @@
 #include "gb/imgui/imgui_instance.h"
 
 #include <algorithm>
+#include <cmath>
 #include <memory>
 #include <string>
 #include <vector>
 
+#include "absl/status/status.h"
+#include "absl/status/statusor.h"
+#include "absl/time/time.h"
 #include "gb/base/context_builder.h"
 #include "gb/file/file_system.h"
+#include "gb/pilot/fake_pilot.h"
+#include "gb/pilot/pilot.h"
 #include "gb/render/binding_data.h"
 #include "gb/render/draw_list.h"
 #include "gb/render/material.h"
@@ -24,6 +30,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "imgui.h"
+#include "imgui_internal.h"
 
 namespace gb {
 namespace {
@@ -53,12 +60,66 @@ class ImGuiInstanceTest : public RenderTest {
     return instance;
   }
 
-  // Starts a frame on the active instance.
+  // Creates an instance with pilot_, with its fonts loaded.
+  std::unique_ptr<ImGuiInstance> CreatePilotInstance() {
+    auto instance = ImGuiInstance::Create(ContextBuilder()
+                                              .SetPtr(file_system_.get())
+                                              .SetPtr(render_system_.get())
+                                              .SetPtr<Pilot>(&pilot_)
+                                              .Build());
+    if (instance == nullptr || !instance->LoadFonts()) {
+      return nullptr;
+    }
+    ImGui::GetIO().IniFilename = nullptr;
+    return instance;
+  }
+
+  // Starts a frame on the active instance, as a platform backend would, with
+  // the real mouse in the window's corner and no button down.
   void NewFrame() {
     ImGuiIO& io = ImGui::GetIO();
     io.DisplaySize = ImVec2(kWidth, kHeight);
     io.DeltaTime = 1.0f / 60.0f;
+    io.MousePos = ImVec2(0, 0);
+    io.MouseDown[ImGuiMouseButton_Left] = false;
     ImGui::NewFrame();
+  }
+
+  // Begins a window at a place, so its items are where a test expects.
+  static void BeginWindow(const char* name, float x, float y) {
+    ImGui::SetNextWindowPos(ImVec2(x, y));
+    ImGui::Begin(name);
+  }
+
+  // Returns the center of the last item, as a pilot finds it.
+  static PilotPoint GetItemCenter() {
+    const ImVec2 min = ImGui::GetItemRectMin();
+    const ImVec2 max = ImGui::GetItemRectMax();
+    return {.x = static_cast<int>(std::floor((min.x + max.x) * 0.5f)),
+            .y = static_cast<int>(std::floor((min.y + max.y) * 0.5f))};
+  }
+
+  // What DrawPanelFrame() drew.
+  struct Panel {
+    bool pressed = false;
+    PilotPoint button;
+    PilotPoint check_box;
+  };
+
+  // Draws a frame of a window with a button and a check box. A window is
+  // hidden in its first frame, as ImGui sizes it, so a test draws two before
+  // its items can be found.
+  Panel DrawPanelFrame(ImGuiInstance* instance, bool* checked) {
+    Panel panel;
+    NewFrame();
+    BeginWindow("Panel", 100, 50);
+    panel.pressed = ImGui::Button("Go##go_button");
+    panel.button = GetItemCenter();
+    ImGui::Checkbox("Check", checked);
+    panel.check_box = GetItemCenter();
+    ImGui::End();
+    DrawFrame(instance);
+    return panel;
   }
 
   // Adds rectangles (4 vertices and 6 indices each) to the draw list.
@@ -86,6 +147,8 @@ class ImGuiInstanceTest : public RenderTest {
     }
     return count;
   }
+
+  FakePilot pilot_;
 };
 
 TEST_F(ImGuiInstanceTest, CreateIsActive) {
@@ -357,6 +420,170 @@ TEST_F(ImGuiInstanceTest, SavesAndLoadsSettings) {
   EXPECT_EQ(ImGui::GetWindowPos().x, 123);
   EXPECT_EQ(ImGui::GetWindowPos().y, 45);
   ImGui::End();
+  DrawFrame(instance.get());
+}
+
+TEST_F(ImGuiInstanceTest, WithoutPilotItemHooksAreOff) {
+  auto instance = CreateInstance();
+  ASSERT_NE(instance, nullptr);
+  EXPECT_FALSE(ImGui::GetCurrentContext()->TestEngineHookItems);
+}
+
+TEST_F(ImGuiInstanceTest, PilotFindsItemsDrawnInLastFrame) {
+  auto instance = CreatePilotInstance();
+  ASSERT_NE(instance, nullptr);
+  EXPECT_TRUE(ImGui::GetCurrentContext()->TestEngineHookItems);
+  bool checked = false;
+  DrawPanelFrame(instance.get(), &checked);
+  EXPECT_EQ(pilot_.FindItem("Go").status().code(), absl::StatusCode::kNotFound);
+
+  const Panel panel = DrawPanelFrame(instance.get(), &checked);
+  absl::StatusOr<PilotPoint> point = pilot_.FindItem("Go");
+  ASSERT_TRUE(point.ok()) << point.status();
+  EXPECT_EQ(*point, panel.button);
+  point = pilot_.FindItem("Check");
+  ASSERT_TRUE(point.ok()) << point.status();
+  EXPECT_EQ(*point, panel.check_box);
+  point = pilot_.FindItem("Panel/Go");
+  ASSERT_TRUE(point.ok()) << point.status();
+  EXPECT_EQ(*point, panel.button);
+
+  // Only the label as shown is found.
+  EXPECT_EQ(pilot_.FindItem("Go##go_button").status().code(),
+            absl::StatusCode::kNotFound);
+  EXPECT_EQ(pilot_.FindItem("Missing").status().code(),
+            absl::StatusCode::kNotFound);
+  EXPECT_EQ(pilot_.FindItem("Other/Go").status().code(),
+            absl::StatusCode::kNotFound);
+
+  // Destroying the instance removes its items.
+  instance.reset();
+  EXPECT_EQ(pilot_.FindItem("Go").status().code(), absl::StatusCode::kNotFound);
+}
+
+TEST_F(ImGuiInstanceTest, PilotFindsOnlyLastFrameItems) {
+  auto instance = CreatePilotInstance();
+  ASSERT_NE(instance, nullptr);
+  bool checked = false;
+  DrawPanelFrame(instance.get(), &checked);
+  DrawPanelFrame(instance.get(), &checked);
+  ASSERT_TRUE(pilot_.FindItem("Go").ok());
+
+  NewFrame();
+  DrawFrame(instance.get());
+  EXPECT_EQ(pilot_.FindItem("Go").status().code(), absl::StatusCode::kNotFound);
+}
+
+TEST_F(ImGuiInstanceTest, PilotFindsLabelInTwoWindowsByWindow) {
+  auto instance = CreatePilotInstance();
+  ASSERT_NE(instance, nullptr);
+  PilotPoint one;
+  PilotPoint two;
+  for (int frame = 0; frame < 2; ++frame) {
+    NewFrame();
+    BeginWindow("One", 10, 10);
+    ImGui::Button("OK");
+    one = GetItemCenter();
+    ImGui::End();
+    BeginWindow("Two##second", 300, 10);
+    ImGui::Button("OK");
+    two = GetItemCenter();
+    ImGui::End();
+    DrawFrame(instance.get());
+  }
+
+  EXPECT_EQ(pilot_.FindItem("OK").status().code(),
+            absl::StatusCode::kInvalidArgument);
+  absl::StatusOr<PilotPoint> point = pilot_.FindItem("One/OK");
+  ASSERT_TRUE(point.ok()) << point.status();
+  EXPECT_EQ(*point, one);
+  point = pilot_.FindItem("Two/OK");
+  ASSERT_TRUE(point.ok()) << point.status();
+  EXPECT_EQ(*point, two);
+}
+
+TEST_F(ImGuiInstanceTest, PilotDoesNotFindClippedItems) {
+  auto instance = CreatePilotInstance();
+  ASSERT_NE(instance, nullptr);
+
+  // A check box reports its label even when it is clipped.
+  bool checked = false;
+  for (int frame = 0; frame < 2; ++frame) {
+    NewFrame();
+    ImGui::SetNextWindowSize(ImVec2(200, 100));
+    BeginWindow("Panel", 10, 10);
+    ImGui::Checkbox("Above", &checked);
+    ImGui::Dummy(ImVec2(10, 1000));
+    ImGui::Checkbox("Below", &checked);
+    ImGui::End();
+    DrawFrame(instance.get());
+  }
+
+  EXPECT_TRUE(pilot_.FindItem("Above").ok());
+  EXPECT_EQ(pilot_.FindItem("Below").status().code(),
+            absl::StatusCode::kNotFound);
+}
+
+TEST_F(ImGuiInstanceTest, PilotDoesNotFindItemsBehindWindows) {
+  auto instance = CreatePilotInstance();
+  ASSERT_NE(instance, nullptr);
+  PilotPoint inside;
+  for (int frame = 0; frame < 2; ++frame) {
+    NewFrame();
+    BeginWindow("Back", 10, 10);
+    ImGui::Button("Behind");
+    ImGui::End();
+
+    // A window begun for the first time is in front of those before it.
+    ImGui::SetNextWindowSize(ImVec2(300, 200));
+    BeginWindow("Front", 10, 10);
+    ImGui::BeginChild("Child", ImVec2(200, 100));
+    ImGui::Button("Inside");
+    inside = GetItemCenter();
+    ImGui::EndChild();
+    ImGui::End();
+    DrawFrame(instance.get());
+  }
+
+  EXPECT_EQ(pilot_.FindItem("Behind").status().code(),
+            absl::StatusCode::kNotFound);
+  const absl::StatusOr<PilotPoint> point = pilot_.FindItem("Inside");
+  ASSERT_TRUE(point.ok()) << point.status();
+  EXPECT_EQ(*point, inside);
+}
+
+TEST_F(ImGuiInstanceTest, PilotMousePressesItems) {
+  auto instance = CreatePilotInstance();
+  ASSERT_NE(instance, nullptr);
+  bool checked = false;
+  DrawPanelFrame(instance.get(), &checked);
+  DrawPanelFrame(instance.get(), &checked);
+  const absl::StatusOr<PilotPoint> button = pilot_.FindItem("Go");
+  ASSERT_TRUE(button.ok()) << button.status();
+  const absl::StatusOr<PilotPoint> check_box = pilot_.FindItem("Check");
+  ASSERT_TRUE(check_box.ok()) << check_box.status();
+
+  // A click is down for a frame, and up the next, as a StepPilot gives it.
+  // NewFrame() sets the real mouse elsewhere, with no button down.
+  pilot_.SetMouse({.position = *button, .left = true});
+  EXPECT_FALSE(DrawPanelFrame(instance.get(), &checked).pressed);
+  pilot_.SetMouse({.position = *button});
+  EXPECT_TRUE(DrawPanelFrame(instance.get(), &checked).pressed);
+  EXPECT_FALSE(checked);
+
+  pilot_.SetMouse({.position = *check_box, .left = true});
+  DrawPanelFrame(instance.get(), &checked);
+  pilot_.SetMouse({.position = *check_box});
+  EXPECT_FALSE(DrawPanelFrame(instance.get(), &checked).pressed);
+  EXPECT_TRUE(checked);
+}
+
+TEST_F(ImGuiInstanceTest, PilotSetsDeltaTime) {
+  auto instance = CreatePilotInstance();
+  ASSERT_NE(instance, nullptr);
+  pilot_.SetDeltaTime(absl::Seconds(1) / 30);
+  NewFrame();
+  EXPECT_FLOAT_EQ(ImGui::GetIO().DeltaTime, 1.0f / 30.0f);
   DrawFrame(instance.get());
 }
 

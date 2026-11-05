@@ -932,7 +932,7 @@ Depends on: CL8.
   `PrintWindow()` screenshot, with the window shown and hidden, and with the
   validation layer reporting no errors. Removed before review.
 
-### CL10 [ ] imgui: Mouse, time, and items from the pilot
+### CL10 [x] imgui: Mouse, time, and items from the pilot
 
 Depends on: CL2.
 

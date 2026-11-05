@@ -8,6 +8,7 @@ add_subdirectory(sdl)
 set(gb_imgui_SOURCE
   gb_imconfig.h
   imgui_instance.cc imgui_instance.h
+  imgui_pilot_hooks.cc imgui_pilot_hooks.h
   imgui_types.h
   ${GB_THIRD_PARTY_DIR}/imgui/imgui.cpp
   ${GB_THIRD_PARTY_DIR}/imgui/imgui.h
@@ -41,8 +42,11 @@ set(gb_imgui_DEFINES
 set(gb_imgui_DEPS
   absl::flat_hash_map
   absl::memory
+  absl::strings
+  absl::time
   gb_base
   gb_file
+  gb_pilot
   gb_render
   gb_resource
 )
