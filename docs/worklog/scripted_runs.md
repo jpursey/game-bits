@@ -653,7 +653,8 @@ virtual std::unique_ptr<Image> EndFrameAndReadImage(RenderInternal) = 0;
   the surface supports it. To read a frame, it records a copy of the swap
   chain image to a host-visible buffer after the render pass (with layout
   transitions either side), submits and presents as usual, waits on the
-  frame's fence, and converts the surface format (BGRA on Windows) to RGBA.
+  frame's fence, and converts the surface format (BGRA on Windows) to RGBA,
+  opaque as it is presented. Only 8-bit RGBA and BGRA surfaces can be read.
 - The wait stalls the CPU for one frame, on saved frames only.
 - `TestRenderBackend` returns an image of the frame size filled with the
   clear color, so `gb_render`'s tests cover the plumbing.
@@ -744,9 +745,9 @@ CLAUDE.md's "Run an example" says so.
 
 ### To confirm
 
-- Vulkan keeps presenting to a window hidden with `SDL_HideWindow()`, at its
-  size (CL9). If not, `hide window` moves it off screen instead.
-- The surface supports `eTransferSrc` swap chain images on this GPU (CL9).
+- Confirmed in CL9, by render-check saving frames through a `StepPilot`:
+  Vulkan keeps presenting to a window hidden with `SDL_HideWindow()`, at its
+  size, and the surface supports `eTransferSrc` swap chain images on this GPU.
 - Confirmed in CL5, by `gb_pilot_sdl`'s tests: `SDL_PeepEvents(SDL_ADDEVENT)`
   skips the event filter in SDL 2.0.10, and writing SDL's key state array
   works.
@@ -915,7 +916,7 @@ Depends on: CL2.
   two drawn in a pilot frame; a frame that can't be read isn't given to it.
 - `gb_pilot`: `IsSavingFrame()` is false outside a frame and once saved.
 
-### CL9 [ ] render_vulkan: Read back presented frames
+### CL9 [x] render_vulkan: Read back presented frames
 
 Depends on: CL8.
 

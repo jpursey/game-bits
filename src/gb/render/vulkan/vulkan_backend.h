@@ -299,12 +299,20 @@ class VulkanBackend final : public RenderBackend {
   vk::Sampler GetSampler(SamplerOptions options, int width, int height);
 
   void CallFrameCallbacks(std::vector<FrameCallback>* callbacks);
+
+  // Ends the frame, copying its image to `read_buffer` unless it is null.
+  // Returns the fence signaled once the frame has rendered.
+  vk::Fence DoEndFrame(vk::Buffer read_buffer);
   void EndFrameProcessUpdates();
   void EndFrameUpdateBuffers();
   void EndFrameUpdateImages();
   void EndFrameUpdateDescriptorSets();
   void EndFrameRenderPass();
-  void EndFramePresent();
+  void EndFrameCopyImage(vk::Buffer buffer);
+  vk::Fence EndFramePresent();
+
+  std::unique_ptr<VulkanBuffer> CreateReadBuffer();
+  std::unique_ptr<Image> ReadImage(vk::Fence fence, VulkanBuffer* buffer);
 
   //----------------------------------------------------------------------------
   // The following members are set at construction / initialization, and then
@@ -357,6 +365,7 @@ class VulkanBackend final : public RenderBackend {
   // Swap chain
   vk::Extent2D swap_extent_;
   vk::SwapchainKHR swap_chain_;
+  bool can_copy_swap_images_ = false;  // Created with eTransferSrc usage.
   std::vector<FrameBuffer> frame_buffers_;
   std::unique_ptr<VulkanImage> color_image_;
   std::unique_ptr<VulkanImage> depth_image_;

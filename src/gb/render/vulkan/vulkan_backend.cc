@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <memory>
 #include <set>
 #include <string_view>
 #include <tuple>
@@ -16,6 +17,7 @@
 #include "absl/log/log.h"
 #include "absl/memory/memory.h"
 #include "gb/render/vulkan/vulkan_binding_data.h"
+#include "gb/render/vulkan/vulkan_buffer.h"
 #include "gb/render/vulkan/vulkan_format.h"
 #include "gb/render/vulkan/vulkan_render_buffer.h"
 #include "gb/render/vulkan/vulkan_render_pipeline.h"
@@ -74,6 +76,22 @@ bool ValidateBindingTypes(absl::Span<const Binding> bindings) {
     }
   }
   return true;
+}
+
+// The channel order of swap chain images that frames are read back from.
+enum class ReadOrder { kUnsupported, kRgba, kBgra };
+
+ReadOrder GetReadOrder(vk::Format format) {
+  switch (format) {
+    case vk::Format::eR8G8B8A8Unorm:
+    case vk::Format::eR8G8B8A8Srgb:
+      return ReadOrder::kRgba;
+    case vk::Format::eB8G8R8A8Unorm:
+    case vk::Format::eB8G8R8A8Srgb:
+      return ReadOrder::kBgra;
+    default:
+      return ReadOrder::kUnsupported;
+  }
 }
 
 }  // namespace
@@ -470,6 +488,14 @@ bool VulkanBackend::InitSwapChain() {
     image_count = std::min(image_count, capabilities.maxImageCount);
   }
 
+  // Images are copied from to read back frames, where the surface allows it.
+  vk::ImageUsageFlags image_usage = vk::ImageUsageFlagBits::eColorAttachment;
+  can_copy_swap_images_ = static_cast<bool>(
+      capabilities.supportedUsageFlags & vk::ImageUsageFlagBits::eTransferSrc);
+  if (can_copy_swap_images_) {
+    image_usage |= vk::ImageUsageFlagBits::eTransferSrc;
+  }
+
   auto create_info =
       vk::SwapchainCreateInfoKHR()
           .setSurface(window_surface_)
@@ -478,7 +504,7 @@ bool VulkanBackend::InitSwapChain() {
           .setImageColorSpace(format_.colorSpace)
           .setImageExtent(swap_extent_)
           .setImageArrayLayers(1)
-          .setImageUsage(vk::ImageUsageFlagBits::eColorAttachment)
+          .setImageUsage(image_usage)
           .setImageSharingMode(vk::SharingMode::eExclusive)
           .setPreTransform(capabilities.currentTransform)
           .setCompositeAlpha(vk::CompositeAlphaFlagBitsKHR::eOpaque)
@@ -1104,17 +1130,25 @@ void VulkanBackend::Draw(RenderInternal, RenderScene* scene,
   draw.commands.emplace_back(DrawCommand::Type::kReset);
 }
 
-void VulkanBackend::EndFrame(RenderInternal) {
-  EndFrameProcessUpdates();
-  EndFrameRenderPass();
-  EndFramePresent();
+void VulkanBackend::EndFrame(RenderInternal) { DoEndFrame({}); }
+
+std::unique_ptr<Image> VulkanBackend::EndFrameAndReadImage(RenderInternal) {
+  std::unique_ptr<VulkanBuffer> buffer = CreateReadBuffer();
+  if (buffer == nullptr) {
+    DoEndFrame({});
+    return nullptr;
+  }
+  const vk::Fence fence = DoEndFrame(buffer->Get());
+  return ReadImage(fence, buffer.get());
 }
 
-std::unique_ptr<Image> VulkanBackend::EndFrameAndReadImage(
-    RenderInternal access_token) {
-  EndFrame(access_token);
-  LOG(ERROR) << "The Vulkan backend can't read back frames yet";
-  return nullptr;
+vk::Fence VulkanBackend::DoEndFrame(vk::Buffer read_buffer) {
+  EndFrameProcessUpdates();
+  EndFrameRenderPass();
+  if (read_buffer) {
+    EndFrameCopyImage(read_buffer);
+  }
+  return EndFramePresent();
 }
 
 void VulkanBackend::CallFrameCallbacks(std::vector<FrameCallback>* callbacks) {
@@ -1473,14 +1507,67 @@ void VulkanBackend::EndFrameRenderPass() {
   CallFrameCallbacks(&end_render_callbacks_);
 
   frame.commands.endRenderPass();
+
+  CallFrameCallbacks(&post_render_callbacks_);
 }
 
-void VulkanBackend::EndFramePresent() {
+void VulkanBackend::EndFrameCopyImage(vk::Buffer buffer) {
+  auto& frame = frames_[frame_index_];
+  const vk::Image image = frame_buffers_[frame_buffer_index_].image;
+  const auto subresource_range =
+      vk::ImageSubresourceRange()
+          .setAspectMask(vk::ImageAspectFlagBits::eColor)
+          .setLevelCount(1)
+          .setLayerCount(1);
+
+  frame.commands.pipelineBarrier(
+      vk::PipelineStageFlagBits::eColorAttachmentOutput,
+      vk::PipelineStageFlagBits::eTransfer, {}, {}, {},
+      {vk::ImageMemoryBarrier()
+           .setSrcAccessMask(vk::AccessFlagBits::eColorAttachmentWrite)
+           .setDstAccessMask(vk::AccessFlagBits::eTransferRead)
+           .setOldLayout(vk::ImageLayout::ePresentSrcKHR)
+           .setNewLayout(vk::ImageLayout::eTransferSrcOptimal)
+           .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+           .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+           .setImage(image)
+           .setSubresourceRange(subresource_range)});
+
+  frame.commands.copyImageToBuffer(
+      image, vk::ImageLayout::eTransferSrcOptimal, buffer,
+      {vk::BufferImageCopy()
+           .setImageSubresource(
+               vk::ImageSubresourceLayers()
+                   .setAspectMask(vk::ImageAspectFlagBits::eColor)
+                   .setLayerCount(1))
+           .setImageExtent({swap_extent_.width, swap_extent_.height, 1})});
+
+  // The copy is made visible to the host, which reads it once the frame's
+  // fence is signaled. Presenting waits on the frame's semaphore, so the image
+  // needs no later stage to wait for its layout to return.
+  frame.commands.pipelineBarrier(
+      vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eHost,
+      {}, {},
+      {vk::BufferMemoryBarrier()
+           .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
+           .setDstAccessMask(vk::AccessFlagBits::eHostRead)
+           .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+           .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+           .setBuffer(buffer)
+           .setSize(VK_WHOLE_SIZE)},
+      {vk::ImageMemoryBarrier()
+           .setSrcAccessMask(vk::AccessFlagBits::eTransferRead)
+           .setOldLayout(vk::ImageLayout::eTransferSrcOptimal)
+           .setNewLayout(vk::ImageLayout::ePresentSrcKHR)
+           .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+           .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+           .setImage(image)
+           .setSubresourceRange(subresource_range)});
+}
+
+vk::Fence VulkanBackend::EndFramePresent() {
   auto& frame = frames_[frame_index_];
   auto& frame_buffer = frame_buffers_[frame_buffer_index_];
-
-  // Call any registered callbacks
-  CallFrameCallbacks(&post_render_callbacks_);
 
   if (frame.commands.end() != vk::Result::eSuccess) {
     // TODO: Handle this more gracefully...
@@ -1550,6 +1637,58 @@ void VulkanBackend::EndFramePresent() {
   // method already must be externally synchronized, so there is no need to have
   // to use std::memory_order_acq_rel.
   frame_counter_.fetch_add(1, std::memory_order_release);
+  return frame.render_finished_fence;
+}
+
+std::unique_ptr<VulkanBuffer> VulkanBackend::CreateReadBuffer() {
+  if (!can_copy_swap_images_) {
+    LOG(ERROR) << "Frames can't be read, as the surface doesn't allow copying "
+                  "from swap chain images";
+    return nullptr;
+  }
+  if (GetReadOrder(format_.format) == ReadOrder::kUnsupported) {
+    LOG(ERROR) << "Frames can't be read from swap chain images in format "
+               << vk::to_string(format_.format);
+    return nullptr;
+  }
+  const vk::DeviceSize pixel_count =
+      vk::DeviceSize{swap_extent_.width} * swap_extent_.height;
+  auto buffer = VulkanBuffer::Create(
+      this, vk::BufferUsageFlagBits::eTransferDst,
+      pixel_count * vk::DeviceSize{sizeof(Pixel)}, VMA_MEMORY_USAGE_GPU_TO_CPU);
+  if (buffer == nullptr) {
+    LOG(ERROR) << "Failed to create a buffer to read the frame into";
+  }
+  return buffer;
+}
+
+std::unique_ptr<Image> VulkanBackend::ReadImage(vk::Fence fence,
+                                                VulkanBuffer* buffer) {
+  if (device_.waitForFences({fence}, VK_TRUE,
+                            std::numeric_limits<uint64_t>::max()) !=
+      vk::Result::eSuccess) {
+    LOG(ERROR) << "Failed to wait for the frame to be read";
+    return nullptr;
+  }
+  if (!buffer->MapData()) {
+    LOG(ERROR) << "Failed to map the frame read back";
+    return nullptr;
+  }
+
+  // The swap chain is presented opaque, so the image is too.
+  const bool is_bgra = GetReadOrder(format_.format) == ReadOrder::kBgra;
+  const int width = static_cast<int>(swap_extent_.width);
+  const int height = static_cast<int>(swap_extent_.height);
+  auto image = std::make_unique<Image>(width, height);
+  const Pixel* src = static_cast<const Pixel*>(buffer->GetData());
+  Pixel* dst = image->Edit().ModifyPixels();
+  const int count = width * height;
+  for (int i = 0; i < count; ++i) {
+    const Pixel& pixel = src[i];
+    dst[i] = is_bgra ? Pixel(pixel.b, pixel.g, pixel.r)
+                     : Pixel(pixel.r, pixel.g, pixel.b);
+  }
+  return image;
 }
 
 }  // namespace gb
