@@ -16,6 +16,7 @@
 #include "absl/log/log_sink_registry.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
+#include "absl/types/span.h"
 #include "gb/base/context_builder.h"
 #include "gb/render/material.h"
 #include "gb/render/material_config.h"
@@ -32,6 +33,7 @@
 
 // Game includes
 #include "quad_shaders.h"
+#include "storage_shaders.h"
 #include "volume_shaders.h"
 
 // Windows is included last, as its macros rename functions declared above.
@@ -117,6 +119,18 @@ constexpr int kVolumeRegionY = 8;
 constexpr int kVolumeRegionSize = 14;
 constexpr float kVolumeFramesPerCycle = 480.0f;
 
+// The storage buffers are below the blend check, a row of quads for each
+// volatility, side by side. Each quad reads its color from the buffer at its
+// own index, which is an instance constant. The last quad's color changes
+// every second, written as a single value, so frames a second apart differ
+// only in that quad.
+constexpr int kStorageQuads = 8;
+constexpr float kStorageTop = kBlendTop + kBlendCellSize + 24.0f;
+constexpr float kStorageQuadSize = 32.0f;
+constexpr float kStorageSpacing = 36.0f;
+constexpr float kStorageRowSpacing = kStorageQuads * kStorageSpacing + 40.0f;
+constexpr float kStorageHueStep = 0.37f;
+
 // Converts a hue in [0, 1) to a fully saturated color.
 gb::Pixel HueColor(float hue) {
   hue = hue - std::floor(hue);
@@ -201,7 +215,7 @@ bool RenderCheck::Init() {
   absl::AddLogSink(&log_counter_);
   return InitWindow() && InitRenderSystem() && InitGui() && InitQuads() &&
          InitTextures() && InitBlendQuads() && InitFormatTextures() &&
-         InitVolumes();
+         InitVolumes() && InitStorageBuffers();
 }
 
 bool RenderCheck::InitWindow() {
@@ -620,10 +634,99 @@ bool RenderCheck::InitVolumes() {
   return true;
 }
 
+bool RenderCheck::InitStorageBuffers() {
+  const gb::RenderDataType* color_type =
+      render_system_->RegisterConstantsType<QuadColor>("QuadColor");
+  if (color_type == nullptr) {
+    LOG(ERROR) << "Could not register the storage buffer's color type";
+    return false;
+  }
+
+  // The storage buffer quads are drawn in the quads' scene, with the same
+  // scene and instance bindings.
+  const gb::MaterialType* quad_type = quad_material_->GetType();
+  const gb::Binding storage_binding =
+      gb::Binding()
+          .SetShaders(gb::ShaderType::kFragment)
+          .SetLocation(gb::BindingSet::kMaterial, 0)
+          .SetStorageBuffer(color_type);
+  gb::Shader* vertex_shader = render_system_->CreateShader(
+      &resources_, gb::ShaderType::kVertex,
+      render_system_->CreateShaderCode(kStorageVertexShader,
+                                       sizeof(kStorageVertexShader)),
+      quad_type->GetVertexShader()->GetBindings(),
+      {gb::ShaderParam(gb::ShaderValue::kVec2, 0)},
+      {gb::ShaderParam(gb::ShaderValue::kInt, 0)});
+  gb::Shader* fragment_shader = render_system_->CreateShader(
+      &resources_, gb::ShaderType::kFragment,
+      render_system_->CreateShaderCode(kStorageFragmentShader,
+                                       sizeof(kStorageFragmentShader)),
+      {storage_binding}, {gb::ShaderParam(gb::ShaderValue::kInt, 0)},
+      {gb::ShaderParam(gb::ShaderValue::kVec4, 0)});
+  if (vertex_shader == nullptr || fragment_shader == nullptr) {
+    LOG(ERROR) << "Could not create storage buffer shaders";
+    return false;
+  }
+
+  gb::MaterialType* material_type = render_system_->CreateMaterialType(
+      &resources_, quad_type->GetSceneType(), quad_type->GetVertexType(),
+      vertex_shader, fragment_shader, QuadConfig());
+  if (material_type == nullptr) {
+    LOG(ERROR) << "Could not create storage buffer material type";
+    return false;
+  }
+
+  // The quads before the last are evenly spaced hues. UpdateStorageBuffers()
+  // sets the last one.
+  std::vector<QuadColor> colors(kStorageQuads);
+  for (int i = 0; i < kStorageQuads - 1; ++i) {
+    colors[i] = ToQuadColor(HueColor(static_cast<float>(i) / kStorageQuads));
+  }
+  struct Volatility {
+    gb::DataVolatility volatility;
+    const char* name;
+  };
+  const Volatility volatilities[] = {
+      {gb::DataVolatility::kStaticReadWrite, "Storage, kStaticReadWrite"},
+      {gb::DataVolatility::kPerFrame, "Storage, kPerFrame"},
+  };
+  for (const Volatility& volatility : volatilities) {
+    gb::StorageBuffer* storage_buffer = render_system_->CreateStorageBuffer(
+        &resources_, color_type, volatility.volatility, kStorageQuads);
+    gb::Material* material =
+        render_system_->CreateMaterial(&resources_, material_type);
+    if (storage_buffer == nullptr ||
+        !storage_buffer->Set<QuadColor>(0, colors) || material == nullptr) {
+      LOG(ERROR) << "Could not create " << volatility.name << " buffer";
+      return false;
+    }
+    material->GetMaterialBindingData()->SetStorageBuffer(0, storage_buffer);
+
+    const int row_index = static_cast<int>(storage_rows_.size());
+    const float left = kGridLeft + row_index * kStorageRowSpacing;
+    StorageRow row = {volatility.name, left, storage_buffer, material, {}};
+    for (int i = 0; i < kStorageQuads; ++i) {
+      auto quad = material->CreateInstanceBindingData();
+      if (quad == nullptr) {
+        LOG(ERROR) << "Could not create " << volatility.name << " quad";
+        return false;
+      }
+      const InstanceData data = {{left + i * kStorageSpacing, kStorageTop,
+                                  kStorageQuadSize, kStorageQuadSize},
+                                 {static_cast<float>(i), 0.0f, 0.0f, 0.0f}};
+      quad->SetConstants<InstanceData>(0, data);
+      row.quads.emplace_back(std::move(quad));
+    }
+    storage_rows_.emplace_back(std::move(row));
+  }
+  return true;
+}
+
 void RenderCheck::CleanUp() {
   instances_.clear();
   blend_instances_.clear();
   volume_rows_.clear();
+  storage_rows_.clear();
   scene_.reset();
   if (gui_instance_ != nullptr) {
     ImGui_ImplSDL2_Shutdown();
@@ -648,6 +751,7 @@ void RenderCheck::Run() {
     UpdateFrameStats();
     UpdateInstances();
     UpdateTextures();
+    UpdateStorageBuffers();
 
     ImGui_ImplSDL2_NewFrame();
     ImGui::NewFrame();
@@ -741,6 +845,21 @@ void RenderCheck::UpdateTextures() {
   }
 }
 
+void RenderCheck::UpdateStorageBuffers() {
+  const int64_t second = SDL_GetTicks() / 1000;
+  if (second == storage_second_) {
+    return;
+  }
+  storage_second_ = second;
+  const QuadColor color = ToQuadColor(HueColor(second * kStorageHueStep));
+  for (const StorageRow& row : storage_rows_) {
+    if (!row.storage_buffer->Set<QuadColor>(kStorageQuads - 1,
+                                            absl::MakeConstSpan(&color, 1))) {
+      LOG(ERROR) << "Could not change a color in the " << row.name << " buffer";
+    }
+  }
+}
+
 void RenderCheck::DrawGui() {
   ImGui::SetNextWindowPos({10, 10}, ImGuiCond_Always);
   ImGui::SetNextWindowSize({kPanelWidth, 0}, ImGuiCond_Always);
@@ -755,11 +874,13 @@ void RenderCheck::DrawGui() {
   DrawBlendGui();
   DrawFormatGui();
   DrawVolumeGui();
+  DrawStorageGui();
   DrawLogGui();
   ImGui::End();
   DrawExtraRects();
   DrawFormatTextures();
   DrawVolumeLabels();
+  DrawStorageLabels();
 }
 
 void RenderCheck::DrawFrameGui() {
@@ -946,6 +1067,26 @@ void RenderCheck::DrawVolumeLabels() {
   }
 }
 
+void RenderCheck::DrawStorageGui() {
+  if (!ImGui::CollapsingHeader("Storage buffers",
+                               ImGuiTreeNodeFlags_DefaultOpen)) {
+    return;
+  }
+  ImGui::TextWrapped(
+      "Below the blend check, a storage buffer of colors in each of two "
+      "volatilities, drawn by a row of quads that each read the color at its "
+      "own index. The first seven are evenly spaced hues from red, and the "
+      "last changes color every second.");
+}
+
+void RenderCheck::DrawStorageLabels() {
+  ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
+  for (const StorageRow& row : storage_rows_) {
+    draw_list->AddText({row.left, kStorageTop - 16.0f}, IM_COL32_WHITE,
+                       row.name);
+  }
+}
+
 void RenderCheck::AddVolumeRegions() {
   for (const VolumeRow& row : volume_rows_) {
     const gb::TextureFormat format = row.volume->GetFormat();
@@ -1039,6 +1180,7 @@ void RenderCheck::DrawQuads() {
   }
   render_system_->Draw(scene_.get(), blend_draw_list_);
   DrawVolumes();
+  DrawStorageBuffers();
 }
 
 void RenderCheck::DrawVolumes() {
@@ -1058,6 +1200,14 @@ void RenderCheck::DrawVolumes() {
       gb::BindingData* quad = volume_row.quads[i].get();
       quad->SetConstants<InstanceData>(0, data);
       render_system_->Draw(scene_.get(), quad_mesh_, volume_row.material, quad);
+    }
+  }
+}
+
+void RenderCheck::DrawStorageBuffers() {
+  for (const StorageRow& row : storage_rows_) {
+    for (const auto& quad : row.quads) {
+      render_system_->Draw(scene_.get(), quad_mesh_, row.material, quad.get());
     }
   }
 }
@@ -1092,11 +1242,13 @@ void RenderCheck::SetQuadData(gb::BindingData* instance, float x, float y,
   data.rect[1] = y;
   data.rect[2] = width;
   data.rect[3] = height;
-  data.color[0] = color.r / 255.0f;
-  data.color[1] = color.g / 255.0f;
-  data.color[2] = color.b / 255.0f;
-  data.color[3] = color.a / 255.0f;
+  std::memcpy(data.color, ToQuadColor(color).color, sizeof(data.color));
   instance->SetConstants<InstanceData>(0, data);
+}
+
+RenderCheck::QuadColor RenderCheck::ToQuadColor(gb::Pixel color) {
+  return {
+      {color.r / 255.0f, color.g / 255.0f, color.b / 255.0f, color.a / 255.0f}};
 }
 
 gb::Material* RenderCheck::CreateQuadMaterial(

@@ -23,6 +23,7 @@
 #include "gb/render/draw_list.h"
 #include "gb/render/material_config.h"
 #include "gb/render/render_system.h"
+#include "gb/render/storage_buffer.h"
 #include "gb/render/volume_texture.h"
 #include "gb/render/vulkan/vulkan_backend.h"
 #include "gb/resource/resource_set.h"
@@ -60,7 +61,7 @@ class LogCounter final : public absl::LogSink {
 
 // Exercises the Vulkan backend by hand: window resizing, binding data churn,
 // texture and texture array updates while they are drawn, each texture format,
-// volume textures, and each material blend mode.
+// volume textures, storage buffers, and each material blend mode.
 class RenderCheck final {
  public:
   RenderCheck() = default;
@@ -99,6 +100,21 @@ class RenderCheck final {
     std::vector<std::unique_ptr<gb::BindingData>> quads;
   };
 
+  // Matches QuadColor in shaders/storage.frag.
+  struct QuadColor {
+    float color[4];
+  };
+
+  // A storage buffer of colors with one volatility, drawn by a row of quads
+  // that each read the color at its own index.
+  struct StorageRow {
+    const char* name;
+    float left;
+    gb::StorageBuffer* storage_buffer;
+    gb::Material* material;
+    std::vector<std::unique_ptr<gb::BindingData>> quads;
+  };
+
   // A texture shown in the GUI, with the result of the last action on it.
   struct ShownTexture {
     gb::Texture* texture = nullptr;
@@ -114,6 +130,7 @@ class RenderCheck final {
   bool InitBlendQuads();
   bool InitFormatTextures();
   bool InitVolumes();
+  bool InitStorageBuffers();
   void CleanUp();
 
   bool ProcessEvents();
@@ -125,6 +142,7 @@ class RenderCheck final {
   void UpdateFrameStats();
   void UpdateInstances();
   void UpdateTextures();
+  void UpdateStorageBuffers();
   void DrawGui();
   void DrawFrameGui();
   void DrawInstanceGui();
@@ -134,19 +152,23 @@ class RenderCheck final {
   void DrawBlendGui();
   void DrawFormatGui();
   void DrawVolumeGui();
+  void DrawStorageGui();
   void DrawLogGui();
   void DrawExtraRects();
   void DrawFormatTextures();
   void AddFormatStripes();
   void DrawVolumeLabels();
+  void DrawStorageLabels();
   void AddVolumeRegions();
   void DrawQuads();
   void DrawVolumes();
+  void DrawStorageBuffers();
 
   void CreateInstances();
   void SetInstanceData(int index, gb::BindingData* instance);
   void SetQuadData(gb::BindingData* instance, float x, float y, float width,
                    float height, gb::Pixel color);
+  static QuadColor ToQuadColor(gb::Pixel color);
 
   // Returns a new material of the quad material type, with its own config.
   gb::Material* CreateQuadMaterial(const gb::MaterialConfig& config);
@@ -219,6 +241,11 @@ class RenderCheck final {
 
   // Volume textures, drawn by DrawVolumes().
   std::vector<VolumeRow> volume_rows_;
+
+  // Storage buffers, drawn by DrawStorageBuffers(), with the second at which
+  // their last color was last changed.
+  std::vector<StorageRow> storage_rows_;
+  int64_t storage_second_ = -1;
 
   // GUI.
   int extra_rects_ = 0;

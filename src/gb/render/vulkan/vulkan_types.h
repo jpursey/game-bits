@@ -44,6 +44,7 @@ enum class VulkanBufferType {
   kUniform,
   kVertex,
   kIndex,
+  kStorage,
 };
 
 // Defines the maximum number frames being processed at any given time.

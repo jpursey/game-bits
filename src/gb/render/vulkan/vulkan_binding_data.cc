@@ -68,7 +68,6 @@ void VulkanBindingData::OnRender(VulkanRenderState* state) {
     DataItem& item = data_[binding];
     switch (item.binding_type) {
       case BindingType::kNone:
-      case BindingType::kStorageBuffer:
         break;
       case BindingType::kTexture: {
         auto& info = item.texture;
@@ -109,9 +108,23 @@ void VulkanBindingData::OnRender(VulkanRenderState* state) {
         const auto& handle = info.buffer->GetBufferHandle(state->frame);
         if (info.bound[index] != handle.version) {
           info.bound[index] = handle.version;
-          state->set_buffer_updates.emplace_back(descriptor_set, binding,
-                                                 handle.buffer,
-                                                 info.buffer->GetValueSize());
+          state->set_buffer_updates.emplace_back(
+              descriptor_set, binding,
+              vk::DescriptorType::eUniformBufferDynamic, handle.buffer,
+              info.buffer->GetValueSize());
+        }
+      } break;
+      case BindingType::kStorageBuffer: {
+        auto& info = item.storage_buffer;
+        auto* buffer = static_cast<VulkanRenderBuffer*>(
+            GetRenderBuffer(info.storage_buffer));
+        state->buffers.insert(buffer);
+        const auto& handle = buffer->GetBufferHandle(state->frame);
+        if (info.bound[index] != handle.version) {
+          info.bound[index] = handle.version;
+          state->set_buffer_updates.emplace_back(
+              descriptor_set, binding, vk::DescriptorType::eStorageBuffer,
+              handle.buffer, VK_WHOLE_SIZE);
         }
       } break;
     }
@@ -147,6 +160,11 @@ bool VulkanBindingData::ValidateBindings(
             binding->data_type->GetType()) {
       return false;
     }
+    if (binding->binding_type == BindingType::kStorageBuffer &&
+        data_[index].storage_buffer.type->GetType() !=
+            binding->data_type->GetType()) {
+      return false;
+    }
   }
   return true;
 }
@@ -155,6 +173,7 @@ bool VulkanBindingData::Validate(int index, gb::TypeKey* type) const {
   static gb::TypeKey* texture_type = gb::TypeKey::Get<Texture*>();
   static gb::TypeKey* texture_array_type = gb::TypeKey::Get<TextureArray*>();
   static gb::TypeKey* volume_texture_type = gb::TypeKey::Get<VolumeTexture*>();
+  static gb::TypeKey* storage_buffer_type = gb::TypeKey::Get<StorageBuffer*>();
 
   if (index < 0 || index >= static_cast<int>(data_.size())) {
     return false;
@@ -172,7 +191,7 @@ bool VulkanBindingData::Validate(int index, gb::TypeKey* type) const {
     case BindingType::kVolumeTexture:
       return type == volume_texture_type;
     case BindingType::kStorageBuffer:
-      return false;
+      return type == storage_buffer_type;
     case BindingType::kConstants:
       return item.constants.type->GetType() == type;
   }
@@ -182,16 +201,29 @@ bool VulkanBindingData::Validate(int index, gb::TypeKey* type) const {
 
 bool VulkanBindingData::ValidateDataType(int index,
                                          const RenderDataType* type) const {
-  // Storage buffers can't be bound.
-  return false;
+  if (index < 0 || index >= static_cast<int>(data_.size())) {
+    return false;
+  }
+  const auto& item = data_[index];
+  return item.binding_type == BindingType::kStorageBuffer &&
+         item.storage_buffer.type->GetType() == type->GetType();
 }
 
 void VulkanBindingData::DoSet(int index, const void* value) {
   auto& item = data_[index];
   switch (item.binding_type) {
     case BindingType::kNone:
-    case BindingType::kStorageBuffer:
       break;
+    case BindingType::kStorageBuffer: {
+      auto* storage_buffer = *static_cast<StorageBuffer* const*>(value);
+      auto& info = item.storage_buffer;
+      if (storage_buffer != info.storage_buffer) {
+        info.storage_buffer = storage_buffer;
+        for (auto& bound : info.bound) {
+          bound = -1;
+        }
+      }
+    } break;
     case BindingType::kConstants:
       item.constants.buffer->SetValue(buffer_offset_index_, value);
       break;
@@ -232,10 +264,12 @@ void VulkanBindingData::DoGet(int index, void* value) const {
   const auto& item = data_[index];
   switch (item.binding_type) {
     case BindingType::kNone:
-    case BindingType::kStorageBuffer:
       break;
     case BindingType::kConstants:
       item.constants.buffer->GetValue(buffer_offset_index_, value);
+      break;
+    case BindingType::kStorageBuffer:
+      *static_cast<StorageBuffer**>(value) = item.storage_buffer.storage_buffer;
       break;
     case BindingType::kTexture:
       *static_cast<Texture**>(value) = item.texture.texture;
@@ -255,7 +289,6 @@ void VulkanBindingData::DoGetDependencies(
     switch (item.binding_type) {
       case BindingType::kNone:
       case BindingType::kConstants:
-      case BindingType::kStorageBuffer:
         break;
       case BindingType::kTexture:
         if (item.texture.texture != nullptr) {
@@ -270,6 +303,11 @@ void VulkanBindingData::DoGetDependencies(
       case BindingType::kVolumeTexture:
         if (item.volume_texture.volume_texture != nullptr) {
           dependencies->push_back(item.volume_texture.volume_texture);
+        }
+        break;
+      case BindingType::kStorageBuffer:
+        if (item.storage_buffer.storage_buffer != nullptr) {
+          dependencies->push_back(item.storage_buffer.storage_buffer);
         }
         break;
     }

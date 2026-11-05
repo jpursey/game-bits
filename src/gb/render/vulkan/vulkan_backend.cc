@@ -64,20 +64,6 @@ static const vk::ClearColorValue kColorClearValue(std::array<float, 4>{
     0.0f, 0.0f, 0.0f, 1.0f});
 static const vk::ClearDepthStencilValue kDepthClearValue(1.0f, 0);
 
-// Returns true if every binding is of a type this backend can bind, logging
-// why not otherwise. Storage buffers can't be bound.
-bool ValidateBindingTypes(absl::Span<const Binding> bindings) {
-  for (const Binding& binding : bindings) {
-    if (binding.binding_type == BindingType::kStorageBuffer) {
-      LOG(ERROR) << "Storage buffer bindings are not supported, at set "
-                 << static_cast<int>(binding.set) << ", index "
-                 << binding.index;
-      return false;
-    }
-  }
-  return true;
-}
-
 // The channel order of swap chain images that frames are read back from.
 enum class ReadOrder { kUnsupported, kRgba, kBgra };
 
@@ -957,9 +943,6 @@ std::unique_ptr<ShaderCode> VulkanBackend::CreateShaderCode(RenderInternal,
 
 std::unique_ptr<RenderSceneType> VulkanBackend::CreateSceneType(
     RenderInternal, absl::Span<const Binding> bindings) {
-  if (!ValidateBindingTypes(bindings)) {
-    return nullptr;
-  }
   return VulkanSceneType::Create({}, this, bindings);
 }
 
@@ -973,9 +956,6 @@ std::unique_ptr<RenderPipeline> VulkanBackend::CreatePipeline(
     RenderInternal, RenderSceneType* scene_type, const VertexType* vertex_type,
     absl::Span<const Binding> bindings, ShaderCode* vertex_shader,
     ShaderCode* fragment_shader, const MaterialConfig& config) {
-  if (!ValidateBindingTypes(bindings)) {
-    return nullptr;
-  }
   return VulkanRenderPipeline::Create(
       {}, this, static_cast<VulkanSceneType*>(scene_type), vertex_type,
       bindings, static_cast<VulkanShaderCode*>(vertex_shader),
@@ -998,8 +978,8 @@ std::unique_ptr<RenderBuffer> VulkanBackend::CreateIndexBuffer(
 
 std::unique_ptr<RenderBuffer> VulkanBackend::CreateStorageBuffer(
     RenderInternal, DataVolatility volatility, int value_size, int capacity) {
-  LOG(ERROR) << "Storage buffers are not supported";
-  return nullptr;
+  return VulkanRenderBuffer::Create({}, this, VulkanBufferType::kStorage,
+                                    volatility, value_size, capacity);
 }
 
 bool VulkanBackend::BeginFrame(RenderInternal) {
@@ -1310,7 +1290,7 @@ void VulkanBackend::EndFrameUpdateDescriptorSets() {
         .setDstBinding(update.binding)
         .setDstArrayElement(0)
         .setDescriptorCount(1)
-        .setDescriptorType(vk::DescriptorType::eUniformBufferDynamic)
+        .setDescriptorType(update.type)
         .setPBufferInfo(&update.info);
   }
   device_.updateDescriptorSets(static_cast<uint32_t>(set_updates.size()),

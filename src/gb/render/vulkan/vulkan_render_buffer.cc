@@ -601,6 +601,9 @@ std::unique_ptr<VulkanBuffer> VulkanRenderBuffer::CreateDeviceBuffer(
     case VulkanBufferType::kIndex:
       usage |= vk::BufferUsageFlagBits::eIndexBuffer;
       break;
+    case VulkanBufferType::kStorage:
+      usage |= vk::BufferUsageFlagBits::eStorageBuffer;
+      break;
   }
   return VulkanBuffer::Create(backend_,
                               vk::BufferCreateInfo()
@@ -640,6 +643,9 @@ void VulkanRenderBuffer::CopyBuffer(vk::Buffer host_buffer,
       break;
     case VulkanBufferType::kIndex:
       dst_access = vk::AccessFlagBits::eIndexRead;
+      break;
+    case VulkanBufferType::kStorage:
+      dst_access = vk::AccessFlagBits::eShaderRead;
       break;
     default:
       LOG(FATAL) << "Unhandled buffer type for CopyBuffer";

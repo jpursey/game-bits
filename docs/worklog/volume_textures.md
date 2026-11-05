@@ -315,6 +315,10 @@ class VulkanTexels {
   buffer to the device buffer.
 - The descriptor is `eStorageBuffer`, over the whole buffer, rewritten when its
   buffer handle changes.
+- `VulkanBindingData` keeps the `StorageBuffer`, and binds its `RenderBuffer`
+  through `BindingData::GetRenderBuffer()`, a protected static any backend's
+  binding data can use. `BindingData` joins `RenderInternal`'s friends for it,
+  so `gb_render` names no backend class.
 
 **Brittleness:**
 - A storage buffer's type must match the shader's `std430` block. Nothing can
@@ -340,8 +344,9 @@ class VulkanTexels {
 - Confirmed in CL2: `B4G4R4A4_UNORM_PACK16` with a swizzled view reads back
   as our bit order (render-check), and `stb_image_resize` resizes 1 and 2
   channel 8-bit images (unit tests).
-- `std430` arrays of a struct with a `vec4` have no padding the C++ struct
-  lacks (CL8).
+- Confirmed in CL8: `std430` arrays of a struct with a `vec4` have no padding
+  the C++ struct lacks, as each render-check quad shows the color at its own
+  index.
 
 ## CLs
 
@@ -488,7 +493,7 @@ Depends on: CL6.
   the binding saves and loads it, and a material bound to a buffer saves and
   loads with that buffer.
 
-### CL8 [ ] render_vulkan: Storage buffers in Vulkan
+### CL8 [x] render_vulkan: Storage buffers in Vulkan
 
 Depends on: CL6, CL7.
 
@@ -497,9 +502,12 @@ Depends on: CL6, CL7.
 - Removes CL7's `ValidateBindingTypes()`, which rejects storage buffer
   bindings, and gives `VulkanBindingData` real storage buffer cases and
   `ValidateDataType()`.
+- `BindingData::GetRenderBuffer()`, for `VulkanBindingData` to reach a
+  storage buffer's `RenderBuffer`.
 - render-check: a storage buffer of colors, which each of a row of quads
-  indexes by an instance constant. One color changes every second, written
-  with a one-value `Set()`.
+  indexes by an instance constant, one row for each of `kStaticReadWrite` and
+  `kPerFrame`. One color changes every second, written with a one-value
+  `Set()`.
 
 **Verify**
 - Standard checks.

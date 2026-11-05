@@ -46,6 +46,7 @@ class VulkanDescriptorPool final {
   struct BindingCounts {
     int texture;
     int dynamic_uniform;
+    int storage;
   };
   struct AvailableSet {
     int dispose_frame;

@@ -41,6 +41,7 @@ set(render_check_SOURCE
   main.cc
   quad_shaders.h
   render_check.cc render_check.h
+  storage_shaders.h
   volume_shaders.h
 )
 

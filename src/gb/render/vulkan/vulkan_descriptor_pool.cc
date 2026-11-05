@@ -31,6 +31,9 @@ std::unique_ptr<VulkanDescriptorPool> VulkanDescriptorPool::Create(
         binding.binding_type == BindingType::kVolumeTexture) {
       counts.texture += 1;
       type = vk::DescriptorType::eCombinedImageSampler;
+    } else if (binding.binding_type == BindingType::kStorageBuffer) {
+      counts.storage += 1;
+      type = vk::DescriptorType::eStorageBuffer;
     } else {
       counts.dynamic_uniform += 1;
       type = vk::DescriptorType::eUniformBufferDynamic;
@@ -95,6 +98,10 @@ bool VulkanDescriptorPool::NewPool() {
     sizes.emplace_back(
         vk::DescriptorType::eUniformBufferDynamic,
         static_cast<uint32_t>(counts_.dynamic_uniform * pool_size_));
+  }
+  if (counts_.storage > 0) {
+    sizes.emplace_back(vk::DescriptorType::eStorageBuffer,
+                       static_cast<uint32_t>(counts_.storage * pool_size_));
   }
   auto device = backend_->GetDevice();
   auto [result, pool] = device.createDescriptorPool(

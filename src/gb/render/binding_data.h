@@ -124,6 +124,12 @@ class BindingData {
   BindingData(RenderPipeline* pipeline, BindingSet set)
       : pipeline_(pipeline), set_(set) {}
 
+  // Returns the buffer that holds a storage buffer's values, which the backend
+  // binds.
+  static RenderBuffer* GetRenderBuffer(const StorageBuffer* storage_buffer) {
+    return storage_buffer->GetBuffer({});
+  }
+
   //----------------------------------------------------------------------------
   // Derived class interface
   //----------------------------------------------------------------------------

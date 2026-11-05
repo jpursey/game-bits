@@ -120,14 +120,18 @@ struct VulkanRenderState {
     vk::DescriptorImageInfo info;
   };
 
+  // Binds `size` bytes from the start of `buffer`, which may be VK_WHOLE_SIZE.
   struct SetBufferUpdate {
     SetBufferUpdate(vk::DescriptorSet descriptor_set, uint32_t binding,
-                    vk::Buffer buffer, vk::DeviceSize size)
+                    vk::DescriptorType type, vk::Buffer buffer,
+                    vk::DeviceSize size)
         : descriptor_set(descriptor_set),
           binding(binding),
+          type(type),
           info(buffer, 0, size) {}
     vk::DescriptorSet descriptor_set;
     uint32_t binding;
+    vk::DescriptorType type;
     vk::DescriptorBufferInfo info;
   };
 

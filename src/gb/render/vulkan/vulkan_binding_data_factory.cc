@@ -172,6 +172,13 @@ bool VulkanBindingDataFactory::AddBindingGroup() {
       for (auto& bound : info.bound) {
         bound = false;
       }
+    } else if (binding.binding_type == BindingType::kStorageBuffer) {
+      auto& info = item.storage_buffer;
+      info.type = binding.data_type;
+      info.storage_buffer = nullptr;
+      for (auto& bound : info.bound) {
+        bound = -1;
+      }
     } else if (binding.binding_type == BindingType::kConstants) {
       const int value_size = binding.data_type->GetSize();
       auto buffer = VulkanRenderBuffer::Create(

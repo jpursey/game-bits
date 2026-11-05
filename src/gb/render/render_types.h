@@ -61,6 +61,7 @@ struct VolumeTextureChunk;
 
 // Internal access token for functions callable by render classes.
 GB_BEGIN_ACCESS_TOKEN(RenderInternal)
+friend class BindingData;
 friend class RenderSystem;
 friend class LocalBindingData;
 friend class Material;

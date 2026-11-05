@@ -16,6 +16,7 @@
 #include "gb/render/binding.h"
 #include "gb/render/binding_data.h"
 #include "gb/render/render_types.h"
+#include "gb/render/storage_buffer.h"
 #include "gb/render/vulkan/vulkan_render_buffer.h"
 #include "gb/render/vulkan/vulkan_types.h"
 
@@ -43,6 +44,11 @@ class VulkanBindingData : public BindingData {
     VulkanRenderBuffer* buffer;
     int bound[kMaxFramesInFlight];
   };
+  struct StorageBufferInfo {
+    const RenderDataType* type;
+    StorageBuffer* storage_buffer;
+    int bound[kMaxFramesInFlight];
+  };
   struct DataItem {
     DataItem() : binding_type(BindingType::kNone) {}
     explicit DataItem(VulkanTexture* texture_resource)
@@ -68,6 +74,7 @@ class VulkanBindingData : public BindingData {
       TextureArrayInfo texture_array;
       VolumeTextureInfo volume_texture;
       ConstantsInfo constants;
+      StorageBufferInfo storage_buffer;
     };
   };
 
