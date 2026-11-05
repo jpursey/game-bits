@@ -247,11 +247,15 @@ the host buffers they are generated in, and has the sampler options.
 // generating mipmaps when the texture has them.
 class VulkanTexels {
  public:
-  // A 2D texture, with mipmaps if options asks for them. CL5 adds
-  // CreateVolume(), for a 3D texture, which has no mipmaps.
+  // A 2D texture, with mipmaps if options asks for them.
   static std::unique_ptr<VulkanTexels> CreateTexture(
       VulkanBackend* backend, DataVolatility volatility, TextureFormat format,
       int width, int height, const SamplerOptions& options);
+
+  // A 3D texture, which has no mipmaps.
+  static std::unique_ptr<VulkanTexels> CreateVolume(
+      VulkanBackend* backend, DataVolatility volatility, TextureFormat format,
+      int width, int height, int depth);
 
   const ImageHandle& GetImageHandle(int frame) const;
 
@@ -325,9 +329,7 @@ class VulkanTexels {
   check a C++ struct against GLSL, so `RegisterConstantsType()`'s comment says
   so, as it does for `std140` today.
 - A binding left unset still crashes when drawn, for these types as for
-  textures. *Default texture for unset bindings* fixes textures; it should
-  cover volume textures and storage buffers too (an empty volume, and a buffer
-  of zeros), so it gains them when this lands.
+  textures (see *Default texture for unset bindings* in the backlog).
 - A saved storage buffer holds its values as bytes in its type's C++ layout,
   as saved constants do. Loading checks the type's name and size, but a type
   whose fields change without changing its size loads the old bytes as the
@@ -336,181 +338,44 @@ class VulkanTexels {
   mipmaps. Failing loudly is better than silently differing from the options
   given.
 
-### To confirm
+### Confirmed on a device
 
-- Confirmed in CL5: `kR8` and `kRgba4` volumes draw with filtering between
-  slices on this machine's device (render-check). Any format or size a device
-  can't support fails to create, rather than failing when drawn.
-- Confirmed in CL2: `B4G4R4A4_UNORM_PACK16` with a swizzled view reads back
-  as our bit order (render-check), and `stb_image_resize` resizes 1 and 2
-  channel 8-bit images (unit tests).
-- Confirmed in CL8: `std430` arrays of a struct with a `vec4` have no padding
-  the C++ struct lacks, as each render-check quad shows the color at its own
-  index.
+- `kR8` and `kRgba4` volumes draw with filtering between slices. Any format or
+  size a device can't support fails to create, rather than failing when drawn.
+- `B4G4R4A4_UNORM_PACK16` with a swizzled view reads back as our bit order,
+  and `stb_image_resize` resizes 1 and 2 channel 8-bit images.
+- `std430` arrays of a struct with a `vec4` have no padding the C++ struct
+  lacks.
 
-## CLs
+### Building blocks
 
-The formats come first, as volume textures take one. Each `gb_render` CL
-changes the backend interface, so it also gives the Vulkan backend just enough
-to build (failing to create what it can't yet), and the next CL implements it
-there and checks it by hand in `examples/render-check`.
+Pieces other features can use:
+- `TextureFormat` and `GetTexelSize()` (`render_types.h`), for render targets
+  in these formats.
+- `gb/render/mipmaps.h`: mip level counts, offsets, and generation for any
+  format, with nothing Vulkan's in it.
+- `VulkanTexels`: the three volatility strategies for any image, on 3D
+  regions.
+- `RenderBuffer::SetRange()` and `Get()`, writing and reading part of a
+  buffer, which mesh pools need.
+- `BindingData::GetRenderBuffer()`, for any backend's binding data to bind a
+  storage buffer.
+- `VulkanImage::Create()` failing for images larger than the device allows.
 
-### CL1 [x] render: Texture formats
+## Checks
 
-Depends on: nothing.
-
-- `TextureFormat`, `GetTexelSize()`, and the format on `Texture`,
-  `TextureArray`, and their `RenderSystem::Create*()` functions.
-- `RenderSystem::CanFilter()`, and `RenderBackend::CanFilter()`.
-- Texture chunks with `format` and `texels`.
-- Test backend: formats in `TestTexture` and `TestTextureArray`, and
-  `CanFilter()`.
-- Vulkan backend: creates only `kRgba8Srgb` textures, and answers `CanFilter()`
-  for it alone.
-
-**Verify**
-- Standard checks.
-- Unit tests: each format's texel size; `Set()` and `SetRegion()` sizes are
-  checked in texels of the format; `Clear()` converts a `Pixel` to each
-  format; the `Pixel` overloads and `Edit()` fail for 1 and 2 byte formats;
-  creating a texture with filtering in a format the backend can't filter
-  fails; a texture and texture array in each format save and load; a chunk
-  written without `format` or `texels` loads as `kRgba8Srgb`.
-
-### CL2 [x] render_vulkan: Texture formats in Vulkan
-
-Depends on: CL1.
-
-- Vulkan formats, the swizzled view for `kRgba4`, `CanFilter()` from the
-  device, texel arithmetic by format, and mipmaps for every format.
-- render-check: a row of textures, one in each format, drawn as quads, each
-  with a gradient across it and mipmapped where it is drawn small.
-
-**Verify**
-- Standard checks.
-- Unit tests (`mipmaps_test.cc` in `gb_render_test`): mip level counts and
-  chain sizes; a uniform texture keeps its texel in every mip level in each
-  format; tiles don't blend; channels resize independently.
-- render-check, run with `tools\run-program.ps1`: each format's quad shows its
-  gradient in the expected channels (red only for `kR8`, red and green for
-  `kRg8`, and `kRgba4` matching `kRgba8` but banded), with no validation
-  errors in the log.
-
-### CL3 [x] render_vulkan: Texture volatility on 3D regions
-
-Depends on: nothing.
-
-- `VulkanTexels`, taking the three volatility strategies out of
-  `VulkanTexture`, with regions in three dimensions.
-- `VulkanImage` and `ImageUpdate` with a depth.
-- No visible change. render-check gains keys for its texture checks, which a
-  script can't click: P paints a square each frame, and 1, 2, and 3 press the
-  `kStaticWrite` buttons.
-
-**Verify**
-- Standard checks.
-- render-check, run with `tools\run-program.ps1`: the textures draw, P paints
-  in the `kStaticReadWrite` and `kPerFrame` textures, the `kStaticWrite`
-  checks give their expected results, and the format textures' stripes and
-  mipmaps are as in CL2, with no validation errors in the log.
-
-### CL4 [x] render: Volume textures
-
-Depends on: CL1.
-
-- `VolumeTexture`, `RenderSystem::CreateVolumeTexture()`, the limits, and
-  `RenderBackend::CreateVolumeTexture()`.
-- `BindingType::kVolumeTexture`: `Binding`, `BindingData`,
-  `LocalBindingData`, and saving bindings.
-- `VolumeTextureChunk`, `RenderSystem::SaveVolumeTexture()`, its loader, and
-  `volume_texture_id` in saved binding data.
-- Test backend: `TestVolumeTexture`, and binding data that holds one.
-- Vulkan backend: fails to create volume textures, and rejects scene types and
-  pipelines with the binding type.
-
-**Verify**
-- Standard checks.
-- Unit tests: creation validates sizes, the mipmap and tile size options, and
-  formats; `Clear()`, `Set()`, `ClearRegion()`, and `SetRegion()` write the
-  right texels, clipped to the volume; `Get()` fails for `kStaticWrite`;
-  binding data sets and gets a volume texture, and lists it as a dependency;
-  a volume in each format saves and loads with its texels, options, and the
-  volatility given; saving a `kStaticWrite` volume fails; a material type
-  with the binding saves and loads it, and a material bound to a volume saves
-  and loads with that volume.
-
-### CL5 [x] render_vulkan: Volume textures in Vulkan
-
-Depends on: CL2, CL3, CL4.
-
-- `VulkanVolumeTexture` on `VulkanTexels`, 3D images and views, and
-  `VulkanBindingData` support.
-- render-check: a 3D texture with a different pattern in each slice, sampled
-  with filtering by a quad that moves through it, in `kR8` and `kRgba4`.
-
-**Verify**
-- Standard checks.
-- render-check: frames saved some time apart show the quad blending smoothly
-  between slices (filtered, not stepped), and a region update changes only
-  its region, with no validation errors.
-
-### CL6 [x] render, render_vulkan: Writes to part of a render buffer
-
-Depends on: nothing.
-
-- `RenderBuffer::DoSet()` takes an offset, with `SetRange()` to call it.
-- Each `VulkanRenderBuffer` strategy uploads only the range written.
-- Unused outside tests, so no visible change.
-
-**Verify**
-- Standard checks.
-- Unit tests, with the test backend: a range is written and the rest kept, and
-  a range past the size fails.
-- render-check's meshes still draw.
-
-### CL7 [x] render: Storage buffers
-
-Depends on: CL6.
-
-- `StorageBuffer`, `RenderSystem::CreateStorageBuffer()`, the limit, and
-  `RenderBackend::CreateStorageBuffer()`.
-- `BindingType::kStorageBuffer`: `Binding` (with `constants_type` renamed
-  `data_type`), `BindingData`, `LocalBindingData`, and saving bindings.
-- `StorageBufferChunk`, `RenderSystem::SaveStorageBuffer()`, its loader, and
-  `storage_buffer_id` in saved binding data.
-- Test backend: storage buffers on `TestRenderBuffer`.
-- Vulkan backend: fails to create storage buffers.
-
-**Verify**
-- Standard checks.
-- Unit tests: creation validates the type, count, and size limit; a new
-  buffer is zeros; `Set()` and `Get()` write and read ranges, and reject
-  ranges out of bounds and the wrong type; `Get()` fails for `kStaticWrite`;
-  binding data sets and gets a buffer, asserts on the wrong type, and lists it
-  as a dependency; a buffer saves and loads with its type, values, and the
-  volatility given; saving a `kStaticWrite` buffer fails; loading fails for an
-  unregistered type, or one whose size doesn't match; a material type with
-  the binding saves and loads it, and a material bound to a buffer saves and
-  loads with that buffer.
-
-### CL8 [x] render_vulkan: Storage buffers in Vulkan
-
-Depends on: CL6, CL7.
-
-- `VulkanBufferType::kStorage`, `CreateStorageBuffer()`, and the
-  `eStorageBuffer` descriptor.
-- Removes CL7's `ValidateBindingTypes()`, which rejects storage buffer
-  bindings, and gives `VulkanBindingData` real storage buffer cases and
-  `ValidateDataType()`.
-- `BindingData::GetRenderBuffer()`, for `VulkanBindingData` to reach a
-  storage buffer's `RenderBuffer`.
-- render-check: a storage buffer of colors, which each of a row of quads
-  indexes by an instance constant, one row for each of `kStaticReadWrite` and
-  `kPerFrame`. One color changes every second, written with a one-value
-  `Set()`.
-
-**Verify**
-- Standard checks.
-- render-check: each quad shows its own color from the buffer, and frames
-  saved a second apart differ only in the changing quad, with no validation
-  errors.
+- Unit tests in `gb_render_test` cover formats, volume textures, storage
+  buffers, partial buffer writes, and saving each of them, against the test
+  backend. `mipmaps_test.cc` covers mipmaps in every format.
+- `examples/render-check` draws what only the Vulkan backend can show, and a
+  session checks it with `tools\run-program.ps1` screenshots:
+  - A row of textures, one per format, each a gradient, mipmapped where drawn
+    small. `kR8` is red only, `kRg8` red and green, and `kRgba4` matches
+    `kRgba8` but banded.
+  - `kR8` and `kRgba4` volumes, a different pattern in each slice, sampled by a
+    quad moving through them, which blends smoothly between slices.
+  - Two rows of quads, `kStaticReadWrite` and `kPerFrame` storage buffers,
+    each quad colored from its own index. The last color changes every second,
+    so frames a second apart differ only in that quad.
+  - Keys for the texture checks a script can't click: P paints a square each
+    frame, and 1, 2, and 3 press the `kStaticWrite` buttons.

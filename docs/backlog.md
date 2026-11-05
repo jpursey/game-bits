@@ -28,14 +28,17 @@ Each item carries:
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** nothing
-- **Background:** [Code audit](worklog/code_audit.md)
+- **Background:** [Code audit](worklog/code_audit.md),
+  [Volume textures and storage buffers](worklog/volume_textures.md)
 
-Drawing with a texture binding that was never set crashes in
-`VulkanBindingData::OnRender()`. Skipping the binding would leave its
-descriptor unwritten or pointing at a deleted image, which is worse. Give the
-backend a default texture (one opaque pixel, say) that every texture binding
+Drawing with a texture, texture array, volume texture, or storage buffer
+binding that was never set crashes in `VulkanBindingData::OnRender()`.
+Skipping the binding would leave its descriptor unwritten or pointing at a
+deleted image or buffer, which is worse. Give the backend a default for each
+binding type (one opaque pixel for textures and texture arrays, one texel for
+volumes, and a small buffer of zeros for storage buffers) that every binding
 starts with and falls back to, and check it by hand in `examples/render-check`
-with a material whose texture is never set.
+with a material whose bindings are never set.
 
 ## clang-cl build
 
@@ -443,6 +446,23 @@ that need the existing contents fail:
 - Growing a `kStaticWrite` render buffer that was recently rendered fails, as
   the old values can't be read back. A device to device copy from the old
   buffer would keep them. Nothing grows one today.
+
+## Saving textures over 2 GiB
+
+- **Layers:** render
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:**
+  [Volume textures and storage buffers](worklog/volume_textures.md)
+
+`SaveTextureArrayChunk()` and `SaveVolumeTextureChunk()` put every texel in
+one FlatBuffers vector, but FlatBuffers buffers are at most 2^31-1 bytes. The
+largest texture array (`kMaxTextureArrayPixels`) or volume
+(`kMaxVolumeTextureTexels`) in a 4-byte format is 2 GiB, so saving it asserts
+in Debug and writes a corrupt size in Release. Either fail such a save with an
+error, or split the texels across several chunks, and test it with the test
+backend at the limit.
 
 ## Large GUIs across meshes
 
