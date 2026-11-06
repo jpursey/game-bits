@@ -1,8 +1,8 @@
 # Shared mesh buffers and indirect draws
 
-Today every `Mesh` owns a vertex buffer and an index buffer (two GPU
-allocations), its indices are 16 bits (`kMaxMeshVertices` is 65,535), and every
-draw is a command of its own, with instance binding data of its own. A voxel
+Every `Mesh` owns a vertex buffer and an index buffer (two GPU allocations),
+its indices are 16 bits (`kMaxMeshVertices` is 65,535), and every draw of one
+is a command of its own, with instance binding data of its own. A voxel
 world draws thousands of small meshes (Terra Diem had 4,212 chunk meshes within
 its default view distance) and rebuilds them often, from job threads, so the
 cost per mesh and per draw dominates.
@@ -312,201 +312,90 @@ virtual std::unique_ptr<MeshPoolBuffers> CreateMeshPoolBuffers(
   otherwise.
 - **Features.** `drawIndirectFirstInstance` is required, as
   `samplerAnisotropy` is: every desktop GPU has it. `multiDrawIndirect` is
-  enabled where the device has it, and a backend option turns it off, so the
-  fallback can be checked on a GPU that has it.
+  enabled where the device has it (`VulkanBackend::IsMultiDrawSupported()`),
+  and `SetMultiDrawEnabled()` turns it off and on from the next frame, from
+  any thread, so the fallback can be checked on a GPU that has it. The device's
+  name, `multiDrawIndirect`, and `maxDrawIndirectCount` are logged at startup.
 
-### Not included
+### Left out
 
-- **Compaction.** Moving meshes within a pool would change the offsets in every
-  `MeshDraw` a program keeps, so it needs a way to tell the program, or draws
-  built on the GPU. A fragmented pool can instead be rebuilt by recreating its
-  meshes in a new one, which `GetStats()` lets a program decide. This goes in
-  the backlog when the feature is complete.
-- **Draw counts from the GPU** (`drawIndexedIndirectCount()`, Vulkan 1.2), for
-  culling in a compute pass. That comes with compute shaders.
-- **Instance counts above one**, which *Instanced draws* adds.
 - **`Mesh` on pools.** `Mesh` keeps its own buffers. Moving it onto pools would
   change its editing (`MeshView`) and volatility, for no gain to its callers.
+- **Instance counts above one** come with the backlog's *Instanced draws*.
+- **Compaction** and **draw counts from the GPU** are in the backlog: *Mesh pool
+  compaction* and *Indirect draw counts from the GPU*.
 
-### To confirm
+## Structure
 
-- Confirmed (CL6): `gl_InstanceIndex` includes `first_instance` in indirect
-  draws, and in the fallback without multi-draw.
-- Confirmed (CL6): the device in use (an NVIDIA GeForce RTX 4070 Ti SUPER) has
-  `drawIndirectFirstInstance` and `multiDrawIndirect`, with a
-  `maxDrawIndirectCount` of 2^32 - 1.
-- Confirmed (CL7): in block-world, drawing every chunk from one pool with an
-  indirect draw is faster than drawing each chunk on its own. It takes under a
-  third of the CPU time to draw a frame at the default view distance, and
-  about a fifth at the farthest (see CL7).
+- `gb/container/range_packer.h` / `.cc`: `RangePacker`.
+- `gb/render/render_types.h`: `IndexType` and `MeshDraw`.
+- `gb/render/mesh_pool.h` / `.cc`: `MeshPool`, `PooledMesh`, and
+  `MeshPoolStats`, created by `RenderSystem::CreateMeshPool()`.
+- `gb/render/mesh_pool_buffers.h`: `MeshPoolBuffers`, the backend's half, from
+  `RenderBackend::CreateMeshPoolBuffers()`.
+- `gb/render/draw_list.h` / `.cc`: `SetMeshPool()`, `Draw(const MeshDraw&)`, and
+  `DrawIndirect()`, recorded as `DrawCommand`'s `kMeshPool` and `kIndirect`.
+- `gb/render/test_mesh_pool_buffers.h` / `.cc`: the test backend's buffers,
+  whose reuse the tests control by frame.
+- `gb/render/vulkan/vulkan_mesh_pool_buffers.h` / `.cc`: uploads, growth, and
+  reuse in Vulkan; `vulkan_backend.cc` draws pools and indirect draws, and
+  `vulkan_render_buffer.cc` gives storage buffers `eIndirectBuffer` usage.
 
-## CLs
+Reusable pieces: `RangePacker` for any space handed out in ranges (offsets
+only, never memory), mesh pools for any program drawing many meshes of one
+vertex type, and a per-frame storage buffer of `MeshDraw` values with
+per-draw data by `first_instance`, as block-world uses, for drawing them all at
+once.
 
-Each `gb_render` CL changes the backend interface, so it also gives the Vulkan
-backend just enough to build (failing to create what it can't yet), and the
-next CL implements it there and checks it by hand in `examples/render-check`.
+## Checks
 
-### CL1 [x] container: RangePacker
+- `gb_container_test`: `RangePacker`'s best fit (the smallest gap that fits,
+  and the lowest offset of equal gaps), merging a removed range with the gaps
+  on either side, filling the capacity then failing, growth, the counts and
+  largest gap after each change, and a randomized run against a flag per
+  offset.
+- `gb_render_test`:
+  - Mesh pools: data reaching the test buffers when the frame ends, `GetDraw()`
+    offsets for whole meshes and ranges, the wrong vertex or index type,
+    `kMaxMeshVertices` in 16-bit and 32-bit pools, reuse only once the buffers
+    accept a ticket, growth keeping every mesh's offsets, stats, destroying
+    the pool first (a death test), and meshes created and destroyed on several
+    threads while frames end on another.
+  - Draw lists: the commands recorded for pools, ranges and indirect draws;
+    switching between a mesh and a pool; and the asserts for a material of
+    another vertex type, a mesh draw with a pool and a range with a mesh, an
+    indirect draw without a pool or instance data, a storage buffer of
+    another type, and a range past its end.
+- `examples/render-check`, `scripts/mesh_pools.txt`: a row of shapes from one
+  32-bit pool, one drawn as two ranges in two colors by `first_instance`, and
+  below it the same shapes in one indirect draw, while a shape is replaced
+  every frame (so the pool's reuse and growth run), with multi-draw on and off.
+  The rows match, and the validation layer logs no errors.
+- `examples/block-world`, `scripts/chunk_pool.txt`: every chunk in view drawn
+  from one 32-bit pool in one indirect draw, with each chunk's position in a
+  per-frame storage buffer by draw index, and drawn each on its own the old way
+  (I switches between them). Both draw the world pixel for pixel the same, at
+  the default and the farthest view distance, and the validation layer logs no
+  errors, including when the draw buffers grow.
 
-Depends on: nothing.
+## Results
 
-- `RangePacker`, in `gb_container`.
-- Unused, so no visible change.
+The device used (an NVIDIA GeForce RTX 4070 Ti SUPER) has
+`drawIndirectFirstInstance` and `multiDrawIndirect`, with a
+`maxDrawIndirectCount` of 2^32 - 1. `gl_InstanceIndex` includes
+`first_instance` in indirect draws, with multi-draw and without.
 
-**Verify**
-- Standard checks (see CLAUDE.md).
-- Unit tests: best fit picks the smallest gap that fits, and the lowest offset
-  of equal gaps; removing a range merges it with the gap on either side, or
-  both; filling the capacity, then failing; growth adds a gap, merged with a
-  gap at the end; the counts and largest gap follow each change; a randomized
-  run against a simple model (a flag per offset) agrees after every step.
+In block-world (Release), the real time between frames is the display's 10 ms
+(100 Hz, FIFO present) either way, so the CPU time to draw a frame (from after
+`BeginFrame()` to after `EndFrame()`, shown in its "Draw Time" window) is what
+differs. Each is the median of 60 frames, over three runs:
 
-### CL2 [x] render: Mesh pools
+| View distance | Chunks | Draw calls | From the pool | Each on its own |
+|---|---|---|---|---|
+| 640 (default) | 1,272 | 1 / 1,272 | 0.29-0.35 ms | 1.08-1.09 ms |
+| 1200 (farthest) | 4,315 | 1 / 4,315 | 0.72-0.81 ms | 3.67-4.21 ms |
 
-Depends on: CL1.
-
-- `IndexType`, `MeshDraw`, `MeshPool`, `PooledMesh`, `MeshPoolStats`, and
-  `RenderSystem::CreateMeshPool()`.
-- `RenderBackend::CreateMeshPoolBuffers()`, with `MeshPoolBuffers` (including
-  its reuse tickets).
-- Test backend: `TestMeshPoolBuffers`, with a frame counter and a configurable
-  number of frames before reuse.
-- Vulkan backend: `CreateMeshPoolBuffers()` returning null.
-
-**Verify**
-- Standard checks.
-- Unit tests: a mesh's vertices and indices reach the test buffers when the
-  frame ends; `GetDraw()` offsets for whole meshes and ranges; the wrong
-  vertex or index type fails; more than `kMaxMeshVertices` vertices fail in a
-  16-bit pool and succeed in a 32-bit one; a destroyed mesh's space isn't
-  reused until the buffers accept its ticket, and is after; a full pool grows, keeping every mesh's offsets; stats follow each
-  change; destroying the pool before a mesh fails a `CHECK` (a death test);
-  meshes created and destroyed from several threads at once, with frames
-  ending on another, end with every live mesh's data intact and the stats
-  consistent.
-
-### CL3 [x] render: Drawing pools and ranges
-
-Depends on: CL2.
-
-- `DrawList::SetMeshPool()` and `Draw(const MeshDraw&)`, with `kMeshPool`, and
-  `DrawCommand::Draw`'s `first_instance` and 32-bit `vertex_offset` (so
-  `DrawPartial()` bounds `first_vertex` by the mesh's vertex capacity).
-- Vulkan backend: the wider `vertex_offset` and `first_instance` in its
-  existing draws, and `kMeshPool` ignored (no pool can be created yet).
-
-**Verify**
-- Standard checks.
-- Unit tests: the commands recorded for a pool and its draws; switching between
-  a mesh and a pool; a material of another vertex type asserts; `Draw()` with a
-  pool, and `Draw(const MeshDraw&)` with a mesh, assert.
-
-### CL4 [x] render_vulkan: Mesh pools in Vulkan
-
-Depends on: CL3.
-
-- `VulkanMeshPoolBuffers`: staging blocks, the upload queue, growth, reuse
-  tickets, and its part of `EndFrame()`.
-- Drawing `kMeshPool` and `MeshDraw` ranges, binding the index type. The draw
-  loop tracks the `vk::Buffer` handles to bind, rather than the
-  `VulkanRenderBuffer`s, so a mesh and a pool share the tracking.
-- render-check: a row of shapes from one 32-bit pool, one of them drawn as two
-  ranges (its halves in different colors, by `first_instance` into a storage
-  buffer of colors), and a check box (and key) that replaces one shape every
-  frame (creating the new one, destroying the old one), so the pool's reuse and
-  growth run. Its script is `scripts/mesh_pools.txt`.
-
-**Verify**
-- Standard checks.
-- render-check, run with `tools\run-program.ps1`: the shapes draw correctly
-  before and after replacing them for a few seconds, with no validation errors
-  in the log.
-
-### CL5 [x] render: Indirect draws
-
-Depends on: CL3.
-
-- `DrawList::DrawIndirect()`, with `kIndirect`.
-- Vulkan backend: `kIndirect` ignored.
-
-**Verify**
-- Standard checks.
-- Unit tests: the commands recorded; a storage buffer of another type, or a
-  range past its end, asserts; `DrawIndirect()` without a pool asserts.
-
-### CL6 [x] render_vulkan: Indirect draws in Vulkan
-
-Depends on: CL4, CL5.
-
-- `eIndirectBuffer` usage on storage buffers, the device features, the backend
-  option to turn off multi-draw, and drawing `kIndirect`.
-- The multi-draw option is `VulkanBackend::SetMultiDrawEnabled()`, which
-  takes effect from the next frame, so render-check can toggle it.
-- render-check: the row of CL4's shapes drawn again in one indirect draw, from
-  a storage buffer of `MeshDraw` values, each with its own color by
-  `first_instance`, and a check box (and key) that turns multi-draw off and on.
-  The pool's vertex shader adds the instance's offset, which moves the
-  indirect row below the other. `scripts/mesh_pools.txt` also saves frames
-  without multi-draw, and `scripts/gui.txt` collapses the taller Mesh pools
-  section to keep the log in the window.
-
-**Verify**
-- Standard checks.
-- render-check, run with `tools\run-program.ps1`: the indirect row matches the
-  direct one, with multi-draw on and off, with no validation errors in the log.
-- The device's features are logged at startup, confirming both features.
-
-### CL7 [x] block-world: Chunks in a pool
-
-Depends on: CL6.
-
-- Chunk meshes allocated from one 32-bit pool (one mesh per chunk, as the
-  16-bit split is no longer needed), and every visible chunk drawn in one
-  indirect draw, with chunk positions in a storage buffer by draw index.
-- A key that switches between that and drawing each chunk on its own.
-- The positions are a `kPerFrame` storage buffer in the scene's bindings, read
-  by a new vertex shader (`block_pool.vert`), and the draws another, both
-  rewritten each frame for the chunks in view, and replaced by larger ones when
-  more chunks are in view than they hold. Switching rebuilds each chunk's mesh
-  as it is next drawn.
-- Drawing each chunk on its own keeps block-world's old meshes (a vertex and
-  index buffer, and instance data, for each chunk), rather than drawing ranges
-  of the pool one at a time, so the comparison is with what the pool replaces.
-- The key is I, with a check box in "World Render Stats", which also shows the
-  draw calls. A "Draw Time" window shows the CPU time to draw a frame (from
-  after `BeginFrame()` to after `EndFrame()`, leaving out waits for the
-  display), the median of the last 60 frames.
-- `Chunk::Update()` builds an edited chunk's mesh once, rather than twice.
-- `block.vert` writes its position as the `vec3` that `block.frag` reads,
-  rather than a `vec4`, which the validation layer reported in every Debug run.
-- Each chunk's mesh is built with 32-bit indices, which drawing on its own
-  splits into 16-bit meshes as before, now also taking only the remaining
-  vertices and triangles for a mesh after the first.
-- `scripts/chunk_pool.txt` draws the same view both ways, at the default and
-  the farthest view distance.
-
-**Verify**
-- Standard checks.
-- block-world, run with `tools\run-program.ps1`: the world looks the same both
-  ways.
-- Performance: frame time (and draw calls) both ways in Release, at the default
-  view distance, recorded here.
-
-**Results** (Release, RTX 4070 Ti SUPER, three runs of `chunk_pool.txt`)
-- Block edits, which rebuild a chunk's mesh, are left to check by hand: a
-  pilot click on the ground doesn't hit a block (the ray cast reports air
-  below the ground), which is unrelated to this change.
-- The world is drawn pixel for pixel the same both ways, at both distances,
-  and the Debug runs (with the validation layer) log no errors, including when
-  the draw buffers grow.
-- The real time between frames is the display's 10 ms (100 Hz, FIFO present)
-  either way, even at the farthest view distance, so the CPU time to draw a
-  frame is what differs:
-
-  | View distance | Chunks | Draw calls | Pool | Each on its own |
-  |---|---|---|---|---|
-  | 640 (default) | 1,272 | 1 / 1,272 | 0.29-0.35 ms | 1.08-1.09 ms |
-  | 1200 (farthest) | 4,315 | 1 / 4,315 | 0.72-0.81 ms | 3.67-4.21 ms |
-
-  Each is the median of 60 frames. The mean was thrown off by single frames
-  held up by other work on the machine, by up to 9 ms.
+Drawing from the pool takes under a third of the CPU time at the default view
+distance, and about a fifth at the farthest. Drawing each chunk on its own
+keeps block-world's old meshes (a vertex and index buffer, and instance data,
+for each chunk), so the comparison is with what the pool replaces.

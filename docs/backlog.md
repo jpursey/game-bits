@@ -277,9 +277,46 @@ Drawing one mesh many times (grass, flowers, rocks, props) takes a draw per
 copy today, each with instance binding data of its own. Add draws of a mesh
 many times in one call, with per-instance attributes from a second vertex
 stream (a vertex type read once per instance), so a program can draw thousands
-of small decorations at once. Once *Shared mesh buffers and indirect draws* is
-done, its indirect draws take an instance count too. Check by hand in
-`examples/render-check` with a field of instanced quads.
+of small decorations at once. Draws from a mesh pool take an instance count
+too: `DrawList::Draw(const MeshDraw&)` asserts a `MeshDraw` has one instance
+today, and indirect draws pass whatever count each `MeshDraw` holds. Check by
+hand in `examples/render-check` with a field of instanced quads.
+
+## Mesh pool compaction
+
+- **Layers:** render, render_vulkan
+- **Size:** medium
+- **Feature workflow:** yes
+- **Depends on:** nothing
+- **Background:** [Shared mesh buffers and indirect
+  draws](worklog/shared_mesh_buffers.md)
+
+A `MeshPool` never moves a mesh, so creating and destroying meshes of many
+sizes leaves its free space in ranges too small to use, and the pool grows
+instead. `MeshPool::GetStats()` shows how fragmented it is, and a program can
+rebuild a fragmented pool by recreating its meshes in a new one. Moving meshes
+within the pool instead (on the GPU, between frames) would change the offsets
+in every `MeshDraw` a program keeps, so the pool would need to tell the
+program which meshes moved, or the draws would need to be built on the GPU
+from the meshes' current offsets. Measure how fragmented a pool gets in real
+use (such as a voxel world rebuilding its chunks) before choosing.
+
+## Indirect draw counts from the GPU
+
+- **Layers:** render, render_vulkan
+- **Size:** medium
+- **Feature workflow:** yes
+- **Depends on:** nothing
+- **Background:** [Shared mesh buffers and indirect
+  draws](worklog/shared_mesh_buffers.md)
+
+`DrawList::DrawIndirect()` draws a count of `MeshDraw` values the program
+gives on the CPU. Culling on the GPU (a compute pass that writes only the
+visible chunks' draws) needs the count to come from a buffer the GPU writes
+too: `drawIndexedIndirectCount()` (Vulkan 1.2). That needs compute passes,
+which Game Bits doesn't have yet, so it starts with them: a compute shader
+type, binding storage buffers it writes, and the barriers between it and the
+draws that read them.
 
 ## Job priorities and cancellation
 
@@ -553,6 +590,44 @@ relative mouse mode and moving the cursor back on release
 real cursor, so a script that right-clicks in play would capture and move the
 user's mouse. Under a pilot, turn the camera from the mouse motion events alone,
 without relative mode or moving the cursor.
+
+## Block-world clicks miss the ground
+
+- **Layers:** block-world
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Shared mesh buffers and indirect
+  draws](worklog/shared_mesh_buffers.md)
+
+A pilot click on the ground near the bottom of block-world's view, well
+within the 50 block reach, adds no block: `World::RayCast()` returns air at a
+point below the visible ground, such as (23, 55, 96) from a camera at
+(10, 10, 114) with the ground 10 blocks below it. Either the ray from
+`Camera::CreateScreenRay()` doesn't match what is drawn at that pixel, or the
+ray cast misses blocks it passes through. Find which, fix it, and add a block
+edit to `scripts/chunk_pool.txt` (as a click on the ground), which today
+leaves rebuilding an edited chunk's mesh to be checked by hand.
+
+## Block-world chunk pool stats and memory
+
+- **Layers:** block-world
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Shared mesh buffers and indirect
+  draws](worklog/shared_mesh_buffers.md)
+
+Two loose ends of drawing block-world's chunks from a mesh pool:
+- "World Render Stats" counts the indirect draw as one draw call. On a GPU
+  without `multiDrawIndirect`, the Vulkan backend makes it one call per chunk,
+  so the count is wrong there. Show the calls the backend makes (from
+  `VulkanBackend::IsMultiDrawSupported()`), or label the count as draw
+  commands.
+- Switching to drawing each chunk on its own destroys the pooled meshes but
+  keeps the pool's buffers at their grown size (hundreds of MB after the
+  farthest view), as a pool never shrinks. Create a new pool when switching
+  back instead, and release the old one.
 
 ## Pilot scripts with a byte order mark
 
