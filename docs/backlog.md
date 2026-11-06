@@ -611,6 +611,53 @@ and Visual Studio's "UTF-8 with signature"). The error is at line 1, column 1,
 which doesn't say why. Skip a leading byte order mark, as `gb_file` leaves it in
 the text it reads.
 
+## Pilot clicks on a scaled display
+
+- **Layers:** pilot_sdl, imgui
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Scripted runs](worklog/scripted_runs.md)
+
+A pilot's mouse positions are in window pixels, the pixels of its saved frames,
+so a click at a point seen in a frame lands on what is drawn there. That is
+confirmed on a display at 100%, where SDL's window coordinates and the frame's
+pixels are the same. Check it on a display scaled above 100% (render-check's
+scripts click by label, so they show it), and if SDL's coordinates differ
+there, convert between them in `PilotSdl`.
+
+## Pilot window resizing and polled mouse
+
+- **Layers:** pilot, pilot_script, pilot_sdl
+- **Size:** medium
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Scripted runs](worklog/scripted_runs.md)
+
+No pilot step resizes the window, so render-check's resizing checks are still
+done by hand. A `resize <width> <height>` step would set the window's size
+through `PilotSdl`, and the frames after it would be saved at the new size.
+Separately, a program that polls the mouse (`SDL_GetMouseState()`) rather than
+reading events still sees the real one, as SDL keeps that state itself; only
+ImGui, through `ImGuiInstance`, reads the pilot's mouse. Programs read mouse
+input from events until something needs polling.
+
+## Pilot steps from a running session
+
+- **Layers:** pilot, pilot_script
+- **Size:** medium
+- **Feature workflow:** yes
+- **Depends on:** nothing
+- **Background:** [Scripted runs](worklog/scripted_runs.md)
+
+A script is fixed when a run starts, so a session that wants to look at a frame
+before choosing the next step runs the script again with the step added, which
+works as runs are repeatable. Steps read from a pipe, with results written
+back, would let a session drive one run step by step. `StepPilot` already takes
+steps from anywhere, and more while it runs, so a pipe is another source of
+steps. It needs an option to wait for more steps, rather than being done when
+they run out.
+
 ## Deterministic concurrency tests
 
 - **Layers:** game, job, message, resource

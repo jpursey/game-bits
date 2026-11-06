@@ -9,11 +9,14 @@ ImGui items by their labels, and saves exact frames as PNGs read back from the
 renderer, which works with the window hidden. When the script ends the program
 exits normally, and its exit code and log say whether every step passed.
 
-`tools/run-program.ps1` drives programs from outside today, posting key
-messages to the window and capturing it with `PrintWindow()`. That can't use
-the mouse, waits in seconds rather than frames, can't see what the program is
-doing, and needs the window on screen. This replaces its stepping. The script
-is left only to launch the program, catch a hang, and collect what it saved.
+Driving a program from outside, by posting key messages to its window and
+capturing it with `PrintWindow()`, can't use the mouse, waits in seconds rather
+than frames, can't see what the program is doing, and needs the window on
+screen. So `tools/run-program.ps1` no longer does: it launches the program with
+a script, catches a hang, and reports what it saved.
+
+render-check and block-world both run scripts, in
+`examples/render-check/scripts/` and `examples/block-world/scripts/`.
 
 ## Behavior
 
@@ -41,11 +44,21 @@ bool Run(gb::ValidatedContext& context, const gb::CliCommandLine& line) {
   if (!pilot.ok()) {
     return false;
   }
-  ...
   RenderCheck game;
-  return game.Run(gb::ContextBuilder().SetOwned(*std::move(pilot)).Build(),
+  return game.Run(gb::ContextBuilder()
+                      .SetParent(context)
+                      .SetOwned(*std::move(pilot))
+                      .Build(),
                   {});
 }
+
+// main(): paths on the command line are opened as the OS opens them.
+gb::FileSystem file_system;
+file_system.Register(gb::LocalFileProtocol::CreateOsRoot());
+file_system.SetDefaultProtocol("file");
+gb::Context context;
+context.SetPtr<gb::FileSystem>(&file_system);
+return gb::RunCommandLine(&context, &kProgram, gb::GetMainArgs(argc, argv));
 
 // Game::Init(): after creating the window, if there is a pilot.
 pilot_sdl_ = gb::PilotSdl::Create(pilot, window_);
@@ -150,8 +163,10 @@ expect error "cannot be edited" 10  # Errors with this text pass, for 10 frames
 
 The script launches the program with `--pilot <script> --pilot-output
 out\run\<program>`, waits for it to exit, and fails if it exits with an error
-code or runs longer than `-TimeoutSecs`, saving every thread's stack first, as
-today. The frames and the log are in `out\run\<program>\`.
+code or runs longer than `-TimeoutSecs` (60), saving every thread's stack first.
+The frames and the log are in `out\run\<program>\`, and it prints the frames
+saved, the log's errors, and the run's summary. `-Steps` takes a script inline,
+with `;` between steps, and `-Arguments` the program's other flags.
 
 ## Design
 
@@ -331,7 +346,7 @@ class Pilot {
   (`SDL_GetScancodeFromName()`), the names a reader of the script knows.
 - **Command values** are passed as the text written in the script
   (`absl::Span<const std::string>`), which the runner already holds, and each
-  command converts what it needs. A typed value is a backlog item.
+  command converts what it needs (backlog: *Typed values in gb_base*).
 - **Delta time:** `GetDeltaTime()` is the game time each frame stands for.
   `Game` passes it to `Update()` as `delta_time` in place of the time it
   measured, and ImGui takes it as `io.DeltaTime`, so a run is the same however
@@ -696,7 +711,7 @@ virtual std::unique_ptr<Image> EndFrameAndReadImage(RenderInternal) = 0;
   `io.DeltaTime` from the delta time. It also clears `io.IniFilename`, so a
   run's window layout doesn't depend on earlier runs or change later ones. The SDL backend reads the real cursor
   in `ImGui_ImplSDL2_NewFrame()`, so this replaces what it read, and programs
-  call both as they do today.
+  call both as they would without a pilot.
 - `gb_imconfig.h` defines `IMGUI_ENABLE_TEST_ENGINE`, and `gb_imgui`
   implements its hooks (`ImGuiTestEngineHook_ItemAdd()` and `ItemInfo()`,
   which ImGui calls for every item with its rectangle and label). With an
@@ -753,351 +768,94 @@ the next frame begins.
 
 ### Session tools
 
-`tools/run-program.ps1` loses its key and screenshot steps. It takes
-`-Script` (or `-Steps`, a script written inline with `;` between steps, saved
-to `out\run\<program>\steps.txt`), launches the program with the pilot
-flags, and keeps its hang detection and stack dump, now on a run timeout.
-CLAUDE.md's "Run an example" says so.
+`tools/run-program.ps1` takes `-Script`, or `-Steps` (a script written inline
+with `;` between steps, saved to `steps.txt` in the output folder), and with
+neither saves one frame from a hidden window. It launches the program with the
+pilot flags and any `-Arguments`, and its hang detection and stack dump work on
+a run timeout. It lists only the frames this run saved, leaving any from
+earlier runs, and prints the log's errors and the pilot's summary.
+CLAUDE.md's "Run an example" says how a session uses it.
 
-### Left out
+### Programs
 
-- **Steps over a pipe**, which a session would write to and read results
-  from. Runs are repeatable, so a session that wants to look at a frame
-  before choosing the next step can run the script again with the step
-  added. `StepPilot` takes steps from anywhere, and more while it runs, so a
-  pipe can be added later as a source of steps. It would need an option to
-  wait for more steps rather than be done when they run out.
-- **Resizing the window** from a step, and polled mouse state
-  (`SDL_GetMouseState()`) for programs other than ImGui.
+- **render-check** runs on `gb::Game`, so its frames follow the pilot. Its
+  storage buffer colors change by game time, and a check whose result isn't
+  as expected logs an error, which fails a run. Its `gui_under_limit`
+  condition holds unless the GUI is being kept over its vertex limit. One
+  script per part of the panel presses its buttons and check boxes by label,
+  collapsing the sections above to bring each into the window.
+- **block-world** takes `--state` (TitleState by default) beside the pilot
+  flags. With a pilot, `World::Draw()` builds every chunk mesh in view in the
+  frame it is first drawn, rather than for 10 ms of real time a frame, so what
+  is drawn doesn't depend on the machine. It leaves loading its window layout
+  to ImGui's first frame, which `ImGuiInstance` stops under a pilot.
 
-### To confirm
+### Confirmed
 
-- Confirmed in CL9, by render-check saving frames through a `StepPilot`:
-  Vulkan keeps presenting to a window hidden with `SDL_HideWindow()`, at its
+- Vulkan keeps presenting to a window hidden with `SDL_HideWindow()`, at its
   size, and the surface supports `eTransferSrc` swap chain images on this GPU.
-- Confirmed in CL5, by `gb_pilot_sdl`'s tests: `SDL_PeepEvents(SDL_ADDEVENT)`
-  skips the event filter in SDL 2.0.10, and writing SDL's key state array
-  works.
-- Confirmed in CL13, by render-check's scripts clicking items by label: mouse
-  coordinates in SDL window pixels match the saved frame's pixels on a display
-  at 100%. Still to confirm on a display scaled above 100%.
-- Confirmed in CL6, by `gb_pilot_script`'s tests: the step grammar holds in
-  `gb_parse`, with `wait for` beside `wait`, `click`'s optional forms, and
-  `run`'s values stopping at the line break.
+  Frames read back match `PrintWindow()` screenshots of the same frames.
+- `SDL_PeepEvents(SDL_ADDEVENT)` skips the event filter in SDL 2.0.10, and
+  writing SDL's key state array works.
+- Mouse coordinates in SDL window pixels match the saved frame's pixels on a
+  display at 100%, as render-check's scripts click items by label. A display
+  scaled above 100% is still to check (backlog: *Pilot clicks on a scaled
+  display*).
+- The step grammar holds in `gb_parse`, with `wait for` beside `wait`,
+  `click`'s optional forms, and `run`'s values stopping at the line break.
+- ImGui 1.84 reads the mouse once a frame, so a release followed by another
+  press in the same frame is missed. This is why each release has a frame to
+  itself.
 
-## CLs
+### Building blocks
 
-The interface comes first, then `StepPilot` beside it (CL3), then the tier 1
-libraries that take part (CL4 and CL5), then tier 2: script files (CL6 and
-CL7), and the render system and GUI (CL8 to CL10). Each library that takes
-part is tested against `FakePilot`, so after CL2 they can be built in any
-order. Expected errors (CL11) and held keys and clicks (CL12) were added once
-render-check's scripts needed them.
+Pieces other features can use:
+- `SaveImage()` (`gb_image`), writing an image as a PNG to a file system or
+  file.
+- `StepPilot`, to drive a program from code with steps it builds, such as a
+  program's own tests of its drawing, with no script file.
+- `Pilot` and `PilotHandle`, for a new way of deciding each frame's input
+  (a pilot that reacts to what it sees, or steps from a pipe), and
+  `FakePilot` for tests of code that takes part.
+- `RenderBackend::EndFrameAndReadImage()`, reading back the presented frame,
+  which any screenshot feature can use.
+- `PilotSdl`'s event filter and injected events, for giving an SDL program
+  input it didn't get from the user.
+- `ImGuiInstance`'s item finder (ImGui's test engine hooks), which finds a
+  drawn item's place by its label.
+- Steps convert to the text that reads back as them, so a logged step can be
+  pasted into a script.
+- `tools/run-program.ps1` and `tools/dump-stacks.ps1`, for running any program
+  that takes the pilot flags, and for finding where any program is stuck.
 
-### CL1 [x] stb, image: Save PNGs
+## Checks
 
-Depends on: nothing.
-
-- `src/stb`: an `stb_image_write` library, from the `stb` submodule already
-  in `third_party`.
-- `gb_image`: `SaveImage(FileSystem*, filename, const ImageView&)` and
-  `SaveImage(File*, const ImageView&)`, writing a PNG.
-- Unused, so no visible change.
-
-**Verify**
-- Standard checks (see CLAUDE.md).
-- Unit tests: an image saved to a memory file system loads back with the same
-  pixels; saving to a file that can't be written fails.
-
-### CL2 [x] pilot: The interface, and a fake
-
-Depends on: nothing.
-
-- New `gb_pilot` library: `Pilot`, `PilotInput` and its events, `PilotMouse`,
-  and `PilotHandle`, with the registries of commands, conditions, and item
-  finders, and `FakePilot`.
-- `pilot.h` documents what a piloted program must do (Taking part in a run),
-  and what an implementation must give (Implementing a pilot).
-- Unused, so no visible change.
-
-**Verify**
-- Standard checks.
-- Unit tests, through `FakePilot`: commands run with their values, and a
-  missing one fails; conditions likewise; a name registered twice logs an
-  error; item finders are asked in turn, and a label two of them find is
-  ambiguous; destroying a handle removes what it registered, and a callback
-  can remove registrations (its own included) while it runs; unpaired
-  `BeginFrame()` and `EndFrame()`, and saving a frame not being saved or
-  twice, fail their `DCHECK` (death tests, in Debug).
-
-### CL3 [x] pilot: Steps from code
-
-Depends on: CL2.
-
-- `gb_pilot`: `PilotStep` and its steps, and `StepPilot`: frames, input,
-  commands, conditions, waits and timeouts, clicks on items, saving frames
-  through `save_frame`, failures (with the log sink), the step log, and the
-  summary.
-- Unused, so no visible change.
-
-**Verify**
-- Standard checks.
-- Unit tests, driving frames by hand as a program would: input by frame for
-  each step; commands with values, a missing command, a failing command;
-  `wait for` that passes and that times out; `expect`; a click at the place
-  an item finder gives, and at a missing or ambiguous label; `save` giving
-  `save_frame` the next frame drawn, and failing with no saver, when the
-  saver fails, and when no frame is drawn; steps added while running,
-  including by a command; done after the last step; an error logged from
-  another thread failing the run; the key names of every step added.
-
-### CL4 [x] game: Run frames for the pilot
-
-Depends on: CL2.
-
-- `Game`: `kConstraintPilot`, the fixed time step, no sleeping,
-  `BeginFrame()` and `EndFrame()` around `Update()`, stopping when done, and
-  `Run()` returning false on failure.
-
-**Verify**
-- Standard checks.
-- Unit tests, with `FakePilot` and a `FakeClock` that would fail the test
-  if slept on: every `delta_time` is the pilot's; the game stops when the
-  pilot is done; `Run()` returns false when it failed, and true
-  otherwise; without a pilot, nothing changes.
-
-### CL5 [x] pilot_sdl: Input through SDL
-
-Depends on: CL2.
-
-- `gb_pilot`: `AddFrameListener()`, so `PilotSdl` learns when each frame
-  begins.
-- New `gb_pilot_sdl` library: `PilotSdl`, with the event filter, the
-  injected events, key and modifier state, and `hide window`.
-
-**Verify**
-- Standard checks.
-- Unit tests, with `FakePilot` and SDL's events subsystem alone (no
-  video, so no window): each kind of input arrives as the right SDL events in
-  its frame; pushed real input is dropped; quit events pass;
-  `SDL_GetKeyboardState()` and `SDL_GetModState()` match the input given; an
-  unknown key name fails `Create()`.
-- Unit tests, with `FakePilot`: `BeginFrame()` calls frame listeners in order
-  once the frame's input is set; a listener can add and remove listeners.
-- Can't be unit tested: hiding the window, which needs SDL's video subsystem
-  and a window on screen. CL13 checks it.
-
-### CL6 [x] pilot_script: Read scripts
-
-Depends on: CL3.
-
-- New `gb_pilot_script` library: `PilotScript` and `ReadPilotScript()`, which
-  reads a script into `PilotStep`s with a `ParserProgram` and the script
-  grammar, with errors by line and column.
-- `gb_pilot`: steps convert to text that reads back as the same step.
-- Unused, so no visible change.
-
-**Verify**
-- Standard checks.
-- Unit tests: every step and its values, including `click`'s forms and `run`
-  with no values and with several; comments, blank lines, CRLF line breaks,
-  and a last step with no line break after it; quoted and integer names,
-  labels, window-qualified labels, and string escapes; `hide window` at the
-  top, and failing after another step; a step that doesn't match, an unknown
-  step, a step with values missing or left over, negative frames, and bad
-  tokens, each failing with its position; steps from code read back from
-  their text.
-
-### CL7 [x] pilot_script: Scripts from the command line
-
-Depends on: CL1, CL6.
-
-- `gb_pilot_script`: `cli_pilot.h`, with `kCliPilotScript`, `kCliPilotOutput`,
-  and `CreateCliPilot()`, with its frame saver writing PNGs.
-- Unused, so no visible change.
-
-**Verify**
-- Standard checks.
-- Unit tests, with a memory file system: no `--pilot` gives null; a context
-  without a file system fails; a missing script fails parsing; a script with errors gives an error, logged; a script
-  runs through the pilot created, driven frame by frame, hiding the window,
-  and its `save` steps write `<output>/<name>.png`, which load back as the
-  frame given, in `out/pilot` by default; a frame that can't be written fails
-  the run.
-
-### CL8 [x] render: Save frames
-
-Depends on: CL2.
-
-- `RenderBackend::EndFrameAndReadImage()`, and `RenderSystem::EndFrame()`
-  saving for the pilot in its context.
-- `TestRenderBackend` returns a frame of the clear color.
-- `VulkanBackend` gets a stub returning null, so it builds; CL9 does the real
-  one.
-- `gb_pilot`: `IsSavingFrame()` is false outside a frame and once the frame
-  is saved, so every caller saves at most once a frame.
-
-**Verify**
-- Standard checks.
-- Unit tests, with `FakePilot`: `EndFrame()` reads nothing without a pilot,
-  or unless the pilot is saving; the pilot is given the frame it asked for,
-  at its size and in the clear color, and only that frame, and the first of
-  two drawn in a pilot frame; a frame that can't be read isn't given to it.
-- `gb_pilot`: `IsSavingFrame()` is false outside a frame and once saved.
-
-### CL9 [x] render_vulkan: Read back presented frames
-
-Depends on: CL8.
-
-- `VulkanBackend`: transfer source swap chain images, the copy, the wait, and
-  the format conversion.
-
-**Verify**
-- Standard checks.
-- Can't be unit tested: checked with render-check, by temporary code that
-  puts a `StepPilot` with save steps in its render system's context and
-  calls the pilot's `BeginFrame()` and `EndFrame()` around each frame, run
-  with `run-program.ps1` and its saved frames compared with its
-  `PrintWindow()` screenshot, with the window shown and hidden, and with the
-  validation layer reporting no errors. Removed before review.
-
-### CL10 [x] imgui: Mouse, time, and items from the pilot
-
-Depends on: CL2.
-
-- `ImGuiInstance`: the new frame hook, the test engine hooks, and the item
-  finder.
-- `gb_imconfig.h`: `IMGUI_ENABLE_TEST_ENGINE`.
-
-**Verify**
-- Standard checks.
-- Unit tests, with `FakePilot` and the test render backend: the item
-  finder gives the centers of a button and a check box drawn in the last
-  frame; a missing label fails, and so does one used in two windows unless
-  qualified by its window; the fake's mouse, pressed there, presses the
-  button and toggles the check box; `io.DeltaTime` is the pilot's delta time; without
-  a pilot the test engine hooks are off.
-
-### CL11 [x] pilot, pilot_script: Expected errors
-
-Depends on: CL3, CL6.
-
-- `gb_pilot`: `PilotExpectErrorStep`, and `StepPilot` keeping the errors
-  logged so it can match them to expected ones (see Expected errors).
-- `gb_pilot_script`: the `expect error` step.
-- Unused, so no visible change.
-
-**Verify**
-- Standard checks.
-- Unit tests: an expected error logged after the step, in its frame or a
-  later one within its frames, passes, as do several; one logged before the
-  step, after its frames, or with other text fails the run, as does none
-  being logged in its frames or before the run ends; several expectations at
-  once; errors from another thread; the step reads back from its text, and a
-  script reads it with and without frames, beside a condition named `error`.
-
-### CL12 [x] pilot, pilot_script: Held keys and clicks
-
-Depends on: CL3, CL6.
-
-- `gb_pilot`: `PilotKeyStep` and `PilotMouseClickStep` take the frames they
-  are held for, and release in a frame with no other input. `PilotHoldStep`
-  is removed, as a key step held for its frames replaces it.
-- `gb_pilot_script`: `key` and `click` take `for <frames>`, and `hold` is
-  removed.
-- Found by render-check's first scripts: two clicks in a row both did nothing,
-  as ImGui 1.84 reads the mouse once a frame, and saw the second press in the
-  frame of the first release.
-
-**Verify**
-- Standard checks.
-- Unit tests: a key or click held for its frames, and for at least one; two
-  keys, and two clicks, in a row each release in a frame of their own, and a
-  step after a click runs in the frame after the release; the steps convert to
-  text with `for` only when held for other than one frame, and read back; a
-  script reads `for` on each form of `click`, and fails on a missing or
-  negative count.
-
-### CL13 [x] render-check: Scripted checks
-
-Depends on: CL4, CL5, CL7, CL9, CL10, CL11, CL12.
-
-- render-check runs on `gb::Game`, takes the pilot flags through `gb_cli`,
-  and creates `PilotSdl`. Its storage buffer colors change by game time, so
-  a run's frames are the same each time.
-- A check's result that isn't as expected logs an error, which fails a run.
-  A `gui_under_limit` condition holds unless the GUI is being kept over its
-  vertex limit.
-- Scripts in `examples/render-check/scripts/` for its hand checks, one for
-  each part of the panel: `instances`, `textures`, `texture_arrays`, `gui`
-  (with the log), and `scene` (what is drawn without a button). Resizing is
-  left out, as no step resizes. Each presses its section's buttons and check
-  boxes by label, and saves frames before and after. Sections are collapsed
-  to bring lower ones into the window.
-- Of the checks meant to fail, only going over the GUI's vertex limit logs an
-  error, which the `gui` script expects. The failed partial texture updates
-  just return false.
-
-**Verify**
-- Standard checks.
-- Each script runs with `bin\render_check.exe --pilot <script>`
-  (`run-program.ps1` takes scripts in CL14), passes, and its saved frames show
-  what the panel's text says they should, read by the session. The run is repeated with the
-  window hidden, and the frames match, apart from the process memory line.
-- A script with a failing step, one with a timed out `wait for`, and one
-  whose check has an unexpected result, exit with code 1 and say why in the
-  log.
-- Without the flags, `run-program.ps1` runs the program as before: the P key
-  paints, and it closes cleanly.
-- By hand (the user): the panel's checks by hand, and moving the mouse over
-  the window during a run changes nothing.
-
-### CL14 [x] tools, docs: Run scripts from a session
-
-Depends on: CL13.
-
-- `tools/run-program.ps1` as described in Session tools. With neither
-  `-Script` nor `-Steps`, it saves one frame after 30. It prints the frames
-  the run saved (leaving any from earlier runs), the log's errors, and the
-  pilot's summary. `-TimeoutSecs` is 60 by default.
-  A program that doesn't take the pilot flags can't be run with it, which
-  leaves out block-world until CL15.
-- CLAUDE.md "Run an example" and Checks, and README.md's render-check section.
-  README.md's library list already has the new libraries.
-
-**Verify**
-- Standard checks.
-- render-check's scripts run through the new `run-program.ps1`, with `-Script`
-  and with `-Steps` (in an output folder whose path has a space), and with
-  neither.
-- A failing script, and a script with an unknown step, fail with the log's
-  errors printed. A script that hangs the program (a long `wait`, as
-  render-check has no condition that stays false) saves the stacks, and fails
-  once `-TimeoutSecs` is up.
-
-### CL15 [x] block-world: Scripted runs
-
-Depends on: CL14.
-
-- BlockWorld takes its arguments through `gb_cli` (its starting state becomes
-  `--state`, which fails on a state that isn't registered), and creates
-  `PilotSdl`.
-- `World::Draw()` builds meshes for at most 10 ms of real time a frame. With
-  a pilot, it builds every mesh in view in the frame it is first drawn, so
-  what is drawn doesn't depend on how fast the machine is.
-- `ImGuiInstance`'s pilot hook clears `io.IniFilename` each frame, so window
-  settings are neither loaded from an earlier run nor saved for a later one.
-  block-world leaves loading its layout to ImGui's first frame, rather than
-  calling `LoadIniSettingsFromDisk()`, which the hook can't stop.
-- `scripts/walk.txt` starts from the title, saves a frame, walks forward with
-  `w`, and saves another.
-- `run-program.ps1` takes `-Arguments`, the program's other flags.
-
-**Verify**
-- Standard checks, with block-world built in Debug and Release.
-- `gb_imgui`'s tests: with a pilot, an ini file is neither loaded nor
-  written.
-- The script runs with `run-program.ps1` and its frames show the view moving.
-  Three runs save identical frames.
-- `--state PlayState` starts playing, and an unknown state fails. Without the
-  flags, the game runs, loads and saves its layout, and closes cleanly.
+- Unit tests, against `FakePilot` for the libraries that take part:
+  - `gb_image_test`: a saved PNG loads back with the same pixels, and saving
+    to a file that can't be written fails.
+  - `gb_pilot_test`: the registries and handles; `StepPilot`'s timing of every
+    step, including held keys and clicks, its failures, expected errors (from
+    any thread), the step log and summary; and steps read back from their
+    text.
+  - `gb_pilot_script_test`: every step and its values, comments, line breaks,
+    escapes, and each error with its position; `CreateCliPilot()` with a
+    memory file system, writing `<output>/<name>.png`.
+  - `gb_game_test`: with a pilot, every `delta_time` is the pilot's, the clock
+    is never slept on, and `Run()` returns whether the run passed.
+  - `gb_pilot_sdl_test`: each kind of input arrives as SDL events in its
+    frame, real input is dropped, quit events pass, and the key and modifier
+    state match (SDL's events subsystem alone, no window).
+  - `gb_render_test`: the pilot is given the frame it asked for, once, from
+    the test backend.
+  - `gb_imgui_test`: the item finder, the pilot's mouse pressing items, its
+    delta time, and the ini file left alone.
+- `examples/render-check/scripts/` cover the panel's checks: `instances`,
+  `textures`, `texture_arrays`, `gui` (with the log and the vertex limit's
+  expected error), and `scene`. Each passes, with the window shown and hidden,
+  and the frames match apart from the process memory line. A script with a
+  missing label, a timed out `wait for`, or an unexpected result exits with
+  code 1 and says why.
+- `examples/block-world/scripts/walk.txt` starts from the title and walks
+  forward, and repeated runs save identical frames.
+- Still by hand: render-check's resizing, and block-world's mouse (turning the
+  camera, and placing and removing blocks).
