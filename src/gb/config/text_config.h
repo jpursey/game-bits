@@ -7,10 +7,12 @@
 #define GB_CONFIG_TEXT_CONFIG_H_
 
 #include <string>
+#include <string_view>
 
 #include "absl/status/statusor.h"
 #include "gb/base/flags.h"
 #include "gb/config/config.h"
+#include "gb/config/config_types.h"
 
 namespace gb {
 
@@ -131,9 +133,16 @@ std::string WriteConfigToText(const Config& config,
 // then the text will be read as if it is a map (key/value pairs). Otherwise it
 // will read the text as any Config type (maps must be enclosed in {...}).
 // Any parse error will result in the entire config not being read, and an error
-// status returned indicating the parse error.
+// status returned indicating the parse error, which names `filename` if it
+// isn't empty: `hello.ozzy(3:1): Parse error at "b": Invalid key`.
+//
+// Each value read has the location of its first token (see
+// Config::GetLocation): the value itself for a bool, int, float, string, or
+// null, and the opening '{' or '[' of a map or array. A rootless root is at its
+// first key, or at the end of the text if it has none.
 absl::StatusOr<Config> ReadConfigFromText(
-    std::string text, TextConfigFlags flags = kDefaultTextConfig);
+    std::string text, TextConfigFlags flags = kDefaultTextConfig,
+    std::string_view filename = {});
 
 }  // namespace gb
 

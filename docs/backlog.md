@@ -65,33 +65,6 @@ component, as the MSVC standard library rejects older clang versions. Fix them,
 build and test both clang configurations, and consider building one in CI so it
 stays working.
 
-## Config reader with error locations
-
-- **Layers:** config
-- **Size:** medium
-- **Feature workflow:** yes
-- **Depends on:** nothing
-- **Requested by:** OZ-3 *Ozzy machine*
-- **Background:** `ReadMachineSettings` in OZ-3's
-  `oz3/ozzy/machine_settings.cc`, whose helpers this would replace;
-  `gb/config/config.h` and `text_config.h`
-
-A way to read a `Config` into a program's own settings that says where each
-problem is. A program reading a config file by hand checks every key and type
-itself, and its errors can't point at the text. Two parts:
-- **A reader** that goes down from a root `Config`, keeping each value's path
-  as it goes (`devices[1].columns`). It reads a map or array of the right
-  type, an int in a range, a string, and so on, and leaves the caller's
-  default where a key is missing. It rejects unknown keys, naming the first in
-  sorted order, since maps are unordered. It returns the first problem with its
-  path, such as `devices[1].columns: must be 1 to 132`. Paths aren't stored in
-  `Config` itself: a `Config` is a value that gets copied and edited, so a
-  stored path goes stale, and the reader knows the path anyway.
-- **Source locations:** with a flag, `ReadConfigFromText` keeps each value's
-  line and column, and the reader puts them in its errors
-  (`hello.ozzy:12:5: devices[1].columns: ...`). A copy keeps its location,
-  which is where it was read from. A value set in code has none.
-
 ## Optional commas in text configs
 
 - **Layers:** config

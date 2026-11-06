@@ -20,6 +20,7 @@ namespace {
 
 using ::testing::HasSubstr;
 using ::testing::Not;
+using ::testing::StartsWith;
 
 //==============================================================================
 // WriteConfigToText - Scalar types
@@ -1418,6 +1419,118 @@ TEST(ReadConfigFromTextTest, RootlessInvalidKey) {
 TEST(ReadConfigFromTextTest, RootlessTrailingGarbage) {
   auto result = ReadConfigFromText("a: 1 garbage", kRootlessTextConfig);
   EXPECT_FALSE(result.ok());
+}
+
+TEST(ReadConfigFromTextTest, ErrorNamesFilename) {
+  auto result =
+      ReadConfigFromText("{\n  a 1\n}", kDefaultTextConfig, "hello.cfg");
+  ASSERT_FALSE(result.ok());
+  EXPECT_THAT(result.status().message(), StartsWith("hello.cfg(2:"));
+}
+
+TEST(ReadConfigFromTextTest, ErrorWithoutLocationNamesFilename) {
+  // A line too long for the lexer gives an error with no location.
+  const std::string text = absl::StrCat("a: \"", std::string(5000, 'x'), "\"");
+  auto result = ReadConfigFromText(text, kRootlessTextConfig, "hello.cfg");
+  ASSERT_FALSE(result.ok());
+  EXPECT_THAT(result.status().message(), StartsWith("hello.cfg: "));
+
+  result = ReadConfigFromText(text, kRootlessTextConfig);
+  ASSERT_FALSE(result.ok());
+  EXPECT_THAT(result.status().message(), Not(StartsWith(": ")));
+}
+
+TEST(ReadConfigFromTextTest, ErrorWithoutFilename) {
+  auto result = ReadConfigFromText("{\n  a 1\n}");
+  ASSERT_FALSE(result.ok());
+  EXPECT_THAT(result.status().message(), StartsWith("(2:"));
+}
+
+//==============================================================================
+// ReadConfigFromText - Locations
+//==============================================================================
+
+// Returns the location of `config` as "line:column", "none" if it has none, or
+// "missing" if `config` is null.
+std::string LocationOf(const Config* config) {
+  if (config == nullptr) {
+    return "missing";
+  }
+  const ConfigLocation location = config->GetLocation();
+  if (!location.IsSet()) {
+    return "none";
+  }
+  return absl::StrCat(location.line, ":", location.column);
+}
+
+TEST(ReadConfigFromTextTest, ScalarLocations) {
+  auto result = ReadConfigFromText("[1, 2.5, \"s\", true, null]");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(LocationOf(&*result), "1:1");
+  EXPECT_EQ(LocationOf(result->Get(0)), "1:2");
+  EXPECT_EQ(LocationOf(result->Get(1)), "1:5");
+  EXPECT_EQ(LocationOf(result->Get(2)), "1:10");
+  EXPECT_EQ(LocationOf(result->Get(3)), "1:15");
+  EXPECT_EQ(LocationOf(result->Get(4)), "1:21");
+}
+
+TEST(ReadConfigFromTextTest, RootLocation) {
+  auto result = ReadConfigFromText("\n  42");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(LocationOf(&*result), "2:3");
+}
+
+TEST(ReadConfigFromTextTest, NestedLocations) {
+  auto result = ReadConfigFromText(
+      "{\n"
+      "  // A comment\n"
+      "  \"a\": 1,\n"
+      "  b: {\n"
+      "    c: [10,\n"
+      "        20],\n"
+      "    d: /* x */ 5\n"
+      "  }\n"
+      "}\n");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(LocationOf(&*result), "1:1");
+  EXPECT_EQ(LocationOf(result->Get("a")), "3:8");
+  const Config* b = result->Get("b");
+  EXPECT_EQ(LocationOf(b), "4:6");
+  ASSERT_NE(b, nullptr);
+  const Config* c = b->Get("c");
+  EXPECT_EQ(LocationOf(c), "5:8");
+  ASSERT_NE(c, nullptr);
+  EXPECT_EQ(LocationOf(c->Get(0)), "5:9");
+  EXPECT_EQ(LocationOf(c->Get(1)), "6:9");
+  EXPECT_EQ(LocationOf(b->Get("d")), "7:16");
+}
+
+TEST(ReadConfigFromTextTest, RootlessLocations) {
+  auto result = ReadConfigFromText("\n  a: 1,\nb: [2]", kRootlessTextConfig);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(LocationOf(&*result), "2:3");
+  EXPECT_EQ(LocationOf(result->Get("a")), "2:6");
+  EXPECT_EQ(LocationOf(result->Get("b")), "3:4");
+  EXPECT_EQ(LocationOf(result->Get("b")->Get(0)), "3:5");
+}
+
+TEST(ReadConfigFromTextTest, LocationsWithCrLf) {
+  auto result = ReadConfigFromText("a: 1,\r\nb: 2\r\n", kRootlessTextConfig);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(LocationOf(result->Get("a")), "1:4");
+  EXPECT_EQ(LocationOf(result->Get("b")), "2:4");
+}
+
+TEST(ReadConfigFromTextTest, LocationsWithFilename) {
+  auto result = ReadConfigFromText("a: 1", kRootlessTextConfig, "hello.cfg");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(LocationOf(result->Get("a")), "1:4");
+}
+
+TEST(ReadConfigFromTextTest, EmptyRootlessLocation) {
+  auto result = ReadConfigFromText("// Nothing\n\n", kRootlessTextConfig);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(LocationOf(&*result), "2:1");
 }
 
 //==============================================================================

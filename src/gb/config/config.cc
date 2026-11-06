@@ -68,7 +68,7 @@ void Config::Set(std::string_view key, Config value) {
   if (map == nullptr) {
     MapValue new_map;
     new_map.insert_or_assign(std::string(key), std::move(value));
-    value_ = std::move(new_map);
+    SetValue(std::move(new_map));
   } else {
     map->insert_or_assign(std::string(key), std::move(value));
   }
@@ -82,7 +82,7 @@ bool Config::Set(int index, Config value) {
     }
     ArrayValue new_arr;
     new_arr.push_back(std::move(value));
-    value_ = std::move(new_arr);
+    SetValue(std::move(new_arr));
     return true;
   }
   if (index < 0 || index > static_cast<int>(arr->size())) {
@@ -113,7 +113,7 @@ bool Config::GetBool(int index) const {
   return config != nullptr ? config->GetBool() : false;
 }
 
-void Config::SetBool(bool value) { value_ = value; }
+void Config::SetBool(bool value) { SetValue(value); }
 
 void Config::SetBool(std::string_view key, bool value) {
   Set(key, Bool(value));
@@ -138,7 +138,7 @@ int64_t Config::GetInt(int index) const {
   return config != nullptr ? config->GetInt() : 0;
 }
 
-void Config::SetInt(int64_t value) { value_ = value; }
+void Config::SetInt(int64_t value) { SetValue(value); }
 
 void Config::SetInt(std::string_view key, int64_t value) {
   Set(key, Int(value));
@@ -163,7 +163,7 @@ double Config::GetFloat(int index) const {
   return config != nullptr ? config->GetFloat() : 0.0;
 }
 
-void Config::SetFloat(double value) { value_ = value; }
+void Config::SetFloat(double value) { SetValue(value); }
 
 void Config::SetFloat(std::string_view key, double value) {
   Set(key, Float(value));
@@ -190,7 +190,7 @@ std::string_view Config::GetString(int index) const {
   return config != nullptr ? config->GetString() : std::string_view();
 }
 
-void Config::SetString(std::string value) { value_ = std::move(value); }
+void Config::SetString(std::string value) { SetValue(std::move(value)); }
 
 void Config::SetString(std::string_view key, std::string value) {
   Set(key, String(std::move(value)));
@@ -216,7 +216,7 @@ const Config::MapValue* Config::GetMap(int index) const {
   return config != nullptr ? config->GetMap() : nullptr;
 }
 
-void Config::SetMap(MapValue value) { value_ = std::move(value); }
+void Config::SetMap(MapValue value) { SetValue(std::move(value)); }
 
 // Array accessors
 
@@ -238,7 +238,7 @@ absl::Span<const Config> Config::GetArray(int index) const {
   return config != nullptr ? config->GetArray() : absl::Span<const Config>();
 }
 
-void Config::SetArray(ArrayValue value) { value_ = std::move(value); }
+void Config::SetArray(ArrayValue value) { SetValue(std::move(value)); }
 
 //==============================================================================
 // Map operations
@@ -280,8 +280,7 @@ void Config::ResizeArray(int new_size, const Config& value) {
   new_size = std::max(new_size, 0);
   auto* arr = std::get_if<ArrayValue>(&value_);
   if (arr == nullptr) {
-    ArrayValue new_arr(new_size, value);
-    value_ = std::move(new_arr);
+    SetValue(ArrayValue(new_size, value));
     return;
   }
   arr->resize(new_size, value);
@@ -300,7 +299,7 @@ void Config::Append(Config value) {
   if (arr == nullptr) {
     ArrayValue new_arr;
     new_arr.push_back(std::move(value));
-    value_ = std::move(new_arr);
+    SetValue(std::move(new_arr));
     return;
   }
   arr->push_back(std::move(value));

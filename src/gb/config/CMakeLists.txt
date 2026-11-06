@@ -5,6 +5,7 @@
 
 set(gb_config_SOURCE
   config.cc config.h
+  config_types.h
   text_config.cc text_config.h
 )
 

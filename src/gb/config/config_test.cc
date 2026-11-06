@@ -1069,5 +1069,169 @@ TEST(ConfigTest, GetArrayDirect) {
   EXPECT_EQ(span[1].GetInt(), 2);
 }
 
+//==============================================================================
+// Location
+//==============================================================================
+
+constexpr ConfigLocation kLocation = {.line = 3, .column = 7};
+constexpr ConfigLocation kOtherLocation = {.line = 5, .column = 2};
+
+// Only the config module can set a location.
+static_assert(!std::is_default_constructible_v<ConfigInternal>);
+
+}  // namespace
+
+// Sets locations in tests, which takes a ConfigInternal token. It is outside
+// the anonymous namespace, so the token's friend declaration names it.
+class ConfigLocationTest : public ::testing::Test {
+ protected:
+  // Returns `config` with `location`.
+  static Config Located(Config config, ConfigLocation location = kLocation) {
+    config.SetLocation({}, location);
+    return config;
+  }
+};
+
+namespace {
+
+TEST_F(ConfigLocationTest, NoLocation) {
+  const ConfigLocation location;
+  EXPECT_FALSE(location.IsSet());
+  EXPECT_EQ(location.line, 0);
+  EXPECT_EQ(location.column, 0);
+  EXPECT_TRUE(kLocation.IsSet());
+}
+
+TEST_F(ConfigLocationTest, NewValuesHaveNoLocation) {
+  EXPECT_FALSE(Config().GetLocation().IsSet());
+  EXPECT_FALSE(Config::None().GetLocation().IsSet());
+  EXPECT_FALSE(Config::Bool(true).GetLocation().IsSet());
+  EXPECT_FALSE(Config::Int(1).GetLocation().IsSet());
+  EXPECT_FALSE(Config::Float(1.0).GetLocation().IsSet());
+  EXPECT_FALSE(Config::String("a").GetLocation().IsSet());
+  EXPECT_FALSE(Config::Map().GetLocation().IsSet());
+  EXPECT_FALSE(Config::Array().GetLocation().IsSet());
+}
+
+TEST_F(ConfigLocationTest, SetLocation) {
+  Config config = Located(Config::Int(1));
+  EXPECT_EQ(config.GetLocation(), kLocation);
+  EXPECT_EQ(config.GetInt(), 1);
+  config = Located(config, {});
+  EXPECT_FALSE(config.GetLocation().IsSet());
+}
+
+TEST_F(ConfigLocationTest, CopiesKeepLocation) {
+  const Config config = Located(Config::Int(1));
+  const Config copy(config);
+  EXPECT_EQ(copy.GetLocation(), kLocation);
+
+  Config assigned = Located(Config::Int(2), kOtherLocation);
+  assigned = config;
+  EXPECT_EQ(assigned.GetLocation(), kLocation);
+
+  Config moved(Located(Config::String("a")));
+  EXPECT_EQ(moved.GetLocation(), kLocation);
+  Config move_assigned;
+  move_assigned = std::move(moved);
+  EXPECT_EQ(move_assigned.GetLocation(), kLocation);
+
+  // Values held in a map or array keep theirs too.
+  const Config map =
+      Config::Map(Config::MapValue{{"a", Located(Config::Int(1))}});
+  EXPECT_EQ(map.Get("a")->GetLocation(), kLocation);
+  const Config array =
+      Config::Array(Config::ArrayValue{Located(Config::Int(1))});
+  EXPECT_EQ(array.Get(0)->GetLocation(), kLocation);
+}
+
+TEST_F(ConfigLocationTest, ReplacingValueClearsLocation) {
+  Config config = Located(Config::Int(1));
+  config.SetBool(true);
+  EXPECT_FALSE(config.GetLocation().IsSet());
+
+  config = Located(Config::Int(1));
+  config.SetInt(2);
+  EXPECT_FALSE(config.GetLocation().IsSet());
+
+  config = Located(Config::Int(1));
+  config.SetFloat(2.0);
+  EXPECT_FALSE(config.GetLocation().IsSet());
+
+  config = Located(Config::Int(1));
+  config.SetString("a");
+  EXPECT_FALSE(config.GetLocation().IsSet());
+
+  config = Located(Config::Map());
+  config.SetMap(Config::MapValue());
+  EXPECT_FALSE(config.GetLocation().IsSet());
+
+  config = Located(Config::Array());
+  config.SetArray(Config::ArrayValue());
+  EXPECT_FALSE(config.GetLocation().IsSet());
+
+  config = Located(Config::Int(1));
+  config.Clear();
+  EXPECT_FALSE(config.GetLocation().IsSet());
+}
+
+TEST_F(ConfigLocationTest, BecomingMapOrArrayClearsLocation) {
+  Config config = Located(Config::Int(1));
+  config.Set("a", Config::Int(2));
+  EXPECT_FALSE(config.GetLocation().IsSet());
+
+  config = Located(Config::Int(1));
+  config.SetInt("a", 2);
+  EXPECT_FALSE(config.GetLocation().IsSet());
+
+  config = Located(Config::Int(1));
+  EXPECT_TRUE(config.Set(0, Config::Int(2)));
+  EXPECT_FALSE(config.GetLocation().IsSet());
+
+  config = Located(Config::Int(1));
+  config.Append(Config::Int(2));
+  EXPECT_FALSE(config.GetLocation().IsSet());
+
+  config = Located(Config::Int(1));
+  config.ResizeArray(2);
+  EXPECT_FALSE(config.GetLocation().IsSet());
+}
+
+TEST_F(ConfigLocationTest, FailedSetKeepsLocation) {
+  Config config = Located(Config::Int(1));
+  EXPECT_FALSE(config.Set(1, Config::Int(2)));
+  EXPECT_EQ(config.GetLocation(), kLocation);
+  EXPECT_EQ(config.GetInt(), 1);
+}
+
+TEST_F(ConfigLocationTest, EditingMapKeepsLocation) {
+  Config config = Located(Config::Map(Config::MapValue{{"a", Config::Int(1)}}));
+  config.Set("b", Config::Int(2));
+  config.SetInt("a", 3);
+  EXPECT_TRUE(config.DeleteKey("b"));
+  EXPECT_EQ(config.GetLocation(), kLocation);
+
+  // The value set brings its own location.
+  EXPECT_FALSE(config.Get("a")->GetLocation().IsSet());
+  config.Set("a", Located(Config::Int(4), kOtherLocation));
+  EXPECT_EQ(config.Get("a")->GetLocation(), kOtherLocation);
+}
+
+TEST_F(ConfigLocationTest, EditingArrayKeepsLocation) {
+  Config config = Located(Config::Array(Config::ArrayValue{Config::Int(1)}));
+  EXPECT_TRUE(config.Set(0, Config::Int(2)));
+  EXPECT_TRUE(config.Set(1, Config::Int(3)));
+  config.Append(Config::Int(4));
+  config.ResizeArray(5);
+  config.PopBack();
+  EXPECT_EQ(config.GetArraySize(), 4);
+  EXPECT_EQ(config.GetLocation(), kLocation);
+
+  // The value set brings its own location.
+  EXPECT_FALSE(config.Get(0)->GetLocation().IsSet());
+  EXPECT_TRUE(config.Set(0, Located(Config::Int(5), kOtherLocation)));
+  EXPECT_EQ(config.Get(0)->GetLocation(), kOtherLocation);
+}
+
 }  // namespace
 }  // namespace gb

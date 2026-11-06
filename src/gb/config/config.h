@@ -15,8 +15,20 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/types/span.h"
+#include "gb/config/config_types.h"
 
 namespace gb {
+
+// Where a config value was read from, if it was read from text.
+struct ConfigLocation {
+  bool operator==(const ConfigLocation&) const = default;
+
+  // Returns true if this is a location, rather than no location.
+  bool IsSet() const { return line > 0; }
+
+  int line = 0;    // 1-based line, or 0 if the value has no location.
+  int column = 0;  // 1-based column, in bytes from the start of the line.
+};
 
 // Represents a configuration value, which can be a bool, int, float,
 // string, or a map or array of other config values.
@@ -100,6 +112,25 @@ class Config {
   bool IsArray() const { return std::holds_alternative<ArrayValue>(value_); }
 
   //----------------------------------------------------------------------------
+  // Location
+  //
+  // A value read from text (see ReadConfigFromText) has the location it was
+  // read from, which copies keep. A value made in code has no location, and
+  // a value that is replaced loses its location: the setters below that
+  // replace the whole value clear it, including those that turn a value into
+  // a map or an array. Setting a key of a map or an element of an array keeps
+  // the map's or array's location, and the value set brings its own.
+  //----------------------------------------------------------------------------
+
+  ConfigLocation GetLocation() const { return location_; }
+
+  // Sets where this value was read from, which only the config module's text
+  // reader does.
+  void SetLocation(ConfigInternal, ConfigLocation location) {
+    location_ = location;
+  }
+
+  //----------------------------------------------------------------------------
   // Value accessors
   //
   // These provide type-specific access to the underlying value of this
@@ -155,7 +186,7 @@ class Config {
   bool Set(int index, Config value);
 
   // Clears the value of this config, setting it to None.
-  void Clear() { value_ = std::monostate(); }
+  void Clear() { SetValue(std::monostate()); }
 
   // Returns false if this is not a bool, or it is not found.
   bool GetBool() const;
@@ -374,7 +405,14 @@ class Config {
  private:
   explicit Config(Value value) : value_(std::move(value)) {}
 
+  // Replaces the whole value, which then has no location.
+  void SetValue(Value value) {
+    value_ = std::move(value);
+    location_ = {};
+  }
+
   Value value_;
+  ConfigLocation location_;
 };
 
 }  // namespace gb

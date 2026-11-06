@@ -24,7 +24,10 @@
 #include "absl/strings/str_format.h"
 #include "absl/synchronization/mutex.h"
 #include "absl/types/span.h"
+#include "gb/parse/lexer.h"
 #include "gb/parse/lexer_config.h"
+#include "gb/parse/parse_error.h"
+#include "gb/parse/parse_result.h"
 #include "gb/parse/parser.h"
 #include "gb/parse/parser_program.h"
 #include "gb/parse/symbol.h"
@@ -369,7 +372,39 @@ std::shared_ptr<ParserProgram> GetParserProgram(TextConfigFlags flags) {
   return parser_program;
 }
 
-Config GetParsedConfig(const ParsedItem& item) {
+}  // namespace
+
+//==============================================================================
+// TextConfigBuilder
+//==============================================================================
+
+// Builds the Config for items parsed by the parser program above, each located
+// where it was read from.
+class TextConfigBuilder final {
+ public:
+  // `lexer` holds the parsed text, and must outlive this.
+  explicit TextConfigBuilder(const Lexer* lexer) : lexer_(lexer) {}
+
+  // Returns the config for `item`, located at its first token.
+  Config Build(const ParsedItem& item) const;
+
+ private:
+  Config BuildValue(const ParsedItem& item) const;
+
+  const Lexer* const lexer_;
+};
+
+Config TextConfigBuilder::Build(const ParsedItem& item) const {
+  Config config = BuildValue(item);
+  const LexerLocation location = lexer_->GetTokenLocation(item.GetToken());
+  if (location.line >= 0) {
+    config.SetLocation(
+        {}, {.line = location.line + 1, .column = location.column + 1});
+  }
+  return config;
+}
+
+Config TextConfigBuilder::BuildValue(const ParsedItem& item) const {
   std::string_view item_type = item.GetMatchName();
   if (item_type == "null") {
     return Config::None();
@@ -389,7 +424,7 @@ Config GetParsedConfig(const ParsedItem& item) {
   if (item_type == "array") {
     std::vector<Config> array;
     for (const auto& value_item : item.GetItem("array")->GetItems("values")) {
-      array.push_back(GetParsedConfig(value_item));
+      array.push_back(Build(value_item));
     }
     return Config::Array(std::move(array));
   }
@@ -397,7 +432,7 @@ Config GetParsedConfig(const ParsedItem& item) {
     Config::MapValue map;
     for (const auto& value_item : item.GetItem("map")->GetItems("values")) {
       std::string_view key = value_item.GetToken("key").GetString();
-      map[key] = GetParsedConfig(*value_item.GetItem("value"));
+      map[key] = Build(*value_item.GetItem("value"));
     }
     return Config::Map(std::move(map));
   }
@@ -405,7 +440,9 @@ Config GetParsedConfig(const ParsedItem& item) {
   return Config::None();
 }
 
-}  // namespace
+//==============================================================================
+// Text config I/O
+//==============================================================================
 
 std::string WriteConfigToText(const Config& config, TextConfigFlags flags) {
   std::string text;
@@ -418,19 +455,29 @@ std::string WriteConfigToText(const Config& config, TextConfigFlags flags) {
 }
 
 absl::StatusOr<Config> ReadConfigFromText(std::string text,
-                                          TextConfigFlags flags) {
+                                          TextConfigFlags flags,
+                                          std::string_view filename) {
   auto parser = Parser::Create(GetParserProgram(flags));
   DCHECK_NE(parser, nullptr);
+  // The content has no filename, as every token location would copy it. The
+  // filename is only needed for an error.
   LexerContentId content = parser->GetLexer().AddContent(std::move(text));
   ParseResult result = parser->Parse(
       content, flags.IsSet(TextConfigFlag::kRootless) ? "Rootless" : "Rooted");
   if (!result) {
-    return absl::InvalidArgumentError(result.GetError().FormatMessage());
+    const ParseError& error = result.GetError();
+    if (error.GetLocation().line < 0) {
+      // ParseError only names the file with a location.
+      return absl::InvalidArgumentError(
+          filename.empty() ? std::string(error.GetMessage())
+                           : absl::StrCat(filename, ": ", error.GetMessage()));
+    }
+    LexerLocation location = error.GetLocation();
+    location.filename = filename;
+    return absl::InvalidArgumentError(
+        ParseError(std::move(location), error.GetMessage()).FormatMessage());
   }
-
-  Config config = GetParsedConfig(*result.GetItem());
-
-  return config;
+  return TextConfigBuilder(&parser->GetLexer()).Build(*result.GetItem());
 }
 
 }  // namespace gb
