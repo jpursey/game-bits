@@ -330,6 +330,10 @@ bool StepPilot::RunStep(const PilotMouseReleaseStep& step) {
 }
 
 bool StepPilot::RunStep(const PilotMouseWheelStep& step) {
+  // It runs again at the start of the next frame, which has no move yet.
+  if (HasMouseMovedThisFrame()) {
+    return false;
+  }
   input_.push_back(PilotMouseWheelEvent{.amount = step.amount});
   return true;
 }

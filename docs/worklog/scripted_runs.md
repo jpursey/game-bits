@@ -131,8 +131,9 @@ expect error "cannot be edited" 10  # Errors with this text pass, for 10 frames
 ```
 
 - Time passes only in steps that wait or give input that must not share a
-  frame: `wait`, `wait for`, `key`, `click`, `press`, and `release`. Every
-  other step happens in the current frame, in order.
+  frame: `wait`, `wait for`, `key`, `click`, `press`, and `release`, and
+  `wheel` after a move. Every other step happens in the current frame, in
+  order.
 - A key or button is held for one frame unless given a number of frames, and
   then released in a frame with no other input, so `key` and `click` take two
   frames by default. A program that polls input (as ImGui does the mouse) sees
@@ -140,10 +141,12 @@ expect error "cannot be edited" 10  # Errors with this text pass, for 10 frames
   another press or a move in the same frame.
 - A `click` or `press` moves the mouse to its point or label first, if it isn't
   there, and never presses in a frame the mouse moves in: the press comes a
-  frame later. A program that judges a press by where the mouse was in the
-  frame before (such as whether ImGui wants the mouse, as block-world does) sees
-  it there, as it would a real mouse, so a script needs no `move` and `wait`
-  before a `click` or `press`.
+  frame later. A `wheel` is never in a frame the mouse moves in either, and
+  turns at the start of the next frame instead. A program that judges a press
+  or the wheel by where the mouse was in the frame before (such as whether
+  ImGui wants the mouse, as block-world does) sees it there, as it would a real
+  mouse, so a script needs no `move` and `wait` before a `click`, `press`, or
+  `wheel`.
 - `press` and `press key` hold a button or key while later steps run, until
   `release` or `release key`, so moves between them drag. A press takes its
   frame, so what follows comes in a later frame, and a release is in a frame

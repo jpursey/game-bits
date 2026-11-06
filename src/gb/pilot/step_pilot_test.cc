@@ -184,14 +184,26 @@ TEST_F(StepPilotTest, WithNoStepsIsDoneAfterOneFrame) {
 TEST_F(StepPilotTest, StepsThatTakeNoTimeRunInOneFrame) {
   StepPilot pilot;
   pilot.AddSteps({PilotTextStep{.text = "hi"},
-                  PilotMouseMoveStep{.position = {10, 20}},
-                  PilotMouseWheelStep{.amount = -2}});
+                  PilotMouseWheelStep{.amount = -2},
+                  PilotMouseMoveStep{.position = {10, 20}}});
   pilot.BeginFrame();
   EXPECT_THAT(pilot.GetInput(),
-              ElementsAre(Text("hi"), Move(10, 20), Wheel(-2)));
+              ElementsAre(Text("hi"), Wheel(-2), Move(10, 20)));
   EXPECT_EQ(pilot.GetMouse(), (PilotMouse{.position = {10, 20}}));
   pilot.EndFrame();
   EXPECT_TRUE(pilot.IsDone());
+  EXPECT_FALSE(pilot.HasFailed());
+}
+
+TEST_F(StepPilotTest, WheelAfterAMoveInTheSameFrameTurnsInTheNext) {
+  StepPilot pilot;
+  pilot.AddSteps({PilotMouseMoveStep{.position = {10, 20}},
+                  PilotMouseWheelStep{.amount = -2},
+                  PilotMouseWheelStep{.amount = 1},
+                  PilotTextStep{.text = "a"}});
+  EXPECT_THAT(RunUntilDone(&pilot),
+              ElementsAre(ElementsAre(Move(10, 20)),
+                          ElementsAre(Wheel(-2), Wheel(1), Text("a"))));
   EXPECT_FALSE(pilot.HasFailed());
 }
 

@@ -341,10 +341,10 @@ void AbslStringify(Sink& sink, const PilotStep& step) {
 // - A key is pressed in the frame its step starts in. A click or press first
 //   moves the mouse to its target, if it isn't there, and presses its button
 //   in the frame it starts in only if the mouse doesn't move in that frame (by
-//   this step or an earlier one), and in the next frame otherwise. So a
-//   program that judges a press by where the mouse was in the frame before
-//   (such as whether ImGui wants the mouse) sees it at the target, as it would
-//   a real mouse.
+//   this step or an earlier one), and in the next frame otherwise.
+// - PilotMouseWheelStep: in the frame the wheel turns in, which is the frame
+//   the step starts in only if the mouse doesn't move in that frame, and the
+//   next frame otherwise.
 // - PilotKeyReleaseStep and PilotMouseReleaseStep: 1 frame after the key or
 //   button is released, which is in a frame with no other input. That is the
 //   frame the step starts in if it has no input yet, or else the next frame.
@@ -353,6 +353,11 @@ void AbslStringify(Sink& sink, const PilotStep& step) {
 //   after `max_frames` frames.
 // - PilotSaveStep: in the frame after the one saved, which is the frame the
 //   step starts in, or if that isn't drawn, the next one that is.
+//
+// So a button is never pressed, nor the wheel turned, in a frame the mouse
+// moves in. A program that judges them by where the mouse was in the frame
+// before (such as whether ImGui wants the mouse) sees it where they happen, as
+// it would a real mouse.
 //
 // The run is done once its last step has finished, or at its first failure. A
 // run fails if:
@@ -495,8 +500,8 @@ class StepPilot final : public Pilot {
   bool MoveMouseToPress(PilotMouseButton button,
                         const PilotMouseTarget& target);
 
-  // Returns whether this frame's input has moved the mouse, so a button is
-  // pressed in a later frame (see StepPilot).
+  // Returns whether this frame's input has moved the mouse, so a button press
+  // or a turn of the wheel waits for a later frame (see StepPilot).
   bool HasMouseMovedThisFrame() const;
 
   void MoveMouse(PilotPoint position);
