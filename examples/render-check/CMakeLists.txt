@@ -39,6 +39,7 @@ endif()
 
 set(render_check_SOURCE
   main.cc
+  pool_shaders.h
   quad_shaders.h
   render_check.cc render_check.h
   storage_shaders.h

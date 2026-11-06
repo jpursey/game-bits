@@ -650,8 +650,9 @@ void VulkanRenderBuffer::CopyBuffer(vk::Buffer host_buffer,
     default:
       LOG(FATAL) << "Unhandled buffer type for CopyBuffer";
   }
-  state->buffer_updates.emplace_back(host_buffer, device_buffer, dst_access,
-                                     copy_offset, copy_end - copy_offset);
+  state->buffer_updates.emplace_back(host_buffer, copy_offset, device_buffer,
+                                     copy_offset, copy_end - copy_offset,
+                                     dst_access);
 }
 
 }  // namespace gb

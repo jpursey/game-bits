@@ -1,0 +1,29 @@
+# Copyright (c) 2026 John Pursey
+#
+# Use of this source code is governed by an MIT-style License that can be found
+# in the LICENSE file or at https://opensource.org/licenses/MIT.
+
+# The Mesh pools section: a row of shapes from one pool, and replacing a shape
+# each frame, so the pool reuses their space and grows.
+wait 30
+
+# The sections above are collapsed to bring this one into the window.
+click "Frames"
+click "Instances"
+click "Textures"
+click "Texture arrays"
+click "GUI"
+click "Blend modes"
+click "Texture formats"
+click "Volume textures"
+click "Storage buffers"
+wait 2
+save start
+
+# Each shape is replaced many times over, turning a little each time.
+click "Replace a shape each frame (M)"
+wait 120
+save replacing
+click "Replace a shape each frame (M)"
+wait 4
+save stopped

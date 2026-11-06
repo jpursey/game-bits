@@ -280,17 +280,24 @@ virtual std::unique_ptr<MeshPoolBuffers> CreateMeshPoolBuffers(
 ### Vulkan
 
 - **Uploads.** `VulkanMeshPoolBuffers` keeps device-local vertex and index
-  buffers, and host-visible staging blocks. A write takes space in the current
-  block (a short lock, which only writers take), copies the data in, and
-  pushes the copy onto a lock-free queue (`moodycamel::ConcurrentQueue`,
-  already vendored). At the start of `EndFrame()`, the render thread drains
-  the queue, records the copies in batches (one `copyBuffer()` per block and
-  buffer), and one barrier before the render pass. A block is freed by the
-  garbage collector once every copy from it has been drawn by a finished
-  frame.
-- **Growth** is queued too, so it is applied in order: the render thread makes
-  the bigger buffers, copies the old contents (on the GPU), and passes the old
-  buffers to the garbage collector, before the copies that follow it.
+  buffers, and host-visible staging blocks (4 MiB, or bigger for a bigger
+  write). A write takes space in the current block (a short lock, which only
+  writers take), copies the data in, and pushes the copy onto a lock-free
+  queue (`moodycamel::ConcurrentQueue`, already vendored). The backend keeps a
+  set of every pool's buffers, and at the start of `EndFrame()` each one
+  drains its queue, whether or not the frame draws it, so a write is never
+  more than a frame late. The copies join the backend's other buffer updates,
+  which are now recorded with one `copyBuffer()` for each run of copies
+  between the same two buffers, and one memory barrier before the render
+  pass. Each copy holds its block, so the last copy recorded from a full block
+  passes it to the garbage collector.
+- **Growth.** `Grow()` creates the bigger buffers at once (so it can fail),
+  and the next `EndFrame()` copies the old contents into them on the GPU,
+  between barriers, before that frame's copies, and passes the old buffers to
+  the garbage collector. The queue is drained before the grown buffers are
+  taken, so any growth a drained write needs is applied with it, as it
+  happened before the write was queued. A second `Grow()` before the frame
+  ends replaces the first's unused buffers.
 - **No hazards on reuse.** The reuse ticket is the backend's frame, and
   `CanReuse()` is true once the frame after the ticket's is no longer in use
   (`IsFrameInUse(ticket + 1)`, as Vulkan already has internally). The extra
@@ -391,17 +398,20 @@ Depends on: CL2.
   a mesh and a pool; a material of another vertex type asserts; `Draw()` with a
   pool, and `Draw(const MeshDraw&)` with a mesh, assert.
 
-### CL4 [ ] render_vulkan: Mesh pools in Vulkan
+### CL4 [x] render_vulkan: Mesh pools in Vulkan
 
 Depends on: CL3.
 
 - `VulkanMeshPoolBuffers`: staging blocks, the upload queue, growth, reuse
   tickets, and its part of `EndFrame()`.
-- Drawing `kMeshPool` and `MeshDraw` ranges, binding the index type.
+- Drawing `kMeshPool` and `MeshDraw` ranges, binding the index type. The draw
+  loop tracks the `vk::Buffer` handles to bind, rather than the
+  `VulkanRenderBuffer`s, so a mesh and a pool share the tracking.
 - render-check: a row of shapes from one 32-bit pool, one of them drawn as two
   ranges (its halves in different colors, by `first_instance` into a storage
-  buffer of colors), and a key that replaces one shape every frame (creating the
-  new one, destroying the old one), so the pool's reuse and growth run.
+  buffer of colors), and a check box (and key) that replaces one shape every
+  frame (creating the new one, destroying the old one), so the pool's reuse and
+  growth run. Its script is `scripts/mesh_pools.txt`.
 
 **Verify**
 - Standard checks.

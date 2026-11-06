@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/container/flat_hash_set.h"
 #include "absl/functional/any_invocable.h"
 #include "absl/synchronization/mutex.h"
 #include "absl/types/span.h"
@@ -181,6 +182,13 @@ class VulkanBackend final : public RenderBackend {
   // This method is thread-compatible. If called, it must be synchronized with
   // BeginFrame/EndFrame calls.
   void AddFrameCallback(RenderStage stage, FrameCallback callback);
+
+  // Called by VulkanMeshPoolBuffers as it is created and destroyed, so each
+  // frame that is ended copies its writes, whether or not it draws the pool.
+  //
+  // These methods are thread-safe.
+  void RegisterMeshPool(VulkanInternal, VulkanMeshPoolBuffers* buffers);
+  void UnregisterMeshPool(VulkanInternal, VulkanMeshPoolBuffers* buffers);
 
   //----------------------------------------------------------------------------
   // RenderBackend overrides
@@ -359,6 +367,10 @@ class VulkanBackend final : public RenderBackend {
   mutable absl::Mutex samplers_mutex_;
   absl::flat_hash_map<SamplerOptions, vk::Sampler> samplers_
       ABSL_GUARDED_BY(samplers_mutex_);
+
+  absl::Mutex mesh_pools_mutex_;
+  absl::flat_hash_set<VulkanMeshPoolBuffers*> mesh_pools_
+      ABSL_GUARDED_BY(mesh_pools_mutex_);
 
   //----------------------------------------------------------------------------
   // The following members are accessed only during rendering and

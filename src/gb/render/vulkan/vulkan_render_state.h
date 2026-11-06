@@ -91,21 +91,23 @@ struct VulkanRenderState {
     vk::Extent3D region_extent;
   };
 
-  // Copies copy_size bytes at copy_offset in src_buffer to the same offset in
-  // dst_buffer.
+  // Copies copy_size bytes at src_offset in src_buffer to dst_offset in
+  // dst_buffer, which is then read with dst_access.
   struct BufferUpdate {
-    BufferUpdate(vk::Buffer src_buffer, vk::Buffer dst_buffer,
-                 vk::AccessFlags dst_access, vk::DeviceSize copy_offset,
-                 vk::DeviceSize copy_size)
+    BufferUpdate(vk::Buffer src_buffer, vk::DeviceSize src_offset,
+                 vk::Buffer dst_buffer, vk::DeviceSize dst_offset,
+                 vk::DeviceSize copy_size, vk::AccessFlags dst_access)
         : src_buffer(src_buffer),
           dst_buffer(dst_buffer),
           dst_access(dst_access),
-          copy_offset(copy_offset),
+          src_offset(src_offset),
+          dst_offset(dst_offset),
           copy_size(copy_size) {}
     vk::Buffer src_buffer;
     vk::Buffer dst_buffer;
     vk::AccessFlags dst_access;
-    vk::DeviceSize copy_offset;
+    vk::DeviceSize src_offset;
+    vk::DeviceSize dst_offset;
     vk::DeviceSize copy_size;
   };
 

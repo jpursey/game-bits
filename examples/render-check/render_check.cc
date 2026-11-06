@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <numbers>
 #include <utility>
 
 #include "absl/base/log_severity.h"
@@ -32,6 +33,7 @@
 #include "imgui_impl_sdl.h"
 
 // Game includes
+#include "pool_shaders.h"
 #include "quad_shaders.h"
 #include "storage_shaders.h"
 #include "volume_shaders.h"
@@ -131,6 +133,23 @@ constexpr float kStorageSpacing = 36.0f;
 constexpr float kStorageRowSpacing = kStorageQuads * kStorageSpacing + 40.0f;
 constexpr float kStorageHueStep = 0.37f;
 
+// The mesh pool's shapes are a row left of the texture formats, below the
+// extra rectangles (which only reach them while the GUI is over its vertex
+// limit). They have three sides and up, and evenly spaced hues, read from a
+// storage buffer by draw index. The last is drawn as two ranges, the second in
+// white. The pool starts too small for them, so it grows before they are first
+// drawn, and again to hold replaced shapes until their space can be reused.
+// Each replacement turns its shape by kPoolTurn for each shape replaced before
+// it.
+constexpr int kPoolShapes = 8;
+constexpr int kPoolFirstSides = 3;
+constexpr int kPoolStartVertices = 16;
+constexpr int kPoolStartTriangles = 16;
+constexpr float kPoolTop = kExtraRectTop + 160.0f;
+constexpr float kPoolRadius = 14.0f;
+constexpr float kPoolSpacing = 34.0f;
+constexpr float kPoolTurn = 0.1f;
+
 // Converts a hue in [0, 1) to a fully saturated color.
 gb::Pixel HueColor(float hue) {
   hue = hue - std::floor(hue);
@@ -219,7 +238,8 @@ bool RenderCheck::Init(const std::vector<std::string_view>& args) {
   absl::AddLogSink(&log_counter_);
   return InitWindow() && InitPilot() && InitRenderSystem() && InitGui() &&
          InitQuads() && InitTextures() && InitBlendQuads() &&
-         InitFormatTextures() && InitVolumes() && InitStorageBuffers();
+         InitFormatTextures() && InitVolumes() && InitStorageBuffers() &&
+         InitMeshPool();
 }
 
 bool RenderCheck::InitWindow() {
@@ -677,20 +697,20 @@ bool RenderCheck::InitStorageBuffers() {
       quad_type->GetVertexShader()->GetBindings(),
       {gb::ShaderParam(gb::ShaderValue::kVec2, 0)},
       {gb::ShaderParam(gb::ShaderValue::kInt, 0)});
-  gb::Shader* fragment_shader = render_system_->CreateShader(
+  storage_fragment_shader_ = render_system_->CreateShader(
       &resources_, gb::ShaderType::kFragment,
       render_system_->CreateShaderCode(kStorageFragmentShader,
                                        sizeof(kStorageFragmentShader)),
       {storage_binding}, {gb::ShaderParam(gb::ShaderValue::kInt, 0)},
       {gb::ShaderParam(gb::ShaderValue::kVec4, 0)});
-  if (vertex_shader == nullptr || fragment_shader == nullptr) {
+  if (vertex_shader == nullptr || storage_fragment_shader_ == nullptr) {
     LOG(ERROR) << "Could not create storage buffer shaders";
     return false;
   }
 
   gb::MaterialType* material_type = render_system_->CreateMaterialType(
       &resources_, quad_type->GetSceneType(), quad_type->GetVertexType(),
-      vertex_shader, fragment_shader, QuadConfig());
+      vertex_shader, storage_fragment_shader_, QuadConfig());
   if (material_type == nullptr) {
     LOG(ERROR) << "Could not create storage buffer material type";
     return false;
@@ -742,11 +762,72 @@ bool RenderCheck::InitStorageBuffers() {
   return true;
 }
 
+bool RenderCheck::InitMeshPool() {
+  // The shapes are drawn in the quads' scene, with the storage buffer quads'
+  // fragment shader, which reads a storage buffer of colors. The vertex shader
+  // takes the quad's bindings, and only reads the scene's.
+  const gb::MaterialType* quad_type = quad_material_->GetType();
+  gb::Shader* vertex_shader = render_system_->CreateShader(
+      &resources_, gb::ShaderType::kVertex,
+      render_system_->CreateShaderCode(kPoolVertexShader,
+                                       sizeof(kPoolVertexShader)),
+      quad_type->GetVertexShader()->GetBindings(),
+      {gb::ShaderParam(gb::ShaderValue::kVec2, 0)},
+      {gb::ShaderParam(gb::ShaderValue::kInt, 0)});
+  if (vertex_shader == nullptr) {
+    LOG(ERROR) << "Could not create mesh pool shaders";
+    return false;
+  }
+  gb::MaterialType* material_type = render_system_->CreateMaterialType(
+      &resources_, quad_type->GetSceneType(), quad_type->GetVertexType(),
+      vertex_shader, storage_fragment_shader_, QuadConfig());
+  if (material_type == nullptr) {
+    LOG(ERROR) << "Could not create mesh pool material type";
+    return false;
+  }
+
+  // A color for each shape, and white for the last shape's second range.
+  std::vector<QuadColor> colors(kPoolShapes + 1);
+  for (int i = 0; i < kPoolShapes; ++i) {
+    colors[i] = ToQuadColor(HueColor(static_cast<float>(i) / kPoolShapes));
+  }
+  colors[kPoolShapes] = ToQuadColor(gb::PixelColor::kWhite);
+  gb::StorageBuffer* storage_buffer = render_system_->CreateStorageBuffer(
+      &resources_, render_system_->GetConstantsType("QuadColor"),
+      gb::DataVolatility::kStaticReadWrite, kPoolShapes + 1);
+  pool_material_ = render_system_->CreateMaterial(&resources_, material_type);
+  if (storage_buffer == nullptr || !storage_buffer->Set<QuadColor>(0, colors) ||
+      pool_material_ == nullptr) {
+    LOG(ERROR) << "Could not create mesh pool colors";
+    return false;
+  }
+  pool_material_->GetMaterialBindingData()->SetStorageBuffer(0, storage_buffer);
+  pool_instance_ = pool_material_->CreateInstanceBindingData();
+
+  mesh_pool_ = render_system_->CreateMeshPool(
+      &resources_, quad_type->GetVertexType(), gb::IndexType::kUint32,
+      kPoolStartVertices, kPoolStartTriangles);
+  if (pool_instance_ == nullptr || mesh_pool_ == nullptr) {
+    LOG(ERROR) << "Could not create mesh pool";
+    return false;
+  }
+  for (int i = 0; i < kPoolShapes; ++i) {
+    auto shape = CreatePoolShape(i, 0.0f);
+    if (shape == nullptr) {
+      return false;
+    }
+    pool_shapes_.emplace_back(std::move(shape));
+  }
+  return true;
+}
+
 void RenderCheck::CleanUp() {
   instances_.clear();
   blend_instances_.clear();
   volume_rows_.clear();
   storage_rows_.clear();
+  pool_shapes_.clear();
+  pool_instance_.reset();
   scene_.reset();
   if (gui_instance_ != nullptr) {
     ImGui_ImplSDL2_Shutdown();
@@ -776,6 +857,7 @@ bool RenderCheck::Update(absl::Duration delta_time) {
   UpdateInstances();
   UpdateTextures();
   UpdateStorageBuffers();
+  UpdateMeshPool();
   Draw();
   return true;
 }
@@ -827,6 +909,9 @@ void RenderCheck::OnKeyDown(SDL_Keycode key) {
       break;
     case SDLK_3:
       UpdatePartOfMipmappedTexture();
+      break;
+    case SDLK_m:
+      replace_shapes_ = !replace_shapes_;
       break;
   }
 }
@@ -889,6 +974,23 @@ void RenderCheck::UpdateStorageBuffers() {
   }
 }
 
+void RenderCheck::UpdateMeshPool() {
+  if (!replace_shapes_) {
+    return;
+  }
+
+  // The replacement is created while the old shape is still in the pool. The
+  // old shape was last drawn in a frame that has already ended, so it can be
+  // destroyed now.
+  const int index = static_cast<int>(shapes_replaced_ % kPoolShapes);
+  auto shape = CreatePoolShape(index, shapes_replaced_ * kPoolTurn);
+  if (shape == nullptr) {
+    return;
+  }
+  pool_shapes_[index] = std::move(shape);
+  ++shapes_replaced_;
+}
+
 void RenderCheck::DrawGui() {
   ImGui::SetNextWindowPos({10, 10}, ImGuiCond_Always);
   ImGui::SetNextWindowSize({kPanelWidth, 0}, ImGuiCond_Always);
@@ -904,12 +1006,14 @@ void RenderCheck::DrawGui() {
   DrawFormatGui();
   DrawVolumeGui();
   DrawStorageGui();
+  DrawMeshPoolGui();
   DrawLogGui();
   ImGui::End();
   DrawExtraRects();
   DrawFormatTextures();
   DrawVolumeLabels();
   DrawStorageLabels();
+  DrawMeshPoolLabel();
 }
 
 void RenderCheck::DrawFrameGui() {
@@ -1115,6 +1219,33 @@ void RenderCheck::DrawStorageLabels() {
   }
 }
 
+void RenderCheck::DrawMeshPoolGui() {
+  if (!ImGui::CollapsingHeader("Mesh pools", ImGuiTreeNodeFlags_DefaultOpen)) {
+    return;
+  }
+  ImGui::Checkbox("Replace a shape each frame (M)", &replace_shapes_);
+  const gb::MeshPoolStats stats = mesh_pool_->GetStats();
+  ImGui::Text("Meshes: %d   Replaced: %lld", stats.mesh_count,
+              static_cast<long long>(shapes_replaced_));
+  ImGui::Text("Vertices: %d of %d used, %d waiting, %d free ranges",
+              stats.vertices.used, stats.vertices.capacity,
+              stats.vertices.waiting, stats.vertices.free_ranges);
+  ImGui::Text("Triangles: %d of %d used, %d waiting, %d free ranges",
+              stats.triangles.used, stats.triangles.capacity,
+              stats.triangles.waiting, stats.triangles.free_ranges);
+  ImGui::TextWrapped(
+      "Left of the texture formats, a row of shapes from one 32-bit mesh pool, "
+      "from a triangle to a decagon, in evenly spaced hues from red. The "
+      "decagon is drawn as two ranges, its second half white. While "
+      "replacing, the shapes turn as they are replaced, and the pool grows to "
+      "hold the replaced shapes until their space is reused.");
+}
+
+void RenderCheck::DrawMeshPoolLabel() {
+  ImGui::GetBackgroundDrawList()->AddText({kGridLeft, kPoolTop - 16.0f},
+                                          IM_COL32_WHITE, "Mesh pool, 32-bit");
+}
+
 void RenderCheck::AddVolumeRegions() {
   for (const VolumeRow& row : volume_rows_) {
     const gb::TextureFormat format = row.volume->GetFormat();
@@ -1209,6 +1340,7 @@ void RenderCheck::DrawQuads() {
   render_system_->Draw(scene_.get(), blend_draw_list_);
   DrawVolumes();
   DrawStorageBuffers();
+  DrawMeshPool();
 }
 
 void RenderCheck::DrawVolumes() {
@@ -1238,6 +1370,47 @@ void RenderCheck::DrawStorageBuffers() {
       render_system_->Draw(scene_.get(), quad_mesh_, row.material, quad.get());
     }
   }
+}
+
+void RenderCheck::DrawMeshPool() {
+  // Each shape's draw index is the index of its color.
+  gb::DrawList draw_list;
+  draw_list.SetMeshPool(mesh_pool_, pool_material_, pool_instance_.get());
+  for (int i = 0; i < kPoolShapes - 1; ++i) {
+    draw_list.Draw(pool_shapes_[i]->GetDraw(i));
+  }
+  const gb::PooledMesh* last = pool_shapes_.back().get();
+  const int half = last->GetTriangleCount() / 2;
+  draw_list.Draw(last->GetDraw(0, half, kPoolShapes - 1));
+  draw_list.Draw(
+      last->GetDraw(half, last->GetTriangleCount() - half, kPoolShapes));
+  render_system_->Draw(scene_.get(), draw_list);
+}
+
+std::unique_ptr<gb::PooledMesh> RenderCheck::CreatePoolShape(int index,
+                                                             float angle) {
+  // A fan of triangles around the center vertex, with its first corner up
+  // before turning.
+  const int sides = kPoolFirstSides + index;
+  const float center_x = kGridLeft + index * kPoolSpacing + kPoolRadius;
+  const float center_y = kPoolTop + kPoolRadius;
+  std::vector<QuadVertex> vertices = {{center_x, center_y}};
+  std::vector<uint32_t> indices;
+  for (int i = 0; i < sides; ++i) {
+    const float corner_angle = angle +
+                               2.0f * std::numbers::pi_v<float> * i / sides -
+                               std::numbers::pi_v<float> / 2.0f;
+    vertices.push_back({center_x + kPoolRadius * std::cos(corner_angle),
+                        center_y + kPoolRadius * std::sin(corner_angle)});
+    indices.insert(indices.end(), {0, static_cast<uint32_t>(1 + i),
+                                   static_cast<uint32_t>(1 + (i + 1) % sides)});
+  }
+  auto shape = mesh_pool_->CreateMesh<QuadVertex>(vertices, indices);
+  if (shape == nullptr) {
+    LOG(ERROR) << "Could not create a mesh pool shape with " << sides
+               << " sides";
+  }
+  return shape;
 }
 
 void RenderCheck::CreateInstances() {

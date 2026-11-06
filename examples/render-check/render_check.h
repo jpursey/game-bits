@@ -26,6 +26,7 @@
 #include "gb/pilot/sdl/pilot_sdl.h"
 #include "gb/render/draw_list.h"
 #include "gb/render/material_config.h"
+#include "gb/render/mesh_pool.h"
 #include "gb/render/render_system.h"
 #include "gb/render/storage_buffer.h"
 #include "gb/render/volume_texture.h"
@@ -65,7 +66,7 @@ class LogCounter final : public absl::LogSink {
 
 // Exercises the Vulkan backend: window resizing, binding data churn, texture
 // and texture array updates while they are drawn, each texture format, volume
-// textures, storage buffers, and each material blend mode.
+// textures, storage buffers, mesh pools, and each material blend mode.
 //
 // The checks are run by hand, or by a pilot in the context, whose scripts (in
 // scripts/) press the panel's buttons by their labels. A result that isn't as
@@ -137,6 +138,7 @@ class RenderCheck final : public gb::Game {
   bool InitFormatTextures();
   bool InitVolumes();
   bool InitStorageBuffers();
+  bool InitMeshPool();
   bool InitPilot();
 
   bool ProcessEvents();
@@ -152,6 +154,7 @@ class RenderCheck final : public gb::Game {
   void UpdateInstances();
   void UpdateTextures();
   void UpdateStorageBuffers();
+  void UpdateMeshPool();
   void Draw();
   void DrawGui();
   void DrawFrameGui();
@@ -163,16 +166,23 @@ class RenderCheck final : public gb::Game {
   void DrawFormatGui();
   void DrawVolumeGui();
   void DrawStorageGui();
+  void DrawMeshPoolGui();
   void DrawLogGui();
   void DrawExtraRects();
   void DrawFormatTextures();
   void AddFormatStripes();
   void DrawVolumeLabels();
   void DrawStorageLabels();
+  void DrawMeshPoolLabel();
   void AddVolumeRegions();
   void DrawQuads();
   void DrawVolumes();
   void DrawStorageBuffers();
+  void DrawMeshPool();
+
+  // Creates the mesh pool's shape at `index`, turned by `angle` radians, or
+  // returns null if it couldn't.
+  std::unique_ptr<gb::PooledMesh> CreatePoolShape(int index, float angle);
 
   void CreateInstances();
   void SetInstanceData(int index, gb::BindingData* instance);
@@ -258,6 +268,20 @@ class RenderCheck final : public gb::Game {
   // time at which their last color was last changed.
   std::vector<StorageRow> storage_rows_;
   int64_t storage_second_ = -1;
+
+  // Reads its color from a storage buffer of QuadColor, by an index from the
+  // vertex shader. The mesh pool's shapes use it too.
+  gb::Shader* storage_fragment_shader_ = nullptr;
+
+  // A mesh pool, drawn by DrawMeshPool(), whose shapes each read their color
+  // from a storage buffer by their draw index. While replacing, one shape is
+  // replaced each frame.
+  gb::MeshPool* mesh_pool_ = nullptr;
+  gb::Material* pool_material_ = nullptr;
+  std::unique_ptr<gb::BindingData> pool_instance_;
+  std::vector<std::unique_ptr<gb::PooledMesh>> pool_shapes_;
+  bool replace_shapes_ = false;
+  int64_t shapes_replaced_ = 0;
 
   // GUI.
   int extra_rects_ = 0;

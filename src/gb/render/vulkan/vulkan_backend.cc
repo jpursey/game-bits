@@ -19,6 +19,7 @@
 #include "gb/render/vulkan/vulkan_binding_data.h"
 #include "gb/render/vulkan/vulkan_buffer.h"
 #include "gb/render/vulkan/vulkan_format.h"
+#include "gb/render/vulkan/vulkan_mesh_pool_buffers.h"
 #include "gb/render/vulkan/vulkan_render_buffer.h"
 #include "gb/render/vulkan/vulkan_render_pipeline.h"
 #include "gb/render/vulkan/vulkan_scene.h"
@@ -890,6 +891,18 @@ void VulkanBackend::AddFrameCallback(RenderStage stage,
   }
 }
 
+void VulkanBackend::RegisterMeshPool(VulkanInternal,
+                                     VulkanMeshPoolBuffers* buffers) {
+  absl::MutexLock lock(&mesh_pools_mutex_);
+  mesh_pools_.insert(buffers);
+}
+
+void VulkanBackend::UnregisterMeshPool(VulkanInternal,
+                                       VulkanMeshPoolBuffers* buffers) {
+  absl::MutexLock lock(&mesh_pools_mutex_);
+  mesh_pools_.erase(buffers);
+}
+
 bool VulkanBackend::CanFilter(RenderInternal, TextureFormat format) const {
   const vk::FormatProperties properties = physical_device_.getFormatProperties(
       GetVulkanTextureFormat(format).format);
@@ -983,9 +996,10 @@ std::unique_ptr<RenderBuffer> VulkanBackend::CreateStorageBuffer(
 }
 
 std::unique_ptr<MeshPoolBuffers> VulkanBackend::CreateMeshPoolBuffers(
-    RenderInternal, int, IndexType, int, int) {
-  LOG(ERROR) << "Mesh pools are not supported by the Vulkan backend yet";
-  return nullptr;
+    RenderInternal, int vertex_size, IndexType index_type, int vertex_capacity,
+    int index_capacity) {
+  return VulkanMeshPoolBuffers::Create({}, this, vertex_size, index_type,
+                                       vertex_capacity, index_capacity);
 }
 
 bool VulkanBackend::BeginFrame(RenderInternal) {
@@ -1164,6 +1178,15 @@ void VulkanBackend::EndFrameProcessUpdates() {
     volume_texture->OnRender(&render_state_);
   }
 
+  // Every mesh pool copies its writes, whether or not this frame draws it, so
+  // a write is never more than a frame late.
+  {
+    absl::MutexLock lock(&mesh_pools_mutex_);
+    for (VulkanMeshPoolBuffers* mesh_pool : mesh_pools_) {
+      mesh_pool->OnRender(frames_[frame_index_].commands, &render_state_);
+    }
+  }
+
   // Update all changed resources.
   if (!render_state_.buffer_updates.empty()) {
     EndFrameUpdateBuffers();
@@ -1177,30 +1200,32 @@ void VulkanBackend::EndFrameProcessUpdates() {
 void VulkanBackend::EndFrameUpdateBuffers() {
   auto& frame = frames_[frame_index_];
 
-  std::vector<vk::BufferMemoryBarrier> barriers;
-  barriers.reserve(render_state_.buffer_updates.size());
-
-  for (const auto& update : render_state_.buffer_updates) {
-    frame.commands.copyBuffer(
-        update.src_buffer, update.dst_buffer,
-        {vk::BufferCopy(update.copy_offset, update.copy_offset,
-                        update.copy_size)});
-    auto& barrier = barriers.emplace_back();
-    barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
-    barrier.dstAccessMask = update.dst_access;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.buffer = update.dst_buffer;
-    barrier.offset = update.copy_offset;
-    barrier.size = update.copy_size;
+  // Adjacent updates between the same two buffers are recorded as one copy.
+  std::vector<vk::BufferCopy> regions;
+  vk::AccessFlags dst_access;
+  const auto& updates = render_state_.buffer_updates;
+  const int update_count = static_cast<int>(updates.size());
+  for (int i = 0; i < update_count; ++i) {
+    const auto& update = updates[i];
+    regions.emplace_back(update.src_offset, update.dst_offset,
+                         update.copy_size);
+    dst_access |= update.dst_access;
+    if (i + 1 == update_count ||
+        updates[i + 1].src_buffer != update.src_buffer ||
+        updates[i + 1].dst_buffer != update.dst_buffer) {
+      frame.commands.copyBuffer(update.src_buffer, update.dst_buffer, regions);
+      regions.clear();
+    }
   }
 
-  // Create single pipeline barrier for any modified buffers.
-  frame.commands.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                                 vk::PipelineStageFlagBits::eVertexInput |
-                                     vk::PipelineStageFlagBits::eVertexShader |
-                                     vk::PipelineStageFlagBits::eFragmentShader,
-                                 {}, {}, barriers, {});
+  // One barrier for every copy, before anything reads them.
+  frame.commands.pipelineBarrier(
+      vk::PipelineStageFlagBits::eTransfer,
+      vk::PipelineStageFlagBits::eVertexInput |
+          vk::PipelineStageFlagBits::eVertexShader |
+          vk::PipelineStageFlagBits::eFragmentShader,
+      {}, {vk::MemoryBarrier(vk::AccessFlagBits::eTransferWrite, dst_access)},
+      {}, {});
 }
 
 void VulkanBackend::EndFrameUpdateImages() {
@@ -1382,10 +1407,13 @@ void VulkanBackend::EndFrameRenderPass() {
         }  // MaterialDraw
         VulkanRenderPipeline* last_pipeline = pipeline;
         VulkanRenderPipeline* next_pipeline = pipeline;
-        VulkanRenderBuffer* last_vertex_buffer = nullptr;
-        VulkanRenderBuffer* next_vertex_buffer = nullptr;
-        VulkanRenderBuffer* last_index_buffer = nullptr;
-        VulkanRenderBuffer* next_index_buffer = nullptr;
+        // Each command sets what the next draw binds, and a draw binds only
+        // what differs from the last draw.
+        vk::Buffer last_vertex_buffer;
+        vk::Buffer next_vertex_buffer;
+        vk::Buffer last_index_buffer;
+        vk::Buffer next_index_buffer;
+        vk::IndexType next_index_type = vk::IndexType::eUint16;
         VulkanBindingData* last_material_data = nullptr;
         VulkanBindingData* next_material_data = nullptr;
         VulkanBindingData* last_instance_data = nullptr;
@@ -1394,31 +1422,34 @@ void VulkanBackend::EndFrameRenderPass() {
           switch (command.type) {
             case DrawCommand::Type::kPipeline: {
               pipeline = static_cast<VulkanRenderPipeline*>(command.pipeline);
-              if (pipeline != last_pipeline) {
-                next_pipeline = pipeline;
-              }
+              next_pipeline = pipeline;
               break;
             }
             case DrawCommand::Type::kVertices: {
-              auto* buffer = static_cast<VulkanRenderBuffer*>(command.buffer);
-              if (buffer != last_vertex_buffer) {
-                next_vertex_buffer = buffer;
-              }
+              next_vertex_buffer =
+                  static_cast<VulkanRenderBuffer*>(command.buffer)
+                      ->GetBuffer(frame_index_);
               break;
             }
             case DrawCommand::Type::kIndices: {
-              auto* buffer = static_cast<VulkanRenderBuffer*>(command.buffer);
-              if (buffer != last_index_buffer) {
-                next_index_buffer = buffer;
-              }
+              next_index_buffer =
+                  static_cast<VulkanRenderBuffer*>(command.buffer)
+                      ->GetBuffer(frame_index_);
+              next_index_type = vk::IndexType::eUint16;
+              break;
+            }
+            case DrawCommand::Type::kMeshPool: {
+              auto* buffers = static_cast<VulkanMeshPoolBuffers*>(
+                  command.mesh_pool_buffers);
+              next_vertex_buffer = buffers->GetVertexBuffer();
+              next_index_buffer = buffers->GetIndexBuffer();
+              next_index_type = buffers->GetIndexType();
               break;
             }
             case DrawCommand::Type::kMaterialData: {
               auto* binding_data =
                   static_cast<VulkanBindingData*>(command.binding_data);
-              auto descriptor_set =
-                  binding_data->GetDescriptorSet(frame_index_);
-              if (binding_data != last_material_data && descriptor_set) {
+              if (binding_data->GetDescriptorSet(frame_index_)) {
                 next_material_data = binding_data;
               }
               break;
@@ -1426,9 +1457,7 @@ void VulkanBackend::EndFrameRenderPass() {
             case DrawCommand::Type::kInstanceData: {
               auto* binding_data =
                   static_cast<VulkanBindingData*>(command.binding_data);
-              auto descriptor_set =
-                  binding_data->GetDescriptorSet(frame_index_);
-              if (binding_data != last_instance_data && descriptor_set) {
+              if (binding_data->GetDescriptorSet(frame_index_)) {
                 next_instance_data = binding_data;
               }
               break;
@@ -1461,23 +1490,19 @@ void VulkanBackend::EndFrameRenderPass() {
                 last_instance_data = next_instance_data;
               }
               if (next_vertex_buffer != last_vertex_buffer) {
-                frame.commands.bindVertexBuffers(
-                    0, {next_vertex_buffer->GetBuffer(frame_index_)}, {0});
+                frame.commands.bindVertexBuffers(0, {next_vertex_buffer}, {0});
                 last_vertex_buffer = next_vertex_buffer;
               }
+
+              // An index buffer is only ever read with one index type.
               if (next_index_buffer != last_index_buffer) {
-                frame.commands.bindIndexBuffer(
-                    next_index_buffer->GetBuffer(frame_index_), 0,
-                    vk::IndexType::eUint16);
+                frame.commands.bindIndexBuffer(next_index_buffer, 0,
+                                               next_index_type);
                 last_index_buffer = next_index_buffer;
               }
               frame.commands.drawIndexed(
                   command.draw.index_count, 1, command.draw.index_offset,
                   command.draw.vertex_offset, command.draw.first_instance);
-              break;
-            }
-            case DrawCommand::Type::kMeshPool: {
-              // CreateMeshPoolBuffers() always fails, so no mesh pool exists.
               break;
             }
             case DrawCommand::Type::kReset: {

@@ -22,6 +22,7 @@ class VulkanBuffer;
 class VulkanDescriptorPool;
 class VulkanFrame;
 class VulkanImage;
+class VulkanMeshPoolBuffers;
 class VulkanRenderBuffer;
 class VulkanRenderPipeline;
 struct VulkanRenderState;
@@ -36,6 +37,7 @@ class VulkanWindow;
 GB_BEGIN_ACCESS_TOKEN(VulkanInternal)
 friend class VulkanBackend;
 friend class VulkanBindingDataFactory;
+friend class VulkanMeshPoolBuffers;
 friend class VulkanRenderPipeline;
 friend class VulkanSceneType;
 GB_END_ACCESS_TOKEN()
