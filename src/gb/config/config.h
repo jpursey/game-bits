@@ -32,6 +32,8 @@ struct ConfigLocation {
 
 // Represents a configuration value, which can be a bool, int, float,
 // string, or a map or array of other config values.
+//
+// This class is thread-compatible.
 class Config {
  public:
   enum class Type {

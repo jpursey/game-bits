@@ -5,11 +5,13 @@
 
 set(gb_config_SOURCE
   config.cc config.h
+  config_reader.cc config_reader.h
   config_types.h
   text_config.cc text_config.h
 )
 
 set(gb_config_DEPS
+  absl::check
   absl::status
   absl::statusor
   absl::strings
@@ -19,6 +21,7 @@ set(gb_config_DEPS
 )
 
 set(gb_config_TEST_SOURCE
+  config_reader_test.cc
   config_test.cc
   text_config_test.cc
 )

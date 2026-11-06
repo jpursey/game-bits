@@ -180,7 +180,10 @@ if (!reader.GetStatus().ok()) {
   so `device.Get("type").Reject("missing type")` points at the device's `{`.
 - Messages: `must be a map`, `must be an array`, `must be a bool`, `must be an
   int`, `must be a float`, `must be a string`, `must be 1 to 132`, `must have 1
-  to 8 values`, and `unknown key` (at the key's own path).
+  to 8 values` (or `must have 2 values` and `must have at least 1 value` for
+  an exact or open size), and `unknown key` (at the key's own path). A float
+  too big for a `float` gives its range: `must be -3.40282e+38 to
+  3.40282e+38`.
 - The destination types are constrained, so a mismatch is a compile error
   rather than a silent conversion: `ReadInt()` takes a pointer to an integer
   type (`ConfigInt`: `int8_t` to `uint64_t`, not `bool` or a character type),
@@ -262,7 +265,9 @@ if (!reader.GetStatus().ok()) {
   (OZ-3's screen character sets) builds a path for each, a few thousand short
   strings, which is well under a millisecond and only paid when a config file
   is read.
-- Single threaded, like `Config`.
+- Thread-compatible, like `Config`. The status its const functions record is
+  shared by every reader of a read, so a mutex guards it, and readers of one
+  read can be used on different threads at once.
 
 **Brittleness:**
 - The `Config` must outlive every reader, as for any view. Readers are meant
@@ -301,7 +306,7 @@ Depends on: nothing.
   nested values, values after comments and on later lines, rooted and rootless
   roots. A syntax error names the filename when one is given.
 
-### CL2 [ ] config: ConfigReader
+### CL2 [x] config: ConfigReader
 
 Depends on: CL1.
 
