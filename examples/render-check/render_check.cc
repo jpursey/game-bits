@@ -167,9 +167,15 @@ std::string PixelString(gb::Pixel pixel) {
                          pixel.a);
 }
 
-std::string ResultString(bool result, bool expected) {
-  return absl::StrCat(result ? "succeeded" : "failed",
-                      result == expected ? " (expected)" : " (UNEXPECTED)");
+// Returns the result of a check to show, and logs an error if it isn't what
+// was expected, which fails a pilot's run.
+std::string ResultString(std::string_view check, bool result, bool expected) {
+  const char* const outcome = result ? "succeeded" : "failed";
+  if (result != expected) {
+    LOG(ERROR) << check << " " << outcome << ", which is unexpected";
+  }
+  return absl::StrCat(check, ": ", outcome, " (",
+                      result == expected ? "expected" : "UNEXPECTED", ")");
 }
 
 }  // namespace
@@ -209,13 +215,11 @@ void LogCounter::Reset() {
 // RenderCheck
 //==============================================================================
 
-RenderCheck::~RenderCheck() { CleanUp(); }
-
-bool RenderCheck::Init() {
+bool RenderCheck::Init(const std::vector<std::string_view>& args) {
   absl::AddLogSink(&log_counter_);
-  return InitWindow() && InitRenderSystem() && InitGui() && InitQuads() &&
-         InitTextures() && InitBlendQuads() && InitFormatTextures() &&
-         InitVolumes() && InitStorageBuffers();
+  return InitWindow() && InitPilot() && InitRenderSystem() && InitGui() &&
+         InitQuads() && InitTextures() && InitBlendQuads() &&
+         InitFormatTextures() && InitVolumes() && InitStorageBuffers();
 }
 
 bool RenderCheck::InitWindow() {
@@ -241,8 +245,21 @@ bool RenderCheck::InitWindow() {
   return true;
 }
 
+bool RenderCheck::InitPilot() {
+  gb::Pilot* pilot = Context().GetPtr<gb::Pilot>();
+  if (pilot == nullptr) {
+    return true;
+  }
+  pilot_sdl_ = gb::PilotSdl::Create(pilot, window_);
+  if (pilot_sdl_ == nullptr) {
+    return false;
+  }
+  gui_under_limit_ = pilot->AddCondition("gui_under_limit",
+                                         [this] { return IsGuiUnderLimit(); });
+  return true;
+}
+
 bool RenderCheck::InitRenderSystem() {
-  file_system_ = std::make_unique<gb::FileSystem>();
   resource_system_ = gb::ResourceSystem::Create();
   if (resource_system_ == nullptr) {
     return false;
@@ -272,11 +289,14 @@ bool RenderCheck::InitRenderSystem() {
     return false;
   }
   backend_ = backend.get();
+
+  // The render system and GUI take the file system and the pilot from the
+  // game's context.
   render_system_ = gb::RenderSystem::Create(
       gb::ContextBuilder()
+          .SetParent(Context())
           .SetOwned<gb::RenderBackend>(std::move(backend))
           .SetPtr<gb::ResourceSystem>(resource_system_.get())
-          .SetPtr<gb::FileSystem>(file_system_.get())
           .Build());
   if (render_system_ == nullptr) {
     LOG(ERROR) << "Could not create render system";
@@ -289,7 +309,7 @@ bool RenderCheck::InitRenderSystem() {
 bool RenderCheck::InitGui() {
   gui_instance_ = gb::ImGuiInstance::Create(
       gb::ContextBuilder()
-          .SetPtr<gb::FileSystem>(file_system_.get())
+          .SetParent(Context())
           .SetPtr<gb::RenderSystem>(render_system_.get())
           .Build());
   if (gui_instance_ == nullptr) {
@@ -735,7 +755,8 @@ void RenderCheck::CleanUp() {
   resources_.RemoveAll();
   render_system_.reset();
   resource_system_.reset();
-  file_system_.reset();
+  gui_under_limit_ = {};
+  pilot_sdl_.reset();
   message_system_.reset();
   if (window_ != nullptr) {
     SDL_DestroyWindow(window_);
@@ -745,31 +766,37 @@ void RenderCheck::CleanUp() {
   absl::RemoveLogSink(&log_counter_);
 }
 
-void RenderCheck::Run() {
-  while (ProcessEvents()) {
-    ++frame_;
-    UpdateFrameStats();
-    UpdateInstances();
-    UpdateTextures();
-    UpdateStorageBuffers();
-
-    ImGui_ImplSDL2_NewFrame();
-    ImGui::NewFrame();
-    DrawGui();
-
-    if (!render_system_->BeginFrame()) {
-      ++begin_frame_failures_;
-      ImGui::EndFrame();
-
-      // Nothing is presented (such as while minimized), so don't spin.
-      SDL_Delay(10);
-      continue;
-    }
-    ++frames_drawn_;
-    DrawQuads();
-    gui_instance_->Draw();
-    render_system_->EndFrame();
+bool RenderCheck::Update(absl::Duration delta_time) {
+  if (!ProcessEvents()) {
+    return false;
   }
+  ++frame_;
+  time_ += delta_time;
+  UpdateFrameStats();
+  UpdateInstances();
+  UpdateTextures();
+  UpdateStorageBuffers();
+  Draw();
+  return true;
+}
+
+void RenderCheck::Draw() {
+  ImGui_ImplSDL2_NewFrame();
+  ImGui::NewFrame();
+  DrawGui();
+
+  if (!render_system_->BeginFrame()) {
+    ++begin_frame_failures_;
+    ImGui::EndFrame();
+
+    // Nothing is presented (such as while minimized), so don't spin.
+    SDL_Delay(10);
+    return;
+  }
+  ++frames_drawn_;
+  DrawQuads();
+  gui_instance_->Draw();
+  render_system_->EndFrame();
 }
 
 bool RenderCheck::ProcessEvents() {
@@ -803,6 +830,8 @@ void RenderCheck::OnKeyDown(SDL_Keycode key) {
       break;
   }
 }
+
+bool RenderCheck::IsGuiUnderLimit() const { return over_limit_frames_ == 0; }
 
 void RenderCheck::UpdateFrameStats() {
   if (frame_ % 30 != 1) {
@@ -846,7 +875,7 @@ void RenderCheck::UpdateTextures() {
 }
 
 void RenderCheck::UpdateStorageBuffers() {
-  const int64_t second = SDL_GetTicks() / 1000;
+  const int64_t second = absl::ToInt64Seconds(time_);
   if (second == storage_second_) {
     return;
   }
@@ -976,7 +1005,7 @@ void RenderCheck::DrawTextureArrayGui() {
     std::vector<gb::Pixel> pixels;
     const bool result = read_write_array_->Get(1, &pixels);
     read_write_array_result_ =
-        absl::StrCat("Get: ", ResultString(result, /*expected=*/true), ", ",
+        absl::StrCat(ResultString("Get", result, /*expected=*/true), ", ",
                      pixels.size(), " pixels, first ",
                      pixels.empty() ? "none" : PixelString(pixels.front()));
   }
@@ -994,9 +1023,8 @@ void RenderCheck::DrawTextureArrayGui() {
   if (ImGui::Button("Set layer 0 of the drawn array")) {
     const std::vector<gb::Pixel> pixels(kArraySize * kArraySize,
                                         gb::Pixel(255, 255, 255));
-    static_write_array_result_ =
-        absl::StrCat("Set: ", ResultString(static_write_array_->Set(0, pixels),
-                                           /*expected=*/false));
+    static_write_array_result_ = ResultString(
+        "Set", static_write_array_->Set(0, pixels), /*expected=*/false);
   }
   ImGui::TextWrapped("%s", static_write_array_result_.c_str());
 }
@@ -1355,7 +1383,7 @@ void RenderCheck::TwoRegionUpdate() {
   static_write_texture_.texture = texture;
   static_write_texture_.id = gui_instance_->AddTexture(texture);
   static_write_texture_.result =
-      absl::StrCat("Regions: ", ResultString(failed == 0, /*expected=*/true),
+      absl::StrCat(ResultString("Regions", failed == 0, /*expected=*/true),
                    " (a red square on grey, above a blue band)");
 }
 
@@ -1366,10 +1394,10 @@ void RenderCheck::UpdatePartOfDrawnTexture() {
   const std::vector<gb::Pixel> pixels(kSquareSize * kSquareSize,
                                       gb::Pixel(255, 255, 255));
   static_write_texture_.result =
-      absl::StrCat("Update drawn: ",
-                   ResultString(static_write_texture_.texture->SetRegion(
-                                    0, 0, kSquareSize, kSquareSize, pixels),
-                                /*expected=*/false));
+      ResultString("Update drawn",
+                   static_write_texture_.texture->SetRegion(
+                       0, 0, kSquareSize, kSquareSize, pixels),
+                   /*expected=*/false);
 }
 
 void RenderCheck::UpdatePartOfMipmappedTexture() {
@@ -1389,6 +1417,6 @@ void RenderCheck::UpdatePartOfMipmappedTexture() {
       texture->SetRegion(0, 0, kSquareSize, kSquareSize, square);
   const bool whole_result = texture->Set(all);
   static_write_texture_.result = absl::StrCat(
-      "Mipmapped partial: ", ResultString(partial_result, /*expected=*/false),
-      ", whole: ", ResultString(whole_result, /*expected=*/true));
+      ResultString("Mipmapped partial", partial_result, /*expected=*/false),
+      ", ", ResultString("whole", whole_result, /*expected=*/true));
 }

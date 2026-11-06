@@ -1,0 +1,23 @@
+# Copyright (c) 2026 John Pursey
+#
+# Use of this source code is governed by an MIT-style License that can be found
+# in the LICENSE file or at https://opensource.org/licenses/MIT.
+
+# The Frames and Instances sections: memory peaks, and recreating every
+# instance in the grid each frame.
+wait 30
+save start
+
+# Recreates the grid's instances each frame, which keeps the grid whole, shifts
+# its colors, and counts them as created.
+click "Recreate every instance each frame"
+wait 10
+save recreating
+click "Recreate every instance each frame"
+wait 2
+save stopped
+
+# The peaks drop to the memory in use, once next measured.
+click "Reset peaks"
+wait 30
+save peaks_reset

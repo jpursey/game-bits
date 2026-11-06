@@ -1,0 +1,31 @@
+# Copyright (c) 2026 John Pursey
+#
+# Use of this source code is governed by an MIT-style License that can be found
+# in the LICENSE file or at https://opensource.org/licenses/MIT.
+
+# The Textures section: painting into textures while they are drawn, and
+# updating parts of kStaticWrite textures. A result that isn't as expected
+# logs an error, which fails the run.
+wait 30
+save start
+
+# Paints a square into both checkerboards each frame, then resets them.
+click "Paint a square each frame (P)"
+wait 30
+save painted
+click "Paint a square each frame (P)"
+click "Reset checkerboards"
+wait 2
+save reset
+
+# A new texture takes two regions, but one that is drawn, or mipmapped, can't
+# take a part.
+click "New texture, two regions (1)"
+wait 2
+save two_regions
+click "Update part of the drawn texture (2)"
+wait 2
+save update_drawn
+click "Update part of a mipmapped texture (3)"
+wait 2
+save update_mipmapped

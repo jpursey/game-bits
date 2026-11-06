@@ -1,0 +1,15 @@
+# Copyright (c) 2026 John Pursey
+#
+# Use of this source code is governed by an MIT-style License that can be found
+# in the LICENSE file or at https://opensource.org/licenses/MIT.
+
+# What is drawn without a button: the blend modes, the texture formats, the
+# volume textures, and the storage buffers, whose sections say what each
+# should look like.
+wait 30
+save first_second
+
+# A second later, only each storage buffer's last quad, and the last volume
+# quad in each row, have changed.
+wait 60
+save next_second

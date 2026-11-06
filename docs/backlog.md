@@ -503,6 +503,37 @@ and release separately (`press left "Extra rectangles"`, `move 400 300`,
 keys held across other steps, such as shift. As with `key` and `click`, each
 release needs a frame with no other input, for programs that poll input.
 
+## Pilot clicks on scrolled out items
+
+- **Layers:** imgui
+- **Size:** medium
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Scripted runs](worklog/scripted_runs.md)
+
+With a pilot, `ImGuiInstance` only finds items that aren't clipped, so an item
+scrolled out of its window, or below the edge of the screen, can't be clicked.
+render-check's scripts collapse the sections above the one they check to bring
+it into the window, which ties each script to the panel's layout. Scroll the
+window to an item a script names, as ImGui's own test engine does. ImGui only
+gives an item's label for items that aren't clipped, so finding a clipped one
+by its label needs another way to learn it.
+
+## OS file system for command lines
+
+- **Layers:** cli
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Scripted runs](worklog/scripted_runs.md)
+
+A program whose command line takes paths (any using `CreateCliPilot()`, and
+OZ-3's assembler and simulator) builds the same file system in `main()`: an
+OS-root `LocalFileProtocol`, registered as the default protocol, in the context
+given to `RunCommandLine()`. A program that forgets the default protocol fails
+only when a path without one is given. Add a `gb_cli` function that builds it,
+or a `RunCommandLine()` that does, beside `GetMainArgs()`.
+
 ## Deterministic concurrency tests
 
 - **Layers:** game, job, message, resource

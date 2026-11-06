@@ -49,13 +49,21 @@ set(render_check_DEPS
   absl::log_entry
   absl::log_sink
   absl::log_sink_registry
+  absl::statusor
   absl::str_format
   absl::strings
   absl::synchronization
+  absl::time
+  gb_base
+  gb_cli
   gb_file
+  gb_game
   gb_imgui
   gb_imgui_sdl
   gb_message
+  gb_pilot
+  gb_pilot_script
+  gb_pilot_sdl
   gb_render
   gb_render_vulkan
   gb_render_vulkan_sdl

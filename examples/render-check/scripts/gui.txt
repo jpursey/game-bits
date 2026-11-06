@@ -1,0 +1,40 @@
+# Copyright (c) 2026 John Pursey
+#
+# Use of this source code is governed by an MIT-style License that can be found
+# in the LICENSE file or at https://opensource.org/licenses/MIT.
+
+# The GUI section: many GUI vertices, too many for a second, and a render state
+# reset in the panel's draw list.
+wait 30
+
+# The sections above are collapsed to bring this one, and the log, into the
+# window.
+click "Frames"
+click "Instances"
+click "Textures"
+click "Texture arrays"
+wait 2
+save start
+
+# A click sets the slider to where it is pressed: the middle of the slider and
+# its label, so several thousand extra rectangles are drawn.
+click "Extra rectangles"
+wait 2
+save extra_rectangles
+
+# For a second the GUI has too many vertices, so it isn't drawn and logs an
+# error (at most once a second), then it is drawn again, with the error in the
+# log.
+expect error "more than the maximum of" 120
+click "Go over the vertex limit for a second"
+save over_limit
+wait for gui_under_limit
+save after_over_limit
+click "Reset log"
+wait 2
+save log_reset
+
+# The line after the reset is drawn as the rest of the panel is.
+click "Reset render state in this panel"
+wait 2
+save reset_render_state

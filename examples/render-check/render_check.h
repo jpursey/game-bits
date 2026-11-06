@@ -9,17 +9,21 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "SDL.h"
 #include "absl/base/thread_annotations.h"
 #include "absl/log/log_sink.h"
 #include "absl/synchronization/mutex.h"
-#include "gb/file/file_system.h"
+#include "absl/time/time.h"
+#include "gb/game/game.h"
 #include "gb/image/pixel.h"
 #include "gb/imgui/imgui_instance.h"
 #include "gb/message/message_dispatcher.h"
 #include "gb/message/message_system.h"
+#include "gb/pilot/pilot.h"
+#include "gb/pilot/sdl/pilot_sdl.h"
 #include "gb/render/draw_list.h"
 #include "gb/render/material_config.h"
 #include "gb/render/render_system.h"
@@ -59,18 +63,20 @@ class LogCounter final : public absl::LogSink {
 // RenderCheck
 //==============================================================================
 
-// Exercises the Vulkan backend by hand: window resizing, binding data churn,
-// texture and texture array updates while they are drawn, each texture format,
-// volume textures, storage buffers, and each material blend mode.
-class RenderCheck final {
- public:
-  RenderCheck() = default;
-  RenderCheck(const RenderCheck&) = delete;
-  RenderCheck& operator=(const RenderCheck&) = delete;
-  ~RenderCheck();
-
-  bool Init();
-  void Run();
+// Exercises the Vulkan backend: window resizing, binding data churn, texture
+// and texture array updates while they are drawn, each texture format, volume
+// textures, storage buffers, and each material blend mode.
+//
+// The checks are run by hand, or by a pilot in the context, whose scripts (in
+// scripts/) press the panel's buttons by their labels. A result that isn't as
+// expected logs an error, which fails the pilot's run. The pilot's
+// "gui_under_limit" condition holds unless the GUI is being kept over its
+// vertex limit.
+class RenderCheck final : public gb::Game {
+ protected:
+  bool Init(const std::vector<std::string_view>& args) override;
+  bool Update(absl::Duration delta_time) override;
+  void CleanUp() override;
 
  private:
   // Vertex of the unit quad drawn for each instance.
@@ -131,18 +137,22 @@ class RenderCheck final {
   bool InitFormatTextures();
   bool InitVolumes();
   bool InitStorageBuffers();
-  void CleanUp();
+  bool InitPilot();
 
   bool ProcessEvents();
 
-  // Keys run the checks a script can't reach with the mouse (see
-  // tools\run-program.ps1).
+  // Keys are shortcuts for some of the panel's checks.
   void OnKeyDown(SDL_Keycode key);
+
+  // Returns false while "Go over the vertex limit for a second" keeps the GUI
+  // over its vertex limit.
+  bool IsGuiUnderLimit() const;
 
   void UpdateFrameStats();
   void UpdateInstances();
   void UpdateTextures();
   void UpdateStorageBuffers();
+  void Draw();
   void DrawGui();
   void DrawFrameGui();
   void DrawInstanceGui();
@@ -190,15 +200,17 @@ class RenderCheck final {
   gb::ThreadMessageDispatcher dispatcher_;
   std::unique_ptr<gb::MessageSystem> message_system_;
   gb::MessageEndpointId sdl_channel_ = gb::kNoMessageEndpointId;
-  std::unique_ptr<gb::FileSystem> file_system_;
+  std::unique_ptr<gb::PilotSdl> pilot_sdl_;
+  gb::PilotHandle gui_under_limit_;
   std::unique_ptr<gb::ResourceSystem> resource_system_;
   std::unique_ptr<gb::RenderSystem> render_system_;
   gb::VulkanBackend* backend_ = nullptr;
   std::unique_ptr<gb::ImGuiInstance> gui_instance_;
   gb::ResourceSet resources_;
 
-  // Frame statistics.
+  // Frame statistics, and the game time run.
   int frame_ = 0;
+  absl::Duration time_;
   int frames_drawn_ = 0;
   int begin_frame_failures_ = 0;
   int64_t gpu_bytes_ = 0;
@@ -242,8 +254,8 @@ class RenderCheck final {
   // Volume textures, drawn by DrawVolumes().
   std::vector<VolumeRow> volume_rows_;
 
-  // Storage buffers, drawn by DrawStorageBuffers(), with the second at which
-  // their last color was last changed.
+  // Storage buffers, drawn by DrawStorageBuffers(), with the second of game
+  // time at which their last color was last changed.
   std::vector<StorageRow> storage_rows_;
   int64_t storage_second_ = -1;
 

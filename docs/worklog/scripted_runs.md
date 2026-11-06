@@ -777,8 +777,9 @@ CLAUDE.md's "Run an example" says so.
 - Confirmed in CL5, by `gb_pilot_sdl`'s tests: `SDL_PeepEvents(SDL_ADDEVENT)`
   skips the event filter in SDL 2.0.10, and writing SDL's key state array
   works.
-- Mouse coordinates in SDL window pixels match the saved frame's pixels,
-  including on a display scaled above 100% (CL13).
+- Confirmed in CL13, by render-check's scripts clicking items by label: mouse
+  coordinates in SDL window pixels match the saved frame's pixels on a display
+  at 100%. Still to confirm on a display scaled above 100%.
 - Confirmed in CL6, by `gb_pilot_script`'s tests: the step grammar holds in
   `gb_parse`, with `wait for` beside `wait`, `click`'s optional forms, and
   `run`'s values stopping at the line break.
@@ -1016,26 +1017,39 @@ Depends on: CL3, CL6.
   script reads `for` on each form of `click`, and fails on a missing or
   negative count.
 
-### CL13 [ ] render-check: Scripted checks
+### CL13 [x] render-check: Scripted checks
 
 Depends on: CL4, CL5, CL7, CL9, CL10, CL11, CL12.
 
 - render-check runs on `gb::Game`, takes the pilot flags through `gb_cli`,
-  and creates `PilotSdl`.
-- Scripts in `examples/render-check/scripts/` for its hand checks: resizing
-  is left out (no step resizes), and each other section's buttons and check
-  boxes are pressed by label, with frames saved before and after. The checks
-  meant to fail, which log an error, expect it.
+  and creates `PilotSdl`. Its storage buffer colors change by game time, so
+  a run's frames are the same each time.
+- A check's result that isn't as expected logs an error, which fails a run.
+  A `gui_under_limit` condition holds unless the GUI is being kept over its
+  vertex limit.
+- Scripts in `examples/render-check/scripts/` for its hand checks, one for
+  each part of the panel: `instances`, `textures`, `texture_arrays`, `gui`
+  (with the log), and `scene` (what is drawn without a button). Resizing is
+  left out, as no step resizes. Each presses its section's buttons and check
+  boxes by label, and saves frames before and after. Sections are collapsed
+  to bring lower ones into the window.
+- Of the checks meant to fail, only going over the GUI's vertex limit logs an
+  error, which the `gui` script expects. The failed partial texture updates
+  just return false.
 
 **Verify**
 - Standard checks.
-- Each script runs with `run-program.ps1`, passes, and its saved frames show
-  what the panel's text says they should, read by the session. The run is
-  repeated with the window hidden, and the frames match.
-- A script with a failing step, and one with a timed out `wait for`, exit
-  with code 1 and say why in the log.
-- By hand (the user): the program runs as before without the flags, and
-  moving the mouse over the window during a run changes nothing.
+- Each script runs with `bin\render_check.exe --pilot <script>`
+  (`run-program.ps1` takes scripts in CL14), passes, and its saved frames show
+  what the panel's text says they should, read by the session. The run is repeated with the
+  window hidden, and the frames match, apart from the process memory line.
+- A script with a failing step, one with a timed out `wait for`, and one
+  whose check has an unexpected result, exit with code 1 and say why in the
+  log.
+- Without the flags, `run-program.ps1` runs the program as before: the P key
+  paints, and it closes cleanly.
+- By hand (the user): the panel's checks by hand, and moving the mouse over
+  the window during a run changes nothing.
 
 ### CL14 [ ] tools, docs: Run scripts from a session
 

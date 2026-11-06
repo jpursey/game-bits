@@ -1,0 +1,28 @@
+# Copyright (c) 2026 John Pursey
+#
+# Use of this source code is governed by an MIT-style License that can be found
+# in the LICENSE file or at https://opensource.org/licenses/MIT.
+
+# The Texture arrays section: changing a layer while the array is drawn,
+# reading a layer back, and setting a layer of a drawn kStaticWrite array. A
+# result that isn't as expected logs an error, which fails the run.
+wait 30
+
+# The Textures section is collapsed to bring this one into the window.
+click "Textures"
+wait 2
+save start
+
+# Changes layer 0's color each frame, which its mipmaps follow.
+click "Change layer 0 each frame"
+wait 30
+save layer_0_changed
+click "Change layer 0 each frame"
+
+# Layer 1 is read back, but a layer of a drawn kStaticWrite array can't be set.
+click "Get layer 1"
+wait 2
+save get_layer_1
+click "Set layer 0 of the drawn array"
+wait 2
+save set_layer_0
