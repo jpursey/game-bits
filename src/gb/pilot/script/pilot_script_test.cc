@@ -69,6 +69,7 @@ TEST(PilotScriptTest, ReadsEveryStep) {
                 "release key \"Left Shift\"\n"
                 "text \"hello\"\n"
                 "move 640 -400\n"
+                "move by -10 5\n"
                 "click\n"
                 "press\n"
                 "release\n"
@@ -81,8 +82,8 @@ TEST(PilotScriptTest, ReadsEveryStep) {
       ElementsAre("wait 30", "wait for loaded 600", "wait for loaded 20",
                   "key f1", "key w for 20", "press key \"Left Shift\"",
                   "release key \"Left Shift\"", "text \"hello\"",
-                  "move 640 -400", "click", "press", "release", "wheel -2",
-                  "run reset_peaks", "expect loaded",
+                  "move 640 -400", "move by -10 5", "click", "press", "release",
+                  "wheel -2", "run reset_peaks", "expect loaded",
                   "expect error \"cannot be edited\" 600",
                   "expect error \"cannot be edited\" 10", "save get_layer_1"));
 }
@@ -171,6 +172,7 @@ TEST(PilotScriptTest, StepsReadBackFromTheirText) {
       PilotTextStep{.text = "say \"hi\"\\\r\n\t\x01\x7f é"},
       PilotMouseClickStep{.button = PilotMouseButton::kRight, .target = "a\"b"},
       PilotMouseClickStep{.button = PilotMouseButton::kMiddle, .frames = 7},
+      PilotMouseMoveByStep{.offset = {-1, 0}},
       PilotKeyPressStep{.key = "Left Shift"},
       PilotKeyReleaseStep{.key = "key"},
       PilotMousePressStep{.button = PilotMouseButton::kRight,
@@ -247,6 +249,8 @@ TEST(PilotScriptTest, MissingValuesFail) {
   EXPECT_EQ(ReadError("press key\n"),
             "(1:10): Parse error at \"\": Expected string value");
   EXPECT_EQ(ReadError("press 700\n"),
+            "(1:10): Parse error at \"\": Expected integer value");
+  EXPECT_EQ(ReadError("move by 3\n"),
             "(1:10): Parse error at \"\": Expected integer value");
 }
 

@@ -39,6 +39,7 @@ struct PilotScript {
 //   release key <key>                   PilotKeyReleaseStep
 //   text "<text>"                       PilotTextStep
 //   move <x> <y>                        PilotMouseMoveStep
+//   move by <x> <y>                     PilotMouseMoveByStep
 //   click [left|middle|right] ["<label>" | <x> <y>] [for <frames>]
 //                                       PilotMouseClickStep
 //   press [left|middle|right] ["<label>" | <x> <y>]

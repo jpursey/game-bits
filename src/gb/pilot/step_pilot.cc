@@ -279,6 +279,12 @@ bool StepPilot::RunStep(const PilotMouseMoveStep& step) {
   return true;
 }
 
+bool StepPilot::RunStep(const PilotMouseMoveByStep& step) {
+  MoveMouse(
+      {mouse_.position.x + step.offset.x, mouse_.position.y + step.offset.y});
+  return true;
+}
+
 bool StepPilot::RunStep(const PilotMouseClickStep& step) {
   // Once started, it finishes at the end of the frame it is released in (in
   // EndStepFrame()).

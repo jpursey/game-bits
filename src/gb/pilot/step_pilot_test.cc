@@ -120,6 +120,8 @@ TEST(PilotStepTest, StepsAreWrittenAsScriptLines) {
             "text \"say \\\"hi\\\"\\n\"");
   EXPECT_EQ(absl::StrCat(PilotMouseMoveStep{.position = {640, 400}}),
             "move 640 400");
+  EXPECT_EQ(absl::StrCat(PilotMouseMoveByStep{.offset = {10, -5}}),
+            "move by 10 -5");
   EXPECT_EQ(absl::StrCat(PilotMouseClickStep{}), "click");
   EXPECT_EQ(
       absl::StrCat(PilotMouseClickStep{.button = PilotMouseButton::kMiddle,
@@ -190,6 +192,37 @@ TEST_F(StepPilotTest, StepsThatTakeNoTimeRunInOneFrame) {
   EXPECT_EQ(pilot.GetMouse(), (PilotMouse{.position = {10, 20}}));
   pilot.EndFrame();
   EXPECT_TRUE(pilot.IsDone());
+  EXPECT_FALSE(pilot.HasFailed());
+}
+
+TEST_F(StepPilotTest, MovesByOffsetsFromWhereTheMouseIs) {
+  StepPilot pilot;
+  pilot.AddSteps({PilotMouseMoveByStep{.offset = {3, 4}},
+                  PilotMouseMoveStep{.position = {10, 20}},
+                  PilotMouseMoveByStep{.offset = {5, -3}},
+                  PilotMouseMoveByStep{.offset = {-20, 0}}});
+  pilot.BeginFrame();
+  EXPECT_THAT(pilot.GetInput(), ElementsAre(Move(3, 4), Move(10, 20),
+                                            Move(15, 17), Move(-5, 17)));
+  EXPECT_EQ(pilot.GetMouse(), (PilotMouse{.position = {-5, 17}}));
+  pilot.EndFrame();
+  EXPECT_TRUE(pilot.IsDone());
+}
+
+TEST_F(StepPilotTest, MovesByFromWhereAPressMovedTheMouse) {
+  StepPilot pilot;
+  PilotHandle finder = pilot.AddItemFinder(FindLabel("OK", {30, 40}));
+  pilot.AddSteps(
+      {PilotMousePressStep{.button = PilotMouseButton::kRight, .target = "OK"},
+       PilotMouseMoveByStep{.offset = {100, 0}},
+       PilotMouseReleaseStep{.button = PilotMouseButton::kRight}});
+  EXPECT_THAT(
+      RunUntilDone(&pilot),
+      ElementsAre(
+          ElementsAre(Move(30, 40),
+                      Button(PilotMouseButton::kRight, true, 30, 40)),
+          ElementsAre(Move(130, 40)),
+          ElementsAre(Button(PilotMouseButton::kRight, false, 130, 40))));
   EXPECT_FALSE(pilot.HasFailed());
 }
 

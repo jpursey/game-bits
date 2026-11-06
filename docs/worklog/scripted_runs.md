@@ -112,6 +112,7 @@ key f1                     # Down this frame, up the next
 key "Left Shift"           # SDL's name for a key, quoted if it has spaces
 key w for 20               # Down for 20 frames, up the next
 move 640 400               # Mouse, in window pixels
+move by 100 0              # From where it is, such as to turn a camera
 click right                # At the mouse
 click 700 120              # Moves there first
 click "Get layer 1" for 30 # Holds the button for 30 frames
@@ -487,6 +488,7 @@ struct PilotKeyPressStep { std::string key; };    // Held until released.
 struct PilotKeyReleaseStep { std::string key; };  // Named as pressed.
 struct PilotTextStep { std::string text; };
 struct PilotMouseMoveStep { PilotPoint position; };
+struct PilotMouseMoveByStep { PilotPoint offset; };  // From where it is.
 
 // At the mouse, at a point, or at the item with a label.
 using PilotMouseTarget = std::variant<std::monostate, PilotPoint, std::string>;
@@ -640,6 +642,7 @@ absl::StatusOr<std::unique_ptr<Pilot>> CreateCliPilot(
     $press_key=("press" "key" $key=name);
     $release_key=("release" "key" $key=name);
     $text=("text" $text=%string);
+    $move_by=("move" "by" $x=%int $y=%int);
     $move=("move" $x=%int $y=%int);
     $click=("click" [$button=button] [$label=%string | $x=%int $y=%int]
             ["for" $frames=%int]);

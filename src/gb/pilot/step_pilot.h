@@ -167,6 +167,18 @@ struct PilotMouseMoveStep {
   PilotPoint position;
 };
 
+// Moves the mouse by an offset from where it is, such as to turn a camera that
+// follows the mouse's movement. The mouse starts at 0 0, until a step moves it,
+// and may move outside the window.
+struct PilotMouseMoveByStep {
+  template <typename Sink>
+  friend void AbslStringify(Sink& sink, const PilotMouseMoveByStep& step) {
+    absl::Format(&sink, "move by %d %d", step.offset.x, step.offset.y);
+  }
+
+  PilotPoint offset;
+};
+
 // Presses a mouse button, holds it, and releases it (see StepPilot for when).
 struct PilotMouseClickStep {
   template <typename Sink>
@@ -277,9 +289,10 @@ struct PilotSaveStep {
 using PilotStep =
     std::variant<PilotWaitStep, PilotWaitForStep, PilotKeyStep,
                  PilotKeyPressStep, PilotKeyReleaseStep, PilotTextStep,
-                 PilotMouseMoveStep, PilotMouseClickStep, PilotMousePressStep,
-                 PilotMouseReleaseStep, PilotMouseWheelStep, PilotRunStep,
-                 PilotExpectStep, PilotExpectErrorStep, PilotSaveStep>;
+                 PilotMouseMoveStep, PilotMouseMoveByStep, PilotMouseClickStep,
+                 PilotMousePressStep, PilotMouseReleaseStep,
+                 PilotMouseWheelStep, PilotRunStep, PilotExpectStep,
+                 PilotExpectErrorStep, PilotSaveStep>;
 
 // Writes whichever step it holds. Abseil finds this through the steps' own
 // namespace, as PilotStep is a std::variant of them.
@@ -439,6 +452,7 @@ class StepPilot final : public Pilot {
   bool RunStep(const PilotKeyReleaseStep& step);
   bool RunStep(const PilotTextStep& step);
   bool RunStep(const PilotMouseMoveStep& step);
+  bool RunStep(const PilotMouseMoveByStep& step);
   bool RunStep(const PilotMouseClickStep& step);
   bool RunStep(const PilotMousePressStep& step);
   bool RunStep(const PilotMouseReleaseStep& step);

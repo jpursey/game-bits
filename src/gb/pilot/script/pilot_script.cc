@@ -63,6 +63,7 @@ constexpr std::string_view kScriptProgram = R"---(
     $press_key=("press" "key" $key=name);
     $release_key=("release" "key" $key=name);
     $text=("text" $text=%string);
+    $move_by=("move" "by" $x=%int $y=%int);
     $move=("move" $x=%int $y=%int);
     $click=("click" [$button=button] [$label=%string | $x=%int $y=%int]
             ["for" $frames=%int]);
@@ -181,6 +182,9 @@ absl::StatusOr<PilotStep> ReadStep(const Lexer& lexer, const ParsedItem& item) {
   }
   if (type == "move") {
     return PilotMouseMoveStep{.position = ReadPoint(*values)};
+  }
+  if (type == "move_by") {
+    return PilotMouseMoveByStep{.offset = ReadPoint(*values)};
   }
   if (type == "click") {
     PilotMouseClickStep step = {.button = ReadButton(*values),
