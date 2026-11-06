@@ -257,15 +257,20 @@ virtual std::unique_ptr<MeshPoolBuffers> CreateMeshPoolBuffers(
 
 ### Drawing pools
 
-- `DrawCommand` gains `kMeshPool` (sets both buffers and the index type), and
-  `kIndirect` (a storage buffer, first, and count). Its `Draw` gains
+- `DrawCommand` gains `kMeshPool` (sets both buffers and the index type, from
+  the pool's `MeshPoolBuffers`, as `kVertices` holds a mesh's `RenderBuffer`),
+  and `kIndirect` (a storage buffer, first, and count). Its `Draw` gains
   `first_instance`, and its `vertex_offset` becomes 32 bits, as a pool's are
-  large.
-- `DrawList::SetMeshPool(MeshPool* pool, Material* material = nullptr,
-  BindingData* instance_data = nullptr)` checks the material's vertex type
-  against the pool's, as `SetMesh()` does for a mesh, and replaces any current
-  mesh. `Draw()` and `DrawPartial()` need a mesh, and the new `Draw(const
-  MeshDraw&)` and `DrawIndirect()` need a pool.
+  large. This fills what was padding, so `DrawCommand` stays 24 bytes.
+  `DrawPartial()`'s `first_vertex` is then bounded by the mesh's vertex
+  capacity, rather than by 16 bits.
+- `DrawList::SetMeshPool()` has the same overloads as `SetMesh()` (a pool, and
+  optionally a material and instance data). It checks the material's vertex
+  type against the pool's, as `SetMesh()` does for a mesh, and replaces any
+  current mesh, as `SetMesh()` replaces any current pool. `Draw()` and
+  `DrawPartial()` need a mesh, and the new `Draw(const MeshDraw&)` and
+  `DrawIndirect()` need a pool. `Draw(const MeshDraw&)` asserts the draw has
+  one instance, as `DrawCommand::Draw` has no instance count yet.
 - `DrawIndirect()` asserts that the storage buffer holds `MeshDraw` values, and
   that `first + count` is within it. What is in the values is not checked: the
   GPU reads them.
@@ -370,12 +375,13 @@ Depends on: CL1.
   ending on another, end with every live mesh's data intact and the stats
   consistent.
 
-### CL3 [ ] render: Drawing pools and ranges
+### CL3 [x] render: Drawing pools and ranges
 
 Depends on: CL2.
 
 - `DrawList::SetMeshPool()` and `Draw(const MeshDraw&)`, with `kMeshPool`, and
-  `DrawCommand::Draw`'s `first_instance` and 32-bit `vertex_offset`.
+  `DrawCommand::Draw`'s `first_instance` and 32-bit `vertex_offset` (so
+  `DrawPartial()` bounds `first_vertex` by the mesh's vertex capacity).
 - Vulkan backend: the wider `vertex_offset` and `first_instance` in its
   existing draws, and `kMeshPool` ignored (no pool can be created yet).
 

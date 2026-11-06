@@ -1471,9 +1471,13 @@ void VulkanBackend::EndFrameRenderPass() {
                     vk::IndexType::eUint16);
                 last_index_buffer = next_index_buffer;
               }
-              frame.commands.drawIndexed(command.draw.index_count, 1,
-                                         command.draw.index_offset,
-                                         command.draw.vertex_offset, 0);
+              frame.commands.drawIndexed(
+                  command.draw.index_count, 1, command.draw.index_offset,
+                  command.draw.vertex_offset, command.draw.first_instance);
+              break;
+            }
+            case DrawCommand::Type::kMeshPool: {
+              // CreateMeshPoolBuffers() always fails, so no mesh pool exists.
               break;
             }
             case DrawCommand::Type::kReset: {

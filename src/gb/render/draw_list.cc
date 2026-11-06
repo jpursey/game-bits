@@ -11,6 +11,7 @@
 #include "gb/render/material.h"
 #include "gb/render/material_type.h"
 #include "gb/render/mesh.h"
+#include "gb/render/mesh_pool.h"
 #include "gb/render/render_assert.h"
 #include "gb/render/render_pipeline.h"
 
@@ -20,13 +21,24 @@ void DrawList::ClearBindings() {
   current_material_type_ = nullptr;
   current_instance_data_ = nullptr;
   current_mesh_ = nullptr;
+  current_mesh_pool_ = nullptr;
 }
 
-void DrawList::SetMesh(Mesh* mesh, Material* material,
-                       BindingData* instance_data) {
-  RENDER_ASSERT(mesh != nullptr);
+const VertexType* DrawList::GetVertexType() const {
+  if (current_mesh_ != nullptr) {
+    return current_mesh_->GetVertexType();
+  }
+  if (current_mesh_pool_ != nullptr) {
+    return current_mesh_pool_->GetVertexType();
+  }
+  return nullptr;
+}
+
+void DrawList::SetMeshBindings(const VertexType* vertex_type,
+                               Material* material, BindingData* instance_data) {
   RENDER_ASSERT(material != nullptr || current_material_type_ != nullptr);
   current_mesh_ = nullptr;
+  current_mesh_pool_ = nullptr;
   if (instance_data != nullptr) {
     current_instance_data_ = nullptr;
   }
@@ -36,20 +48,32 @@ void DrawList::SetMesh(Mesh* mesh, Material* material,
   if (instance_data != nullptr) {
     SetInstanceData(instance_data);
   }
-  RENDER_ASSERT(current_material_type_->GetVertexType() ==
-                mesh->GetVertexType());
+  RENDER_ASSERT(current_material_type_->GetVertexType() == vertex_type);
+}
+
+void DrawList::SetMesh(Mesh* mesh, Material* material,
+                       BindingData* instance_data) {
+  RENDER_ASSERT(mesh != nullptr);
+  SetMeshBindings(mesh->GetVertexType(), material, instance_data);
   commands_.emplace_back(DrawCommand::Type::kVertices,
                          mesh->GetVertexBuffer({}));
   commands_.emplace_back(DrawCommand::Type::kIndices, mesh->GetIndexBuffer({}));
   current_mesh_ = mesh;
 }
 
+void DrawList::SetMeshPool(MeshPool* pool, Material* material,
+                           BindingData* instance_data) {
+  RENDER_ASSERT(pool != nullptr);
+  SetMeshBindings(pool->GetVertexType(), material, instance_data);
+  commands_.emplace_back(DrawCommand::Type::kMeshPool, pool->GetBuffers({}));
+  current_mesh_pool_ = pool;
+}
+
 void DrawList::SetMaterial(Material* material, BindingData* material_data) {
   RENDER_ASSERT(material != nullptr);
   if (material->GetType() != current_material_type_) {
-    RENDER_ASSERT(current_mesh_ == nullptr ||
-                  current_mesh_->GetVertexType() ==
-                      material->GetType()->GetVertexType());
+    RENDER_ASSERT(GetVertexType() == nullptr ||
+                  GetVertexType() == material->GetType()->GetVertexType());
     RENDER_ASSERT(
         current_instance_data_ == nullptr ||
         material->GetType()->GetPipeline({})->ValidateInstanceBindingData(
@@ -99,19 +123,32 @@ void DrawList::Draw() {
       DrawCommand::Draw{
           0,
           static_cast<uint32_t>(current_mesh_->GetIndexBuffer({})->GetSize()),
-          0});
+          0, 0});
 }
 
 void DrawList::DrawPartial(int first_triangle, int triangle_count,
                            int first_vertex) {
-  RENDER_ASSERT(current_mesh_ != nullptr && current_instance_data_ != nullptr &&
-                first_triangle >= 0 && triangle_count >= 0 &&
-                FitsUint16(first_vertex));
+  RENDER_ASSERT(current_mesh_ != nullptr);
+  RENDER_ASSERT(current_instance_data_ != nullptr);
+  RENDER_ASSERT(first_triangle >= 0);
+  RENDER_ASSERT(triangle_count >= 0);
+  RENDER_ASSERT(first_vertex >= 0 &&
+                first_vertex < current_mesh_->GetVertexCapacity());
   commands_.emplace_back(
       DrawCommand::Type::kDraw,
       DrawCommand::Draw{static_cast<uint32_t>(first_triangle * 3),
-                        static_cast<uint32_t>(triangle_count * 3),
-                        static_cast<uint16_t>(first_vertex)});
+                        static_cast<uint32_t>(triangle_count * 3), first_vertex,
+                        0});
+}
+
+void DrawList::Draw(const MeshDraw& draw) {
+  RENDER_ASSERT(current_mesh_pool_ != nullptr);
+  RENDER_ASSERT(current_instance_data_ != nullptr);
+  RENDER_ASSERT(draw.instance_count == 1);
+  commands_.emplace_back(
+      DrawCommand::Type::kDraw,
+      DrawCommand::Draw{draw.first_index, draw.index_count, draw.vertex_offset,
+                        draw.first_instance});
 }
 
 void DrawList::Reset() {

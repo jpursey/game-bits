@@ -10,6 +10,7 @@
 #include <limits>
 #include <vector>
 
+#include "gb/render/mesh_pool_buffers.h"
 #include "gb/render/render_types.h"
 
 namespace gb {
@@ -20,6 +21,7 @@ struct DrawCommand {
     kPipeline,      // Sets the render pipeline via "pipeline".
     kVertices,      // Sets the vertex data via "buffer".
     kIndices,       // Sets the index data via "buffer".
+    kMeshPool,      // Sets the vertex and index data via "mesh_pool_buffers".
     kMaterialData,  // Sets the material data via "binding_data".
     kInstanceData,  // Sets the instance data via "binding_data".
     kScissor,       // Sets the scissor position via "rect".
@@ -36,12 +38,15 @@ struct DrawCommand {
   struct Draw {
     uint32_t index_offset;
     uint32_t index_count;
-    uint16_t vertex_offset;
+    int32_t vertex_offset;
+    uint32_t first_instance;
   };
 
   DrawCommand(Type in_type) : type(in_type) {}
   DrawCommand(Type in_type, RenderBuffer* in_buffer)
       : type(in_type), buffer(in_buffer) {}
+  DrawCommand(Type in_type, MeshPoolBuffers* in_mesh_pool_buffers)
+      : type(in_type), mesh_pool_buffers(in_mesh_pool_buffers) {}
   DrawCommand(Type in_type, RenderPipeline* in_pipeline)
       : type(in_type), pipeline(in_pipeline) {}
   DrawCommand(Type in_type, BindingData* in_binding_data)
@@ -52,6 +57,7 @@ struct DrawCommand {
   Type type;
   union {
     RenderBuffer* buffer;
+    MeshPoolBuffers* mesh_pool_buffers;
     RenderPipeline* pipeline;
     BindingData* binding_data;
     Rect rect;
@@ -87,8 +93,8 @@ class DrawList final {
   // will persist until it is explicitly changed.
   //----------------------------------------------------------------------------
 
-  // Clears material, mesh, and any instance data currently set in the draw
-  // list.
+  // Clears material, mesh or mesh pool, and any instance data currently set in
+  // the draw list.
   void ClearBindings();
 
   // Sets the material and material data for the next Draw command.
@@ -96,8 +102,8 @@ class DrawList final {
   // If material data is not provided, the material's default material data will
   // be used.
   //
-  // If mesh is currently set, then this material must be compatible with the
-  // current mesh (it must support the mesh's vertex type).
+  // If a mesh or mesh pool is currently set, then this material must be
+  // compatible with it (it must support its vertex type).
   //
   // This must be called before SetMaterialData or SetInstanceData are called.
   void SetMaterial(Material* material, BindingData* material_data = nullptr);
@@ -113,7 +119,7 @@ class DrawList final {
   void SetInstanceData(BindingData* instance_data);
 
   // Sets the mesh (and optionally material and instance data) for the
-  // next Draw command.
+  // next Draw command, replacing any mesh pool.
   //
   // If a material is not provided, then the material must already be set and be
   // compatible with this mesh's vertex type.
@@ -127,6 +133,17 @@ class DrawList final {
   }
   void SetMesh(Mesh* mesh) { SetMesh(mesh, nullptr, nullptr); }
 
+  // Sets the mesh pool (and optionally material and instance data) for the
+  // next Draw(const MeshDraw&) command, replacing any mesh.
+  //
+  // The material and instance data are as for SetMesh().
+  void SetMeshPool(MeshPool* pool, Material* material,
+                   BindingData* instance_data = nullptr);
+  void SetMeshPool(MeshPool* pool, BindingData* instance_data) {
+    SetMeshPool(pool, nullptr, instance_data);
+  }
+  void SetMeshPool(MeshPool* pool) { SetMeshPool(pool, nullptr, nullptr); }
+
   // Sets the scissor rectangle for subsequent draw commands.
   //
   // These are in pixels, and must be in the range [0, 65535].
@@ -136,15 +153,22 @@ class DrawList final {
   // Commands
   //----------------------------------------------------------------------------
 
-  // Draws the mesh.
+  // Draws the mesh. A mesh must be set.
   void Draw();
 
-  // Draws a partial mesh.
+  // Draws a partial mesh. A mesh must be set.
   //
-  // "first_vertex" is added to each index, and must be in the range
-  // [0, 65535].
+  // "first_vertex" is added to each index, and must be within the mesh's
+  // vertex capacity.
   void DrawPartial(int first_triangle, int triangle_count,
                    int first_vertex = 0);
+
+  // Draws a range of the mesh pool, such as one from PooledMesh::GetDraw(). A
+  // mesh pool must be set, and the draw must have one instance.
+  //
+  // The draw is not checked against the pool: it must be from a mesh that is
+  // still in it.
+  void Draw(const MeshDraw& draw);
 
   // Resets the state back to the initial state.
   void Reset();
@@ -163,9 +187,20 @@ class DrawList final {
     return value >= 0 && value <= std::numeric_limits<uint16_t>::max();
   }
 
+  // Sets the material and instance data for SetMesh() or SetMeshPool(),
+  // clearing the current mesh and mesh pool first, and asserts the material
+  // draws `vertex_type`.
+  void SetMeshBindings(const VertexType* vertex_type, Material* material,
+                       BindingData* instance_data);
+
+  // Returns the vertex type of the current mesh or mesh pool, or null if
+  // neither is set.
+  const VertexType* GetVertexType() const;
+
   MaterialType* current_material_type_ = nullptr;
   BindingData* current_instance_data_ = nullptr;
   Mesh* current_mesh_ = nullptr;
+  MeshPool* current_mesh_pool_ = nullptr;
   std::vector<DrawCommand> commands_;
 };
 
