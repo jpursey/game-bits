@@ -83,6 +83,26 @@ entries with no comma between them, in the Game Bits format (not
 `kJsonTextConfig`). Check first that no text becomes ambiguous without commas,
 such as `[1 -2]`. Writing keeps its commas.
 
+## Code point conversions in gb_base
+
+- **Layers:** base
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Requested by:** OZ-3 *Ozzy machine*
+- **Background:** `gb/base/unicode.h`
+
+`gb/base/unicode.h` converts whole strings between UTF-8 and UTF-16, but has
+nothing for a single code point, so a program that works in code points writes
+its own UTF-8 encoder, or decodes UTF-16 surrogate pairs by hand. OZ-3's
+console frontend does both: it encodes each screen character's nearest Unicode
+character (some outside the BMP) as UTF-8, and its tests decode them back, and
+turning Windows key events (UTF-16) into characters needs the same. Add
+functions that append one code point to a UTF-8 string and read the first code
+point of a UTF-8 or UTF-16 string, along with conversions between UTF-8 and
+`std::u32string`. They fail cleanly on invalid input, without utfcpp's
+exceptions.
+
 ## Shaders compiled by the build
 
 - **Layers:** CMake, examples
