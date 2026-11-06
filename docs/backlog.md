@@ -583,6 +583,29 @@ pixels are the same. Check it on a display scaled above 100% (render-check's
 scripts click by label, so they show it), and if SDL's coordinates differ
 there, convert between them in `PilotSdl`.
 
+## Pilot clicks where the mouse wasn't
+
+- **Layers:** pilot
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Requested by:** Terra Diem *Scripted runs*
+- **Background:** [Scripted runs](worklog/scripted_runs.md)
+
+A `click` or `press` at a point the mouse isn't at moves the mouse there and
+presses the button in the same frame (`StepPilot::PressMouseButton()`). A
+program that decides from the frame before whether ImGui wants the mouse
+(`io.WantCaptureMouse`, as block-world's `BaseState` does) then sees the mouse
+where it was, so a click in the world just after the mouse was over an ImGui
+window, or as a script's first mouse step (the mouse starts at the top left,
+over a menu bar), goes to ImGui and is silently dropped. No step fails; only a
+saved frame shows the click did nothing. Scripts work around it with
+`move <x> <y>` and `wait 1` before each such click. A real mouse is never over
+a point and clicking it in the same frame, so move the mouse in one frame and
+press the button in the next when the point is new, and leave a click where
+the mouse already is as it is. Update `step_pilot.h`'s account of which frame
+each step's input lands in, and the frame counts its tests expect.
+
 ## Pilot window resizing and polled mouse
 
 - **Layers:** pilot, pilot_script, pilot_sdl
