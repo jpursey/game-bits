@@ -129,18 +129,17 @@ A `clang-format` on PATH may be a different version, and versions disagree on a 
 
 ### Run an example
 
-A session can run an example itself, drive it with keys, and look at screenshots of its window. README.md says how to build each one (`bin/render_check.exe` in "Running the RenderCheck example").
+A session can run an example with a script of steps, and look at the frames it saves. The example runs the script itself, so this works for any program that takes the pilot flags from `gb_pilot_script` (render-check does). README.md says how to build each one (`bin/render_check.exe` in "Running the RenderCheck example").
 
 ```
 # PowerShell
-.\tools\run-program.ps1 -Exe bin\render_check.exe -Steps "wait:3,shot:start"
+.\tools\run-program.ps1 -Exe bin\render_check.exe -Script examples\render-check\scripts\textures.txt
+.\tools\run-program.ps1 -Exe bin\render_check.exe -Steps 'hide window; wait 30; click "Reset peaks"; wait 2; save peaks'
 ```
 
-The steps wait, press or hold keys, and save screenshots (see the script for the list). The screenshots, and the program's stdout and stderr, go to `out\run\<program>\`. Read the PNGs to see what was drawn. Screenshots include Vulkan drawing, and keys go to the window, so the program can be behind other windows (but not minimized) and nothing is typed anywhere else.
+`-Steps` is a script written inline, with `;` between steps. `src/gb/pilot/script/pilot_script.h` lists the steps: they wait a number of frames or for a condition the program names, press keys, move and click the mouse (on an ImGui item by its label, too), run the program's commands, and save frames. Time is counted in frames on a fixed time step, so a run is the same every time. The user's real keyboard and mouse don't reach the program, and `hide window` keeps it off the desktop. The saved frames (`<name>.png`), and the program's stdout and stderr, go to `out\run\<program>\`. Read the PNGs to see what was drawn.
 
-After the last step, the window is closed as its close button would, so every run also checks that the program shuts down cleanly. The run fails if it exits with an error code, or is still running 15 seconds after being closed (`-CloseSecs`). In that case the stack of each of its threads is saved to `hang-stacks.txt` there first, showing where it is stuck. `tools\dump-stacks.ps1 -ProcessId <id>` prints the same for any running program, such as one the user says has hung.
-
-There is no mouse step, as ImGui reads the real cursor, so a script can't press an ImGui button or check box without taking over the user's mouse.
+The program exits once the script ends, so every run also checks that it shuts down cleanly. The run fails if the program exits with an error code, which it does when a step fails or anything logs an error (unless the script expects it), or is still running 60 seconds after it started (`-TimeoutSecs`). In that case the stack of each of its threads is saved to `hang-stacks.txt` there first, showing where it is stuck. `tools\dump-stacks.ps1 -ProcessId <id>` prints the same for any running program, such as one the user says has hung.
 
 ### Checks
 
@@ -148,7 +147,7 @@ Every change is checked as follows:
 - It builds cleanly (warnings are errors) in both Debug and Release.
 - `ctest` passes in Debug.
 - Touched files pass the clang-format check (see Format above).
-- New and changed behavior has unit tests. Code that can't be unit tested (rendering, windows, input) is checked in an example, such as `examples/render-check`. The session builds it, runs it with `tools\run-program.ps1` (see Run an example above), and checks the screenshots itself. Only what the steps can't reach is left for the user to check by hand, and the hand-off says exactly what that is.
+- New and changed behavior has unit tests. Code that can't be unit tested (rendering, windows, input) is checked in an example, such as `examples/render-check`. The session builds it, runs it with `tools\run-program.ps1` (see Run an example above), and checks the saved frames itself. Only what the steps can't reach is left for the user to check by hand, and the hand-off says exactly what that is.
 
 ## Sessions
 

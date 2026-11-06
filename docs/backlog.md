@@ -579,6 +579,20 @@ given to `RunCommandLine()`. A program that forgets the default protocol fails
 only when a path without one is given. Add a `gb_cli` function that builds it,
 or a `RunCommandLine()` that does, beside `GetMainArgs()`.
 
+## Pilot scripts with a byte order mark
+
+- **Layers:** pilot_script
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Scripted runs](worklog/scripted_runs.md)
+
+`ReadPilotScript()` fails on a script that starts with a UTF-8 byte order mark,
+as Windows tools often write one (PowerShell 5.1's `Out-File -Encoding utf8`,
+and Visual Studio's "UTF-8 with signature"). The error is at line 1, column 1,
+which doesn't say why. Skip a leading byte order mark, as `gb_file` leaves it in
+the text it reads.
+
 ## Deterministic concurrency tests
 
 - **Layers:** game, job, message, resource

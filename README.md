@@ -329,6 +329,19 @@ cmake --build examples/render-check/out/build/x64-Release
 The resulting executable is written to `bin/render_check.exe`. Its shaders are
 embedded, so it needs no assets.
 
+The same checks can run without a user, from scripts in
+[examples/render-check/scripts](examples/render-check/scripts), one for each
+part of the panel. Each presses the panel's buttons and check boxes by their
+labels and saves frames before and after, and a check whose result isn't as
+expected fails the run. They are run with
+[tools/run-program.ps1](tools/run-program.ps1):
+
+```
+.\tools\run-program.ps1 -Exe bin\render_check.exe -Script examples\render-check\scripts\textures.txt
+```
+
+The frames are saved to `out\run\render_check\`.
+
 ## Using Game Bits CMake commands
 
 Game Bits has its own funny way of defining CMake targets and tests via various

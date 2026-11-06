@@ -1051,19 +1051,28 @@ Depends on: CL4, CL5, CL7, CL9, CL10, CL11, CL12.
 - By hand (the user): the panel's checks by hand, and moving the mouse over
   the window during a run changes nothing.
 
-### CL14 [ ] tools, docs: Run scripts from a session
+### CL14 [x] tools, docs: Run scripts from a session
 
 Depends on: CL13.
 
-- `tools/run-program.ps1` as described in Session tools.
-- CLAUDE.md "Run an example", and README.md's library list (the new
-  libraries) and render-check section.
+- `tools/run-program.ps1` as described in Session tools. With neither
+  `-Script` nor `-Steps`, it saves one frame after 30. It prints the frames
+  the run saved (leaving any from earlier runs), the log's errors, and the
+  pilot's summary. `-TimeoutSecs` is 60 by default.
+  A program that doesn't take the pilot flags can't be run with it, which
+  leaves out block-world until CL15.
+- CLAUDE.md "Run an example" and Checks, and README.md's render-check section.
+  README.md's library list already has the new libraries.
 
 **Verify**
 - Standard checks.
 - render-check's scripts run through the new `run-program.ps1`, with `-Script`
-  and with `-Steps`. A script that hangs the program (a `wait for` with a
-  timeout longer than `-TimeoutSecs`) saves the stacks and fails.
+  and with `-Steps` (in an output folder whose path has a space), and with
+  neither.
+- A failing script, and a script with an unknown step, fail with the log's
+  errors printed. A script that hangs the program (a long `wait`, as
+  render-check has no condition that stays false) saves the stacks, and fails
+  once `-TimeoutSecs` is up.
 
 ### CL15 [ ] block-world: Scripted runs
 
