@@ -5,8 +5,8 @@ checks each value's type and range, rejects unknown keys, and returns the
 first problem it finds with where it is:
 `hello.ozzy(12:5): devices[1].columns: must be 1 to 132`. Today a program
 reading a config file by hand writes these checks itself (OZ-3's
-`ReadMachineSettings` has a page of helpers for them), and its errors can only
-name the path, not the line in the file.
+`ReadMachineSettings` has a page of helpers for them), and its errors could
+only name the path, not the line in the file.
 
 The reader keeps each value's path as it goes down from the root. Paths aren't
 stored in `Config`: a `Config` is a value that gets copied and edited, so a
@@ -86,7 +86,8 @@ class ConfigReader final {
   // it isn't empty.
   explicit ConfigReader(const Config* config, std::string_view source = {});
 
-  // Copyable: a copy is the same view of the same read.
+  // A copy is the same view of the same read. There is no move: moving
+  // copies, so no reader is ever left without a read.
 
   // Returns OK, or the first error any reader of this read has found.
   absl::Status GetStatus() const;
@@ -225,10 +226,10 @@ if (!reader.GetStatus().ok()) {
   `gb_base`. Floats use the standard `std::floating_point` as is.
 - `ConfigEnumName<T>`: an enum value's name in a config. Alternatives:
   `ConfigEnumValue` (reads as the value alone), `ConfigEnumEntry` (a
-  catch-all). Recommend `ConfigEnumName`.
+  catch-all). *Chosen:* `ConfigEnumName`.
 - `Reject(message)`: records an error at the value. Alternatives: `Fail`
   (reads as if the call itself failed), `AddError` ("Add" is for something
-  registered and kept). Recommend `Reject`.
+  registered and kept). *Chosen:* `Reject`.
 - `ValidateMap` / `ValidateArray`: judge the value and record an error if it
   fails, per the naming rules.
 
@@ -265,9 +266,16 @@ if (!reader.GetStatus().ok()) {
   (OZ-3's screen character sets) builds a path for each, a few thousand short
   strings, which is well under a millisecond and only paid when a config file
   is read.
+- `Get()` on a present value gives the child its own location, even when it
+  has none (a value the program set in code). Falling back to the map's
+  location would point the user at text they never wrote, for a value that
+  is the program's own (a default, or a command line override).
+- Copy only. A defaulted move would leave the moved-from reader with no
+  state, so it has none, and a move copies.
 - Thread-compatible, like `Config`. The status its const functions record is
   shared by every reader of a read, so a mutex guards it, and readers of one
-  read can be used on different threads at once.
+  read can be used on different threads at once. Only a rejection or
+  `GetStatus()` takes the lock.
 
 **Brittleness:**
 - The `Config` must outlive every reader, as for any view. Readers are meant
@@ -280,48 +288,40 @@ if (!reader.GetStatus().ok()) {
   read and rejecting the rest at the end, needs a step the caller can forget
   just as easily, and fails later than the problem.
 
-### To confirm
+## Structure
 
-- Nothing yet.
+- `gb/config/config.h`: `ConfigLocation`, and `Config::GetLocation()` /
+  `SetLocation()`.
+- `gb/config/config_types.h`: the `ConfigInternal` access token, for the
+  module's internal functions (only `SetLocation()` today).
+- `gb/config/text_config.cc`: `TextConfigBuilder`, which builds a `Config`
+  from parsed text and gives each value its location.
+- `gb/config/config_reader.h` / `.cc`: `ConfigReader`, `ConfigInt`, and
+  `ConfigEnumName`.
 
-## CLs
+Reusable pieces: `ConfigLocation` for anything that reports where a config
+value came from, `ConfigInternal` for any later module-internal function, and
+`ConfigReader` for any program reading settings, by hand-written code or from
+a config file.
 
-### CL1 [x] config: value locations
+## Checks
 
-Depends on: nothing.
-
-- `ConfigLocation`, and `Config::GetLocation()` / `SetLocation()`, with the
-  setters that replace a value clearing it.
-- `config_types.h` with the `ConfigInternal` token, which `SetLocation()`
-  takes.
-- `ReadConfigFromText` records each value's location, and takes an optional
-  `filename` for syntax errors.
-- Only syntax errors change, and only for a caller that passes a filename.
-
-**Verify**
-- Standard checks (see CLAUDE.md).
-- Unit tests: a new value has no location; copies and moves keep it; each
-  replacing setter clears it, while setting a key or element of an existing
-  map or array keeps the container's. Text locations of scalars, maps, arrays,
-  nested values, values after comments and on later lines, rooted and rootless
-  roots. A syntax error names the filename when one is given.
-
-### CL2 [x] config: ConfigReader
-
-Depends on: CL1.
-
-- `gb/config/config_reader.h` / `.cc` / `_test.cc`.
-- Unused, so no visible change.
-
-**Verify**
-- Standard checks.
-- Unit tests: each read of each type, in and out of range, missing (keeps the
-  default), and of the wrong type; `ReadInt` limits for small and unsigned
-  types; floats read from ints, and ints never read from floats; `ReadFloat`
-  into a `float` (a value too big for it is rejected); `ReadEnum` by each name,
-  an unknown name or non-string (listing the names), and a missing value; `ValidateMap` names the first unknown key in sorted order;
-  `ValidateArray` sizes; `Get()` on a non-map or non-array; paths through maps
-  and arrays; only the first error kept, shared across copies and children;
-  error text with and without a source and a location, at the root, and for a
-  missing value (its map's location). One test reads a config from text end to
-  end, checking an error's line and column.
+- `gb_config_test`:
+  - Locations: a new value has none; copies and moves keep it; each setter
+    that replaces a value clears it, while setting a key or element of an
+    existing map or array keeps the container's. Text locations of scalars,
+    maps, arrays, nested values, values after comments and on later lines,
+    CRLF text, and rooted, rootless and empty rootless roots. Syntax errors
+    name the filename, with and without a location.
+  - `ConfigReader`: each read of each type, in and out of range, missing
+    (keeps the default), and of the wrong type; `ReadInt` limits of `int8_t`,
+    `uint8_t`, `uint16_t`, `int64_t` and `uint64_t`; floats read from ints,
+    and ints never from floats; a `float` rejecting a value too big for it;
+    `ReadEnum` by each name and alias, an unknown name or non-string (listing
+    the names), and with one or two names; `ValidateMap` and `ValidateArray`
+    with each message; `Get()` on the wrong type; paths; the first error
+    shared across copies, children and a moved-from reader; every form of the
+    error text; readers of one read on many threads; and settings read from
+    text end to end, with an error's line and column.
+  - `static_assert`s that `ReadInt` refuses `bool`, the character types,
+    floats and enums, and `ReadFloat` refuses ints.

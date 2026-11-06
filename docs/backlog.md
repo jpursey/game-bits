@@ -657,6 +657,23 @@ Text configs still don't round trip a few values:
 - Reading recurses once per nesting level, so very deeply nested text can
   overflow the stack. A nesting limit would fail it instead.
 
+## One format for config errors
+
+- **Layers:** config
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Config reader with error locations](worklog/config_reader.md)
+
+A config's syntax errors and `ConfigReader`'s errors read alike
+(`hello.ozzy(12:5): devices[1].columns: must be 1 to 132`), but the format is
+written three times: in `ParseError::FormatMessage()`, in
+`ReadConfigFromText()`'s branch for an error with no location (which adds the
+filename back, as `ParseError` drops it), and in `ConfigReader::Reject()`.
+Only tests keep them alike. One function in `gb_config` that formats a source,
+a `ConfigLocation` and a message, leaving out what isn't known, would serve
+both, and remove the special branch.
+
 ## Collision precision and conversions
 
 - **Layers:** collide
