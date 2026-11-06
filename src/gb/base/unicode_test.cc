@@ -6,7 +6,9 @@
 #include "gb/base/unicode.h"
 
 #include <iterator>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <type_traits>
 
 #include "gmock/gmock.h"
@@ -15,7 +17,9 @@
 
 namespace gb {
 
+using ::testing::Eq;
 using ::testing::IsEmpty;
+using ::testing::Optional;
 
 inline void PrintTo(const StringEncoding& value, std::ostream* out) {
   switch (value) {
@@ -416,12 +420,15 @@ TEST(UnicodeTest, EmptyString) {
   const char16_t u16_bom[2] = {0xFEFF, 0};
   const char16_t u16_swap_bom[2] = {0xFFFE, 0};
 
-  EXPECT_THAT(ToUtf8({}), IsEmpty());
+  EXPECT_THAT(ToUtf8(std::u16string_view()), IsEmpty());
+  EXPECT_THAT(ToUtf8(std::u32string_view()), IsEmpty());
   EXPECT_THAT(ToUtf8(u16_bom), IsEmpty());
   EXPECT_THAT(ToUtf8(u16_swap_bom), IsEmpty());
 
   EXPECT_THAT(ToUtf16({}), IsEmpty());
   EXPECT_THAT(ToUtf16(u8_bom), IsEmpty());
+
+  EXPECT_THAT(ToUtf32({}), IsEmpty());
 
   EXPECT_EQ(GetStringEncoding("", nullptr), StringEncoding::kAscii);
   EXPECT_EQ(GetStringEncoding(u8_bom, nullptr), StringEncoding::kUtf8WithBom);
@@ -450,6 +457,185 @@ TEST(UnicodeTest, ToUtf8InvalidUtf16IsEmpty) {
 TEST(UnicodeTest, ToUtf8SurrogatePair) {
   EXPECT_EQ(ToUtf8(u"a\xD83D\xDE00z"), "a\xF0\x9F\x98\x80z");
   EXPECT_EQ(ToUtf8(u"\xFFFE\x3DD8\x00DE"), "\xF0\x9F\x98\x80");
+}
+
+// Every Unicode scalar value, including U+0000 and the noncharacters, in each
+// encoding.
+struct AllScalarValues {
+  AllScalarValues() {
+    utf32_string.reserve(0x110000 - 0x800);
+    for (char32_t ch = 0; ch < 0xD800; ++ch) {
+      utf32_string.push_back(ch);
+    }
+    for (char32_t ch = 0xE000; ch < 0x110000; ++ch) {
+      utf32_string.push_back(ch);
+    }
+    utf8::unchecked::utf32to8(
+        utf32_string.begin(), utf32_string.end(),
+        std::back_insert_iterator<std::string>(utf8_string));
+    utf8::unchecked::utf8to16(
+        utf8_string.begin(), utf8_string.end(),
+        std::back_insert_iterator<std::u16string>(utf16_string));
+  }
+
+  std::u32string utf32_string;
+  std::string utf8_string;
+  std::u16string utf16_string;
+};
+
+// Returns the scalar values, which are built on first use.
+const AllScalarValues& GetAllScalarValues() {
+  static const AllScalarValues* const s_all = new AllScalarValues();
+  return *s_all;
+}
+
+TEST(UnicodeTest, Utf32ConvertsAllScalarValues) {
+  const AllScalarValues& all = GetAllScalarValues();
+  EXPECT_EQ(ToUtf8(all.utf32_string), all.utf8_string);
+  EXPECT_EQ(ToUtf32(all.utf8_string), all.utf32_string);
+}
+
+TEST(UnicodeTest, ToUtf32KeepsByteOrderMark) {
+  EXPECT_EQ(ToUtf32("\xEF\xBB\xBF"
+                    "a"),
+            U"\xFEFF"
+            U"a");
+  EXPECT_EQ(ToUtf8(U"\xFEFF"
+                   U"a"),
+            "\xEF\xBB\xBF"
+            "a");
+}
+
+TEST(UnicodeTest, ToUtf32InvalidUtf8IsEmpty) {
+  EXPECT_THAT(ToUtf32("a\xFF"), IsEmpty());              // Invalid byte.
+  EXPECT_THAT(ToUtf32("a\xC3"), IsEmpty());              // Truncated sequence.
+  EXPECT_THAT(ToUtf32("a\xC3z"), IsEmpty());             // Bad continuation.
+  EXPECT_THAT(ToUtf32("a\xC0\xAF"), IsEmpty());          // Overlong encoding.
+  EXPECT_THAT(ToUtf32("a\xED\xA0\x80"), IsEmpty());      // UTF-16 surrogate.
+  EXPECT_THAT(ToUtf32("a\xF4\x90\x80\x80"), IsEmpty());  // Above U+10FFFF.
+}
+
+TEST(UnicodeTest, ToUtf8InvalidUtf32IsEmpty) {
+  EXPECT_THAT(ToUtf8(U"a\xD800"), IsEmpty());    // Lead surrogate.
+  EXPECT_THAT(ToUtf8(U"a\xDFFF"), IsEmpty());    // Trail surrogate.
+  EXPECT_THAT(ToUtf8(U"a\x110000"), IsEmpty());  // Above U+10FFFF.
+}
+
+TEST(UnicodeTest, AppendUtf8AllScalarValues) {
+  const AllScalarValues& all = GetAllScalarValues();
+  std::string text;
+  for (const char32_t ch : all.utf32_string) {
+    ASSERT_TRUE(AppendUtf8(&text, ch)) << "Character: " << static_cast<int>(ch);
+  }
+  EXPECT_EQ(text, all.utf8_string);
+}
+
+TEST(UnicodeTest, AppendUtf8EachLength) {
+  std::string text = "a";
+  EXPECT_TRUE(AppendUtf8(&text, U'z'));
+  EXPECT_TRUE(AppendUtf8(&text, 0xE9));
+  EXPECT_TRUE(AppendUtf8(&text, 0x20AC));
+  EXPECT_TRUE(AppendUtf8(&text, 0x1F600));
+  EXPECT_EQ(text,
+            "az\xC3\xA9\xE2\x82\xAC"
+            "\xF0\x9F\x98\x80");
+}
+
+TEST(UnicodeTest, AppendUtf8InvalidLeavesStringUnchanged) {
+  std::string text = "a";
+  EXPECT_FALSE(AppendUtf8(&text, 0xD800));
+  EXPECT_FALSE(AppendUtf8(&text, 0xDFFF));
+  EXPECT_FALSE(AppendUtf8(&text, 0x110000));
+  EXPECT_FALSE(AppendUtf8(&text, 0xFFFFFFFF));
+  EXPECT_EQ(text, "a");
+}
+
+TEST(UnicodeTest, ConsumeCodePointAllScalarValuesUtf8) {
+  const AllScalarValues& all = GetAllScalarValues();
+  std::string_view text = all.utf8_string;
+  std::u32string consumed;
+  while (const std::optional<char32_t> ch = ConsumeCodePoint(&text)) {
+    consumed.push_back(*ch);
+  }
+  EXPECT_THAT(text, IsEmpty());
+  EXPECT_EQ(consumed, all.utf32_string);
+}
+
+TEST(UnicodeTest, ConsumeCodePointAllScalarValuesUtf16) {
+  const AllScalarValues& all = GetAllScalarValues();
+  std::u16string_view text = all.utf16_string;
+  std::u32string consumed;
+  while (const std::optional<char32_t> ch = ConsumeCodePoint(&text)) {
+    consumed.push_back(*ch);
+  }
+  EXPECT_THAT(text, IsEmpty());
+  EXPECT_EQ(consumed, all.utf32_string);
+}
+
+TEST(UnicodeTest, ConsumeCodePointEmpty) {
+  std::string_view u8_text;
+  EXPECT_THAT(ConsumeCodePoint(&u8_text), Eq(std::nullopt));
+  std::u16string_view u16_text;
+  EXPECT_THAT(ConsumeCodePoint(&u16_text), Eq(std::nullopt));
+}
+
+TEST(UnicodeTest, ConsumeCodePointInvalidUtf8LeavesStringUnchanged) {
+  const std::string_view kInvalid[] = {
+      "\xFF",              // Invalid byte.
+      "\xF5\x80\x80\x80",  // Lead byte above U+10FFFF.
+      "\xF8\x80\x80\x80",  // Lead byte of a 5-byte sequence.
+      "\x80z",             // Continuation byte with no lead.
+      "\xC3",              // Truncated sequence.
+      "\xE2\x82",          // Truncated sequence.
+      "\xF0\x9F\x98",      // Truncated sequence.
+      "\xC3z",             // Bad continuation.
+      "\xE2z\xAC",         // Bad continuation.
+      "\xC0\xAF",          // Overlong encoding.
+      "\xE0\x80\xAF",      // Overlong encoding.
+      "\xF0\x80\x80\xAF",  // Overlong encoding.
+      "\xED\xA0\x80",      // UTF-16 surrogate.
+      "\xF4\x90\x80\x80",  // Above U+10FFFF.
+  };
+  for (const std::string_view invalid : kInvalid) {
+    std::string_view text = invalid;
+    EXPECT_THAT(ConsumeCodePoint(&text), Eq(std::nullopt));
+    EXPECT_EQ(text, invalid);
+  }
+}
+
+TEST(UnicodeTest, ConsumeCodePointInvalidUtf16LeavesStringUnchanged) {
+  const std::u16string_view kInvalid[] = {
+      u"\xD800",        // Truncated pair.
+      u"\xD800z",       // Lead without trail.
+      u"\xDC00z",       // Trail without lead.
+      u"\xD800\xD800",  // Lead followed by lead.
+  };
+  for (const std::u16string_view invalid : kInvalid) {
+    std::u16string_view text = invalid;
+    EXPECT_THAT(ConsumeCodePoint(&text), Eq(std::nullopt));
+    EXPECT_EQ(text, invalid);
+  }
+}
+
+TEST(UnicodeTest, ConsumeCodePointStopsAtInvalid) {
+  std::string_view u8_text = "a\xC3\xA9\xFF";
+  EXPECT_THAT(ConsumeCodePoint(&u8_text), Optional(U'a'));
+  EXPECT_THAT(ConsumeCodePoint(&u8_text), Optional(char32_t{0xE9}));
+  EXPECT_THAT(ConsumeCodePoint(&u8_text), Eq(std::nullopt));
+  EXPECT_EQ(u8_text, "\xFF");
+
+  std::u16string_view u16_text = u"a\xD83D\xDE00\xDC00";
+  EXPECT_THAT(ConsumeCodePoint(&u16_text), Optional(U'a'));
+  EXPECT_THAT(ConsumeCodePoint(&u16_text), Optional(char32_t{0x1F600}));
+  EXPECT_THAT(ConsumeCodePoint(&u16_text), Eq(std::nullopt));
+  EXPECT_EQ(u16_text, u"\xDC00");
+}
+
+TEST(UnicodeTest, ConsumeCodePointKeepsByteOrderMark) {
+  std::string_view u8_text = "\xEF\xBB\xBF";
+  EXPECT_THAT(ConsumeCodePoint(&u8_text), Optional(char32_t{0xFEFF}));
+  std::u16string_view u16_text = u"\xFEFF";
+  EXPECT_THAT(ConsumeCodePoint(&u16_text), Optional(char32_t{0xFEFF}));
 }
 
 }  // namespace

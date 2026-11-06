@@ -6,6 +6,7 @@
 #include "gb/base/unicode.h"
 
 #include <iterator>
+#include <optional>
 #include <string>
 
 #include "utf8.h"
@@ -251,20 +252,35 @@ void EncodingDetector::Process() {
 
 // Returns true if every UTF-16 surrogate in the string is part of a valid pair.
 bool HasValidSurrogates(std::u16string_view str) {
-  const int size = static_cast<int>(str.size());
-  for (int i = 0; i < size; ++i) {
-    const char16_t ch = str[i];
-    if (ch >= 0xDC00 && ch < 0xE000) {
+  while (!str.empty()) {
+    if (!ConsumeCodePoint(&str).has_value()) {
       return false;
-    }
-    if (ch >= 0xD800 && ch < 0xDC00) {
-      ++i;
-      if (i == size || str[i] < 0xDC00 || str[i] >= 0xE000) {
-        return false;
-      }
     }
   }
   return true;
+}
+
+// Returns true if `code_point` is a Unicode scalar value.
+bool IsValidCodePoint(char32_t code_point) {
+  return code_point < 0xD800 || (code_point >= 0xE000 && code_point < 0x110000);
+}
+
+// Returns the length of the UTF-8 sequence that starts with `lead`, or 0 if
+// `lead` can't start a sequence.
+int GetUtf8SequenceLength(unsigned char lead) {
+  if (lead < 0x80) {
+    return 1;
+  }
+  if ((lead & 0xE0) == 0xC0) {
+    return 2;
+  }
+  if ((lead & 0xF0) == 0xE0) {
+    return 3;
+  }
+  if ((lead & 0xF8) == 0xF0) {
+    return 4;
+  }
+  return 0;
 }
 
 }  // namespace
@@ -278,8 +294,9 @@ StringEncoding GetStringEncoding(std::string_view str,
   return detector.GetEncoding();
 }
 
-// utfcpp's checked conversions throw on invalid input, so ToUtf16() and
-// ToUtf8() validate the input first, and then convert it unchecked.
+// utfcpp's checked conversions throw on invalid input, so the functions below
+// that use utfcpp validate the input first, and then use its unchecked
+// conversions.
 
 std::u16string ToUtf16(std::string_view utf8_string) {
   const unsigned char* const bom =
@@ -320,6 +337,77 @@ std::string ToUtf8(std::u16string_view utf16_string) {
   utf8::unchecked::utf16to8(begin, end,
                             std::back_insert_iterator<std::string>(result));
   return result;
+}
+
+std::u32string ToUtf32(std::string_view utf8_string) {
+  const char* const begin = utf8_string.data();
+  const char* const end = utf8_string.data() + utf8_string.size();
+  if (!utf8::is_valid(begin, end)) {
+    return {};
+  }
+  std::u32string result;
+  utf8::unchecked::utf8to32(begin, end,
+                            std::back_insert_iterator<std::u32string>(result));
+  return result;
+}
+
+std::string ToUtf8(std::u32string_view utf32_string) {
+  std::string result;
+  result.reserve(utf32_string.size());
+  for (const char32_t code_point : utf32_string) {
+    if (!AppendUtf8(&result, code_point)) {
+      return {};
+    }
+  }
+  return result;
+}
+
+bool AppendUtf8(std::string* utf8_string, char32_t code_point) {
+  if (!IsValidCodePoint(code_point)) {
+    return false;
+  }
+  utf8::unchecked::append(code_point,
+                          std::back_insert_iterator<std::string>(*utf8_string));
+  return true;
+}
+
+std::optional<char32_t> ConsumeCodePoint(std::string_view* utf8_string) {
+  if (utf8_string->empty()) {
+    return std::nullopt;
+  }
+  const int length =
+      GetUtf8SequenceLength(static_cast<unsigned char>(utf8_string->front()));
+  if (length == 0 || length > static_cast<int>(utf8_string->size())) {
+    return std::nullopt;
+  }
+  const char* it = utf8_string->data();
+  if (!utf8::is_valid(it, it + length)) {
+    return std::nullopt;
+  }
+  const char32_t code_point = static_cast<char32_t>(utf8::unchecked::next(it));
+  utf8_string->remove_prefix(length);
+  return code_point;
+}
+
+std::optional<char32_t> ConsumeCodePoint(std::u16string_view* utf16_string) {
+  if (utf16_string->empty()) {
+    return std::nullopt;
+  }
+  const char16_t lead = (*utf16_string)[0];
+  if (lead < 0xD800 || lead >= 0xE000) {
+    utf16_string->remove_prefix(1);
+    return lead;
+  }
+  if (lead >= 0xDC00 || utf16_string->size() < 2) {
+    return std::nullopt;
+  }
+  const char16_t trail = (*utf16_string)[1];
+  if (trail < 0xDC00 || trail >= 0xE000) {
+    return std::nullopt;
+  }
+  utf16_string->remove_prefix(2);
+  return 0x10000 + ((static_cast<char32_t>(lead) - 0xD800) << 10) +
+         (trail - 0xDC00);
 }
 
 }  // namespace gb

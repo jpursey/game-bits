@@ -6,6 +6,7 @@
 #ifndef GB_BASE_UNICODE_H_
 #define GB_BASE_UNICODE_H_
 
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -73,6 +74,45 @@ std::u16string ToUtf16(std::string_view utf8_string);
 // This does handle the UTF-16 byte order mark (BOM) if it exists. It never
 // outputs the UTF-8 BOM, however.
 std::string ToUtf8(std::u16string_view utf16_string);
+
+//==============================================================================
+// Code points
+//
+// These work on Unicode scalar values: the code points from U+0000 to U+10FFFF,
+// other than the UTF-16 surrogates (U+D800 to U+DFFF). Noncharacters (such as
+// U+FFFE) and U+0000 are valid. A byte order mark (U+FEFF) is a code point like
+// any other, and is never added or removed.
+//==============================================================================
+
+// Converts a UTF-8-encoded string to UTF-32.
+//
+// If the string is not valid UTF-8, this returns an empty string. Unlike
+// ToUtf16(), a leading byte order mark is kept as a code point.
+std::u32string ToUtf32(std::string_view utf8_string);
+
+// Converts a UTF-32-encoded string to UTF-8.
+//
+// If any code point in the string is invalid, this returns an empty string.
+// Unlike ToUtf8(std::u16string_view), a leading byte order mark is kept as a
+// code point.
+std::string ToUtf8(std::u32string_view utf32_string);
+
+// Appends the UTF-8 encoding of `code_point` to `utf8_string`.
+//
+// If `code_point` is invalid, this returns false and leaves `utf8_string`
+// unchanged.
+bool AppendUtf8(std::string* utf8_string, char32_t code_point);
+
+// Removes the first code point from the front of a UTF-8 or UTF-16 string, and
+// returns it.
+//
+// If the string is empty, or does not start with a valid encoding of a code
+// point (including a UTF-8 sequence or UTF-16 surrogate pair that is cut short
+// by the end of the string), this returns std::nullopt and leaves the string
+// unchanged. A loop that consumes code points until this fails can tell the end
+// of the string from invalid input by whether the string is empty.
+std::optional<char32_t> ConsumeCodePoint(std::string_view* utf8_string);
+std::optional<char32_t> ConsumeCodePoint(std::u16string_view* utf16_string);
 
 }  // namespace gb
 
