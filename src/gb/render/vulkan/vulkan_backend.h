@@ -142,6 +142,23 @@ class VulkanBackend final : public RenderBackend {
   // Allocator
   VmaAllocator GetAllocator() { return allocator_; }
 
+  // Returns true if the device can draw many indirect draws in one call.
+  bool IsMultiDrawSupported() const { return max_draw_indirect_count_ > 1; }
+
+  //----------------------------------------------------------------------------
+  // Options
+  //
+  // Thread-safety: These are thread-safe, and take effect from the next frame
+  // that is ended.
+  //----------------------------------------------------------------------------
+
+  // Sets whether indirect draws are drawn in one call where the device
+  // supports it, rather than one call each. It is enabled by default, and is
+  // turned off to check the fallback for devices without it.
+  void SetMultiDrawEnabled(bool enabled) {
+    multi_draw_enabled_.store(enabled, std::memory_order_relaxed);
+  }
+
   //----------------------------------------------------------------------------
   // Render properties
   //
@@ -319,6 +336,11 @@ class VulkanBackend final : public RenderBackend {
   void EndFrameUpdateImages();
   void EndFrameUpdateDescriptorSets();
   void EndFrameRenderPass();
+
+  // Records an indirect draw, in calls of at most `max_count` draws.
+  void DrawIndirect(vk::CommandBuffer commands,
+                    const DrawCommand::Indirect& indirect, uint32_t max_count);
+
   void EndFrameCopyImage(vk::Buffer buffer);
   vk::Fence EndFramePresent();
 
@@ -350,6 +372,7 @@ class VulkanBackend final : public RenderBackend {
   Queues queues_;
   vk::Format depth_format_;
   vk::SampleCountFlagBits msaa_count_ = vk::SampleCountFlagBits::e1;
+  uint32_t max_draw_indirect_count_ = 1;  // One without multi-draw.
   VmaAllocator allocator_ = VK_NULL_HANDLE;
 
   // Render pass
@@ -388,6 +411,9 @@ class VulkanBackend final : public RenderBackend {
   // Set by the window's size changed callback, which may be called on any
   // thread.
   std::atomic<bool> recreate_swap_ = false;
+
+  // Set by SetMultiDrawEnabled(), which may be called on any thread.
+  std::atomic<bool> multi_draw_enabled_ = true;
 
   // Frame management
   std::atomic<int> frame_counter_;

@@ -7,12 +7,13 @@
 # reset in the panel's draw list.
 wait 30
 
-# The sections above are collapsed to bring this one, and the log, into the
-# window.
+# The sections above, and the Mesh pools section below, are collapsed to bring
+# this one, and the log, into the window.
 click "Frames"
 click "Instances"
 click "Textures"
 click "Texture arrays"
+click "Mesh pools"
 wait 2
 save start
 

@@ -220,7 +220,7 @@ bool VulkanBackend::InitDevice(const std::vector<const char*>& layers) {
   for (const auto& physical_device : physical_devices) {
     // Validate required features are available.
     auto features = physical_device.getFeatures();
-    if (!features.samplerAnisotropy) {
+    if (!features.samplerAnisotropy || !features.drawIndirectFirstInstance) {
       continue;
     }
 
@@ -294,6 +294,16 @@ bool VulkanBackend::InitDevice(const std::vector<const char*>& layers) {
 
   // Initialize device specific properties.
   physical_device_properties_ = physical_device_.getProperties();
+  if (physical_device_.getFeatures().multiDrawIndirect) {
+    max_draw_indirect_count_ =
+        physical_device_properties_.limits.maxDrawIndirectCount;
+  }
+  LOG(INFO) << "Vulkan device: "
+            << physical_device_properties_.deviceName.data()
+            << ", multiDrawIndirect: "
+            << (IsMultiDrawSupported() ? "yes" : "no")
+            << ", maxDrawIndirectCount: "
+            << physical_device_properties_.limits.maxDrawIndirectCount;
   auto depth_format =
       FindSupportedFormat({vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint,
                            vk::Format::eD24UnormS8Uint},
@@ -328,8 +338,10 @@ bool VulkanBackend::InitDevice(const std::vector<const char*>& layers) {
         .setQueueCount(1)
         .setPQueuePriorities(&queue_priorities);
   }
-  auto device_features =
-      vk::PhysicalDeviceFeatures().setSamplerAnisotropy(VK_TRUE);
+  auto device_features = vk::PhysicalDeviceFeatures()
+                             .setSamplerAnisotropy(VK_TRUE)
+                             .setDrawIndirectFirstInstance(VK_TRUE)
+                             .setMultiDrawIndirect(IsMultiDrawSupported());
   std::tie(result, device_) = physical_device_.createDevice(
       vk::DeviceCreateInfo()
           .setQueueCreateInfoCount(
@@ -1118,6 +1130,9 @@ void VulkanBackend::Draw(RenderInternal, RenderScene* scene,
                command.type == DrawCommand::Type::kIndices) {
       render_state_.buffers.insert(
           static_cast<VulkanRenderBuffer*>(command.buffer));
+    } else if (command.type == DrawCommand::Type::kIndirect) {
+      render_state_.buffers.insert(
+          static_cast<VulkanRenderBuffer*>(command.indirect.draws));
     }
   }
   if (pipeline == nullptr) {
@@ -1221,7 +1236,8 @@ void VulkanBackend::EndFrameUpdateBuffers() {
   // One barrier for every copy, before anything reads them.
   frame.commands.pipelineBarrier(
       vk::PipelineStageFlagBits::eTransfer,
-      vk::PipelineStageFlagBits::eVertexInput |
+      vk::PipelineStageFlagBits::eDrawIndirect |
+          vk::PipelineStageFlagBits::eVertexInput |
           vk::PipelineStageFlagBits::eVertexShader |
           vk::PipelineStageFlagBits::eFragmentShader,
       {}, {vk::MemoryBarrier(vk::AccessFlagBits::eTransferWrite, dst_access)},
@@ -1331,6 +1347,12 @@ void VulkanBackend::EndFrameUpdateDescriptorSets() {
 void VulkanBackend::EndFrameRenderPass() {
   auto& frame = frames_[frame_index_];
   auto& frame_buffer = frame_buffers_[frame_buffer_index_];
+
+  // Without multi-draw, each indirect draw call draws one range.
+  const uint32_t max_draw_indirect_count =
+      multi_draw_enabled_.load(std::memory_order_relaxed)
+          ? max_draw_indirect_count_
+          : 1;
 
   const std::array<vk::ClearValue, 2> kClearValues = {clear_color_,
                                                       kDepthClearValue};
@@ -1469,7 +1491,8 @@ void VulkanBackend::EndFrameRenderPass() {
               frame.commands.setScissor(0, {scissor});
               break;
             }
-            case DrawCommand::Type::kDraw: {
+            case DrawCommand::Type::kDraw:
+            case DrawCommand::Type::kIndirect: {
               if (next_pipeline != last_pipeline) {
                 frame.commands.bindPipeline(vk::PipelineBindPoint::eGraphics,
                                             next_pipeline->Get());
@@ -1500,13 +1523,14 @@ void VulkanBackend::EndFrameRenderPass() {
                                                next_index_type);
                 last_index_buffer = next_index_buffer;
               }
-              frame.commands.drawIndexed(
-                  command.draw.index_count, 1, command.draw.index_offset,
-                  command.draw.vertex_offset, command.draw.first_instance);
-              break;
-            }
-            case DrawCommand::Type::kIndirect: {
-              // Indirect draws are not drawn yet.
+              if (command.type == DrawCommand::Type::kIndirect) {
+                DrawIndirect(frame.commands, command.indirect,
+                             max_draw_indirect_count);
+              } else {
+                frame.commands.drawIndexed(
+                    command.draw.index_count, 1, command.draw.index_offset,
+                    command.draw.vertex_offset, command.draw.first_instance);
+              }
               break;
             }
             case DrawCommand::Type::kReset: {
@@ -1528,6 +1552,22 @@ void VulkanBackend::EndFrameRenderPass() {
   frame.commands.endRenderPass();
 
   CallFrameCallbacks(&post_render_callbacks_);
+}
+
+void VulkanBackend::DrawIndirect(vk::CommandBuffer commands,
+                                 const DrawCommand::Indirect& indirect,
+                                 uint32_t max_count) {
+  auto* draws = static_cast<VulkanRenderBuffer*>(indirect.draws);
+  const vk::Buffer buffer = draws->GetBuffer(frame_index_);
+  const uint32_t stride = static_cast<uint32_t>(draws->GetAlignSize());
+  vk::DeviceSize offset = vk::DeviceSize{indirect.first} * stride;
+  uint32_t remaining = indirect.count;
+  while (remaining > 0) {
+    const uint32_t count = std::min(remaining, max_count);
+    commands.drawIndexedIndirect(buffer, offset, count, stride);
+    offset += vk::DeviceSize{count} * stride;
+    remaining -= count;
+  }
 }
 
 void VulkanBackend::EndFrameCopyImage(vk::Buffer buffer) {

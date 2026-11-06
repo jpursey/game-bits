@@ -66,7 +66,8 @@ class LogCounter final : public absl::LogSink {
 
 // Exercises the Vulkan backend: window resizing, binding data churn, texture
 // and texture array updates while they are drawn, each texture format, volume
-// textures, storage buffers, mesh pools, and each material blend mode.
+// textures, storage buffers, mesh pools and indirect draws, and each material
+// blend mode.
 //
 // The checks are run by hand, or by a pilot in the context, whose scripts (in
 // scripts/) press the panel's buttons by their labels. A result that isn't as
@@ -184,6 +185,11 @@ class RenderCheck final : public gb::Game {
   // returns null if it couldn't.
   std::unique_ptr<gb::PooledMesh> CreatePoolShape(int index, float angle);
 
+  // Returns the ranges the mesh pool's shapes are drawn with, and writes them
+  // to the storage buffer the indirect row is drawn from.
+  std::vector<gb::MeshDraw> GetPoolDraws() const;
+  void SetPoolDraws();
+
   void CreateInstances();
   void SetInstanceData(int index, gb::BindingData* instance);
   void SetQuadData(gb::BindingData* instance, float x, float y, float width,
@@ -275,12 +281,18 @@ class RenderCheck final : public gb::Game {
 
   // A mesh pool, drawn by DrawMeshPool(), whose shapes each read their color
   // from a storage buffer by their draw index. While replacing, one shape is
-  // replaced each frame.
+  // replaced each frame. The shapes are drawn twice: a range at a time with
+  // `pool_instance_`, and in one indirect draw from `pool_draws_` with
+  // `pool_indirect_instance_`, which moves them down. `multi_draw_` sets
+  // whether the indirect draw may use multi-draw.
   gb::MeshPool* mesh_pool_ = nullptr;
   gb::Material* pool_material_ = nullptr;
   std::unique_ptr<gb::BindingData> pool_instance_;
+  std::unique_ptr<gb::BindingData> pool_indirect_instance_;
+  gb::StorageBuffer* pool_draws_ = nullptr;
   std::vector<std::unique_ptr<gb::PooledMesh>> pool_shapes_;
   bool replace_shapes_ = false;
+  bool multi_draw_ = true;
   int64_t shapes_replaced_ = 0;
 
   // GUI.

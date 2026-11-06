@@ -4,7 +4,8 @@
 # in the LICENSE file or at https://opensource.org/licenses/MIT.
 
 # The Mesh pools section: a row of shapes from one pool, and replacing a shape
-# each frame, so the pool reuses their space and grows.
+# each frame, so the pool reuses their space and grows. The row below draws the
+# same shapes in one indirect draw, with multi-draw and then without.
 wait 30
 
 # The sections above are collapsed to bring this one into the window.
@@ -27,3 +28,12 @@ save replacing
 click "Replace a shape each frame (M)"
 wait 4
 save stopped
+
+# Without multi-draw, each range is its own call, while shapes are replaced.
+click "Multi-draw (I)"
+click "Replace a shape each frame (M)"
+wait 60
+save single_draws_replacing
+click "Replace a shape each frame (M)"
+wait 4
+save single_draws

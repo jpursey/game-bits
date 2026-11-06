@@ -140,8 +140,10 @@ constexpr float kStorageHueStep = 0.37f;
 // white. The pool starts too small for them, so it grows before they are first
 // drawn, and again to hold replaced shapes until their space can be reused.
 // Each replacement turns its shape by kPoolTurn for each shape replaced before
-// it.
+// it. The same shapes are drawn again kPoolIndirectOffset below, in one
+// indirect draw.
 constexpr int kPoolShapes = 8;
+constexpr int kPoolDraws = kPoolShapes + 1;
 constexpr int kPoolFirstSides = 3;
 constexpr int kPoolStartVertices = 16;
 constexpr int kPoolStartTriangles = 16;
@@ -149,6 +151,7 @@ constexpr float kPoolTop = kExtraRectTop + 160.0f;
 constexpr float kPoolRadius = 14.0f;
 constexpr float kPoolSpacing = 34.0f;
 constexpr float kPoolTurn = 0.1f;
+constexpr float kPoolIndirectOffset = 56.0f;
 
 // Converts a hue in [0, 1) to a fully saturated color.
 gb::Pixel HueColor(float hue) {
@@ -787,14 +790,14 @@ bool RenderCheck::InitMeshPool() {
   }
 
   // A color for each shape, and white for the last shape's second range.
-  std::vector<QuadColor> colors(kPoolShapes + 1);
+  std::vector<QuadColor> colors(kPoolDraws);
   for (int i = 0; i < kPoolShapes; ++i) {
     colors[i] = ToQuadColor(HueColor(static_cast<float>(i) / kPoolShapes));
   }
   colors[kPoolShapes] = ToQuadColor(gb::PixelColor::kWhite);
   gb::StorageBuffer* storage_buffer = render_system_->CreateStorageBuffer(
       &resources_, render_system_->GetConstantsType("QuadColor"),
-      gb::DataVolatility::kStaticReadWrite, kPoolShapes + 1);
+      gb::DataVolatility::kStaticReadWrite, kPoolDraws);
   pool_material_ = render_system_->CreateMaterial(&resources_, material_type);
   if (storage_buffer == nullptr || !storage_buffer->Set<QuadColor>(0, colors) ||
       pool_material_ == nullptr) {
@@ -802,12 +805,31 @@ bool RenderCheck::InitMeshPool() {
     return false;
   }
   pool_material_->GetMaterialBindingData()->SetStorageBuffer(0, storage_buffer);
-  pool_instance_ = pool_material_->CreateInstanceBindingData();
 
+  // The instance data's rectangle is the offset of the shapes' row.
+  pool_instance_ = pool_material_->CreateInstanceBindingData();
+  pool_indirect_instance_ = pool_material_->CreateInstanceBindingData();
+  if (pool_instance_ == nullptr || pool_indirect_instance_ == nullptr) {
+    LOG(ERROR) << "Could not create mesh pool instances";
+    return false;
+  }
+  pool_instance_->SetConstants<InstanceData>(0, {});
+  pool_indirect_instance_->SetConstants<InstanceData>(
+      0, {{0.0f, kPoolIndirectOffset, 0.0f, 0.0f}, {}});
+
+  // The draws the indirect row reads, written as the shapes change.
+  const gb::RenderDataType* draw_type =
+      render_system_->RegisterConstantsType<gb::MeshDraw>("MeshDraw");
+  if (draw_type == nullptr) {
+    LOG(ERROR) << "Could not register the mesh pool's draw type";
+    return false;
+  }
+  pool_draws_ = render_system_->CreateStorageBuffer(
+      &resources_, draw_type, gb::DataVolatility::kStaticReadWrite, kPoolDraws);
   mesh_pool_ = render_system_->CreateMeshPool(
       &resources_, quad_type->GetVertexType(), gb::IndexType::kUint32,
       kPoolStartVertices, kPoolStartTriangles);
-  if (pool_instance_ == nullptr || mesh_pool_ == nullptr) {
+  if (pool_draws_ == nullptr || mesh_pool_ == nullptr) {
     LOG(ERROR) << "Could not create mesh pool";
     return false;
   }
@@ -818,6 +840,7 @@ bool RenderCheck::InitMeshPool() {
     }
     pool_shapes_.emplace_back(std::move(shape));
   }
+  SetPoolDraws();
   return true;
 }
 
@@ -828,6 +851,7 @@ void RenderCheck::CleanUp() {
   storage_rows_.clear();
   pool_shapes_.clear();
   pool_instance_.reset();
+  pool_indirect_instance_.reset();
   scene_.reset();
   if (gui_instance_ != nullptr) {
     ImGui_ImplSDL2_Shutdown();
@@ -913,6 +937,9 @@ void RenderCheck::OnKeyDown(SDL_Keycode key) {
     case SDLK_m:
       replace_shapes_ = !replace_shapes_;
       break;
+    case SDLK_i:
+      multi_draw_ = !multi_draw_;
+      break;
   }
 }
 
@@ -975,6 +1002,7 @@ void RenderCheck::UpdateStorageBuffers() {
 }
 
 void RenderCheck::UpdateMeshPool() {
+  backend_->SetMultiDrawEnabled(multi_draw_);
   if (!replace_shapes_) {
     return;
   }
@@ -989,6 +1017,28 @@ void RenderCheck::UpdateMeshPool() {
   }
   pool_shapes_[index] = std::move(shape);
   ++shapes_replaced_;
+  SetPoolDraws();
+}
+
+std::vector<gb::MeshDraw> RenderCheck::GetPoolDraws() const {
+  // Each draw's first instance is the index of its color.
+  std::vector<gb::MeshDraw> draws;
+  draws.reserve(kPoolDraws);
+  for (int i = 0; i < kPoolShapes - 1; ++i) {
+    draws.push_back(pool_shapes_[i]->GetDraw(i));
+  }
+  const gb::PooledMesh* last = pool_shapes_.back().get();
+  const int half = last->GetTriangleCount() / 2;
+  draws.push_back(last->GetDraw(0, half, kPoolShapes - 1));
+  draws.push_back(
+      last->GetDraw(half, last->GetTriangleCount() - half, kPoolShapes));
+  return draws;
+}
+
+void RenderCheck::SetPoolDraws() {
+  if (!pool_draws_->Set<gb::MeshDraw>(0, GetPoolDraws())) {
+    LOG(ERROR) << "Could not write the mesh pool's draws";
+  }
 }
 
 void RenderCheck::DrawGui() {
@@ -1224,6 +1274,10 @@ void RenderCheck::DrawMeshPoolGui() {
     return;
   }
   ImGui::Checkbox("Replace a shape each frame (M)", &replace_shapes_);
+  ImGui::Checkbox("Multi-draw (I)", &multi_draw_);
+  ImGui::SameLine();
+  ImGui::TextUnformatted(backend_->IsMultiDrawSupported() ? "Supported"
+                                                          : "Not supported");
   const gb::MeshPoolStats stats = mesh_pool_->GetStats();
   ImGui::Text("Meshes: %d   Replaced: %lld", stats.mesh_count,
               static_cast<long long>(shapes_replaced_));
@@ -1238,12 +1292,20 @@ void RenderCheck::DrawMeshPoolGui() {
       "from a triangle to a decagon, in evenly spaced hues from red. The "
       "decagon is drawn as two ranges, its second half white. While "
       "replacing, the shapes turn as they are replaced, and the pool grows to "
-      "hold the replaced shapes until their space is reused.");
+      "hold the replaced shapes until their space is reused. Below them, the "
+      "same shapes in one indirect draw, from a storage buffer of the same "
+      "ranges, so the rows match: in one call with multi-draw, and a call "
+      "for each range without it.");
 }
 
 void RenderCheck::DrawMeshPoolLabel() {
-  ImGui::GetBackgroundDrawList()->AddText({kGridLeft, kPoolTop - 16.0f},
-                                          IM_COL32_WHITE, "Mesh pool, 32-bit");
+  ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
+  draw_list->AddText({kGridLeft, kPoolTop - 16.0f}, IM_COL32_WHITE,
+                     "Mesh pool, 32-bit");
+  const bool multi_draw = multi_draw_ && backend_->IsMultiDrawSupported();
+  draw_list->AddText(
+      {kGridLeft, kPoolTop + kPoolIndirectOffset - 16.0f}, IM_COL32_WHITE,
+      multi_draw ? "Indirect, multi-draw" : "Indirect, a call per range");
 }
 
 void RenderCheck::AddVolumeRegions() {
@@ -1373,17 +1435,15 @@ void RenderCheck::DrawStorageBuffers() {
 }
 
 void RenderCheck::DrawMeshPool() {
-  // Each shape's draw index is the index of its color.
+  // The top row is drawn a range at a time, and the row below from the same
+  // ranges in the storage buffer.
   gb::DrawList draw_list;
   draw_list.SetMeshPool(mesh_pool_, pool_material_, pool_instance_.get());
-  for (int i = 0; i < kPoolShapes - 1; ++i) {
-    draw_list.Draw(pool_shapes_[i]->GetDraw(i));
+  for (const gb::MeshDraw& draw : GetPoolDraws()) {
+    draw_list.Draw(draw);
   }
-  const gb::PooledMesh* last = pool_shapes_.back().get();
-  const int half = last->GetTriangleCount() / 2;
-  draw_list.Draw(last->GetDraw(0, half, kPoolShapes - 1));
-  draw_list.Draw(
-      last->GetDraw(half, last->GetTriangleCount() - half, kPoolShapes));
+  draw_list.SetInstanceData(pool_indirect_instance_.get());
+  draw_list.DrawIndirect(pool_draws_, 0, kPoolDraws);
   render_system_->Draw(scene_.get(), draw_list);
 }
 

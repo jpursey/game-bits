@@ -602,7 +602,9 @@ std::unique_ptr<VulkanBuffer> VulkanRenderBuffer::CreateDeviceBuffer(
       usage |= vk::BufferUsageFlagBits::eIndexBuffer;
       break;
     case VulkanBufferType::kStorage:
-      usage |= vk::BufferUsageFlagBits::eStorageBuffer;
+      // Any storage buffer of MeshDraw values can be drawn from.
+      usage |= vk::BufferUsageFlagBits::eStorageBuffer |
+               vk::BufferUsageFlagBits::eIndirectBuffer;
       break;
   }
   return VulkanBuffer::Create(backend_,
@@ -645,7 +647,8 @@ void VulkanRenderBuffer::CopyBuffer(vk::Buffer host_buffer,
       dst_access = vk::AccessFlagBits::eIndexRead;
       break;
     case VulkanBufferType::kStorage:
-      dst_access = vk::AccessFlagBits::eShaderRead;
+      dst_access = vk::AccessFlagBits::eShaderRead |
+                   vk::AccessFlagBits::eIndirectCommandRead;
       break;
     default:
       LOG(FATAL) << "Unhandled buffer type for CopyBuffer";

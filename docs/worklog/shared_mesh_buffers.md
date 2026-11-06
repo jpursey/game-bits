@@ -330,10 +330,11 @@ virtual std::unique_ptr<MeshPoolBuffers> CreateMeshPoolBuffers(
 
 ### To confirm
 
-- `gl_InstanceIndex` includes `first_instance` in indirect draws, and in the
-  fallback without multi-draw (CL6).
-- The device in use has `drawIndirectFirstInstance` and `multiDrawIndirect`
-  (CL6).
+- Confirmed (CL6): `gl_InstanceIndex` includes `first_instance` in indirect
+  draws, and in the fallback without multi-draw.
+- Confirmed (CL6): the device in use (an NVIDIA GeForce RTX 4070 Ti SUPER) has
+  `drawIndirectFirstInstance` and `multiDrawIndirect`, with a
+  `maxDrawIndirectCount` of 2^32 - 1.
 - In block-world, drawing every chunk from one pool with an indirect draw is
   faster than drawing each chunk on its own (CL7).
 
@@ -431,15 +432,21 @@ Depends on: CL3.
 - Unit tests: the commands recorded; a storage buffer of another type, or a
   range past its end, asserts; `DrawIndirect()` without a pool asserts.
 
-### CL6 [ ] render_vulkan: Indirect draws in Vulkan
+### CL6 [x] render_vulkan: Indirect draws in Vulkan
 
 Depends on: CL4, CL5.
 
 - `eIndirectBuffer` usage on storage buffers, the device features, the backend
   option to turn off multi-draw, and drawing `kIndirect`.
+- The multi-draw option is `VulkanBackend::SetMultiDrawEnabled()`, which
+  takes effect from the next frame, so render-check can toggle it.
 - render-check: the row of CL4's shapes drawn again in one indirect draw, from
   a storage buffer of `MeshDraw` values, each with its own color by
-  `first_instance`, and a key that turns multi-draw off and on.
+  `first_instance`, and a check box (and key) that turns multi-draw off and on.
+  The pool's vertex shader adds the instance's offset, which moves the
+  indirect row below the other. `scripts/mesh_pools.txt` also saves frames
+  without multi-draw, and `scripts/gui.txt` collapses the taller Mesh pools
+  section to keep the log in the window.
 
 **Verify**
 - Standard checks.
