@@ -31,8 +31,8 @@ class ImGuiPilotHooks final {
 
   // Called by ImGui's hooks. BeginFrame() is called as ImGui::NewFrame()
   // starts, once the platform backend has set the mouse and delta time, and
-  // replaces them with the pilot's. AddItem() is called for each item that
-  // reports its label, as it is submitted.
+  // replaces them with the pilot's, and clears the ini file's name. AddItem()
+  // is called for each item that reports its label, as it is submitted.
   void BeginFrame();
   void AddItem(ImGuiID id, const char* label);
 

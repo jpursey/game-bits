@@ -45,12 +45,14 @@ class ImGuiInstance final {
 
   // OPTIONAL: Pilot driving the program (see Pilot for how it is stored). With
   // one, each ImGui::NewFrame() takes the mouse and delta time from the pilot,
-  // in place of what the platform backend set, and the pilot can find the
-  // labelled items drawn in the last frame, where a click at their center
-  // reaches them (not clipped, or behind another window). An item is found by
-  // its label as shown (before any "##"), or after its top level window's name
-  // and a "/" ("Settings/Save"), if more than one item has the label. The pilot
-  // must outlive the instance.
+  // in place of what the platform backend set, and clears io.IniFilename, so
+  // window settings are neither loaded from an earlier run nor saved for a
+  // later one. ImGui::LoadIniSettingsFromDisk() still loads a file it is
+  // given. The pilot can find the labelled items drawn in the last frame,
+  // where a click at their center reaches them (not clipped, or behind another
+  // window). An item is found by its label as shown (before any "##"), or
+  // after its top level window's name and a "/" ("Settings/Save"), if more
+  // than one item has the label. The pilot must outlive the instance.
   static GB_CONTEXT_CONSTRAINT(kConstraintPilot, kInOptional, Pilot);
 
   // SCOPED: The ImGuiContext that this instance is managing.

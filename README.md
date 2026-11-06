@@ -312,6 +312,15 @@ it, you must first build the required shaders, by running the
 (it must be run from the `assets/shaders` directory, and requires `glslc` from
 the Vulkan SDK to be on the PATH).
 
+It starts at the title, or in the state `--state` names (`--state PlayState`
+starts playing straight away). It also runs pilot scripts, such as
+[examples/block-world/scripts/walk.txt](examples/block-world/scripts/walk.txt),
+which walks forward and saves frames before and after:
+
+```
+.\tools\run-program.ps1 -Exe bin\block_world.exe -Script examples\block-world\scripts\walk.txt
+```
+
 ### Running the RenderCheck example
 
 The RenderCheck example exercises the Vulkan backend by hand: window resizing,

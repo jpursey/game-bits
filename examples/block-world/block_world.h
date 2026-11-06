@@ -6,6 +6,11 @@
 #ifndef BLOCK_WORLD_H_
 #define BLOCK_WORLD_H_
 
+#include <memory>
+#include <string>
+#include <string_view>
+#include <vector>
+
 #include "SDL.h"
 #include "gb/file/file_system.h"
 #include "gb/game/game.h"
@@ -14,6 +19,7 @@
 #include "gb/message/message_dispatcher.h"
 #include "gb/message/message_stack_endpoint.h"
 #include "gb/message/message_system.h"
+#include "gb/pilot/sdl/pilot_sdl.h"
 #include "gb/render/render_types.h"
 #include "gb/resource/resource_system.h"
 
@@ -52,7 +58,10 @@ class BlockWorld final : public gb::Game {
       kConstraintRenderSystem, kConstraintGuiInstance, kConstraintGuiFonts,
       kConstraintWorldResources>;
 
-  BlockWorld() = default;
+  // Starts in the game state registered with `init_state_name`, which Init()
+  // fails on if there is none.
+  explicit BlockWorld(std::string_view init_state_name)
+      : init_state_name_(init_state_name) {}
   ~BlockWorld() override = default;
 
   gb::ValidatedContext& Context() override { return context_; }
@@ -64,6 +73,7 @@ class BlockWorld final : public gb::Game {
   void CleanUp() override;
 
  private:
+  bool InitPilot();
   bool InitFileSystem();
   bool InitResourceSystem();
   bool InitMessages();
@@ -84,6 +94,7 @@ class BlockWorld final : public gb::Game {
   gb::RenderBackend* render_backend_ = nullptr;
   gb::ImGuiInstance* gui_instance_ = nullptr;
   GuiFonts* gui_fonts_ = nullptr;
+  std::unique_ptr<gb::PilotSdl> pilot_sdl_;
   std::string init_state_name_;
 };
 

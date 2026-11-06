@@ -79,6 +79,10 @@ void ImGuiPilotHooks::BeginFrame() {
   io.MouseDown[ImGuiMouseButton_Middle] = mouse.middle;
   io.DeltaTime =
       static_cast<float>(absl::ToDoubleSeconds(pilot_->GetDeltaTime()));
+
+  // ImGui loads the ini file later in the first frame, and saves it in later
+  // ones and at shutdown, all only while it has a name.
+  io.IniFilename = nullptr;
   items_.clear();
 }
 

@@ -693,7 +693,8 @@ virtual std::unique_ptr<Image> EndFrameAndReadImage(RenderInternal) = 0;
   ImGui context hook (`ImGuiContextHookType_NewFramePre`, run at the start of
   `ImGui::NewFrame()`, after the platform backend has set up `ImGuiIO`) that
   sets `io.MousePos` and `io.MouseDown` from `GetMouse()`, and
-  `io.DeltaTime` from the delta time. The SDL backend reads the real cursor
+  `io.DeltaTime` from the delta time. It also clears `io.IniFilename`, so a
+  run's window layout doesn't depend on earlier runs or change later ones. The SDL backend reads the real cursor
   in `ImGui_ImplSDL2_NewFrame()`, so this replaces what it read, and programs
   call both as they do today.
 - `gb_imconfig.h` defines `IMGUI_ENABLE_TEST_ENGINE`, and `gb_imgui`
@@ -1074,14 +1075,29 @@ Depends on: CL13.
   render-check has no condition that stays false) saves the stacks, and fails
   once `-TimeoutSecs` is up.
 
-### CL15 [ ] block-world: Scripted runs
+### CL15 [x] block-world: Scripted runs
 
 Depends on: CL14.
 
 - BlockWorld takes its arguments through `gb_cli` (its starting state becomes
-  a flag), and creates `PilotSdl`.
-- A script that walks forward with `w` and saves frames before and after.
+  `--state`, which fails on a state that isn't registered), and creates
+  `PilotSdl`.
+- `World::Draw()` builds meshes for at most 10 ms of real time a frame. With
+  a pilot, it builds every mesh in view in the frame it is first drawn, so
+  what is drawn doesn't depend on how fast the machine is.
+- `ImGuiInstance`'s pilot hook clears `io.IniFilename` each frame, so window
+  settings are neither loaded from an earlier run nor saved for a later one.
+  block-world leaves loading its layout to ImGui's first frame, rather than
+  calling `LoadIniSettingsFromDisk()`, which the hook can't stop.
+- `scripts/walk.txt` starts from the title, saves a frame, walks forward with
+  `w`, and saves another.
+- `run-program.ps1` takes `-Arguments`, the program's other flags.
 
 **Verify**
-- Standard checks.
+- Standard checks, with block-world built in Debug and Release.
+- `gb_imgui`'s tests: with a pilot, an ini file is neither loaded nor
+  written.
 - The script runs with `run-program.ps1` and its frames show the view moving.
+  Three runs save identical frames.
+- `--state PlayState` starts playing, and an unknown state fails. Without the
+  flags, the game runs, loads and saves its layout, and closes cleanly.

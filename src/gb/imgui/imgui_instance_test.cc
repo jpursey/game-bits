@@ -578,6 +578,29 @@ TEST_F(ImGuiInstanceTest, PilotMousePressesItems) {
   EXPECT_TRUE(checked);
 }
 
+TEST_F(ImGuiInstanceTest, PilotTurnsOffSettingsFile) {
+  static constexpr const char* kIniFilename = "mem:/imgui.ini";
+  ASSERT_TRUE(
+      file_system_->WriteFile(kIniFilename, "[Window][Test]\nPos=123,45\n"));
+
+  auto instance = CreatePilotInstance();
+  ASSERT_NE(instance, nullptr);
+  ImGui::GetIO().IniFilename = kIniFilename;
+  NewFrame();
+  EXPECT_EQ(ImGui::GetIO().IniFilename, nullptr);
+  ImGui::SetNextWindowPos(ImVec2(10, 20), ImGuiCond_FirstUseEver);
+  ImGui::Begin("Test");
+  EXPECT_EQ(ImGui::GetWindowPos().x, 10);
+  EXPECT_EQ(ImGui::GetWindowPos().y, 20);
+  ImGui::End();
+  DrawFrame(instance.get());
+  instance.reset();
+
+  std::string settings;
+  ASSERT_TRUE(file_system_->ReadFile(kIniFilename, &settings));
+  EXPECT_EQ(settings, "[Window][Test]\nPos=123,45\n");
+}
+
 TEST_F(ImGuiInstanceTest, PilotSetsDeltaTime) {
   auto instance = CreatePilotInstance();
   ASSERT_NE(instance, nullptr);

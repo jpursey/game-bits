@@ -577,7 +577,25 @@ OZ-3's assembler and simulator) builds the same file system in `main()`: an
 OS-root `LocalFileProtocol`, registered as the default protocol, in the context
 given to `RunCommandLine()`. A program that forgets the default protocol fails
 only when a path without one is given. Add a `gb_cli` function that builds it,
-or a `RunCommandLine()` that does, beside `GetMainArgs()`.
+or a `RunCommandLine()` that does, beside `GetMainArgs()`. render-check and
+block-world also repeat the start of their command's run function: creating the
+pilot with `CreateCliPilot()`, failing if it fails, and passing it to the game
+in a context whose parent is the command's.
+
+## Block-world camera turning in scripts
+
+- **Layers:** block-world
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Scripted runs](worklog/scripted_runs.md)
+
+Block-world turns the camera while the right mouse button is held, using SDL's
+relative mouse mode and moving the cursor back on release
+(`SDL_GetGlobalMouseState()` and `SDL_WarpMouseGlobal()`). These act on the
+real cursor, so a script that right-clicks in play would capture and move the
+user's mouse. Under a pilot, turn the camera from the mouse motion events alone,
+without relative mode or moving the cursor.
 
 ## Pilot scripts with a byte order mark
 

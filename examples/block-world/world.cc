@@ -408,6 +408,7 @@ void World::Draw(const Camera& camera) {
 
   static constexpr int64_t kMaxTime = 10LL * 1000 * 1000;  // 10 milliseconds
   int64_t start_time = absl::GetCurrentTimeNanos();
+  const bool build_all = context_.GetPtr<gb::Pilot>() != nullptr;
 
   absl::flat_hash_set<std::tuple<int, int>> visited;
   std::vector<ChunkIndex> chunk_queue;
@@ -438,7 +439,7 @@ void World::Draw(const Camera& camera) {
 
     ++debug_chunk_count;
     if (!chunk->HasMesh()) {
-      if (absl::GetCurrentTimeNanos() - start_time < kMaxTime) {
+      if (build_all || absl::GetCurrentTimeNanos() - start_time < kMaxTime) {
         chunk->BuildMesh();
       }
     }

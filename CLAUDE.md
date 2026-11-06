@@ -129,7 +129,7 @@ A `clang-format` on PATH may be a different version, and versions disagree on a 
 
 ### Run an example
 
-A session can run an example with a script of steps, and look at the frames it saves. The example runs the script itself, so this works for any program that takes the pilot flags from `gb_pilot_script` (render-check does). README.md says how to build each one (`bin/render_check.exe` in "Running the RenderCheck example").
+A session can run an example with a script of steps, and look at the frames it saves. The example runs the script itself, so this works for any program that takes the pilot flags from `gb_pilot_script` (render-check and block-world do). `-Arguments` passes the program's other flags, such as block-world's `--state PlayState`. README.md says how to build each one (`bin/render_check.exe` in "Running the RenderCheck example").
 
 ```
 # PowerShell

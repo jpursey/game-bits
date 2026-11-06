@@ -8,15 +8,16 @@
 #
 # Usage:
 #   tools\run-program.ps1 -Exe <path> [-Script <file> | -Steps <steps>]
-#                         [-OutDir <dir>] [-WorkingDirectory <dir>]
-#                         [-TimeoutSecs <seconds>]
+#                         [-Arguments <arguments>] [-OutDir <dir>]
+#                         [-WorkingDirectory <dir>] [-TimeoutSecs <seconds>]
 #
 # The program must take the pilot flags (--pilot and --pilot-output, from
 # gb_pilot_script), and runs the script by itself: src/gb/pilot/script/
 # pilot_script.h lists the steps. -Steps is a script written inline, with ";"
 # between steps (so ";" can't appear in a step's text), which is saved to
 # <OutDir>\steps.txt. With neither, the steps save one frame once the program
-# has had time to draw.
+# has had time to draw. -Arguments are the program's other arguments, as they
+# would be typed after it on a command line.
 #
 # The program exits once the script ends. The run fails if it exits with an
 # error code, which it does if a step failed or an error was logged, or is still
@@ -34,6 +35,7 @@ param(
   [string]$Exe,
   [string]$Script = "",
   [string]$Steps = "hide window; wait 30; save frame",
+  [string]$Arguments = "",
   [string]$OutDir = "",
   [string]$WorkingDirectory = "",
   [double]$TimeoutSecs = 60
@@ -68,7 +70,7 @@ if ($Script -ne "") {
 $log = Join-Path $OutDir "stderr.txt"
 $started = Get-Date
 $process = Start-Process -FilePath $Exe -WorkingDirectory $WorkingDirectory `
-  -ArgumentList "--pilot `"$Script`" --pilot-output `"$OutDir`"" `
+  -ArgumentList "$Arguments --pilot `"$Script`" --pilot-output `"$OutDir`"" `
   -PassThru `
   -RedirectStandardOutput (Join-Path $OutDir "stdout.txt") `
   -RedirectStandardError $log

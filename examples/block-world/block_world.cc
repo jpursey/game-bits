@@ -9,10 +9,11 @@
 
 #include "absl/log/check.h"
 #include "absl/log/log.h"
-#include "absl/strings/str_cat.h"
 #include "gb/base/context_builder.h"
 #include "gb/file/local_file_protocol.h"
 #include "gb/file/path.h"
+#include "gb/game/game_state.h"
+#include "gb/pilot/pilot.h"
 #include "gb/render/render_system.h"
 #include "gb/render/vulkan/sdl/sdl_vulkan_window.h"
 #include "gb/render/vulkan/vulkan_backend.h"
@@ -28,16 +29,10 @@ namespace {
 namespace fs = std::filesystem;
 }  // namespace
 
-bool BlockWorld::Init(const std::vector<std::string_view>& args) {
+bool BlockWorld::Init(const std::vector<std::string_view>&) {
   if (SDL_Init(SDL_INIT_VIDEO) != 0) {
     LOG(ERROR) << "Unable to initialize SDL: " << SDL_GetError();
     return false;
-  }
-
-  // TODO: Use a proper command line parser. Right now, we only need one
-  //       argument for testing.
-  if (!args.empty()) {
-    init_state_name_ = absl::StrCat(args.front());
   }
 
   window_ = SDL_CreateWindow("Block World", SDL_WINDOWPOS_CENTERED,
@@ -53,8 +48,18 @@ bool BlockWorld::Init(const std::vector<std::string_view>& args) {
       !context_.SetPtr<SDL_Window>(window_)) {
     return false;
   }
-  return InitFileSystem() && InitResourceSystem() && InitMessages() &&
-         InitRenderSystem() && InitGui() && InitResources() && InitStates();
+  return InitPilot() && InitFileSystem() && InitResourceSystem() &&
+         InitMessages() && InitRenderSystem() && InitGui() && InitResources() &&
+         InitStates();
+}
+
+bool BlockWorld::InitPilot() {
+  gb::Pilot* pilot = context_.GetPtr<gb::Pilot>();
+  if (pilot == nullptr) {
+    return true;
+  }
+  pilot_sdl_ = gb::PilotSdl::Create(pilot, window_);
+  return pilot_sdl_ != nullptr;
 }
 
 bool BlockWorld::InitFileSystem() {
@@ -196,8 +201,9 @@ bool BlockWorld::InitGui() {
   gui_fonts_ = context_.GetPtr<GuiFonts>();
   ImGui_ImplSDL2_InitForVulkan(window_);
 
+  // ImGui loads the window layout in the first frame, unless a pilot is
+  // running.
   io.IniFilename = "game:/block-world-ui.ini";
-  ImGui::LoadIniSettingsFromDisk("game:/block-world-ui.ini");
   return true;
 }
 
@@ -217,9 +223,11 @@ bool BlockWorld::InitStates() {
   }
   state_machine_ = context_.GetPtr<gb::GameStateMachine>();
   RegisterStates(state_machine_);
-  auto init_state = state_machine_->GetRegisteredId(init_state_name_);
+  const gb::GameStateId init_state =
+      state_machine_->GetRegisteredId(init_state_name_);
   if (init_state == gb::kNoGameStateId) {
-    init_state = gb::GetGameStateId<TitleState>();
+    LOG(ERROR) << "There is no game state named \"" << init_state_name_ << "\"";
+    return false;
   }
   state_machine_->ChangeState(gb::kNoGameStateId, init_state);
   UpdateStateMachine(absl::ZeroDuration());
@@ -291,6 +299,7 @@ void BlockWorld::CleanUp() {
   context_.Clear<gb::FileSystem>();
   LOG_IF(ERROR, !context_.Complete()) << "Contract constraints violated!";
 
+  pilot_sdl_.reset();
   if (window_ != nullptr) {
     SDL_DestroyWindow(window_);
   }

@@ -5,6 +5,7 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "gb/base/validated_context.h"
+#include "gb/pilot/pilot.h"
 #include "gb/render/render_types.h"
 #include "glm/glm.hpp"
 
@@ -35,8 +36,14 @@ class World final {
   static GB_CONTEXT_CONSTRAINT(kConstraintWorldResources, kInRequired,
                                WorldResources);
 
+  // OPTIONAL: Pilot. With one, Draw() builds the mesh of every chunk in view
+  // in the frame it is first drawn, rather than only for part of each frame,
+  // so what is drawn doesn't depend on how fast the program runs.
+  static GB_CONTEXT_CONSTRAINT(kConstraintPilot, kInOptional, gb::Pilot);
+
   using Contract =
-      gb::ContextContract<kConstraintRenderSystem, kConstraintWorldResources>;
+      gb::ContextContract<kConstraintRenderSystem, kConstraintWorldResources,
+                          kConstraintPilot>;
 
   //----------------------------------------------------------------------------
   // Construction / Destruction
