@@ -982,6 +982,12 @@ std::unique_ptr<RenderBuffer> VulkanBackend::CreateStorageBuffer(
                                     volatility, value_size, capacity);
 }
 
+std::unique_ptr<MeshPoolBuffers> VulkanBackend::CreateMeshPoolBuffers(
+    RenderInternal, int, IndexType, int, int) {
+  LOG(ERROR) << "Mesh pools are not supported by the Vulkan backend yet";
+  return nullptr;
+}
+
 bool VulkanBackend::BeginFrame(RenderInternal) {
   auto& frame = frames_[frame_index_];
   render_state_.frame = GetFrame();

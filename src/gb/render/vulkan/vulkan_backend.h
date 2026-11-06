@@ -225,6 +225,9 @@ class VulkanBackend final : public RenderBackend {
                                                     DataVolatility volatility,
                                                     int value_size,
                                                     int capacity) override;
+  std::unique_ptr<MeshPoolBuffers> CreateMeshPoolBuffers(
+      RenderInternal, int vertex_size, IndexType index_type,
+      int vertex_capacity, int index_capacity) override;
 
   void SetClearColor(RenderInternal, Pixel color) override;
   bool BeginFrame(RenderInternal) override;

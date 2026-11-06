@@ -102,6 +102,13 @@ class RenderTest : public ::testing::Test {
 };
 
 // Helpers for test output of basic values
+inline void PrintTo(const MeshDraw& value, std::ostream* out) {
+  *out << "{index_count=" << value.index_count
+       << ", instance_count=" << value.instance_count
+       << ", first_index=" << value.first_index
+       << ", vertex_offset=" << value.vertex_offset
+       << ", first_instance=" << value.first_instance << "}";
+}
 inline void PrintTo(const Triangle& value, std::ostream* out) {
   *out << "{" << value.a << ", " << value.b << ", " << value.c << "}";
 }

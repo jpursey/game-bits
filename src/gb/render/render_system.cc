@@ -668,10 +668,11 @@ bool RenderSystem::Init() {
   TypeKey::Get<MaterialType>()->SetTypeName("MaterialType");
   TypeKey::Get<Material>()->SetTypeName("Material");
   TypeKey::Get<Mesh>()->SetTypeName("Mesh");
+  TypeKey::Get<MeshPool>()->SetTypeName("MeshPool");
   auto* resource_system = context_.GetPtr<ResourceSystem>();
   if (!resource_system->Register<Texture, TextureArray, VolumeTexture,
                                  StorageBuffer, Shader, MaterialType, Material,
-                                 Mesh>(resource_manager_.get())) {
+                                 Mesh, MeshPool>(resource_manager_.get())) {
     return false;
   }
   return true;
@@ -1031,6 +1032,39 @@ Mesh* RenderSystem::DoCreateMesh(const VertexType* vertex_type,
   return new Mesh({}, resource_manager_->NewResourceEntry<Mesh>(), backend_,
                   vertex_type, volatility, std::move(vertex_buffer),
                   std::move(index_buffer));
+}
+
+MeshPool* RenderSystem::DoCreateMeshPool(const VertexType* vertex_type,
+                                         IndexType index_type,
+                                         int vertex_capacity,
+                                         int triangle_capacity) {
+  if (vertex_type == nullptr) {
+    LOG(ERROR) << "Null vertex type passed in to CreateMeshPool";
+    return nullptr;
+  }
+
+  if (vertex_capacity < 1 || triangle_capacity < 1 ||
+      triangle_capacity > MeshPool::kMaxTriangles) {
+    LOG(ERROR) << "Invalid mesh pool capacity of " << vertex_capacity
+               << " vertices and " << triangle_capacity
+               << " triangles, which must be positive, and at most "
+               << MeshPool::kMaxTriangles << " triangles";
+    return nullptr;
+  }
+
+  auto buffers =
+      backend_->CreateMeshPoolBuffers({}, vertex_type->GetSize(), index_type,
+                                      vertex_capacity, triangle_capacity * 3);
+  if (buffers == nullptr) {
+    LOG(ERROR) << "Failed to create mesh pool buffers with space for "
+               << vertex_capacity << " vertices and " << triangle_capacity
+               << " triangles";
+    return nullptr;
+  }
+
+  return new MeshPool({}, resource_manager_->NewResourceEntry<MeshPool>(),
+                      vertex_type, index_type, vertex_capacity,
+                      triangle_capacity, std::move(buffers));
 }
 
 Mesh* RenderSystem::LoadMeshChunk(Context* context, const fbs::MeshChunk* chunk,

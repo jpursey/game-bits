@@ -16,6 +16,8 @@ set(gb_render_SOURCE
   material_config.h
   material_type.cc material_type.h
   mesh.cc mesh.h
+  mesh_pool.cc mesh_pool.h
+  mesh_pool_buffers.h
   mesh_view.cc mesh_view.h
   mipmaps.cc mipmaps.h
   render_assert.cc render_assert.h
@@ -49,6 +51,7 @@ set(gb_render_TEST_SOURCE
   material_test.cc
   material_type_test.cc
   mesh_test.cc
+  mesh_pool_test.cc
   mesh_view_test.cc
   mipmaps_test.cc
   render_assert_test.cc
@@ -76,7 +79,9 @@ set(gb_render_DEPS
   absl::memory
   absl::span
   absl::strings
+  absl::synchronization
   gb_base
+  gb_container
   gb_file
   gb_image
   gb_pilot
@@ -96,6 +101,7 @@ gb_add_library(gb_render)
 set(gb_render_testing_SOURCE
   render_test.cc render_test.h
   test_binding_data.cc test_binding_data.h
+  test_mesh_pool_buffers.cc test_mesh_pool_buffers.h
   test_render_backend.cc test_render_backend.h
   test_render_buffer.cc test_render_buffer.h
   test_render_pipeline.cc test_render_pipeline.h
@@ -109,6 +115,7 @@ set(gb_render_testing_SOURCE
 
 set(gb_render_testing_DEPS
   absl::span
+  absl::synchronization
   gb_base
   gb_file
   gb_image

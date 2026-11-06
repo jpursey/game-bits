@@ -14,6 +14,7 @@
 #include "gb/image/pixel.h"
 #include "gb/render/binding.h"
 #include "gb/render/binding_data.h"
+#include "gb/render/mesh_pool_buffers.h"
 #include "gb/render/render_buffer.h"
 #include "gb/render/render_pipeline.h"
 #include "gb/render/render_types.h"
@@ -192,6 +193,16 @@ class RenderBackend {
   virtual std::unique_ptr<RenderBuffer> CreateStorageBuffer(
       RenderInternal, DataVolatility volatility, int value_size,
       int capacity) = 0;
+
+  // Creates the buffers for a MeshPool, holding at least `vertex_capacity`
+  // vertices of `vertex_size` bytes each, and `index_capacity` indices of the
+  // index type.
+  //
+  // If the buffers could not be created, this returns null. On success, their
+  // contents are unknown.
+  virtual std::unique_ptr<MeshPoolBuffers> CreateMeshPoolBuffers(
+      RenderInternal, int vertex_size, IndexType index_type,
+      int vertex_capacity, int index_capacity) = 0;
 
   //----------------------------------------------------------------------------
   // Rendering

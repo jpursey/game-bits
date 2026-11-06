@@ -27,7 +27,9 @@ class LocalBindingData;
 class Material;
 class MaterialType;
 class Mesh;
+class MeshPool;
 class MeshView;
+class PooledMesh;
 class RenderBackend;
 class RenderBuffer;
 class RenderBufferView;
@@ -66,6 +68,7 @@ friend class RenderSystem;
 friend class LocalBindingData;
 friend class Material;
 friend class Mesh;
+friend class MeshPool;
 friend class RenderFrame;
 friend class RenderBuffer;
 friend class RenderSceneType;
@@ -393,6 +396,42 @@ inline constexpr bool operator==(const Triangle& i, const Triangle& j) {
 inline constexpr bool operator!=(const Triangle& i, const Triangle& j) {
   return !(i == j);
 }
+
+//==============================================================================
+// IndexType
+//==============================================================================
+
+// The type of each index in a mesh pool.
+enum class IndexType : uint8_t {
+  kUint16,  // uint16_t, so a mesh has at most kMaxMeshVertices vertices.
+  kUint32,  // uint32_t.
+};
+
+// Returns the size of one index in bytes.
+inline constexpr int GetIndexSize(IndexType type) {
+  return type == IndexType::kUint16 ? 2 : 4;
+}
+
+//==============================================================================
+// MeshDraw
+//==============================================================================
+
+// A range of a mesh pool's triangles to draw, from PooledMesh::GetDraw().
+//
+// Its layout is that of the indexed indirect draw arguments in Vulkan
+// (VkDrawIndexedIndirectCommand), Direct3D 12, and OpenGL, so a storage buffer
+// of them can be drawn as it is.
+struct MeshDraw {
+  bool operator==(const MeshDraw&) const = default;
+
+  uint32_t index_count = 0;     // Three for each triangle.
+  uint32_t instance_count = 0;  // One to draw the range once.
+  uint32_t first_index = 0;     // In the pool's indices.
+  int32_t vertex_offset = 0;    // Added to each index, for the pool's vertex.
+  uint32_t first_instance = 0;  // The shader's gl_InstanceIndex.
+};
+static_assert(sizeof(MeshDraw) == 20,
+              "MeshDraw must match the graphics APIs' indirect draw arguments");
 
 //==============================================================================
 // Constants

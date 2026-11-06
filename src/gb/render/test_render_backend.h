@@ -6,14 +6,18 @@
 #ifndef GB_RENDER_TEST_RENDER_BACKEND_H_
 #define GB_RENDER_TEST_RENDER_BACKEND_H_
 
+#include <atomic>
 #include <vector>
 
+#include "absl/base/thread_annotations.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/log/check.h"
+#include "absl/synchronization/mutex.h"
 #include "gb/render/draw_list.h"
 #include "gb/render/render_backend.h"
 #include "gb/render/render_types.h"
 #include "gb/render/test_binding_data.h"
+#include "gb/render/test_mesh_pool_buffers.h"
 #include "gb/render/test_render_buffer.h"
 #include "gb/render/test_render_pipeline.h"
 #include "gb/render/test_render_scene.h"
@@ -59,6 +63,7 @@ class TestRenderBackend final : public RenderBackend {
     TestRenderBuffer::Config vertex_buffer_config;
     TestRenderBuffer::Config index_buffer_config;
     TestRenderBuffer::Config storage_buffer_config;
+    TestMeshPoolBuffers::Config mesh_pool_buffers_config;
 
     // Formats CanFilter() says can't be filtered.
     absl::flat_hash_set<TextureFormat> unfilterable_formats;
@@ -73,6 +78,7 @@ class TestRenderBackend final : public RenderBackend {
     bool fail_create_vertex_buffer = false;
     bool fail_create_index_buffer = false;
     bool fail_create_storage_buffer = false;
+    bool fail_create_mesh_pool_buffers = false;
     bool fail_begin_frame = false;
     bool fail_read_image = false;
 
@@ -88,6 +94,15 @@ class TestRenderBackend final : public RenderBackend {
     CHECK(state_->backend == this);
     state_->backend = nullptr;
   }
+
+  // Returns the number of the frame being recorded, which starts at zero and
+  // goes up by one each time EndFrame() is called. Thread-safe.
+  int GetFrame() const { return frame_.load(std::memory_order_acquire); }
+
+  // Called by TestMeshPoolBuffers as it is created and destroyed, so the
+  // buffers' writes are copied when each frame ends.
+  void AddMeshPoolBuffers(TestMeshPoolBuffers* buffers);
+  void RemoveMeshPoolBuffers(TestMeshPoolBuffers* buffers);
 
   // Implementation of RenderBackend
   void SetClearColor(RenderInternal, Pixel color) override {
@@ -131,6 +146,9 @@ class TestRenderBackend final : public RenderBackend {
                                                     DataVolatility volatility,
                                                     int value_size,
                                                     int capacity) override;
+  std::unique_ptr<MeshPoolBuffers> CreateMeshPoolBuffers(
+      RenderInternal, int vertex_size, IndexType index_type,
+      int vertex_capacity, int index_capacity) override;
   bool BeginFrame(RenderInternal) override;
   void Draw(RenderInternal, RenderScene* scene, RenderPipeline* pipeline,
             BindingData* material_data, BindingData* instance_data,
@@ -142,6 +160,10 @@ class TestRenderBackend final : public RenderBackend {
 
  private:
   State* state_ = nullptr;
+  std::atomic<int> frame_ = 0;
+
+  absl::Mutex mutex_;
+  std::vector<TestMeshPoolBuffers*> mesh_pool_buffers_ ABSL_GUARDED_BY(mutex_);
 };
 
 }  // namespace gb

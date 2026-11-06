@@ -23,6 +23,16 @@ void TestRenderBackend::State::ResetState() {
   *this = state;
 }
 
+void TestRenderBackend::AddMeshPoolBuffers(TestMeshPoolBuffers* buffers) {
+  absl::MutexLock lock(&mutex_);
+  mesh_pool_buffers_.push_back(buffers);
+}
+
+void TestRenderBackend::RemoveMeshPoolBuffers(TestMeshPoolBuffers* buffers) {
+  absl::MutexLock lock(&mutex_);
+  std::erase(mesh_pool_buffers_, buffers);
+}
+
 FrameDimensions TestRenderBackend::GetFrameDimensions(RenderInternal) const {
   return state_->frame_dimensions;
 }
@@ -134,6 +144,17 @@ std::unique_ptr<RenderBuffer> TestRenderBackend::CreateStorageBuffer(
                                             volatility, value_size, capacity);
 }
 
+std::unique_ptr<MeshPoolBuffers> TestRenderBackend::CreateMeshPoolBuffers(
+    RenderInternal, int vertex_size, IndexType index_type, int vertex_capacity,
+    int index_capacity) {
+  if (state_->fail_create_mesh_pool_buffers) {
+    return nullptr;
+  }
+  return std::make_unique<TestMeshPoolBuffers>(
+      &state_->mesh_pool_buffers_config, this, vertex_size, index_type,
+      vertex_capacity, index_capacity);
+}
+
 bool TestRenderBackend::BeginFrame(RenderInternal) {
   if (state_->fail_begin_frame) {
     return false;
@@ -177,6 +198,13 @@ void TestRenderBackend::EndFrame(RenderInternal) {
     state_->invalid_call_count += 1;
   }
   state_->rendering = false;
+  {
+    absl::MutexLock lock(&mutex_);
+    for (TestMeshPoolBuffers* buffers : mesh_pool_buffers_) {
+      buffers->CopyWrites();
+    }
+  }
+  frame_.fetch_add(1, std::memory_order_release);
 }
 
 std::unique_ptr<Image> TestRenderBackend::EndFrameAndReadImage(

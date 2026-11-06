@@ -26,7 +26,7 @@ Nothing existing changes: `Mesh`, `DrawList::SetMesh()`, `Draw()`, and
 
 - **Mesh pools.** `RenderSystem::CreateMeshPool()` creates a `MeshPool` (a
   resource) for one vertex type and index type (16 or 32 bits), with a starting
-  vertex and index capacity.
+  vertex and triangle capacity.
   - `MeshPool::CreateMesh()` copies a mesh's vertices and indices into the pool,
     and returns a `PooledMesh`, which holds the mesh's place in the pool until
     it is destroyed. It never fails for lack of room: a full pool grows.
@@ -72,7 +72,9 @@ Nothing existing changes: `Mesh`, `DrawList::SetMesh()`, `Draw()`, and
 The pool's bookkeeping (which ranges are used, free, and waiting to be reused)
 is in `gb_render`, independent of any graphics API and covered by unit tests
 with the test backend. The backend only provides the buffers: writes into them
-from any thread, staged and copied on the render thread, and growth.
+from any thread, staged and copied on the render thread, growth, and when freed
+space may be written again. The frames in flight stay inside the backend, as
+`RenderBackend` has no other caller that needs them.
 
 ### Names
 
@@ -122,22 +124,6 @@ class RangePacker final {
 - The caller passes the size to `Remove()`, as the pool keeps it anyway, so the
   packer doesn't need to.
 
-### Frames in the backend
-
-`RenderBackend` gains two thread-safe properties, which the Vulkan backend
-already has internally:
-
-```
-// The number of the frame being recorded, which EndFrame() advances.
-virtual int GetFrame(RenderInternal) const = 0;
-
-// Returns true if the frame may still be drawing, so resources it used must
-// not be changed or reused.
-virtual bool IsFrameInUse(RenderInternal, int frame) const = 0;
-```
-
-The test backend advances its frame in `EndFrame()`, and keeps a configurable
-number of frames in flight, so tests control when space is reused.
 
 ### MeshPool and PooledMesh
 
@@ -152,12 +138,26 @@ class MeshPool final : public Resource {
 
   // Copies the vertices and indices into the pool, returning null if they
   // are the wrong types, or the pool couldn't grow to hold them. Thread-safe.
-  template <typename Vertex, typename Index>
+  // One overload for each index type, so a std::vector converts to the span.
+  template <typename Vertex>
   std::unique_ptr<PooledMesh> CreateMesh(absl::Span<const Vertex> vertices,
-                                         absl::Span<const Index> indices);
+                                         absl::Span<const uint16_t> indices);
+  template <typename Vertex>
+  std::unique_ptr<PooledMesh> CreateMesh(absl::Span<const Vertex> vertices,
+                                         absl::Span<const uint32_t> indices);
   template <typename Vertex>
   std::unique_ptr<PooledMesh> CreateMesh(absl::Span<const Vertex> vertices,
                                          absl::Span<const Triangle> triangles);
+};
+
+// The vertex and triangle space each has a capacity, the amount used, the
+// amount of that waiting for reuse, the number of free ranges, and the
+// largest free range.
+struct MeshPoolStats {
+  struct Space;
+  int mesh_count;
+  Space vertices;
+  Space triangles;
 };
 
 class PooledMesh final {
@@ -186,17 +186,23 @@ struct MeshDraw {
 };
 ```
 
-- A pool has a `RangePacker` each for vertices and indices, behind a mutex
+- Capacities and stats are in vertices and triangles, as for `Mesh`
+  (`CreateMesh(vertex_type, volatility, max_vertices, max_triangles)`), and
+  only the backend and `MeshDraw` count indices.
+- A pool has a `RangePacker` each for vertices and triangles, behind a mutex
   that only `CreateMesh()`, `~PooledMesh()`, and `GetStats()` take. The render
-  loop never takes it.
-- A destroyed mesh's ranges go on a list with the frame they were freed in, and
-  `CreateMesh()` removes the ones that are safe to reuse from the packers
-  before it places its own. A range freed in frame F is reused once frame F + 1
-  is no longer in use: the extra frame covers a write to the range that was
-  queued during frame F but only copied in frame F + 1 (see Vulkan below).
+  loop never takes it. `CreateMesh()` places the mesh under the lock, and
+  writes its data after, as the space is its own by then.
+- A destroyed mesh's ranges go on a list with a reuse ticket from the buffers,
+  and `CreateMesh()` removes the ones the buffers say can be reused from the
+  packers before it places its own. Tickets never decrease, so the list is in
+  ticket order and is checked from the front.
 - When a range doesn't fit, the pool grows its packer and buffers to at least
-  double the capacity. The new capacity is used at once (offsets never move),
-  and the backend makes the buffers bigger before the next frame's copies.
+  double the capacity, and to at least the old capacity plus the range, so the
+  range fits in the new space at the end. The new capacity is used at once
+  (offsets never move), and the backend makes the buffers bigger before the
+  next frame's copies. Growth happens under the lock, so any write to the new
+  space is queued after it.
 - A `PooledMesh` holds a pointer to its pool, and the pool counts its meshes, so
   destroying the pool first is a `CHECK` failure, as for a `MeshView`.
 - `RenderSystem::CreateMeshPool()` validates the vertex type, and that the
@@ -215,15 +221,26 @@ every frame from the live meshes, avoids this.
 // The backend's buffers for a MeshPool. Every function is thread-safe.
 class MeshPoolBuffers {
  public:
-  // Copies values into the buffers before the next frame that is ended draws.
+  // Copies a mesh's vertices and indices into the buffers, for the next frame
+  // that is ended to draw, or the one after if that frame is already ending.
   // No other write to the same values is in progress, and no frame in flight
-  // draws them.
-  virtual bool WriteVertices(int offset, const void* vertices, int count) = 0;
-  virtual bool WriteIndices(int offset, const void* indices, int count) = 0;
+  // draws them. One call per mesh, so a backend reserves staging space once.
+  virtual bool WriteMesh(int vertex_offset, const void* vertices,
+                         int vertex_count, int index_offset,
+                         const void* indices, int index_count) = 0;
 
   // Makes the buffers at least this big, keeping their contents, before the
-  // next frame that is ended draws. Capacities only increase.
+  // next frame that is ended draws. Capacities only increase. It runs under
+  // the pool's lock, so it does as little as it can.
   virtual bool Grow(int vertex_capacity, int index_capacity) = 0;
+
+  // Returns a ticket for space the pool frees now. Tickets never decrease.
+  virtual uint64_t GetReuseTicket() const = 0;
+
+  // Returns true if space freed with the ticket can be written again: no frame
+  // that may draw it is in flight, and no write to it is still to be copied.
+  // Once a ticket can be reused, so can every earlier one.
+  virtual bool CanReuse(uint64_t ticket) const = 0;
 };
 
 // In RenderBackend.
@@ -233,7 +250,9 @@ virtual std::unique_ptr<MeshPoolBuffers> CreateMeshPoolBuffers(
 ```
 
 - The test backend's version keeps the values in vectors, and copies writes
-  into them when its frame ends, so tests see what a frame would draw.
+  into them when its frame ends, so tests see what a frame would draw. Its
+  ticket is the backend's frame, and a configurable number of frames must end
+  after it before the space is reused, so tests control reuse.
 - Sizes in bytes are `int64_t`, as a pool's buffers may hold more than 2 GiB.
 
 ### Drawing pools
@@ -267,11 +286,13 @@ virtual std::unique_ptr<MeshPoolBuffers> CreateMeshPoolBuffers(
 - **Growth** is queued too, so it is applied in order: the render thread makes
   the bigger buffers, copies the old contents (on the GPU), and passes the old
   buffers to the garbage collector, before the copies that follow it.
-- **No hazards on reuse.** Writes are only recorded in `EndFrame()`, after
-  `BeginFrame()` has waited for the frame two before to finish, and the pool
-  only reuses a range once the frame after the one it was freed in is no longer
-  in use. So nothing in flight reads a range when it is written, and two
-  writes to one range are never in flight at once.
+- **No hazards on reuse.** The reuse ticket is the backend's frame, and
+  `CanReuse()` is true once the frame after the ticket's is no longer in use
+  (`IsFrameInUse(ticket + 1)`, as Vulkan already has internally). The extra
+  frame covers a write queued during the ticket's frame but only copied in the
+  next. Writes are only recorded in `EndFrame()`, after `BeginFrame()` has
+  waited for the frame two before to finish, so nothing in flight reads a range
+  when it is written, and two writes to one range are never in flight at once.
 - **Indirect draws.** Storage buffers are also created with
   `eIndirectBuffer` usage, so any can be drawn from. `DrawIndirect()` is one
   `drawIndexedIndirect()` with the count where the device has
@@ -325,17 +346,17 @@ Depends on: nothing.
   gap at the end; the counts and largest gap follow each change; a randomized
   run against a simple model (a flag per offset) agrees after every step.
 
-### CL2 [ ] render: Mesh pools
+### CL2 [x] render: Mesh pools
 
 Depends on: CL1.
 
 - `IndexType`, `MeshDraw`, `MeshPool`, `PooledMesh`, `MeshPoolStats`, and
   `RenderSystem::CreateMeshPool()`.
-- `RenderBackend::GetFrame()`, `IsFrameInUse()`, and
-  `CreateMeshPoolBuffers()`, with `MeshPoolBuffers`.
-- Test backend: `TestMeshPoolBuffers`, frames, and frames in flight.
-- Vulkan backend: `GetFrame()` and `IsFrameInUse()` (from what it has), and
-  `CreateMeshPoolBuffers()` returning null.
+- `RenderBackend::CreateMeshPoolBuffers()`, with `MeshPoolBuffers` (including
+  its reuse tickets).
+- Test backend: `TestMeshPoolBuffers`, with a frame counter and a configurable
+  number of frames before reuse.
+- Vulkan backend: `CreateMeshPoolBuffers()` returning null.
 
 **Verify**
 - Standard checks.
@@ -343,8 +364,7 @@ Depends on: CL1.
   frame ends; `GetDraw()` offsets for whole meshes and ranges; the wrong
   vertex or index type fails; more than `kMaxMeshVertices` vertices fail in a
   16-bit pool and succeed in a 32-bit one; a destroyed mesh's space isn't
-  reused while the frame after the one it was destroyed in is in use, and is
-  after; a full pool grows, keeping every mesh's offsets; stats follow each
+  reused until the buffers accept its ticket, and is after; a full pool grows, keeping every mesh's offsets; stats follow each
   change; destroying the pool before a mesh fails a `CHECK` (a death test);
   meshes created and destroyed from several threads at once, with frames
   ending on another, end with every live mesh's data intact and the stats
@@ -369,8 +389,8 @@ Depends on: CL2.
 
 Depends on: CL3.
 
-- `VulkanMeshPoolBuffers`: staging blocks, the upload queue, growth, and its
-  part of `EndFrame()`.
+- `VulkanMeshPoolBuffers`: staging blocks, the upload queue, growth, reuse
+  tickets, and its part of `EndFrame()`.
 - Drawing `kMeshPool` and `MeshDraw` ranges, binding the index type.
 - render-check: a row of shapes from one 32-bit pool, one of them drawn as two
   ranges (its halves in different colors, by `first_instance` into a storage

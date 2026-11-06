@@ -22,6 +22,7 @@
 #include "gb/render/material_config.h"
 #include "gb/render/material_type.h"
 #include "gb/render/mesh.h"
+#include "gb/render/mesh_pool.h"
 #include "gb/render/render_scene.h"
 #include "gb/render/render_scene_type.h"
 #include "gb/render/render_types.h"
@@ -241,6 +242,20 @@ class RenderSystem final {
   // Returns true if the mesh was successfully saved.
   bool SaveMesh(std::string_view name, Mesh* mesh,
                 DataVolatility volatility = DataVolatility::kStaticWrite);
+
+  // Creates a mesh pool for meshes of the vertex type, with indices of the
+  // index type, and room for `vertex_capacity` vertices and
+  // `triangle_capacity` triangles before it first grows. Both capacities are
+  // positive.
+  //
+  // If successful, the pool is created empty. Pools can't be saved.
+  ResourcePtr<MeshPool> CreateMeshPool(const VertexType* vertex_type,
+                                       IndexType index_type,
+                                       int vertex_capacity,
+                                       int triangle_capacity);
+  MeshPool* CreateMeshPool(ResourceSet* resource_set,
+                           const VertexType* vertex_type, IndexType index_type,
+                           int vertex_capacity, int triangle_capacity);
 
   // Creates a material from a material type.
   //
@@ -508,6 +523,10 @@ class RenderSystem final {
   bool SaveMeshChunk(Context* context, Mesh* mesh,
                      flatbuffers::FlatBufferBuilder* builder);
 
+  MeshPool* DoCreateMeshPool(const VertexType* vertex_type,
+                             IndexType index_type, int vertex_capacity,
+                             int triangle_capacity);
+
   Material* DoCreateMaterial(MaterialType* material_type);
   Material* LoadMaterialChunk(Context* context, const fbs::MaterialChunk* chunk,
                               ResourceEntry entry);
@@ -670,6 +689,24 @@ inline Mesh* RenderSystem::CreateMesh(ResourceSet* resource_set,
       DoCreateMesh(vertex_type, volatility, max_vertices, max_triangles);
   resource_set->Add(mesh);
   return mesh;
+}
+
+inline ResourcePtr<MeshPool> RenderSystem::CreateMeshPool(
+    const VertexType* vertex_type, IndexType index_type, int vertex_capacity,
+    int triangle_capacity) {
+  return DoCreateMeshPool(vertex_type, index_type, vertex_capacity,
+                          triangle_capacity);
+}
+
+inline MeshPool* RenderSystem::CreateMeshPool(ResourceSet* resource_set,
+                                              const VertexType* vertex_type,
+                                              IndexType index_type,
+                                              int vertex_capacity,
+                                              int triangle_capacity) {
+  MeshPool* mesh_pool = DoCreateMeshPool(vertex_type, index_type,
+                                         vertex_capacity, triangle_capacity);
+  resource_set->Add(mesh_pool);
+  return mesh_pool;
 }
 
 inline ResourcePtr<Material> RenderSystem::CreateMaterial(
