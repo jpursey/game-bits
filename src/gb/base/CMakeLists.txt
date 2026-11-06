@@ -30,6 +30,7 @@ set(gb_base_SOURCE
   clock.h
   context.cc context.h
   context_builder.h
+  embedded_data.h
   fake_clock.h
   flags.h
   function_hook.h
@@ -52,6 +53,7 @@ set(gb_base_TEST_SOURCE
   callback_scope_test.cc
   clock_test.cc
   context_test.cc
+  embedded_data_test.cc
   flags_test.cc
   function_hook_test.cc
   init_logging_test.cc
@@ -82,6 +84,7 @@ set(gb_base_DEPS
   absl::log_sink
   absl::log_sink_registry
   absl::memory
+  absl::span
   absl::str_format
   absl::strings
   absl::synchronization
@@ -97,5 +100,11 @@ gb_add_library(gb_base)
 
 target_include_directories(gb_base PRIVATE "${GB_THIRD_PARTY_DIR}/utfcpp/source")
 if (GB_BUILD_TESTS)
+  gb_embed_data(gb_base_test embedded_data_test.bin
+    gb/base/embedded_data_test_bytes.h gb::kTestBytes)
+  gb_embed_data(gb_base_test embedded_data_test_empty.txt
+    gb/base/embedded_data_test_empty.h kGbTestEmpty)
+  gb_embed_data(gb_base_test embedded_data_test.txt
+    gb/base/embedded_data_test_text.h gb::embedded_test::kText)
   target_include_directories(gb_base_test PRIVATE "${GB_THIRD_PARTY_DIR}/utfcpp/source")
 endif()
