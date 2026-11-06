@@ -863,6 +863,11 @@ void VulkanBackend::SetClearColor(RenderInternal, Pixel color) {
   }));
 }
 
+void VulkanBackend::SetDefaultBindings(RenderInternal,
+                                       const DefaultBindings& defaults) {
+  default_bindings_ = defaults;
+}
+
 FrameDimensions VulkanBackend::GetFrameDimensions(RenderInternal) const {
   absl::MutexLock lock(&frame_dimensions_mutex_);
   return frame_dimensions_;
@@ -1178,7 +1183,7 @@ void VulkanBackend::EndFrameProcessUpdates() {
   // Binding data may add buffers and textures to the render state, so we need
   // to process them first.
   for (VulkanBindingData* binding_data : render_state_.binding_data) {
-    binding_data->OnRender(&render_state_);
+    binding_data->OnRender(&render_state_, default_bindings_);
   }
   for (VulkanRenderBuffer* buffer : render_state_.buffers) {
     buffer->OnRender(&render_state_);

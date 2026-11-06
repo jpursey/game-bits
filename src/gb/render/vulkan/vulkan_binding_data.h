@@ -15,6 +15,7 @@
 #include "gb/base/weak_ptr.h"
 #include "gb/render/binding.h"
 #include "gb/render/binding_data.h"
+#include "gb/render/render_backend.h"
 #include "gb/render/render_types.h"
 #include "gb/render/storage_buffer.h"
 #include "gb/render/vulkan/vulkan_render_buffer.h"
@@ -106,7 +107,9 @@ class VulkanBindingData : public BindingData {
   }
 
   // Collect all required descriptor set updates and affected render buffers.
-  void OnRender(VulkanRenderState* state);
+  // A texture, texture array, volume texture, or storage buffer binding that
+  // is null is bound to its default instead.
+  void OnRender(VulkanRenderState* state, const DefaultBindings& defaults);
 
   // Validates that all of this binding data is included in the provided
   // bindings.

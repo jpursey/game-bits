@@ -60,7 +60,8 @@ VulkanBindingData::~VulkanBindingData() {
   }
 }
 
-void VulkanBindingData::OnRender(VulkanRenderState* state) {
+void VulkanBindingData::OnRender(VulkanRenderState* state,
+                                 const DefaultBindings& defaults) {
   const int index = state->frame % kMaxFramesInFlight;
   const vk::DescriptorSet& descriptor_set = descriptor_sets_[index];
   const int num_bindings = static_cast<int>(data_.size());
@@ -71,35 +72,46 @@ void VulkanBindingData::OnRender(VulkanRenderState* state) {
         break;
       case BindingType::kTexture: {
         auto& info = item.texture;
-        state->textures.insert(info.texture);
-        const auto& handle = info.texture->GetImageHandle(state->frame);
+        auto* texture = info.texture != nullptr
+                            ? info.texture
+                            : static_cast<VulkanTexture*>(defaults.texture);
+        state->textures.insert(texture);
+        const auto& handle = texture->GetImageHandle(state->frame);
         if (info.bound[index] != handle.version) {
           info.bound[index] = handle.version;
           state->set_image_updates.emplace_back(descriptor_set, binding,
-                                                info.texture->GetSampler(),
+                                                texture->GetSampler(),
                                                 handle.image->GetView());
         }
       } break;
       case BindingType::kTextureArray: {
         auto& info = item.texture_array;
-        state->texture_arrays.insert(info.texture_array);
-        const auto& handle = info.texture_array->GetImageHandle();
+        auto* texture_array =
+            info.texture_array != nullptr
+                ? info.texture_array
+                : static_cast<VulkanTextureArray*>(defaults.texture_array);
+        state->texture_arrays.insert(texture_array);
+        const auto& handle = texture_array->GetImageHandle();
         if (info.bound[index] != handle.version) {
           info.bound[index] = handle.version;
-          state->set_image_updates.emplace_back(
-              descriptor_set, binding, info.texture_array->GetSampler(),
-              handle.image->GetView());
+          state->set_image_updates.emplace_back(descriptor_set, binding,
+                                                texture_array->GetSampler(),
+                                                handle.image->GetView());
         }
       } break;
       case BindingType::kVolumeTexture: {
         auto& info = item.volume_texture;
-        state->volume_textures.insert(info.volume_texture);
-        const auto& handle = info.volume_texture->GetImageHandle(state->frame);
+        auto* volume_texture =
+            info.volume_texture != nullptr
+                ? info.volume_texture
+                : static_cast<VulkanVolumeTexture*>(defaults.volume_texture);
+        state->volume_textures.insert(volume_texture);
+        const auto& handle = volume_texture->GetImageHandle(state->frame);
         if (info.bound[index] != handle.version) {
           info.bound[index] = handle.version;
-          state->set_image_updates.emplace_back(
-              descriptor_set, binding, info.volume_texture->GetSampler(),
-              handle.image->GetView());
+          state->set_image_updates.emplace_back(descriptor_set, binding,
+                                                volume_texture->GetSampler(),
+                                                handle.image->GetView());
         }
       } break;
       case BindingType::kConstants: {
@@ -117,7 +129,9 @@ void VulkanBindingData::OnRender(VulkanRenderState* state) {
       case BindingType::kStorageBuffer: {
         auto& info = item.storage_buffer;
         auto* buffer = static_cast<VulkanRenderBuffer*>(
-            GetRenderBuffer(info.storage_buffer));
+            info.storage_buffer != nullptr
+                ? GetRenderBuffer(info.storage_buffer)
+                : defaults.storage_buffer);
         state->buffers.insert(buffer);
         const auto& handle = buffer->GetBufferHandle(state->frame);
         if (info.bound[index] != handle.version) {

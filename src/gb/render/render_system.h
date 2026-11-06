@@ -519,6 +519,9 @@ class RenderSystem final {
 
   bool Init();
 
+  // Creates the default bindings, and gives them to the backend.
+  bool InitDefaultBindings();
+
   Mesh* DoCreateMesh(const VertexType* vertex_type, DataVolatility volatility,
                      int max_vertices, int max_triangles);
   Mesh* LoadMeshChunk(Context* context, const fbs::MeshChunk* chunk,
@@ -647,6 +650,13 @@ class RenderSystem final {
   bool edit_ = false;
   std::unique_ptr<ResourceFileReader> resource_reader_;
   std::unique_ptr<ResourceFileWriter> resource_writer_;
+
+  // What the backend draws with for a null binding (see DefaultBindings), set
+  // at creation and never modified afterward.
+  ResourcePtr<Texture> default_texture_;
+  ResourcePtr<TextureArray> default_texture_array_;
+  ResourcePtr<VolumeTexture> default_volume_texture_;
+  std::unique_ptr<RenderBuffer> default_storage_buffer_;
 
   // Members set by initialization functions only. These must be externally
   // synchronized.

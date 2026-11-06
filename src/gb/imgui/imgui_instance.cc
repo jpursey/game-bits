@@ -503,27 +503,9 @@ bool ImGuiInstance::Init() {
     return false;
   }
 
-  // Initialize the material type with default bindings.
-  const Pixel default_pixel = PixelColor::kBlack;
-  auto* default_texture = render_system->CreateTexture(
-      &resources_, DataVolatility::kStaticWrite, 1, 1,
-      SamplerOptions().SetFilter(false).SetMipmap(false));
-  auto* default_texture_array = render_system->CreateTextureArray(
-      &resources_, DataVolatility::kStaticWrite, 1, 1, 1,
-      SamplerOptions().SetFilter(false).SetMipmap(false));
-  if (default_texture == nullptr || default_texture_array == nullptr ||
-      !default_texture->Set(&default_pixel, sizeof(default_pixel)) ||
-      !default_texture_array->Set(0, &default_pixel, sizeof(default_pixel))) {
-    LOG(ERROR) << "Failed to create ImGui default textures";
-    return false;
-  }
-  auto* default_material_bindings =
-      material_type->GetDefaultMaterialBindingData();
-  default_material_bindings->SetTexture(0, default_texture);
-  default_material_bindings->SetTextureArray(1, default_texture_array);
-
-  // -1 indicates the texture should be used instead of the texture array.
-  default_material_bindings->SetConstants<float>(2, -1.0f);
+  // -1 indicates the texture should be used instead of the texture array. A
+  // material sets only the one it uses, and the other draws with its default.
+  material_type->GetDefaultMaterialBindingData()->SetConstants<float>(2, -1.0f);
 
   material_ = render_system->CreateMaterial(&resources_, material_type);
   if (material_ == nullptr) {

@@ -22,24 +22,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Default texture for unset bindings
-
-- **Layers:** render, render_vulkan
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** [Code audit](worklog/code_audit.md),
-  [Volume textures and storage buffers](worklog/volume_textures.md)
-
-Drawing with a texture, texture array, volume texture, or storage buffer
-binding that was never set crashes in `VulkanBindingData::OnRender()`.
-Skipping the binding would leave its descriptor unwritten or pointing at a
-deleted image or buffer, which is worse. Give the backend a default for each
-binding type (one opaque pixel for textures and texture arrays, one texel for
-volumes, and a small buffer of zeros for storage buffers) that every binding
-starts with and falls back to, and check it by hand in `examples/render-check`
-with a material whose bindings are never set.
-
 ## clang-cl build
 
 - **Layers:** container, parse, job

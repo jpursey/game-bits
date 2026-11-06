@@ -38,6 +38,7 @@
 #include "shaders/quad_vert.h"
 #include "shaders/storage_frag.h"
 #include "shaders/storage_vert.h"
+#include "shaders/unset_frag.h"
 #include "shaders/volume_frag.h"
 #include "shaders/volume_vert.h"
 
@@ -135,6 +136,13 @@ constexpr float kStorageQuadSize = 32.0f;
 constexpr float kStorageSpacing = 36.0f;
 constexpr float kStorageRowSpacing = kStorageQuads * kStorageSpacing + 40.0f;
 constexpr float kStorageHueStep = 0.37f;
+
+// The unset bindings quad is right of the blend check. Its material has a
+// texture, texture array, volume texture, and storage buffer binding that are
+// never set, so it draws with their defaults, which make it white.
+constexpr float kUnsetLeft = kGridLeft + kBlendCells * kBlendCellSize + 40.0f;
+constexpr float kUnsetTop = kBlendTop + 24.0f;
+constexpr float kUnsetQuadSize = 32.0f;
 
 // The mesh pool's shapes are a row left of the texture formats, below the
 // extra rectangles (which only reach them while the GUI is over its vertex
@@ -245,7 +253,7 @@ bool RenderCheck::Init(const std::vector<std::string_view>& args) {
   return InitWindow() && InitPilot() && InitRenderSystem() && InitGui() &&
          InitQuads() && InitTextures() && InitBlendQuads() &&
          InitFormatTextures() && InitVolumes() && InitStorageBuffers() &&
-         InitMeshPool();
+         InitUnsetBindings() && InitMeshPool();
 }
 
 bool RenderCheck::InitWindow() {
@@ -762,6 +770,61 @@ bool RenderCheck::InitStorageBuffers() {
   return true;
 }
 
+bool RenderCheck::InitUnsetBindings() {
+  // The quad is drawn in the quads' scene, with the same scene and instance
+  // bindings, and the volume quads' vertex shader.
+  const gb::MaterialType* quad_type = quad_material_->GetType();
+  const gb::MaterialType* volume_type =
+      volume_rows_.front().material->GetType();
+  const gb::Binding bindings[] = {
+      gb::Binding()
+          .SetShaders(gb::ShaderType::kFragment)
+          .SetLocation(gb::BindingSet::kMaterial, 0)
+          .SetTexture(),
+      gb::Binding()
+          .SetShaders(gb::ShaderType::kFragment)
+          .SetLocation(gb::BindingSet::kMaterial, 1)
+          .SetTextureArray(),
+      gb::Binding()
+          .SetShaders(gb::ShaderType::kFragment)
+          .SetLocation(gb::BindingSet::kMaterial, 2)
+          .SetVolumeTexture(),
+      gb::Binding()
+          .SetShaders(gb::ShaderType::kFragment)
+          .SetLocation(gb::BindingSet::kMaterial, 3)
+          .SetStorageBuffer(render_system_->GetConstantsType("QuadColor")),
+  };
+  gb::Shader* fragment_shader = render_system_->CreateShader(
+      &resources_, gb::ShaderType::kFragment,
+      render_system_->CreateShaderCode(kUnsetFragmentShader.GetBytes()),
+      bindings, {gb::ShaderParam(gb::ShaderValue::kVec3, 0)},
+      {gb::ShaderParam(gb::ShaderValue::kVec4, 0)});
+  if (fragment_shader == nullptr) {
+    LOG(ERROR) << "Could not create the unset bindings shader";
+    return false;
+  }
+
+  gb::MaterialType* material_type = render_system_->CreateMaterialType(
+      &resources_, quad_type->GetSceneType(), quad_type->GetVertexType(),
+      volume_type->GetVertexShader(), fragment_shader, QuadConfig());
+  if (material_type != nullptr) {
+    unset_material_ =
+        render_system_->CreateMaterial(&resources_, material_type);
+  }
+  if (unset_material_ != nullptr) {
+    unset_quad_ = unset_material_->CreateInstanceBindingData();
+  }
+  if (unset_quad_ == nullptr) {
+    LOG(ERROR) << "Could not create the unset bindings quad";
+    return false;
+  }
+  const InstanceData data = {
+      {kUnsetLeft, kUnsetTop, kUnsetQuadSize, kUnsetQuadSize},
+      {0.5f, 0.0f, 0.0f, 0.0f}};
+  unset_quad_->SetConstants<InstanceData>(0, data);
+  return true;
+}
+
 bool RenderCheck::InitMeshPool() {
   // The shapes are drawn in the quads' scene, with the storage buffer quads'
   // fragment shader, which reads a storage buffer of colors. The vertex shader
@@ -845,6 +908,7 @@ void RenderCheck::CleanUp() {
   blend_instances_.clear();
   volume_rows_.clear();
   storage_rows_.clear();
+  unset_quad_.reset();
   pool_shapes_.clear();
   pool_instance_.reset();
   pool_indirect_instance_.reset();
@@ -1052,6 +1116,7 @@ void RenderCheck::DrawGui() {
   DrawFormatGui();
   DrawVolumeGui();
   DrawStorageGui();
+  DrawUnsetBindingsGui();
   DrawMeshPoolGui();
   DrawLogGui();
   ImGui::End();
@@ -1059,6 +1124,7 @@ void RenderCheck::DrawGui() {
   DrawFormatTextures();
   DrawVolumeLabels();
   DrawStorageLabels();
+  DrawUnsetBindingsLabel();
   DrawMeshPoolLabel();
 }
 
@@ -1265,6 +1331,24 @@ void RenderCheck::DrawStorageLabels() {
   }
 }
 
+void RenderCheck::DrawUnsetBindingsGui() {
+  if (!ImGui::CollapsingHeader("Unset bindings",
+                               ImGuiTreeNodeFlags_DefaultOpen)) {
+    return;
+  }
+  ImGui::TextWrapped(
+      "Right of the blend check, a white quad, whose material has a "
+      "texture, texture array, volume texture, and storage buffer that are "
+      "never set. It multiplies the three textures, which default to opaque "
+      "white, and subtracts the first value in the storage buffer, which "
+      "defaults to zeros.");
+}
+
+void RenderCheck::DrawUnsetBindingsLabel() {
+  ImGui::GetBackgroundDrawList()->AddText({kUnsetLeft, kUnsetTop - 16.0f},
+                                          IM_COL32_WHITE, "Unset");
+}
+
 void RenderCheck::DrawMeshPoolGui() {
   if (!ImGui::CollapsingHeader("Mesh pools", ImGuiTreeNodeFlags_DefaultOpen)) {
     return;
@@ -1398,6 +1482,7 @@ void RenderCheck::DrawQuads() {
   render_system_->Draw(scene_.get(), blend_draw_list_);
   DrawVolumes();
   DrawStorageBuffers();
+  DrawUnsetBindings();
   DrawMeshPool();
 }
 
@@ -1428,6 +1513,11 @@ void RenderCheck::DrawStorageBuffers() {
       render_system_->Draw(scene_.get(), quad_mesh_, row.material, quad.get());
     }
   }
+}
+
+void RenderCheck::DrawUnsetBindings() {
+  render_system_->Draw(scene_.get(), quad_mesh_, unset_material_,
+                       unset_quad_.get());
 }
 
 void RenderCheck::DrawMeshPool() {

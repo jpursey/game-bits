@@ -139,6 +139,7 @@ class RenderCheck final : public gb::Game {
   bool InitFormatTextures();
   bool InitVolumes();
   bool InitStorageBuffers();
+  bool InitUnsetBindings();
   bool InitMeshPool();
   bool InitPilot();
 
@@ -167,6 +168,7 @@ class RenderCheck final : public gb::Game {
   void DrawFormatGui();
   void DrawVolumeGui();
   void DrawStorageGui();
+  void DrawUnsetBindingsGui();
   void DrawMeshPoolGui();
   void DrawLogGui();
   void DrawExtraRects();
@@ -174,11 +176,13 @@ class RenderCheck final : public gb::Game {
   void AddFormatStripes();
   void DrawVolumeLabels();
   void DrawStorageLabels();
+  void DrawUnsetBindingsLabel();
   void DrawMeshPoolLabel();
   void AddVolumeRegions();
   void DrawQuads();
   void DrawVolumes();
   void DrawStorageBuffers();
+  void DrawUnsetBindings();
   void DrawMeshPool();
 
   // Creates the mesh pool's shape at `index`, turned by `angle` radians, or
@@ -278,6 +282,11 @@ class RenderCheck final : public gb::Game {
   // Reads its color from a storage buffer of QuadColor, by an index from the
   // vertex shader. The mesh pool's shapes use it too.
   gb::Shader* storage_fragment_shader_ = nullptr;
+
+  // A quad drawn by DrawUnsetBindings(), whose material's bindings are never
+  // set.
+  gb::Material* unset_material_ = nullptr;
+  std::unique_ptr<gb::BindingData> unset_quad_;
 
   // A mesh pool, drawn by DrawMeshPool(), whose shapes each read their color
   // from a storage buffer by their draw index. While replacing, one shape is

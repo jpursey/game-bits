@@ -85,6 +85,8 @@ gb_embed_shader(render_check shaders/storage.frag shaders/storage_frag.h
   kStorageFragmentShader)
 gb_embed_shader(render_check shaders/storage.vert shaders/storage_vert.h
   kStorageVertexShader)
+gb_embed_shader(render_check shaders/unset.frag shaders/unset_frag.h
+  kUnsetFragmentShader)
 gb_embed_shader(render_check shaders/volume.frag shaders/volume_frag.h
   kVolumeFragmentShader)
 gb_embed_shader(render_check shaders/volume.vert shaders/volume_vert.h

@@ -53,6 +53,9 @@ class TestRenderBackend final : public RenderBackend {
     // drawn.
     Pixel clear_color = {0, 0, 0, 255};
 
+    // What SetDefaultBindings() was last called with.
+    DefaultBindings default_bindings;
+
     bool rendering = false;
     std::vector<DrawItem> draw_list;
     std::vector<DrawCommand> draw_commands;  // From every DrawList drawn.
@@ -107,6 +110,10 @@ class TestRenderBackend final : public RenderBackend {
   // Implementation of RenderBackend
   void SetClearColor(RenderInternal, Pixel color) override {
     state_->clear_color = color;
+  }
+  void SetDefaultBindings(RenderInternal,
+                          const DefaultBindings& defaults) override {
+    state_->default_bindings = defaults;
   }
   FrameDimensions GetFrameDimensions(RenderInternal) const override;
   bool CanFilter(RenderInternal, TextureFormat format) const override;

@@ -328,8 +328,6 @@ class VulkanTexels {
 - A storage buffer's type must match the shader's `std430` block. Nothing can
   check a C++ struct against GLSL, so `RegisterConstantsType()`'s comment says
   so, as it does for `std140` today.
-- A binding left unset still crashes when drawn, for these types as for
-  textures (see *Default texture for unset bindings* in the backlog).
 - A saved storage buffer holds its values as bytes in its type's C++ layout,
   as saved constants do. Loading checks the type's name and size, but a type
   whose fields change without changing its size loads the old bytes as the

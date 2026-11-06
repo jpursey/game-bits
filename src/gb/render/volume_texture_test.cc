@@ -179,8 +179,8 @@ TEST_F(VolumeTextureTest, FilterOnlyFilterableFormats) {
 }
 
 TEST_F(VolumeTextureTest, FailCreate) {
-  state_.fail_create_volume_texture = true;
   CreateSystem();
+  state_.fail_create_volume_texture = true;
   EXPECT_EQ(CreateVolume(), nullptr);
 }
 

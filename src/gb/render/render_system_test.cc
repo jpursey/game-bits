@@ -22,7 +22,11 @@
 #include "gb/pilot/pilot.h"
 #include "gb/render/render_resource_generated.h"
 #include "gb/render/render_test.h"
+#include "gb/render/test_render_buffer.h"
 #include "gb/render/test_shader_code.h"
+#include "gb/render/test_texture.h"
+#include "gb/render/test_texture_array.h"
+#include "gb/render/test_volume_texture.h"
 #include "gb/resource/resource_chunks.h"
 #include "gb/resource/resource_file_writer.h"
 #include "gb/test/log_error_guard.h"
@@ -33,6 +37,7 @@
 namespace gb {
 namespace {
 
+using ::testing::Contains;
 using ::testing::Each;
 using ::testing::ElementsAre;
 using ::testing::ElementsAreArray;
@@ -414,6 +419,64 @@ TEST_F(RenderSystemTest, CreateShaderCodeFromBytes) {
   state_.fail_create_shader_code = true;
   EXPECT_EQ(render_system_->CreateShaderCode(absl::MakeConstSpan(bytes)),
             nullptr);
+}
+
+TEST_F(RenderSystemTest, GivesTheBackendDefaultBindings) {
+  CreateSystem();
+  const DefaultBindings& defaults = state_.default_bindings;
+
+  auto* texture = static_cast<TestTexture*>(defaults.texture);
+  ASSERT_NE(texture, nullptr);
+  EXPECT_EQ(texture->GetWidth(), 1);
+  EXPECT_EQ(texture->GetHeight(), 1);
+  EXPECT_THAT(texture->GetPixels(), ElementsAre(PixelColor::kWhite));
+
+  auto* texture_array = static_cast<TestTextureArray*>(defaults.texture_array);
+  ASSERT_NE(texture_array, nullptr);
+  EXPECT_EQ(texture_array->GetCount(), 1);
+  EXPECT_EQ(texture_array->GetWidth(), 1);
+  EXPECT_EQ(texture_array->GetHeight(), 1);
+  EXPECT_THAT(texture_array->GetPixels(0), ElementsAre(PixelColor::kWhite));
+
+  auto* volume_texture =
+      static_cast<TestVolumeTexture*>(defaults.volume_texture);
+  ASSERT_NE(volume_texture, nullptr);
+  EXPECT_EQ(volume_texture->GetWidth(), 1);
+  EXPECT_EQ(volume_texture->GetHeight(), 1);
+  EXPECT_EQ(volume_texture->GetDepth(), 1);
+  EXPECT_THAT(volume_texture->GetTexels(), ElementsAre(255, 255, 255, 255));
+
+  auto* storage_buffer =
+      static_cast<TestRenderBuffer*>(defaults.storage_buffer);
+  ASSERT_NE(storage_buffer, nullptr);
+  const int size_in_bytes =
+      storage_buffer->GetSize() * storage_buffer->GetValueSize();
+  EXPECT_EQ(size_in_bytes, 64 * 1024);
+  EXPECT_THAT(absl::MakeConstSpan(
+                  static_cast<const uint8_t*>(storage_buffer->GetData()),
+                  size_in_bytes),
+              Each(0));
+
+  render_system_.reset();
+  EXPECT_EQ(state_.default_bindings.texture, nullptr);
+  EXPECT_EQ(state_.default_bindings.texture_array, nullptr);
+  EXPECT_EQ(state_.default_bindings.volume_texture, nullptr);
+  EXPECT_EQ(state_.default_bindings.storage_buffer, nullptr);
+}
+
+TEST_F(RenderSystemTest, CreateFailsWithoutDefaultBindings) {
+  LogErrorGuard log_error_guard;
+  state_.fail_create_texture = true;
+  EXPECT_EQ(
+      RenderSystem::Create(ContextBuilder()
+                               .SetOwned<RenderBackend>(
+                                   std::make_unique<TestRenderBackend>(&state_))
+                               .SetOwned(ResourceSystem::Create())
+                               .SetOwned(std::make_unique<FileSystem>())
+                               .Build()),
+      nullptr);
+  EXPECT_THAT(log_error_guard.TakeMessages(),
+              Contains(LogTextHas("default bindings")));
 }
 
 TEST_F(RenderSystemTest, FrameDimensions) {

@@ -255,6 +255,8 @@ class VulkanBackend final : public RenderBackend {
       int vertex_capacity, int index_capacity) override;
 
   void SetClearColor(RenderInternal, Pixel color) override;
+  void SetDefaultBindings(RenderInternal,
+                          const DefaultBindings& defaults) override;
   bool BeginFrame(RenderInternal) override;
   void Draw(RenderInternal, RenderScene* scene, RenderPipeline* pipeline,
             BindingData* material_data, BindingData* instance_data,
@@ -424,6 +426,7 @@ class VulkanBackend final : public RenderBackend {
 
   // Global render properties
   vk::ClearColorValue clear_color_;
+  DefaultBindings default_bindings_;
 
   // Garbage collection
   std::array<VulkanGarbageCollector, kMaxFramesInFlight + 1>

@@ -41,6 +41,10 @@ using fb::FlatBufferBuilder;
 
 namespace {
 
+// The default storage buffer is 64 KiB of zeros, in values the size of a vec4.
+constexpr int kDefaultStorageBufferValueSize = 16;
+constexpr int kDefaultStorageBufferCapacity = 4096;
+
 fb::Offset<fb::Vector<fb::Offset<fbs::Binding>>> WriteBindings(
     FlatBufferBuilder* builder, absl::Span<const Binding> bindings) {
   return builder->CreateVector<fb::Offset<fbs::Binding>>(
@@ -675,11 +679,46 @@ bool RenderSystem::Init() {
                                  Mesh, MeshPool>(resource_manager_.get())) {
     return false;
   }
+  return InitDefaultBindings();
+}
+
+bool RenderSystem::InitDefaultBindings() {
+  default_texture_ = CreateTexture(DataVolatility::kStaticWrite, 1, 1);
+  default_texture_array_ =
+      CreateTextureArray(DataVolatility::kStaticWrite, 1, 1, 1);
+  default_volume_texture_ = CreateVolumeTexture(
+      DataVolatility::kStaticWrite, 1, 1, 1, SamplerOptions().SetMipmap(false));
+  default_storage_buffer_ = backend_->CreateStorageBuffer(
+      {}, DataVolatility::kStaticWrite, kDefaultStorageBufferValueSize,
+      kDefaultStorageBufferCapacity);
+  if (default_texture_ == nullptr || default_texture_array_ == nullptr ||
+      default_volume_texture_ == nullptr ||
+      default_storage_buffer_ == nullptr ||
+      !default_texture_->Clear(PixelColor::kWhite) ||
+      !default_texture_array_->Clear(0, PixelColor::kWhite) ||
+      !default_volume_texture_->Clear(PixelColor::kWhite) ||
+      !default_storage_buffer_->Clear(kDefaultStorageBufferCapacity)) {
+    LOG(ERROR) << "Failed to create the default bindings";
+    return false;
+  }
+
+  DefaultBindings defaults;
+  defaults.texture = default_texture_.Get();
+  defaults.texture_array = default_texture_array_.Get();
+  defaults.volume_texture = default_volume_texture_.Get();
+  defaults.storage_buffer = default_storage_buffer_.get();
+  backend_->SetDefaultBindings({}, defaults);
   return true;
 }
 
 RenderSystem::~RenderSystem() {
-  // Shut down the resource manager first, to allow cleanup to happen.
+  // The default bindings are released first, as they belong to the resource
+  // manager, and the backend may outlive this. Then the resource manager is
+  // shut down, to allow cleanup to happen.
+  backend_->SetDefaultBindings({}, {});
+  default_texture_.Reset();
+  default_texture_array_.Reset();
+  default_volume_texture_.Reset();
   resource_manager_.reset();
 }
 

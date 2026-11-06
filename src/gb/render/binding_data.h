@@ -29,6 +29,10 @@ namespace gb {
 // meaningful to change BindingData between multiple Draw calls that use it, as
 // only the final modifications will apply to *all* the Draw calls.
 //
+// A texture, texture array, or volume texture binding that is null (never set,
+// or set to null) draws as opaque white, and a null storage buffer as 64 KiB of
+// zeros.
+//
 // This class and all derived classes must be thread-compatible.
 class BindingData {
  public:

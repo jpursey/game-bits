@@ -26,6 +26,16 @@
 
 namespace gb {
 
+// What a backend draws with for a texture, texture array, volume texture, or
+// storage buffer binding that is null: one that was never set, or was set to
+// null.
+struct DefaultBindings {
+  Texture* texture = nullptr;               // 1x1, opaque white.
+  TextureArray* texture_array = nullptr;    // One 1x1 layer, opaque white.
+  VolumeTexture* volume_texture = nullptr;  // 1x1x1, opaque white.
+  RenderBuffer* storage_buffer = nullptr;   // 64 KiB of zeros.
+};
+
 // This class defines a render backend for a specific graphics API.
 //
 // This is an internal class called by other render classes to implement all
@@ -216,6 +226,11 @@ class RenderBackend {
 
   // Sets the clear color for the background before rendering takes place.
   virtual void SetClearColor(RenderInternal, Pixel color) = 0;
+
+  // Sets what to draw with for a binding that is null. RenderSystem calls this
+  // once, before anything is drawn, and the resources outlive every draw.
+  virtual void SetDefaultBindings(RenderInternal,
+                                  const DefaultBindings& defaults) = 0;
 
   // Begins drawing the next frame.
   //
