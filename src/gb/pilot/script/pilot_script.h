@@ -35,10 +35,15 @@ struct PilotScript {
 //   wait <frames>                       PilotWaitStep
 //   wait for <condition> [<frames>]     PilotWaitForStep
 //   key <key> [for <frames>]            PilotKeyStep
+//   press key <key>                     PilotKeyPressStep
+//   release key <key>                   PilotKeyReleaseStep
 //   text "<text>"                       PilotTextStep
 //   move <x> <y>                        PilotMouseMoveStep
 //   click [left|middle|right] ["<label>" | <x> <y>] [for <frames>]
 //                                       PilotMouseClickStep
+//   press [left|middle|right] ["<label>" | <x> <y>]
+//                                       PilotMousePressStep
+//   release [left|middle|right]         PilotMouseReleaseStep
 //   wheel <amount>                      PilotMouseWheelStep
 //   run <command> <value>...            PilotRunStep
 //   expect <condition>                  PilotExpectStep

@@ -22,6 +22,15 @@ click "Extra rectangles"
 wait 2
 save extra_rectangles
 
+# A drag from there to near the slider's left end sets it to where it is
+# released, so fewer rectangles are drawn.
+press "Extra rectangles"
+move 150 161
+move 100 161
+release
+wait 2
+save drag_extra_rectangles
+
 # For a second the GUI has too many vertices, so it isn't drawn and logs an
 # error (at most once a second), then it is drawn again, with the error in the
 # log.

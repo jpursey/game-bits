@@ -6,8 +6,10 @@
 #include "gb/pilot/step_pilot.h"
 
 #include <algorithm>
+#include <initializer_list>
 #include <utility>
 
+#include "absl/algorithm/container.h"
 #include "absl/base/log_severity.h"
 #include "absl/log/log.h"
 #include "absl/log/log_sink_registry.h"
@@ -117,10 +119,11 @@ void StepPilot::AddSteps(std::vector<PilotStep> steps) {
     // What is pressed is held for at least one frame.
     if (auto* key_step = std::get_if<PilotKeyStep>(&step)) {
       key_step->frames = std::max(key_step->frames, 1);
-      if (std::find(key_names_.begin(), key_names_.end(), key_step->key) ==
-          key_names_.end()) {
-        key_names_.push_back(key_step->key);
-      }
+      AddKeyName(key_step->key);
+    } else if (const auto* press = std::get_if<PilotKeyPressStep>(&step)) {
+      AddKeyName(press->key);
+    } else if (const auto* release = std::get_if<PilotKeyReleaseStep>(&step)) {
+      AddKeyName(release->key);
     } else if (auto* click_step = std::get_if<PilotMouseClickStep>(&step)) {
       click_step->frames = std::max(click_step->frames, 1);
     }
@@ -145,6 +148,9 @@ void StepPilot::DoEndFrame() {
   }
   if (!failed_) {
     EndExpectationFrames(/*run_ending=*/steps_.empty());
+  }
+  if (!failed_ && steps_.empty()) {
+    ValidateNothingHeld();
   }
   if (failed_ || steps_.empty()) {
     done_ = true;
@@ -203,6 +209,14 @@ void StepPilot::EndStepFrame() {
     finished = step_frames_ > key->frames;
   } else if (const auto* click = std::get_if<PilotMouseClickStep>(&step)) {
     finished = step_frames_ > click->frames;
+  } else if (std::holds_alternative<PilotKeyPressStep>(step) ||
+             std::holds_alternative<PilotMousePressStep>(step)) {
+    finished = true;
+  } else if (const auto* release_key =
+                 std::get_if<PilotKeyReleaseStep>(&step)) {
+    finished = !IsKeyHeld(release_key->key);
+  } else if (const auto* release = std::get_if<PilotMouseReleaseStep>(&step)) {
+    finished = !IsMouseButtonDown(release->button);
   } else if (std::holds_alternative<PilotSaveStep>(step)) {
     finished = step_frame_saved_;
     if (!finished && step_frames_ >= kMaxSaveFrames) {
@@ -230,9 +244,27 @@ bool StepPilot::RunStep(const PilotKeyStep& step) {
   // Once started, it finishes at the end of the frame it is released in (in
   // EndStepFrame()).
   if (step_frames_ == 0) {
-    input_.push_back(PilotKeyEvent{.key = step.key, .down = true});
+    PressKey(step.key);
   } else if (step_frames_ == step.frames) {
-    input_.push_back(PilotKeyEvent{.key = step.key, .down = false});
+    ReleaseKey(step.key);
+  }
+  return false;
+}
+
+bool StepPilot::RunStep(const PilotKeyPressStep& step) {
+  // It finishes at the end of the frame it starts in (in EndStepFrame()).
+  PressKey(step.key);
+  return false;
+}
+
+bool StepPilot::RunStep(const PilotKeyReleaseStep& step) {
+  // Once released, it finishes at the end of the frame (in EndStepFrame()).
+  if (!IsKeyHeld(step.key)) {
+    FailStep("The key isn't held");
+    return false;
+  }
+  if (input_.empty()) {
+    ReleaseKey(step.key);
   }
   return false;
 }
@@ -256,17 +288,25 @@ bool StepPilot::RunStep(const PilotMouseClickStep& step) {
     }
     return false;
   }
-  if (const auto* point = std::get_if<PilotPoint>(&step.target)) {
-    MoveMouse(*point);
-  } else if (const auto* label = std::get_if<std::string>(&step.target)) {
-    absl::StatusOr<PilotPoint> item_point = FindItem(*label);
-    if (!item_point.ok()) {
-      FailStep(item_point.status().message());
-      return false;
-    }
-    MoveMouse(*item_point);
+  PressMouseButton(step.button, step.target);
+  return false;
+}
+
+bool StepPilot::RunStep(const PilotMousePressStep& step) {
+  // It finishes at the end of the frame it starts in (in EndStepFrame()).
+  PressMouseButton(step.button, step.target);
+  return false;
+}
+
+bool StepPilot::RunStep(const PilotMouseReleaseStep& step) {
+  // Once released, it finishes at the end of the frame (in EndStepFrame()).
+  if (!IsMouseButtonDown(step.button)) {
+    FailStep("The button isn't held");
+    return false;
   }
-  SetMouseButton(step.button, true);
+  if (input_.empty()) {
+    SetMouseButton(step.button, false);
+  }
   return false;
 }
 
@@ -337,9 +377,82 @@ bool StepPilot::CheckWaitFor(const PilotWaitForStep& step) {
   return false;
 }
 
+void StepPilot::AddKeyName(std::string_view key) {
+  if (!absl::c_linear_search(key_names_, key)) {
+    key_names_.emplace_back(key);
+  }
+}
+
+bool StepPilot::IsKeyHeld(std::string_view key) const {
+  return absl::c_linear_search(held_keys_, key);
+}
+
+void StepPilot::PressKey(std::string_view key) {
+  if (IsKeyHeld(key)) {
+    FailStep("The key is already held");
+    return;
+  }
+  held_keys_.emplace_back(key);
+  input_.push_back(PilotKeyEvent{.key = std::string(key), .down = true});
+}
+
+void StepPilot::ReleaseKey(std::string_view key) {
+  std::erase(held_keys_, key);
+  input_.push_back(PilotKeyEvent{.key = std::string(key), .down = false});
+}
+
+void StepPilot::PressMouseButton(PilotMouseButton button,
+                                 const PilotMouseTarget& target) {
+  if (IsMouseButtonDown(button)) {
+    FailStep("The button is already held");
+    return;
+  }
+  if (const auto* point = std::get_if<PilotPoint>(&target)) {
+    MoveMouse(*point);
+  } else if (const auto* label = std::get_if<std::string>(&target)) {
+    absl::StatusOr<PilotPoint> item_point = FindItem(*label);
+    if (!item_point.ok()) {
+      FailStep(item_point.status().message());
+      return;
+    }
+    MoveMouse(*item_point);
+  }
+  SetMouseButton(button, true);
+}
+
 void StepPilot::MoveMouse(PilotPoint position) {
   mouse_.position = position;
   input_.push_back(PilotMouseMoveEvent{.position = position});
+}
+
+bool StepPilot::IsMouseButtonDown(PilotMouseButton button) const {
+  switch (button) {
+    case PilotMouseButton::kLeft:
+      return mouse_.left;
+    case PilotMouseButton::kMiddle:
+      return mouse_.middle;
+    case PilotMouseButton::kRight:
+      return mouse_.right;
+  }
+  return false;
+}
+
+void StepPilot::ValidateNothingHeld() {
+  // Each message names the step that would release what is held.
+  if (!held_keys_.empty()) {
+    Fail(absl::StrCat("The run ended with a key held (",
+                      PilotKeyReleaseStep{.key = held_keys_.front()}, ")"));
+    return;
+  }
+  for (const PilotMouseButton button :
+       {PilotMouseButton::kLeft, PilotMouseButton::kMiddle,
+        PilotMouseButton::kRight}) {
+    if (IsMouseButtonDown(button)) {
+      Fail(absl::StrCat("The run ended with a mouse button held (",
+                        PilotMouseReleaseStep{.button = button}, ")"));
+      return;
+    }
+  }
 }
 
 void StepPilot::SetMouseButton(PilotMouseButton button, bool down) {

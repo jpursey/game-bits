@@ -505,22 +505,6 @@ other instance's window is still found, though a click reaches the window on
 top. Order the instances by their scene order, and leave out an item that a
 window of a later instance covers.
 
-## Pilot drags
-
-- **Layers:** pilot, pilot_script
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** [Scripted runs](worklog/scripted_runs.md)
-
-A pilot script holds a key or mouse button only for the length of one step
-(`key w for 20`, `click "OK" for 30`), so the mouse can't move while a button
-is held, and one key can't be held while others are pressed. Steps that press
-and release separately (`press left "Extra rectangles"`, `move 400 300`,
-`release left`) would allow drags, such as an ImGui slider or a window, and
-keys held across other steps, such as shift. As with `key` and `click`, each
-release needs a frame with no other input, for programs that poll input.
-
 ## Pilot clicks on scrolled out items
 
 - **Layers:** imgui

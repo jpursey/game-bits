@@ -38,6 +38,11 @@ namespace gb {
 // reads each line back as the same step (see gb_pilot_script).
 //==============================================================================
 
+// Where a mouse button is pressed: where the mouse is (std::monostate), at a
+// point, or at the item with a label, as drawn in the last frame (see
+// Pilot::AddItemFinder()). The mouse moves there first.
+using PilotMouseTarget = std::variant<std::monostate, PilotPoint, std::string>;
+
 namespace internal {
 
 // Returns a name bare if it is a C identifier or an integer as written in
@@ -53,6 +58,27 @@ template <typename Sink>
 void FormatPilotHeldFrames(Sink& sink, int frames) {
   if (frames != 1) {
     absl::Format(&sink, " for %d", frames);
+  }
+}
+
+// Writes " middle" or " right", or nothing for the left button, which a script
+// assumes.
+template <typename Sink>
+void FormatPilotButton(Sink& sink, PilotMouseButton button) {
+  if (button == PilotMouseButton::kMiddle) {
+    sink.Append(" middle");
+  } else if (button == PilotMouseButton::kRight) {
+    sink.Append(" right");
+  }
+}
+
+// Writes " <x> <y>" or " \"<label>\"", or nothing where the mouse is.
+template <typename Sink>
+void FormatPilotMouseTarget(Sink& sink, const PilotMouseTarget& target) {
+  if (const auto* point = std::get_if<PilotPoint>(&target)) {
+    absl::Format(&sink, " %d %d", point->x, point->y);
+  } else if (const auto* label = std::get_if<std::string>(&target)) {
+    absl::Format(&sink, " %s", QuotePilotText(*label));
   }
 }
 
@@ -97,6 +123,29 @@ struct PilotKeyStep {
   int frames = 1;
 };
 
+// Presses a key, and holds it until a PilotKeyReleaseStep releases it, while
+// other steps run (see StepPilot for when).
+struct PilotKeyPressStep {
+  template <typename Sink>
+  friend void AbslStringify(Sink& sink, const PilotKeyPressStep& step) {
+    absl::Format(&sink, "press key %s", internal::FormatPilotName(step.key));
+  }
+
+  // The key, by the name SDL gives its scancode (see PilotKeyEvent).
+  std::string key;
+};
+
+// Releases a key held by a PilotKeyPressStep (see StepPilot for when).
+struct PilotKeyReleaseStep {
+  template <typename Sink>
+  friend void AbslStringify(Sink& sink, const PilotKeyReleaseStep& step) {
+    absl::Format(&sink, "release key %s", internal::FormatPilotName(step.key));
+  }
+
+  // The key, named as it was pressed.
+  std::string key;
+};
+
 // Types text.
 struct PilotTextStep {
   template <typename Sink>
@@ -123,29 +172,43 @@ struct PilotMouseClickStep {
   template <typename Sink>
   friend void AbslStringify(Sink& sink, const PilotMouseClickStep& step) {
     sink.Append("click");
-    if (step.button == PilotMouseButton::kMiddle) {
-      sink.Append(" middle");
-    } else if (step.button == PilotMouseButton::kRight) {
-      sink.Append(" right");
-    }
-    if (const auto* point = std::get_if<PilotPoint>(&step.target)) {
-      absl::Format(&sink, " %d %d", point->x, point->y);
-    } else if (const auto* label = std::get_if<std::string>(&step.target)) {
-      absl::Format(&sink, " %s", internal::QuotePilotText(*label));
-    }
+    internal::FormatPilotButton(sink, step.button);
+    internal::FormatPilotMouseTarget(sink, step.target);
     internal::FormatPilotHeldFrames(sink, step.frames);
   }
 
   PilotMouseButton button = PilotMouseButton::kLeft;
-
-  // Where to click: where the mouse is (std::monostate), at a point, or at the
-  // item with a label, as drawn in the last frame (see Pilot::AddItemFinder()).
-  // The mouse moves there first.
-  std::variant<std::monostate, PilotPoint, std::string> target;
+  PilotMouseTarget target;
 
   // The frames the button is held down for. StepPilot holds it for at least
   // one.
   int frames = 1;
+};
+
+// Presses a mouse button, and holds it until a PilotMouseReleaseStep releases
+// it, while other steps run, such as moves that drag (see StepPilot for when).
+struct PilotMousePressStep {
+  template <typename Sink>
+  friend void AbslStringify(Sink& sink, const PilotMousePressStep& step) {
+    sink.Append("press");
+    internal::FormatPilotButton(sink, step.button);
+    internal::FormatPilotMouseTarget(sink, step.target);
+  }
+
+  PilotMouseButton button = PilotMouseButton::kLeft;
+  PilotMouseTarget target;
+};
+
+// Releases a mouse button held by a PilotMousePressStep, where the mouse is
+// (see StepPilot for when).
+struct PilotMouseReleaseStep {
+  template <typename Sink>
+  friend void AbslStringify(Sink& sink, const PilotMouseReleaseStep& step) {
+    sink.Append("release");
+    internal::FormatPilotButton(sink, step.button);
+  }
+
+  PilotMouseButton button = PilotMouseButton::kLeft;
 };
 
 // Turns the mouse wheel.
@@ -212,10 +275,11 @@ struct PilotSaveStep {
 
 // One step of a run.
 using PilotStep =
-    std::variant<PilotWaitStep, PilotWaitForStep, PilotKeyStep, PilotTextStep,
-                 PilotMouseMoveStep, PilotMouseClickStep, PilotMouseWheelStep,
-                 PilotRunStep, PilotExpectStep, PilotExpectErrorStep,
-                 PilotSaveStep>;
+    std::variant<PilotWaitStep, PilotWaitForStep, PilotKeyStep,
+                 PilotKeyPressStep, PilotKeyReleaseStep, PilotTextStep,
+                 PilotMouseMoveStep, PilotMouseClickStep, PilotMousePressStep,
+                 PilotMouseReleaseStep, PilotMouseWheelStep, PilotRunStep,
+                 PilotExpectStep, PilotExpectErrorStep, PilotSaveStep>;
 
 // Writes whichever step it holds. Abseil finds this through the steps' own
 // namespace, as PilotStep is a std::variant of them.
@@ -257,6 +321,13 @@ void AbslStringify(Sink& sink, const PilotStep& step) {
 //   other input. A program that polls input, rather than reading its events,
 //   sees only how it stands in each frame, so it would miss a release followed
 //   in the same frame by another press, or a move.
+// - PilotKeyPressStep and PilotMousePressStep: 1 frame later. The key or button
+//   is pressed in the frame the step starts in, and held while later steps
+//   run, so input that follows comes in later frames (a move in the same frame
+//   would move the press, for a program that polls the mouse).
+// - PilotKeyReleaseStep and PilotMouseReleaseStep: 1 frame after the key or
+//   button is released, which is in a frame with no other input. That is the
+//   frame the step starts in if it has no input yet, or else the next frame.
 // - PilotWaitForStep: as soon as the condition holds. It is checked when the
 //   step starts, and after each frame, and the step fails if it doesn't hold
 //   after `max_frames` frames.
@@ -267,7 +338,9 @@ void AbslStringify(Sink& sink, const PilotStep& step) {
 // run fails if:
 // - A command or condition isn't registered, a command fails, or an expected
 //   condition doesn't hold.
-// - A click's label is on no item, or on more than one.
+// - A click's or press's label is on no item, or on more than one.
+// - A key or button is pressed while it is held, released while it isn't, or
+//   still held when the last step finishes.
 // - A save has no frame saver, the frame saver fails, or no frame is drawn
 //   within 600 frames.
 // - An error is logged, on any thread, from when the pilot is created until it
@@ -362,9 +435,13 @@ class StepPilot final : public Pilot {
   bool RunStep(const PilotWaitStep& step);
   bool RunStep(const PilotWaitForStep& step);
   bool RunStep(const PilotKeyStep& step);
+  bool RunStep(const PilotKeyPressStep& step);
+  bool RunStep(const PilotKeyReleaseStep& step);
   bool RunStep(const PilotTextStep& step);
   bool RunStep(const PilotMouseMoveStep& step);
   bool RunStep(const PilotMouseClickStep& step);
+  bool RunStep(const PilotMousePressStep& step);
+  bool RunStep(const PilotMouseReleaseStep& step);
   bool RunStep(const PilotMouseWheelStep& step);
   bool RunStep(const PilotRunStep& step);
   bool RunStep(const PilotExpectStep& step);
@@ -380,8 +457,28 @@ class StepPilot final : public Pilot {
   // Checks a wait for step's condition, returning true if it holds.
   bool CheckWaitFor(const PilotWaitForStep& step);
 
+  // Adds a key to GetKeyNames(), if it isn't there.
+  void AddKeyName(std::string_view key);
+
+  bool IsKeyHeld(std::string_view key) const;
+
+  // Presses a key, failing the step if it is already held.
+  void PressKey(std::string_view key);
+
+  // Releases a held key.
+  void ReleaseKey(std::string_view key);
+
+  // Moves the mouse to a target and presses a button, failing the step if the
+  // button is already held or the target has no point.
+  void PressMouseButton(PilotMouseButton button,
+                        const PilotMouseTarget& target);
+
   void MoveMouse(PilotPoint position);
+  bool IsMouseButtonDown(PilotMouseButton button) const;
   void SetMouseButton(PilotMouseButton button, bool down);
+
+  // Fails the run if a key or mouse button is held.
+  void ValidateNothingHeld();
 
   // Fails the run on an error logged since the last call that no expectation
   // in its frames expects, and marks the expectations each error meets.
@@ -407,6 +504,7 @@ class StepPilot final : public Pilot {
   bool step_frame_saved_ = false;  // Whether a save step's frame was saved.
 
   std::vector<std::string> key_names_;
+  std::vector<std::string> held_keys_;  // As each was pressed.
   std::vector<PilotInput> input_;
   PilotMouse mouse_;
   bool saving_ = false;

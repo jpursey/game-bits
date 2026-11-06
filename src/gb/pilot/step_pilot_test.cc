@@ -113,6 +113,9 @@ TEST(PilotStepTest, StepsAreWrittenAsScriptLines) {
   EXPECT_EQ(absl::StrCat(PilotKeyStep{.key = "Left Shift", .frames = 20}),
             "key \"Left Shift\" for 20");
   EXPECT_EQ(absl::StrCat(PilotKeyStep{.key = "a", .frames = 0}), "key a for 0");
+  EXPECT_EQ(absl::StrCat(PilotKeyPressStep{.key = "Left Shift"}),
+            "press key \"Left Shift\"");
+  EXPECT_EQ(absl::StrCat(PilotKeyReleaseStep{.key = "a"}), "release key a");
   EXPECT_EQ(absl::StrCat(PilotTextStep{.text = "say \"hi\"\n"}),
             "text \"say \\\"hi\\\"\\n\"");
   EXPECT_EQ(absl::StrCat(PilotMouseMoveStep{.position = {640, 400}}),
@@ -129,6 +132,15 @@ TEST(PilotStepTest, StepsAreWrittenAsScriptLines) {
   EXPECT_EQ(absl::StrCat(
                 PilotMouseClickStep{.target = PilotPoint{7, 8}, .frames = 30}),
             "click 7 8 for 30");
+  EXPECT_EQ(absl::StrCat(PilotMousePressStep{}), "press");
+  EXPECT_EQ(absl::StrCat(PilotMousePressStep{.button = PilotMouseButton::kRight,
+                                             .target = PilotPoint{7, 8}}),
+            "press right 7 8");
+  EXPECT_EQ(absl::StrCat(PilotMousePressStep{.target = "OK"}), "press \"OK\"");
+  EXPECT_EQ(absl::StrCat(PilotMouseReleaseStep{}), "release");
+  EXPECT_EQ(
+      absl::StrCat(PilotMouseReleaseStep{.button = PilotMouseButton::kMiddle}),
+      "release middle");
   EXPECT_EQ(absl::StrCat(PilotMouseWheelStep{.amount = -2}), "wheel -2");
   EXPECT_EQ(absl::StrCat(PilotRunStep{.command = "reset"}), "run reset");
   EXPECT_EQ(absl::StrCat(PilotRunStep{.command = "set",
@@ -241,6 +253,89 @@ TEST_F(StepPilotTest, HasKeyNamesOfEveryStepAdded) {
   EXPECT_THAT(pilot.GetKeyNames(), ElementsAre("a", "Left Shift"));
   pilot.AddSteps({PilotKeyStep{.key = "b"}});
   EXPECT_THAT(pilot.GetKeyNames(), ElementsAre("a", "Left Shift", "b"));
+  pilot.AddSteps({PilotKeyPressStep{.key = "c"},
+                  PilotKeyReleaseStep{.key = "d"},
+                  PilotKeyPressStep{.key = "a"}});
+  EXPECT_THAT(pilot.GetKeyNames(),
+              ElementsAre("a", "Left Shift", "b", "c", "d"));
+}
+
+//------------------------------------------------------------------------------
+// Held keys
+//------------------------------------------------------------------------------
+
+TEST_F(StepPilotTest, PressedKeyIsHeldWhileOtherStepsRun) {
+  StepPilot pilot;
+  pilot.AddSteps({PilotKeyPressStep{.key = "Left Shift"},
+                  PilotKeyStep{.key = "a"},
+                  PilotKeyReleaseStep{.key = "Left Shift"}});
+  EXPECT_THAT(
+      RunUntilDone(&pilot),
+      ElementsAre(ElementsAre(KeyDown("Left Shift")), ElementsAre(KeyDown("a")),
+                  ElementsAre(KeyUp("a")), ElementsAre(KeyUp("Left Shift"))));
+  EXPECT_FALSE(pilot.HasFailed());
+}
+
+TEST_F(StepPilotTest, KeyPressTakesAFrame) {
+  StepPilot pilot;
+  pilot.AddSteps({PilotTextStep{.text = "a"}, PilotKeyPressStep{.key = "b"},
+                  PilotTextStep{.text = "c"}, PilotKeyReleaseStep{.key = "b"}});
+  EXPECT_THAT(RunUntilDone(&pilot),
+              ElementsAre(ElementsAre(Text("a"), KeyDown("b")),
+                          ElementsAre(Text("c")), ElementsAre(KeyUp("b"))));
+}
+
+TEST_F(StepPilotTest, KeyIsReleasedInAFrameWithNoOtherInput) {
+  StepPilot pilot;
+  pilot.AddSteps({PilotKeyPressStep{.key = "a"}, PilotWaitStep{.frames = 1},
+                  PilotKeyReleaseStep{.key = "a"}, PilotTextStep{.text = "b"}});
+  EXPECT_THAT(RunUntilDone(&pilot),
+              ElementsAre(ElementsAre(KeyDown("a")), IsEmpty(),
+                          ElementsAre(KeyUp("a")), ElementsAre(Text("b"))));
+}
+
+TEST_F(StepPilotTest, PressingAHeldKeyFails) {
+  StepPilot pilot;
+  pilot.AddSteps({PilotKeyPressStep{.key = "a"}, PilotKeyStep{.key = "a"}});
+  EXPECT_THAT(RunUntilDone(&pilot),
+              ElementsAre(ElementsAre(KeyDown("a")), IsEmpty()));
+  EXPECT_TRUE(pilot.HasFailed());
+  EXPECT_THAT(log_error_guard_.TakeMessages(),
+              ElementsAre(LogText(
+                  "Pilot frame 1: key a failed: The key is already held")));
+
+  StepPilot press_pilot;
+  press_pilot.AddSteps(
+      {PilotKeyPressStep{.key = "a"}, PilotKeyPressStep{.key = "a"}});
+  RunUntilDone(&press_pilot);
+  EXPECT_TRUE(press_pilot.HasFailed());
+  EXPECT_THAT(
+      log_error_guard_.TakeMessages(),
+      ElementsAre(LogText(
+          "Pilot frame 1: press key a failed: The key is already held")));
+}
+
+TEST_F(StepPilotTest, ReleasingAKeyThatIsntHeldFails) {
+  StepPilot pilot;
+  pilot.AddSteps({PilotKeyStep{.key = "a"}, PilotKeyReleaseStep{.key = "a"}});
+  EXPECT_THAT(RunUntilDone(&pilot),
+              ElementsAre(ElementsAre(KeyDown("a")), ElementsAre(KeyUp("a")),
+                          IsEmpty()));
+  EXPECT_TRUE(pilot.HasFailed());
+  EXPECT_THAT(log_error_guard_.TakeMessages(),
+              ElementsAre(LogText(
+                  "Pilot frame 2: release key a failed: The key isn't held")));
+}
+
+TEST_F(StepPilotTest, KeyHeldWhenTheRunEndsFails) {
+  StepPilot pilot;
+  pilot.AddSteps({PilotKeyPressStep{.key = "Left Shift"}});
+  EXPECT_THAT(RunUntilDone(&pilot),
+              ElementsAre(ElementsAre(KeyDown("Left Shift"))));
+  EXPECT_TRUE(pilot.HasFailed());
+  EXPECT_THAT(log_error_guard_.TakeMessages(),
+              ElementsAre(LogText("Pilot frame 0: The run ended with a key "
+                                  "held (release key \"Left Shift\")")));
 }
 
 //------------------------------------------------------------------------------
@@ -339,6 +434,122 @@ TEST_F(StepPilotTest, ClickAtAMissingLabelFails) {
       log_error_guard_.TakeMessages(),
       ElementsAre(LogText(
           "Pilot frame 0: click \"OK\" failed: No item is labelled \"OK\"")));
+}
+
+TEST_F(StepPilotTest, DragsWithAPressedButton) {
+  StepPilot pilot;
+  PilotHandle finder = pilot.AddItemFinder(FindLabel("Slider", {10, 20}));
+  pilot.AddSteps({PilotMousePressStep{.target = "Slider"},
+                  PilotMouseMoveStep{.position = {30, 20}},
+                  PilotMouseMoveStep{.position = {40, 25}},
+                  PilotMouseReleaseStep{}, PilotTextStep{.text = "a"}});
+
+  pilot.BeginFrame();
+  EXPECT_THAT(
+      pilot.GetInput(),
+      ElementsAre(Move(10, 20), Button(PilotMouseButton::kLeft, true, 10, 20)));
+  pilot.EndFrame();
+
+  pilot.BeginFrame();
+  EXPECT_THAT(pilot.GetInput(), ElementsAre(Move(30, 20), Move(40, 25)));
+  EXPECT_EQ(pilot.GetMouse(), (PilotMouse{.position = {40, 25}, .left = true}));
+  pilot.EndFrame();
+
+  pilot.BeginFrame();
+  EXPECT_THAT(pilot.GetInput(),
+              ElementsAre(Button(PilotMouseButton::kLeft, false, 40, 25)));
+  EXPECT_EQ(pilot.GetMouse(), (PilotMouse{.position = {40, 25}}));
+  pilot.EndFrame();
+
+  EXPECT_THAT(RunUntilDone(&pilot), ElementsAre(ElementsAre(Text("a"))));
+  EXPECT_FALSE(pilot.HasFailed());
+}
+
+TEST_F(StepPilotTest, PressesAnyButtonWhereTheMouseIsOrAtAPoint) {
+  StepPilot pilot;
+  pilot.AddSteps({PilotMouseMoveStep{.position = {1, 2}},
+                  PilotMousePressStep{.button = PilotMouseButton::kRight},
+                  PilotMousePressStep{.button = PilotMouseButton::kMiddle,
+                                      .target = PilotPoint{3, 4}},
+                  PilotMouseReleaseStep{.button = PilotMouseButton::kRight},
+                  PilotMouseReleaseStep{.button = PilotMouseButton::kMiddle}});
+  EXPECT_THAT(
+      RunUntilDone(&pilot),
+      ElementsAre(
+          ElementsAre(Move(1, 2), Button(PilotMouseButton::kRight, true, 1, 2)),
+          ElementsAre(Move(3, 4),
+                      Button(PilotMouseButton::kMiddle, true, 3, 4)),
+          ElementsAre(Button(PilotMouseButton::kRight, false, 3, 4)),
+          ElementsAre(Button(PilotMouseButton::kMiddle, false, 3, 4))));
+  EXPECT_FALSE(pilot.HasFailed());
+}
+
+TEST_F(StepPilotTest, ButtonIsReleasedInAFrameWithNoOtherInput) {
+  StepPilot pilot;
+  pilot.AddSteps({PilotMousePressStep{}, PilotMouseMoveStep{.position = {5, 6}},
+                  PilotMouseReleaseStep{},
+                  PilotMouseMoveStep{.position = {7, 8}}});
+  EXPECT_THAT(
+      RunUntilDone(&pilot),
+      ElementsAre(ElementsAre(Button(PilotMouseButton::kLeft, true, 0, 0)),
+                  ElementsAre(Move(5, 6)),
+                  ElementsAre(Button(PilotMouseButton::kLeft, false, 5, 6)),
+                  ElementsAre(Move(7, 8))));
+}
+
+TEST_F(StepPilotTest, PressAtAMissingLabelFails) {
+  StepPilot pilot;
+  pilot.AddSteps({PilotMousePressStep{.target = "OK"}});
+  EXPECT_THAT(RunUntilDone(&pilot), ElementsAre(IsEmpty()));
+  EXPECT_TRUE(pilot.HasFailed());
+  EXPECT_THAT(
+      log_error_guard_.TakeMessages(),
+      ElementsAre(LogText(
+          "Pilot frame 0: press \"OK\" failed: No item is labelled \"OK\"")));
+}
+
+TEST_F(StepPilotTest, PressingAHeldButtonFails) {
+  StepPilot pilot;
+  pilot.AddSteps({PilotMousePressStep{.button = PilotMouseButton::kRight},
+                  PilotMouseClickStep{.button = PilotMouseButton::kRight,
+                                      .target = PilotPoint{1, 2}}});
+  EXPECT_THAT(
+      RunUntilDone(&pilot),
+      ElementsAre(ElementsAre(Button(PilotMouseButton::kRight, true, 0, 0)),
+                  IsEmpty()));
+  EXPECT_TRUE(pilot.HasFailed());
+  EXPECT_THAT(log_error_guard_.TakeMessages(),
+              ElementsAre(LogText("Pilot frame 1: click right 1 2 failed: The "
+                                  "button is already held")));
+
+  StepPilot press_pilot;
+  press_pilot.AddSteps({PilotMousePressStep{}, PilotMousePressStep{}});
+  RunUntilDone(&press_pilot);
+  EXPECT_TRUE(press_pilot.HasFailed());
+  EXPECT_THAT(log_error_guard_.TakeMessages(),
+              ElementsAre(LogText(
+                  "Pilot frame 1: press failed: The button is already held")));
+}
+
+TEST_F(StepPilotTest, ReleasingAButtonThatIsntHeldFails) {
+  StepPilot pilot;
+  pilot.AddSteps({PilotMousePressStep{},
+                  PilotMouseReleaseStep{.button = PilotMouseButton::kMiddle}});
+  RunUntilDone(&pilot);
+  EXPECT_TRUE(pilot.HasFailed());
+  EXPECT_THAT(log_error_guard_.TakeMessages(),
+              ElementsAre(LogText("Pilot frame 1: release middle failed: The "
+                                  "button isn't held")));
+}
+
+TEST_F(StepPilotTest, ButtonHeldWhenTheRunEndsFails) {
+  StepPilot pilot;
+  pilot.AddSteps({PilotMousePressStep{.button = PilotMouseButton::kMiddle}});
+  RunUntilDone(&pilot);
+  EXPECT_TRUE(pilot.HasFailed());
+  EXPECT_THAT(log_error_guard_.TakeMessages(),
+              ElementsAre(LogText("Pilot frame 0: The run ended with a mouse "
+                                  "button held (release middle)")));
 }
 
 TEST_F(StepPilotTest, ClickAtAnAmbiguousLabelFails) {

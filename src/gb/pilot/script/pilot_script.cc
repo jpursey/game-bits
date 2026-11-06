@@ -60,10 +60,14 @@ constexpr std::string_view kScriptProgram = R"---(
     $wait_for=("wait" "for" $condition=name [$frames=%int]);
     $wait=("wait" $frames=%int);
     $key=("key" $key=name ["for" $frames=%int]);
+    $press_key=("press" "key" $key=name);
+    $release_key=("release" "key" $key=name);
     $text=("text" $text=%string);
     $move=("move" $x=%int $y=%int);
     $click=("click" [$button=button] [$label=%string | $x=%int $y=%int]
             ["for" $frames=%int]);
+    $press=("press" [$button=button] [$label=%string | $x=%int $y=%int]);
+    $release=("release" [$button=button]);
     $wheel=("wheel" $amount=%int);
     $run=("run" $command=name $args=name*);
     $expect_error=("expect" "error" $text=%string [$frames=%int]);
@@ -114,6 +118,30 @@ PilotPoint ReadPoint(const ParsedItem& values) {
           static_cast<int>(values.GetInt("y"))};
 }
 
+// Returns the button in `values`, or the left button if none is given.
+PilotMouseButton ReadButton(const ParsedItem& values) {
+  const std::string_view button = values.GetString("button");
+  if (button == "middle") {
+    return PilotMouseButton::kMiddle;
+  }
+  if (button == "right") {
+    return PilotMouseButton::kRight;
+  }
+  return PilotMouseButton::kLeft;
+}
+
+// Returns the label or point in `values`, or where the mouse is if neither is
+// given.
+PilotMouseTarget ReadMouseTarget(const ParsedItem& values) {
+  if (const ParsedItem* label = values.GetItem("label")) {
+    return std::string(label->GetToken().GetString());
+  }
+  if (values.GetItem("x") != nullptr) {
+    return ReadPoint(values);
+  }
+  return {};
+}
+
 // Reads a step other than `hide window`, matched by the `step` rule.
 absl::StatusOr<PilotStep> ReadStep(const Lexer& lexer, const ParsedItem& item) {
   const std::string_view type = item.GetMatchName();
@@ -142,6 +170,12 @@ absl::StatusOr<PilotStep> ReadStep(const Lexer& lexer, const ParsedItem& item) {
     }
     return step;
   }
+  if (type == "press_key") {
+    return PilotKeyPressStep{.key = ReadName(lexer, values->GetToken("key"))};
+  }
+  if (type == "release_key") {
+    return PilotKeyReleaseStep{.key = ReadName(lexer, values->GetToken("key"))};
+  }
   if (type == "text") {
     return PilotTextStep{.text = std::string(values->GetString("text"))};
   }
@@ -149,22 +183,19 @@ absl::StatusOr<PilotStep> ReadStep(const Lexer& lexer, const ParsedItem& item) {
     return PilotMouseMoveStep{.position = ReadPoint(*values)};
   }
   if (type == "click") {
-    PilotMouseClickStep step;
-    const std::string_view button = values->GetString("button");
-    if (button == "middle") {
-      step.button = PilotMouseButton::kMiddle;
-    } else if (button == "right") {
-      step.button = PilotMouseButton::kRight;
-    }
-    if (const ParsedItem* label = values->GetItem("label")) {
-      step.target = std::string(label->GetToken().GetString());
-    } else if (values->GetItem("x") != nullptr) {
-      step.target = ReadPoint(*values);
-    }
+    PilotMouseClickStep step = {.button = ReadButton(*values),
+                                .target = ReadMouseTarget(*values)};
     if (frames != nullptr) {
       step.frames = frame_count;
     }
     return step;
+  }
+  if (type == "press") {
+    return PilotMousePressStep{.button = ReadButton(*values),
+                               .target = ReadMouseTarget(*values)};
+  }
+  if (type == "release") {
+    return PilotMouseReleaseStep{.button = ReadButton(*values)};
   }
   if (type == "wheel") {
     return PilotMouseWheelStep{.amount =

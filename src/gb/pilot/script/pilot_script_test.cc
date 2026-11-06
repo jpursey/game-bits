@@ -65,9 +65,13 @@ TEST(PilotScriptTest, ReadsEveryStep) {
                 "wait for loaded 20\n"
                 "key f1\n"
                 "key w for 20\n"
+                "press key \"Left Shift\"\n"
+                "release key \"Left Shift\"\n"
                 "text \"hello\"\n"
                 "move 640 -400\n"
                 "click\n"
+                "press\n"
+                "release\n"
                 "wheel -2\n"
                 "run reset_peaks\n"
                 "expect loaded\n"
@@ -75,8 +79,10 @@ TEST(PilotScriptTest, ReadsEveryStep) {
                 "expect error \"cannot be edited\" 10\n"
                 "save get_layer_1\n"),
       ElementsAre("wait 30", "wait for loaded 600", "wait for loaded 20",
-                  "key f1", "key w for 20", "text \"hello\"", "move 640 -400",
-                  "click", "wheel -2", "run reset_peaks", "expect loaded",
+                  "key f1", "key w for 20", "press key \"Left Shift\"",
+                  "release key \"Left Shift\"", "text \"hello\"",
+                  "move 640 -400", "click", "press", "release", "wheel -2",
+                  "run reset_peaks", "expect loaded",
                   "expect error \"cannot be edited\" 600",
                   "expect error \"cannot be edited\" 10", "save get_layer_1"));
 }
@@ -110,6 +116,23 @@ TEST(PilotScriptTest, ReadsClickForms) {
               ElementsAre("click", "click", "click middle", "click right 3 4",
                           "click 700 120", "click \"Get layer 1\"",
                           "click right \"Render Check/Get layer 1\""));
+}
+
+TEST(PilotScriptTest, ReadsPressAndReleaseForms) {
+  EXPECT_THAT(ReadLines("press key a\n"
+                        "press key 1\n"
+                        "release key a\n"
+                        "press left\n"
+                        "press middle 3 4\n"
+                        "press right \"Extra rectangles\"\n"
+                        "press 700 120\n"
+                        "release left\n"
+                        "release middle\n"
+                        "release right\n"),
+              ElementsAre("press key a", "press key 1", "release key a",
+                          "press", "press middle 3 4",
+                          "press right \"Extra rectangles\"", "press 700 120",
+                          "release", "release middle", "release right"));
 }
 
 TEST(PilotScriptTest, ReadsRunValues) {
@@ -148,6 +171,12 @@ TEST(PilotScriptTest, StepsReadBackFromTheirText) {
       PilotTextStep{.text = "say \"hi\"\\\r\n\t\x01\x7f é"},
       PilotMouseClickStep{.button = PilotMouseButton::kRight, .target = "a\"b"},
       PilotMouseClickStep{.button = PilotMouseButton::kMiddle, .frames = 7},
+      PilotKeyPressStep{.key = "Left Shift"},
+      PilotKeyReleaseStep{.key = "key"},
+      PilotMousePressStep{.button = PilotMouseButton::kRight,
+                          .target = PilotPoint{-1, 2}},
+      PilotMousePressStep{.target = "a\"b"},
+      PilotMouseReleaseStep{.button = PilotMouseButton::kMiddle},
       PilotRunStep{.command = "set",
                    .args = {"-2", "007", "-0", "a-b", "", "99999999999"}},
       PilotExpectErrorStep{.text = "can't \"edit\"", .max_frames = 0},
@@ -215,6 +244,10 @@ TEST(PilotScriptTest, MissingValuesFail) {
             "(1:6): Parse error at \"hello\": Expected string value");
   EXPECT_EQ(ReadError("hide"),
             "(1:5): Parse error at \"\": Expected identifier window");
+  EXPECT_EQ(ReadError("press key\n"),
+            "(1:10): Parse error at \"\": Expected string value");
+  EXPECT_EQ(ReadError("press 700\n"),
+            "(1:10): Parse error at \"\": Expected integer value");
 }
 
 TEST(PilotScriptTest, LeftOverValuesFail) {
@@ -226,6 +259,12 @@ TEST(PilotScriptTest, LeftOverValuesFail) {
             "(1:8): Parse error at \"wait\": Expected end of line");
   EXPECT_EQ(ReadError("click \"OK\" 1 2\n"),
             "(1:12): Parse error at \"1\": Expected end of line");
+  EXPECT_EQ(ReadError("press \"OK\" for 2\n"),
+            "(1:12): Parse error at \"for\": Expected end of line");
+  EXPECT_EQ(ReadError("release 1 2\n"),
+            "(1:9): Parse error at \"1\": Expected end of line");
+  EXPECT_EQ(ReadError("release key a b\n"),
+            "(1:15): Parse error at \"b\": Expected end of line");
 }
 
 TEST(PilotScriptTest, NegativeFramesFail) {

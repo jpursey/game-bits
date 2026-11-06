@@ -115,6 +115,12 @@ move 640 400               # Mouse, in window pixels
 click right                # At the mouse
 click 700 120              # Moves there first
 click "Get layer 1" for 30 # Holds the button for 30 frames
+press "Extra rectangles"   # Holds the button until released, to drag
+move 400 300
+release                    # Left, unless named as for click
+press key "Left Shift"     # Holds the key until released
+click "Get layer 1"
+release key "Left Shift"
 wheel -2
 text "hello"
 run reset_peaks            # A program command, with any further values
@@ -123,13 +129,20 @@ expect world_loaded        # Fails if the condition doesn't hold now
 expect error "cannot be edited" 10  # Errors with this text pass, for 10 frames
 ```
 
-- Time passes only in steps that wait or hold input: `wait`, `wait for`,
-  `key`, and `click`. Every other step happens in the current frame, in order.
+- Time passes only in steps that wait or give input that must not share a
+  frame: `wait`, `wait for`, `key`, `click`, `press`, and `release`. Every
+  other step happens in the current frame, in order.
 - A key or button is held for one frame unless given a number of frames, and
   then released in a frame with no other input, so `key` and `click` take two
   frames by default. A program that polls input (as ImGui does the mouse) sees
   only how it stands in each frame, so it would miss a release followed by
   another press or a move in the same frame.
+- `press` and `press key` hold a button or key while later steps run, until
+  `release` or `release key`, so moves between them drag. A press takes its
+  frame, so what follows comes in a later frame, and a release is in a frame
+  with no other input (the next one, if a step before it in the frame gave
+  input). Pressing what is held, releasing what isn't, or ending the run with
+  anything held fails the run.
 - `wait for` waits at most 600 frames (10 seconds) unless given a limit.
 - `expect error` goes before the step that logs the error, for a check that
   is meant to fail. Errors whose message contains its text don't fail the
@@ -470,14 +483,24 @@ one source of its steps (`gb_pilot_script`).
 struct PilotWaitStep { int frames; };
 struct PilotWaitForStep { std::string condition; int max_frames = 600; };
 struct PilotKeyStep { std::string key; int frames = 1; };  // Frames held.
+struct PilotKeyPressStep { std::string key; };    // Held until released.
+struct PilotKeyReleaseStep { std::string key; };  // Named as pressed.
 struct PilotTextStep { std::string text; };
 struct PilotMouseMoveStep { PilotPoint position; };
+
+// At the mouse, at a point, or at the item with a label.
+using PilotMouseTarget = std::variant<std::monostate, PilotPoint, std::string>;
 struct PilotMouseClickStep {
   PilotMouseButton button = PilotMouseButton::kLeft;
-
-  // At the mouse, at a point, or at the item with a label.
-  std::variant<std::monostate, PilotPoint, std::string> target;
+  PilotMouseTarget target;
   int frames = 1;  // Frames held.
+};
+struct PilotMousePressStep {  // Held until released.
+  PilotMouseButton button = PilotMouseButton::kLeft;
+  PilotMouseTarget target;
+};
+struct PilotMouseReleaseStep {  // Where the mouse is.
+  PilotMouseButton button = PilotMouseButton::kLeft;
 };
 struct PilotMouseWheelStep { int amount; };
 struct PilotRunStep { std::string command; std::vector<std::string> args; };
@@ -515,10 +538,15 @@ class StepPilot final : public Pilot {
   `BeginFrame()`), steps run in order until one that takes time. A key or
   click presses in the frame it starts in, releases at the start of the frame
   `frames` (at least 1) later, and finishes at the end of that frame, so the
-  release has a frame to itself. A wait, `wait for`, or save finishes at the
-  end of a frame (in `EndFrame()`): once its frames have passed, its condition
-  holds (checked when it starts, and after each frame), or its frame was
-  saved. The steps after any of these run from the next frame.
+  release has a frame to itself. A press step presses in the frame it starts
+  in and finishes at the end of it. A release step releases in the frame it
+  starts in if no step before it has given input in that frame, or else in the
+  next frame, and finishes at the end of the frame it releases in. A held key
+  is released by the name it was pressed with. A wait, `wait for`, or save
+  finishes at the end of a frame (in `EndFrame()`): once its frames have
+  passed, its condition holds (checked when it starts, and after each frame),
+  or its frame was saved. The steps after any of these run from the next
+  frame.
   So the step after one that takes N frames always starts N frames later, and
   no frame is run after the last step needs it.
 - **Done** once every step has finished, or at the first failure, decided at
@@ -529,8 +557,9 @@ class StepPilot final : public Pilot {
   that doesn't hold, a `wait for` that times out, a label that no item or more
   than one has, a `save` with no `save_frame`, a frame not saved within 600
   frames or that `save_frame` couldn't keep, an expected error that isn't
-  logged, and any other error logged while it runs, from any thread (an absl
-  log sink keeps them). The first ends the run.
+  logged, a key or button pressed while held, released while not, or held
+  when the last step finishes, and any other error logged while it runs, from
+  any thread (an absl log sink keeps them). The first ends the run.
 - **Expected errors:** the log sink keeps each error's message, under a
   mutex, and the pilot takes them on the loop thread: at the start and end of
   each frame, and as each step starts, so errors logged before an
@@ -608,10 +637,14 @@ absl::StatusOr<std::unique_ptr<Pilot>> CreateCliPilot(
     $wait_for=("wait" "for" $condition=name [$frames=%int]);
     $wait=("wait" $frames=%int);
     $key=("key" $key=name ["for" $frames=%int]);
+    $press_key=("press" "key" $key=name);
+    $release_key=("release" "key" $key=name);
     $text=("text" $text=%string);
     $move=("move" $x=%int $y=%int);
     $click=("click" [$button=button] [$label=%string | $x=%int $y=%int]
             ["for" $frames=%int]);
+    $press=("press" [$button=button] [$label=%string | $x=%int $y=%int]);
+    $release=("release" [$button=button]);
     $wheel=("wheel" $amount=%int);
     $run=("run" $command=name $args=name*);
     $expect_error=("expect" "error" $text=%string [$frames=%int]);
