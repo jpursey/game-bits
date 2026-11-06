@@ -248,6 +248,12 @@ VULKAN_SDK is defined as `VULKAN_SDK=C:\VulkanSDK\1.3.283.0`
 Vulkan may be linked to by depending on the `Vulkan` library target in CMake
 files that use Game Bits and have Vulkan installed.
 
+A program can compile its GLSL shaders in its build, and build them into
+itself, with `gb_embed_shader` (see
+[CMake/GameBitsTargetCommands.cmake](CMake/GameBitsTargetCommands.cmake)), as
+RenderCheck does. It compiles them with `glslc` from the Vulkan SDK, which only
+a program that calls it needs.
+
 ## Building
 
 Game Bits can be built directly from its own CMakeLists.txt file, or more
@@ -309,8 +315,7 @@ cmake --build examples/block-world/out/build/x64-Debug
 The resulting executable is written to `bin/block_world.exe`. In order to run
 it, you must first build the required shaders, by running the
 [assets/shaders/build-shaders.bat](assets/shaders/build-shaders.bat) file
-(it must be run from the `assets/shaders` directory, and requires `glslc` from
-the Vulkan SDK to be on the PATH).
+(it requires `glslc` from the Vulkan SDK to be on the PATH).
 
 It starts at the title, or in the state `--state` names (`--state PlayState`
 starts playing straight away). It also runs pilot scripts, such as
@@ -336,7 +341,7 @@ cmake --build examples/render-check/out/build/x64-Release
 ```
 
 The resulting executable is written to `bin/render_check.exe`. Its shaders are
-embedded, so it needs no assets.
+compiled in the build and built into it, so it needs no assets.
 
 The same checks can run without a user, from scripts in
 [examples/render-check/scripts](examples/render-check/scripts), one for each

@@ -33,10 +33,13 @@
 #include "imgui_impl_sdl.h"
 
 // Game includes
-#include "pool_shaders.h"
-#include "quad_shaders.h"
-#include "storage_shaders.h"
-#include "volume_shaders.h"
+#include "shaders/pool_vert.h"
+#include "shaders/quad_frag.h"
+#include "shaders/quad_vert.h"
+#include "shaders/storage_frag.h"
+#include "shaders/storage_vert.h"
+#include "shaders/volume_frag.h"
+#include "shaders/volume_vert.h"
 
 // Windows is included last, as its macros rename functions declared above.
 #ifndef NOMINMAX
@@ -383,16 +386,14 @@ bool RenderCheck::InitQuads() {
 
   gb::Shader* vertex_shader = render_system_->CreateShader(
       &resources_, gb::ShaderType::kVertex,
-      render_system_->CreateShaderCode(kQuadVertexShader,
-                                       sizeof(kQuadVertexShader)),
+      render_system_->CreateShaderCode(kQuadVertexShader.GetBytes()),
       {scene_binding, instance_binding},
       {gb::ShaderParam(gb::ShaderValue::kVec2, 0)},
       {gb::ShaderParam(gb::ShaderValue::kVec4, 0)});
   gb::Shader* fragment_shader = render_system_->CreateShader(
       &resources_, gb::ShaderType::kFragment,
-      render_system_->CreateShaderCode(kQuadFragmentShader,
-                                       sizeof(kQuadFragmentShader)),
-      {}, {gb::ShaderParam(gb::ShaderValue::kVec4, 0)},
+      render_system_->CreateShaderCode(kQuadFragmentShader.GetBytes()), {},
+      {gb::ShaderParam(gb::ShaderValue::kVec4, 0)},
       {gb::ShaderParam(gb::ShaderValue::kVec4, 0)});
   if (vertex_shader == nullptr || fragment_shader == nullptr) {
     LOG(ERROR) << "Could not create quad shaders";
@@ -588,15 +589,13 @@ bool RenderCheck::InitVolumes() {
           .SetVolumeTexture();
   gb::Shader* vertex_shader = render_system_->CreateShader(
       &resources_, gb::ShaderType::kVertex,
-      render_system_->CreateShaderCode(kVolumeVertexShader,
-                                       sizeof(kVolumeVertexShader)),
+      render_system_->CreateShaderCode(kVolumeVertexShader.GetBytes()),
       quad_type->GetVertexShader()->GetBindings(),
       {gb::ShaderParam(gb::ShaderValue::kVec2, 0)},
       {gb::ShaderParam(gb::ShaderValue::kVec3, 0)});
   gb::Shader* fragment_shader = render_system_->CreateShader(
       &resources_, gb::ShaderType::kFragment,
-      render_system_->CreateShaderCode(kVolumeFragmentShader,
-                                       sizeof(kVolumeFragmentShader)),
+      render_system_->CreateShaderCode(kVolumeFragmentShader.GetBytes()),
       {volume_binding}, {gb::ShaderParam(gb::ShaderValue::kVec3, 0)},
       {gb::ShaderParam(gb::ShaderValue::kVec4, 0)});
   if (vertex_shader == nullptr || fragment_shader == nullptr) {
@@ -695,15 +694,13 @@ bool RenderCheck::InitStorageBuffers() {
           .SetStorageBuffer(color_type);
   gb::Shader* vertex_shader = render_system_->CreateShader(
       &resources_, gb::ShaderType::kVertex,
-      render_system_->CreateShaderCode(kStorageVertexShader,
-                                       sizeof(kStorageVertexShader)),
+      render_system_->CreateShaderCode(kStorageVertexShader.GetBytes()),
       quad_type->GetVertexShader()->GetBindings(),
       {gb::ShaderParam(gb::ShaderValue::kVec2, 0)},
       {gb::ShaderParam(gb::ShaderValue::kInt, 0)});
   storage_fragment_shader_ = render_system_->CreateShader(
       &resources_, gb::ShaderType::kFragment,
-      render_system_->CreateShaderCode(kStorageFragmentShader,
-                                       sizeof(kStorageFragmentShader)),
+      render_system_->CreateShaderCode(kStorageFragmentShader.GetBytes()),
       {storage_binding}, {gb::ShaderParam(gb::ShaderValue::kInt, 0)},
       {gb::ShaderParam(gb::ShaderValue::kVec4, 0)});
   if (vertex_shader == nullptr || storage_fragment_shader_ == nullptr) {
@@ -772,8 +769,7 @@ bool RenderCheck::InitMeshPool() {
   const gb::MaterialType* quad_type = quad_material_->GetType();
   gb::Shader* vertex_shader = render_system_->CreateShader(
       &resources_, gb::ShaderType::kVertex,
-      render_system_->CreateShaderCode(kPoolVertexShader,
-                                       sizeof(kPoolVertexShader)),
+      render_system_->CreateShaderCode(kPoolVertexShader.GetBytes()),
       quad_type->GetVertexShader()->GetBindings(),
       {gb::ShaderParam(gb::ShaderValue::kVec2, 0)},
       {gb::ShaderParam(gb::ShaderValue::kInt, 0)});

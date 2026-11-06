@@ -164,6 +164,45 @@ ${_declaration}
   endif()
 endfunction()
 
+# Compiles a GLSL shader to SPIR-V and builds it into a target, as
+# gb_embed_data does with a file:
+#
+#   gb_embed_shader(<target> <file> <header> <name>)
+#
+# For example, gb_embed_shader(render_check shaders/quad.vert
+# shaders/quad_vert.h kQuadVertexShader) lets the target include
+# "shaders/quad_vert.h", which declares the gb::EmbeddedData kQuadVertexShader,
+# whose bytes are the SPIR-V to pass to RenderSystem::CreateShaderCode().
+#  <file>    The shader, relative to the current source directory. Its extension
+#            (.vert, .frag, .comp, ...) gives its stage.
+#  <header>  As for gb_embed_data.
+#  <name>    As for gb_embed_data.
+#
+# The shader is compiled again whenever it or a file it includes changes, and
+# the build fails on any error or warning in it. It is compiled with glslc,
+# found in the Vulkan SDK or on the PATH, which only a project that calls this
+# needs.
+function(gb_embed_shader TARGET FILE HEADER NAME)
+  find_program(GB_GLSLC glslc HINTS "$ENV{VULKAN_SDK}/Bin")
+  if (NOT GB_GLSLC)
+    message(FATAL_ERROR
+      "gb_embed_shader: glslc was not found in the Vulkan SDK or on the PATH")
+  endif()
+
+  get_filename_component(_input "${FILE}" ABSOLUTE)
+  string(REGEX REPLACE "\\.h$" ".spv" _output
+    "${CMAKE_CURRENT_BINARY_DIR}/${TARGET}_shaders/${HEADER}")
+  add_custom_command(
+    OUTPUT "${_output}"
+    COMMAND "${GB_GLSLC}" -Werror -MD -MF "${_output}.d" -o "${_output}"
+      "${_input}"
+    DEPENDS "${_input}"
+    DEPFILE "${_output}.d"
+    COMMENT "Compiling ${FILE} for ${TARGET}"
+    VERBATIM)
+  gb_embed_data(${TARGET} "${_output}" "${HEADER}" "${NAME}")
+endfunction()
+
 function(gb_add_test NAME)
   add_executable(${NAME}_test ${${NAME}_TEST_SOURCE})
   gb_embed_manifest(${NAME}_test)

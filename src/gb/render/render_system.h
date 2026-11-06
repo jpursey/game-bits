@@ -6,6 +6,7 @@
 #ifndef GB_RENDER_RENDER_SYSTEM_H_
 #define GB_RENDER_RENDER_SYSTEM_H_
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -336,11 +337,13 @@ class RenderSystem final {
   //
   // The shader code specified must be in a form expected by the render backend
   // used by the render system. For instance, for the Vulkan backend this must
-  // be SPIR-V code.
+  // be SPIR-V code, such as a shader built into the program by
+  // gb_embed_shader (see CMake/GameBitsTargetCommands.cmake).
   //
   // Returns null if the shader code could not be created.
   std::unique_ptr<ShaderCode> CreateShaderCode(const void* code,
                                                int64_t code_size);
+  std::unique_ptr<ShaderCode> CreateShaderCode(absl::Span<const uint8_t> code);
   std::unique_ptr<ShaderCode> LoadShaderCode(std::string_view filename);
 
   // Creates a texture with the specified parameters.

@@ -103,21 +103,28 @@ point of a UTF-8 or UTF-16 string, along with conversions between UTF-8 and
 `std::u32string`. They fail cleanly on invalid input, without utfcpp's
 exceptions.
 
-## Shaders compiled by the build
+## Block-world and ImGui shaders compiled by the build
 
-- **Layers:** CMake, examples
+- **Layers:** CI, imgui, examples
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** nothing
-- **Background:** `gb_embed_data` in `CMake/GameBitsTargetCommands.cmake`; the
-  SPIR-V pasted into `examples/render-check/*_shaders.h`
+- **Background:** `gb_embed_shader` in `CMake/GameBitsTargetCommands.cmake`,
+  as render-check uses it; `assets/shaders/build-shaders.bat`; the SPIR-V
+  pasted into `gb/imgui/imgui_instance.cc`
 
-Shaders are compiled to SPIR-V by hand (`glslc -mfmt=c`) and the output pasted
-into headers, so a shader edit is easy to leave uncompiled. Compile them in the
-build instead, with `glslc` from the Vulkan SDK, and embed the result with
-`gb_embed_data`, whose data is aligned for reading as `uint32_t` words. This
-adds `glslc` to the build, which only the Vulkan SDK provides, so a target
-without shaders must not need it.
+Block-world's shaders are compiled by a hand-run script into `.spv` files it
+loads at run time, so a fresh checkout or worktree has none until the script is
+run, and an edited shader is easy to leave stale. gb_imgui's are compiled by
+hand and their bytes pasted into `imgui_instance.cc`. Compile both with
+`gb_embed_shader`, as render-check does, and remove the script.
+
+CI builds block-world, and every project that links gb_imgui (including its
+unit tests, which draw with the test backend) would then need `glslc`. It comes
+with the Vulkan SDK, but CI's Vulkan setup (`.github/workflows/cmake.yml`,
+`humbletim/setup-vulkan-sdk`) installs only the headers and loader and can't
+install `glslc`, so CI first needs an action that installs the whole SDK. CI
+changes can only be checked by pushing.
 
 ## Profile timelines
 

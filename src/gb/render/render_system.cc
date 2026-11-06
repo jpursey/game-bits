@@ -1670,6 +1670,11 @@ std::unique_ptr<ShaderCode> RenderSystem::CreateShaderCode(const void* code,
   return shader_code;
 }
 
+std::unique_ptr<ShaderCode> RenderSystem::CreateShaderCode(
+    absl::Span<const uint8_t> code) {
+  return CreateShaderCode(code.data(), static_cast<int64_t>(code.size()));
+}
+
 std::unique_ptr<ShaderCode> RenderSystem::LoadShaderCode(
     std::string_view filename) {
   std::vector<uint8_t> buffer;

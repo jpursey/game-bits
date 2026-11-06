@@ -6,6 +6,7 @@
 #include "gb/render/render_system.h"
 
 #include <cstdint>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -21,6 +22,7 @@
 #include "gb/pilot/pilot.h"
 #include "gb/render/render_resource_generated.h"
 #include "gb/render/render_test.h"
+#include "gb/render/test_shader_code.h"
 #include "gb/resource/resource_chunks.h"
 #include "gb/resource/resource_file_writer.h"
 #include "gb/test/log_error_guard.h"
@@ -399,6 +401,19 @@ TEST_F(RenderSystemTest, RegisterSceneType) {
   EXPECT_EQ(render_system_->RegisterSceneType("scene", {bindings[0]}), nullptr);
   EXPECT_EQ(render_system_->GetSceneType("scene"), scene_type);
   EXPECT_NE(render_system_->RegisterSceneType("scene2", {}), nullptr);
+}
+
+TEST_F(RenderSystemTest, CreateShaderCodeFromBytes) {
+  CreateSystem();
+  const uint8_t bytes[] = {0x03, 0x02, 0x23, 0x07, 0x00, 0x01};
+  auto code = render_system_->CreateShaderCode(absl::MakeConstSpan(bytes));
+  ASSERT_NE(code, nullptr);
+  EXPECT_EQ(static_cast<TestShaderCode*>(code.get())->GetCode(),
+            std::string(std::begin(bytes), std::end(bytes)));
+
+  state_.fail_create_shader_code = true;
+  EXPECT_EQ(render_system_->CreateShaderCode(absl::MakeConstSpan(bytes)),
+            nullptr);
 }
 
 TEST_F(RenderSystemTest, FrameDimensions) {

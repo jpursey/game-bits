@@ -39,11 +39,7 @@ endif()
 
 set(render_check_SOURCE
   main.cc
-  pool_shaders.h
-  quad_shaders.h
   render_check.cc render_check.h
-  storage_shaders.h
-  volume_shaders.h
 )
 
 set(render_check_DEPS
@@ -78,5 +74,20 @@ set(render_check_LIBS
 )
 
 gb_add_win_executable(render_check)
+
+gb_embed_shader(render_check shaders/pool.vert shaders/pool_vert.h
+  kPoolVertexShader)
+gb_embed_shader(render_check shaders/quad.frag shaders/quad_frag.h
+  kQuadFragmentShader)
+gb_embed_shader(render_check shaders/quad.vert shaders/quad_vert.h
+  kQuadVertexShader)
+gb_embed_shader(render_check shaders/storage.frag shaders/storage_frag.h
+  kStorageFragmentShader)
+gb_embed_shader(render_check shaders/storage.vert shaders/storage_vert.h
+  kStorageVertexShader)
+gb_embed_shader(render_check shaders/volume.frag shaders/volume_frag.h
+  kVolumeFragmentShader)
+gb_embed_shader(render_check shaders/volume.vert shaders/volume_vert.h
+  kVolumeVertexShader)
 
 set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT render_check)
