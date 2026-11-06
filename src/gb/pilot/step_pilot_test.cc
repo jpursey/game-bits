@@ -219,8 +219,8 @@ TEST_F(StepPilotTest, MovesByFromWhereAPressMovedTheMouse) {
   EXPECT_THAT(
       RunUntilDone(&pilot),
       ElementsAre(
-          ElementsAre(Move(30, 40),
-                      Button(PilotMouseButton::kRight, true, 30, 40)),
+          ElementsAre(Move(30, 40)),
+          ElementsAre(Button(PilotMouseButton::kRight, true, 30, 40)),
           ElementsAre(Move(130, 40)),
           ElementsAre(Button(PilotMouseButton::kRight, false, 130, 40))));
   EXPECT_FALSE(pilot.HasFailed());
@@ -378,12 +378,13 @@ TEST_F(StepPilotTest, KeyHeldWhenTheRunEndsFails) {
 TEST_F(StepPilotTest, ClicksWhereTheMouseIs) {
   StepPilot pilot;
   pilot.AddSteps({PilotMouseMoveStep{.position = {5, 6}},
+                  PilotWaitStep{.frames = 1},
                   PilotMouseClickStep{.button = PilotMouseButton::kRight}});
+  RunFrame(&pilot);
 
   pilot.BeginFrame();
-  EXPECT_THAT(
-      pilot.GetInput(),
-      ElementsAre(Move(5, 6), Button(PilotMouseButton::kRight, true, 5, 6)));
+  EXPECT_THAT(pilot.GetInput(),
+              ElementsAre(Button(PilotMouseButton::kRight, true, 5, 6)));
   EXPECT_EQ(pilot.GetMouse(), (PilotMouse{.position = {5, 6}, .right = true}));
   pilot.EndFrame();
 
@@ -401,9 +402,13 @@ TEST_F(StepPilotTest, ClicksAtAPoint) {
                                       .target = PilotPoint{7, 8}}});
 
   pilot.BeginFrame();
-  EXPECT_THAT(
-      pilot.GetInput(),
-      ElementsAre(Move(7, 8), Button(PilotMouseButton::kMiddle, true, 7, 8)));
+  EXPECT_THAT(pilot.GetInput(), ElementsAre(Move(7, 8)));
+  EXPECT_EQ(pilot.GetMouse(), (PilotMouse{.position = {7, 8}}));
+  pilot.EndFrame();
+
+  pilot.BeginFrame();
+  EXPECT_THAT(pilot.GetInput(),
+              ElementsAre(Button(PilotMouseButton::kMiddle, true, 7, 8)));
   EXPECT_EQ(pilot.GetMouse(), (PilotMouse{.position = {7, 8}, .middle = true}));
   pilot.EndFrame();
 
@@ -419,9 +424,57 @@ TEST_F(StepPilotTest, ClicksAtAnItem) {
   pilot.AddSteps({PilotMouseClickStep{.target = "OK"}});
   EXPECT_THAT(
       RunUntilDone(&pilot),
-      ElementsAre(ElementsAre(Move(30, 40),
-                              Button(PilotMouseButton::kLeft, true, 30, 40)),
+      ElementsAre(ElementsAre(Move(30, 40)),
+                  ElementsAre(Button(PilotMouseButton::kLeft, true, 30, 40)),
                   ElementsAre(Button(PilotMouseButton::kLeft, false, 30, 40))));
+  EXPECT_FALSE(pilot.HasFailed());
+}
+
+TEST_F(StepPilotTest, ClickWhereTheMouseAlreadyIsPressesAtOnce) {
+  StepPilot pilot;
+  PilotHandle finder = pilot.AddItemFinder(FindLabel("OK", {1, 2}));
+  pilot.AddSteps({PilotMouseClickStep{.target = PilotPoint{1, 2}},
+                  PilotMouseClickStep{.target = PilotPoint{1, 2}},
+                  PilotMouseClickStep{.target = "OK"}});
+  EXPECT_THAT(
+      RunUntilDone(&pilot),
+      ElementsAre(ElementsAre(Move(1, 2)),
+                  ElementsAre(Button(PilotMouseButton::kLeft, true, 1, 2)),
+                  ElementsAre(Button(PilotMouseButton::kLeft, false, 1, 2)),
+                  ElementsAre(Button(PilotMouseButton::kLeft, true, 1, 2)),
+                  ElementsAre(Button(PilotMouseButton::kLeft, false, 1, 2)),
+                  ElementsAre(Button(PilotMouseButton::kLeft, true, 1, 2)),
+                  ElementsAre(Button(PilotMouseButton::kLeft, false, 1, 2))));
+  EXPECT_FALSE(pilot.HasFailed());
+}
+
+TEST_F(StepPilotTest, ClickAfterOtherInputInTheSameFramePressesAtOnce) {
+  StepPilot pilot;
+  pilot.AddSteps({PilotTextStep{.text = "a"}, PilotMouseWheelStep{.amount = 1},
+                  PilotMouseClickStep{}});
+  EXPECT_THAT(
+      RunUntilDone(&pilot),
+      ElementsAre(ElementsAre(Text("a"), Wheel(1),
+                              Button(PilotMouseButton::kLeft, true, 0, 0)),
+                  ElementsAre(Button(PilotMouseButton::kLeft, false, 0, 0))));
+  EXPECT_FALSE(pilot.HasFailed());
+}
+
+TEST_F(StepPilotTest, ClickAfterAMoveInTheSameFramePressesInTheNext) {
+  StepPilot pilot;
+  pilot.AddSteps({PilotMouseMoveByStep{.offset = {1, 2}},
+                  PilotMouseClickStep{.target = PilotPoint{1, 2}},
+                  PilotMouseMoveStep{.position = {3, 4}},
+                  PilotMousePressStep{.button = PilotMouseButton::kRight},
+                  PilotMouseReleaseStep{.button = PilotMouseButton::kRight}});
+  EXPECT_THAT(
+      RunUntilDone(&pilot),
+      ElementsAre(ElementsAre(Move(1, 2)),
+                  ElementsAre(Button(PilotMouseButton::kLeft, true, 1, 2)),
+                  ElementsAre(Button(PilotMouseButton::kLeft, false, 1, 2)),
+                  ElementsAre(Move(3, 4)),
+                  ElementsAre(Button(PilotMouseButton::kRight, true, 3, 4)),
+                  ElementsAre(Button(PilotMouseButton::kRight, false, 3, 4))));
   EXPECT_FALSE(pilot.HasFailed());
 }
 
@@ -432,12 +485,13 @@ TEST_F(StepPilotTest, ClickIsReleasedInAFrameOfItsOwn) {
                   PilotMouseMoveStep{.position = {5, 6}}});
   EXPECT_THAT(
       RunUntilDone(&pilot),
-      ElementsAre(
-          ElementsAre(Move(1, 2), Button(PilotMouseButton::kLeft, true, 1, 2)),
-          ElementsAre(Button(PilotMouseButton::kLeft, false, 1, 2)),
-          ElementsAre(Move(3, 4), Button(PilotMouseButton::kLeft, true, 3, 4)),
-          ElementsAre(Button(PilotMouseButton::kLeft, false, 3, 4)),
-          ElementsAre(Move(5, 6))));
+      ElementsAre(ElementsAre(Move(1, 2)),
+                  ElementsAre(Button(PilotMouseButton::kLeft, true, 1, 2)),
+                  ElementsAre(Button(PilotMouseButton::kLeft, false, 1, 2)),
+                  ElementsAre(Move(3, 4)),
+                  ElementsAre(Button(PilotMouseButton::kLeft, true, 3, 4)),
+                  ElementsAre(Button(PilotMouseButton::kLeft, false, 3, 4)),
+                  ElementsAre(Move(5, 6))));
 }
 
 TEST_F(StepPilotTest, ClickIsHeldForItsFrames) {
@@ -448,12 +502,12 @@ TEST_F(StepPilotTest, ClickIsHeldForItsFrames) {
                   PilotMouseClickStep{.frames = 0}});
   EXPECT_THAT(
       RunUntilDone(&pilot),
-      ElementsAre(
-          ElementsAre(Move(1, 2), Button(PilotMouseButton::kRight, true, 1, 2)),
-          IsEmpty(), IsEmpty(),
-          ElementsAre(Button(PilotMouseButton::kRight, false, 1, 2)),
-          ElementsAre(Button(PilotMouseButton::kLeft, true, 1, 2)),
-          ElementsAre(Button(PilotMouseButton::kLeft, false, 1, 2))));
+      ElementsAre(ElementsAre(Move(1, 2)),
+                  ElementsAre(Button(PilotMouseButton::kRight, true, 1, 2)),
+                  IsEmpty(), IsEmpty(),
+                  ElementsAre(Button(PilotMouseButton::kRight, false, 1, 2)),
+                  ElementsAre(Button(PilotMouseButton::kLeft, true, 1, 2)),
+                  ElementsAre(Button(PilotMouseButton::kLeft, false, 1, 2))));
   EXPECT_FALSE(pilot.HasFailed());
 }
 
@@ -477,11 +531,9 @@ TEST_F(StepPilotTest, DragsWithAPressedButton) {
                   PilotMouseMoveStep{.position = {40, 25}},
                   PilotMouseReleaseStep{}, PilotTextStep{.text = "a"}});
 
-  pilot.BeginFrame();
-  EXPECT_THAT(
-      pilot.GetInput(),
-      ElementsAre(Move(10, 20), Button(PilotMouseButton::kLeft, true, 10, 20)));
-  pilot.EndFrame();
+  EXPECT_THAT(RunFrame(&pilot), ElementsAre(Move(10, 20)));
+  EXPECT_THAT(RunFrame(&pilot),
+              ElementsAre(Button(PilotMouseButton::kLeft, true, 10, 20)));
 
   pilot.BeginFrame();
   EXPECT_THAT(pilot.GetInput(), ElementsAre(Move(30, 20), Move(40, 25)));
@@ -508,12 +560,12 @@ TEST_F(StepPilotTest, PressesAnyButtonWhereTheMouseIsOrAtAPoint) {
                   PilotMouseReleaseStep{.button = PilotMouseButton::kMiddle}});
   EXPECT_THAT(
       RunUntilDone(&pilot),
-      ElementsAre(
-          ElementsAre(Move(1, 2), Button(PilotMouseButton::kRight, true, 1, 2)),
-          ElementsAre(Move(3, 4),
-                      Button(PilotMouseButton::kMiddle, true, 3, 4)),
-          ElementsAre(Button(PilotMouseButton::kRight, false, 3, 4)),
-          ElementsAre(Button(PilotMouseButton::kMiddle, false, 3, 4))));
+      ElementsAre(ElementsAre(Move(1, 2)),
+                  ElementsAre(Button(PilotMouseButton::kRight, true, 1, 2)),
+                  ElementsAre(Move(3, 4)),
+                  ElementsAre(Button(PilotMouseButton::kMiddle, true, 3, 4)),
+                  ElementsAre(Button(PilotMouseButton::kRight, false, 3, 4)),
+                  ElementsAre(Button(PilotMouseButton::kMiddle, false, 3, 4))));
   EXPECT_FALSE(pilot.HasFailed());
 }
 
@@ -1065,16 +1117,16 @@ TEST_F(StepPilotTest, LogsEachStepAndASummary) {
                                       .target = PilotPoint{3, 4}},
                   PilotMouseWheelStep{.amount = -1},
                   PilotWaitStep{.frames = 1}});
-  EXPECT_THAT(RunUntilDone(&pilot), SizeIs(8));
+  EXPECT_THAT(RunUntilDone(&pilot), SizeIs(9));
   EXPECT_THAT(log_recorder.TakeMessages(),
               ElementsAre(LogText("Pilot frame 0: key a"),
                           LogText("Pilot frame 2: text \"hi there\""),
                           LogText("Pilot frame 2: key \"Left Shift\" for 2"),
                           LogText("Pilot frame 5: move 1 2"),
                           LogText("Pilot frame 5: click right 3 4"),
-                          LogText("Pilot frame 7: wheel -1"),
-                          LogText("Pilot frame 7: wait 1"),
-                          LogText("Pilot run passed. Frames run: 8. Frames "
+                          LogText("Pilot frame 8: wheel -1"),
+                          LogText("Pilot frame 8: wait 1"),
+                          LogText("Pilot run passed. Frames run: 9. Frames "
                                   "saved: 0.")));
 }
 

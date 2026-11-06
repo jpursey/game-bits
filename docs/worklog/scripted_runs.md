@@ -138,6 +138,12 @@ expect error "cannot be edited" 10  # Errors with this text pass, for 10 frames
   frames by default. A program that polls input (as ImGui does the mouse) sees
   only how it stands in each frame, so it would miss a release followed by
   another press or a move in the same frame.
+- A `click` or `press` moves the mouse to its point or label first, if it isn't
+  there, and never presses in a frame the mouse moves in: the press comes a
+  frame later. A program that judges a press by where the mouse was in the
+  frame before (such as whether ImGui wants the mouse, as block-world does) sees
+  it there, as it would a real mouse, so a script needs no `move` and `wait`
+  before a `click` or `press`.
 - `press` and `press key` hold a button or key while later steps run, until
   `release` or `release key`, so moves between them drag. A press takes its
   frame, so what follows comes in a later frame, and a release is in a frame

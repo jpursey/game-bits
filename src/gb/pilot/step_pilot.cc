@@ -208,10 +208,11 @@ void StepPilot::EndStepFrame() {
   } else if (const auto* key = std::get_if<PilotKeyStep>(&step)) {
     finished = step_frames_ > key->frames;
   } else if (const auto* click = std::get_if<PilotMouseClickStep>(&step)) {
-    finished = step_frames_ > click->frames;
-  } else if (std::holds_alternative<PilotKeyPressStep>(step) ||
-             std::holds_alternative<PilotMousePressStep>(step)) {
+    finished = step_frames_ > step_press_frame_ + click->frames;
+  } else if (std::holds_alternative<PilotKeyPressStep>(step)) {
     finished = true;
+  } else if (std::holds_alternative<PilotMousePressStep>(step)) {
+    finished = step_frames_ > step_press_frame_;
   } else if (const auto* release_key =
                  std::get_if<PilotKeyReleaseStep>(&step)) {
     finished = !IsKeyHeld(release_key->key);
@@ -288,19 +289,31 @@ bool StepPilot::RunStep(const PilotMouseMoveByStep& step) {
 bool StepPilot::RunStep(const PilotMouseClickStep& step) {
   // Once started, it finishes at the end of the frame it is released in (in
   // EndStepFrame()).
-  if (step_frames_ > 0) {
-    if (step_frames_ == step.frames) {
-      SetMouseButton(step.button, false);
+  if (step_frames_ == 0) {
+    if (!MoveMouseToPress(step.button, step.target)) {
+      return false;
     }
-    return false;
+    step_press_frame_ = HasMouseMovedThisFrame() ? 1 : 0;
   }
-  PressMouseButton(step.button, step.target);
+  if (step_frames_ == step_press_frame_) {
+    SetMouseButton(step.button, true);
+  } else if (step_frames_ == step_press_frame_ + step.frames) {
+    SetMouseButton(step.button, false);
+  }
   return false;
 }
 
 bool StepPilot::RunStep(const PilotMousePressStep& step) {
-  // It finishes at the end of the frame it starts in (in EndStepFrame()).
-  PressMouseButton(step.button, step.target);
+  // It finishes at the end of the frame it presses in (in EndStepFrame()).
+  if (step_frames_ == 0) {
+    if (!MoveMouseToPress(step.button, step.target)) {
+      return false;
+    }
+    step_press_frame_ = HasMouseMovedThisFrame() ? 1 : 0;
+  }
+  if (step_frames_ == step_press_frame_) {
+    SetMouseButton(step.button, true);
+  }
   return false;
 }
 
@@ -407,23 +420,33 @@ void StepPilot::ReleaseKey(std::string_view key) {
   input_.push_back(PilotKeyEvent{.key = std::string(key), .down = false});
 }
 
-void StepPilot::PressMouseButton(PilotMouseButton button,
+bool StepPilot::MoveMouseToPress(PilotMouseButton button,
                                  const PilotMouseTarget& target) {
   if (IsMouseButtonDown(button)) {
     FailStep("The button is already held");
-    return;
+    return false;
   }
+  PilotPoint position = mouse_.position;
   if (const auto* point = std::get_if<PilotPoint>(&target)) {
-    MoveMouse(*point);
+    position = *point;
   } else if (const auto* label = std::get_if<std::string>(&target)) {
     absl::StatusOr<PilotPoint> item_point = FindItem(*label);
     if (!item_point.ok()) {
       FailStep(item_point.status().message());
-      return;
+      return false;
     }
-    MoveMouse(*item_point);
+    position = *item_point;
   }
-  SetMouseButton(button, true);
+  if (position != mouse_.position) {
+    MoveMouse(position);
+  }
+  return true;
+}
+
+bool StepPilot::HasMouseMovedThisFrame() const {
+  return absl::c_any_of(input_, [](const PilotInput& input) {
+    return std::holds_alternative<PilotMouseMoveEvent>(input);
+  });
 }
 
 void StepPilot::MoveMouse(PilotPoint position) {
@@ -481,6 +504,7 @@ void StepPilot::FinishStep() {
   steps_.pop_front();
   step_started_ = false;
   step_frames_ = 0;
+  step_press_frame_ = 0;
   step_frame_saved_ = false;
 }
 

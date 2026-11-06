@@ -328,16 +328,23 @@ void AbslStringify(Sink& sink, const PilotStep& step) {
 // Every other step takes none, so a run of them happens within the one frame,
 // in order. The step after one that takes time starts:
 // - PilotWaitStep: `frames` frames later (in the same frame, if 0 or less).
-// - PilotKeyStep and PilotMouseClickStep: `frames` + 1 frames later (2 by
-//   default). The key or button is pressed in the frame the step starts in,
-//   held for `frames` frames, and released in the next frame, which has no
-//   other input. A program that polls input, rather than reading its events,
-//   sees only how it stands in each frame, so it would miss a release followed
-//   in the same frame by another press, or a move.
-// - PilotKeyPressStep and PilotMousePressStep: 1 frame later. The key or button
-//   is pressed in the frame the step starts in, and held while later steps
-//   run, so input that follows comes in later frames (a move in the same frame
-//   would move the press, for a program that polls the mouse).
+// - PilotKeyStep and PilotMouseClickStep: `frames` + 1 frames after the key or
+//   button is pressed (2 by default). It is held for `frames` frames, and
+//   released in the next frame, which has no other input. A program that polls
+//   input, rather than reading its events, sees only how it stands in each
+//   frame, so it would miss a release followed in the same frame by another
+//   press, or a move.
+// - PilotKeyPressStep and PilotMousePressStep: 1 frame after the key or button
+//   is pressed. It is held while later steps run, so input that follows comes
+//   in later frames (a move in the same frame would move the press, for a
+//   program that polls the mouse).
+// - A key is pressed in the frame its step starts in. A click or press first
+//   moves the mouse to its target, if it isn't there, and presses its button
+//   in the frame it starts in only if the mouse doesn't move in that frame (by
+//   this step or an earlier one), and in the next frame otherwise. So a
+//   program that judges a press by where the mouse was in the frame before
+//   (such as whether ImGui wants the mouse) sees it at the target, as it would
+//   a real mouse.
 // - PilotKeyReleaseStep and PilotMouseReleaseStep: 1 frame after the key or
 //   button is released, which is in a frame with no other input. That is the
 //   frame the step starts in if it has no input yet, or else the next frame.
@@ -482,10 +489,15 @@ class StepPilot final : public Pilot {
   // Releases a held key.
   void ReleaseKey(std::string_view key);
 
-  // Moves the mouse to a target and presses a button, failing the step if the
-  // button is already held or the target has no point.
-  void PressMouseButton(PilotMouseButton button,
+  // Moves the mouse to a click's or press's target, if it isn't there.
+  // Returns false, having failed the step, if the button is already held or
+  // the target has no point.
+  bool MoveMouseToPress(PilotMouseButton button,
                         const PilotMouseTarget& target);
+
+  // Returns whether this frame's input has moved the mouse, so a button is
+  // pressed in a later frame (see StepPilot).
+  bool HasMouseMovedThisFrame() const;
 
   void MoveMouse(PilotPoint position);
   bool IsMouseButtonDown(PilotMouseButton button) const;
@@ -515,6 +527,7 @@ class StepPilot final : public Pilot {
   std::deque<PilotStep> steps_;
   bool step_started_ = false;
   int step_frames_ = 0;            // Frames ended since the step started.
+  int step_press_frame_ = 0;       // The step frame a button is pressed in.
   bool step_frame_saved_ = false;  // Whether a save step's frame was saved.
 
   std::vector<std::string> key_names_;
