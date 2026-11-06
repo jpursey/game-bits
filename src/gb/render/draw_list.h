@@ -26,6 +26,7 @@ struct DrawCommand {
     kInstanceData,  // Sets the instance data via "binding_data".
     kScissor,       // Sets the scissor position via "rect".
     kDraw,          // Defines draw request via "draw".
+    kIndirect,      // Draws mesh pool ranges via "indirect".
     kReset,         // Reset all context
   };
 
@@ -42,6 +43,14 @@ struct DrawCommand {
     uint32_t first_instance;
   };
 
+  // The `count` MeshDraw values in `draws`, the buffer of a storage buffer,
+  // from the value at `first`.
+  struct Indirect {
+    RenderBuffer* draws;
+    uint32_t first;
+    uint32_t count;
+  };
+
   DrawCommand(Type in_type) : type(in_type) {}
   DrawCommand(Type in_type, RenderBuffer* in_buffer)
       : type(in_type), buffer(in_buffer) {}
@@ -53,6 +62,8 @@ struct DrawCommand {
       : type(in_type), binding_data(in_binding_data) {}
   DrawCommand(Type in_type, Rect in_rect) : type(in_type), rect(in_rect) {}
   DrawCommand(Type in_type, Draw in_draw) : type(in_type), draw(in_draw) {}
+  DrawCommand(Type in_type, Indirect in_indirect)
+      : type(in_type), indirect(in_indirect) {}
 
   Type type;
   union {
@@ -62,8 +73,11 @@ struct DrawCommand {
     BindingData* binding_data;
     Rect rect;
     Draw draw;
+    Indirect indirect;
   };
 };
+static_assert(sizeof(DrawCommand::Indirect) <= sizeof(DrawCommand::Draw),
+              "Indirect must not make DrawCommand bigger");
 
 // This class defines an ordered list of drawing commands which may be passed to
 // the render system.
@@ -169,6 +183,15 @@ class DrawList final {
   // The draw is not checked against the pool: it must be from a mesh that is
   // still in it.
   void Draw(const MeshDraw& draw);
+
+  // Draws `count` ranges of the mesh pool, read from the values in `draws`
+  // starting at the one at `first`. A mesh pool must be set, and `draws` must
+  // be a storage buffer of MeshDraw (a type registered with
+  // RenderSystem::RegisterConstantsType()) with that many values from `first`.
+  //
+  // The GPU reads the draws when the frame is drawn, so they aren't checked
+  // against the pool: each must be from a mesh that is still in it.
+  void DrawIndirect(StorageBuffer* draws, int first, int count);
 
   // Resets the state back to the initial state.
   void Reset();

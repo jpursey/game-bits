@@ -1505,6 +1505,10 @@ void VulkanBackend::EndFrameRenderPass() {
                   command.draw.vertex_offset, command.draw.first_instance);
               break;
             }
+            case DrawCommand::Type::kIndirect: {
+              // Indirect draws are not drawn yet.
+              break;
+            }
             case DrawCommand::Type::kReset: {
               scissor = vk::Rect2D({0, 0}, swap_extent_);
               frame.commands.setScissor(0, {scissor});

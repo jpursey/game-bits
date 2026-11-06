@@ -7,6 +7,7 @@
 
 #include <cstdint>
 
+#include "gb/base/type_info.h"
 #include "gb/render/binding_data.h"
 #include "gb/render/material.h"
 #include "gb/render/material_type.h"
@@ -14,6 +15,7 @@
 #include "gb/render/mesh_pool.h"
 #include "gb/render/render_assert.h"
 #include "gb/render/render_pipeline.h"
+#include "gb/render/storage_buffer.h"
 
 namespace gb {
 
@@ -149,6 +151,20 @@ void DrawList::Draw(const MeshDraw& draw) {
       DrawCommand::Type::kDraw,
       DrawCommand::Draw{draw.first_index, draw.index_count, draw.vertex_offset,
                         draw.first_instance});
+}
+
+void DrawList::DrawIndirect(StorageBuffer* draws, int first, int count) {
+  RENDER_ASSERT(current_mesh_pool_ != nullptr);
+  RENDER_ASSERT(current_instance_data_ != nullptr);
+  RENDER_ASSERT(draws != nullptr);
+  RENDER_ASSERT(draws->GetType()->GetType() == TypeKey::Get<MeshDraw>());
+  RENDER_ASSERT(first >= 0);
+  RENDER_ASSERT(count >= 0);
+  RENDER_ASSERT(count <= draws->GetCount() - first);
+  commands_.emplace_back(
+      DrawCommand::Type::kIndirect,
+      DrawCommand::Indirect{draws->GetBuffer({}), static_cast<uint32_t>(first),
+                            static_cast<uint32_t>(count)});
 }
 
 void DrawList::Reset() {

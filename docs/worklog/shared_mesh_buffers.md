@@ -419,7 +419,7 @@ Depends on: CL3.
   before and after replacing them for a few seconds, with no validation errors
   in the log.
 
-### CL5 [ ] render: Indirect draws
+### CL5 [x] render: Indirect draws
 
 Depends on: CL3.
 

@@ -16,6 +16,7 @@
 #include "gb/render/mesh_pool.h"
 #include "gb/render/render_assert.h"
 #include "gb/render/render_test.h"
+#include "gb/render/storage_buffer.h"
 #include "gb/render/test_binding_data.h"
 #include "gtest/gtest.h"
 
@@ -23,6 +24,8 @@ namespace gb {
 namespace {
 
 using Type = DrawCommand::Type;
+
+constexpr int kDrawCount = 4;
 
 class DrawListTest : public RenderTest {
  protected:
@@ -51,6 +54,14 @@ class DrawListTest : public RenderTest {
     ASSERT_NE(first_pooled_mesh_, nullptr);
     pooled_mesh_ = pool_->CreateMesh<Vector3>(vertices, triangles);
     ASSERT_NE(pooled_mesh_, nullptr);
+
+    const RenderDataType* draw_type =
+        render_system_->RegisterConstantsType<MeshDraw>("mesh_draw");
+    ASSERT_NE(draw_type, nullptr);
+    draws_ = render_system_->CreateStorageBuffer(
+        &temp_resource_set_, draw_type, DataVolatility::kStaticReadWrite,
+        kDrawCount);
+    ASSERT_NE(draws_, nullptr);
   }
 
   const std::vector<DrawCommand>& GetCommands() {
@@ -82,6 +93,9 @@ class DrawListTest : public RenderTest {
 
   // A mesh of 4 vertices and 2 triangles.
   std::unique_ptr<PooledMesh> pooled_mesh_;
+
+  // A storage buffer of kDrawCount MeshDraw values.
+  StorageBuffer* draws_ = nullptr;
 
   DrawList draw_list_;
 };
@@ -117,6 +131,8 @@ TEST_F(DrawListTest, ValidCallsPassAsserts) {
   draw_list_.SetMaterial(material_);
   draw_list_.SetMeshPool(pool_, instance_data_.get());
   draw_list_.Draw(pooled_mesh_->GetDraw());
+  draw_list_.DrawIndirect(draws_, 0, kDrawCount);
+  draw_list_.DrawIndirect(draws_, kDrawCount, 0);
 }
 
 TEST_F(DrawListTest, MeshPoolCommands) {
@@ -140,6 +156,18 @@ TEST_F(DrawListTest, MeshPoolCommands) {
   EXPECT_EQ(part.index_count, 3);
   EXPECT_EQ(part.vertex_offset, 3);
   EXPECT_EQ(part.first_instance, 9);
+}
+
+TEST_F(DrawListTest, IndirectCommands) {
+  draw_list_.SetMeshPool(pool_, material_, instance_data_.get());
+  draw_list_.DrawIndirect(draws_, 1, 3);
+  ASSERT_EQ(GetTypes(), (std::vector<Type>{Type::kPipeline, Type::kMaterialData,
+                                           Type::kInstanceData, Type::kMeshPool,
+                                           Type::kIndirect}));
+  const DrawCommand::Indirect& indirect = GetCommands()[4].indirect;
+  EXPECT_EQ(indirect.draws, draws_->GetBuffer(GetAccessToken()));
+  EXPECT_EQ(indirect.first, 1);
+  EXPECT_EQ(indirect.count, 3);
 }
 
 TEST_F(DrawListTest, MeshDrawsHaveFirstInstanceZero) {
@@ -205,6 +233,41 @@ TEST_F(DrawListDeathTest, PoolDrawWithManyInstances) {
   MeshDraw draw = pooled_mesh_->GetDraw();
   draw.instance_count = 2;
   EXPECT_DEATH(draw_list_.Draw(draw), "draw.instance_count == 1");
+}
+
+TEST_F(DrawListDeathTest, IndirectDrawsNeedAPool) {
+  EXPECT_DEATH(draw_list_.DrawIndirect(draws_, 0, 1),
+               "current_mesh_pool_ != nullptr");
+  draw_list_.SetMesh(mesh_, material_, instance_data_.get());
+  EXPECT_DEATH(draw_list_.DrawIndirect(draws_, 0, 1),
+               "current_mesh_pool_ != nullptr");
+}
+
+TEST_F(DrawListDeathTest, IndirectDrawWithoutInstanceData) {
+  draw_list_.SetMeshPool(pool_, material_);
+  EXPECT_DEATH(draw_list_.DrawIndirect(draws_, 0, 1),
+               "current_instance_data_ != nullptr");
+}
+
+TEST_F(DrawListDeathTest, IndirectDrawOfOtherType) {
+  const RenderDataType* type =
+      render_system_->RegisterConstantsType<Vector2>("vec2");
+  ASSERT_NE(type, nullptr);
+  StorageBuffer* other_draws = render_system_->CreateStorageBuffer(
+      &temp_resource_set_, type, DataVolatility::kStaticReadWrite, kDrawCount);
+  ASSERT_NE(other_draws, nullptr);
+
+  draw_list_.SetMeshPool(pool_, material_, instance_data_.get());
+  EXPECT_DEATH(draw_list_.DrawIndirect(nullptr, 0, 1), "draws != nullptr");
+  EXPECT_DEATH(draw_list_.DrawIndirect(other_draws, 0, 1), "GetType");
+}
+
+TEST_F(DrawListDeathTest, IndirectDrawOutOfRange) {
+  draw_list_.SetMeshPool(pool_, material_, instance_data_.get());
+  EXPECT_DEATH(draw_list_.DrawIndirect(draws_, -1, 1), "first >= 0");
+  EXPECT_DEATH(draw_list_.DrawIndirect(draws_, 0, -1), "count >= 0");
+  EXPECT_DEATH(draw_list_.DrawIndirect(draws_, 0, kDrawCount + 1), "GetCount");
+  EXPECT_DEATH(draw_list_.DrawIndirect(draws_, kDrawCount, 1), "GetCount");
 }
 
 TEST_F(DrawListDeathTest, NullPool) {
