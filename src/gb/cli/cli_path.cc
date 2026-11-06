@@ -5,10 +5,14 @@
 
 #include "gb/cli/cli_path.h"
 
+#include <memory>
+
+#include "absl/log/check.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "gb/file/file_types.h"
+#include "gb/file/local_file_protocol.h"
 #include "gb/file/path.h"
 
 namespace gb {
@@ -160,6 +164,13 @@ absl::Status ValidateFileWritable(const ValidatedContext& context,
 }
 
 }  // namespace
+
+std::unique_ptr<FileSystem> CreateCliFileSystem() {
+  auto file_system = std::make_unique<FileSystem>();
+  CHECK(file_system->Register(LocalFileProtocol::CreateOsRoot()));
+  CHECK(file_system->SetDefaultProtocol("file"));
+  return file_system;
+}
 
 const CliValidator<std::string_view> kCliPathExists = {
     .validate = ValidatePathExists,

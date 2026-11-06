@@ -565,24 +565,6 @@ window to an item a script names, as ImGui's own test engine does. ImGui only
 gives an item's label for items that aren't clipped, so finding a clipped one
 by its label needs another way to learn it.
 
-## OS file system for command lines
-
-- **Layers:** cli
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** [Scripted runs](worklog/scripted_runs.md)
-
-A program whose command line takes paths (any using `CreateCliPilot()`, and
-OZ-3's assembler and simulator) builds the same file system in `main()`: an
-OS-root `LocalFileProtocol`, registered as the default protocol, in the context
-given to `RunCommandLine()`. A program that forgets the default protocol fails
-only when a path without one is given. Add a `gb_cli` function that builds it,
-or a `RunCommandLine()` that does, beside `GetMainArgs()`. render-check and
-block-world also repeat the start of their command's run function: creating the
-pilot with `CreateCliPilot()`, failing if it fails, and passing it to the game
-in a context whose parent is the command's.
-
 ## Block-world camera turning in scripts
 
 - **Layers:** block-world

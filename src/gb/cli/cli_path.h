@@ -6,6 +6,7 @@
 #ifndef GB_CLI_CLI_PATH_H_
 #define GB_CLI_CLI_PATH_H_
 
+#include <memory>
 #include <string>
 #include <string_view>
 
@@ -20,10 +21,15 @@ namespace gb {
 //
 // A path given on a command line is validated as it is written, in the
 // context's FileSystem. For paths written the operating system's way, absolute
-// or relative to the current directory, register
-// LocalFileProtocol::CreateOsRoot() and make "file" the default protocol: on
-// Windows, a drive ("C:\src\a") is then a protocol name, and a path without one
-// is opened with the default protocol.
+// or relative to the current directory, main() puts CreateCliFileSystem() in
+// the context:
+//
+//   int main(int argc, char* argv[]) {
+//     gb::Context context;
+//     context.SetOwned(gb::CreateCliFileSystem());
+//     return gb::RunCommandLine(&context, &kProgram,
+//                               gb::GetMainArgs(argc, argv));
+//   }
 //
 // The path validators below read the context, and list what they read in
 // their own constraints. A command's run function that opens the paths lists
@@ -40,6 +46,12 @@ namespace gb {
 //       .run = Run,
 //   };
 //==============================================================================
+
+// Returns a file system that opens paths the way the operating system writes
+// them: its default protocol, "file", is LocalFileProtocol::CreateOsRoot(), so
+// a path without a protocol is absolute or relative to the current directory.
+// On Windows, each drive is also a protocol name, so "C:\src\a" opens as it is.
+std::unique_ptr<FileSystem> CreateCliFileSystem();
 
 // The file system paths on the command line are opened in.
 GB_CONTEXT_CONSTRAINT(kConstraintCliFileSystem, kInRequired, FileSystem);

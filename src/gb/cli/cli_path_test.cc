@@ -5,6 +5,7 @@
 
 #include "gb/cli/cli_path.h"
 
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -267,6 +268,24 @@ TEST_F(CliPathTest, WithoutAFileSystem) {
   EXPECT_TRUE(absl::IsFailedPrecondition(command_line.status()))
       << command_line.status();
   EXPECT_THAT(context_errors_, ElementsAre(HasSubstr("FileSystem")));
+}
+
+//==============================================================================
+// CreateCliFileSystem
+//==============================================================================
+
+TEST(CreateCliFileSystemTest, OpensOsPaths) {
+  Context context;
+  context.SetOwned(CreateCliFileSystem());
+  EXPECT_EQ(context.GetPtr<FileSystem>()->GetDefaultProtocolName(), "file");
+  ValidatedContext validated_context(
+      &context, {kConstraintCliFileSystem, kConstraintCliFileProtocol});
+  const std::string current_folder = std::filesystem::current_path().string();
+  EXPECT_TRUE(kCliFolderExists.validate(validated_context, current_folder).ok())
+      << current_folder;
+  EXPECT_TRUE(kCliFolderExists.validate(validated_context, ".").ok());
+  EXPECT_EQ(kCliPathExists.validate(validated_context, "missing.txt").message(),
+            "\"missing.txt\" doesn't exist");
 }
 
 }  // namespace

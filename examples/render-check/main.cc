@@ -13,9 +13,8 @@
 #include "gb/base/validated_context.h"
 #include "gb/cli/cli.h"
 #include "gb/cli/cli_command_line.h"
+#include "gb/cli/cli_path.h"
 #include "gb/cli/run_command_line.h"
-#include "gb/file/file_system.h"
-#include "gb/file/local_file_protocol.h"
 #include "gb/game/game.h"
 #include "gb/pilot/pilot.h"
 #include "gb/pilot/script/cli_pilot.h"
@@ -56,11 +55,7 @@ const gb::CliCommand kProgram = {
 }  // namespace
 
 SDLMAIN_DECLSPEC int main(int argc, char* argv[]) {
-  // Paths on the command line are opened as the operating system opens them.
-  gb::FileSystem file_system;
-  file_system.Register(gb::LocalFileProtocol::CreateOsRoot());
-  file_system.SetDefaultProtocol("file");
   gb::Context context;
-  context.SetPtr<gb::FileSystem>(&file_system);
+  context.SetOwned(gb::CreateCliFileSystem());
   return gb::RunCommandLine(&context, &kProgram, gb::GetMainArgs(argc, argv));
 }
