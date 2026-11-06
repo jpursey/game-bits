@@ -11,7 +11,7 @@ layout(location = 1) in vec3 in_normal;
 layout(location = 2) in vec3 in_uv;
 layout(location = 3) in vec4 in_color;
 
-layout(location = 0) out vec4 out_pos;
+layout(location = 0) out vec3 out_pos;
 layout(location = 1) out vec3 out_normal;
 layout(location = 2) out vec3 out_uv;
 layout(location = 3) out vec4 out_color;
@@ -25,10 +25,11 @@ layout(set = 2, binding = 0) uniform InstanceData {
 };
 
 void main() {
-  out_pos = i_model * vec4(in_pos, 1.0);
+  vec4 pos = i_model * vec4(in_pos, 1.0);
+  out_pos = pos.xyz;
   out_normal = mat3(i_model) * in_normal;
   out_color = in_color;
   out_uv = in_uv;
   //out_uv = vec3(in_uv.x, in_uv.y, 0);
-  gl_Position = s_view_projection * out_pos;
+  gl_Position = s_view_projection * pos;
 }

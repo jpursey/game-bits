@@ -1,0 +1,39 @@
+# Copyright (c) 2026 John Pursey
+#
+# Use of this source code is governed by an MIT-style License that can be found
+# in the LICENSE file or at https://opensource.org/licenses/MIT.
+
+# Draws the same view with the chunks in a mesh pool, drawn in one indirect
+# draw, then each chunk on its own, then from the pool again, which all look
+# the same. "World Render Stats" shows each way's draw calls, and "Draw Time"
+# the CPU time to draw each frame.
+hide window
+wait 30
+
+# Any key starts playing, in a new world, with the chunks drawn from the pool.
+key space
+wait 120
+save pool
+
+# I switches to drawing each chunk on its own, rebuilding their meshes.
+key i
+wait 120
+save separate
+
+# And back to the pool.
+key i
+wait 120
+save pool_again
+
+# A drag to past the slider's right end sets the farthest view distance, so
+# more chunks are drawn than the pool's draw buffers start with room for.
+press "View Distance"
+move by 100 0
+release
+wait 120
+save far
+
+# The far view, with each chunk drawn on its own.
+key i
+wait 120
+save far_separate

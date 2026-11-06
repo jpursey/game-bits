@@ -7,6 +7,7 @@
 #include "gb/image/image_file.h"
 #include "gb/imgui/imgui_instance.h"
 #include "gb/render/render_system.h"
+#include "gb/render/shader.h"
 #include "gb/resource/resource_system.h"
 
 // Game includes
@@ -47,6 +48,13 @@ bool WorldResources::InitGraphics() {
     return false;
   }
 
+  auto pool_vertex_shader_code =
+      render_system->LoadShaderCode("asset:/shaders/block_pool.vert.spv");
+  if (pool_vertex_shader_code == nullptr) {
+    LOG(ERROR) << "Failed to load pool vertex shader";
+    return false;
+  }
+
   chunk_vertex_type_ = render_system->RegisterVertexType<Vertex>(
       "Vertex",
       {/*pos=*/gb::ShaderValue::kVec3, /*normal=*/gb::ShaderValue::kVec3,
@@ -63,8 +71,13 @@ bool WorldResources::InitGraphics() {
       render_system->RegisterConstantsType<SceneLightData>("SceneLightData");
   const auto* instance_constants =
       render_system->RegisterConstantsType<InstanceData>("InstanceData");
+  chunk_position_type_ =
+      render_system->RegisterConstantsType<ChunkPosition>("ChunkPosition");
+  mesh_draw_type_ =
+      render_system->RegisterConstantsType<gb::MeshDraw>("MeshDraw");
   if (scene_constants == nullptr || scene_light_constants == nullptr ||
-      instance_constants == nullptr) {
+      instance_constants == nullptr || chunk_position_type_ == nullptr ||
+      mesh_draw_type_ == nullptr) {
     LOG(ERROR) << "Could not register one or more render constants";
     return false;
   }
@@ -83,9 +96,12 @@ bool WorldResources::InitGraphics() {
                             gb::DataVolatility::kPerFrame),
           gb::Binding()
               .SetShaders(gb::ShaderType::kVertex)
+              .SetLocation(gb::BindingSet::kScene, kChunkPositionsBinding)
+              .SetStorageBuffer(chunk_position_type_),
+          gb::Binding()
+              .SetShaders(gb::ShaderType::kVertex)
               .SetLocation(gb::BindingSet::kInstance, 0)
               .SetConstants(instance_constants, gb::DataVolatility::kPerFrame),
-
       });
   if (scene_type_ == nullptr) {
     LOG(ERROR) << "Could not register scene type";
@@ -147,17 +163,40 @@ bool WorldResources::InitGraphics() {
     return false;
   }
 
+  gb::Shader* pool_vertex_shader = render_system->CreateShader(
+      &resources_, gb::ShaderType::kVertex, std::move(pool_vertex_shader_code),
+      {
+          gb::Binding()
+              .SetShaders(gb::ShaderType::kVertex)
+              .SetLocation(gb::BindingSet::kScene, 0)
+              .SetConstants(scene_constants),
+          gb::Binding()
+              .SetShaders(gb::ShaderType::kVertex)
+              .SetLocation(gb::BindingSet::kScene, kChunkPositionsBinding)
+              .SetStorageBuffer(chunk_position_type_),
+      },
+      vertex_shader->GetInputs(), vertex_shader->GetOutputs());
+  if (pool_vertex_shader == nullptr) {
+    LOG(ERROR) << "Could not create pool vertex shader";
+    return false;
+  }
+
   gb::MaterialType* material_type = render_system->CreateMaterialType(
       &resources_, scene_type_, chunk_vertex_type_, vertex_shader,
       fragment_shader);
-  if (material_type == nullptr) {
-    LOG(ERROR) << "Could not create material type";
+  gb::MaterialType* pool_material_type = render_system->CreateMaterialType(
+      &resources_, scene_type_, chunk_vertex_type_, pool_vertex_shader,
+      fragment_shader);
+  if (material_type == nullptr || pool_material_type == nullptr) {
+    LOG(ERROR) << "Could not create material types";
     return false;
   }
 
   chunk_material_ = render_system->CreateMaterial(&resources_, material_type);
-  if (chunk_material_ == nullptr) {
-    LOG(ERROR) << "Could not create material";
+  chunk_pool_material_ =
+      render_system->CreateMaterial(&resources_, pool_material_type);
+  if (chunk_material_ == nullptr || chunk_pool_material_ == nullptr) {
+    LOG(ERROR) << "Could not create materials";
     return false;
   }
 
@@ -189,6 +228,8 @@ bool WorldResources::InitGraphics() {
   }
 
   chunk_material_->GetMaterialBindingData()->SetTextureArray(0, block_texture_);
+  chunk_pool_material_->GetMaterialBindingData()->SetTextureArray(
+      0, block_texture_);
 
   return true;
 }

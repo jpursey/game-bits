@@ -7,7 +7,10 @@
 
 #define GLM_ENABLE_EXPERIMENTAL
 
+#include <algorithm>
+#include <array>
 #include <cmath>
+#include <iterator>
 
 #include "absl/log/log.h"
 #include "absl/strings/str_cat.h"
@@ -73,6 +76,7 @@ void PlayState::OnUpdate(absl::Duration delta_time) {
   if (!render_system->BeginFrame()) {
     return;
   }
+  const absl::Time draw_start = absl::Now();
 
   if (camera_speed_mod_ != 0.0f || camera_strafe_mod_ != 0.0f) {
     glm::vec3 camera_position = camera_.GetPosition();
@@ -96,11 +100,32 @@ void PlayState::OnUpdate(absl::Duration delta_time) {
   GetGuiInstance()->Draw();
 
   render_system->EndFrame();
+  draw_times_[timed_frame_] = absl::Now() - draw_start;
+  timed_frame_ = (timed_frame_ + 1) % kTimedFrames;
+}
+
+void PlayState::DrawDrawTime() {
+  // The median isn't thrown off by a frame that other work on the machine
+  // held up.
+  std::array<absl::Duration, kTimedFrames> sorted;
+  std::copy(std::begin(draw_times_), std::end(draw_times_), sorted.begin());
+  auto median = sorted.begin() + kTimedFrames / 2;
+  std::nth_element(sorted.begin(), median, sorted.end());
+
+  // It starts at the right, below the world's render stats.
+  ImGui::SetNextWindowPos(
+      {static_cast<float>(GetRenderSystem()->GetFrameDimensions().width) - 310,
+       250},
+      ImGuiCond_FirstUseEver);
+  ImGui::Begin("Draw Time");
+  ImGui::Text("CPU per frame: %.2f ms", absl::ToDoubleMilliseconds(*median));
+  ImGui::End();
 }
 
 void PlayState::DrawGui() {
   world_->DrawLightingGui();
   camera_.DrawGui();
+  DrawDrawTime();
 
   auto render_size = GetRenderSystem()->GetFrameDimensions();
   ImVec2 window_size = {static_cast<float>(render_size.width),
@@ -160,6 +185,11 @@ bool PlayState::OnSdlEvent(const SDL_Event& event) {
         return true;
       case SDL_SCANCODE_D:
         camera_strafe_mod_ = 1.0f;
+        return true;
+      case SDL_SCANCODE_I:
+        if (event.key.repeat == 0) {
+          world_->SetDrawFromPool(!world_->IsDrawingFromPool());
+        }
         return true;
       default:
         break;

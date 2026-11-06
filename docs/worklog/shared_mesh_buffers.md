@@ -335,8 +335,10 @@ virtual std::unique_ptr<MeshPoolBuffers> CreateMeshPoolBuffers(
 - Confirmed (CL6): the device in use (an NVIDIA GeForce RTX 4070 Ti SUPER) has
   `drawIndirectFirstInstance` and `multiDrawIndirect`, with a
   `maxDrawIndirectCount` of 2^32 - 1.
-- In block-world, drawing every chunk from one pool with an indirect draw is
-  faster than drawing each chunk on its own (CL7).
+- Confirmed (CL7): in block-world, drawing every chunk from one pool with an
+  indirect draw is faster than drawing each chunk on its own. It takes under a
+  third of the CPU time to draw a frame at the default view distance, and
+  about a fifth at the farthest (see CL7).
 
 ## CLs
 
@@ -454,7 +456,7 @@ Depends on: CL4, CL5.
   direct one, with multi-draw on and off, with no validation errors in the log.
 - The device's features are logged at startup, confirming both features.
 
-### CL7 [ ] block-world: Chunks in a pool
+### CL7 [x] block-world: Chunks in a pool
 
 Depends on: CL6.
 
@@ -462,6 +464,26 @@ Depends on: CL6.
   16-bit split is no longer needed), and every visible chunk drawn in one
   indirect draw, with chunk positions in a storage buffer by draw index.
 - A key that switches between that and drawing each chunk on its own.
+- The positions are a `kPerFrame` storage buffer in the scene's bindings, read
+  by a new vertex shader (`block_pool.vert`), and the draws another, both
+  rewritten each frame for the chunks in view, and replaced by larger ones when
+  more chunks are in view than they hold. Switching rebuilds each chunk's mesh
+  as it is next drawn.
+- Drawing each chunk on its own keeps block-world's old meshes (a vertex and
+  index buffer, and instance data, for each chunk), rather than drawing ranges
+  of the pool one at a time, so the comparison is with what the pool replaces.
+- The key is I, with a check box in "World Render Stats", which also shows the
+  draw calls. A "Draw Time" window shows the CPU time to draw a frame (from
+  after `BeginFrame()` to after `EndFrame()`, leaving out waits for the
+  display), the median of the last 60 frames.
+- `Chunk::Update()` builds an edited chunk's mesh once, rather than twice.
+- `block.vert` writes its position as the `vec3` that `block.frag` reads,
+  rather than a `vec4`, which the validation layer reported in every Debug run.
+- Each chunk's mesh is built with 32-bit indices, which drawing on its own
+  splits into 16-bit meshes as before, now also taking only the remaining
+  vertices and triangles for a mesh after the first.
+- `scripts/chunk_pool.txt` draws the same view both ways, at the default and
+  the farthest view distance.
 
 **Verify**
 - Standard checks.
@@ -469,3 +491,22 @@ Depends on: CL6.
   ways.
 - Performance: frame time (and draw calls) both ways in Release, at the default
   view distance, recorded here.
+
+**Results** (Release, RTX 4070 Ti SUPER, three runs of `chunk_pool.txt`)
+- Block edits, which rebuild a chunk's mesh, are left to check by hand: a
+  pilot click on the ground doesn't hit a block (the ray cast reports air
+  below the ground), which is unrelated to this change.
+- The world is drawn pixel for pixel the same both ways, at both distances,
+  and the Debug runs (with the validation layer) log no errors, including when
+  the draw buffers grow.
+- The real time between frames is the display's 10 ms (100 Hz, FIFO present)
+  either way, even at the farthest view distance, so the CPU time to draw a
+  frame is what differs:
+
+  | View distance | Chunks | Draw calls | Pool | Each on its own |
+  |---|---|---|---|---|
+  | 640 (default) | 1,272 | 1 / 1,272 | 0.29-0.35 ms | 1.08-1.09 ms |
+  | 1200 (farthest) | 4,315 | 1 / 4,315 | 0.72-0.81 ms | 3.67-4.21 ms |
+
+  Each is the median of 60 frames. The mean was thrown off by single frames
+  held up by other work on the machine, by up to 9 ms.

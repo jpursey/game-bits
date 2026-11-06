@@ -3,6 +3,8 @@
 #include <algorithm>
 
 #include "absl/memory/memory.h"
+#include "gb/render/draw_list.h"
+#include "gb/render/material.h"
 #include "gb/render/render_system.h"
 #include "imgui.h"
 #include "stb_perlin.h"
@@ -14,6 +16,12 @@
 #include "world_resources.h"
 
 namespace {
+
+// The chunk pool's starting size, which grows as chunks need, and the chunks
+// its draw buffers start with room for.
+constexpr int kPoolStartVertices = 1 << 20;
+constexpr int kPoolStartTriangles = 1 << 19;
+constexpr int kPoolStartChunks = 256;
 
 inline constexpr glm::vec3 kChunkVertices[8] = {
     glm::vec3(0, 0, 0),
@@ -108,6 +116,49 @@ bool World::InitGraphics() {
   sky_color_ = gb::Pixel(69, 136, 221);
   render_system->SetClearColor(sky_color_);
 
+  pool_material_ = resources->GetChunkPoolMaterial();
+  pool_instance_data_ = pool_material_->CreateInstanceBindingData();
+  chunk_pool_ = render_system->CreateMeshPool(
+      &resources_, resources->GetChunkVertexType(), gb::IndexType::kUint32,
+      kPoolStartVertices, kPoolStartTriangles);
+  if (pool_instance_data_ == nullptr || chunk_pool_ == nullptr ||
+      !CreatePoolBuffers(kPoolStartChunks)) {
+    LOG(ERROR) << "Could not create the chunk pool";
+    return false;
+  }
+
+  return true;
+}
+
+bool World::CreatePoolBuffers(int count) {
+  auto* render_system = context_.GetPtr<gb::RenderSystem>();
+  auto* resources = context_.GetPtr<WorldResources>();
+  gb::StorageBuffer* draw_buffer = render_system->CreateStorageBuffer(
+      &resources_, resources->GetMeshDrawType(), gb::DataVolatility::kPerFrame,
+      count);
+  gb::StorageBuffer* position_buffer = render_system->CreateStorageBuffer(
+      &resources_, resources->GetChunkPositionType(),
+      gb::DataVolatility::kPerFrame, count);
+  if (draw_buffer == nullptr || position_buffer == nullptr) {
+    LOG(ERROR) << "Could not create the draw buffers for " << count
+               << " chunks";
+    if (draw_buffer != nullptr) {
+      resources_.Remove(draw_buffer);
+    }
+    if (position_buffer != nullptr) {
+      resources_.Remove(position_buffer);
+    }
+    return false;
+  }
+
+  if (pool_draw_buffer_ != nullptr) {
+    resources_.Remove(pool_draw_buffer_);
+    resources_.Remove(chunk_position_buffer_);
+  }
+  pool_draw_buffer_ = draw_buffer;
+  chunk_position_buffer_ = position_buffer;
+  scene_->GetSceneBindingData()->SetStorageBuffer(kChunkPositionsBinding,
+                                                  chunk_position_buffer_);
   return true;
 }
 
@@ -370,6 +421,18 @@ HitInfo World::RayCast(const glm::vec3& position, const glm::vec3& ray,
 }
 
 void World::Draw(const Camera& camera) {
+  // Chunk meshes are rebuilt for the new way to draw them as they are drawn.
+  // This happens before any are drawn, so no mesh is removed after it is drawn
+  // this frame.
+  if (next_draw_from_pool_ != draw_from_pool_) {
+    draw_from_pool_ = next_draw_from_pool_;
+    for (auto& [index, chunk] : chunks_) {
+      chunk->ClearMesh();
+    }
+  }
+  pool_draws_.clear();
+  chunk_positions_.clear();
+
   const Camera cull_camera = (use_cull_camera_ ? cull_camera_ : camera);
   const glm::vec3 cull_position = cull_camera.GetPosition();
   const float cull_distance = cull_camera.GetViewDistance();
@@ -405,6 +468,7 @@ void World::Draw(const Camera& camera) {
 
   int debug_triangle_count = 0;
   int debug_chunk_count = 0;
+  int debug_draw_count = 0;
 
   static constexpr int64_t kMaxTime = 10LL * 1000 * 1000;  // 10 milliseconds
   int64_t start_time = absl::GetCurrentTimeNanos();
@@ -424,9 +488,9 @@ void World::Draw(const Camera& camera) {
 
     Chunk* chunk = GetChunk(chunk_queue[queue_index++]);
 
+    const glm::vec3 chunk_pos = {index.x * Chunk::kSize.x,
+                                 index.y * Chunk::kSize.y, 0};
     if (use_frustum_cull_) {
-      const glm::vec3 chunk_pos = {index.x * Chunk::kSize.x,
-                                   index.y * Chunk::kSize.y, 0};
       if (IsChunkOutsidePlane(chunk_pos, cull_position + frustum.near * 0.1f,
                               frustum.near) ||
           IsChunkOutsidePlane(chunk_pos, cull_position, frustum.left) ||
@@ -444,12 +508,23 @@ void World::Draw(const Camera& camera) {
       }
     }
     if (chunk->HasMesh()) {
-      auto instance_data = chunk->GetInstanceData();
-      auto meshes = chunk->GetMesh();
-      if (instance_data != nullptr && !meshes.empty()) {
-        for (gb::Mesh* mesh : meshes) {
+      if (draw_from_pool_) {
+        const gb::PooledMesh* mesh = chunk->GetPooledMesh();
+        if (mesh != nullptr) {
           debug_triangle_count += mesh->GetTriangleCount();
-          render_system->Draw(scene_.get(), mesh, material_, instance_data);
+          const int draw_index = static_cast<int>(pool_draws_.size());
+          pool_draws_.push_back(mesh->GetDraw(draw_index));
+          chunk_positions_.push_back({glm::vec4(chunk_pos, 0.0f)});
+        }
+      } else {
+        auto instance_data = chunk->GetInstanceData();
+        auto meshes = chunk->GetMesh();
+        if (instance_data != nullptr && !meshes.empty()) {
+          for (gb::Mesh* mesh : meshes) {
+            debug_triangle_count += mesh->GetTriangleCount();
+            ++debug_draw_count;
+            render_system->Draw(scene_.get(), mesh, material_, instance_data);
+          }
         }
       }
     }
@@ -466,7 +541,16 @@ void World::Draw(const Camera& camera) {
       chunk_queue.push_back({index.x, index.y + 1});
     }
   }
+  if (!pool_draws_.empty()) {
+    DrawFromPool();
+    ++debug_draw_count;
+  }
 
+  // It starts at the right, below the frame stats, clear of the other
+  // windows.
+  ImGui::SetNextWindowPos(
+      {static_cast<float>(render_system->GetFrameDimensions().width) - 310, 50},
+      ImGuiCond_FirstUseEver);
   ImGui::Begin("World Render Stats");
   if (ImGui::Checkbox("Freeze cull camera", &use_cull_camera_)) {
     if (use_cull_camera_) {
@@ -476,9 +560,32 @@ void World::Draw(const Camera& camera) {
     }
   }
   ImGui::Checkbox("Frustum culling", &use_frustum_cull_);
+  bool draw_from_pool = next_draw_from_pool_;
+  if (ImGui::Checkbox("Draw from a mesh pool (I)", &draw_from_pool)) {
+    SetDrawFromPool(draw_from_pool);
+  }
   ImGui::Text("Chunks: %d", debug_chunk_count);
   ImGui::Text("Triangles: %d", debug_triangle_count);
+  ImGui::Text("Draw calls: %d", debug_draw_count);
   ImGui::End();
+}
+
+void World::DrawFromPool() {
+  const int count = static_cast<int>(pool_draws_.size());
+  const int capacity = pool_draw_buffer_->GetCount();
+  if (count > capacity && !CreatePoolBuffers(std::max(count, capacity * 2))) {
+    return;
+  }
+  if (!pool_draw_buffer_->Set<gb::MeshDraw>(0, pool_draws_) ||
+      !chunk_position_buffer_->Set<ChunkPosition>(0, chunk_positions_)) {
+    LOG(ERROR) << "Could not write the chunks' draws";
+    return;
+  }
+
+  gb::DrawList draw_list;
+  draw_list.SetMeshPool(chunk_pool_, pool_material_, pool_instance_data_.get());
+  draw_list.DrawIndirect(pool_draw_buffer_, 0, count);
+  context_.GetPtr<gb::RenderSystem>()->Draw(scene_.get(), draw_list);
 }
 
 void World::DrawLightingGui() {

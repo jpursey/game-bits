@@ -30,7 +30,6 @@ void Chunk::Update() {
     return;
   }
   if (has_mesh_) {
-    UpdateMesh();
     ClearMesh();
     BuildMesh();
   }
@@ -63,42 +62,71 @@ bool Chunk::UpdateMesh() {
     }
   }
 
+  if (world_->IsDrawingFromPool()) {
+    return UpdatePooledMesh(context);
+  }
+  return UpdateSeparateMeshes(context);
+}
+
+bool Chunk::UpdatePooledMesh(const MeshContext& context) {
+  if (context.indices.empty()) {
+    return true;
+  }
+  pooled_mesh_ = world_->GetChunkPool()->CreateMesh<Vertex>(context.vertices,
+                                                            context.indices);
+  if (pooled_mesh_ == nullptr) {
+    LOG(ERROR) << "Failed to create pooled mesh for chunk";
+    ClearMesh();
+    return false;
+  }
+  return true;
+}
+
+bool Chunk::UpdateSeparateMeshes(const MeshContext& context) {
   auto* render_system = world_->GetContext().GetPtr<gb::RenderSystem>();
   auto* world_resources = world_->GetContext().GetPtr<WorldResources>();
 
   const int num_vertices = static_cast<int>(context.vertices.size());
-  const int num_triangles = static_cast<int>(context.triangles.size());
   const int num_meshes =
-      (static_cast<int>(context.vertices.size()) + kMaxVerticesPerMesh - 1) /
-      kMaxVerticesPerMesh;
-  for (int i = num_meshes; i < static_cast<int>(mesh_.size()); ++i) {
-    resources_.Remove(mesh_[i], false);
-  }
-  mesh_.resize(num_meshes);
+      (num_vertices + kMaxVerticesPerMesh - 1) / kMaxVerticesPerMesh;
   if (num_meshes == 0) {
     return true;
   }
 
+  // Each block side adds four vertices and two triangles, so each mesh's
+  // vertices are the next kMaxVerticesPerMesh, and its triangles the next
+  // kMaxTrianglesPerMesh. Each mesh's indices count from its own first vertex,
+  // which wraps them into 16 bits.
+  const int num_indices = static_cast<int>(context.indices.size());
+  std::vector<gb::Triangle> triangles;
+  triangles.reserve(num_indices / 3);
+  for (int i = 0; i < num_indices; i += 3) {
+    triangles.emplace_back(static_cast<uint16_t>(context.indices[i]),
+                           static_cast<uint16_t>(context.indices[i + 1]),
+                           static_cast<uint16_t>(context.indices[i + 2]));
+  }
+  const int num_triangles = static_cast<int>(triangles.size());
+
   int vertex_index = 0;
   int triangle_index = 0;
   for (int i = 0; i < num_meshes; ++i) {
-    const int vertex_count = std::min(num_vertices, kMaxVerticesPerMesh);
-    const int triangle_count = std::min(num_triangles, kMaxTrianglesPerMesh);
-    if (mesh_[i] == nullptr) {
-      mesh_[i] = render_system->CreateMesh(
-          &resources_, world_resources->GetChunkVertexType(),
-          gb::DataVolatility::kStaticWrite, vertex_count, triangle_count);
-      if (mesh_[i] == nullptr) {
-        LOG(ERROR) << "Failed to create mesh for chunk";
-        ClearMesh();
-        return false;
-      }
+    const int vertex_count =
+        std::min(num_vertices - vertex_index, kMaxVerticesPerMesh);
+    const int triangle_count =
+        std::min(num_triangles - triangle_index, kMaxTrianglesPerMesh);
+    gb::Mesh* mesh = render_system->CreateMesh(
+        &resources_, world_resources->GetChunkVertexType(),
+        gb::DataVolatility::kStaticWrite, vertex_count, triangle_count);
+    if (mesh == nullptr) {
+      LOG(ERROR) << "Failed to create mesh for chunk";
+      ClearMesh();
+      return false;
     }
-    if (!mesh_[i]->Set(
-            absl::MakeConstSpan(context.vertices.data() + vertex_index,
-                                vertex_count),
-            absl::MakeConstSpan(context.triangles.data() + triangle_index,
-                                triangle_count))) {
+    mesh_.push_back(mesh);
+    if (!mesh->Set(absl::MakeConstSpan(context.vertices.data() + vertex_index,
+                                       vertex_count),
+                   absl::MakeConstSpan(triangles.data() + triangle_index,
+                                       triangle_count))) {
       LOG(ERROR) << "Failed to initialize mesh for chunk";
       ClearMesh();
       return false;
@@ -335,9 +363,7 @@ void Chunk::AddMesh(MeshContext* context, int x, int y, int z) {
   GetEdgeAndCornerBlocks(context, x, y, z);
   GetVertexBlockCount(context, x, y, z);
 
-  // If we have more than 2^16 indexes, then this will start wrapping around --
-  // which is exactly what we want. We break the mesh into multiple meshes.
-  uint16_t index = static_cast<uint16_t>(context->vertices.size());
+  uint32_t index = static_cast<uint32_t>(context->vertices.size());
   glm::vec3 position = {x, y, z};
 
   Vertex vertex;
@@ -355,12 +381,11 @@ void Chunk::AddMesh(MeshContext* context, int x, int y, int z) {
       context->vertices.push_back(vertex);
     }
     for (int face = 0; face < 2; ++face) {
-      gb::Triangle triangle = kCubeSideTriangle[face];
-      triangle.a += index;
-      triangle.b += index;
-      triangle.c += index;
-      std::swap(triangle.a, triangle.b);  // Fix winding order.
-      context->triangles.push_back(triangle);
+      // The first two indices are swapped, to fix the winding order.
+      const gb::Triangle& triangle = kCubeSideTriangle[face];
+      context->indices.push_back(index + triangle.b);
+      context->indices.push_back(index + triangle.a);
+      context->indices.push_back(index + triangle.c);
     }
     index += 4;
   }
@@ -369,5 +394,6 @@ void Chunk::AddMesh(MeshContext* context, int x, int y, int z) {
 void Chunk::ClearMesh() {
   mesh_.clear();
   resources_.RemoveAll();
+  pooled_mesh_.reset();
   has_mesh_ = false;
 }

@@ -2,11 +2,16 @@
 #define WORLD_H_
 
 #include <memory>
+#include <vector>
 
 #include "absl/container/flat_hash_map.h"
 #include "gb/base/validated_context.h"
 #include "gb/pilot/pilot.h"
+#include "gb/render/binding_data.h"
+#include "gb/render/mesh_pool.h"
 #include "gb/render/render_types.h"
+#include "gb/render/storage_buffer.h"
+#include "gb/resource/resource_set.h"
 #include "glm/glm.hpp"
 
 // Game includes
@@ -127,6 +132,21 @@ class World final {
   }
   void DisableCullCamera() { use_cull_camera_ = false; }
 
+  // Sets whether every chunk in view is drawn from one mesh pool, in one
+  // indirect draw, or each chunk is drawn on its own. Chunks are drawn from
+  // the pool by default.
+  //
+  // This takes effect from the next Draw(), which rebuilds the mesh of each
+  // chunk it draws. Until then, IsDrawingFromPool() returns the current way.
+  void SetDrawFromPool(bool draw_from_pool) {
+    next_draw_from_pool_ = draw_from_pool;
+  }
+  bool IsDrawingFromPool() const { return draw_from_pool_; }
+
+  // Returns the pool that chunk meshes are created in while the world draws
+  // from it.
+  gb::MeshPool* GetChunkPool() const { return chunk_pool_; }
+
   void Draw(const Camera& camera);
   void DrawLightingGui();
 
@@ -135,12 +155,24 @@ class World final {
 
   bool InitGraphics();
 
+  // Creates the buffers of draws and positions for `count` chunks drawn from
+  // the pool, replacing any there were.
+  bool CreatePoolBuffers(int count);
+
+  // Draws the chunks added to `pool_draws_` and `chunk_positions_` this frame,
+  // in one indirect draw.
+  void DrawFromPool();
+
   std::unique_ptr<Chunk> NewChunk(const ChunkIndex& index);
   void InitFlatWorldChunk(Chunk* chunk);
   void InitSineWorldChunk(Chunk* chunk);
   void InitPerlinWorldChunk(Chunk* chunk);
 
   gb::ValidatedContext context_;
+
+  // The world's render resources, which include the chunk pool, so they are
+  // declared before the chunks, whose meshes must be destroyed first.
+  gb::ResourceSet resources_;
 
   // Game data
   absl::flat_hash_map<std::tuple<int, int>, std::unique_ptr<Chunk>> chunks_;
@@ -153,6 +185,21 @@ class World final {
   gb::Material* material_ = nullptr;
   SceneLightData lights_;
   gb::Pixel sky_color_;
+
+  // Drawing from the pool. Each frame, a chunk drawn from the pool adds its
+  // draw to `pool_draws_`, with its draw index as its first instance, and its
+  // position to `chunk_positions_` at that index, which DrawFromPool() writes
+  // to the buffers. Chunk meshes are built for `draw_from_pool_`, which
+  // Draw() sets from `next_draw_from_pool_`.
+  bool draw_from_pool_ = true;
+  bool next_draw_from_pool_ = true;
+  gb::MeshPool* chunk_pool_ = nullptr;
+  gb::Material* pool_material_ = nullptr;
+  std::unique_ptr<gb::BindingData> pool_instance_data_;
+  gb::StorageBuffer* pool_draw_buffer_ = nullptr;
+  gb::StorageBuffer* chunk_position_buffer_ = nullptr;
+  std::vector<gb::MeshDraw> pool_draws_;
+  std::vector<ChunkPosition> chunk_positions_;
 };
 
 #endif  // WORLD_H_

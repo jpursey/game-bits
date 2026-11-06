@@ -26,6 +26,13 @@ struct InstanceData {
   glm::mat4 model;
 };
 
+// Matches ChunkPosition in block_pool.vert, which reads a storage buffer of
+// them at this binding in the scene's binding set.
+struct ChunkPosition {
+  glm::vec4 offset;  // xyz is added to each vertex.
+};
+inline constexpr int kChunkPositionsBinding = 2;
+
 inline constexpr glm::vec3 kUpAxis = glm::vec3(0, 0, 1);
 
 #endif  // SCENE_TYPES_H_

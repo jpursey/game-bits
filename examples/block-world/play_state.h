@@ -8,6 +8,7 @@
 
 #include <memory>
 
+#include "absl/time/time.h"
 #include "gb/base/callback_scope.h"
 #include "gb/base/validated_context.h"
 #include "gb/file/file_types.h"
@@ -62,7 +63,11 @@ class PlayState final : public BaseState {
   bool OnSdlEvent(const SDL_Event& event) override;
 
  private:
+  // The CPU time to draw a frame is the median of the last kTimedFrames.
+  static constexpr int kTimedFrames = 60;
+
   void DrawGui();
+  void DrawDrawTime();
 
   void AddBlock(int screen_x, int screen_y);
   void RemoveBlock(int screen_x, int screen_y);
@@ -79,6 +84,11 @@ class PlayState final : public BaseState {
   float camera_sensitivity_ = 0.25f;
   BlockId selected_block_ = kFirstSolidBlock;
   absl::Duration right_click_down_time_;
+
+  // The real time from after BeginFrame() to after EndFrame(), which leaves out
+  // waiting for the display.
+  absl::Duration draw_times_[kTimedFrames] = {};
+  int timed_frame_ = 0;
 };
 
 #endif  // PLAY_STATE_H_

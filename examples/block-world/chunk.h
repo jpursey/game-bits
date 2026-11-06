@@ -8,6 +8,7 @@
 #include "absl/types/span.h"
 #include "gb/render/binding_data.h"
 #include "gb/render/mesh.h"
+#include "gb/render/mesh_pool.h"
 #include "gb/resource/resource_set.h"
 #include "glm/glm.hpp"
 
@@ -86,7 +87,7 @@ class Chunk final {
   // Returns true if this may have mesh to render.
   bool HasMesh() { return has_mesh_; }
 
-  // Returns the mesh to render.
+  // Returns the mesh to render, if the world doesn't draw from its pool.
   absl::Span<gb::Mesh* const> GetMesh() {
     if (modified_) {
       Update();
@@ -97,7 +98,16 @@ class Chunk final {
   // Returns the instance data to use with all mesh.
   gb::BindingData* GetInstanceData() const { return instance_data_.get(); }
 
-  // Builds mesh for this chunk.
+  // Returns the mesh to render from the world's pool, if the world draws from
+  // it. This is null if the chunk has nothing to render.
+  const gb::PooledMesh* GetPooledMesh() {
+    if (modified_) {
+      Update();
+    }
+    return pooled_mesh_.get();
+  }
+
+  // Builds mesh for this chunk, in the world's pool if it draws from it.
   bool BuildMesh();
 
   // Clears mesh for this chunk.
@@ -117,7 +127,7 @@ class Chunk final {
     BlockId side_blocks[6];
     int vertex_block_count[8];
     std::vector<Vertex> vertices;
-    std::vector<gb::Triangle> triangles;
+    std::vector<uint32_t> indices;
   };
 
   BlockId GetBlock(MeshContext* context, int x, int y, int z);
@@ -126,7 +136,11 @@ class Chunk final {
   void GetVertexBlockCount(MeshContext* context, int x, int y, int z);
   void AddMesh(MeshContext* context, int x, int y, int z);
 
+  // Builds the chunk's mesh, which it doesn't have yet (BuildMesh() only calls
+  // this before the first build, or after ClearMesh()).
   bool UpdateMesh();
+  bool UpdatePooledMesh(const MeshContext& context);
+  bool UpdateSeparateMeshes(const MeshContext& context);
 
   World* const world_;
   const ChunkIndex index_;
@@ -136,6 +150,7 @@ class Chunk final {
   gb::ResourceSet resources_;
   absl::InlinedVector<gb::Mesh*, 2> mesh_;
   std::unique_ptr<gb::BindingData> instance_data_;
+  std::unique_ptr<gb::PooledMesh> pooled_mesh_;
 };
 
 #endif  // CHUNK_H_

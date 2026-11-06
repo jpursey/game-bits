@@ -54,8 +54,19 @@ class WorldResources {
   // Render resources
   //----------------------------------------------------------------------------
 
+  // The scene's bindings include a storage buffer of ChunkPosition, which
+  // chunks drawn from a mesh pool read by their draw index.
   gb::RenderSceneType* GetSceneType() const { return scene_type_; }
+  const gb::RenderDataType* GetChunkPositionType() const {
+    return chunk_position_type_;
+  }
+  const gb::RenderDataType* GetMeshDrawType() const { return mesh_draw_type_; }
+
+  // Chunks drawn each on its own use the chunk material, with their position
+  // in their instance data. Chunks drawn from a mesh pool use the pool
+  // material, which ignores its instance data.
   gb::Material* GetChunkMaterial() const { return chunk_material_; }
+  gb::Material* GetChunkPoolMaterial() const { return chunk_pool_material_; }
   const gb::VertexType* GetChunkVertexType() const {
     return chunk_vertex_type_;
   }
@@ -77,7 +88,10 @@ class WorldResources {
   gb::ValidatedContext context_;
   gb::ResourceSet resources_;
   gb::RenderSceneType* scene_type_ = nullptr;
+  const gb::RenderDataType* chunk_position_type_ = nullptr;
+  const gb::RenderDataType* mesh_draw_type_ = nullptr;
   gb::Material* chunk_material_ = nullptr;
+  gb::Material* chunk_pool_material_ = nullptr;
   const gb::VertexType* chunk_vertex_type_ = nullptr;
   gb::TextureArray* block_texture_ = nullptr;
   std::vector<ImTextureID> chunk_gui_textures_;
