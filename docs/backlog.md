@@ -47,30 +47,6 @@ component, as the MSVC standard library rejects older clang versions. Fix them,
 build and test both clang configurations, and consider building one in CI so it
 stays working.
 
-## High-resolution sleep
-
-- **Layers:** base
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Requested by:** OZ-3 *Ozzy frame rate*
-- **Background:** none
-
-`RealtimeClock::SleepFor` is `absl::SleepFor`, which on Windows wakes only at
-the system timer's tick, every 15.6 ms by default. A sleep to the end of a
-60 Hz frame (16.7 ms) overshoots by up to a tick, so a loop paced by it runs
-unevenly, anywhere from 32 to 64 frames a second. `gb::Game` sleeps until a
-millisecond before its next frame and spins the rest, but the sleep still
-overshoots by up to a tick.
-
-Add a sleep that wakes within about a millisecond of its time without
-spinning, and build `RealtimeClock::SleepFor` on it. On Windows, that is a
-high-resolution waitable timer (`CreateWaitableTimerExW` with
-`CREATE_WAITABLE_TIMER_HIGH_RESOLUTION`), behind a platform independent
-function in its own header, with a `gen_` version on `absl::SleepFor`. As it is
-real time by nature, its test can only check loosely that it sleeps about as
-long as asked.
-
 ## Optional commas in text configs
 
 - **Layers:** config

@@ -8,6 +8,7 @@ if (WIN32)
     win_aligned_memory.cc
     win_local_time.cc
     win_platform.cc win_platform.h
+    win_sleep.cc
     win_stdio_file.cc
   )
   set(gb_base_internal_TEST_SOURCE
@@ -18,6 +19,7 @@ else()
   set(gb_base_internal_SOURCE
     gen_aligned_memory.cc
     gen_local_time.cc
+    gen_sleep.cc
     gen_stdio_file.cc
   )
 endif()
@@ -39,6 +41,7 @@ set(gb_base_SOURCE
   log_file.cc log_file.h
   platform_requirements.cc platform_requirements.h
   scoped_call.h
+  sleep.h
   stdio_file.h
   string_util.h
   type_info.h
@@ -61,6 +64,7 @@ set(gb_base_TEST_SOURCE
   log_file_test.cc
   platform_requirements_test.cc
   scoped_call_test.cc
+  sleep_test.cc
   type_info_test.cc
   unicode_test.cc
   validated_context_test.cc

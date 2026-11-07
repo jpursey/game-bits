@@ -7,6 +7,7 @@
 #define GB_BASE_CLOCK_H_
 
 #include "absl/time/clock.h"
+#include "gb/base/sleep.h"
 
 namespace gb {
 
@@ -37,7 +38,7 @@ class RealtimeClock : public Clock {
   }
 
   absl::Time Now() override { return absl::Now(); }
-  void SleepFor(absl::Duration duration) override { absl::SleepFor(duration); }
+  void SleepFor(absl::Duration duration) override { PreciseSleepFor(duration); }
 };
 
 }  // namespace gb

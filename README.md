@@ -194,7 +194,8 @@ sub-libraries (organized as subdirectories).
 While Game Bits code is designed to be cross platform, it is currently only
 developed and maintained on Windows with Visual Studio 2022, building with
 CMake and the Ninja generator. CMake 3.13 or later is required; the copy that
-ships with Visual Studio is what is normally used.
+ships with Visual Studio is what is normally used. Programs using Game Bits
+require Windows 10 version 1903 or later, and older versions are not supported.
 
 Game Bits works only in UTF-8 (of which ASCII is a part): every `char` string
 it takes or returns, including paths and command line arguments, is UTF-8.
