@@ -14,7 +14,7 @@
 #include "gb/file/file_types.h"
 #include "gb/render/binding_data.h"
 #include "gb/render/mesh.h"
-#include "gb/render/render_scene.h"
+#include "gb/render/render_view.h"
 #include "gb/resource/resource_set.h"
 #include "gb/resource/resource_types.h"
 #include "glm/glm.hpp"

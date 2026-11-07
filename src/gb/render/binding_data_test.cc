@@ -22,8 +22,8 @@ using ::testing::ElementsAre;
 class BindingDataTest : public RenderTest {};
 
 TEST_F(BindingDataTest, ConstructionNullPipelineNoBindings) {
-  TestBindingData binding_data(nullptr, BindingSet::kScene, {});
-  EXPECT_EQ(binding_data.GetSet(), BindingSet::kScene);
+  TestBindingData binding_data(nullptr, BindingSet::kView, {});
+  EXPECT_EQ(binding_data.GetSet(), BindingSet::kView);
   EXPECT_EQ(binding_data.GetPipeline(GetAccessToken()), nullptr);
 }
 
@@ -44,14 +44,14 @@ TEST_F(BindingDataTest, ReadWriteConstants) {
   ASSERT_NE(constant_type_0, nullptr);
   ASSERT_NE(constant_type_1, nullptr);
 
-  TestBindingData binding_data(nullptr, BindingSet::kScene,
+  TestBindingData binding_data(nullptr, BindingSet::kView,
                                {Binding()
                                     .SetShaders(ShaderType::kVertex)
-                                    .SetLocation(BindingSet::kScene, 0)
+                                    .SetLocation(BindingSet::kView, 0)
                                     .SetConstants(constant_type_0),
                                 Binding()
                                     .SetShaders(ShaderType::kVertex)
-                                    .SetLocation(BindingSet::kScene, 1)
+                                    .SetLocation(BindingSet::kView, 1)
                                     .SetConstants(constant_type_1)});
   EXPECT_TRUE(binding_data.IsConstants<Vector3>(0));
   EXPECT_FALSE(binding_data.IsConstants<Vector2>(0));
@@ -78,10 +78,10 @@ TEST_F(BindingDataTest, ReadWriteTextures) {
       render_system_->CreateTexture(DataVolatility::kStaticWrite, 16, 16);
   ASSERT_NE(texture, nullptr);
 
-  TestBindingData binding_data(nullptr, BindingSet::kScene,
+  TestBindingData binding_data(nullptr, BindingSet::kView,
                                {Binding()
                                     .SetShaders(ShaderType::kFragment)
-                                    .SetLocation(BindingSet::kScene, 2)
+                                    .SetLocation(BindingSet::kView, 2)
                                     .SetTexture()});
   EXPECT_FALSE(binding_data.IsTexture(0));
   EXPECT_FALSE(binding_data.IsTexture(1));
@@ -102,18 +102,18 @@ TEST_F(BindingDataTest, GetDependencies) {
   ASSERT_NE(constant_type_1, nullptr);
   ASSERT_NE(texture_2, nullptr);
 
-  TestBindingData binding_data(nullptr, BindingSet::kScene,
+  TestBindingData binding_data(nullptr, BindingSet::kView,
                                {Binding()
                                     .SetShaders(ShaderType::kFragment)
-                                    .SetLocation(BindingSet::kScene, 0)
+                                    .SetLocation(BindingSet::kView, 0)
                                     .SetTexture(),
                                 Binding()
                                     .SetShaders(ShaderType::kVertex)
-                                    .SetLocation(BindingSet::kScene, 1)
+                                    .SetLocation(BindingSet::kView, 1)
                                     .SetConstants(constant_type_1),
                                 Binding()
                                     .SetShaders(ShaderType::kFragment)
-                                    .SetLocation(BindingSet::kScene, 2)
+                                    .SetLocation(BindingSet::kView, 2)
                                     .SetTexture()});
   EXPECT_TRUE(binding_data.IsTexture(0));
   EXPECT_TRUE(binding_data.IsConstants<Vector2>(1));
@@ -135,9 +135,9 @@ TEST_F(BindingDataTest, TextureArrays) {
   ASSERT_NE(texture_array, nullptr);
   const std::vector<Binding> bindings = {Binding()
                                              .SetShaders(ShaderType::kFragment)
-                                             .SetLocation(BindingSet::kScene, 1)
+                                             .SetLocation(BindingSet::kView, 1)
                                              .SetTextureArray()};
-  TestBindingData binding_data(nullptr, BindingSet::kScene, bindings);
+  TestBindingData binding_data(nullptr, BindingSet::kView, bindings);
 
   binding_data.SetTextureArray(1, texture_array.Get());
   EXPECT_EQ(binding_data.GetTextureArray(1), texture_array.Get());
@@ -153,9 +153,9 @@ TEST_F(BindingDataTest, VolumeTextures) {
   ASSERT_NE(volume_texture, nullptr);
   const std::vector<Binding> bindings = {Binding()
                                              .SetShaders(ShaderType::kFragment)
-                                             .SetLocation(BindingSet::kScene, 1)
+                                             .SetLocation(BindingSet::kView, 1)
                                              .SetVolumeTexture()};
-  TestBindingData binding_data(nullptr, BindingSet::kScene, bindings);
+  TestBindingData binding_data(nullptr, BindingSet::kView, bindings);
 
   EXPECT_EQ(binding_data.GetVolumeTexture(1), nullptr);
   binding_data.SetVolumeTexture(1, volume_texture.Get());
@@ -174,9 +174,9 @@ TEST_F(BindingDataTest, StorageBuffers) {
   ASSERT_NE(storage_buffer, nullptr);
   const std::vector<Binding> bindings = {Binding()
                                              .SetShaders(ShaderType::kFragment)
-                                             .SetLocation(BindingSet::kScene, 1)
+                                             .SetLocation(BindingSet::kView, 1)
                                              .SetStorageBuffer(vector2_type)};
-  TestBindingData binding_data(nullptr, BindingSet::kScene, bindings);
+  TestBindingData binding_data(nullptr, BindingSet::kView, bindings);
 
   EXPECT_EQ(binding_data.GetStorageBuffer(1), nullptr);
   binding_data.SetStorageBuffer(1, storage_buffer.Get());
@@ -201,10 +201,10 @@ TEST_F(BindingDataTest, StorageBufferOfWrongTypeDies) {
   auto storage_buffer = render_system_->CreateStorageBuffer(
       vector3_type, DataVolatility::kStaticWrite, 4);
   ASSERT_NE(storage_buffer, nullptr);
-  TestBindingData binding_data(nullptr, BindingSet::kScene,
+  TestBindingData binding_data(nullptr, BindingSet::kView,
                                {Binding()
                                     .SetShaders(ShaderType::kFragment)
-                                    .SetLocation(BindingSet::kScene, 1)
+                                    .SetLocation(BindingSet::kView, 1)
                                     .SetStorageBuffer(vector2_type)});
 
   EXPECT_DEATH(binding_data.SetStorageBuffer(1, storage_buffer.Get()),
@@ -222,14 +222,14 @@ TEST_F(BindingDataTest, AccessWithWrongTypeOrIndexDies) {
   auto texture =
       render_system_->CreateTexture(DataVolatility::kStaticWrite, 16, 16);
   ASSERT_NE(texture, nullptr);
-  TestBindingData binding_data(nullptr, BindingSet::kScene,
+  TestBindingData binding_data(nullptr, BindingSet::kView,
                                {Binding()
                                     .SetShaders(ShaderType::kVertex)
-                                    .SetLocation(BindingSet::kScene, 0)
+                                    .SetLocation(BindingSet::kView, 0)
                                     .SetConstants(constants_type),
                                 Binding()
                                     .SetShaders(ShaderType::kFragment)
-                                    .SetLocation(BindingSet::kScene, 1)
+                                    .SetLocation(BindingSet::kView, 1)
                                     .SetTexture()});
 
   Vector2 vector2;

@@ -13,7 +13,7 @@ layout(location = 3) in vec4 in_color;
 
 layout(location = 0) out vec4 out_color;
 
-layout(set = 0, binding = 1) uniform SceneLightData {
+layout(set = 0, binding = 1) uniform ViewLightData {
   vec4 s_ambient;        // w is intensity
   vec4 s_sun_color;      // w is intensity
   vec3 s_sun_direction;

@@ -498,13 +498,13 @@ SamplerOptions ReadSamplerOptions(
 }
 
 // Adds the bindings for a material type to "bindings": the bindings of its
-// scene type and shaders. Bindings at the same location must be compatible, and
-// are combined into one. Returns false if any are not.
-bool GetMaterialTypeBindings(RenderSceneType* scene_type, Shader* vertex_shader,
-                             Shader* fragment_shader,
+// binding layout and shaders. Bindings at the same location must be compatible,
+// and are combined into one. Returns false if any are not.
+bool GetMaterialTypeBindings(BindingLayout* binding_layout,
+                             Shader* vertex_shader, Shader* fragment_shader,
                              std::vector<Binding>* bindings) {
   const std::pair<std::string_view, absl::Span<const Binding>> sources[] = {
-      {"Scene type", scene_type->GetBindings()},
+      {"Binding layout", binding_layout->GetBindings()},
       {"Vertex shader", vertex_shader->GetBindings()},
       {"Fragment shader", fragment_shader->GetBindings()},
   };
@@ -902,29 +902,29 @@ const VertexType* RenderSystem::DoRegisterVertexType(
   return vertex_type.get();
 }
 
-RenderSceneType* RenderSystem::RegisterSceneType(
+BindingLayout* RenderSystem::RegisterBindingLayout(
     std::string_view name, absl::Span<const Binding> bindings) {
-  std::vector<Binding> scene_bindings;
-  if (!GetUniqueBindings(bindings, &scene_bindings)) {
+  std::vector<Binding> unique_bindings;
+  if (!GetUniqueBindings(bindings, &unique_bindings)) {
     return nullptr;
   }
-  if (auto it = scene_types_.find(name); it != scene_types_.end()) {
-    if (!absl::c_equal(it->second->GetBindings(), scene_bindings)) {
-      LOG(ERROR) << "Scene type " << name
+  if (auto it = binding_layouts_.find(name); it != binding_layouts_.end()) {
+    if (!absl::c_equal(it->second->GetBindings(), unique_bindings)) {
+      LOG(ERROR) << "Binding layout " << name
                  << " is already registered with different bindings.";
       return nullptr;
     }
     return it->second.get();
   }
 
-  auto scene_type = backend_->CreateSceneType({}, scene_bindings);
-  if (scene_type == nullptr) {
+  auto binding_layout = backend_->CreateBindingLayout({}, unique_bindings);
+  if (binding_layout == nullptr) {
     return nullptr;
   }
-  scene_type->SetName({}, name);
-  auto& registered_scene_type = scene_types_[name];
-  registered_scene_type = std::move(scene_type);
-  return registered_scene_type.get();
+  binding_layout->SetName({}, name);
+  auto& registered_binding_layout = binding_layouts_[name];
+  registered_binding_layout = std::move(binding_layout);
+  return registered_binding_layout.get();
 }
 
 const RenderDataType* RenderSystem::GetConstantsType(
@@ -944,9 +944,9 @@ const VertexType* RenderSystem::GetVertexType(std::string_view name) const {
   return it->second.get();
 }
 
-RenderSceneType* RenderSystem::GetSceneType(std::string_view name) const {
-  auto it = scene_types_.find(name);
-  if (it == scene_types_.end()) {
+BindingLayout* RenderSystem::GetBindingLayout(std::string_view name) const {
+  auto it = binding_layouts_.find(name);
+  if (it == binding_layouts_.end()) {
     return nullptr;
   }
   return it->second.get();
@@ -1015,20 +1015,20 @@ void RenderSystem::SetClearColor(Pixel color) {
   backend_->SetClearColor({}, color);
 }
 
-std::unique_ptr<RenderScene> RenderSystem::CreateScene(
-    RenderSceneType* scene_type, int scene_order) {
-  if (scene_type == nullptr) {
-    LOG(ERROR) << "Null scene type passed in to CreateScene";
+std::unique_ptr<RenderView> RenderSystem::CreateView(
+    BindingLayout* binding_layout, int view_order) {
+  if (binding_layout == nullptr) {
+    LOG(ERROR) << "Null binding layout passed in to CreateView";
     return nullptr;
   }
-  auto scene = backend_->CreateScene({}, scene_type, scene_order);
-  if (scene == nullptr) {
-    LOG(ERROR) << "Failed to create scene";
+  auto view = backend_->CreateView({}, binding_layout, view_order);
+  if (view == nullptr) {
+    LOG(ERROR) << "Failed to create view";
     return nullptr;
   }
-  scene_type->GetDefaultSceneBindingData()->CopyTo(
-      scene->GetSceneBindingData());
-  return scene;
+  binding_layout->GetDefaultViewBindingData()->CopyTo(
+      view->GetViewBindingData());
+  return view;
 }
 
 Mesh* RenderSystem::DoCreateMesh(const VertexType* vertex_type,
@@ -1287,7 +1287,7 @@ bool RenderSystem::SaveMaterialChunk(Context* context, Material* material,
   return true;
 }
 
-bool RenderSystem::ValidateMaterialTypeArguments(RenderSceneType* scene_type,
+bool RenderSystem::ValidateMaterialTypeArguments(BindingLayout* binding_layout,
                                                  const VertexType* vertex_type,
                                                  Shader* vertex_shader,
                                                  Shader* fragment_shader) {
@@ -1416,13 +1416,13 @@ bool RenderSystem::ValidateMaterialTypeArguments(RenderSceneType* scene_type,
   return true;
 }
 
-MaterialType* RenderSystem::DoCreateMaterialType(RenderSceneType* scene_type,
+MaterialType* RenderSystem::DoCreateMaterialType(BindingLayout* binding_layout,
                                                  const VertexType* vertex_type,
                                                  Shader* vertex_shader,
                                                  Shader* fragment_shader,
                                                  const MaterialConfig& config) {
-  if (scene_type == nullptr) {
-    LOG(ERROR) << "Null scene type passed in to CreateMaterialType";
+  if (binding_layout == nullptr) {
+    LOG(ERROR) << "Null binding layout passed in to CreateMaterialType";
     return nullptr;
   }
   if (vertex_type == nullptr) {
@@ -1437,18 +1437,18 @@ MaterialType* RenderSystem::DoCreateMaterialType(RenderSceneType* scene_type,
     LOG(ERROR) << "Null fragment shader passed in to CreateMaterialType";
     return nullptr;
   }
-  if (!ValidateMaterialTypeArguments(scene_type, vertex_type, vertex_shader,
+  if (!ValidateMaterialTypeArguments(binding_layout, vertex_type, vertex_shader,
                                      fragment_shader)) {
     return nullptr;
   }
   std::vector<Binding> bindings;
-  if (!GetMaterialTypeBindings(scene_type, vertex_shader, fragment_shader,
+  if (!GetMaterialTypeBindings(binding_layout, vertex_shader, fragment_shader,
                                &bindings)) {
     return nullptr;
   }
 
   // Create a pipeline for the material.
-  auto pipeline = backend_->CreatePipeline({}, scene_type, vertex_type,
+  auto pipeline = backend_->CreatePipeline({}, binding_layout, vertex_type,
                                            bindings, vertex_shader->GetCode(),
                                            fragment_shader->GetCode(), config);
   if (pipeline == nullptr) {
@@ -1458,11 +1458,11 @@ MaterialType* RenderSystem::DoCreateMaterialType(RenderSceneType* scene_type,
 
   auto* material_type =
       new MaterialType({}, resource_manager_->NewResourceEntry<MaterialType>(),
-                       scene_type, bindings, std::move(pipeline), vertex_type,
-                       vertex_shader, fragment_shader, config);
-  scene_type->GetDefaultMaterialBindingData()->CopyTo(
+                       binding_layout, bindings, std::move(pipeline),
+                       vertex_type, vertex_shader, fragment_shader, config);
+  binding_layout->GetDefaultMaterialBindingData()->CopyTo(
       material_type->GetDefaultMaterialBindingData());
-  scene_type->GetDefaultInstanceBindingData()->CopyTo(
+  binding_layout->GetDefaultInstanceBindingData()->CopyTo(
       material_type->GetDefaultInstanceBindingData());
   return material_type;
 }
@@ -1482,13 +1482,14 @@ MaterialType* RenderSystem::LoadMaterialTypeChunk(
   config.depth_bias_constant = chunk->depth_bias_constant();
   config.depth_bias_slope = chunk->depth_bias_slope();
 
-  std::string_view scene_type_name =
-      (chunk->scene_type_name() != nullptr ? chunk->scene_type_name()->c_str()
-                                           : "");
-  RenderSceneType* scene_type = GetSceneType(scene_type_name);
-  if (scene_type == nullptr) {
-    LOG(ERROR) << "Cannot load material type because scene type \""
-               << scene_type_name << "\" is not registered";
+  std::string_view binding_layout_name =
+      (chunk->binding_layout_name() != nullptr
+           ? chunk->binding_layout_name()->c_str()
+           : "");
+  BindingLayout* binding_layout = GetBindingLayout(binding_layout_name);
+  if (binding_layout == nullptr) {
+    LOG(ERROR) << "Cannot load material type because binding layout \""
+               << binding_layout_name << "\" is not registered";
     return nullptr;
   }
   auto* vertex_shader =
@@ -1515,19 +1516,19 @@ MaterialType* RenderSystem::LoadMaterialTypeChunk(
     return nullptr;
   }
 
-  if (!ValidateMaterialTypeArguments(scene_type, vertex_type, vertex_shader,
+  if (!ValidateMaterialTypeArguments(binding_layout, vertex_type, vertex_shader,
                                      fragment_shader)) {
     return nullptr;
   }
 
   std::vector<Binding> bindings;
-  if (!GetMaterialTypeBindings(scene_type, vertex_shader, fragment_shader,
+  if (!GetMaterialTypeBindings(binding_layout, vertex_shader, fragment_shader,
                                &bindings)) {
     return nullptr;
   }
 
   // Create a pipeline for the material.
-  auto pipeline = backend_->CreatePipeline({}, scene_type, vertex_type,
+  auto pipeline = backend_->CreatePipeline({}, binding_layout, vertex_type,
                                            bindings, vertex_shader->GetCode(),
                                            fragment_shader->GetCode(), config);
   if (pipeline == nullptr) {
@@ -1536,7 +1537,7 @@ MaterialType* RenderSystem::LoadMaterialTypeChunk(
   }
 
   auto material_type = new MaterialType(
-      {}, std::move(entry), scene_type, bindings, std::move(pipeline),
+      {}, std::move(entry), binding_layout, bindings, std::move(pipeline),
       vertex_type, vertex_shader, fragment_shader, config);
   if (!ReadBindingData({}, resources, bindings, chunk->material_data(),
                        material_type->GetDefaultMaterialBindingData()) ||
@@ -1562,13 +1563,13 @@ bool RenderSystem::SaveMaterialTypeChunk(Context* context,
   const auto fb_instance_data =
       WriteBindingData({}, builder, BindingSet::kInstance, bindings,
                        material_type->GetDefaultInstanceBindingData());
-  const auto fb_scene_type_name =
-      builder->CreateSharedString(material_type->GetSceneType()->GetName());
+  const auto fb_binding_layout_name =
+      builder->CreateSharedString(material_type->GetBindingLayout()->GetName());
   const auto fb_vertex_type_name =
       builder->CreateSharedString(material_type->GetVertexType()->GetName());
 
   fbs::MaterialTypeChunkBuilder material_type_builder(*builder);
-  material_type_builder.add_scene_type_name(fb_scene_type_name);
+  material_type_builder.add_binding_layout_name(fb_binding_layout_name);
   material_type_builder.add_vertex_shader_id(
       material_type->GetVertexShader()->GetResourceId());
   material_type_builder.add_fragment_shader_id(
@@ -2213,29 +2214,29 @@ bool RenderSystem::BeginFrame() {
   return true;
 }
 
-void RenderSystem::Draw(RenderScene* scene, Mesh* mesh, Material* material,
+void RenderSystem::Draw(RenderView* view, Mesh* mesh, Material* material,
                         BindingData* instance_data) {
   RENDER_ASSERT(is_rendering_);
-  RENDER_ASSERT(scene != nullptr && mesh != nullptr && material != nullptr &&
+  RENDER_ASSERT(view != nullptr && mesh != nullptr && material != nullptr &&
                 instance_data != nullptr);
   MaterialType* const material_type = material->GetType();
   RENDER_ASSERT(mesh->GetVertexType() == material_type->GetVertexType());
   RenderPipeline* const pipeline = material_type->GetPipeline({});
   RENDER_ASSERT(instance_data->GetPipeline({}) == pipeline);
-  RENDER_ASSERT(scene->GetType() == material_type->GetSceneType());
-  backend_->Draw({}, scene, pipeline, material->GetMaterialBindingData(),
+  RENDER_ASSERT(view->GetBindingLayout() == material_type->GetBindingLayout());
+  backend_->Draw({}, view, pipeline, material->GetMaterialBindingData(),
                  instance_data, mesh->GetVertexBuffer({}),
                  mesh->GetIndexBuffer({}));
 }
 
-void RenderSystem::Draw(RenderScene* scene, const DrawList& commands) {
+void RenderSystem::Draw(RenderView* view, const DrawList& commands) {
   RENDER_ASSERT(is_rendering_);
-  RENDER_ASSERT(scene != nullptr);
+  RENDER_ASSERT(view != nullptr);
   const auto& command_list = commands.GetCommands({});
   if (command_list.empty()) {
     return;
   }
-  backend_->Draw({}, scene, command_list);
+  backend_->Draw({}, view, command_list);
 }
 
 void RenderSystem::EndFrame() {

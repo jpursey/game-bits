@@ -20,7 +20,7 @@
 #include "gb/render/test_mesh_pool_buffers.h"
 #include "gb/render/test_render_buffer.h"
 #include "gb/render/test_render_pipeline.h"
-#include "gb/render/test_render_scene.h"
+#include "gb/render/test_render_view.h"
 #include "gb/render/test_texture.h"
 #include "gb/render/test_texture_array.h"
 #include "gb/render/test_volume_texture.h"
@@ -31,7 +31,7 @@ namespace gb {
 class TestRenderBackend final : public RenderBackend {
  public:
   struct DrawItem {
-    TestRenderScene* scene;
+    TestRenderView* view;
     TestRenderPipeline* pipeline;
     TestBindingData* material_data;
     TestBindingData* instance_data;
@@ -75,8 +75,8 @@ class TestRenderBackend final : public RenderBackend {
     bool fail_create_texture_array = false;
     bool fail_create_volume_texture = false;
     bool fail_create_shader_code = false;
-    bool fail_create_scene_type = false;
-    bool fail_create_scene = false;
+    bool fail_create_binding_layout = false;
+    bool fail_create_view = false;
     bool fail_create_pipeline = false;
     bool fail_create_vertex_buffer = false;
     bool fail_create_index_buffer = false;
@@ -133,13 +133,13 @@ class TestRenderBackend final : public RenderBackend {
                                      TextureFormat format) override;
   std::unique_ptr<ShaderCode> CreateShaderCode(RenderInternal, const void* code,
                                                int64_t code_size) override;
-  std::unique_ptr<RenderSceneType> CreateSceneType(
+  std::unique_ptr<BindingLayout> CreateBindingLayout(
       RenderInternal, absl::Span<const Binding> bindings) override;
-  std::unique_ptr<RenderScene> CreateScene(RenderInternal,
-                                           RenderSceneType* scene_type,
-                                           int scene_order) override;
+  std::unique_ptr<RenderView> CreateView(RenderInternal,
+                                         BindingLayout* binding_layout,
+                                         int view_order) override;
   std::unique_ptr<RenderPipeline> CreatePipeline(
-      RenderInternal, RenderSceneType* scene_type,
+      RenderInternal, BindingLayout* binding_layout,
       const VertexType* vertex_type, absl::Span<const Binding> bindings,
       ShaderCode* vertex_shader, ShaderCode* fragment_shader,
       const MaterialConfig& config) override;
@@ -157,10 +157,10 @@ class TestRenderBackend final : public RenderBackend {
       RenderInternal, int vertex_size, IndexType index_type,
       int vertex_capacity, int index_capacity) override;
   bool BeginFrame(RenderInternal) override;
-  void Draw(RenderInternal, RenderScene* scene, RenderPipeline* pipeline,
+  void Draw(RenderInternal, RenderView* view, RenderPipeline* pipeline,
             BindingData* material_data, BindingData* instance_data,
             RenderBuffer* vertices, RenderBuffer* indices) override;
-  void Draw(RenderInternal, RenderScene* scene,
+  void Draw(RenderInternal, RenderView* view,
             absl::Span<const DrawCommand> commands) override;
   void EndFrame(RenderInternal) override;
   std::unique_ptr<Image> EndFrameAndReadImage(RenderInternal) override;

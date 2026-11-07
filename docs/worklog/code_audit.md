@@ -77,9 +77,9 @@ caller can rely on, or break code that depended on the old behavior:
   - `kMaxTextureWidth` and `kMaxTextureHeight` are 8192, not 8096, and the
     maximum itself loads.
   - Material types save their depth test and raster mode, and loading takes
-    bindings from the scene type and shaders, as creating does. Older files
+    bindings from the binding layout and shaders, as creating does. Older files
     still load; the binding fields they saved are deprecated.
-  - Scenes and material types start from their scene type's defaults.
+  - Views and material types start from their binding layout's defaults.
 - **gb_render_vulkan:** growing a `kStaticWrite` render buffer that was
   recently rendered fails, as does a partial update of a mipmapped
   `kStaticWrite` texture, or setting a texture in a `kStaticWrite` texture

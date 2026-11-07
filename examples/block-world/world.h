@@ -68,7 +68,7 @@ class World final {
 
   const gb::ValidatedContext& GetContext() const { return context_; }
 
-  gb::RenderScene* GetScene() const { return scene_.get(); }
+  gb::RenderView* GetView() const { return view_.get(); }
 
   //----------------------------------------------------------------------------
   // Chunk access
@@ -181,9 +181,9 @@ class World final {
   bool use_frustum_cull_ = true;
   bool use_cull_camera_ = false;
   Camera cull_camera_;
-  std::unique_ptr<gb::RenderScene> scene_;
+  std::unique_ptr<gb::RenderView> view_;
   gb::Material* material_ = nullptr;
-  SceneLightData lights_;
+  ViewLightData lights_;
   gb::Pixel sky_color_;
 
   // Drawing from the pool. Each frame, a chunk drawn from the pool adds its

@@ -85,32 +85,33 @@ std::unique_ptr<ShaderCode> TestRenderBackend::CreateShaderCode(
   return std::make_unique<TestShaderCode>(code, code_size);
 }
 
-std::unique_ptr<RenderSceneType> TestRenderBackend::CreateSceneType(
+std::unique_ptr<BindingLayout> TestRenderBackend::CreateBindingLayout(
     RenderInternal, absl::Span<const Binding> bindings) {
-  if (state_->fail_create_scene_type) {
+  if (state_->fail_create_binding_layout) {
     return nullptr;
   }
-  return std::make_unique<TestRenderSceneType>(bindings);
+  return std::make_unique<TestBindingLayout>(bindings);
 }
 
-std::unique_ptr<RenderScene> TestRenderBackend::CreateScene(
-    RenderInternal, RenderSceneType* scene_type, int scene_order) {
-  if (state_->fail_create_scene) {
+std::unique_ptr<RenderView> TestRenderBackend::CreateView(
+    RenderInternal, BindingLayout* binding_layout, int view_order) {
+  if (state_->fail_create_view) {
     return nullptr;
   }
-  return std::make_unique<TestRenderScene>(scene_type, scene_order);
+  return std::make_unique<TestRenderView>(binding_layout, view_order);
 }
 
 std::unique_ptr<RenderPipeline> TestRenderBackend::CreatePipeline(
-    RenderInternal, RenderSceneType* scene_type, const VertexType* vertex_type,
-    absl::Span<const Binding> bindings, ShaderCode* vertex_shader,
-    ShaderCode* fragment_shader, const MaterialConfig& config) {
+    RenderInternal, BindingLayout* binding_layout,
+    const VertexType* vertex_type, absl::Span<const Binding> bindings,
+    ShaderCode* vertex_shader, ShaderCode* fragment_shader,
+    const MaterialConfig& config) {
   if (state_->fail_create_pipeline) {
     return nullptr;
   }
   return std::make_unique<TestRenderPipeline>(
       &state_->render_pipeline_config,
-      static_cast<TestRenderSceneType*>(scene_type), vertex_type, bindings,
+      static_cast<TestBindingLayout*>(binding_layout), vertex_type, bindings,
       static_cast<TestShaderCode*>(vertex_shader),
       static_cast<TestShaderCode*>(fragment_shader), config);
 }
@@ -166,17 +167,17 @@ bool TestRenderBackend::BeginFrame(RenderInternal) {
   return true;
 }
 
-void TestRenderBackend::Draw(RenderInternal, RenderScene* scene,
+void TestRenderBackend::Draw(RenderInternal, RenderView* view,
                              RenderPipeline* pipeline,
                              BindingData* material_data,
                              BindingData* instance_data, RenderBuffer* vertices,
                              RenderBuffer* indices) {
-  if (!state_->rendering || scene == nullptr || pipeline == nullptr ||
+  if (!state_->rendering || view == nullptr || pipeline == nullptr ||
       material_data == nullptr || instance_data == nullptr ||
       vertices == nullptr || indices == nullptr) {
     state_->invalid_call_count += 1;
   }
-  state_->draw_list.push_back({static_cast<TestRenderScene*>(scene),
+  state_->draw_list.push_back({static_cast<TestRenderView*>(view),
                                static_cast<TestRenderPipeline*>(pipeline),
                                static_cast<TestBindingData*>(material_data),
                                static_cast<TestBindingData*>(instance_data),
@@ -184,9 +185,9 @@ void TestRenderBackend::Draw(RenderInternal, RenderScene* scene,
                                static_cast<TestRenderBuffer*>(indices)});
 }
 
-void TestRenderBackend::Draw(RenderInternal, RenderScene* scene,
+void TestRenderBackend::Draw(RenderInternal, RenderView* view,
                              absl::Span<const DrawCommand> commands) {
-  if (!state_->rendering || scene == nullptr) {
+  if (!state_->rendering || view == nullptr) {
     state_->invalid_call_count += 1;
   }
   state_->draw_commands.insert(state_->draw_commands.end(), commands.begin(),

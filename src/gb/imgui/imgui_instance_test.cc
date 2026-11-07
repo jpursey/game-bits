@@ -205,7 +205,7 @@ TEST_F(ImGuiInstanceTest, FailedCreateKeepsActiveInstance) {
 TEST_F(ImGuiInstanceTest, CreateFailsWithoutRenderResources) {
   using State = TestRenderBackend::State;
   for (bool State::* fail :
-       {&State::fail_create_shader_code, &State::fail_create_scene,
+       {&State::fail_create_shader_code, &State::fail_create_view,
         &State::fail_create_pipeline, &State::fail_create_vertex_buffer,
         &State::fail_create_index_buffer}) {
     state_.ResetState();

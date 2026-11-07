@@ -11,14 +11,14 @@
 namespace gb {
 
 TestRenderPipeline::TestRenderPipeline(Config* config,
-                                       TestRenderSceneType* scene_type,
+                                       TestBindingLayout* binding_layout,
                                        const VertexType* vertex_type,
                                        absl::Span<const Binding> bindings,
                                        TestShaderCode* vertex_shader,
                                        TestShaderCode* fragment_shader,
                                        const MaterialConfig& material_config)
     : config_(config),
-      scene_type_(scene_type),
+      binding_layout_(binding_layout),
       vertex_type_(vertex_type),
       bindings_(bindings.begin(), bindings.end()),
       vertex_shader_(vertex_shader),

@@ -13,19 +13,19 @@
 #include "absl/memory/memory.h"
 #include "gb/render/material_config.h"
 #include "gb/render/vulkan/vulkan_backend.h"
-#include "gb/render/vulkan/vulkan_scene_type.h"
+#include "gb/render/vulkan/vulkan_binding_layout.h"
 #include "gb/render/vulkan/vulkan_shader_code.h"
 
 namespace gb {
 
 std::unique_ptr<VulkanRenderPipeline> VulkanRenderPipeline::Create(
-    VulkanInternal, VulkanBackend* backend, VulkanSceneType* scene_type,
+    VulkanInternal, VulkanBackend* backend, VulkanBindingLayout* binding_layout,
     const VertexType* vertex_type, absl::Span<const Binding> bindings,
     VulkanShaderCode* vertex_shader, VulkanShaderCode* fragment_shader,
     const MaterialConfig& config, vk::RenderPass render_pass) {
   auto pipeline = absl::WrapUnique(new VulkanRenderPipeline());
-  if (!pipeline->Init(backend, scene_type, vertex_type, bindings, vertex_shader,
-                      fragment_shader, config, render_pass)) {
+  if (!pipeline->Init(backend, binding_layout, vertex_type, bindings,
+                      vertex_shader, fragment_shader, config, render_pass)) {
     return nullptr;
   }
   return pipeline;
@@ -38,7 +38,7 @@ VulkanRenderPipeline::~VulkanRenderPipeline() {
 }
 
 bool VulkanRenderPipeline::Init(
-    VulkanBackend* backend, VulkanSceneType* scene_type,
+    VulkanBackend* backend, VulkanBindingLayout* binding_layout,
     const VertexType* vertex_type, absl::Span<const Binding> bindings,
     VulkanShaderCode* vertex_shader, VulkanShaderCode* fragment_shader,
     const MaterialConfig& config, vk::RenderPass render_pass) {
@@ -410,7 +410,7 @@ bool VulkanRenderPipeline::Init(
                            .setPDynamicStates(dynamic_states);
 
   vk::DescriptorSetLayout descriptor_set_layouts[] = {
-      scene_type->GetLayout(),
+      binding_layout->GetViewSetLayout(),
       material_data_factory_->GetLayout(),
       instance_data_factory_->GetLayout(),
   };

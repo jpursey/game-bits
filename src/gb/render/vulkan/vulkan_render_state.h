@@ -17,7 +17,7 @@
 
 namespace gb {
 
-// This structure contains all state necessary to render a scene in the
+// This structure contains all state necessary to render a frame in the
 // VulkanBackend.
 //
 // This is updated by draw commands and is also passed into each render resource
@@ -33,8 +33,8 @@ struct VulkanRenderState {
     std::vector<DrawCommand> commands;
   };
   using PipelineDraw = absl::flat_hash_map<VulkanRenderPipeline*, MaterialDraw>;
-  using SceneDraw = absl::flat_hash_map<VulkanScene*, PipelineDraw>;
-  using SceneGroupDraw = std::map<int, SceneDraw>;
+  using ViewDraw = absl::flat_hash_map<VulkanView*, PipelineDraw>;
+  using ViewGroupDraw = std::map<int, ViewDraw>;
 
   // Prepares a layer of an image for its updates. If keep_contents is false,
   // the updates replace every pixel of every mip level.
@@ -141,7 +141,7 @@ struct VulkanRenderState {
   int frame = 0;
 
   // Draw lists.
-  SceneGroupDraw draw;
+  ViewGroupDraw draw;
 
   // Accumulates all resources participating in a frame.
   absl::flat_hash_set<VulkanBindingData*> binding_data;

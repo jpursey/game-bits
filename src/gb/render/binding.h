@@ -16,7 +16,7 @@ namespace gb {
 // - Shaders: Which shader types the binding is referenced by (aka vertex and/or
 //   fragment shader). A binding may be for more than one shader type.
 // - Location: What binding set and binding index must be referenced in the
-//   shader to access the binding. There are three binding sets (scene,
+//   shader to access the binding. There are three binding sets (view,
 //   material, and instance) which represent at what scope the bindings may be
 //   tuned or changed.
 // - Binding type: This determines what data or resources are associated with
@@ -46,7 +46,7 @@ struct Binding {
 
   // Sets the location within shaders that use this binding.
   //
-  // The binding set is one of kScene, kMaterial, or kInstance which determines
+  // The binding set is one of kView, kMaterial, or kInstance which determines
   // where the associated data can be modified and its scope.
   //
   // The binding index is an arbitrary index that must be within the range [0,
@@ -125,8 +125,8 @@ struct Binding {
   // Defines which shader the binding applies to.
   ShaderTypes shader_types;
 
-  // The binding set determines the scope of the binding within a scene.
-  BindingSet set = BindingSet::kScene;
+  // The binding set determines the scope of the binding within a view.
+  BindingSet set = BindingSet::kView;
 
   // Index for the binding within the set.
   int index = 0;
@@ -209,7 +209,7 @@ inline bool Binding::IsValid() const {
          (volatility == DataVolatility::kPerFrame ||
           volatility == DataVolatility::kStaticReadWrite ||
           volatility == DataVolatility::kStaticWrite) &&
-         (set == BindingSet::kScene || set == BindingSet::kMaterial ||
+         (set == BindingSet::kView || set == BindingSet::kMaterial ||
           set == BindingSet::kInstance) &&
          (index >= 0 && index <= kMaxBindingIndex);
 }

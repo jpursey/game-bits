@@ -17,16 +17,16 @@
 #include "absl/log/log.h"
 #include "absl/memory/memory.h"
 #include "gb/render/vulkan/vulkan_binding_data.h"
+#include "gb/render/vulkan/vulkan_binding_layout.h"
 #include "gb/render/vulkan/vulkan_buffer.h"
 #include "gb/render/vulkan/vulkan_format.h"
 #include "gb/render/vulkan/vulkan_mesh_pool_buffers.h"
 #include "gb/render/vulkan/vulkan_render_buffer.h"
 #include "gb/render/vulkan/vulkan_render_pipeline.h"
-#include "gb/render/vulkan/vulkan_scene.h"
-#include "gb/render/vulkan/vulkan_scene_type.h"
 #include "gb/render/vulkan/vulkan_shader_code.h"
 #include "gb/render/vulkan/vulkan_texture.h"
 #include "gb/render/vulkan/vulkan_texture_array.h"
+#include "gb/render/vulkan/vulkan_view.h"
 #include "gb/render/vulkan/vulkan_volume_texture.h"
 #include "gb/render/vulkan/vulkan_window.h"
 
@@ -971,23 +971,24 @@ std::unique_ptr<ShaderCode> VulkanBackend::CreateShaderCode(RenderInternal,
   return VulkanShaderCode::Create({}, this, code, code_size);
 }
 
-std::unique_ptr<RenderSceneType> VulkanBackend::CreateSceneType(
+std::unique_ptr<BindingLayout> VulkanBackend::CreateBindingLayout(
     RenderInternal, absl::Span<const Binding> bindings) {
-  return VulkanSceneType::Create({}, this, bindings);
+  return VulkanBindingLayout::Create({}, this, bindings);
 }
 
-std::unique_ptr<RenderScene> VulkanBackend::CreateScene(
-    RenderInternal, RenderSceneType* scene_type, int scene_order) {
-  return VulkanScene::Create({}, static_cast<VulkanSceneType*>(scene_type),
-                             scene_order);
+std::unique_ptr<RenderView> VulkanBackend::CreateView(
+    RenderInternal, BindingLayout* binding_layout, int view_order) {
+  return VulkanView::Create(
+      {}, static_cast<VulkanBindingLayout*>(binding_layout), view_order);
 }
 
 std::unique_ptr<RenderPipeline> VulkanBackend::CreatePipeline(
-    RenderInternal, RenderSceneType* scene_type, const VertexType* vertex_type,
-    absl::Span<const Binding> bindings, ShaderCode* vertex_shader,
-    ShaderCode* fragment_shader, const MaterialConfig& config) {
+    RenderInternal, BindingLayout* binding_layout,
+    const VertexType* vertex_type, absl::Span<const Binding> bindings,
+    ShaderCode* vertex_shader, ShaderCode* fragment_shader,
+    const MaterialConfig& config) {
   return VulkanRenderPipeline::Create(
-      {}, this, static_cast<VulkanSceneType*>(scene_type), vertex_type,
+      {}, this, static_cast<VulkanBindingLayout*>(binding_layout), vertex_type,
       bindings, static_cast<VulkanShaderCode*>(vertex_shader),
       static_cast<VulkanShaderCode*>(fragment_shader), config, render_pass_);
 }
@@ -1095,12 +1096,12 @@ bool VulkanBackend::BeginFrame(RenderInternal) {
   return true;
 }
 
-void VulkanBackend::Draw(RenderInternal, RenderScene* scene,
+void VulkanBackend::Draw(RenderInternal, RenderView* view,
                          RenderPipeline* pipeline, BindingData* material_data,
                          BindingData* instance_data, RenderBuffer* vertices,
                          RenderBuffer* indices) {
   render_state_.binding_data.insert(
-      static_cast<VulkanBindingData*>(scene->GetSceneBindingData()));
+      static_cast<VulkanBindingData*>(view->GetViewBindingData()));
   render_state_.binding_data.insert(
       static_cast<VulkanBindingData*>(material_data));
   render_state_.binding_data.insert(
@@ -1108,7 +1109,7 @@ void VulkanBackend::Draw(RenderInternal, RenderScene* scene,
   render_state_.buffers.insert(static_cast<VulkanRenderBuffer*>(vertices));
   render_state_.buffers.insert(static_cast<VulkanRenderBuffer*>(indices));
   render_state_
-      .draw[scene->GetOrder()][static_cast<VulkanScene*>(scene)]
+      .draw[view->GetOrder()][static_cast<VulkanView*>(view)]
            [static_cast<VulkanRenderPipeline*>(pipeline)]
       .mesh[static_cast<VulkanBindingData*>(material_data)]
            [static_cast<VulkanRenderBuffer*>(vertices)]
@@ -1117,10 +1118,10 @@ void VulkanBackend::Draw(RenderInternal, RenderScene* scene,
       .push_back(static_cast<VulkanBindingData*>(instance_data));
 }
 
-void VulkanBackend::Draw(RenderInternal, RenderScene* scene,
+void VulkanBackend::Draw(RenderInternal, RenderView* view,
                          absl::Span<const DrawCommand> commands) {
   render_state_.binding_data.insert(
-      static_cast<VulkanBindingData*>(scene->GetSceneBindingData()));
+      static_cast<VulkanBindingData*>(view->GetViewBindingData()));
   RenderPipeline* pipeline = nullptr;
   for (const auto& command : commands) {
     if (command.type == DrawCommand::Type::kPipeline) {
@@ -1144,7 +1145,7 @@ void VulkanBackend::Draw(RenderInternal, RenderScene* scene,
     return;
   }
   auto& draw =
-      render_state_.draw[scene->GetOrder()][static_cast<VulkanScene*>(scene)]
+      render_state_.draw[view->GetOrder()][static_cast<VulkanView*>(view)]
                         [static_cast<VulkanRenderPipeline*>(pipeline)];
   draw.commands.insert(draw.commands.end(), commands.begin(), commands.end());
   draw.commands.emplace_back(DrawCommand::Type::kReset);
@@ -1379,19 +1380,19 @@ void VulkanBackend::EndFrameRenderPass() {
 
   CallFrameCallbacks(&begin_render_callbacks_);
 
-  for (const auto& scene_group_it : render_state_.draw) {
-    for (const auto& scene_it : scene_group_it.second) {
-      VulkanScene* scene = scene_it.first;
-      VulkanBindingData* scene_data =
-          static_cast<VulkanBindingData*>(scene->GetSceneBindingData());
-      auto scene_descriptor_set = scene_data->GetDescriptorSet(frame_index_);
-      if (scene_descriptor_set) {
+  for (const auto& view_group_it : render_state_.draw) {
+    for (const auto& view_it : view_group_it.second) {
+      VulkanView* view = view_it.first;
+      VulkanBindingData* view_data =
+          static_cast<VulkanBindingData*>(view->GetViewBindingData());
+      auto view_descriptor_set = view_data->GetDescriptorSet(frame_index_);
+      if (view_descriptor_set) {
         frame.commands.bindDescriptorSets(
             vk::PipelineBindPoint::eGraphics,
-            scene_it.second.begin()->first->GetLayout(), 0,
-            {scene_descriptor_set}, scene_data->GetBufferOffsets());
+            view_it.second.begin()->first->GetLayout(), 0,
+            {view_descriptor_set}, view_data->GetBufferOffsets());
       }
-      for (const auto& pipeline_it : scene_it.second) {
+      for (const auto& pipeline_it : view_it.second) {
         VulkanRenderPipeline* pipeline = pipeline_it.first;
         frame.commands.bindPipeline(vk::PipelineBindPoint::eGraphics,
                                     pipeline->Get());
@@ -1549,8 +1550,8 @@ void VulkanBackend::EndFrameRenderPass() {
           }
         }
       }  // PipelineDraw
-    }  // SceneDraw
-  }  // SceneGroupDraw
+    }  // ViewDraw
+  }  // ViewGroupDraw
 
   CallFrameCallbacks(&end_render_callbacks_);
 

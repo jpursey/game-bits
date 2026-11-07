@@ -37,11 +37,11 @@ class ImGuiInstance final {
   static GB_CONTEXT_CONSTRAINT(kConstraintRenderSystem, kInRequired,
                                RenderSystem);
 
-  // OPTIONAL: Scene order for the GUI scene. By default this is 100, which is
+  // OPTIONAL: View order for the GUI view. By default this is 100, which is
   // suitably late.
-  static inline constexpr const char* kKeySceneOrder = "SceneOrder";
-  static GB_CONTEXT_CONSTRAINT_NAMED_DEFAULT(kConstraintSceneOrder, kInOptional,
-                                             int, kKeySceneOrder, 100);
+  static inline constexpr const char* kKeyViewOrder = "ViewOrder";
+  static GB_CONTEXT_CONSTRAINT_NAMED_DEFAULT(kConstraintViewOrder, kInOptional,
+                                             int, kKeyViewOrder, 100);
 
   // OPTIONAL: Pilot driving the program (see Pilot for how it is stored). With
   // one, each ImGui::NewFrame() takes the mouse and delta time from the pilot,
@@ -60,7 +60,7 @@ class ImGuiInstance final {
 
   using CreateContract =
       ContextContract<kConstraintFileSystem, kConstraintRenderSystem,
-                      kConstraintSceneOrder, kConstraintPilot,
+                      kConstraintViewOrder, kConstraintPilot,
                       kConstraintImGuiContext>;
 
   //----------------------------------------------------------------------------
@@ -157,7 +157,7 @@ class ImGuiInstance final {
   ImTextureID SetDrawDefaults(DrawList* draw);
 
   ValidatedContext context_;
-  std::unique_ptr<RenderScene> scene_;
+  std::unique_ptr<RenderView> view_;
   ResourceSet resources_;
   Material* material_ = nullptr;
   Mesh* mesh_ = nullptr;

@@ -9,7 +9,7 @@
 #include "gb/render/material_config.h"
 #include "gb/render/render_pipeline.h"
 #include "gb/render/render_types.h"
-#include "gb/render/test_render_scene_type.h"
+#include "gb/render/test_binding_layout.h"
 #include "gb/render/test_shader_code.h"
 
 namespace gb {
@@ -22,7 +22,7 @@ class TestRenderPipeline final : public RenderPipeline {
     bool fail_create_instance_binding_data = false;
   };
 
-  TestRenderPipeline(Config* config, TestRenderSceneType* scene_type,
+  TestRenderPipeline(Config* config, TestBindingLayout* binding_layout,
                      const VertexType* vertex_type,
                      absl::Span<const Binding> bindings,
                      TestShaderCode* vertex_shader,
@@ -31,7 +31,7 @@ class TestRenderPipeline final : public RenderPipeline {
   ~TestRenderPipeline() override;
 
   const MaterialConfig& GetConfig() const { return material_config_; }
-  TestRenderSceneType* GetSceneType() const { return scene_type_; }
+  TestBindingLayout* GetBindingLayout() const { return binding_layout_; }
   const VertexType* GetVertexType() const { return vertex_type_; }
   absl::Span<const Binding> GetBindings() const { return bindings_; }
   TestShaderCode* GetVertexShader() const { return vertex_shader_; }
@@ -43,7 +43,7 @@ class TestRenderPipeline final : public RenderPipeline {
 
  private:
   Config* const config_;
-  TestRenderSceneType* const scene_type_;
+  TestBindingLayout* const binding_layout_;
   const VertexType* const vertex_type_;
   const std::vector<Binding> bindings_;
   TestShaderCode* const vertex_shader_;

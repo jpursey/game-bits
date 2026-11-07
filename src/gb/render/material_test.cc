@@ -93,7 +93,7 @@ TEST_F(MaterialTest, BindingData) {
   std::vector<Binding> bindings = {
       Binding()
           .SetShaders(ShaderType::kVertex)
-          .SetLocation(BindingSet::kScene, 0)
+          .SetLocation(BindingSet::kView, 0)
           .SetConstants(constants_0),
       Binding()
           .SetShaders({ShaderType::kVertex, ShaderType::kFragment})

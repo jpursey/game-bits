@@ -65,46 +65,46 @@ bool WorldResources::InitGraphics() {
     return false;
   }
 
-  const auto* scene_constants =
-      render_system->RegisterConstantsType<SceneData>("SceneData");
-  const auto* scene_light_constants =
-      render_system->RegisterConstantsType<SceneLightData>("SceneLightData");
+  const auto* view_constants =
+      render_system->RegisterConstantsType<ViewData>("ViewData");
+  const auto* view_light_constants =
+      render_system->RegisterConstantsType<ViewLightData>("ViewLightData");
   const auto* instance_constants =
       render_system->RegisterConstantsType<InstanceData>("InstanceData");
   chunk_position_type_ =
       render_system->RegisterConstantsType<ChunkPosition>("ChunkPosition");
   mesh_draw_type_ =
       render_system->RegisterConstantsType<gb::MeshDraw>("MeshDraw");
-  if (scene_constants == nullptr || scene_light_constants == nullptr ||
+  if (view_constants == nullptr || view_light_constants == nullptr ||
       instance_constants == nullptr || chunk_position_type_ == nullptr ||
       mesh_draw_type_ == nullptr) {
     LOG(ERROR) << "Could not register one or more render constants";
     return false;
   }
 
-  scene_type_ = render_system->RegisterSceneType(
-      "Scene",
+  binding_layout_ = render_system->RegisterBindingLayout(
+      "World",
       {
           gb::Binding()
               .SetShaders(gb::ShaderType::kVertex)
-              .SetLocation(gb::BindingSet::kScene, 0)
-              .SetConstants(scene_constants, gb::DataVolatility::kPerFrame),
+              .SetLocation(gb::BindingSet::kView, 0)
+              .SetConstants(view_constants, gb::DataVolatility::kPerFrame),
           gb::Binding()
               .SetShaders(gb::ShaderType::kFragment)
-              .SetLocation(gb::BindingSet::kScene, 1)
-              .SetConstants(scene_light_constants,
+              .SetLocation(gb::BindingSet::kView, 1)
+              .SetConstants(view_light_constants,
                             gb::DataVolatility::kPerFrame),
           gb::Binding()
               .SetShaders(gb::ShaderType::kVertex)
-              .SetLocation(gb::BindingSet::kScene, kChunkPositionsBinding)
+              .SetLocation(gb::BindingSet::kView, kChunkPositionsBinding)
               .SetStorageBuffer(chunk_position_type_),
           gb::Binding()
               .SetShaders(gb::ShaderType::kVertex)
               .SetLocation(gb::BindingSet::kInstance, 0)
               .SetConstants(instance_constants, gb::DataVolatility::kPerFrame),
       });
-  if (scene_type_ == nullptr) {
-    LOG(ERROR) << "Could not register scene type";
+  if (binding_layout_ == nullptr) {
+    LOG(ERROR) << "Could not register binding layout";
     return false;
   }
 
@@ -113,8 +113,8 @@ bool WorldResources::InitGraphics() {
       {
           gb::Binding()
               .SetShaders(gb::ShaderType::kVertex)
-              .SetLocation(gb::BindingSet::kScene, 0)
-              .SetConstants(scene_constants),
+              .SetLocation(gb::BindingSet::kView, 0)
+              .SetConstants(view_constants),
           gb::Binding()
               .SetShaders(gb::ShaderType::kVertex)
               .SetLocation(gb::BindingSet::kInstance, 0)
@@ -142,8 +142,8 @@ bool WorldResources::InitGraphics() {
       {
           gb::Binding()
               .SetShaders(gb::ShaderType::kFragment)
-              .SetLocation(gb::BindingSet::kScene, 1)
-              .SetConstants(scene_light_constants),
+              .SetLocation(gb::BindingSet::kView, 1)
+              .SetConstants(view_light_constants),
           gb::Binding()
               .SetShaders(gb::ShaderType::kFragment)
               .SetLocation(gb::BindingSet::kMaterial, 0)
@@ -168,11 +168,11 @@ bool WorldResources::InitGraphics() {
       {
           gb::Binding()
               .SetShaders(gb::ShaderType::kVertex)
-              .SetLocation(gb::BindingSet::kScene, 0)
-              .SetConstants(scene_constants),
+              .SetLocation(gb::BindingSet::kView, 0)
+              .SetConstants(view_constants),
           gb::Binding()
               .SetShaders(gb::ShaderType::kVertex)
-              .SetLocation(gb::BindingSet::kScene, kChunkPositionsBinding)
+              .SetLocation(gb::BindingSet::kView, kChunkPositionsBinding)
               .SetStorageBuffer(chunk_position_type_),
       },
       vertex_shader->GetInputs(), vertex_shader->GetOutputs());
@@ -182,10 +182,10 @@ bool WorldResources::InitGraphics() {
   }
 
   gb::MaterialType* material_type = render_system->CreateMaterialType(
-      &resources_, scene_type_, chunk_vertex_type_, vertex_shader,
+      &resources_, binding_layout_, chunk_vertex_type_, vertex_shader,
       fragment_shader);
   gb::MaterialType* pool_material_type = render_system->CreateMaterialType(
-      &resources_, scene_type_, chunk_vertex_type_, pool_vertex_shader,
+      &resources_, binding_layout_, chunk_vertex_type_, pool_vertex_shader,
       fragment_shader);
   if (material_type == nullptr || pool_material_type == nullptr) {
     LOG(ERROR) << "Could not create material types";

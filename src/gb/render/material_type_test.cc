@@ -18,8 +18,8 @@ class MaterialTypeTest : public RenderTest {};
 
 TEST_F(MaterialTypeTest, CreateAsResourcePtr) {
   CreateSystem();
-  auto* scene_type = render_system_->RegisterSceneType("scene", {});
-  ASSERT_NE(scene_type, nullptr);
+  auto* binding_layout = render_system_->RegisterBindingLayout("layout", {});
+  ASSERT_NE(binding_layout, nullptr);
   auto* vertex_type = render_system_->RegisterVertexType<Vector3>(
       "vertex", {ShaderValue::kVec3});
   ASSERT_NE(vertex_type, nullptr);
@@ -37,7 +37,7 @@ TEST_F(MaterialTypeTest, CreateAsResourcePtr) {
   ASSERT_NE(fragment_shader, nullptr);
 
   ResourcePtr<MaterialType> material_type = render_system_->CreateMaterialType(
-      scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get());
+      binding_layout, vertex_type, vertex_shader.Get(), fragment_shader.Get());
   ASSERT_NE(material_type, nullptr);
 
   EXPECT_EQ(state_.invalid_call_count, 0);
@@ -45,8 +45,8 @@ TEST_F(MaterialTypeTest, CreateAsResourcePtr) {
 
 TEST_F(MaterialTypeTest, CreateInResourceSet) {
   CreateSystem();
-  auto* scene_type = render_system_->RegisterSceneType("scene", {});
-  ASSERT_NE(scene_type, nullptr);
+  auto* binding_layout = render_system_->RegisterBindingLayout("layout", {});
+  ASSERT_NE(binding_layout, nullptr);
   auto* vertex_type = render_system_->RegisterVertexType<Vector3>(
       "vertex", {ShaderValue::kVec3});
   ASSERT_NE(vertex_type, nullptr);
@@ -65,7 +65,7 @@ TEST_F(MaterialTypeTest, CreateInResourceSet) {
 
   ResourceSet resource_set;
   MaterialType* material_type = render_system_->CreateMaterialType(
-      &resource_set, scene_type, vertex_type, vertex_shader.Get(),
+      &resource_set, binding_layout, vertex_type, vertex_shader.Get(),
       fragment_shader.Get());
   ASSERT_NE(material_type, nullptr);
   EXPECT_EQ(resource_set.Get<Shader>(vertex_shader->GetResourceId()),
@@ -80,8 +80,8 @@ TEST_F(MaterialTypeTest, CreateInResourceSet) {
 
 TEST_F(MaterialTypeTest, FailCreateWithNullResources) {
   CreateSystem();
-  auto* scene_type = render_system_->RegisterSceneType("scene", {});
-  ASSERT_NE(scene_type, nullptr);
+  auto* binding_layout = render_system_->RegisterBindingLayout("layout", {});
+  ASSERT_NE(binding_layout, nullptr);
   auto* vertex_type = render_system_->RegisterVertexType<Vector3>(
       "vertex", {ShaderValue::kVec3});
   ASSERT_NE(vertex_type, nullptr);
@@ -104,30 +104,30 @@ TEST_F(MaterialTypeTest, FailCreateWithNullResources) {
       nullptr);
   EXPECT_EQ(
       render_system_->CreateMaterialType(
-          scene_type, nullptr, vertex_shader.Get(), fragment_shader.Get()),
+          binding_layout, nullptr, vertex_shader.Get(), fragment_shader.Get()),
       nullptr);
-  EXPECT_EQ(render_system_->CreateMaterialType(scene_type, vertex_type, nullptr,
-                                               fragment_shader.Get()),
+  EXPECT_EQ(render_system_->CreateMaterialType(binding_layout, vertex_type,
+                                               nullptr, fragment_shader.Get()),
             nullptr);
-  EXPECT_EQ(render_system_->CreateMaterialType(scene_type, vertex_type,
+  EXPECT_EQ(render_system_->CreateMaterialType(binding_layout, vertex_type,
                                                fragment_shader.Get(),
                                                fragment_shader.Get()),
             nullptr);
-  EXPECT_EQ(render_system_->CreateMaterialType(scene_type, vertex_type,
+  EXPECT_EQ(render_system_->CreateMaterialType(binding_layout, vertex_type,
                                                vertex_shader.Get(), nullptr),
             nullptr);
-  EXPECT_EQ(
-      render_system_->CreateMaterialType(
-          scene_type, vertex_type, vertex_shader.Get(), vertex_shader.Get()),
-      nullptr);
+  EXPECT_EQ(render_system_->CreateMaterialType(binding_layout, vertex_type,
+                                               vertex_shader.Get(),
+                                               vertex_shader.Get()),
+            nullptr);
 
   EXPECT_EQ(state_.invalid_call_count, 0);
 }
 
 TEST_F(MaterialTypeTest, FailCreateWithVertexMismatch) {
   CreateSystem();
-  auto* scene_type = render_system_->RegisterSceneType("scene", {});
-  ASSERT_NE(scene_type, nullptr);
+  auto* binding_layout = render_system_->RegisterBindingLayout("layout", {});
+  ASSERT_NE(binding_layout, nullptr);
   auto* vertex_type = render_system_->RegisterVertexType<Vector3>(
       "vertex", {ShaderValue::kVec3});
   ASSERT_NE(vertex_type, nullptr);
@@ -144,10 +144,10 @@ TEST_F(MaterialTypeTest, FailCreateWithVertexMismatch) {
                                        kVertexShaderCode.size()),
       {}, {{ShaderValue::kVec2, 0}}, {});
   ASSERT_NE(vertex_shader, nullptr);
-  EXPECT_EQ(
-      render_system_->CreateMaterialType(
-          scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get()),
-      nullptr);
+  EXPECT_EQ(render_system_->CreateMaterialType(binding_layout, vertex_type,
+                                               vertex_shader.Get(),
+                                               fragment_shader.Get()),
+            nullptr);
 
   vertex_shader = render_system_->CreateShader(
       ShaderType::kVertex,
@@ -155,10 +155,10 @@ TEST_F(MaterialTypeTest, FailCreateWithVertexMismatch) {
                                        kVertexShaderCode.size()),
       {}, {{ShaderValue::kVec3, 1}}, {});
   ASSERT_NE(vertex_shader, nullptr);
-  EXPECT_EQ(
-      render_system_->CreateMaterialType(
-          scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get()),
-      nullptr);
+  EXPECT_EQ(render_system_->CreateMaterialType(binding_layout, vertex_type,
+                                               vertex_shader.Get(),
+                                               fragment_shader.Get()),
+            nullptr);
 
   vertex_shader = render_system_->CreateShader(
       ShaderType::kVertex,
@@ -166,10 +166,10 @@ TEST_F(MaterialTypeTest, FailCreateWithVertexMismatch) {
                                        kVertexShaderCode.size()),
       {}, {{ShaderValue::kVec3, 0}, {ShaderValue::kVec2, 1}}, {});
   ASSERT_NE(vertex_shader, nullptr);
-  EXPECT_EQ(
-      render_system_->CreateMaterialType(
-          scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get()),
-      nullptr);
+  EXPECT_EQ(render_system_->CreateMaterialType(binding_layout, vertex_type,
+                                               vertex_shader.Get(),
+                                               fragment_shader.Get()),
+            nullptr);
 
   vertex_shader = render_system_->CreateShader(
       ShaderType::kVertex,
@@ -177,18 +177,18 @@ TEST_F(MaterialTypeTest, FailCreateWithVertexMismatch) {
                                        kVertexShaderCode.size()),
       {}, {{ShaderValue::kVec3, -1}}, {});
   ASSERT_NE(vertex_shader, nullptr);
-  EXPECT_EQ(
-      render_system_->CreateMaterialType(
-          scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get()),
-      nullptr);
+  EXPECT_EQ(render_system_->CreateMaterialType(binding_layout, vertex_type,
+                                               vertex_shader.Get(),
+                                               fragment_shader.Get()),
+            nullptr);
 
   EXPECT_EQ(state_.invalid_call_count, 0);
 }
 
 TEST_F(MaterialTypeTest, FailCreateWithShaderInputOutputMismatch) {
   CreateSystem();
-  auto* scene_type = render_system_->RegisterSceneType("scene", {});
-  ASSERT_NE(scene_type, nullptr);
+  auto* binding_layout = render_system_->RegisterBindingLayout("layout", {});
+  ASSERT_NE(binding_layout, nullptr);
   auto* vertex_type = render_system_->RegisterVertexType<Vector3>(
       "vertex", {ShaderValue::kVec3});
   ASSERT_NE(vertex_type, nullptr);
@@ -206,10 +206,10 @@ TEST_F(MaterialTypeTest, FailCreateWithShaderInputOutputMismatch) {
                                        kFragmentShaderCode.size()),
       {}, {{ShaderValue::kVec2, 0}, {ShaderValue::kVec2, 1}}, {});
   ASSERT_NE(fragment_shader, nullptr);
-  EXPECT_EQ(
-      render_system_->CreateMaterialType(
-          scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get()),
-      nullptr);
+  EXPECT_EQ(render_system_->CreateMaterialType(binding_layout, vertex_type,
+                                               vertex_shader.Get(),
+                                               fragment_shader.Get()),
+            nullptr);
 
   fragment_shader = render_system_->CreateShader(
       ShaderType::kFragment,
@@ -217,10 +217,10 @@ TEST_F(MaterialTypeTest, FailCreateWithShaderInputOutputMismatch) {
                                        kFragmentShaderCode.size()),
       {}, {{ShaderValue::kVec3, 0}, {ShaderValue::kVec3, 1}}, {});
   ASSERT_NE(fragment_shader, nullptr);
-  EXPECT_EQ(
-      render_system_->CreateMaterialType(
-          scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get()),
-      nullptr);
+  EXPECT_EQ(render_system_->CreateMaterialType(binding_layout, vertex_type,
+                                               vertex_shader.Get(),
+                                               fragment_shader.Get()),
+            nullptr);
 
   fragment_shader = render_system_->CreateShader(
       ShaderType::kFragment,
@@ -232,15 +232,15 @@ TEST_F(MaterialTypeTest, FailCreateWithShaderInputOutputMismatch) {
        {ShaderValue::kFloat, 2}},
       {});
   ASSERT_NE(fragment_shader, nullptr);
-  EXPECT_EQ(
-      render_system_->CreateMaterialType(
-          scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get()),
-      nullptr);
+  EXPECT_EQ(render_system_->CreateMaterialType(binding_layout, vertex_type,
+                                               vertex_shader.Get(),
+                                               fragment_shader.Get()),
+            nullptr);
 
   EXPECT_EQ(state_.invalid_call_count, 0);
 }
 
-TEST_F(MaterialTypeTest, FailCreateWithSceneVertexBindingMismatch) {
+TEST_F(MaterialTypeTest, FailCreateWithBindingLayoutVertexBindingMismatch) {
   CreateSystem();
   auto* constants_0 = render_system_->RegisterConstantsType<Vector3>("0");
   auto* constants_2 = render_system_->RegisterConstantsType<Vector2>("2");
@@ -252,7 +252,7 @@ TEST_F(MaterialTypeTest, FailCreateWithSceneVertexBindingMismatch) {
   std::vector<Binding> bindings = {
       Binding()
           .SetShaders(ShaderType::kVertex)
-          .SetLocation(BindingSet::kScene, 0)
+          .SetLocation(BindingSet::kView, 0)
           .SetConstants(constants_0),
       Binding()
           .SetShaders(ShaderType::kFragment)
@@ -263,8 +263,9 @@ TEST_F(MaterialTypeTest, FailCreateWithSceneVertexBindingMismatch) {
           .SetLocation(BindingSet::kInstance, 2)
           .SetConstants(constants_2),
   };
-  auto* scene_type = render_system_->RegisterSceneType("scene", bindings);
-  ASSERT_NE(scene_type, nullptr);
+  auto* binding_layout =
+      render_system_->RegisterBindingLayout("layout", bindings);
+  ASSERT_NE(binding_layout, nullptr);
   auto* vertex_type = render_system_->RegisterVertexType<Vector3>(
       "vertex", {ShaderValue::kVec3});
   ASSERT_NE(vertex_type, nullptr);
@@ -281,10 +282,10 @@ TEST_F(MaterialTypeTest, FailCreateWithSceneVertexBindingMismatch) {
                                        kVertexShaderCode.size()),
       {bindings[0].SetConstants(constants_other)}, {}, {});
   ASSERT_NE(vertex_shader, nullptr);
-  EXPECT_EQ(
-      render_system_->CreateMaterialType(
-          scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get()),
-      nullptr);
+  EXPECT_EQ(render_system_->CreateMaterialType(binding_layout, vertex_type,
+                                               vertex_shader.Get(),
+                                               fragment_shader.Get()),
+            nullptr);
 
   vertex_shader = render_system_->CreateShader(
       ShaderType::kVertex,
@@ -292,10 +293,10 @@ TEST_F(MaterialTypeTest, FailCreateWithSceneVertexBindingMismatch) {
                                        kVertexShaderCode.size()),
       {bindings[0].SetTexture()}, {}, {});
   ASSERT_NE(vertex_shader, nullptr);
-  EXPECT_EQ(
-      render_system_->CreateMaterialType(
-          scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get()),
-      nullptr);
+  EXPECT_EQ(render_system_->CreateMaterialType(binding_layout, vertex_type,
+                                               vertex_shader.Get(),
+                                               fragment_shader.Get()),
+            nullptr);
 
   vertex_shader = render_system_->CreateShader(
       ShaderType::kVertex,
@@ -306,10 +307,10 @@ TEST_F(MaterialTypeTest, FailCreateWithSceneVertexBindingMismatch) {
            .SetConstants(constants_other)},
       {}, {});
   ASSERT_NE(vertex_shader, nullptr);
-  EXPECT_EQ(
-      render_system_->CreateMaterialType(
-          scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get()),
-      nullptr);
+  EXPECT_EQ(render_system_->CreateMaterialType(binding_layout, vertex_type,
+                                               vertex_shader.Get(),
+                                               fragment_shader.Get()),
+            nullptr);
 
   vertex_shader = render_system_->CreateShader(
       ShaderType::kVertex,
@@ -317,10 +318,10 @@ TEST_F(MaterialTypeTest, FailCreateWithSceneVertexBindingMismatch) {
                                        kVertexShaderCode.size()),
       {bindings[2].SetConstants(constants_other)}, {}, {});
   ASSERT_NE(vertex_shader, nullptr);
-  EXPECT_EQ(
-      render_system_->CreateMaterialType(
-          scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get()),
-      nullptr);
+  EXPECT_EQ(render_system_->CreateMaterialType(binding_layout, vertex_type,
+                                               vertex_shader.Get(),
+                                               fragment_shader.Get()),
+            nullptr);
 
   vertex_shader = render_system_->CreateShader(
       ShaderType::kVertex,
@@ -328,15 +329,15 @@ TEST_F(MaterialTypeTest, FailCreateWithSceneVertexBindingMismatch) {
                                        kVertexShaderCode.size()),
       {bindings[2].SetTexture()}, {}, {});
   ASSERT_NE(vertex_shader, nullptr);
-  EXPECT_EQ(
-      render_system_->CreateMaterialType(
-          scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get()),
-      nullptr);
+  EXPECT_EQ(render_system_->CreateMaterialType(binding_layout, vertex_type,
+                                               vertex_shader.Get(),
+                                               fragment_shader.Get()),
+            nullptr);
 
   EXPECT_EQ(state_.invalid_call_count, 0);
 }
 
-TEST_F(MaterialTypeTest, FailCreateWithSceneFragmentBindingMismatch) {
+TEST_F(MaterialTypeTest, FailCreateWithBindingLayoutFragmentBindingMismatch) {
   CreateSystem();
   auto* constants_0 = render_system_->RegisterConstantsType<Vector3>("0");
   auto* constants_2 = render_system_->RegisterConstantsType<Vector2>("2");
@@ -348,7 +349,7 @@ TEST_F(MaterialTypeTest, FailCreateWithSceneFragmentBindingMismatch) {
   std::vector<Binding> bindings = {
       Binding()
           .SetShaders(ShaderType::kVertex)
-          .SetLocation(BindingSet::kScene, 0)
+          .SetLocation(BindingSet::kView, 0)
           .SetConstants(constants_0),
       Binding()
           .SetShaders(ShaderType::kFragment)
@@ -359,8 +360,9 @@ TEST_F(MaterialTypeTest, FailCreateWithSceneFragmentBindingMismatch) {
           .SetLocation(BindingSet::kInstance, 2)
           .SetConstants(constants_2),
   };
-  auto* scene_type = render_system_->RegisterSceneType("scene", bindings);
-  ASSERT_NE(scene_type, nullptr);
+  auto* binding_layout =
+      render_system_->RegisterBindingLayout("layout", bindings);
+  ASSERT_NE(binding_layout, nullptr);
   auto* vertex_type = render_system_->RegisterVertexType<Vector3>(
       "vertex", {ShaderValue::kVec3});
   ASSERT_NE(vertex_type, nullptr);
@@ -380,10 +382,10 @@ TEST_F(MaterialTypeTest, FailCreateWithSceneFragmentBindingMismatch) {
            .SetConstants(constants_other)},
       {}, {});
   ASSERT_NE(fragment_shader, nullptr);
-  EXPECT_EQ(
-      render_system_->CreateMaterialType(
-          scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get()),
-      nullptr);
+  EXPECT_EQ(render_system_->CreateMaterialType(binding_layout, vertex_type,
+                                               vertex_shader.Get(),
+                                               fragment_shader.Get()),
+            nullptr);
 
   fragment_shader = render_system_->CreateShader(
       ShaderType::kFragment,
@@ -391,10 +393,10 @@ TEST_F(MaterialTypeTest, FailCreateWithSceneFragmentBindingMismatch) {
                                        kFragmentShaderCode.size()),
       {bindings[0].SetTexture()}, {}, {});
   ASSERT_NE(fragment_shader, nullptr);
-  EXPECT_EQ(
-      render_system_->CreateMaterialType(
-          scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get()),
-      nullptr);
+  EXPECT_EQ(render_system_->CreateMaterialType(binding_layout, vertex_type,
+                                               vertex_shader.Get(),
+                                               fragment_shader.Get()),
+            nullptr);
 
   fragment_shader = render_system_->CreateShader(
       ShaderType::kFragment,
@@ -402,10 +404,10 @@ TEST_F(MaterialTypeTest, FailCreateWithSceneFragmentBindingMismatch) {
                                        kFragmentShaderCode.size()),
       {bindings[1].SetConstants(constants_other)}, {}, {});
   ASSERT_NE(fragment_shader, nullptr);
-  EXPECT_EQ(
-      render_system_->CreateMaterialType(
-          scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get()),
-      nullptr);
+  EXPECT_EQ(render_system_->CreateMaterialType(binding_layout, vertex_type,
+                                               vertex_shader.Get(),
+                                               fragment_shader.Get()),
+            nullptr);
 
   fragment_shader = render_system_->CreateShader(
       ShaderType::kFragment,
@@ -413,10 +415,10 @@ TEST_F(MaterialTypeTest, FailCreateWithSceneFragmentBindingMismatch) {
                                        kFragmentShaderCode.size()),
       {bindings[2].SetConstants(constants_other)}, {}, {});
   ASSERT_NE(fragment_shader, nullptr);
-  EXPECT_EQ(
-      render_system_->CreateMaterialType(
-          scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get()),
-      nullptr);
+  EXPECT_EQ(render_system_->CreateMaterialType(binding_layout, vertex_type,
+                                               vertex_shader.Get(),
+                                               fragment_shader.Get()),
+            nullptr);
 
   fragment_shader = render_system_->CreateShader(
       ShaderType::kFragment,
@@ -424,10 +426,10 @@ TEST_F(MaterialTypeTest, FailCreateWithSceneFragmentBindingMismatch) {
                                        kFragmentShaderCode.size()),
       {bindings[2].SetTexture()}, {}, {});
   ASSERT_NE(fragment_shader, nullptr);
-  EXPECT_EQ(
-      render_system_->CreateMaterialType(
-          scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get()),
-      nullptr);
+  EXPECT_EQ(render_system_->CreateMaterialType(binding_layout, vertex_type,
+                                               vertex_shader.Get(),
+                                               fragment_shader.Get()),
+            nullptr);
 
   EXPECT_EQ(state_.invalid_call_count, 0);
 }
@@ -444,7 +446,7 @@ TEST_F(MaterialTypeTest, FailCreateWithVertexFragmentBindingMismatch) {
   std::vector<Binding> bindings = {
       Binding()
           .SetShaders(ShaderType::kVertex)
-          .SetLocation(BindingSet::kScene, 0)
+          .SetLocation(BindingSet::kView, 0)
           .SetConstants(constants_0),
       Binding()
           .SetShaders({ShaderType::kVertex, ShaderType::kFragment})
@@ -455,8 +457,8 @@ TEST_F(MaterialTypeTest, FailCreateWithVertexFragmentBindingMismatch) {
           .SetLocation(BindingSet::kInstance, 2)
           .SetConstants(constants_2),
   };
-  auto* scene_type = render_system_->RegisterSceneType("scene", {});
-  ASSERT_NE(scene_type, nullptr);
+  auto* binding_layout = render_system_->RegisterBindingLayout("layout", {});
+  ASSERT_NE(binding_layout, nullptr);
   auto* vertex_type = render_system_->RegisterVertexType<Vector3>(
       "vertex", {ShaderValue::kVec3});
   ASSERT_NE(vertex_type, nullptr);
@@ -476,10 +478,10 @@ TEST_F(MaterialTypeTest, FailCreateWithVertexFragmentBindingMismatch) {
            .SetConstants(constants_other)},
       {}, {});
   ASSERT_NE(fragment_shader, nullptr);
-  EXPECT_EQ(
-      render_system_->CreateMaterialType(
-          scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get()),
-      nullptr);
+  EXPECT_EQ(render_system_->CreateMaterialType(binding_layout, vertex_type,
+                                               vertex_shader.Get(),
+                                               fragment_shader.Get()),
+            nullptr);
 
   fragment_shader = render_system_->CreateShader(
       ShaderType::kFragment,
@@ -487,10 +489,10 @@ TEST_F(MaterialTypeTest, FailCreateWithVertexFragmentBindingMismatch) {
                                        kFragmentShaderCode.size()),
       {bindings[0].SetTexture()}, {}, {});
   ASSERT_NE(fragment_shader, nullptr);
-  EXPECT_EQ(
-      render_system_->CreateMaterialType(
-          scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get()),
-      nullptr);
+  EXPECT_EQ(render_system_->CreateMaterialType(binding_layout, vertex_type,
+                                               vertex_shader.Get(),
+                                               fragment_shader.Get()),
+            nullptr);
 
   fragment_shader = render_system_->CreateShader(
       ShaderType::kFragment,
@@ -498,10 +500,10 @@ TEST_F(MaterialTypeTest, FailCreateWithVertexFragmentBindingMismatch) {
                                        kFragmentShaderCode.size()),
       {bindings[1].SetConstants(constants_other)}, {}, {});
   ASSERT_NE(fragment_shader, nullptr);
-  EXPECT_EQ(
-      render_system_->CreateMaterialType(
-          scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get()),
-      nullptr);
+  EXPECT_EQ(render_system_->CreateMaterialType(binding_layout, vertex_type,
+                                               vertex_shader.Get(),
+                                               fragment_shader.Get()),
+            nullptr);
 
   fragment_shader = render_system_->CreateShader(
       ShaderType::kFragment,
@@ -509,10 +511,10 @@ TEST_F(MaterialTypeTest, FailCreateWithVertexFragmentBindingMismatch) {
                                        kFragmentShaderCode.size()),
       {bindings[2].SetConstants(constants_other)}, {}, {});
   ASSERT_NE(fragment_shader, nullptr);
-  EXPECT_EQ(
-      render_system_->CreateMaterialType(
-          scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get()),
-      nullptr);
+  EXPECT_EQ(render_system_->CreateMaterialType(binding_layout, vertex_type,
+                                               vertex_shader.Get(),
+                                               fragment_shader.Get()),
+            nullptr);
 
   fragment_shader = render_system_->CreateShader(
       ShaderType::kFragment,
@@ -520,18 +522,18 @@ TEST_F(MaterialTypeTest, FailCreateWithVertexFragmentBindingMismatch) {
                                        kFragmentShaderCode.size()),
       {bindings[2].SetTexture()}, {}, {});
   ASSERT_NE(fragment_shader, nullptr);
-  EXPECT_EQ(
-      render_system_->CreateMaterialType(
-          scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get()),
-      nullptr);
+  EXPECT_EQ(render_system_->CreateMaterialType(binding_layout, vertex_type,
+                                               vertex_shader.Get(),
+                                               fragment_shader.Get()),
+            nullptr);
 
   EXPECT_EQ(state_.invalid_call_count, 0);
 }
 
 TEST_F(MaterialTypeTest, FailCreateWithNullPipeline) {
   CreateSystem();
-  auto* scene_type = render_system_->RegisterSceneType("scene", {});
-  ASSERT_NE(scene_type, nullptr);
+  auto* binding_layout = render_system_->RegisterBindingLayout("layout", {});
+  ASSERT_NE(binding_layout, nullptr);
   auto* vertex_type = render_system_->RegisterVertexType<Vector3>(
       "vertex", {ShaderValue::kVec3});
   ASSERT_NE(vertex_type, nullptr);
@@ -549,18 +551,18 @@ TEST_F(MaterialTypeTest, FailCreateWithNullPipeline) {
   ASSERT_NE(fragment_shader, nullptr);
 
   state_.fail_create_pipeline = true;
-  ASSERT_EQ(
-      render_system_->CreateMaterialType(
-          scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get()),
-      nullptr);
+  ASSERT_EQ(render_system_->CreateMaterialType(binding_layout, vertex_type,
+                                               vertex_shader.Get(),
+                                               fragment_shader.Get()),
+            nullptr);
 
   EXPECT_EQ(state_.invalid_call_count, 0);
 }
 
 TEST_F(MaterialTypeTest, Properties) {
   CreateSystem();
-  auto* scene_type = render_system_->RegisterSceneType("scene", {});
-  ASSERT_NE(scene_type, nullptr);
+  auto* binding_layout = render_system_->RegisterBindingLayout("layout", {});
+  ASSERT_NE(binding_layout, nullptr);
   auto* vertex_type = render_system_->RegisterVertexType<Vector3>(
       "vertex", {ShaderValue::kVec3});
   ASSERT_NE(vertex_type, nullptr);
@@ -578,7 +580,7 @@ TEST_F(MaterialTypeTest, Properties) {
   ASSERT_NE(fragment_shader, nullptr);
 
   auto material_type = render_system_->CreateMaterialType(
-      scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get());
+      binding_layout, vertex_type, vertex_shader.Get(), fragment_shader.Get());
   ASSERT_NE(material_type, nullptr);
   const MaterialType* const_material_type = material_type.Get();
   EXPECT_EQ(const_material_type->GetConfig(), MaterialConfig());
@@ -598,8 +600,8 @@ TEST_F(MaterialTypeTest, Properties) {
 
 TEST_F(MaterialTypeTest, ExplicitMaterialConfig) {
   CreateSystem();
-  auto* scene_type = render_system_->RegisterSceneType("scene", {});
-  ASSERT_NE(scene_type, nullptr);
+  auto* binding_layout = render_system_->RegisterBindingLayout("layout", {});
+  ASSERT_NE(binding_layout, nullptr);
   auto* vertex_type = render_system_->RegisterVertexType<Vector3>(
       "vertex", {ShaderValue::kVec3});
   ASSERT_NE(vertex_type, nullptr);
@@ -623,7 +625,7 @@ TEST_F(MaterialTypeTest, ExplicitMaterialConfig) {
                                     .SetColorChannels({})
                                     .SetDepthBias(-1.0f, 0.5f);
   auto material_type = render_system_->CreateMaterialType(
-      scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get(),
+      binding_layout, vertex_type, vertex_shader.Get(), fragment_shader.Get(),
       config);
   ASSERT_NE(material_type, nullptr);
   const MaterialType* const_material_type = material_type.Get();
@@ -645,7 +647,7 @@ TEST_F(MaterialTypeTest, BindingData) {
   std::vector<Binding> bindings = {
       Binding()
           .SetShaders(ShaderType::kVertex)
-          .SetLocation(BindingSet::kScene, 0)
+          .SetLocation(BindingSet::kView, 0)
           .SetConstants(constants_0),
       Binding()
           .SetShaders({ShaderType::kVertex, ShaderType::kFragment})
@@ -678,14 +680,14 @@ TEST_F(MaterialTypeTest, CombinesSharedBindings) {
   CreateSystem();
   auto* constants_type = render_system_->RegisterConstantsType<Vector2>("vec2");
   ASSERT_NE(constants_type, nullptr);
-  const Binding scene_binding =
+  const Binding layout_binding =
       Binding()
           .SetShaders(ShaderType::kVertex)
           .SetLocation(BindingSet::kMaterial, 0)
           .SetConstants(constants_type, DataVolatility::kStaticReadWrite);
-  auto* scene_type =
-      render_system_->RegisterSceneType("scene", {scene_binding});
-  ASSERT_NE(scene_type, nullptr);
+  auto* binding_layout =
+      render_system_->RegisterBindingLayout("layout", {layout_binding});
+  ASSERT_NE(binding_layout, nullptr);
   auto* vertex_type = render_system_->RegisterVertexType<Vector3>(
       "vertex", {ShaderValue::kVec3});
   ASSERT_NE(vertex_type, nullptr);
@@ -693,20 +695,20 @@ TEST_F(MaterialTypeTest, CombinesSharedBindings) {
       ShaderType::kVertex,
       render_system_->CreateShaderCode(kVertexShaderCode.data(),
                                        kVertexShaderCode.size()),
-      {scene_binding}, {}, {});
+      {layout_binding}, {}, {});
   ASSERT_NE(vertex_shader, nullptr);
   auto fragment_shader = render_system_->CreateShader(
       ShaderType::kFragment,
       render_system_->CreateShaderCode(kFragmentShaderCode.data(),
                                        kFragmentShaderCode.size()),
-      {Binding(scene_binding)
+      {Binding(layout_binding)
            .SetShaders(ShaderType::kFragment)
            .SetConstants(constants_type, DataVolatility::kPerFrame)},
       {}, {});
   ASSERT_NE(fragment_shader, nullptr);
 
   auto material_type = render_system_->CreateMaterialType(
-      scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get());
+      binding_layout, vertex_type, vertex_shader.Get(), fragment_shader.Get());
   ASSERT_NE(material_type, nullptr);
   const Binding expected_binding =
       Binding()
@@ -721,25 +723,26 @@ TEST_F(MaterialTypeTest, CombinesSharedBindings) {
   EXPECT_EQ(state_.invalid_call_count, 0);
 }
 
-TEST_F(MaterialTypeTest, CreateCopiesSceneTypeDefaults) {
+TEST_F(MaterialTypeTest, CreateCopiesBindingLayoutDefaults) {
   CreateSystem();
   auto* constants_type = render_system_->RegisterConstantsType<Vector2>("vec2");
   ASSERT_NE(constants_type, nullptr);
-  auto* scene_type = render_system_->RegisterSceneType(
-      "scene", {Binding()
-                    .SetShaders(ShaderType::kVertex)
-                    .SetLocation(BindingSet::kMaterial, 0)
-                    .SetConstants(constants_type),
-                Binding()
-                    .SetShaders(ShaderType::kFragment)
-                    .SetLocation(BindingSet::kInstance, 1)
-                    .SetTexture()});
-  ASSERT_NE(scene_type, nullptr);
+  auto* binding_layout = render_system_->RegisterBindingLayout(
+      "layout", {Binding()
+                     .SetShaders(ShaderType::kVertex)
+                     .SetLocation(BindingSet::kMaterial, 0)
+                     .SetConstants(constants_type),
+                 Binding()
+                     .SetShaders(ShaderType::kFragment)
+                     .SetLocation(BindingSet::kInstance, 1)
+                     .SetTexture()});
+  ASSERT_NE(binding_layout, nullptr);
   auto texture =
       render_system_->CreateTexture(DataVolatility::kStaticReadWrite, 4, 4);
   ASSERT_NE(texture, nullptr);
-  scene_type->GetDefaultMaterialBindingData()->SetConstants<Vector2>(0, {1, 2});
-  scene_type->GetDefaultInstanceBindingData()->SetTexture(1, texture.Get());
+  binding_layout->GetDefaultMaterialBindingData()->SetConstants<Vector2>(
+      0, {1, 2});
+  binding_layout->GetDefaultInstanceBindingData()->SetTexture(1, texture.Get());
   auto* vertex_type = render_system_->RegisterVertexType<Vector3>(
       "vertex", {ShaderValue::kVec3});
   ASSERT_NE(vertex_type, nullptr);
@@ -757,7 +760,7 @@ TEST_F(MaterialTypeTest, CreateCopiesSceneTypeDefaults) {
   ASSERT_NE(fragment_shader, nullptr);
 
   auto material_type = render_system_->CreateMaterialType(
-      scene_type, vertex_type, vertex_shader.Get(), fragment_shader.Get());
+      binding_layout, vertex_type, vertex_shader.Get(), fragment_shader.Get());
   ASSERT_NE(material_type, nullptr);
   Vector2 constants = {0, 0};
   material_type->GetDefaultMaterialBindingData()->GetConstants<Vector2>(

@@ -230,13 +230,13 @@ class VulkanBackend final : public RenderBackend {
                                      TextureFormat format) override;
   std::unique_ptr<ShaderCode> CreateShaderCode(RenderInternal, const void* code,
                                                int64_t code_size) override;
-  std::unique_ptr<RenderSceneType> CreateSceneType(
+  std::unique_ptr<BindingLayout> CreateBindingLayout(
       RenderInternal, absl::Span<const Binding> bindings) override;
-  std::unique_ptr<RenderScene> CreateScene(RenderInternal,
-                                           RenderSceneType* scene_type,
-                                           int scene_order) override;
+  std::unique_ptr<RenderView> CreateView(RenderInternal,
+                                         BindingLayout* binding_layout,
+                                         int view_order) override;
   std::unique_ptr<RenderPipeline> CreatePipeline(
-      RenderInternal, RenderSceneType* scene_type,
+      RenderInternal, BindingLayout* binding_layout,
       const VertexType* vertex_type, absl::Span<const Binding> bindings,
       ShaderCode* vertex_shader, ShaderCode* fragment_shader,
       const MaterialConfig& config) override;
@@ -258,10 +258,10 @@ class VulkanBackend final : public RenderBackend {
   void SetDefaultBindings(RenderInternal,
                           const DefaultBindings& defaults) override;
   bool BeginFrame(RenderInternal) override;
-  void Draw(RenderInternal, RenderScene* scene, RenderPipeline* pipeline,
+  void Draw(RenderInternal, RenderView* view, RenderPipeline* pipeline,
             BindingData* material_data, BindingData* instance_data,
             RenderBuffer* vertices, RenderBuffer* indices) override;
-  void Draw(RenderInternal, RenderScene* scene,
+  void Draw(RenderInternal, RenderView* view,
             absl::Span<const DrawCommand> commands) override;
   void EndFrame(RenderInternal) override;
   std::unique_ptr<Image> EndFrameAndReadImage(RenderInternal) override;

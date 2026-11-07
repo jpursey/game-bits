@@ -8,8 +8,8 @@ class World;
 class WorldResources;
 struct GuiFonts;
 struct Vertex;
-struct SceneData;
-struct SceneLightData;
+struct ViewData;
+struct ViewLightData;
 struct InstanceData;
 
 #endif  // GAME_TYPES_H_

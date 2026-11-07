@@ -217,42 +217,6 @@ same for slots, removing the baselines and the subtraction in every gather, at
 the cost of a compare as each point is recorded. Measure a timed point before
 and after.
 
-## Render passes and targets
-
-- **Layers:** render, render_vulkan
-- **Size:** large
-- **Feature workflow:** yes
-- **Depends on:** nothing
-- **Requested by:** Terra Diem *Water refraction and reflections*, *Sun and
-  moon shadows*
-- **Background:** Terra Diem's meshing assessment
-  (`docs/tech/meshing-assessment.md` there)
-
-Everything is drawn in one render pass, to the window, with scenes in
-`scene_order`. Effects that read what was already drawn (refraction and
-reflections on water, fog by depth, soft particles) or draw from somewhere
-else (shadow maps, mirrors, maps) need more than one pass. Add:
-- **Render targets:** color textures, in the formats of *Volume textures and
-  storage buffers* if that's done, and depth textures, sized in pixels or
-  relative to the frame, following the window as it resizes.
-- **Passes:** each draws scenes into a set of targets (or the frame), clearing
-  them or keeping what's there, with its own scene constants (a camera of its
-  own). A later pass can sample an earlier pass's color and depth as textures.
-  Passes are declared up front, in order, so the backend can place the
-  synchronization between them: a small frame graph rather than commands
-  issued as they come.
-- **Depth-only passes**, for shadow maps.
-- The test backend recording passes, so tests can check their order and what
-  each reads.
-
-Check by hand in `examples/render-check`: a scene drawn to a target, then shown
-distorted, beside its depth shown as gray.
-
-Terra Diem would draw its opaque world first, then its water, sampling the
-world's color (offset by the water's moving normals, to distort what's below)
-and depth (for color by depth, and foam at the shore), with reflections in
-screen space. Later, optionally, it would draw shadow maps.
-
 ## Instanced draws
 
 - **Layers:** render, render_vulkan
@@ -528,7 +492,7 @@ With a pilot, `ImGuiInstance` leaves out items behind another of its own
 windows, but only looks at its own context's windows. When two instances share
 a render system and one draws on top of the other, an item covered by the
 other instance's window is still found, though a click reaches the window on
-top. Order the instances by their scene order, and leave out an item that a
+top. Order the instances by their view order, and leave out an item that a
 window of a later instance covers.
 
 ## Pilot clicks on scrolled out items

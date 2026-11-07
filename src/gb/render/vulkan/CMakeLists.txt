@@ -11,6 +11,7 @@ set(gb_render_vulkan_SOURCE
   vulkan_backend.cc vulkan_backend.h
   vulkan_binding_data.cc vulkan_binding_data.h
   vulkan_binding_data_factory.cc vulkan_binding_data_factory.h
+  vulkan_binding_layout.cc vulkan_binding_layout.h
   vulkan_buffer.cc vulkan_buffer.h
   vulkan_descriptor_pool.cc vulkan_descriptor_pool.h
   vulkan_format.h
@@ -20,13 +21,12 @@ set(gb_render_vulkan_SOURCE
   vulkan_render_buffer.cc vulkan_render_buffer.h
   vulkan_render_pipeline.cc vulkan_render_pipeline.h
   vulkan_render_state.h
-  vulkan_scene.cc vulkan_scene.h
-  vulkan_scene_type.cc vulkan_scene_type.h
   vulkan_shader_code.cc vulkan_shader_code.h
   vulkan_texels.cc vulkan_texels.h
   vulkan_texture.cc vulkan_texture.h
   vulkan_texture_array.cc vulkan_texture_array.h
   vulkan_types.h
+  vulkan_view.cc vulkan_view.h
   vulkan_volume_texture.cc vulkan_volume_texture.h
   vulkan_window.h
 )

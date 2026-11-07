@@ -87,8 +87,8 @@ class RenderCheck final : public gb::Game {
     float y;
   };
 
-  // Matches SceneData in shaders/quad.vert and shaders/volume.vert.
-  struct SceneData {
+  // Matches ViewData in shaders/quad.vert and shaders/volume.vert.
+  struct ViewData {
     float pixel_to_clip[4];
   };
 
@@ -239,7 +239,7 @@ class RenderCheck final : public gb::Game {
   int64_t peak_process_bytes_ = 0;
 
   // Instance churn.
-  std::unique_ptr<gb::RenderScene> scene_;
+  std::unique_ptr<gb::RenderView> view_;
   gb::Material* quad_material_ = nullptr;
   gb::Mesh* quad_mesh_ = nullptr;
   std::vector<std::unique_ptr<gb::BindingData>> instances_;

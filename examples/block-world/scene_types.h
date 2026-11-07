@@ -12,11 +12,11 @@ struct Vertex {
   gb::Pixel color;
 };
 
-struct SceneData {
+struct ViewData {
   glm::mat4 view_projection;
 };
 
-struct SceneLightData {
+struct ViewLightData {
   glm::vec4 ambient;    // w is intensity
   glm::vec4 sun_color;  // w is intensity
   glm::vec3 sun_direction;
@@ -27,7 +27,7 @@ struct InstanceData {
 };
 
 // Matches ChunkPosition in block_pool.vert, which reads a storage buffer of
-// them at this binding in the scene's binding set.
+// them at this binding in the view's binding set.
 struct ChunkPosition {
   glm::vec4 offset;  // xyz is added to each vertex.
 };

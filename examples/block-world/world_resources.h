@@ -6,8 +6,8 @@
 #include "gb/base/validated_context.h"
 #include "gb/file/file_types.h"
 #include "gb/imgui/imgui_types.h"
+#include "gb/render/binding_layout.h"
 #include "gb/render/material.h"
-#include "gb/render/render_scene_type.h"
 #include "gb/resource/resource_set.h"
 #include "imgui.h"
 
@@ -54,9 +54,10 @@ class WorldResources {
   // Render resources
   //----------------------------------------------------------------------------
 
-  // The scene's bindings include a storage buffer of ChunkPosition, which
-  // chunks drawn from a mesh pool read by their draw index.
-  gb::RenderSceneType* GetSceneType() const { return scene_type_; }
+  // The binding layout's view bindings include a storage buffer of
+  // ChunkPosition, which chunks drawn from a mesh pool read by their draw
+  // index.
+  gb::BindingLayout* GetBindingLayout() const { return binding_layout_; }
   const gb::RenderDataType* GetChunkPositionType() const {
     return chunk_position_type_;
   }
@@ -87,7 +88,7 @@ class WorldResources {
 
   gb::ValidatedContext context_;
   gb::ResourceSet resources_;
-  gb::RenderSceneType* scene_type_ = nullptr;
+  gb::BindingLayout* binding_layout_ = nullptr;
   const gb::RenderDataType* chunk_position_type_ = nullptr;
   const gb::RenderDataType* mesh_draw_type_ = nullptr;
   gb::Material* chunk_material_ = nullptr;

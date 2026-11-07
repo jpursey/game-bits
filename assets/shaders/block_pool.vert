@@ -8,7 +8,7 @@
 
 // The vertex shader for chunks drawn from the world's mesh pool. Each chunk's
 // draw has its own first instance, which is the index of its position in the
-// scene's storage buffer.
+// view's storage buffer.
 
 layout(location = 0) in vec3 in_pos;
 layout(location = 1) in vec3 in_normal;
@@ -20,7 +20,7 @@ layout(location = 1) out vec3 out_normal;
 layout(location = 2) out vec3 out_uv;
 layout(location = 3) out vec4 out_color;
 
-layout(set = 0, binding = 0) uniform SceneData {
+layout(set = 0, binding = 0) uniform ViewData {
   mat4 s_view_projection;
 };
 

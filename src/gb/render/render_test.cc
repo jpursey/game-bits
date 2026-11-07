@@ -28,8 +28,8 @@ void RenderTest::CreateSystem(bool edit_mode, Pilot* pilot) {
 
 std::unique_ptr<RenderPipeline> RenderTest::CreatePipeline(
     absl::Span<const Binding> bindings, const MaterialConfig& config) {
-  auto* scene_type = render_system_->RegisterSceneType("scene", {});
-  EXPECT_NE(scene_type, nullptr);
+  auto* binding_layout = render_system_->RegisterBindingLayout("layout", {});
+  EXPECT_NE(binding_layout, nullptr);
   auto* vertex_type = render_system_->RegisterVertexType<Vector3>(
       "vertex", {ShaderValue::kVec3});
   EXPECT_NE(vertex_type, nullptr);
@@ -45,19 +45,20 @@ std::unique_ptr<RenderPipeline> RenderTest::CreatePipeline(
                                        kFragmentShaderCode.size()),
       {}, {}, {});
   EXPECT_NE(fragment_shader, nullptr);
-  if (scene_type == nullptr || vertex_type == nullptr ||
+  if (binding_layout == nullptr || vertex_type == nullptr ||
       vertex_shader == nullptr || fragment_shader == nullptr) {
     return nullptr;
   }
   return state_.backend->CreatePipeline(
-      GetAccessToken(), scene_type, vertex_type, bindings,
+      GetAccessToken(), binding_layout, vertex_type, bindings,
       vertex_shader->GetCode(), fragment_shader->GetCode(), config);
 }
 
 MaterialType* RenderTest::CreateMaterialType(absl::Span<const Binding> bindings,
                                              const MaterialConfig& config) {
-  auto* scene_type = render_system_->RegisterSceneType("scene", bindings);
-  EXPECT_NE(scene_type, nullptr);
+  auto* binding_layout =
+      render_system_->RegisterBindingLayout("layout", bindings);
+  EXPECT_NE(binding_layout, nullptr);
   auto* vertex_type = render_system_->RegisterVertexType<Vector3>(
       "vertex", {ShaderValue::kVec3});
   EXPECT_NE(vertex_type, nullptr);
@@ -73,7 +74,7 @@ MaterialType* RenderTest::CreateMaterialType(absl::Span<const Binding> bindings,
       render_system_->CreateShader(&temp_resource_set_, ShaderType::kFragment,
                                    std::move(fragment_shader_code), {}, {}, {});
   EXPECT_NE(fragment_shader, nullptr);
-  return render_system_->CreateMaterialType(&temp_resource_set_, scene_type,
+  return render_system_->CreateMaterialType(&temp_resource_set_, binding_layout,
                                             vertex_type, vertex_shader,
                                             fragment_shader, config);
 }

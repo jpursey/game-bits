@@ -16,7 +16,7 @@ layout(location = 1) out vec3 out_normal;
 layout(location = 2) out vec3 out_uv;
 layout(location = 3) out vec4 out_color;
 
-layout(set = 0, binding = 0) uniform SceneData {
+layout(set = 0, binding = 0) uniform ViewData {
   mat4 s_view_projection;
 };
 

@@ -10,7 +10,7 @@ layout(location = 0) in vec2 in_pos;
 
 layout(location = 0) flat out int out_index;
 
-layout(set = 0, binding = 0) uniform SceneData {
+layout(set = 0, binding = 0) uniform ViewData {
   vec4 s_pixel_to_clip;  // xy scales a pixel position to clip space.
 };
 

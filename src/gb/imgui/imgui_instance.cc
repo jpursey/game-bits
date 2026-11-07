@@ -23,8 +23,8 @@
 #include "gb/render/material_type.h"
 #include "gb/render/mesh.h"
 #include "gb/render/mesh_view.h"
-#include "gb/render/render_scene.h"
 #include "gb/render/render_system.h"
+#include "gb/render/render_view.h"
 #include "gb/render/texture.h"
 #include "gb/render/texture_array.h"
 
@@ -101,7 +101,7 @@ namespace gb {
 
 namespace {
 
-struct ImGuiSceneConstants {
+struct ImGuiViewConstants {
   float scale_x, scale_y;
   float offset_x, offset_y;
 };
@@ -118,10 +118,10 @@ static_assert(sizeof(ImGuiVertex) == sizeof(ImDrawVert) &&
               "ImGuiVertex must match ImDrawVert");
 
 // Render types, shared by every instance on a render system.
-constexpr std::string_view kSceneConstantsName = "ImGuiSceneConstants";
+constexpr std::string_view kViewConstantsName = "ImGuiViewConstants";
 constexpr std::string_view kSamplerInfoName = "ImGuiSamplerInfo";
 constexpr std::string_view kVertexName = "ImGuiVertex";
-constexpr std::string_view kSceneName = "ImGui";
+constexpr std::string_view kBindingLayoutName = "ImGui";
 
 const uint8_t kImGuiVertexShaderData[] = {
     0x03, 0x02, 0x23, 0x07, 0x00, 0x00, 0x01, 0x00, 0x08, 0x00, 0x0d, 0x00,
@@ -423,31 +423,31 @@ bool ImGuiInstance::Init() {
 
   auto* render_system = context_.GetPtr<RenderSystem>();
 
-  const RenderDataType* scene_constants_type =
-      render_system->RegisterConstantsType<ImGuiSceneConstants>(
-          kSceneConstantsName);
+  const RenderDataType* view_constants_type =
+      render_system->RegisterConstantsType<ImGuiViewConstants>(
+          kViewConstantsName);
   const RenderDataType* material_constants =
       render_system->RegisterConstantsType<float>(kSamplerInfoName);
   const VertexType* vertex_type =
       render_system->RegisterVertexType<ImGuiVertex>(
           kVertexName,
           {ShaderValue::kVec2, ShaderValue::kVec2, ShaderValue::kColor});
-  if (scene_constants_type == nullptr || material_constants == nullptr ||
+  if (view_constants_type == nullptr || material_constants == nullptr ||
       vertex_type == nullptr) {
     LOG(ERROR) << "Could not register ImGui render types";
     return false;
   }
-  auto scene_binding =
+  auto view_binding =
       Binding()
           .SetShaders(ShaderType::kVertex)
-          .SetLocation(BindingSet::kScene, 0)
-          .SetConstants(scene_constants_type, DataVolatility::kPerFrame);
-  RenderSceneType* scene_type =
-      render_system->RegisterSceneType(kSceneName, {scene_binding});
-  scene_ = render_system->CreateScene(scene_type,
-                                      context_.GetValue<int>(kKeySceneOrder));
-  if (scene_ == nullptr) {
-    LOG(ERROR) << "Could not create ImGui render scene";
+          .SetLocation(BindingSet::kView, 0)
+          .SetConstants(view_constants_type, DataVolatility::kPerFrame);
+  BindingLayout* binding_layout =
+      render_system->RegisterBindingLayout(kBindingLayoutName, {view_binding});
+  view_ = render_system->CreateView(binding_layout,
+                                    context_.GetValue<int>(kKeyViewOrder));
+  if (view_ == nullptr) {
+    LOG(ERROR) << "Could not create ImGui render view";
     return false;
   }
 
@@ -473,7 +473,7 @@ bool ImGuiInstance::Init() {
 #endif
 
   auto* vertex_shader = render_system->CreateShader(
-      &resources_, ShaderType::kVertex, std::move(vertex_code), {scene_binding},
+      &resources_, ShaderType::kVertex, std::move(vertex_code), {view_binding},
       {ShaderParam(ShaderValue::kVec2, 0), ShaderParam(ShaderValue::kVec2, 1),
        ShaderParam(ShaderValue::kVec4, 2)},
       {ShaderParam(ShaderValue::kVec4, 0), ShaderParam(ShaderValue::kVec2, 1)});
@@ -494,7 +494,7 @@ bool ImGuiInstance::Init() {
       {ShaderParam(ShaderValue::kVec4, 0), ShaderParam(ShaderValue::kVec2, 1)},
       {});
   auto* material_type = render_system->CreateMaterialType(
-      &resources_, scene_type, vertex_type, vertex_shader, fragment_shader,
+      &resources_, binding_layout, vertex_type, vertex_shader, fragment_shader,
       MaterialConfig()
           .SetCullMode(CullMode::kNone)
           .SetDepthMode(DepthMode::kNone));
@@ -727,17 +727,14 @@ void ImGuiInstance::Draw(ImDrawData* draw_data) {
     vertex_offset += cmd_list->VtxBuffer.Size;
   }
 
-  ImGuiSceneConstants scene_values;
-  scene_values.scale_x = 2.0f / draw_data->DisplaySize.x;
-  scene_values.scale_y = 2.0f / draw_data->DisplaySize.y;
-  scene_values.offset_x =
-      -1.0f - draw_data->DisplayPos.x * scene_values.scale_x;
-  scene_values.offset_y =
-      -1.0f - draw_data->DisplayPos.y * scene_values.scale_y;
-  scene_->GetSceneBindingData()->SetConstants<ImGuiSceneConstants>(
-      0, scene_values);
+  ImGuiViewConstants view_values;
+  view_values.scale_x = 2.0f / draw_data->DisplaySize.x;
+  view_values.scale_y = 2.0f / draw_data->DisplaySize.y;
+  view_values.offset_x = -1.0f - draw_data->DisplayPos.x * view_values.scale_x;
+  view_values.offset_y = -1.0f - draw_data->DisplayPos.y * view_values.scale_y;
+  view_->GetViewBindingData()->SetConstants<ImGuiViewConstants>(0, view_values);
 
-  render_system->Draw(scene_.get(), draw);
+  render_system->Draw(view_.get(), draw);
 }
 
 }  // namespace gb

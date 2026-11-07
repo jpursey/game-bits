@@ -21,10 +21,11 @@ namespace gb {
 class VulkanRenderPipeline final : public RenderPipeline {
  public:
   static std::unique_ptr<VulkanRenderPipeline> Create(
-      VulkanInternal, VulkanBackend* backend, VulkanSceneType* scene_type,
-      const VertexType* vertex_type, absl::Span<const Binding> bindings,
-      VulkanShaderCode* vertex_shader, VulkanShaderCode* fragment_shader,
-      const MaterialConfig& config, vk::RenderPass render_pass);
+      VulkanInternal, VulkanBackend* backend,
+      VulkanBindingLayout* binding_layout, const VertexType* vertex_type,
+      absl::Span<const Binding> bindings, VulkanShaderCode* vertex_shader,
+      VulkanShaderCode* fragment_shader, const MaterialConfig& config,
+      vk::RenderPass render_pass);
   ~VulkanRenderPipeline() override;
 
   vk::Pipeline Get() const { return pipeline_; }
@@ -37,7 +38,7 @@ class VulkanRenderPipeline final : public RenderPipeline {
  private:
   VulkanRenderPipeline() = default;
 
-  bool Init(VulkanBackend* backend, VulkanSceneType* scene_type,
+  bool Init(VulkanBackend* backend, VulkanBindingLayout* binding_layout,
             const VertexType* vertex_type, absl::Span<const Binding> bindings,
             VulkanShaderCode* vertex_shader, VulkanShaderCode* fragment_shader,
             const MaterialConfig& config, vk::RenderPass render_pass);

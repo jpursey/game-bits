@@ -3,8 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef GB_RENDER_RENDER_SCENE_TYPE_H_
-#define GB_RENDER_RENDER_SCENE_TYPE_H_
+#ifndef GB_RENDER_BINDING_LAYOUT_H_
+#define GB_RENDER_BINDING_LAYOUT_H_
 
 #include <memory>
 #include <string>
@@ -18,24 +18,26 @@
 
 namespace gb {
 
-// This class defines common shader bindings and other settings for a render
-// scene.
+// A BindingLayout defines the shader bindings common to every view and
+// material type built on it, in all three binding sets, with default binding
+// data for each set.
 //
-// All scenes and material types and their corresponding shaders, materials, and
-// mesh conform to the settings defined by a RenderSceneType.
+// Views, material types, and their shaders, materials, and meshes all conform
+// to the bindings of the layout they are built on, and a view draws only
+// material types built on the same layout as it.
 //
 // This class and all derived classes must be thread-compatible.
-class RenderSceneType {
+class BindingLayout {
  public:
   //----------------------------------------------------------------------------
   // Construction / Destruction
   //----------------------------------------------------------------------------
 
-  RenderSceneType(const RenderSceneType&) = delete;
-  RenderSceneType(RenderSceneType&&) = delete;
-  RenderSceneType& operator=(const RenderSceneType&) = delete;
-  RenderSceneType& operator=(RenderSceneType&&) = delete;
-  virtual ~RenderSceneType() = default;
+  BindingLayout(const BindingLayout&) = delete;
+  BindingLayout(BindingLayout&&) = delete;
+  BindingLayout& operator=(const BindingLayout&) = delete;
+  BindingLayout& operator=(BindingLayout&&) = delete;
+  virtual ~BindingLayout() = default;
 
   //----------------------------------------------------------------------------
   // Properties
@@ -47,25 +49,23 @@ class RenderSceneType {
   // Binding Data
   //----------------------------------------------------------------------------
 
-  // Returns the common bindings shared by all scenes, materials, and instances
-  // that are associated with this scene type.
+  // Returns the common bindings shared by all views, materials, and instances
+  // that are associated with this binding layout.
   absl::Span<const Binding> GetBindings() const { return bindings_; }
 
-  // Returns the default scene, material, and instance binding data for the
-  // scene type.
+  // Returns the default view, material, and instance binding data for the
+  // binding layout.
   //
-  // Changing these defaults has no effect on existing RenderScenes,
+  // Changing these defaults has no effect on existing RenderViews,
   // MaterialTypes, or those loaded via the resource system. They only affect
-  // RenderScenes and MaterialTypes created afterward.
+  // RenderViews and MaterialTypes created afterward.
   //
   // This is local cached data, and cannot be passed as binding data to
   // RenderSystem::Draw.
-  const LocalBindingData* GetDefaultSceneBindingData() const {
-    return scene_defaults_.get();
+  const LocalBindingData* GetDefaultViewBindingData() const {
+    return view_defaults_.get();
   }
-  LocalBindingData* GetDefaultSceneBindingData() {
-    return scene_defaults_.get();
-  }
+  LocalBindingData* GetDefaultViewBindingData() { return view_defaults_.get(); }
 
   const LocalBindingData* GetDefaultMaterialBindingData() const {
     return material_defaults_.get();
@@ -90,16 +90,16 @@ class RenderSceneType {
   }
 
  protected:
-  RenderSceneType(absl::Span<const Binding> bindings);
+  BindingLayout(absl::Span<const Binding> bindings);
 
  private:
   std::string name_;
   std::vector<Binding> bindings_;
-  std::unique_ptr<LocalBindingData> scene_defaults_;
+  std::unique_ptr<LocalBindingData> view_defaults_;
   std::unique_ptr<LocalBindingData> material_defaults_;
   std::unique_ptr<LocalBindingData> instance_defaults_;
 };
 
 }  // namespace gb
 
-#endif  // GB_RENDER_RENDER_SCENE_TYPE_H_
+#endif  // GB_RENDER_BINDING_LAYOUT_H_

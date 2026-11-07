@@ -26,9 +26,9 @@ namespace gb {
 // These materials and meshes conform to the properties defined by the material
 // type.
 //
-// A material type is also explicitly compatible with a specific scene type
-// which defines common bindings and settings that all material types used in
-// the scene must conform to.
+// A material type is also built on a binding layout, which defines the bindings
+// common to it and every other material type built on the layout. It is drawn
+// only in views built on the same layout.
 //
 // This class is thread-compatible.
 class MaterialType final : public Resource {
@@ -37,8 +37,8 @@ class MaterialType final : public Resource {
   // Properties
   //----------------------------------------------------------------------------
 
-  // Returns the scene type for this material type.
-  RenderSceneType* GetSceneType() const { return scene_type_; }
+  // Returns the binding layout for this material type.
+  BindingLayout* GetBindingLayout() const { return binding_layout_; }
 
   // Returns the shaders used in this material type.
   Shader* GetVertexShader() const { return vertex_shader_; }
@@ -91,7 +91,8 @@ class MaterialType final : public Resource {
   // Internal
   //----------------------------------------------------------------------------
 
-  MaterialType(RenderInternal, ResourceEntry entry, RenderSceneType* scene_type,
+  MaterialType(RenderInternal, ResourceEntry entry,
+               BindingLayout* binding_layout,
                absl::Span<const Binding> bindings,
                std::unique_ptr<RenderPipeline> pipeline,
                const VertexType* vertex_type, Shader* vertex_shader,
@@ -101,7 +102,7 @@ class MaterialType final : public Resource {
  private:
   ~MaterialType() override;
 
-  RenderSceneType* scene_type_ = nullptr;
+  BindingLayout* binding_layout_ = nullptr;
   std::vector<Binding> bindings_;
   std::unique_ptr<RenderPipeline> pipeline_;
   const VertexType* const vertex_type_;

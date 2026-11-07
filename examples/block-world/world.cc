@@ -97,9 +97,9 @@ bool World::InitGraphics() {
 
   material_ = resources->GetChunkMaterial();
 
-  scene_ = render_system->CreateScene(resources->GetSceneType());
-  if (scene_ == nullptr) {
-    LOG(ERROR) << "Could not create scene";
+  view_ = render_system->CreateView(resources->GetBindingLayout());
+  if (view_ == nullptr) {
+    LOG(ERROR) << "Could not create view";
     return false;
   }
 
@@ -112,7 +112,7 @@ bool World::InitGraphics() {
       glm::normalize(
           glm::vec3(0.15f, -0.8f, -0.4f)),  // Down at a convenient angle
   };
-  scene_->GetSceneBindingData()->SetConstants(1, lights_);
+  view_->GetViewBindingData()->SetConstants(1, lights_);
   sky_color_ = gb::Pixel(69, 136, 221);
   render_system->SetClearColor(sky_color_);
 
@@ -157,8 +157,8 @@ bool World::CreatePoolBuffers(int count) {
   }
   pool_draw_buffer_ = draw_buffer;
   chunk_position_buffer_ = position_buffer;
-  scene_->GetSceneBindingData()->SetStorageBuffer(kChunkPositionsBinding,
-                                                  chunk_position_buffer_);
+  view_->GetViewBindingData()->SetStorageBuffer(kChunkPositionsBinding,
+                                                chunk_position_buffer_);
   return true;
 }
 
@@ -452,8 +452,8 @@ void World::Draw(const Camera& camera) {
   auto* render_system = context_.GetPtr<gb::RenderSystem>();
   glm::mat4 projection =
       camera.CreateProjection(render_system->GetFrameDimensions());
-  scene_->GetSceneBindingData()->SetConstants(
-      0, SceneData{projection * camera.GetView()});
+  view_->GetViewBindingData()->SetConstants(
+      0, ViewData{projection * camera.GetView()});
 
   glm::mat4 cull_projection;
   if (!use_cull_camera_) {
@@ -523,7 +523,7 @@ void World::Draw(const Camera& camera) {
           for (gb::Mesh* mesh : meshes) {
             debug_triangle_count += mesh->GetTriangleCount();
             ++debug_draw_count;
-            render_system->Draw(scene_.get(), mesh, material_, instance_data);
+            render_system->Draw(view_.get(), mesh, material_, instance_data);
           }
         }
       }
@@ -585,7 +585,7 @@ void World::DrawFromPool() {
   gb::DrawList draw_list;
   draw_list.SetMeshPool(chunk_pool_, pool_material_, pool_instance_data_.get());
   draw_list.DrawIndirect(pool_draw_buffer_, 0, count);
-  context_.GetPtr<gb::RenderSystem>()->Draw(scene_.get(), draw_list);
+  context_.GetPtr<gb::RenderSystem>()->Draw(view_.get(), draw_list);
 }
 
 void World::DrawLightingGui() {
@@ -603,7 +603,7 @@ void World::DrawLightingGui() {
                                -1.0f, 1.0f) ||
              modified;
   if (modified) {
-    scene_->GetSceneBindingData()->SetConstants(1, lights_);
+    view_->GetViewBindingData()->SetConstants(1, lights_);
   }
   float sky_color[3] = {static_cast<float>(sky_color_.r) / 255.0f,
                         static_cast<float>(sky_color_.g) / 255.0f,

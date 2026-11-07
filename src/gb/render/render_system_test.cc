@@ -193,8 +193,8 @@ class RenderSystemTest : public RenderTest {
         name, material_type, kChunkTypeMaterialType,
         [constants](Context*, MaterialType* material_type,
                     flatbuffers::FlatBufferBuilder* builder) {
-          const auto fb_scene_type_name =
-              builder->CreateString(material_type->GetSceneType()->GetName());
+          const auto fb_binding_layout_name = builder->CreateString(
+              material_type->GetBindingLayout()->GetName());
           const auto fb_vertex_type_name =
               builder->CreateString(material_type->GetVertexType()->GetName());
           const auto fb_constants =
@@ -207,7 +207,7 @@ class RenderSystemTest : public RenderTest {
               material_type->GetVertexShader()->GetResourceId());
           chunk_builder.add_fragment_shader_id(
               material_type->GetFragmentShader()->GetResourceId());
-          chunk_builder.add_scene_type_name(fb_scene_type_name);
+          chunk_builder.add_binding_layout_name(fb_binding_layout_name);
           chunk_builder.add_vertex_type_name(fb_vertex_type_name);
           chunk_builder.add_material_data(fb_material_data);
           builder->Finish(chunk_builder.Finish());
@@ -379,12 +379,12 @@ TEST_F(RenderSystemTest, RegisterVertexType) {
             nullptr);
 }
 
-TEST_F(RenderSystemTest, RegisterSceneType) {
+TEST_F(RenderSystemTest, RegisterBindingLayout) {
   CreateSystem();
   std::vector<Binding> bindings = {
       Binding()
           .SetShaders(ShaderType::kVertex)
-          .SetLocation(BindingSet::kScene, 0)
+          .SetLocation(BindingSet::kView, 0)
           .SetConstants(render_system_->RegisterConstantsType<Vector3>("vec3")),
       Binding()
           .SetShaders(ShaderType::kFragment)
@@ -395,17 +395,20 @@ TEST_F(RenderSystemTest, RegisterSceneType) {
           .SetLocation(BindingSet::kMaterial, 2)
           .SetTextureArray(),
   };
-  auto scene_type = render_system_->RegisterSceneType("scene", bindings);
-  ASSERT_NE(scene_type, nullptr);
-  EXPECT_EQ(scene_type->GetName(), "scene");
-  EXPECT_THAT(scene_type->GetBindings(), ElementsAreArray(bindings));
-  EXPECT_EQ(render_system_->GetSceneType("scene"), scene_type);
+  auto binding_layout =
+      render_system_->RegisterBindingLayout("layout", bindings);
+  ASSERT_NE(binding_layout, nullptr);
+  EXPECT_EQ(binding_layout->GetName(), "layout");
+  EXPECT_THAT(binding_layout->GetBindings(), ElementsAreArray(bindings));
+  EXPECT_EQ(render_system_->GetBindingLayout("layout"), binding_layout);
 
-  EXPECT_EQ(render_system_->RegisterSceneType("scene", bindings), scene_type);
-  EXPECT_EQ(render_system_->RegisterSceneType("scene", {}), nullptr);
-  EXPECT_EQ(render_system_->RegisterSceneType("scene", {bindings[0]}), nullptr);
-  EXPECT_EQ(render_system_->GetSceneType("scene"), scene_type);
-  EXPECT_NE(render_system_->RegisterSceneType("scene2", {}), nullptr);
+  EXPECT_EQ(render_system_->RegisterBindingLayout("layout", bindings),
+            binding_layout);
+  EXPECT_EQ(render_system_->RegisterBindingLayout("layout", {}), nullptr);
+  EXPECT_EQ(render_system_->RegisterBindingLayout("layout", {bindings[0]}),
+            nullptr);
+  EXPECT_EQ(render_system_->GetBindingLayout("layout"), binding_layout);
+  EXPECT_NE(render_system_->RegisterBindingLayout("layout2", {}), nullptr);
 }
 
 TEST_F(RenderSystemTest, CreateShaderCodeFromBytes) {
@@ -1442,7 +1445,7 @@ TEST_F(RenderSystemTest, SaveLoadMaterialTypeWithSameIndexInOtherSet) {
   auto* material_type_ptr = CreateMaterialType({
       Binding()
           .SetShaders(kAllShaderTypes)
-          .SetLocation(BindingSet::kScene, 0)
+          .SetLocation(BindingSet::kView, 0)
           .SetTexture(),
       Binding()
           .SetShaders(kAllShaderTypes)

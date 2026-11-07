@@ -135,40 +135,40 @@ class RenderBackend {
                                                        const void* code,
                                                        int64_t code_size) = 0;
 
-  // Creates a new RenderSceneType compatible with this backend.
+  // Creates a new BindingLayout compatible with this backend.
   //
   // Bindings contain common bindings for all binding sets that must be included
-  // in the binding data generated for all scenes and material types created
-  // with this scene type. This may be empty.
+  // in the binding data generated for all views and material types created
+  // with this binding layout. This may be empty.
   //
-  // If the RenderSceneType could not be created, this returns null.
-  virtual std::unique_ptr<RenderSceneType> CreateSceneType(
+  // If the BindingLayout could not be created, this returns null.
+  virtual std::unique_ptr<BindingLayout> CreateBindingLayout(
       RenderInternal, absl::Span<const Binding> bindings) = 0;
 
-  // Creates a new RenderScene for the specified scene type which is compatible
-  // with this backend.
+  // Creates a new RenderView for the specified binding layout which is
+  // compatible with this backend.
   //
-  // The scene type is always an instance previously created via
-  // CreateSceneType.
+  // The binding layout is always an instance previously created via
+  // CreateBindingLayout.
   //
-  // Note: Scene default binding data is automatically copied into the created
-  // RenderScene after this returns, so derived classes do not (and should not)
+  // Note: View default binding data is automatically copied into the created
+  // RenderView after this returns, so derived classes do not (and should not)
   // do so.
   //
-  // If the RenderScene could not be created, this returns null.
-  virtual std::unique_ptr<RenderScene> CreateScene(RenderInternal,
-                                                   RenderSceneType* scene_type,
-                                                   int scene_order) = 0;
+  // If the RenderView could not be created, this returns null.
+  virtual std::unique_ptr<RenderView> CreateView(RenderInternal,
+                                                 BindingLayout* binding_layout,
+                                                 int view_order) = 0;
 
   // Creates a new RenderPipeline compatible with this backend.
   //
-  // The scene type and shader code are all instances previously created via
-  // CreateSceneType and CreateShaderCode respectively. Bindings contain all
+  // The binding layout and shader code are all instances previously created via
+  // CreateBindingLayout and CreateShaderCode respectively. Bindings contain all
   // bindings the pipeline should support for all binding sets.
   //
   // If the RenderPipeline could not be created, this returns null.
   virtual std::unique_ptr<RenderPipeline> CreatePipeline(
-      RenderInternal, RenderSceneType* scene_type,
+      RenderInternal, BindingLayout* binding_layout,
       const VertexType* vertex_type, absl::Span<const Binding> bindings,
       ShaderCode* vertex_shader, ShaderCode* fragment_shader,
       const MaterialConfig& config) = 0;
@@ -243,17 +243,16 @@ class RenderBackend {
   //
   // This will only be called after BeginFrame is called and before EndFrame
   // is called.
-  virtual void Draw(RenderInternal, RenderScene* scene,
-                    RenderPipeline* pipeline, BindingData* material_data,
-                    BindingData* instance_data, RenderBuffer* vertices,
-                    RenderBuffer* indices) = 0;
+  virtual void Draw(RenderInternal, RenderView* view, RenderPipeline* pipeline,
+                    BindingData* material_data, BindingData* instance_data,
+                    RenderBuffer* vertices, RenderBuffer* indices) = 0;
 
   // Queues an ordered list of draw commands to be executed next time EndFrame
   // is called.
   //
   // This will only be called after BeginFrame is called and before EndFrame
   // is called.
-  virtual void Draw(RenderInternal, RenderScene* scene,
+  virtual void Draw(RenderInternal, RenderView* view,
                     absl::Span<const DrawCommand> commands) = 0;
 
   // Completes draw operations, then renders and presents the frame to the

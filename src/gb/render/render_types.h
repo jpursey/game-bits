@@ -23,6 +23,7 @@
 namespace gb {
 
 class BindingData;
+class BindingLayout;
 class LocalBindingData;
 class Material;
 class MaterialType;
@@ -35,9 +36,8 @@ class RenderBuffer;
 class RenderBufferView;
 class RenderSystem;
 class RenderPipeline;
-class RenderScene;
-class RenderSceneType;
 class RenderTest;
+class RenderView;
 class Shader;
 class ShaderCode;
 class StorageBuffer;
@@ -71,7 +71,7 @@ friend class Mesh;
 friend class MeshPool;
 friend class RenderFrame;
 friend class RenderBuffer;
-friend class RenderSceneType;
+friend class BindingLayout;
 friend class Texture;
 friend class DrawList;
 friend class RenderTest;
@@ -354,8 +354,8 @@ enum class BindingType : int {
 // A binding set describes a game-defined set of resource bindings which are
 // passed to shaders in a material type.
 enum class BindingSet : int {
-  // The scene binding set is global data shared across the entire scene.
-  kScene = 0,
+  // The view binding set is data shared by everything drawn in a view.
+  kView = 0,
 
   // The material binding set is defined at the material type level, and can be
   // overridden per material.

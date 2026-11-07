@@ -19,9 +19,9 @@ namespace gb {
 // This class contains all the binding data for a specific binding set.
 //
 // Binding data defines the actual resources that are accessible from shaders of
-// a specific MaterialType. Separate BindingData is associated at the scene,
+// a specific MaterialType. Separate BindingData is associated at the view,
 // material, and instance scopes. Binding data may be retrieved or created by
-// calling the appropriate function on RenderSceneType, MaterialType, and
+// calling the appropriate function on BindingLayout, MaterialType, and
 // Material.
 //
 // BindingData may be changed at any time (whether rendering a frame or not),

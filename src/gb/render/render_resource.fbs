@@ -13,7 +13,7 @@ enum ShaderType : uint8 {
 
 // Must be kept in sync with gb::BindingSet
 enum BindingSet : uint8 {
-  Scene,
+  View,
   Material,
   Instance,
 }
@@ -153,7 +153,7 @@ table Binding {
   data_type_name : string;
 }
 
-// Entry for scene, material, or instance binding data chunk.
+// Entry for view, material, or instance binding data chunk.
 table BindingDataEntry {
   index : int32;
   type : BindingType;
@@ -185,11 +185,11 @@ table MaterialChunk {
 table MaterialTypeChunk {
   vertex_shader_id : uint64;
   fragment_shader_id : uint64;
-  scene_type_name : string;
+  binding_layout_name : string;
   vertex_type_name : string;
   cull_mode : CullMode;
   depth_mode : DepthMode;
-  bindings : [Binding] (deprecated);  // From the scene type and shaders.
+  bindings : [Binding] (deprecated);  // From the binding layout and shaders.
   material_data : [BindingDataEntry];
   instance_data : [BindingDataEntry];
   depth_test : DepthTest;

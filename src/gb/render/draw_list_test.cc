@@ -294,7 +294,7 @@ TEST_F(DrawListDeathTest, MaterialWithOtherVertexTypeThanPool) {
   ASSERT_NE(vertex_type, nullptr);
   MaterialType* material_type = material_->GetType();
   MaterialType* other_type = render_system_->CreateMaterialType(
-      &temp_resource_set_, material_type->GetSceneType(), vertex_type,
+      &temp_resource_set_, material_type->GetBindingLayout(), vertex_type,
       material_type->GetVertexShader(), material_type->GetFragmentShader());
   ASSERT_NE(other_type, nullptr);
   Material* other_material =

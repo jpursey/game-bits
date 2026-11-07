@@ -18,6 +18,7 @@ namespace gb {
 class VulkanBackend;
 class VulkanBindingData;
 class VulkanBindingDataFactory;
+class VulkanBindingLayout;
 class VulkanBuffer;
 class VulkanDescriptorPool;
 class VulkanFrame;
@@ -26,20 +27,19 @@ class VulkanMeshPoolBuffers;
 class VulkanRenderBuffer;
 class VulkanRenderPipeline;
 struct VulkanRenderState;
-class VulkanScene;
-class VulkanSceneType;
 class VulkanShaderCode;
 class VulkanTexture;
 class VulkanTextureArray;
+class VulkanView;
 class VulkanVolumeTexture;
 class VulkanWindow;
 
 GB_BEGIN_ACCESS_TOKEN(VulkanInternal)
 friend class VulkanBackend;
 friend class VulkanBindingDataFactory;
+friend class VulkanBindingLayout;
 friend class VulkanMeshPoolBuffers;
 friend class VulkanRenderPipeline;
-friend class VulkanSceneType;
 GB_END_ACCESS_TOKEN()
 
 enum class VulkanBufferType {
@@ -54,7 +54,7 @@ inline constexpr int kMaxFramesInFlight = 2;
 
 // These define the descriptor pool sizes and buffer slots for the different
 // binding set types.
-inline constexpr int kMaxScenesPerGroup = 10;
+inline constexpr int kMaxViewsPerGroup = 10;
 inline constexpr int kMaxMaterialsPerGroup = 50;
 inline constexpr int kMaxInstancesPerGroup = 250;
 

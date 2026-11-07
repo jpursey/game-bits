@@ -23,7 +23,7 @@
 #include "gb/render/material_config.h"
 #include "gb/render/material_type.h"
 #include "gb/render/mesh.h"
-#include "gb/render/render_scene.h"
+#include "gb/render/render_view.h"
 #include "gb/render/sampler_options.h"
 #include "gb/render/shader.h"
 #include "gb/render/texture.h"
@@ -365,37 +365,37 @@ bool RenderCheck::InitQuads() {
   const gb::VertexType* vertex_type =
       render_system_->RegisterVertexType<QuadVertex>("QuadVertex",
                                                      {gb::ShaderValue::kVec2});
-  const gb::RenderDataType* scene_constants =
-      render_system_->RegisterConstantsType<SceneData>("SceneData");
+  const gb::RenderDataType* view_constants =
+      render_system_->RegisterConstantsType<ViewData>("ViewData");
   const gb::RenderDataType* instance_constants =
       render_system_->RegisterConstantsType<InstanceData>("InstanceData");
-  if (vertex_type == nullptr || scene_constants == nullptr ||
+  if (vertex_type == nullptr || view_constants == nullptr ||
       instance_constants == nullptr) {
     LOG(ERROR) << "Could not register quad types";
     return false;
   }
 
-  const gb::Binding scene_binding =
+  const gb::Binding view_binding =
       gb::Binding()
           .SetShaders(gb::ShaderType::kVertex)
-          .SetLocation(gb::BindingSet::kScene, 0)
-          .SetConstants(scene_constants, gb::DataVolatility::kPerFrame);
+          .SetLocation(gb::BindingSet::kView, 0)
+          .SetConstants(view_constants, gb::DataVolatility::kPerFrame);
   const gb::Binding instance_binding =
       gb::Binding()
           .SetShaders(gb::ShaderType::kVertex)
           .SetLocation(gb::BindingSet::kInstance, 0)
           .SetConstants(instance_constants, gb::DataVolatility::kPerFrame);
-  gb::RenderSceneType* scene_type = render_system_->RegisterSceneType(
-      "QuadScene", {scene_binding, instance_binding});
-  if (scene_type == nullptr) {
-    LOG(ERROR) << "Could not register quad scene type";
+  gb::BindingLayout* binding_layout = render_system_->RegisterBindingLayout(
+      "Quad", {view_binding, instance_binding});
+  if (binding_layout == nullptr) {
+    LOG(ERROR) << "Could not register quad binding layout";
     return false;
   }
 
   gb::Shader* vertex_shader = render_system_->CreateShader(
       &resources_, gb::ShaderType::kVertex,
       render_system_->CreateShaderCode(kQuadVertexShader.GetBytes()),
-      {scene_binding, instance_binding},
+      {view_binding, instance_binding},
       {gb::ShaderParam(gb::ShaderValue::kVec2, 0)},
       {gb::ShaderParam(gb::ShaderValue::kVec4, 0)});
   gb::Shader* fragment_shader = render_system_->CreateShader(
@@ -409,7 +409,7 @@ bool RenderCheck::InitQuads() {
   }
 
   gb::MaterialType* material_type = render_system_->CreateMaterialType(
-      &resources_, scene_type, vertex_type, vertex_shader, fragment_shader,
+      &resources_, binding_layout, vertex_type, vertex_shader, fragment_shader,
       QuadConfig());
   if (material_type == nullptr) {
     LOG(ERROR) << "Could not create quad material type";
@@ -433,9 +433,9 @@ bool RenderCheck::InitQuads() {
     return false;
   }
 
-  scene_ = render_system_->CreateScene(scene_type);
-  if (scene_ == nullptr) {
-    LOG(ERROR) << "Could not create quad scene";
+  view_ = render_system_->CreateView(binding_layout);
+  if (view_ == nullptr) {
+    LOG(ERROR) << "Could not create quad view";
     return false;
   }
 
@@ -587,7 +587,7 @@ bool RenderCheck::InitFormatTextures() {
 }
 
 bool RenderCheck::InitVolumes() {
-  // The volume quads are drawn in the quads' scene, with the same scene and
+  // The volume quads are drawn in the quads' view, with the same view and
   // instance bindings.
   const gb::MaterialType* quad_type = quad_material_->GetType();
   const gb::Binding volume_binding =
@@ -612,7 +612,7 @@ bool RenderCheck::InitVolumes() {
   }
 
   gb::MaterialType* material_type = render_system_->CreateMaterialType(
-      &resources_, quad_type->GetSceneType(), quad_type->GetVertexType(),
+      &resources_, quad_type->GetBindingLayout(), quad_type->GetVertexType(),
       vertex_shader, fragment_shader, QuadConfig());
   if (material_type == nullptr) {
     LOG(ERROR) << "Could not create volume material type";
@@ -692,8 +692,8 @@ bool RenderCheck::InitStorageBuffers() {
     return false;
   }
 
-  // The storage buffer quads are drawn in the quads' scene, with the same
-  // scene and instance bindings.
+  // The storage buffer quads are drawn in the quads' view, with the same
+  // view and instance bindings.
   const gb::MaterialType* quad_type = quad_material_->GetType();
   const gb::Binding storage_binding =
       gb::Binding()
@@ -717,7 +717,7 @@ bool RenderCheck::InitStorageBuffers() {
   }
 
   gb::MaterialType* material_type = render_system_->CreateMaterialType(
-      &resources_, quad_type->GetSceneType(), quad_type->GetVertexType(),
+      &resources_, quad_type->GetBindingLayout(), quad_type->GetVertexType(),
       vertex_shader, storage_fragment_shader_, QuadConfig());
   if (material_type == nullptr) {
     LOG(ERROR) << "Could not create storage buffer material type";
@@ -771,7 +771,7 @@ bool RenderCheck::InitStorageBuffers() {
 }
 
 bool RenderCheck::InitUnsetBindings() {
-  // The quad is drawn in the quads' scene, with the same scene and instance
+  // The quad is drawn in the quads' view, with the same view and instance
   // bindings, and the volume quads' vertex shader.
   const gb::MaterialType* quad_type = quad_material_->GetType();
   const gb::MaterialType* volume_type =
@@ -805,7 +805,7 @@ bool RenderCheck::InitUnsetBindings() {
   }
 
   gb::MaterialType* material_type = render_system_->CreateMaterialType(
-      &resources_, quad_type->GetSceneType(), quad_type->GetVertexType(),
+      &resources_, quad_type->GetBindingLayout(), quad_type->GetVertexType(),
       volume_type->GetVertexShader(), fragment_shader, QuadConfig());
   if (material_type != nullptr) {
     unset_material_ =
@@ -826,9 +826,9 @@ bool RenderCheck::InitUnsetBindings() {
 }
 
 bool RenderCheck::InitMeshPool() {
-  // The shapes are drawn in the quads' scene, with the storage buffer quads'
+  // The shapes are drawn in the quads' view, with the storage buffer quads'
   // fragment shader, which reads a storage buffer of colors. The vertex shader
-  // takes the quad's bindings, and only reads the scene's.
+  // takes the quad's bindings, and only reads the view's.
   const gb::MaterialType* quad_type = quad_material_->GetType();
   gb::Shader* vertex_shader = render_system_->CreateShader(
       &resources_, gb::ShaderType::kVertex,
@@ -841,7 +841,7 @@ bool RenderCheck::InitMeshPool() {
     return false;
   }
   gb::MaterialType* material_type = render_system_->CreateMaterialType(
-      &resources_, quad_type->GetSceneType(), quad_type->GetVertexType(),
+      &resources_, quad_type->GetBindingLayout(), quad_type->GetVertexType(),
       vertex_shader, storage_fragment_shader_, QuadConfig());
   if (material_type == nullptr) {
     LOG(ERROR) << "Could not create mesh pool material type";
@@ -912,7 +912,7 @@ void RenderCheck::CleanUp() {
   pool_shapes_.clear();
   pool_instance_.reset();
   pool_indirect_instance_.reset();
-  scene_.reset();
+  view_.reset();
   if (gui_instance_ != nullptr) {
     ImGui_ImplSDL2_Shutdown();
     gui_instance_.reset();
@@ -1471,15 +1471,15 @@ void RenderCheck::DrawLogGui() {
 
 void RenderCheck::DrawQuads() {
   const gb::FrameDimensions size = render_system_->GetFrameDimensions();
-  SceneData scene_data = {};
-  scene_data.pixel_to_clip[0] = 2.0f / size.width;
-  scene_data.pixel_to_clip[1] = 2.0f / size.height;
-  scene_->GetSceneBindingData()->SetConstants<SceneData>(0, scene_data);
+  ViewData view_data = {};
+  view_data.pixel_to_clip[0] = 2.0f / size.width;
+  view_data.pixel_to_clip[1] = 2.0f / size.height;
+  view_->GetViewBindingData()->SetConstants<ViewData>(0, view_data);
   for (const auto& instance : instances_) {
-    render_system_->Draw(scene_.get(), quad_mesh_, quad_material_,
+    render_system_->Draw(view_.get(), quad_mesh_, quad_material_,
                          instance.get());
   }
-  render_system_->Draw(scene_.get(), blend_draw_list_);
+  render_system_->Draw(view_.get(), blend_draw_list_);
   DrawVolumes();
   DrawStorageBuffers();
   DrawUnsetBindings();
@@ -1502,7 +1502,7 @@ void RenderCheck::DrawVolumes() {
                                  {depth, 0.0f, 0.0f, 0.0f}};
       gb::BindingData* quad = volume_row.quads[i].get();
       quad->SetConstants<InstanceData>(0, data);
-      render_system_->Draw(scene_.get(), quad_mesh_, volume_row.material, quad);
+      render_system_->Draw(view_.get(), quad_mesh_, volume_row.material, quad);
     }
   }
 }
@@ -1510,13 +1510,13 @@ void RenderCheck::DrawVolumes() {
 void RenderCheck::DrawStorageBuffers() {
   for (const StorageRow& row : storage_rows_) {
     for (const auto& quad : row.quads) {
-      render_system_->Draw(scene_.get(), quad_mesh_, row.material, quad.get());
+      render_system_->Draw(view_.get(), quad_mesh_, row.material, quad.get());
     }
   }
 }
 
 void RenderCheck::DrawUnsetBindings() {
-  render_system_->Draw(scene_.get(), quad_mesh_, unset_material_,
+  render_system_->Draw(view_.get(), quad_mesh_, unset_material_,
                        unset_quad_.get());
 }
 
@@ -1530,7 +1530,7 @@ void RenderCheck::DrawMeshPool() {
   }
   draw_list.SetInstanceData(pool_indirect_instance_.get());
   draw_list.DrawIndirect(pool_draws_, 0, kPoolDraws);
-  render_system_->Draw(scene_.get(), draw_list);
+  render_system_->Draw(view_.get(), draw_list);
 }
 
 std::unique_ptr<gb::PooledMesh> RenderCheck::CreatePoolShape(int index,
@@ -1602,7 +1602,7 @@ gb::Material* RenderCheck::CreateQuadMaterial(
     const gb::MaterialConfig& config) {
   const gb::MaterialType* quad_type = quad_material_->GetType();
   gb::MaterialType* material_type = render_system_->CreateMaterialType(
-      &resources_, quad_type->GetSceneType(), quad_type->GetVertexType(),
+      &resources_, quad_type->GetBindingLayout(), quad_type->GetVertexType(),
       quad_type->GetVertexShader(), quad_type->GetFragmentShader(), config);
   if (material_type == nullptr) {
     return nullptr;

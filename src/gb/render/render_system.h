@@ -18,15 +18,15 @@
 #include "gb/file/file_types.h"
 #include "gb/pilot/pilot.h"
 #include "gb/render/binding.h"
+#include "gb/render/binding_layout.h"
 #include "gb/render/draw_list.h"
 #include "gb/render/material.h"
 #include "gb/render/material_config.h"
 #include "gb/render/material_type.h"
 #include "gb/render/mesh.h"
 #include "gb/render/mesh_pool.h"
-#include "gb/render/render_scene.h"
-#include "gb/render/render_scene_type.h"
 #include "gb/render/render_types.h"
+#include "gb/render/render_view.h"
 #include "gb/render/sampler_options.h"
 #include "gb/render/shader.h"
 #include "gb/render/storage_buffer.h"
@@ -163,20 +163,20 @@ class RenderSystem final {
   const VertexType* RegisterVertexType(
       std::string_view name, absl::Span<const ShaderValue> attributes);
 
-  // Registers a new RenderSceneType with a name, to allow serialization of
+  // Registers a new BindingLayout with a name, to allow serialization of
   // material types.
   //
-  // A RenderSceneType is required in order to create RenderScene instances and
+  // A BindingLayout is required in order to create RenderView instances and
   // do any rendering.
   //
-  // After registering a scene type, any binding data defaults should be set
-  // before calling CreateScene or CreateMaterialType.
+  // After registering a binding layout, any binding data defaults should be set
+  // before calling CreateView or CreateMaterialType.
   //
-  // If the name is already registered, this returns the existing scene type
+  // If the name is already registered, this returns the existing binding layout
   // if it has the same bindings, and fails (returning null) otherwise. The
-  // existing scene type keeps its binding data defaults.
-  RenderSceneType* RegisterSceneType(std::string_view name,
-                                     absl::Span<const Binding> bindings);
+  // existing binding layout keeps its binding data defaults.
+  BindingLayout* RegisterBindingLayout(std::string_view name,
+                                       absl::Span<const Binding> bindings);
 
   //----------------------------------------------------------------------------
   // Properies
@@ -194,8 +194,8 @@ class RenderSystem final {
   // Returns the requested vertex type if it exists or null otherwise.
   const VertexType* GetVertexType(std::string_view name) const;
 
-  // Returns the requested render scene type if it exists or null otherwise.
-  RenderSceneType* GetSceneType(std::string_view name) const;
+  // Returns the requested binding layout if it exists or null otherwise.
+  BindingLayout* GetBindingLayout(std::string_view name) const;
 
   // Return frame dimensions in pixels or null otherwise.
   FrameDimensions GetFrameDimensions();
@@ -206,7 +206,7 @@ class RenderSystem final {
   bool CanFilter(TextureFormat format) const;
 
   //----------------------------------------------------------------------------
-  // Resource / Scene creation
+  // Resource / View creation
   //
   // Thread-safety: All resource creation, saves, and loads (generally via the
   // ResourceSystem) are thread-safe (except relative to initialization
@@ -214,13 +214,13 @@ class RenderSystem final {
   // modification of the resources referenced by a call.
   //----------------------------------------------------------------------------
 
-  // Creates a render scene which must be used in order to draw any render
-  // resources. Its scene binding data starts as the scene type's defaults.
+  // Creates a render view which must be used in order to draw any render
+  // resources. Its view binding data starts as the binding layout's defaults.
   //
-  // The scene order is used to define a global processing order across scenes.
-  // See RenderScene for more details on how this is used.
-  std::unique_ptr<RenderScene> CreateScene(RenderSceneType* scene_type,
-                                           int scene_order = 0);
+  // The view order is used to define a global processing order across views.
+  // See RenderView for more details on how this is used.
+  std::unique_ptr<RenderView> CreateView(BindingLayout* binding_layout,
+                                         int view_order = 0);
 
   // Creates a mesh with the specified parameters.
   //
@@ -278,22 +278,22 @@ class RenderSystem final {
   // Creates a new material type from the specified shaders.
   //
   // The shaders must be compatible with each other (vertex outputs match
-  // fragment inputs) and with the RenderSceneType bindings (must not have any
+  // fragment inputs) and with the binding layout's bindings (must not have any
   // conflicting bindings). Bindings are not conflicting if they have the same
   // type for the same set and binding index. It is ok if the data volatility
   // differs. The resulting material type bindings will be the union of the
-  // shader and scene bindings, using the most permissive data volatility if
-  // there is a difference.
+  // shader and binding layout bindings, using the most permissive data
+  // volatility if there is a difference.
   //
-  // Default material and instance binding data start as the scene type's
-  // defaults for the scene type's bindings, and zero or null for the rest. The
-  // caller should initialize these before using the material type.
+  // Default material and instance binding data start as the binding layout's
+  // defaults for the binding layout's bindings, and zero or null for the rest.
+  // The caller should initialize these before using the material type.
   ResourcePtr<MaterialType> CreateMaterialType(
-      RenderSceneType* scene_type, const VertexType* vertex_type,
+      BindingLayout* binding_layout, const VertexType* vertex_type,
       Shader* vertex_shader, Shader* fragment_shader,
       const MaterialConfig& config = {});
   MaterialType* CreateMaterialType(ResourceSet* resource_set,
-                                   RenderSceneType* scene_type,
+                                   BindingLayout* binding_layout,
                                    const VertexType* vertex_type,
                                    Shader* vertex_shader,
                                    Shader* fragment_shader,
@@ -309,7 +309,7 @@ class RenderSystem final {
 
   // Creates a shader from the specified bindings and API specific shader code
   //
-  // Common bindings defined by a RenderSceneType or paired Shader are
+  // Common bindings defined by a BindingLayout or paired Shader are
   // implicitly added to the provided bindings when creating a MaterialType, and
   // must either match or not be specified in bindings parameters. It is
   // recommended to only specify the bindings that the shader code actually
@@ -479,33 +479,33 @@ class RenderSystem final {
   // minimized), this will return false and the game should try again later.
   bool BeginFrame();
 
-  // Render a mesh in the scene using the specified instance data.
+  // Render a mesh in the view using the specified instance data.
   //
   // This method does not necessarily preserve order relative to other draw
   // methods. The render backend is free to reorder draw calls to maximize
   // performance. If explicit ordering of relative draw calls is required, use
-  // a DrawList instead. To force global ordering, use separate scenes with a
-  // defined order; however this should be reserved for a small number of scenes
+  // a DrawList instead. To force global ordering, use separate views with a
+  // defined order; however this should be reserved for a small number of views
   // as it is a significantly more heavyweight approach.
   //
-  // The scene, mesh, and instance_data must all be compatible with each other.
+  // The view, mesh, and instance_data must all be compatible with each other.
   // This is based on the mesh's material's material type:
-  // - The scene's type must match the material type's scene type.
+  // - The view's binding layout must match the material type's.
   // - The instance data be created from a material of the same material type.
-  void Draw(RenderScene* scene, Mesh* mesh, Material* material,
+  void Draw(RenderView* view, Mesh* mesh, Material* material,
             BindingData* instance_data);
 
-  // Renderss a list of ordered draw commands in the scene.
+  // Renders a list of ordered draw commands in the view.
   //
   // This method does not necessarily preserve order relative to other draw
   // methods. The render backend is free to reorder draw calls to maximize
-  // performance. To force global ordering, use separate scenes with a defined
-  // order; however this should be reserved for a small number of scenes as it
+  // performance. To force global ordering, use separate views with a defined
+  // order; however this should be reserved for a small number of views as it
   // is a significantly more heavyweight approach.
   //
-  // The scene must be compatible with all mesh, and instance_data must in the
-  // DrawList. The scene's type must match each material type's scene type.
-  void Draw(RenderScene* scene, const DrawList& commands);
+  // The view must be compatible with every mesh and instance data in the
+  // DrawList: its binding layout must match each material type's.
+  void Draw(RenderView* view, const DrawList& commands);
 
   // End frame will transfer all registered commands to the graphics card and
   // present the frame.
@@ -539,11 +539,11 @@ class RenderSystem final {
   bool SaveMaterialChunk(Context* context, Material* material,
                          flatbuffers::FlatBufferBuilder* builder);
 
-  bool ValidateMaterialTypeArguments(RenderSceneType* scene_type,
+  bool ValidateMaterialTypeArguments(BindingLayout* binding_layout,
                                      const VertexType* vertex_type,
                                      Shader* vertex_shader,
                                      Shader* fragment_shader);
-  MaterialType* DoCreateMaterialType(RenderSceneType* scene_type,
+  MaterialType* DoCreateMaterialType(BindingLayout* binding_layout,
                                      const VertexType* vertex_type,
                                      Shader* vertex_shader,
                                      Shader* fragment_shader,
@@ -663,8 +663,8 @@ class RenderSystem final {
   absl::flat_hash_map<std::string, std::unique_ptr<RenderDataType>>
       constants_types_;
   absl::flat_hash_map<std::string, std::unique_ptr<VertexType>> vertex_types_;
-  absl::flat_hash_map<std::string, std::unique_ptr<RenderSceneType>>
-      scene_types_;
+  absl::flat_hash_map<std::string, std::unique_ptr<BindingLayout>>
+      binding_layouts_;
 
   // Members set during rendering. All rendering is externally synchronized.
   bool is_rendering_ = false;
@@ -735,19 +735,19 @@ inline Material* RenderSystem::CreateMaterial(ResourceSet* resource_set,
 }
 
 inline ResourcePtr<MaterialType> RenderSystem::CreateMaterialType(
-    RenderSceneType* scene_type, const VertexType* vertex_type,
+    BindingLayout* binding_layout, const VertexType* vertex_type,
     Shader* vertex_shader, Shader* fragment_shader,
     const MaterialConfig& config) {
-  return DoCreateMaterialType(scene_type, vertex_type, vertex_shader,
+  return DoCreateMaterialType(binding_layout, vertex_type, vertex_shader,
                               fragment_shader, config);
 }
 
 inline MaterialType* RenderSystem::CreateMaterialType(
-    ResourceSet* resource_set, RenderSceneType* scene_type,
+    ResourceSet* resource_set, BindingLayout* binding_layout,
     const VertexType* vertex_type, Shader* vertex_shader,
     Shader* fragment_shader, const MaterialConfig& config) {
   MaterialType* material_type = DoCreateMaterialType(
-      scene_type, vertex_type, vertex_shader, fragment_shader, config);
+      binding_layout, vertex_type, vertex_shader, fragment_shader, config);
   resource_set->Add(material_type);
   return material_type;
 }

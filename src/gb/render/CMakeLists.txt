@@ -10,6 +10,7 @@ endif()
 set(gb_render_SOURCE
   binding.h
   binding_data.h
+  binding_layout.cc binding_layout.h
   draw_list.cc draw_list.h
   local_binding_data.cc local_binding_data.h
   material.cc material.h
@@ -26,10 +27,9 @@ set(gb_render_SOURCE
   render_buffer_view.h
   render_pipeline.h
   render_resource_chunks.h
-  render_scene.h
-  render_scene_type.cc render_scene_type.h
   render_system.cc render_system.h
   render_types.h
+  render_view.h
   sampler_options.h
   shader.h
   shader_code.h
@@ -45,6 +45,7 @@ set(gb_render_FBS
 
 set(gb_render_TEST_SOURCE
   binding_data_test.cc
+  binding_layout_test.cc
   binding_test.cc
   draw_list_test.cc
   local_binding_data_test.cc
@@ -57,9 +58,8 @@ set(gb_render_TEST_SOURCE
   render_assert_test.cc
   render_buffer_test.cc
   render_buffer_view_test.cc
-  render_scene_test.cc
-  render_scene_type_test.cc
   render_system_test.cc
+  render_view_test.cc
   shader_test.cc
   storage_buffer_test.cc
   texture_test.cc
@@ -101,12 +101,12 @@ gb_add_library(gb_render)
 set(gb_render_testing_SOURCE
   render_test.cc render_test.h
   test_binding_data.cc test_binding_data.h
+  test_binding_layout.h
   test_mesh_pool_buffers.cc test_mesh_pool_buffers.h
   test_render_backend.cc test_render_backend.h
   test_render_buffer.cc test_render_buffer.h
   test_render_pipeline.cc test_render_pipeline.h
-  test_render_scene.h
-  test_render_scene_type.h
+  test_render_view.h
   test_shader_code.cc test_shader_code.h
   test_texture.cc test_texture.h
   test_texture_array.cc test_texture_array.h
