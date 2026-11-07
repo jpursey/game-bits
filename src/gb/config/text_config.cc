@@ -276,29 +276,17 @@ constexpr LexerConfig kBaseLexerConfig = {
     .symbols = kSymbols,
 };
 
-// The entire parser program except for the "Key" rule, which must be added in
-// conditionally based on the TextConfigFlags.
+// The entire parser program except for the "Key", "RootlessMap", "Array", and
+// "Map" rules, which must be added in conditionally based on the
+// TextConfigFlags.
 constexpr std::string_view kBaseParserProgram = R"---(
   Rooted {
     <Value>
    %end:"Unexpected text after value";
-  }  
+  }
 
   Rootless {
     $map=RootlessMap;
-  }
-
-  RootlessMap {
-    $values=MapValue,*
-    %end:"Invalid key";
-  }
-
-  Array {
-    "[" $values=Value,* "]";
-  }
-
-  Map {
-    "{" $values=MapValue,* "}";
   }
 
   MapValue {
@@ -327,6 +315,40 @@ constexpr std::string_view kStringKeyParserProgram = R"---(
 constexpr std::string_view kIdentKeyParserProgram = R"---(
   Key {
     (%string | %ident);
+  }
+)---";
+
+// Values are separated by commas, and a comma may follow the last value.
+constexpr std::string_view kCommaListParserProgram = R"---(
+  RootlessMap {
+    [$values=MapValue,+ [","]]
+    %end:"Invalid key";
+  }
+
+  Array {
+    "[" [$values=Value,+ [","]] "]";
+  }
+
+  Map {
+    "{" [$values=MapValue,+ [","]] "}";
+  }
+)---";
+
+// Each value may be followed by a comma, so commas between values are optional
+// and one may follow the last value. A comma never starts a list, and two in a
+// row are an error.
+constexpr std::string_view kOptionalCommaListParserProgram = R"---(
+  RootlessMap {
+    ($values=MapValue [","])*
+    %end:"Invalid key";
+  }
+
+  Array {
+    "[" ($values=Value [","])* "]";
+  }
+
+  Map {
+    "{" ($values=MapValue [","])* "}";
   }
 )---";
 
@@ -363,6 +385,11 @@ std::shared_ptr<ParserProgram> GetParserProgram(TextConfigFlags flags) {
     absl::StrAppend(&parser_program_text, kIdentKeyParserProgram);
   } else {
     absl::StrAppend(&parser_program_text, kStringKeyParserProgram);
+  }
+  if (flags.IsSet(TextConfigFlag::kOptionalCommas)) {
+    absl::StrAppend(&parser_program_text, kOptionalCommaListParserProgram);
+  } else {
+    absl::StrAppend(&parser_program_text, kCommaListParserProgram);
   }
 
   std::string error_message;

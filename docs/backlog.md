@@ -47,24 +47,6 @@ component, as the MSVC standard library rejects older clang versions. Fix them,
 build and test both clang configurations, and consider building one in CI so it
 stays working.
 
-## Optional commas in text configs
-
-- **Layers:** config
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Requested by:** OZ-3 *Ozzy machine*
-- **Background:** the parser programs in `gb/config/text_config.cc`
-
-Text configs separate map entries and array values with commas, as JSON does,
-including the entries of a rootless file, and reject a comma after the last
-one. Config files written by hand trip over both: a rootless file reads
-naturally as one entry per line with no commas, and a trailing comma makes
-lines easy to reorder or comment out. Let reading take a trailing comma, and
-entries with no comma between them, in the Game Bits format (not
-`kJsonTextConfig`). Check first that no text becomes ambiguous without commas,
-such as `[1 -2]`. Writing keeps its commas.
-
 ## Block-world and ImGui shaders compiled by the build
 
 - **Layers:** CI, imgui, examples

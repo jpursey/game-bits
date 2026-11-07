@@ -749,6 +749,7 @@ TEST(WriteConfigToTextTest, DefaultFlagsHaveIdentifiersAndSingleQuotes) {
   EXPECT_TRUE(kDefaultTextConfig.IsSet(TextConfigFlag::kIdentifiers));
   EXPECT_TRUE(kDefaultTextConfig.IsSet(TextConfigFlag::kSingleQuotes));
   EXPECT_TRUE(kDefaultTextConfig.IsSet(TextConfigFlag::kComments));
+  EXPECT_TRUE(kDefaultTextConfig.IsSet(TextConfigFlag::kOptionalCommas));
   EXPECT_FALSE(kDefaultTextConfig.IsSet(TextConfigFlag::kCompact));
   EXPECT_FALSE(kDefaultTextConfig.IsSet(TextConfigFlag::kRootless));
 }
@@ -758,6 +759,7 @@ TEST(WriteConfigToTextTest, CompactFlagsIncludeCompact) {
   EXPECT_TRUE(kCompactTextConfig.IsSet(TextConfigFlag::kIdentifiers));
   EXPECT_TRUE(kCompactTextConfig.IsSet(TextConfigFlag::kSingleQuotes));
   EXPECT_TRUE(kCompactTextConfig.IsSet(TextConfigFlag::kComments));
+  EXPECT_TRUE(kCompactTextConfig.IsSet(TextConfigFlag::kOptionalCommas));
 }
 
 TEST(WriteConfigToTextTest, RootlessFlagsIncludeRootless) {
@@ -765,6 +767,7 @@ TEST(WriteConfigToTextTest, RootlessFlagsIncludeRootless) {
   EXPECT_TRUE(kRootlessTextConfig.IsSet(TextConfigFlag::kIdentifiers));
   EXPECT_TRUE(kRootlessTextConfig.IsSet(TextConfigFlag::kSingleQuotes));
   EXPECT_TRUE(kRootlessTextConfig.IsSet(TextConfigFlag::kComments));
+  EXPECT_TRUE(kRootlessTextConfig.IsSet(TextConfigFlag::kOptionalCommas));
 }
 
 TEST(WriteConfigToTextTest, JsonFlagsAreEmpty) {
@@ -1364,6 +1367,152 @@ TEST(ReadConfigFromTextTest, MultilineMap) {
 }
 
 //==============================================================================
+// ReadConfigFromText - Optional commas
+//==============================================================================
+
+TEST(ReadConfigFromTextTest, ArrayWithoutCommas) {
+  auto result = ReadConfigFromText("[1 2.5 'a' \"b\" true null [3] {k: 4}]");
+  ASSERT_TRUE(result.ok()) << result.status();
+  ASSERT_EQ(result->GetArraySize(), 8);
+  EXPECT_EQ(result->GetInt(0), 1);
+  EXPECT_EQ(result->GetFloat(1), 2.5);
+  EXPECT_EQ(result->GetString(2), "a");
+  EXPECT_EQ(result->GetString(3), "b");
+  EXPECT_TRUE(result->GetBool(4));
+  EXPECT_TRUE(result->Get(5)->IsNone());
+  EXPECT_EQ(result->Get(6)->GetInt(0), 3);
+  EXPECT_EQ(result->Get(7)->GetInt("k"), 4);
+}
+
+TEST(ReadConfigFromTextTest, ArrayWithSomeCommas) {
+  auto result = ReadConfigFromText("[1, 2 3]");
+  ASSERT_TRUE(result.ok()) << result.status();
+  ASSERT_EQ(result->GetArraySize(), 3);
+  EXPECT_EQ(result->GetInt(0), 1);
+  EXPECT_EQ(result->GetInt(1), 2);
+  EXPECT_EQ(result->GetInt(2), 3);
+}
+
+TEST(ReadConfigFromTextTest, ArrayTrailingComma) {
+  auto result = ReadConfigFromText("[1, 2,]");
+  ASSERT_TRUE(result.ok()) << result.status();
+  ASSERT_EQ(result->GetArraySize(), 2);
+  EXPECT_EQ(result->GetInt(0), 1);
+  EXPECT_EQ(result->GetInt(1), 2);
+}
+
+TEST(ReadConfigFromTextTest, NegativeNumbersWithoutCommas) {
+  auto result = ReadConfigFromText("[1 -2 -3.5]");
+  ASSERT_TRUE(result.ok()) << result.status();
+  ASSERT_EQ(result->GetArraySize(), 3);
+  EXPECT_EQ(result->GetInt(0), 1);
+  EXPECT_EQ(result->GetInt(1), -2);
+  EXPECT_EQ(result->GetFloat(2), -3.5);
+}
+
+TEST(ReadConfigFromTextTest, NumbersMustBeSeparated) {
+  EXPECT_FALSE(ReadConfigFromText("[1-2]").ok());
+}
+
+TEST(ReadConfigFromTextTest, MapWithoutCommas) {
+  auto result = ReadConfigFromText("{a: 1 'b': [2 3] c: {d: 4 e: 5}}");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(result->GetInt("a"), 1);
+  EXPECT_EQ(result->Get("b")->GetArraySize(), 2);
+  EXPECT_EQ(result->Get("c")->GetInt("d"), 4);
+  EXPECT_EQ(result->Get("c")->GetInt("e"), 5);
+}
+
+TEST(ReadConfigFromTextTest, StringKeysWithoutCommas) {
+  TextConfigFlags flags = kDefaultTextConfig;
+  flags.Clear(TextConfigFlag::kIdentifiers);
+  auto result = ReadConfigFromText("{\"a\": \"x\" \"b\": 1}", flags);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(result->GetString("a"), "x");
+  EXPECT_EQ(result->GetInt("b"), 1);
+}
+
+TEST(ReadConfigFromTextTest, MapTrailingComma) {
+  auto result = ReadConfigFromText("{a: 1, b: 2,}");
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(result->GetInt("a"), 1);
+  EXPECT_EQ(result->GetInt("b"), 2);
+}
+
+TEST(ReadConfigFromTextTest, RootlessOneEntryPerLine) {
+  auto result = ReadConfigFromText(
+      "a: 1\n"
+      "b: 'x'  // comment\n"
+      "c: [1 2]\n",
+      kRootlessTextConfig);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(result->GetInt("a"), 1);
+  EXPECT_EQ(result->GetString("b"), "x");
+  EXPECT_EQ(result->Get("c")->GetArraySize(), 2);
+}
+
+TEST(ReadConfigFromTextTest, RootlessTrailingComma) {
+  auto result = ReadConfigFromText("a: 1,\nb: 2,\n", kRootlessTextConfig);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(result->GetInt("a"), 1);
+  EXPECT_EQ(result->GetInt("b"), 2);
+}
+
+TEST(ReadConfigFromTextTest, CommaWithoutValueIsError) {
+  EXPECT_FALSE(ReadConfigFromText("[,]").ok());
+  EXPECT_FALSE(ReadConfigFromText("[, 1]").ok());
+  EXPECT_FALSE(ReadConfigFromText("{,}").ok());
+  EXPECT_FALSE(ReadConfigFromText(",", kRootlessTextConfig).ok());
+  EXPECT_FALSE(ReadConfigFromText(", a: 1", kRootlessTextConfig).ok());
+}
+
+TEST(ReadConfigFromTextTest, DoubleCommaIsError) {
+  EXPECT_FALSE(ReadConfigFromText("[1,, 2]").ok());
+  EXPECT_FALSE(ReadConfigFromText("[1,,]").ok());
+  EXPECT_FALSE(ReadConfigFromText("{a: 1,, b: 2}").ok());
+  EXPECT_FALSE(ReadConfigFromText("a: 1,, b: 2", kRootlessTextConfig).ok());
+}
+
+TEST(ReadConfigFromTextTest, CommasRequiredWithoutOptionalCommas) {
+  TextConfigFlags flags = kRootlessTextConfig;
+  flags.Clear(TextConfigFlag::kOptionalCommas);
+  EXPECT_FALSE(ReadConfigFromText("a: 1 b: 2", flags).ok());
+  EXPECT_TRUE(ReadConfigFromText("a: 1, b: [1, 2]", flags).ok());
+  EXPECT_FALSE(ReadConfigFromText("a: [1 2]", flags).ok());
+  EXPECT_FALSE(ReadConfigFromText("a: {b: 1 c: 2}", flags).ok());
+}
+
+TEST(ReadConfigFromTextTest, TrailingCommaWithoutOptionalCommas) {
+  TextConfigFlags flags = kRootlessTextConfig;
+  flags.Clear(TextConfigFlag::kOptionalCommas);
+  auto result = ReadConfigFromText("a: [1, 2,], b: {c: 3,},", flags);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(result->Get("a")->GetArraySize(), 2);
+  EXPECT_EQ(result->Get("b")->GetInt("c"), 3);
+}
+
+TEST(ReadConfigFromTextTest, CommaWithoutValueIsErrorWithoutOptionalCommas) {
+  TextConfigFlags flags = kRootlessTextConfig;
+  flags.Clear(TextConfigFlag::kOptionalCommas);
+  EXPECT_FALSE(ReadConfigFromText(",", flags).ok());
+  EXPECT_FALSE(ReadConfigFromText("a: 1,, b: 2", flags).ok());
+  EXPECT_FALSE(ReadConfigFromText("a: [,]", flags).ok());
+  EXPECT_FALSE(ReadConfigFromText("a: [, 1]", flags).ok());
+  EXPECT_FALSE(ReadConfigFromText("a: [1,,]", flags).ok());
+  EXPECT_FALSE(ReadConfigFromText("a: {,}", flags).ok());
+  EXPECT_FALSE(ReadConfigFromText("a: {b: 1,,}", flags).ok());
+}
+
+TEST(ReadConfigFromTextTest, JsonTrailingComma) {
+  auto result =
+      ReadConfigFromText("{\"a\": [1, 2,], \"b\": 3,}", kJsonTextConfig);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(result->Get("a")->GetArraySize(), 2);
+  EXPECT_EQ(result->GetInt("b"), 3);
+  EXPECT_FALSE(ReadConfigFromText("[1 2]", kJsonTextConfig).ok());
+}
+
+//==============================================================================
 // ReadConfigFromText - Error cases
 //==============================================================================
 
@@ -1401,14 +1550,6 @@ TEST(ReadConfigFromTextTest, MissingColon) {
 TEST(ReadConfigFromTextTest, MissingValue) {
   auto result = ReadConfigFromText("{\"a\":}");
   EXPECT_FALSE(result.ok());
-}
-
-TEST(ReadConfigFromTextTest, ExtraCommaInArray) {
-  // The parser allows trailing commas because of comma-separated repeat syntax.
-  // Verify it still parses (or at least has consistent behavior).
-  auto result = ReadConfigFromText("[1, 2,]");
-  // This may or may not be an error depending on parser behavior.
-  // We just verify it doesn't crash.
 }
 
 TEST(ReadConfigFromTextTest, RootlessInvalidKey) {

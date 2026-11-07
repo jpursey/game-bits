@@ -37,6 +37,9 @@ namespace gb {
 //   - The text config can be rootless (see kRootless), meaning that the
 //     top-level structure is a map without an enclosing {...} wrapper. This
 //     allows for more concise configuration files.
+//   - A comma may follow the last map entry or array value, with any flags.
+//   - Commas between map entries and array values can be optional (see
+//     kOptionalCommas).
 //
 // Finally, although this does not affect the format of reading and writing
 // files, Config values make a distinction between integers and floating point
@@ -71,8 +74,16 @@ enum class TextConfigFlag {
   // produce comments.
   kComments,
 
+  // Map entries and array values may be separated by whitespace alone, so
+  // `[1 2, 3]` reads as `[1, 2, 3]`. Two commas in a row, or a comma before the
+  // first one, are still errors. This is only meaningful when reading, as
+  // writing always separates values with commas and never writes a trailing
+  // comma.
+  kOptionalCommas,
+
   // This enables compact output with no unnecessary whitespace. This is only
-  // meaningful when writing, as reading will ignore all whitespace.
+  // meaningful when writing, as reading doesn't depend on how much whitespace
+  // there is.
   kCompact,
 };
 using TextConfigFlags = Flags<TextConfigFlag>;
@@ -81,7 +92,7 @@ using TextConfigFlags = Flags<TextConfigFlag>;
 // value representations.
 inline constexpr TextConfigFlags kDefaultTextConfig = {
     TextConfigFlag::kIdentifiers, TextConfigFlag::kSingleQuotes,
-    TextConfigFlag::kComments};
+    TextConfigFlag::kComments, TextConfigFlag::kOptionalCommas};
 
 // Flags that represent compact output when writing text configs.
 inline constexpr TextConfigFlags kCompactTextConfig = {
@@ -98,8 +109,8 @@ inline constexpr TextConfigFlags kJsonTextConfig = {};
 //==============================================================================
 // Text config output settings
 //
-// This is only relevant when writing text configs, as reading ignores all
-// whitespace.
+// This is only relevant when writing text configs, as reading doesn't depend on
+// how much whitespace there is.
 //==============================================================================
 
 // The number of spaces to indent each level of nesting when writing text
