@@ -36,6 +36,7 @@ class RenderBuffer;
 class RenderBufferView;
 class RenderSystem;
 class RenderPipeline;
+class RenderTarget;
 class RenderTest;
 class RenderView;
 class Shader;
@@ -267,13 +268,18 @@ enum class TextureFormat : uint8_t {
   kR8,         // One 8-bit channel. 1 byte.
   kRgba4,      // Four 4-bit channels in a uint16_t: red in the top 4 bits,
                // then green, blue, and alpha. 2 bytes.
+  kDepth,      // Depth, at the backend's precision (at least 24 bits), read as
+               // one channel. Only render targets have it (see RenderTarget),
+               // and its texels are never read or written by the CPU.
 };
 
 // Returns the size of one texel in bytes, or zero for an invalid format.
+// kDepth's is 4, though a backend may store it in less.
 inline constexpr int GetTexelSize(TextureFormat format) {
   switch (format) {
     case TextureFormat::kRgba8Srgb:
     case TextureFormat::kRgba8:
+    case TextureFormat::kDepth:
       return 4;
     case TextureFormat::kRg8:
     case TextureFormat::kRgba4:

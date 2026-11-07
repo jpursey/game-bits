@@ -51,6 +51,9 @@ class Texture : public Resource {
   // Returns the sampler options used with this texture.
   const SamplerOptions& GetSamplerOptions() const { return options_; }
 
+  // Returns true if this is a RenderTarget, which passes draw into.
+  virtual bool IsRenderTarget() const { return false; }
+
   //----------------------------------------------------------------------------
   // Operations
   //----------------------------------------------------------------------------
@@ -193,6 +196,13 @@ class Texture : public Resource {
   virtual void OnEditEnd(bool modified) = 0;
 
  private:
+  // A render target's size changes as it is resized.
+  friend class RenderTarget;
+  void SetSize(int width, int height) {
+    width_ = width;
+    height_ = height;
+  }
+
   // Returns true if the region is fully clipped, false if width and height are
   // greater than zero after clipping.
   bool Clip(int* x, int* y, int* width, int* height,
@@ -205,8 +215,8 @@ class Texture : public Resource {
   void OnViewDeleted(bool modified);
 
   const DataVolatility volatility_;
-  const int width_;
-  const int height_;
+  int width_;
+  int height_;
   const SamplerOptions options_;
   const TextureFormat format_;
   bool editing_ = false;

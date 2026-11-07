@@ -28,6 +28,7 @@ set(gb_render_SOURCE
   render_pipeline.h
   render_resource_chunks.h
   render_system.cc render_system.h
+  render_target.cc render_target.h
   render_types.h
   render_view.h
   sampler_options.h
@@ -59,6 +60,7 @@ set(gb_render_TEST_SOURCE
   render_buffer_test.cc
   render_buffer_view_test.cc
   render_system_test.cc
+  render_target_test.cc
   render_view_test.cc
   shader_test.cc
   storage_buffer_test.cc
@@ -75,6 +77,7 @@ set(gb_render_TEST_DEPS
 
 set(gb_render_DEPS
   absl::flat_hash_map
+  absl::flat_hash_set
   absl::inlined_vector
   absl::memory
   absl::span
@@ -106,6 +109,7 @@ set(gb_render_testing_SOURCE
   test_render_backend.cc test_render_backend.h
   test_render_buffer.cc test_render_buffer.h
   test_render_pipeline.cc test_render_pipeline.h
+  test_render_target.cc test_render_target.h
   test_render_view.h
   test_shader_code.cc test_shader_code.h
   test_texture.cc test_texture.h

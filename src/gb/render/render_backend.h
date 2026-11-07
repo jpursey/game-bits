@@ -17,6 +17,7 @@
 #include "gb/render/mesh_pool_buffers.h"
 #include "gb/render/render_buffer.h"
 #include "gb/render/render_pipeline.h"
+#include "gb/render/render_target.h"
 #include "gb/render/render_types.h"
 #include "gb/render/shader_code.h"
 #include "gb/render/texture.h"
@@ -123,6 +124,20 @@ class RenderBackend {
                                              int width, int height, int depth,
                                              const SamplerOptions& options,
                                              TextureFormat format) = 0;
+
+  // Creates a render target of width x height texels. "size" is what
+  // RenderTarget::GetSize() returns.
+  //
+  // The format, size, and options are valid for a render target (see
+  // RenderTarget and RenderSystem::CreateRenderTarget).
+  //
+  // If the render target could not be created, this returns null. On success,
+  // its contents are cleared: transparent black, or the far plane for kDepth.
+  virtual RenderTarget* CreateRenderTarget(RenderInternal, ResourceEntry entry,
+                                           TextureFormat format,
+                                           const RenderTargetSize& size,
+                                           int width, int height,
+                                           const SamplerOptions& options) = 0;
 
   // Creates the shader code compatible with this backend from the raw shader
   // code data.

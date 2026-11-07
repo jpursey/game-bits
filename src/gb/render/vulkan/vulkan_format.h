@@ -46,6 +46,9 @@ inline VulkanTextureFormat GetVulkanTextureFormat(TextureFormat format) {
               vk::ComponentMapping(
                   vk::ComponentSwizzle::eB, vk::ComponentSwizzle::eIdentity,
                   vk::ComponentSwizzle::eR, vk::ComponentSwizzle::eIdentity)};
+    case TextureFormat::kDepth:
+      // Render targets aren't supported yet, so there is no depth format.
+      return {};
   }
   return {};
 }

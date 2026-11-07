@@ -6,6 +6,7 @@
 #include "gb/render/render_system.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -471,6 +472,56 @@ bool ValidateVolumeTextureSize(int width, int height, int depth) {
   return true;
 }
 
+// Returns true if render targets can be created in the format, and logs an
+// error otherwise.
+bool ValidateRenderTargetFormat(TextureFormat format) {
+  switch (format) {
+    case TextureFormat::kRgba8Srgb:
+    case TextureFormat::kRgba8:
+    case TextureFormat::kRg8:
+    case TextureFormat::kR8:
+    case TextureFormat::kDepth:
+      return true;
+    default:
+      LOG(ERROR) << "Invalid render target format " << static_cast<int>(format)
+                 << ", which must be kDepth, kRgba8Srgb, kRgba8, kRg8, or kR8";
+      return false;
+  }
+}
+
+// Returns true if a render target size is within the limits, and logs an error
+// otherwise.
+bool ValidateRenderTargetSize(const RenderTargetSize& size) {
+  if (!size.follows_frame) {
+    return IsValidTextureSize("render target", size.width, size.height);
+  }
+  if (!(size.scale > 0.0f && size.scale <= 1.0f)) {
+    LOG(ERROR) << "Invalid render target scale " << size.scale
+               << " of the frame, which must be in (0, 1]";
+    return false;
+  }
+  return true;
+}
+
+// Returns true if the options have no mipmaps, and logs an error naming "what"
+// otherwise.
+bool ValidateNoMipmaps(std::string_view what, const SamplerOptions& options) {
+  if (options.mipmap || options.tile_size != 0) {
+    LOG(ERROR) << "Invalid " << what << " sampler options, as " << what
+               << "s have no mipmaps (mipmap must be false, and tile_size "
+                  "zero)";
+    return false;
+  }
+  return true;
+}
+
+// Returns the width and height in pixels of a render target that follows the
+// frame at the scale.
+std::pair<int, int> GetFrameTargetSize(FrameDimensions frame, float scale) {
+  return {std::max(1, static_cast<int>(std::lround(frame.width * scale))),
+          std::max(1, static_cast<int>(std::lround(frame.height * scale)))};
+}
+
 fb::Offset<fbs::SamplerOptions> WriteSamplerOptions(
     FlatBufferBuilder* builder, const SamplerOptions& options) {
   fbs::SamplerOptionsBuilder sampler_options_builder(*builder);
@@ -663,8 +714,13 @@ bool RenderSystem::Init() {
       [this](Context* context, std::string_view name) {
         return LoadTexture(context, name);
       });
+  resource_manager_->InitReleaseHandler<RenderTarget>(
+      [this](RenderTarget* render_target) {
+        ReleaseRenderTarget(render_target);
+      });
 
   TypeKey::Get<Texture>()->SetTypeName("Texture");
+  TypeKey::Get<RenderTarget>()->SetTypeName("RenderTarget");
   TypeKey::Get<TextureArray>()->SetTypeName("TextureArray");
   TypeKey::Get<VolumeTexture>()->SetTypeName("VolumeTexture");
   TypeKey::Get<StorageBuffer>()->SetTypeName("StorageBuffer");
@@ -674,9 +730,10 @@ bool RenderSystem::Init() {
   TypeKey::Get<Mesh>()->SetTypeName("Mesh");
   TypeKey::Get<MeshPool>()->SetTypeName("MeshPool");
   auto* resource_system = context_.GetPtr<ResourceSystem>();
-  if (!resource_system->Register<Texture, TextureArray, VolumeTexture,
-                                 StorageBuffer, Shader, MaterialType, Material,
-                                 Mesh, MeshPool>(resource_manager_.get())) {
+  if (!resource_system->Register<Texture, RenderTarget, TextureArray,
+                                 VolumeTexture, StorageBuffer, Shader,
+                                 MaterialType, Material, Mesh, MeshPool>(
+          resource_manager_.get())) {
     return false;
   }
   return InitDefaultBindings();
@@ -967,6 +1024,16 @@ bool RenderSystem::ValidateTextureFormat(std::string_view name,
     LOG(ERROR) << "Invalid " << name << " format " << static_cast<int>(format);
     return false;
   }
+  if (format == TextureFormat::kDepth) {
+    LOG(ERROR) << "Cannot create " << name
+               << " in kDepth, which only render targets have";
+    return false;
+  }
+  return ValidateFilter(name, format, options);
+}
+
+bool RenderSystem::ValidateFilter(std::string_view name, TextureFormat format,
+                                  const SamplerOptions& options) const {
   if (options.filter && !backend_->CanFilter({}, format)) {
     LOG(ERROR) << "Cannot create " << name << " with filtering, as format "
                << static_cast<int>(format) << " cannot be filtered";
@@ -1832,6 +1899,11 @@ Texture* RenderSystem::LoadTextureFile(TextureLoadContract contract,
 
 bool RenderSystem::SaveTexture(std::string_view name, Texture* texture,
                                DataVolatility volatility) {
+  if (texture != nullptr && texture->IsRenderTarget()) {
+    LOG(ERROR) << "Cannot save render target as " << name
+               << ", as its texels cannot be read";
+    return false;
+  }
   return resource_writer_->Write(
       name, texture,
       ContextBuilder().SetValue<DataVolatility>(volatility).Build());
@@ -1974,12 +2046,8 @@ VolumeTexture* RenderSystem::CreateBackendVolumeTexture(
     ResourceEntry entry, DataVolatility volatility, int width, int height,
     int depth, const SamplerOptions& options, TextureFormat format) {
   if (!ValidateVolumeTextureSize(width, height, depth) ||
-      !ValidateTextureFormat("volume texture", format, options)) {
-    return nullptr;
-  }
-  if (options.mipmap || options.tile_size != 0) {
-    LOG(ERROR) << "Invalid volume texture sampler options, as volume textures "
-                  "have no mipmaps (mipmap must be false, and tile_size zero)";
+      !ValidateTextureFormat("volume texture", format, options) ||
+      !ValidateNoMipmaps("volume texture", options)) {
     return nullptr;
   }
   VolumeTexture* volume_texture = backend_->CreateVolumeTexture(
@@ -2088,6 +2156,55 @@ bool RenderSystem::SaveVolumeTextureChunk(
 
   builder->Finish(fb_volume_texture);
   return true;
+}
+
+RenderTarget* RenderSystem::DoCreateRenderTarget(
+    TextureFormat format, const RenderTargetSize& size,
+    const SamplerOptions& options) {
+  if (!ValidateRenderTargetFormat(format) ||
+      !ValidateFilter("render target", format, options) ||
+      !ValidateNoMipmaps("render target", options) ||
+      !ValidateRenderTargetSize(size)) {
+    return nullptr;
+  }
+
+  const auto [width, height] =
+      size.follows_frame
+          ? GetFrameTargetSize(backend_->GetFrameDimensions({}), size.scale)
+          : std::pair{size.width, size.height};
+  RenderTarget* render_target = backend_->CreateRenderTarget(
+      {}, resource_manager_->NewResourceEntry<RenderTarget>(), format, size,
+      width, height, options);
+  if (render_target == nullptr) {
+    LOG(ERROR) << "Failed to create render target of dimensions " << width
+               << "x" << height;
+    return nullptr;
+  }
+
+  // A target created at an older frame size is resized in the next
+  // BeginFrame(), before it is drawn into.
+  if (size.follows_frame) {
+    absl::MutexLock lock(&frame_targets_mutex_);
+    frame_targets_.insert(render_target);
+  }
+  return render_target;
+}
+
+void RenderSystem::ReleaseRenderTarget(RenderTarget* render_target) {
+  absl::MutexLock lock(&frame_targets_mutex_);
+  if (resource_manager_->MaybeDeleteResource(render_target)) {
+    frame_targets_.erase(render_target);
+  }
+}
+
+void RenderSystem::ResizeFrameTargets() {
+  const FrameDimensions frame = backend_->GetFrameDimensions({});
+  absl::MutexLock lock(&frame_targets_mutex_);
+  for (RenderTarget* render_target : frame_targets_) {
+    const auto [width, height] =
+        GetFrameTargetSize(frame, render_target->GetSize().scale);
+    render_target->Resize({}, width, height);
+  }
 }
 
 StorageBuffer* RenderSystem::CreateBackendStorageBuffer(
@@ -2209,6 +2326,7 @@ bool RenderSystem::BeginFrame() {
   if (!backend_->BeginFrame({})) {
     return false;
   }
+  ResizeFrameTargets();
 
   is_rendering_ = true;
   return true;

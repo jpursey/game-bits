@@ -20,6 +20,7 @@
 #include "gb/render/test_mesh_pool_buffers.h"
 #include "gb/render/test_render_buffer.h"
 #include "gb/render/test_render_pipeline.h"
+#include "gb/render/test_render_target.h"
 #include "gb/render/test_render_view.h"
 #include "gb/render/test_texture.h"
 #include "gb/render/test_texture_array.h"
@@ -62,6 +63,7 @@ class TestRenderBackend final : public RenderBackend {
     TestTexture::Config texture_config;
     TestTextureArray::Config texture_array_config;
     TestVolumeTexture::Config volume_texture_config;
+    TestRenderTarget::Config render_target_config;
     TestRenderPipeline::Config render_pipeline_config;
     TestRenderBuffer::Config vertex_buffer_config;
     TestRenderBuffer::Config index_buffer_config;
@@ -74,6 +76,7 @@ class TestRenderBackend final : public RenderBackend {
     bool fail_create_texture = false;
     bool fail_create_texture_array = false;
     bool fail_create_volume_texture = false;
+    bool fail_create_render_target = false;
     bool fail_create_shader_code = false;
     bool fail_create_binding_layout = false;
     bool fail_create_view = false;
@@ -131,6 +134,11 @@ class TestRenderBackend final : public RenderBackend {
                                      int height, int depth,
                                      const SamplerOptions& options,
                                      TextureFormat format) override;
+  RenderTarget* CreateRenderTarget(RenderInternal, ResourceEntry entry,
+                                   TextureFormat format,
+                                   const RenderTargetSize& size, int width,
+                                   int height,
+                                   const SamplerOptions& options) override;
   std::unique_ptr<ShaderCode> CreateShaderCode(RenderInternal, const void* code,
                                                int64_t code_size) override;
   std::unique_ptr<BindingLayout> CreateBindingLayout(

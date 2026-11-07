@@ -921,8 +921,12 @@ void VulkanBackend::UnregisterMeshPool(VulkanInternal,
 }
 
 bool VulkanBackend::CanFilter(RenderInternal, TextureFormat format) const {
-  const vk::FormatProperties properties = physical_device_.getFormatProperties(
-      GetVulkanTextureFormat(format).format);
+  const vk::Format vulkan_format = GetVulkanTextureFormat(format).format;
+  if (vulkan_format == vk::Format::eUndefined) {
+    return false;
+  }
+  const vk::FormatProperties properties =
+      physical_device_.getFormatProperties(vulkan_format);
   return static_cast<bool>(
       properties.optimalTilingFeatures &
       vk::FormatFeatureFlagBits::eSampledImageFilterLinear);
@@ -963,6 +967,16 @@ VolumeTexture* VulkanBackend::CreateVolumeTexture(
   return VulkanVolumeTexture::Create(std::move(entry), this, sampler,
                                      volatility, width, height, depth, options,
                                      format);
+}
+
+RenderTarget* VulkanBackend::CreateRenderTarget(RenderInternal,
+                                                ResourceEntry entry,
+                                                TextureFormat format,
+                                                const RenderTargetSize& size,
+                                                int width, int height,
+                                                const SamplerOptions& options) {
+  LOG(ERROR) << "Render targets are not supported by the Vulkan backend yet";
+  return nullptr;
 }
 
 std::unique_ptr<ShaderCode> VulkanBackend::CreateShaderCode(RenderInternal,

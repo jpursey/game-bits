@@ -43,6 +43,7 @@ enum TextureFormat : uint8 {
   Rg8,
   R8,
   Rgba4,
+  Depth,
 }
 
 // Must be kept in sync with gb::DepthMode

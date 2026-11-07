@@ -212,21 +212,27 @@ RenderPass* GetPass() const;  // Null for a view drawn in the frame.
 - `RenderTarget` derives from `Texture`, so it binds anywhere a texture does
   (bindings, material defaults, gb_imgui images) with nothing new in binding
   data. It implements Texture's `Do` virtuals as failures (`final`), and adds a
-  protected virtual `DoResize(width, height)` for the backend. It is a resource
-  type of its own, as `MeshPool` is, registered with the resource system.
+  protected virtual `DoResize(width, height)` for the backend, which returns
+  false if it can't. It is a resource type of its own, as `MeshPool` is,
+  registered with the resource system, so `ResourcePtr<RenderTarget>` converts
+  to `ResourcePtr<Texture>`.
 - `Texture`'s width and height lose their `const`, with a private setter that
-  only `RenderTarget` reaches.
+  only `RenderTarget` reaches, through `RenderTarget::Resize()`.
 - The backend creates it: `RenderBackend::CreateRenderTarget(entry, format,
-  width, height, options)`. `RenderSystem` validates the format, size, and
-  options first, and computes the size of one that follows the frame.
+  size, width, height, options)`. `RenderSystem` validates the format, size,
+  and options first, and computes the size of one that follows the frame.
 - `RenderSystem` keeps the targets that follow the frame, in a set under a
-  mutex (creation is thread-safe), and each removes itself as it is destroyed.
-  `BeginFrame()` compares the frame dimensions with the last frame's, and if
-  they changed, resizes each through `DoResize()`.
+  mutex (creation is thread-safe). A target leaves the set in `RenderSystem`'s
+  release handler for render targets, under the same mutex, before it is
+  deleted, so `BeginFrame()` never resizes one being destroyed on another
+  thread. `BeginFrame()` resizes each to the frame's size, which does nothing
+  for one already that size, so a target created at an older size catches up
+  before it is drawn.
+- `SaveTexture()` fails for a render target, saying why.
 - `TestRenderTarget` records its resizes.
 
 **Brittleness:** the targets that follow the frame are added and removed by
-`RenderSystem` and `RenderTarget` themselves, never by a caller.
+`RenderSystem` itself, never by a caller.
 
 ### gb_render: passes
 
@@ -314,8 +320,6 @@ These would go to the backlog once the feature is done:
 
 ### To confirm
 
-- `ResourcePtr<RenderTarget>` works for a resource type derived from another
-  (`Texture`). CL1.
 - Every device in use has a depth format that is both an attachment and
   sampled, and can filter it. CL4.
 - Validation layers accept a fragment shader writing color in a depth-only
@@ -343,7 +347,7 @@ Depends on: nothing.
 - Nothing named for scenes is left (`git grep -i scene` finds only prose
   about scenes in the general sense).
 
-### CL1 [ ] render: Render targets
+### CL1 [x] render: Render targets
 
 Depends on: CL0.
 

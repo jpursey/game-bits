@@ -11,7 +11,10 @@
 #include <string>
 #include <string_view>
 
+#include "absl/base/thread_annotations.h"
 #include "absl/container/flat_hash_map.h"
+#include "absl/container/flat_hash_set.h"
+#include "absl/synchronization/mutex.h"
 #include "absl/types/span.h"
 #include "flatbuffers/flatbuffers.h"
 #include "gb/base/validated_context.h"
@@ -25,6 +28,7 @@
 #include "gb/render/material_type.h"
 #include "gb/render/mesh.h"
 #include "gb/render/mesh_pool.h"
+#include "gb/render/render_target.h"
 #include "gb/render/render_types.h"
 #include "gb/render/render_view.h"
 #include "gb/render/sampler_options.h"
@@ -424,6 +428,24 @@ class RenderSystem final {
       std::string_view name, VolumeTexture* volume_texture,
       DataVolatility volatility = DataVolatility::kStaticWrite);
 
+  // Creates a render target, a texture that passes draw into (see
+  // RenderTarget).
+  //
+  // The format is one RenderTarget lists, and the size is within the limits
+  // RenderTargetSize gives. The options have no mipmaps (mipmap unset, and a
+  // tile_size of zero), and filter only in a format CanFilter() accepts.
+  //
+  // If successful, the render target is cleared. Its size follows the frame
+  // from the next BeginFrame() if it was created with
+  // RenderTargetSize::Frame().
+  ResourcePtr<RenderTarget> CreateRenderTarget(
+      TextureFormat format, const RenderTargetSize& size,
+      const SamplerOptions& options = kRenderTargetSamplerOptions);
+  RenderTarget* CreateRenderTarget(
+      ResourceSet* resource_set, TextureFormat format,
+      const RenderTargetSize& size,
+      const SamplerOptions& options = kRenderTargetSamplerOptions);
+
   // Creates a storage buffer of "count" values of the type, which is registered
   // with RegisterConstantsType() (and whose C++ layout matches GLSL's std430
   // layout).
@@ -477,6 +499,9 @@ class RenderSystem final {
   // This will block until a frame is ready to be rendered. If rendering is
   // not currently possible (for instance the window has zero size, or is
   // minimized), this will return false and the game should try again later.
+  //
+  // Render targets that follow the frame are resized to it here, if its size
+  // changed.
   bool BeginFrame();
 
   // Render a mesh in the view using the specified instance data.
@@ -565,9 +590,15 @@ class RenderSystem final {
                        flatbuffers::FlatBufferBuilder* builder);
 
   // Returns true if a texture in the format can be created with the options,
-  // logging why if it can't. "name" names the kind of texture.
+  // logging why if it can't. "name" names the kind of texture. kDepth is only
+  // for render targets, so this rejects it.
   bool ValidateTextureFormat(std::string_view name, TextureFormat format,
                              const SamplerOptions& options) const;
+
+  // Returns true if the options filter only in a format that can be filtered,
+  // logging why if not. "name" names the kind of texture.
+  bool ValidateFilter(std::string_view name, TextureFormat format,
+                      const SamplerOptions& options) const;
 
   // Creates a texture or texture array in the backend, returning null and
   // logging why if its size or format is invalid, or the backend fails. Every
@@ -619,6 +650,19 @@ class RenderSystem final {
   bool SaveVolumeTextureChunk(Context* context, VolumeTexture* volume_texture,
                               flatbuffers::FlatBufferBuilder* builder);
 
+  RenderTarget* DoCreateRenderTarget(TextureFormat format,
+                                     const RenderTargetSize& size,
+                                     const SamplerOptions& options);
+
+  // Called as the last reference to a render target is released. It is
+  // deleted unless it was referenced again meanwhile, and taken out of
+  // frame_targets_ under the same lock, so ResizeFrameTargets() never sees one
+  // being deleted.
+  void ReleaseRenderTarget(RenderTarget* render_target);
+
+  // Resizes each render target that follows the frame to the frame's size.
+  void ResizeFrameTargets();
+
   // Creates a storage buffer in the backend, returning null and logging why if
   // its type or count are invalid, or the backend fails. Its values are set
   // from "values" if it isn't null, and are zero otherwise.
@@ -665,6 +709,12 @@ class RenderSystem final {
   absl::flat_hash_map<std::string, std::unique_ptr<VertexType>> vertex_types_;
   absl::flat_hash_map<std::string, std::unique_ptr<BindingLayout>>
       binding_layouts_;
+
+  // The render targets that follow the frame, which are created and released
+  // on any thread.
+  absl::Mutex frame_targets_mutex_;
+  absl::flat_hash_set<RenderTarget*> frame_targets_
+      ABSL_GUARDED_BY(frame_targets_mutex_);
 
   // Members set during rendering. All rendering is externally synchronized.
   bool is_rendering_ = false;
@@ -818,6 +868,20 @@ inline VolumeTexture* RenderSystem::CreateVolumeTexture(
       DoCreateVolumeTexture(volatility, width, height, depth, options, format);
   resource_set->Add(volume_texture);
   return volume_texture;
+}
+
+inline ResourcePtr<RenderTarget> RenderSystem::CreateRenderTarget(
+    TextureFormat format, const RenderTargetSize& size,
+    const SamplerOptions& options) {
+  return DoCreateRenderTarget(format, size, options);
+}
+
+inline RenderTarget* RenderSystem::CreateRenderTarget(
+    ResourceSet* resource_set, TextureFormat format,
+    const RenderTargetSize& size, const SamplerOptions& options) {
+  RenderTarget* render_target = DoCreateRenderTarget(format, size, options);
+  resource_set->Add(render_target);
+  return render_target;
 }
 
 inline ResourcePtr<StorageBuffer> RenderSystem::CreateStorageBuffer(

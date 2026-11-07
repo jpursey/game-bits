@@ -77,6 +77,17 @@ VolumeTexture* TestRenderBackend::CreateVolumeTexture(
                                format);
 }
 
+RenderTarget* TestRenderBackend::CreateRenderTarget(
+    RenderInternal, ResourceEntry entry, TextureFormat format,
+    const RenderTargetSize& size, int width, int height,
+    const SamplerOptions& options) {
+  if (state_->fail_create_render_target) {
+    return nullptr;
+  }
+  return new TestRenderTarget(&state_->render_target_config, std::move(entry),
+                              format, size, width, height, options);
+}
+
 std::unique_ptr<ShaderCode> TestRenderBackend::CreateShaderCode(
     RenderInternal, const void* code, int64_t code_size) {
   if (state_->fail_create_shader_code) {
