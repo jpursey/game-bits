@@ -10,6 +10,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "absl/base/thread_annotations.h"
 #include "absl/container/flat_hash_map.h"
@@ -28,6 +29,7 @@
 #include "gb/render/material_type.h"
 #include "gb/render/mesh.h"
 #include "gb/render/mesh_pool.h"
+#include "gb/render/render_pass.h"
 #include "gb/render/render_target.h"
 #include "gb/render/render_types.h"
 #include "gb/render/render_view.h"
@@ -218,11 +220,30 @@ class RenderSystem final {
   // modification of the resources referenced by a call.
   //----------------------------------------------------------------------------
 
+  // Creates a pass, which draws the views created in it into its targets each
+  // frame, before the frame (see RenderPass).
+  //
+  // The config has a color target, a depth target, or both: the color target
+  // in a color format, the depth target in kDepth, and both of the same
+  // RenderTargetSize. A multisampled pass keeps neither target.
+  //
+  // Passes are drawn in pass order, and those with the same order in the order
+  // they were created. A pass created during a frame is drawn from the next
+  // one, and its views can't be drawn before then. RenderPass says how long a
+  // pass must live.
+  std::unique_ptr<RenderPass> CreatePass(const RenderPassConfig& config,
+                                         int pass_order = 0);
+
   // Creates a render view which must be used in order to draw any render
   // resources. Its view binding data starts as the binding layout's defaults.
   //
-  // The view order is used to define a global processing order across views.
-  // See RenderView for more details on how this is used.
+  // The view is drawn in the pass, which must outlive it, or in the frame if
+  // the pass is null or not given. The view order is the order views in the
+  // same pass (or the frame) are drawn in. See RenderView for more details on
+  // how this is used.
+  std::unique_ptr<RenderView> CreateView(RenderPass* pass,
+                                         BindingLayout* binding_layout,
+                                         int view_order = 0);
   std::unique_ptr<RenderView> CreateView(BindingLayout* binding_layout,
                                          int view_order = 0);
 
@@ -501,7 +522,7 @@ class RenderSystem final {
   // minimized), this will return false and the game should try again later.
   //
   // Render targets that follow the frame are resized to it here, if its size
-  // changed.
+  // changed. The passes that exist now are drawn this frame.
   bool BeginFrame();
 
   // Render a mesh in the view using the specified instance data.
@@ -538,6 +559,13 @@ class RenderSystem final {
   // If the context's pilot is saving this frame, the frame is read back once
   // presented, and given to the pilot. If it can't be read, an error is logged.
   void EndFrame();
+
+  //----------------------------------------------------------------------------
+  // Internal
+  //----------------------------------------------------------------------------
+
+  // Called by each pass this created as it is destroyed. Thread-safe.
+  void RemovePass(RenderInternal, RenderPass* pass);
 
  private:
   RenderSystem(ValidatedContext context);
@@ -663,6 +691,9 @@ class RenderSystem final {
   // Resizes each render target that follows the frame to the frame's size.
   void ResizeFrameTargets();
 
+  // Ends the frame for the passes drawn in it, which may then be destroyed.
+  void ClearFramePasses();
+
   // Creates a storage buffer in the backend, returning null and logging why if
   // its type or count are invalid, or the backend fails. Its values are set
   // from "values" if it isn't null, and are zero otherwise.
@@ -716,8 +747,18 @@ class RenderSystem final {
   absl::flat_hash_set<RenderTarget*> frame_targets_
       ABSL_GUARDED_BY(frame_targets_mutex_);
 
+  // The passes in draw order, which are created and destroyed on any thread.
+  // RenderPass::in_frame_ is set and cleared under the same lock.
+  absl::Mutex passes_mutex_;
+  std::vector<RenderPass*> passes_ ABSL_GUARDED_BY(passes_mutex_);
+
   // Members set during rendering. All rendering is externally synchronized.
   bool is_rendering_ = false;
+
+  // The passes drawn this frame, which the backend holds until EndFrame(). It
+  // is only changed under passes_mutex_, as each pass's in_frame_ is set or
+  // cleared.
+  std::vector<RenderPass*> frame_passes_;
 };
 
 template <typename Type>

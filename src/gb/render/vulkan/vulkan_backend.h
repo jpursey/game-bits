@@ -237,7 +237,10 @@ class VulkanBackend final : public RenderBackend {
                                                int64_t code_size) override;
   std::unique_ptr<BindingLayout> CreateBindingLayout(
       RenderInternal, absl::Span<const Binding> bindings) override;
-  std::unique_ptr<RenderView> CreateView(RenderInternal,
+  std::unique_ptr<RenderPass> CreatePass(RenderInternal,
+                                         const RenderPassConfig& config,
+                                         int pass_order) override;
+  std::unique_ptr<RenderView> CreateView(RenderInternal, RenderPass* pass,
                                          BindingLayout* binding_layout,
                                          int view_order) override;
   std::unique_ptr<RenderPipeline> CreatePipeline(
@@ -262,7 +265,8 @@ class VulkanBackend final : public RenderBackend {
   void SetClearColor(RenderInternal, Pixel color) override;
   void SetDefaultBindings(RenderInternal,
                           const DefaultBindings& defaults) override;
-  bool BeginFrame(RenderInternal) override;
+  bool BeginFrame(RenderInternal,
+                  absl::Span<RenderPass* const> passes) override;
   void Draw(RenderInternal, RenderView* view, RenderPipeline* pipeline,
             BindingData* material_data, BindingData* instance_data,
             RenderBuffer* vertices, RenderBuffer* indices) override;

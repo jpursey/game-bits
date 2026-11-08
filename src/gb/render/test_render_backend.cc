@@ -104,12 +104,21 @@ std::unique_ptr<BindingLayout> TestRenderBackend::CreateBindingLayout(
   return std::make_unique<TestBindingLayout>(bindings);
 }
 
+std::unique_ptr<RenderPass> TestRenderBackend::CreatePass(
+    RenderInternal, const RenderPassConfig& config, int pass_order) {
+  if (state_->fail_create_pass) {
+    return nullptr;
+  }
+  return std::make_unique<TestRenderPass>(config, pass_order);
+}
+
 std::unique_ptr<RenderView> TestRenderBackend::CreateView(
-    RenderInternal, BindingLayout* binding_layout, int view_order) {
+    RenderInternal, RenderPass* pass, BindingLayout* binding_layout,
+    int view_order) {
   if (state_->fail_create_view) {
     return nullptr;
   }
-  return std::make_unique<TestRenderView>(binding_layout, view_order);
+  return std::make_unique<TestRenderView>(pass, binding_layout, view_order);
 }
 
 std::unique_ptr<RenderPipeline> TestRenderBackend::CreatePipeline(
@@ -167,7 +176,8 @@ std::unique_ptr<MeshPoolBuffers> TestRenderBackend::CreateMeshPoolBuffers(
       vertex_capacity, index_capacity);
 }
 
-bool TestRenderBackend::BeginFrame(RenderInternal) {
+bool TestRenderBackend::BeginFrame(RenderInternal,
+                                   absl::Span<RenderPass* const> passes) {
   if (state_->fail_begin_frame) {
     return false;
   }
@@ -175,7 +185,29 @@ bool TestRenderBackend::BeginFrame(RenderInternal) {
     state_->invalid_call_count += 1;
   }
   state_->rendering = true;
+  state_->passes.clear();
+  for (RenderPass* pass : passes) {
+    state_->passes.push_back({.pass = static_cast<TestRenderPass*>(pass)});
+  }
+  state_->passes.push_back({});
   return true;
+}
+
+TestRenderBackend::PassItem* TestRenderBackend::GetPassItem(RenderView* view) {
+  for (PassItem& item : state_->passes) {
+    if (item.pass == view->GetPass()) {
+      return &item;
+    }
+  }
+  state_->invalid_call_count += 1;
+  return nullptr;
+}
+
+void TestRenderBackend::AddReads(PassItem* item,
+                                 const BindingData* binding_data) {
+  ResourceDependencyList dependencies;
+  binding_data->GetDependencies(&dependencies);
+  item->reads.insert(dependencies.begin(), dependencies.end());
 }
 
 void TestRenderBackend::Draw(RenderInternal, RenderView* view,
@@ -183,26 +215,50 @@ void TestRenderBackend::Draw(RenderInternal, RenderView* view,
                              BindingData* material_data,
                              BindingData* instance_data, RenderBuffer* vertices,
                              RenderBuffer* indices) {
+  const DrawItem draw = {static_cast<TestRenderView*>(view),
+                         static_cast<TestRenderPipeline*>(pipeline),
+                         static_cast<TestBindingData*>(material_data),
+                         static_cast<TestBindingData*>(instance_data),
+                         static_cast<TestRenderBuffer*>(vertices),
+                         static_cast<TestRenderBuffer*>(indices)};
+  state_->draw_list.push_back(draw);
   if (!state_->rendering || view == nullptr || pipeline == nullptr ||
       material_data == nullptr || instance_data == nullptr ||
       vertices == nullptr || indices == nullptr) {
     state_->invalid_call_count += 1;
+    return;
   }
-  state_->draw_list.push_back({static_cast<TestRenderView*>(view),
-                               static_cast<TestRenderPipeline*>(pipeline),
-                               static_cast<TestBindingData*>(material_data),
-                               static_cast<TestBindingData*>(instance_data),
-                               static_cast<TestRenderBuffer*>(vertices),
-                               static_cast<TestRenderBuffer*>(indices)});
+  PassItem* item = GetPassItem(view);
+  if (item == nullptr) {
+    return;
+  }
+  item->draws.push_back(draw);
+  AddReads(item, view->GetViewBindingData());
+  AddReads(item, material_data);
+  AddReads(item, instance_data);
 }
 
 void TestRenderBackend::Draw(RenderInternal, RenderView* view,
                              absl::Span<const DrawCommand> commands) {
-  if (!state_->rendering || view == nullptr) {
-    state_->invalid_call_count += 1;
-  }
   state_->draw_commands.insert(state_->draw_commands.end(), commands.begin(),
                                commands.end());
+  if (!state_->rendering || view == nullptr) {
+    state_->invalid_call_count += 1;
+    return;
+  }
+  PassItem* item = GetPassItem(view);
+  if (item == nullptr) {
+    return;
+  }
+  item->draw_commands.insert(item->draw_commands.end(), commands.begin(),
+                             commands.end());
+  AddReads(item, view->GetViewBindingData());
+  for (const DrawCommand& command : commands) {
+    if (command.type == DrawCommand::Type::kMaterialData ||
+        command.type == DrawCommand::Type::kInstanceData) {
+      AddReads(item, command.binding_data);
+    }
+  }
 }
 
 void TestRenderBackend::EndFrame(RenderInternal) {

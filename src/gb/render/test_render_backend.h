@@ -19,12 +19,14 @@
 #include "gb/render/test_binding_data.h"
 #include "gb/render/test_mesh_pool_buffers.h"
 #include "gb/render/test_render_buffer.h"
+#include "gb/render/test_render_pass.h"
 #include "gb/render/test_render_pipeline.h"
 #include "gb/render/test_render_target.h"
 #include "gb/render/test_render_view.h"
 #include "gb/render/test_texture.h"
 #include "gb/render/test_texture_array.h"
 #include "gb/render/test_volume_texture.h"
+#include "gb/resource/resource.h"
 
 namespace gb {
 
@@ -38,6 +40,18 @@ class TestRenderBackend final : public RenderBackend {
     TestBindingData* instance_data;
     TestRenderBuffer* vertices;
     TestRenderBuffer* indices;
+  };
+
+  // A pass drawn in a frame, or the frame itself, and what was drawn in it.
+  struct PassItem {
+    TestRenderPass* pass = nullptr;  // Null for the frame.
+    std::vector<DrawItem> draws;
+    std::vector<DrawCommand> draw_commands;
+
+    // Every resource (texture, texture array, volume texture, or storage
+    // buffer) bound in the view, material, and instance data of the draws and
+    // draw commands.
+    absl::flat_hash_set<Resource*> reads;
   };
 
   struct State {
@@ -60,6 +74,11 @@ class TestRenderBackend final : public RenderBackend {
     bool rendering = false;
     std::vector<DrawItem> draw_list;
     std::vector<DrawCommand> draw_commands;  // From every DrawList drawn.
+
+    // The passes of the frame being drawn, or the last one drawn, in draw
+    // order: each pass BeginFrame() was given, then the frame.
+    std::vector<PassItem> passes;
+
     TestTexture::Config texture_config;
     TestTextureArray::Config texture_array_config;
     TestVolumeTexture::Config volume_texture_config;
@@ -79,6 +98,7 @@ class TestRenderBackend final : public RenderBackend {
     bool fail_create_render_target = false;
     bool fail_create_shader_code = false;
     bool fail_create_binding_layout = false;
+    bool fail_create_pass = false;
     bool fail_create_view = false;
     bool fail_create_pipeline = false;
     bool fail_create_vertex_buffer = false;
@@ -143,7 +163,10 @@ class TestRenderBackend final : public RenderBackend {
                                                int64_t code_size) override;
   std::unique_ptr<BindingLayout> CreateBindingLayout(
       RenderInternal, absl::Span<const Binding> bindings) override;
-  std::unique_ptr<RenderView> CreateView(RenderInternal,
+  std::unique_ptr<RenderPass> CreatePass(RenderInternal,
+                                         const RenderPassConfig& config,
+                                         int pass_order) override;
+  std::unique_ptr<RenderView> CreateView(RenderInternal, RenderPass* pass,
                                          BindingLayout* binding_layout,
                                          int view_order) override;
   std::unique_ptr<RenderPipeline> CreatePipeline(
@@ -164,7 +187,8 @@ class TestRenderBackend final : public RenderBackend {
   std::unique_ptr<MeshPoolBuffers> CreateMeshPoolBuffers(
       RenderInternal, int vertex_size, IndexType index_type,
       int vertex_capacity, int index_capacity) override;
-  bool BeginFrame(RenderInternal) override;
+  bool BeginFrame(RenderInternal,
+                  absl::Span<RenderPass* const> passes) override;
   void Draw(RenderInternal, RenderView* view, RenderPipeline* pipeline,
             BindingData* material_data, BindingData* instance_data,
             RenderBuffer* vertices, RenderBuffer* indices) override;
@@ -174,6 +198,13 @@ class TestRenderBackend final : public RenderBackend {
   std::unique_ptr<Image> EndFrameAndReadImage(RenderInternal) override;
 
  private:
+  // Returns the item for the view's pass in State::passes, or null (as an
+  // invalid call) if its pass isn't drawn this frame.
+  PassItem* GetPassItem(RenderView* view);
+
+  // Adds every resource bound in the binding data to the item's reads.
+  static void AddReads(PassItem* item, const BindingData* binding_data);
+
   State* state_ = nullptr;
   std::atomic<int> frame_ = 0;
 

@@ -71,6 +71,7 @@ friend class Material;
 friend class Mesh;
 friend class MeshPool;
 friend class RenderFrame;
+friend class RenderPass;
 friend class RenderBuffer;
 friend class BindingLayout;
 friend class Texture;

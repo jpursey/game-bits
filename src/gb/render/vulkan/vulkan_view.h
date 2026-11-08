@@ -17,14 +17,15 @@ namespace gb {
 // This class is thread-safe.
 class VulkanView : public RenderView {
  public:
-  static std::unique_ptr<VulkanView> Create(VulkanInternal,
+  // The pass is null for a view drawn in the frame.
+  static std::unique_ptr<VulkanView> Create(VulkanInternal, RenderPass* pass,
                                             VulkanBindingLayout* binding_layout,
                                             int view_order);
 
  private:
-  VulkanView(VulkanBindingLayout* binding_layout, int view_order,
-             std::unique_ptr<VulkanBindingData> view_data)
-      : RenderView(binding_layout, view_order, std::move(view_data)) {}
+  VulkanView(RenderPass* pass, VulkanBindingLayout* binding_layout,
+             int view_order, std::unique_ptr<VulkanBindingData> view_data)
+      : RenderView(pass, binding_layout, view_order, std::move(view_data)) {}
 };
 
 }  // namespace gb

@@ -16,6 +16,7 @@
 #include "gb/render/binding_data.h"
 #include "gb/render/mesh_pool_buffers.h"
 #include "gb/render/render_buffer.h"
+#include "gb/render/render_pass.h"
 #include "gb/render/render_pipeline.h"
 #include "gb/render/render_target.h"
 #include "gb/render/render_types.h"
@@ -160,11 +161,22 @@ class RenderBackend {
   virtual std::unique_ptr<BindingLayout> CreateBindingLayout(
       RenderInternal, absl::Span<const Binding> bindings) = 0;
 
-  // Creates a new RenderView for the specified binding layout which is
-  // compatible with this backend.
+  // Creates a pass compatible with this backend.
   //
-  // The binding layout is always an instance previously created via
-  // CreateBindingLayout.
+  // The config is valid (see RenderSystem::CreatePass). The pass is drawn
+  // whenever it is in the passes given to BeginFrame().
+  //
+  // If the RenderPass could not be created, this returns null.
+  virtual std::unique_ptr<RenderPass> CreatePass(RenderInternal,
+                                                 const RenderPassConfig& config,
+                                                 int pass_order) = 0;
+
+  // Creates a new RenderView for the specified binding layout which is
+  // compatible with this backend, drawn in the pass, or in the frame if the
+  // pass is null.
+  //
+  // The pass, if any, was created by CreatePass, and the binding layout is
+  // always an instance previously created via CreateBindingLayout.
   //
   // Note: View default binding data is automatically copied into the created
   // RenderView after this returns, so derived classes do not (and should not)
@@ -172,6 +184,7 @@ class RenderBackend {
   //
   // If the RenderView could not be created, this returns null.
   virtual std::unique_ptr<RenderView> CreateView(RenderInternal,
+                                                 RenderPass* pass,
                                                  BindingLayout* binding_layout,
                                                  int view_order) = 0;
 
@@ -249,10 +262,16 @@ class RenderBackend {
 
   // Begins drawing the next frame.
   //
+  // The passes are drawn in EndFrame, in the order given, each before the
+  // frame. Every view drawn this frame is in one of them, or in the frame. They
+  // (and the span) are valid until EndFrame: a pass may be destroyed between
+  // frames, and is then left out of the next frame's passes.
+  //
   // If the render backend is not currently able to render, this can return
   // false, at which point no draw commands will be issued and EndFrame will not
   // be called.
-  virtual bool BeginFrame(RenderInternal) = 0;
+  virtual bool BeginFrame(RenderInternal,
+                          absl::Span<RenderPass* const> passes) = 0;
 
   // Queues mesh to be drawn the next time EndFrame is called.
   //

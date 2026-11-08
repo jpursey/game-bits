@@ -14,9 +14,10 @@ namespace gb {
 
 class TestRenderView final : public RenderView {
  public:
-  TestRenderView(BindingLayout* binding_layout, int view_order)
+  TestRenderView(RenderPass* pass, BindingLayout* binding_layout,
+                 int view_order)
       : RenderView(
-            binding_layout, view_order,
+            pass, binding_layout, view_order,
             std::make_unique<TestBindingData>(nullptr, BindingSet::kView,
                                               binding_layout->GetBindings())) {}
 };

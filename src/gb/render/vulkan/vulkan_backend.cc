@@ -990,10 +990,17 @@ std::unique_ptr<BindingLayout> VulkanBackend::CreateBindingLayout(
   return VulkanBindingLayout::Create({}, this, bindings);
 }
 
+std::unique_ptr<RenderPass> VulkanBackend::CreatePass(
+    RenderInternal, const RenderPassConfig& config, int pass_order) {
+  LOG(ERROR) << "Render passes are not supported by the Vulkan backend yet";
+  return nullptr;
+}
+
 std::unique_ptr<RenderView> VulkanBackend::CreateView(
-    RenderInternal, BindingLayout* binding_layout, int view_order) {
+    RenderInternal, RenderPass* pass, BindingLayout* binding_layout,
+    int view_order) {
   return VulkanView::Create(
-      {}, static_cast<VulkanBindingLayout*>(binding_layout), view_order);
+      {}, pass, static_cast<VulkanBindingLayout*>(binding_layout), view_order);
 }
 
 std::unique_ptr<RenderPipeline> VulkanBackend::CreatePipeline(
@@ -1034,7 +1041,9 @@ std::unique_ptr<MeshPoolBuffers> VulkanBackend::CreateMeshPoolBuffers(
                                        vertex_capacity, index_capacity);
 }
 
-bool VulkanBackend::BeginFrame(RenderInternal) {
+bool VulkanBackend::BeginFrame(RenderInternal,
+                               absl::Span<RenderPass* const> passes) {
+  // CreatePass() always fails, so there are no passes to draw.
   auto& frame = frames_[frame_index_];
   render_state_.frame = GetFrame();
 

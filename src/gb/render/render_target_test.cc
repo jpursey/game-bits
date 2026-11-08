@@ -37,12 +37,6 @@ auto LogTextHas(std::string_view text) {
 
 class RenderTargetTest : public RenderTest {
  protected:
-  // Begins and ends a frame, resizing the targets that follow it.
-  void DrawFrame() {
-    ASSERT_TRUE(render_system_->BeginFrame());
-    render_system_->EndFrame();
-  }
-
   static TestRenderTarget* AsTest(RenderTarget* render_target) {
     return static_cast<TestRenderTarget*>(render_target);
   }

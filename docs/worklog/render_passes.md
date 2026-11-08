@@ -149,6 +149,8 @@ class RenderPass {
   int GetOrder() const;
   RenderTarget* GetColorTarget() const;
   RenderTarget* GetDepthTarget() const;
+  bool KeepsColor() const;
+  bool KeepsDepth() const;
   bool IsMultisampled() const;
   Pixel GetClearColor() const;
   void SetClearColor(Pixel color);  // From the next frame drawn.
@@ -168,7 +170,8 @@ RenderPass* GetPass() const;  // Null for a view drawn in the frame.
 - A pass has a color target, a depth target, or both, of the same
   `RenderTargetSize`. Its viewport and scissor cover its targets.
 - A pass runs every frame, whether or not anything is drawn in it, so a target
-  it clears is cleared.
+  it clears is cleared. One created during a frame runs from the next, and its
+  views can't be drawn before then.
 - Each view carries its own view binding data, so a pass with its own camera
   is a view of its own, drawing the same meshes and materials as another.
 - Any material type draws in any pass. Its color channels, blend mode, and
@@ -239,24 +242,34 @@ RenderPass* GetPass() const;  // Null for a view drawn in the frame.
 - `RenderPass` is created by the backend (`RenderBackend::CreatePass(config,
   pass_order)`), as views are, after `RenderSystem` validates the config. It
   holds `ResourcePtr`s to its targets.
-- `RenderSystem` keeps the passes in draw order, under a mutex. A pass
-  registers itself on creation and removes itself as it is destroyed, through a
-  pointer it holds, as `MeshPoolBuffers` does with the Vulkan backend.
+- `RenderSystem` keeps the passes in draw order, under a mutex. It adds each
+  pass as it creates it, and the pass removes itself as it is destroyed,
+  through a pointer it holds, as `MeshPoolBuffers` does with the Vulkan
+  backend. Destroying the `RenderSystem` with passes left is a `CHECK` failure.
 - `RenderBackend::CreateView()` takes the pass (null for the frame).
   `RenderView` holds it, and a pass counts its views: destroying a pass with
-  views left is a `CHECK` failure.
-- `RenderBackend::EndFrame()` is given nothing new: a backend draws each pass
-  that `RenderSystem` gives it in `RenderBackend::SetPasses()` (called in
-  `BeginFrame()` whenever the passes changed), then the frame.
+  views left is a `CHECK` failure. `RenderSystem::CreateView()` without a pass
+  draws in the frame, as before.
+- `RenderBackend::BeginFrame()` is given the frame's passes in draw order,
+  valid until `EndFrame()`, which draws each, then the frame. `RenderSystem`
+  copies them under the mutex as the frame begins. Passing them to
+  `BeginFrame()`, rather than a separate `SetPasses()`, leaves no call order to
+  get right. In Debug, drawing a view whose pass isn't in the frame is a
+  `RENDER_ASSERT` failure, checked by the same flag that catches a pass
+  destroyed during a frame (see Brittleness).
 - `TestRenderBackend` records each frame's passes in draw order, as
   `State::passes`, each with its pass (null for the frame), the draws and
   draw commands drawn in it, and the textures it reads: every texture bound in
   the view, material, and instance data of its draws. Tests check the order
   and what each pass reads from that.
 
-**Brittleness:** a pass must outlive its views, enforced by the `CHECK`. A
-pass sampling its own targets is left to the validation layers, as finding it
-in `RenderSystem` would mean looking through every draw's bindings.
+**Brittleness:** a pass must outlive its views, the `RenderSystem` must outlive
+its passes, and a pass must not be destroyed during a frame it is drawn in,
+each enforced by a `CHECK`. For the last, `BeginFrame()` marks each pass it
+copies as in the frame, under the passes' mutex, and `EndFrame()` (or a failed
+`BeginFrame()`) clears it, so a pass destroyed on any thread is caught. A pass
+sampling its own targets is left to the validation layers, as finding it in
+`RenderSystem` would mean looking through every draw's bindings.
 
 ### gb_render_vulkan
 
@@ -368,7 +381,7 @@ Depends on: CL0.
   changes, and not when it doesn't; writes, reads, and saving failing; binding
   a target as a texture.
 
-### CL2 [ ] render: Passes
+### CL2 [x] render: Passes
 
 Depends on: CL1.
 
@@ -377,8 +390,8 @@ Depends on: CL1.
 - `render_view.h`: `GetPass()`.
 - `render_system`: `CreatePass()`, `CreateView()` in a pass, and the passes in
   draw order given to the backend.
-- `render_backend.h`: `CreatePass()`, `SetPasses()`, and `CreateView()` taking
-  the pass.
+- `render_backend.h`: `CreatePass()`, `CreateView()` taking the pass, and
+  `BeginFrame()` taking the frame's passes.
 - The test backend's passes, and `State::passes`.
 - `VulkanBackend::CreatePass()` logs that it isn't supported yet and returns
   null.

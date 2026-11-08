@@ -25,6 +25,7 @@ set(gb_render_SOURCE
   render_backend.h
   render_buffer.cc render_buffer.h
   render_buffer_view.h
+  render_pass.cc render_pass.h
   render_pipeline.h
   render_resource_chunks.h
   render_system.cc render_system.h
@@ -59,6 +60,7 @@ set(gb_render_TEST_SOURCE
   render_assert_test.cc
   render_buffer_test.cc
   render_buffer_view_test.cc
+  render_pass_test.cc
   render_system_test.cc
   render_target_test.cc
   render_view_test.cc
@@ -108,6 +110,7 @@ set(gb_render_testing_SOURCE
   test_mesh_pool_buffers.cc test_mesh_pool_buffers.h
   test_render_backend.cc test_render_backend.h
   test_render_buffer.cc test_render_buffer.h
+  test_render_pass.h
   test_render_pipeline.cc test_render_pipeline.h
   test_render_target.cc test_render_target.h
   test_render_view.h

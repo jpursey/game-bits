@@ -34,7 +34,7 @@ TEST_F(RenderViewTest, Properties) {
           .SetConstants(constants_1),
   };
   TestBindingLayout test_binding_layout(bindings);
-  TestRenderView test_view(&test_binding_layout, 1);
+  TestRenderView test_view(nullptr, &test_binding_layout, 1);
   RenderView& view = test_view;
   const RenderView& const_view = view;
 

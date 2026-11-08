@@ -77,6 +77,13 @@ class RenderTest : public ::testing::Test {
   // in the context too, and must outlive render_system_.
   void CreateSystem(bool edit_mode = false, Pilot* pilot = nullptr);
 
+  // Begins and ends a frame with nothing drawn, which fails the test if the
+  // frame can't begin.
+  void DrawFrame() {
+    ASSERT_TRUE(render_system_->BeginFrame());
+    render_system_->EndFrame();
+  }
+
   // Creates a test pipeline with the Vector3 vertex data and the requested
   // bindings.
   std::unique_ptr<RenderPipeline> CreatePipeline(

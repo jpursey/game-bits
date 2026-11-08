@@ -522,6 +522,36 @@ std::pair<int, int> GetFrameTargetSize(FrameDimensions frame, float scale) {
           std::max(1, static_cast<int>(std::lround(frame.height * scale)))};
 }
 
+bool ValidatePassConfig(const RenderPassConfig& config) {
+  if (config.color == nullptr && config.depth == nullptr) {
+    LOG(ERROR) << "Invalid render pass, which has neither a color nor a depth "
+                  "target";
+    return false;
+  }
+  if (config.color != nullptr &&
+      config.color->GetFormat() == TextureFormat::kDepth) {
+    LOG(ERROR) << "Invalid render pass, whose color target is a depth target";
+    return false;
+  }
+  if (config.depth != nullptr &&
+      config.depth->GetFormat() != TextureFormat::kDepth) {
+    LOG(ERROR) << "Invalid render pass, whose depth target is not in kDepth";
+    return false;
+  }
+  if (config.color != nullptr && config.depth != nullptr &&
+      config.color->GetSize() != config.depth->GetSize()) {
+    LOG(ERROR) << "Invalid render pass, whose color and depth targets are "
+                  "different sizes";
+    return false;
+  }
+  if (config.multisample && (config.keep_color || config.keep_depth)) {
+    LOG(ERROR) << "Invalid render pass, which is multisampled and keeps its "
+                  "targets (a multisampled pass clears them)";
+    return false;
+  }
+  return true;
+}
+
 fb::Offset<fbs::SamplerOptions> WriteSamplerOptions(
     FlatBufferBuilder* builder, const SamplerOptions& options) {
   fbs::SamplerOptionsBuilder sampler_options_builder(*builder);
@@ -769,6 +799,12 @@ bool RenderSystem::InitDefaultBindings() {
 }
 
 RenderSystem::~RenderSystem() {
+  {
+    absl::MutexLock lock(&passes_mutex_);
+    CHECK(passes_.empty())
+        << "Render passes must be destroyed before the render system";
+  }
+
   // The default bindings are released first, as they belong to the resource
   // manager, and the backend may outlive this. Then the resource manager is
   // shut down, to allow cleanup to happen.
@@ -1082,13 +1118,52 @@ void RenderSystem::SetClearColor(Pixel color) {
   backend_->SetClearColor({}, color);
 }
 
+std::unique_ptr<RenderPass> RenderSystem::CreatePass(
+    const RenderPassConfig& config, int pass_order) {
+  if (!ValidatePassConfig(config)) {
+    return nullptr;
+  }
+  auto pass = backend_->CreatePass({}, config, pass_order);
+  if (pass == nullptr) {
+    LOG(ERROR) << "Failed to create render pass";
+    return nullptr;
+  }
+
+  // Passes of the same order are drawn in the order they were created.
+  pass->system_ = this;
+  absl::MutexLock lock(&passes_mutex_);
+  auto it = absl::c_upper_bound(passes_, pass_order,
+                                [](int order, const RenderPass* other) {
+                                  return order < other->GetOrder();
+                                });
+  passes_.insert(it, pass.get());
+  return pass;
+}
+
+void RenderSystem::RemovePass(RenderInternal, RenderPass* pass) {
+  absl::MutexLock lock(&passes_mutex_);
+  CHECK(!pass->in_frame_)
+      << "Render pass destroyed between BeginFrame() and EndFrame()";
+  std::erase(passes_, pass);
+}
+
 std::unique_ptr<RenderView> RenderSystem::CreateView(
     BindingLayout* binding_layout, int view_order) {
+  return CreateView(nullptr, binding_layout, view_order);
+}
+
+std::unique_ptr<RenderView> RenderSystem::CreateView(
+    RenderPass* pass, BindingLayout* binding_layout, int view_order) {
   if (binding_layout == nullptr) {
     LOG(ERROR) << "Null binding layout passed in to CreateView";
     return nullptr;
   }
-  auto view = backend_->CreateView({}, binding_layout, view_order);
+  if (pass != nullptr && pass->system_ != this) {
+    LOG(ERROR) << "Render pass passed in to CreateView is from another render "
+                  "system";
+    return nullptr;
+  }
+  auto view = backend_->CreateView({}, pass, binding_layout, view_order);
   if (view == nullptr) {
     LOG(ERROR) << "Failed to create view";
     return nullptr;
@@ -2323,7 +2398,15 @@ bool RenderSystem::BeginFrame() {
     return false;
   }
 
-  if (!backend_->BeginFrame({})) {
+  {
+    absl::MutexLock lock(&passes_mutex_);
+    frame_passes_ = passes_;
+    for (RenderPass* pass : frame_passes_) {
+      pass->in_frame_ = true;
+    }
+  }
+  if (!backend_->BeginFrame({}, frame_passes_)) {
+    ClearFramePasses();
     return false;
   }
   ResizeFrameTargets();
@@ -2342,6 +2425,7 @@ void RenderSystem::Draw(RenderView* view, Mesh* mesh, Material* material,
   RenderPipeline* const pipeline = material_type->GetPipeline({});
   RENDER_ASSERT(instance_data->GetPipeline({}) == pipeline);
   RENDER_ASSERT(view->GetBindingLayout() == material_type->GetBindingLayout());
+  RENDER_ASSERT(view->GetPass() == nullptr || view->GetPass()->in_frame_);
   backend_->Draw({}, view, pipeline, material->GetMaterialBindingData(),
                  instance_data, mesh->GetVertexBuffer({}),
                  mesh->GetIndexBuffer({}));
@@ -2350,6 +2434,7 @@ void RenderSystem::Draw(RenderView* view, Mesh* mesh, Material* material,
 void RenderSystem::Draw(RenderView* view, const DrawList& commands) {
   RENDER_ASSERT(is_rendering_);
   RENDER_ASSERT(view != nullptr);
+  RENDER_ASSERT(view->GetPass() == nullptr || view->GetPass()->in_frame_);
   const auto& command_list = commands.GetCommands({});
   if (command_list.empty()) {
     return;
@@ -2366,15 +2451,23 @@ void RenderSystem::EndFrame() {
 
   if (pilot_ == nullptr || !pilot_->IsSavingFrame()) {
     backend_->EndFrame({});
-    return;
+  } else {
+    // A frame that can't be read isn't saved. The backend has logged why,
+    // which fails a pilot that counts errors.
+    std::unique_ptr<Image> image = backend_->EndFrameAndReadImage({});
+    if (image != nullptr) {
+      pilot_->SaveFrame(*image);
+    }
   }
+  ClearFramePasses();
+}
 
-  // A frame that can't be read isn't saved. The backend has logged why, which
-  // fails a pilot that counts errors.
-  std::unique_ptr<Image> image = backend_->EndFrameAndReadImage({});
-  if (image != nullptr) {
-    pilot_->SaveFrame(*image);
+void RenderSystem::ClearFramePasses() {
+  absl::MutexLock lock(&passes_mutex_);
+  for (RenderPass* pass : frame_passes_) {
+    pass->in_frame_ = false;
   }
+  frame_passes_.clear();
 }
 
 }  // namespace gb
