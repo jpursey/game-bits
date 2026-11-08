@@ -840,6 +840,25 @@ default writer write UTF-8 a console shows correctly, behind a `win_` / `gen_`
 split: `SetConsoleOutputCP(CP_UTF8)`, or `WriteConsoleW()` when the handle is
 a console. Check by hand first that the console garbles it.
 
+## Renaming files
+
+- **Layers:** gb_file
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Requested by:** OZ-3 *Disk drive device* (CL5, `RENAME`)
+- **Background:** `FileSystem::CopyFile()` and `DeleteFile()` in
+  `file_system.h`, and `FileProtocol`'s flags in `file_types.h`
+
+`FileSystem` can copy and delete files, but not rename them, so a rename is a
+copy and a delete: slow for a large file, and not atomic, as a failure partway
+leaves both or neither. Add `FileSystem::RenameFile(from_path, to_path)`, with
+a protocol hook that `LocalFileProtocol` implements with
+`std::filesystem::rename()` and `MemoryFileProtocol` by moving its entry. A
+rename onto an existing file fails rather than replacing it, and a rename that
+only changes case succeeds on a case-insensitive host. Renaming across
+protocols isn't a rename, and fails. OZ-3 only needs renames within a folder.
+
 ## Canonical local paths
 
 - **Layers:** gb_file
