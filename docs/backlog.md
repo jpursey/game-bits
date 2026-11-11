@@ -863,26 +863,6 @@ fails rather than replacing it, and a move that only changes case succeeds on
 a case-insensitive host. OZ-3's disk image protocol implements it as a rename
 within its one directory.
 
-## Command line arguments before subcommands
-
-- **Layers:** gb_cli
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Requested by:** OZ-3 *Disk tools* (`oz3dsk <image> <command> ...`)
-- **Background:** `CliCommand` and `CliFlag` in `cli.h`
-
-Two additions to `gb_cli`:
-- **Required arguments with subcommands.** A command has either positional
-  arguments or subcommands today. Let it have both, with the arguments always
-  before the subcommand's name, as `oz3dsk work.ozd format` puts the image
-  first. Only required arguments are allowed there, so the parser always takes
-  exactly that many words before looking for a subcommand, and an argument can
-  never be mistaken for one. Help shows them in the usage line before the
-  subcommand.
-- **Required flags.** A flag can be marked required, failing as a usage error
-  when it isn't given. The default stays optional.
-
 ## Canonical local paths
 
 - **Layers:** gb_file

@@ -208,6 +208,56 @@ TEST(FormatCliHelpTest, HelpCommand) {
 }
 
 //==============================================================================
+// A program with arguments before its subcommands, and a required flag.
+//==============================================================================
+
+const CliFlag<int64_t> kSize = {
+    .name = "size",
+    .help = "The disk's size.",
+    .optional = false,
+};
+const CliArg<std::string_view> kImage = {
+    .name = "image",
+    .help = "The disk image.",
+};
+const CliCommand kFormat = {
+    .name = "format",
+    .help = "Formats the disk.",
+    .flags = {&kSize},
+    .run = RunNothing,
+};
+const CliCommand kDisk = {
+    .name = "disk",
+    .args = {&kImage},
+    .commands = {&kFormat},
+};
+
+TEST(FormatCliHelpTest, ArgsBeforeCommands) {
+  EXPECT_EQ(GetHelp(&kDisk, {"--help"}),
+            "Usage: disk [<flags>] <image> <command>\n"
+            "\n"
+            "Arguments:\n"
+            "  <image>     The disk image.\n"
+            "\n"
+            "Commands:\n"
+            "  format      Formats the disk.\n"
+            "\n"
+            "Flags:\n"
+            "  -h, --help  Writes help for this command.\n");
+  EXPECT_EQ(GetHelp(&kDisk, {"work.ozd", "format", "--help"}),
+            "Usage: disk <image> format [<flags>]\n"
+            "\n"
+            "Formats the disk.\n"
+            "\n"
+            "Arguments for disk:\n"
+            "  <image>            The disk image.\n"
+            "\n"
+            "Flags:\n"
+            "      --size <size>  The disk's size. (required)\n"
+            "  -h, --help         Writes help for this command.\n");
+}
+
+//==============================================================================
 // A program with choices and defaults.
 //==============================================================================
 

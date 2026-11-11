@@ -545,6 +545,125 @@ TEST(ParseCommandLineTest, DoubleDashBeforeCommand) {
 }
 
 //==============================================================================
+// Arguments before subcommands, and required flags
+//==============================================================================
+
+const CliFlag<int64_t> kSize = {.name = "size", .optional = false};
+const CliArg<std::string_view> kImage = {.name = "image"};
+const CliArg<std::string_view> kSide = {.name = "side"};
+const CliArg<std::string_view> kVolume = {.name = "volume"};
+const CliCommand kFormat = {
+    .name = "format",
+    .flags = {&kSize},
+    .args = {&kVolume},
+    .run = RunNothing,
+};
+const CliCommand kList = {.name = "list", .run = RunNothing};
+const CliCommand kDisk = {
+    .name = "disk",
+    .flags = {&kVerbose},
+    .args = {&kImage, &kSide},
+    .commands = {&kFormat, &kList, &kCliHelpCommand},
+};
+
+TEST(ParseCommandLineTest, ArgsBeforeSubcommand) {
+  const std::vector<std::string_view> args = {"work.ozd", "a",    "-v",
+                                              "format",   "Work", "--size=5"};
+  absl::StatusOr<CliCommandLine> command_line = ParseCommandLine(&kDisk, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->GetCommandPath(), ElementsAre(&kDisk, &kFormat));
+  EXPECT_THAT(command_line->Get(kImage),
+              Optional(std::string_view("work.ozd")));
+  EXPECT_THAT(command_line->Get(kSide), Optional(std::string_view("a")));
+  EXPECT_THAT(command_line->Get(kVolume), Optional(std::string_view("Work")));
+  EXPECT_THAT(command_line->Get(kSize), Optional(5));
+  EXPECT_TRUE(command_line->Get(kVerbose));
+}
+
+TEST(ParseCommandLineTest, ArgsAreNeverSubcommands) {
+  const std::vector<std::string_view> args = {"list", "format", "list"};
+  absl::StatusOr<CliCommandLine> command_line = ParseCommandLine(&kDisk, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->GetCommandPath(), ElementsAre(&kDisk, &kList));
+  EXPECT_THAT(command_line->Get(kImage), Optional(std::string_view("list")));
+  EXPECT_THAT(command_line->Get(kSide), Optional(std::string_view("format")));
+}
+
+TEST(ParseCommandLineTest, ArgsWithoutSubcommand) {
+  const std::vector<std::string_view> args = {"work.ozd", "a"};
+  absl::StatusOr<CliCommandLine> command_line = ParseCommandLine(&kDisk, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->GetCommandPath(), ElementsAre(&kDisk));
+  EXPECT_THAT(command_line->Get(kSide), Optional(std::string_view("a")));
+}
+
+TEST(ParseCommandLineTest, MissingArgBeforeSubcommand) {
+  EXPECT_EQ(ParseError(&kDisk, {"work.ozd"}), "disk: missing <side>");
+}
+
+TEST(ParseCommandLineTest, UnknownCommandAfterArgs) {
+  EXPECT_EQ(ParseError(&kDisk, {"work.ozd", "a", "nope"}),
+            "disk: unknown command \"nope\"");
+}
+
+TEST(ParseCommandLineTest, DoubleDashBeforeArgsAndCommand) {
+  EXPECT_EQ(ParseError(&kDisk, {"--", "work.ozd", "a", "list"}),
+            "disk: unexpected argument \"list\"");
+}
+
+TEST(ParseCommandLineTest, HintForHelpShowsArgsBeforeSubcommand) {
+  const std::vector<std::string_view> args = {"work.ozd", "a", "format",
+                                              "--nope"};
+  EXPECT_EQ(ParseCommandLine(&kDisk, args).status().message(),
+            "disk format: unknown flag \"--nope\". Run \"disk <image> <side> "
+            "format --help\" for help.");
+}
+
+TEST_F(CliCommandLineRunTest, HelpCommandAfterArgs) {
+  const std::vector<std::string_view> args = {"work.ozd", "a", "help",
+                                              "format"};
+  absl::StatusOr<CliCommandLine> command_line = Parse(&kDisk, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->GetCommandPath(), ElementsAre(&kDisk, &kFormat));
+  EXPECT_THAT(
+      RunForHelp(*command_line),
+      StartsWith("Usage: disk <image> <side> format [<flags>] <volume>\n"));
+}
+
+TEST(ParseCommandLineTest, MissingRequiredFlag) {
+  const std::vector<std::string_view> args = {"work.ozd", "a", "format",
+                                              "Work"};
+  EXPECT_EQ(ParseCommandLine(&kDisk, args).status().message(),
+            "disk format: missing \"--size\". Run \"disk <image> <side> "
+            "format --help\" for help.");
+}
+
+TEST(ParseCommandLineTest, MissingRequiredFlagOfParent) {
+  static const CliFlag<std::string_view> kDrive = {.name = "drive",
+                                                   .optional = false};
+  static const CliCommand kProgram = {
+      .name = "prog",
+      .flags = {&kDrive},
+      .commands = {&kList},
+  };
+  EXPECT_EQ(ParseError(&kProgram, {"list"}), "prog list: missing \"--drive\"");
+  const std::vector<std::string_view> args = {"list", "--drive", "a"};
+  absl::StatusOr<CliCommandLine> command_line =
+      ParseCommandLine(&kProgram, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->Get(kDrive), Optional(std::string_view("a")));
+}
+
+TEST_F(CliCommandLineRunTest, RequiredFlagNotNeededForHelp) {
+  const std::vector<std::string_view> args = {"work.ozd", "a", "format",
+                                              "--help"};
+  absl::StatusOr<CliCommandLine> command_line = Parse(&kDisk, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(RunForHelp(*command_line),
+              StartsWith("Usage: disk <image> <side> format [<flags>]"));
+}
+
+//==============================================================================
 // Help
 //==============================================================================
 

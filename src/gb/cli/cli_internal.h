@@ -37,6 +37,9 @@ struct CliFlagFields {
 
   // The flag's short name, without the leading "-", or 0 if it has none.
   char short_name = 0;
+
+  // Whether the flag may be left out.
+  bool optional = true;
 };
 
 // The fields every positional argument has, whatever its value type.
@@ -76,6 +79,16 @@ void AppendCliValidatorConstraints(const CliAnyArg& arg,
 // Returns the names of the commands in `path`, separated by spaces, as used to
 // say which command an error is for: "program build".
 std::string GetCliPathName(absl::Span<const CliCommand* const> path);
+
+// Appends the arguments of `command` to `usage`, as help's usage line shows
+// them: " <input> [<output>]".
+void AppendCliArgUsage(const CliCommand* command, std::string* usage);
+
+// Returns how the commands in `path` are written on the command line, with the
+// arguments of each command before the last ahead of its subcommand's name, as
+// help and the hint for it show: "program <image> format". `path` must not be
+// empty.
+std::string GetCliUsagePath(absl::Span<const CliCommand* const> path);
 
 }  // namespace gb::internal
 

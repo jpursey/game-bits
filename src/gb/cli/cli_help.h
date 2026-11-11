@@ -25,8 +25,9 @@ extern const CliCommand kCliHelpCommand;
 
 // Returns the help for the command at the end of `path`, the commands from the
 // program down to it (CliCommandLine::GetCommandPath()), wrapped to `width`
-// columns: how to use it, its help, then its arguments or subcommands, and its
-// flags, followed by those of the commands above it.
+// columns: how to use it, its help, then its arguments followed by those of the
+// commands above it, its subcommands, and its flags followed by those of the
+// commands above it.
 //
 // A definition's help is UTF-8, and is split into paragraphs at blank lines
 // ("\n\n"). A subcommand is listed with the first paragraph of its help.

@@ -96,8 +96,17 @@ TEST(ValidateCliCommandTest, ArgsAndCommands) {
       .args = {&kRequired},
       .commands = {&kSub},
   };
+  EXPECT_TRUE(ValidateCliCommand(&kProgram).ok());
+}
+
+TEST(ValidateCliCommandTest, OptionalArgsAndCommands) {
+  static const CliCommand kProgram = {
+      .name = "prog",
+      .args = {&kRequired, &kOptional},
+      .commands = {&kSub},
+  };
   EXPECT_EQ(ValidateCliCommand(&kProgram).message(),
-            "prog: command has both arguments and commands");
+            "prog: optional argument <optional> is in a command with commands");
 }
 
 TEST(ValidateCliCommandTest, NullConstraint) {
@@ -197,6 +206,34 @@ TEST(ValidateCliCommandTest, BoolFlagWithValueFields) {
             "prog: flag \"--b\" is a bool, so can't have a default value");
   EXPECT_EQ(ValidateCliCommand(&kValidatorsProgram).message(),
             "prog: flag \"--c\" is a bool, so can't have validators");
+}
+
+TEST(ValidateCliCommandTest, ValidRequiredFlag) {
+  static const CliFlag<std::string_view> kRequiredFlag = {.name = "a",
+                                                          .optional = false};
+  static const CliCommand kProgram = {.name = "prog",
+                                      .flags = {&kRequiredFlag}};
+  EXPECT_TRUE(ValidateCliCommand(&kProgram).ok());
+}
+
+TEST(ValidateCliCommandTest, RequiredBoolFlag) {
+  static const CliFlag<bool> kRequiredFlag = {.name = "a", .optional = false};
+  static const CliCommand kProgram = {.name = "prog",
+                                      .flags = {&kRequiredFlag}};
+  EXPECT_EQ(ValidateCliCommand(&kProgram).message(),
+            "prog: flag \"--a\" is a bool, so can't be required");
+}
+
+TEST(ValidateCliCommandTest, RequiredFlagWithDefault) {
+  static const CliFlag<int64_t> kRequiredFlag = {
+      .name = "a",
+      .optional = false,
+      .default_value = 1,
+  };
+  static const CliCommand kProgram = {.name = "prog",
+                                      .flags = {&kRequiredFlag}};
+  EXPECT_EQ(ValidateCliCommand(&kProgram).message(),
+            "prog: flag \"--a\" is required, so can't have a default value");
 }
 
 TEST(ValidateCliCommandTest, ValidChoices) {

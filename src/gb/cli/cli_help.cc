@@ -104,19 +104,22 @@ std::string FormatDefault(double value) {
   return std::string(text, result.ptr);
 }
 
+// Adds `note` to the end of the help.
+void AddNote(std::string_view note, std::vector<std::string>* paragraphs) {
+  if (paragraphs->empty()) {
+    paragraphs->emplace_back(note);
+  } else {
+    absl::StrAppend(&paragraphs->back(), " ", note);
+  }
+}
+
 // Adds `default_value` to the end of the help, if there is one.
 template <typename T>
 void AddDefault(const std::optional<T>& default_value,
                 std::vector<std::string>* paragraphs) {
-  if (!default_value.has_value()) {
-    return;
-  }
-  const std::string text =
-      absl::StrCat("(default: ", FormatDefault(*default_value), ")");
-  if (paragraphs->empty()) {
-    paragraphs->push_back(text);
-  } else {
-    absl::StrAppend(&paragraphs->back(), " ", text);
+  if (default_value.has_value()) {
+    AddNote(absl::StrCat("(default: ", FormatDefault(*default_value), ")"),
+            paragraphs);
   }
 }
 
@@ -136,6 +139,9 @@ Entry GetEntry(const CliFlag<T>& flag) {
     absl::StrAppend(&entry.name, " <",
                     flag.value_name.empty() ? flag.name : flag.value_name, ">");
     AddDefault(flag.default_value, &entry.paragraphs);
+  }
+  if (!flag.optional) {
+    AddNote("(required)", &entry.paragraphs);
   }
   return entry;
 }
@@ -296,15 +302,8 @@ std::string FormatCliHelp(absl::Span<const CliCommand* const> path, int width) {
   const CliCommand* command = path.back();
 
   std::string usage =
-      absl::StrCat("Usage: ", internal::GetCliPathName(path), " [<flags>]");
-  for (const CliAnyArg& arg : command->args) {
-    const internal::CliArgFields fields = internal::GetCliArgFields(arg);
-    if (fields.optional) {
-      absl::StrAppend(&usage, " [<", fields.name, ">]");
-    } else {
-      absl::StrAppend(&usage, " <", fields.name, ">");
-    }
-  }
+      absl::StrCat("Usage: ", internal::GetCliUsagePath(path), " [<flags>]");
+  internal::AppendCliArgUsage(command, &usage);
   if (command->commands.size() != 0) {
     absl::StrAppend(&usage,
                     command->run != nullptr ? " [<command>]" : " <command>");
@@ -313,6 +312,13 @@ std::string FormatCliHelp(absl::Span<const CliCommand* const> path, int width) {
   std::vector<Section> sections;
   sections.push_back(
       {.title = "Arguments:", .entries = GetEntries(command->args)});
+  for (int i = static_cast<int>(path.size()) - 2; i >= 0; --i) {
+    sections.push_back({
+        .title = absl::StrCat("Arguments for ",
+                              internal::GetCliPathName(path.first(i + 1)), ":"),
+        .entries = GetEntries(path[i]->args),
+    });
+  }
   sections.push_back(
       {.title = "Commands:", .entries = GetEntries(command->commands)});
   sections.push_back(

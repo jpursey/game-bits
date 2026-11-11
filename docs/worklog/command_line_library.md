@@ -104,12 +104,15 @@ A program with nothing in its context calls `RunCommandLine(&kProgram, args)`.
   subcommands, the context constraints its run function reads and writes, and
   an optional run function, `bool (*)(ValidatedContext&, const
   CliCommandLine&)`. The program is the root command, and its name is used in
-  help rather than `argv[0]`. A command has arguments or subcommands, not both.
-  A command with no run function writes its help when it is run.
+  help rather than `argv[0]`. A command with subcommands may also have
+  required arguments, given before the subcommand's name (`oz3dsk <image>
+  format`). A command with no run function writes its help when it is run.
 - **Flags:** a `CliFlag<T>` has a long name (`--name`), an optional short name
   (`-n`), a value name shown in help (defaulting to the name), help, choices,
-  a default, and validators. A `CliFlag<bool>` takes no value: it is true if
-  given and false otherwise.
+  a default, and validators. Flags are optional by default, as arguments are
+  required by default. A required flag (`.optional = false`) must be given,
+  and has no default. A `CliFlag<bool>` takes no value: it is true if given
+  and false otherwise, and can't be required.
 - **Positional arguments:** a `CliArg<T>` has a name, shown in help as
   `<name>`, help, choices, and validators. Optional arguments
   (`.optional = true`) follow the required ones, and may have a default.
@@ -127,12 +130,12 @@ A program with nothing in its context calls `RunCommandLine(&kProgram, args)`.
   the program finds one: empty or duplicate names (a flag's names are unique
   across its command and those above it), a name starting with `-`, a short
   name that is `-`, `.`, a digit, or not visible ASCII, a flag named `--help`
-  or `-h`, an optional argument before a required one, arguments and
-  subcommands on one command, a bool flag with a value name, default, or
-  validators, choices on a type other than a string, a choice that is empty,
-  a duplicate, or starts with `-`, a null constraint on a command, and a null
-  validator, one with no function, or one with a constraint that is null or
-  isn't an input.
+  or `-h`, an optional argument before a required one, an optional argument
+  on a command with subcommands, a bool flag with a value name, default,
+  validators, or `.optional = false`, a required flag with a default, choices
+  on a type other than a string, a choice that is empty, a duplicate, or
+  starts with `-`, a null constraint on a command, and a null validator, one
+  with no function, or one with a constraint that is null or isn't an input.
 
 ### Validators
 
@@ -172,8 +175,11 @@ absl::StatusOr<CliCommandLine> ParseCommandLine(
 - Flags: `--name value`, `--name=value`, `-n value`, and for bool flags
   `--name` or `-n`. Short bool flags don't combine (`-ml` is an unknown flag).
   The value after a flag is taken as it is, even if it starts with `-`.
-- A bare word is the next subcommand's name if the command has subcommands,
-  and otherwise its next positional argument. After `--`, every word is a
+- A bare word is the command's next positional argument until all of them are
+  given, then the next subcommand's name if it has subcommands. So an
+  argument is never taken for a subcommand's name, and the help command
+  follows the arguments too (`oz3dsk work.ozd help format`). After `--`,
+  every word is a
   positional argument. `-` alone is a positional argument, and so is a word
   starting with `-` then a digit or `.`, so negative numbers can be given.
 - A command's flags are accepted anywhere after its name, including after its
@@ -181,7 +187,7 @@ absl::StatusOr<CliCommandLine> ParseCommandLine(
 - Errors are an `InvalidArgument` status whose message is ready to show: an
   unknown flag or command, a flag given twice, a missing value, a value that
   isn't of the type or one of the choices, a value a validator rejects, a
-  missing required argument, or an extra argument. Each names the command
+  missing required argument or flag, or an extra argument. Each names the command
   path, and says how to get help: `oz3asm: unknown flag "--foo". Run "oz3asm
   --help" for help.`
 - A context that fails `gb_cli`'s own constraints (a null `Context*`, or a
@@ -236,10 +242,11 @@ class CliCommandLine {
 - `kCliHelpCommand` is a `help` command a program can add to any command's
   subcommands: `prog help build` is `prog build --help`.
 - `FormatCliHelp(path, width)` returns the help for the command at the end of
-  the path: a usage line, the help paragraphs, then the arguments, the
-  subcommands (with the first paragraph of their help), the flags, and those
-  of the commands above it, nearest first. Choices are listed with their help,
-  and defaults as `(default: <value>)`.
+  the path: a usage line, the help paragraphs, then the arguments and those
+  of the commands above it, the subcommands (with the first paragraph of their
+  help), and the flags and those of the commands above it, nearest first.
+  Choices are listed with their help, defaults as `(default: <value>)`, and
+  required flags as `(required)`.
 - Help is in a column shared by all the lists, and an entry wider than 26
   columns has its help start on the next line. Lines wrap at words, by code
   point, up to the width; the usage line doesn't wrap.

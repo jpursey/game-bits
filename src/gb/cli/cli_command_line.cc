@@ -44,9 +44,8 @@ bool IsWord(std::string_view arg) {
 // `path`, in the form it is shown to the user.
 std::string FormatUsageError(absl::Span<const CliCommand* const> path,
                              std::string_view message) {
-  const std::string path_name = internal::GetCliPathName(path);
-  return absl::StrCat(path_name, ": ", message, ". Run \"", path_name,
-                      " --help\" for help.");
+  return absl::StrCat(internal::GetCliPathName(path), ": ", message, ". Run \"",
+                      internal::GetCliUsagePath(path), " --help\" for help.");
 }
 
 // The help flag, as every command lists it.
@@ -73,8 +72,9 @@ class CliParser {
   // takes the next argument.
   absl::Status ParseFlag(absl::Span<const std::string_view> args, int* index);
 
-  // Parses a bare word: a subcommand's name, or a positional argument. After
-  // the help command, every word is a subcommand's name.
+  // Parses a bare word: a positional argument, or a subcommand's name once all
+  // of a command's arguments are given. After the help command, every word is
+  // a subcommand's name.
   absl::Status ParseWord(std::string_view word);
 
   // Validates the context against the constraints of the validators of the
@@ -201,8 +201,9 @@ absl::Status CliParser::ParseFlag(absl::Span<const std::string_view> args,
 
 absl::Status CliParser::ParseWord(std::string_view word) {
   const CliCommand* command = path_.back();
-  if (help_command_given_ ||
-      (command->commands.size() != 0 && !positional_only_)) {
+  const int arg_count = static_cast<int>(command->args.size());
+  if (help_command_given_ || (command->commands.size() != 0 &&
+                              !positional_only_ && next_arg_ == arg_count)) {
     for (const CliCommand* subcommand : command->commands) {
       if (subcommand->name != word) {
         continue;
@@ -216,12 +217,13 @@ absl::Status CliParser::ParseWord(std::string_view word) {
         return absl::OkStatus();
       }
       path_.push_back(subcommand);
+      next_arg_ = 0;
       return ValidateContext();
     }
     return Error(absl::StrCat("unknown command \"", word, "\""));
   }
 
-  if (next_arg_ == static_cast<int>(command->args.size())) {
+  if (next_arg_ == arg_count) {
     return Error(absl::StrCat("unexpected argument \"", word, "\""));
   }
   const CliAnyArg& arg = command->args.begin()[next_arg_];
@@ -263,6 +265,14 @@ absl::Status CliParser::ValidateComplete() const {
         internal::GetCliArgFields(command->args.begin()[next_arg_]);
     if (!fields.optional) {
       return Error(absl::StrCat("missing <", fields.name, ">"));
+    }
+  }
+  for (const CliCommand* path_command : path_) {
+    for (const CliAnyFlag& flag : path_command->flags) {
+      const internal::CliFlagFields fields = internal::GetCliFlagFields(flag);
+      if (!fields.optional && !values_.contains(fields.definition)) {
+        return Error(absl::StrCat("missing \"--", fields.name, "\""));
+      }
     }
   }
   return absl::OkStatus();

@@ -91,6 +91,9 @@ absl::Status ValidateValueFields(const CliFlag<T>& flag) {
       return absl::InvalidArgumentError(
           "is a bool, so can't have a value name");
     }
+    if (!flag.optional) {
+      return absl::InvalidArgumentError("is a bool, so can't be required");
+    }
     if (flag.default_value.has_value()) {
       return absl::InvalidArgumentError(
           "is a bool, so can't have a default value");
@@ -98,6 +101,10 @@ absl::Status ValidateValueFields(const CliFlag<T>& flag) {
     if (flag.validators.size() != 0) {
       return absl::InvalidArgumentError("is a bool, so can't have validators");
     }
+  }
+  if (!flag.optional && flag.default_value.has_value()) {
+    return absl::InvalidArgumentError(
+        "is required, so can't have a default value");
   }
   const absl::Status status = ValidateValidators<T>(flag.validators);
   if (!status.ok()) {
@@ -149,9 +156,6 @@ absl::Status CliCommandValidator::Validate(const CliCommand* command) {
   }
   if (command->name.starts_with('-')) {
     return Error("command name starts with \"-\"");
-  }
-  if (command->args.size() != 0 && command->commands.size() != 0) {
-    return Error("command has both arguments and commands");
   }
   if (absl::c_linear_search(command->constraints, nullptr)) {
     return Error("command has a null constraint");
@@ -260,6 +264,12 @@ absl::Status CliCommandValidator::ValidateArgs() const {
       return Error(absl::StrCat("duplicate argument <", fields.name, ">"));
     }
     if (fields.optional) {
+      // A command's subcommand follows its arguments, so it must always take
+      // the same number of words for them.
+      if (path_.back()->commands.size() != 0) {
+        return Error(absl::StrCat("optional argument <", fields.name,
+                                  "> is in a command with commands"));
+      }
       after_optional = true;
     } else if (after_optional) {
       return Error(absl::StrCat("required argument <", fields.name,

@@ -38,6 +38,7 @@ CliFlagFields GetFields(const CliFlag<T>& flag) {
       .definition = &flag,
       .name = flag.name,
       .short_name = flag.short_name,
+      .optional = flag.optional,
   };
 }
 
@@ -229,6 +230,30 @@ std::string GetCliPathName(absl::Span<const CliCommand* const> path) {
                        [](std::string* out, const CliCommand* command) {
                          absl::StrAppend(out, command->name);
                        });
+}
+
+void AppendCliArgUsage(const CliCommand* command, std::string* usage) {
+  for (const CliAnyArg& arg : command->args) {
+    const CliArgFields fields = GetCliArgFields(arg);
+    if (fields.optional) {
+      absl::StrAppend(usage, " [<", fields.name, ">]");
+    } else {
+      absl::StrAppend(usage, " <", fields.name, ">");
+    }
+  }
+}
+
+std::string GetCliUsagePath(absl::Span<const CliCommand* const> path) {
+  CHECK(!path.empty());
+  const int parent_count = static_cast<int>(path.size()) - 1;
+  std::string usage;
+  for (const CliCommand* command : path.first(parent_count)) {
+    absl::StrAppend(&usage, command->name);
+    AppendCliArgUsage(command, &usage);
+    usage.push_back(' ');
+  }
+  absl::StrAppend(&usage, path.back()->name);
+  return usage;
 }
 
 }  // namespace gb::internal

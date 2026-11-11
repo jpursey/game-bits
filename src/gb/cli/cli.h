@@ -134,8 +134,8 @@ struct CliChoice {
 // A flag: `--name value`, `--name=value`, or `-n value`.
 //
 // A CliFlag<bool> takes no value: it is given as `--name` or `-n`, which makes
-// it true, and is otherwise false. It must leave `value_name`, `choices`,
-// `default_value`, and `validators` unset.
+// it true, and is otherwise false. It must leave `value_name`, `optional`,
+// `choices`, `default_value`, and `validators` unset.
 template <typename T>
 struct CliFlag {
   static_assert(std::is_same_v<T, bool> ||
@@ -161,6 +161,11 @@ struct CliFlag {
 
   // Help for the flag.
   std::string_view help;
+
+  // Whether the flag may be left out. Parsing fails if a required flag
+  // (`.optional = false`) of a command in the path isn't given, unless help is
+  // asked for. A required flag can't have a default value.
+  bool optional = true;
 
   // The values a string flag accepts, if it only accepts some. Each must be
   // unique. Only a string flag can have choices.
@@ -193,7 +198,8 @@ struct CliArg {
   std::string_view help;
 
   // Whether the argument may be left out. Optional arguments must follow all
-  // required ones in a command.
+  // required ones in a command, and a command with subcommands can't have
+  // them.
   bool optional = false;
 
   // The values a string argument accepts, if it only accepts some. Each must
@@ -226,8 +232,14 @@ using CliAnyArg = std::variant<const CliArg<std::string_view>*,
 // A command: the program itself, or one of its subcommands, named by a bare
 // word on the command line (`program build`).
 //
-// A command has either positional arguments or subcommands, not both. Its
-// flags are accepted anywhere after its name, including after its
+// A command with subcommands may also have positional arguments, which are
+// given before the subcommand's name (`program <image> format`). They must all
+// be required, so the parser always takes exactly that many words before
+// looking for a subcommand, and an argument is never taken for a subcommand's
+// name. The help command (see cli_help.h) is a subcommand too, so it also
+// follows them.
+//
+// A command's flags are accepted anywhere after its name, including after its
 // subcommands' names. Every command also takes "--help" and "-h", which ask for
 // its help (see CliCommandLine::Run()).
 struct CliCommand {
@@ -242,7 +254,8 @@ struct CliCommand {
   // and those of the commands above it.
   std::initializer_list<CliAnyFlag> flags;
 
-  // The command's positional arguments, in order.
+  // The command's positional arguments, in order. If the command has
+  // subcommands, these are given before the subcommand's name.
   std::initializer_list<CliAnyArg> args;
 
   // The command's subcommands.
