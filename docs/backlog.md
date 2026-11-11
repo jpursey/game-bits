@@ -840,24 +840,48 @@ default writer write UTF-8 a console shows correctly, behind a `win_` / `gen_`
 split: `SetConsoleOutputCP(CP_UTF8)`, or `WriteConsoleW()` when the handle is
 a console. Check by hand first that the console garbles it.
 
-## Renaming files
+## Moving files
 
 - **Layers:** gb_file
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** nothing
-- **Requested by:** OZ-3 *Disk drive device* (CL5, `RENAME`)
-- **Background:** `FileSystem::CopyFile()` and `DeleteFile()` in
-  `file_system.h`, and `FileProtocol`'s flags in `file_types.h`
+- **Requested by:** OZ-3 *Disk tools* (renaming files on a disk image)
+- **Background:** `FileSystem::CopyFile()`, `CopyFolder()`, and
+  `DeleteFile()` in `file_system.h`, and `FileProtocol`'s flags in
+  `file_types.h`
 
-`FileSystem` can copy and delete files, but not rename them, so a rename is a
-copy and a delete: slow for a large file, and not atomic, as a failure partway
-leaves both or neither. Add `FileSystem::RenameFile(from_path, to_path)`, with
-a protocol hook that `LocalFileProtocol` implements with
-`std::filesystem::rename()` and `MemoryFileProtocol` by moving its entry. A
-rename onto an existing file fails rather than replacing it, and a rename that
-only changes case succeeds on a case-insensitive host. Renaming across
-protocols isn't a rename, and fails. OZ-3 only needs renames within a folder.
+`FileSystem` can copy and delete files and folders, but not move them, so a
+move or rename is a copy and a delete: slow for a large file, and not atomic,
+as a failure partway leaves both or neither. Add `FileSystem::MoveFile()` and
+`MoveFolder()`, taking the same parameters as `CopyFile()` and `CopyFolder()`,
+except that both paths must be in the same protocol, since a move between
+protocols is a copy, and fails. Each protocol implements the move itself, with
+a flag saying it can: `LocalFileProtocol` with `std::filesystem::rename()`,
+and `MemoryFileProtocol` by moving its entries. A move onto an existing file
+fails rather than replacing it, and a move that only changes case succeeds on
+a case-insensitive host. OZ-3's disk image protocol implements it as a rename
+within its one directory.
+
+## Command line arguments before subcommands
+
+- **Layers:** gb_cli
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Requested by:** OZ-3 *Disk tools* (`oz3dsk <image> <command> ...`)
+- **Background:** `CliCommand` and `CliFlag` in `cli.h`
+
+Two additions to `gb_cli`:
+- **Required arguments with subcommands.** A command has either positional
+  arguments or subcommands today. Let it have both, with the arguments always
+  before the subcommand's name, as `oz3dsk work.ozd format` puts the image
+  first. Only required arguments are allowed there, so the parser always takes
+  exactly that many words before looking for a subcommand, and an argument can
+  never be mistaken for one. Help shows them in the usage line before the
+  subcommand.
+- **Required flags.** A flag can be marked required, failing as a usage error
+  when it isn't given. The default stays optional.
 
 ## Canonical local paths
 
