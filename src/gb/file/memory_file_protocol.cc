@@ -206,6 +206,44 @@ bool MemoryFileProtocol::BasicDeleteFile(std::string_view protocol_name,
   return true;
 }
 
+bool MemoryFileProtocol::BasicMoveFolder(std::string_view from_protocol_name,
+                                         std::string_view from_path,
+                                         std::string_view to_protocol_name,
+                                         std::string_view to_path) {
+  // Nothing is moved unless everything can be, so the folder's paths are all
+  // found before any of them change.
+  const std::string prefix = absl::StrCat(from_path, "/");
+  std::vector<Nodes::iterator> moved = {nodes_.find(from_path)};
+  for (auto it = nodes_.lower_bound(prefix);
+       it != nodes_.end() && absl::StartsWith(it->first, prefix); ++it) {
+    if (it->second->open) {
+      return false;
+    }
+    moved.push_back(it);
+  }
+  for (const auto& it : moved) {
+    auto node = nodes_.extract(it);
+    node.key() = absl::StrCat(
+        to_path, std::string_view(node.key()).substr(from_path.size()));
+    nodes_.insert(std::move(node));
+  }
+  return true;
+}
+
+bool MemoryFileProtocol::BasicMoveFile(std::string_view from_protocol_name,
+                                       std::string_view from_path,
+                                       std::string_view to_protocol_name,
+                                       std::string_view to_path) {
+  auto it = nodes_.find(from_path);
+  if (it->second->open) {
+    return false;
+  }
+  auto node = nodes_.extract(it);
+  node.key() = std::string(to_path);
+  nodes_.insert(std::move(node));
+  return true;
+}
+
 std::unique_ptr<RawFile> MemoryFileProtocol::BasicOpenFile(
     std::string_view protocol_name, std::string_view path, FileFlags flags) {
   if (flags.IsSet(FileFlag::kCreate)) {

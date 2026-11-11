@@ -11,6 +11,7 @@
 #include <string_view>
 #include <vector>
 
+#include "absl/strings/ascii.h"
 #include "absl/strings/str_cat.h"
 #include "gb/file/memory_file_protocol.h"
 #include "gb/file/path.h"
@@ -95,6 +96,22 @@ class FolderPerNameProtocol : public MemoryFileProtocol {
                                          FileFlags flags) override {
     return MemoryFileProtocol::BasicOpenFile(
         protocol_name, GetCanonicalPath(protocol_name, path), flags);
+  }
+  bool BasicMoveFolder(std::string_view from_protocol_name,
+                       std::string_view from_path,
+                       std::string_view to_protocol_name,
+                       std::string_view to_path) override {
+    return MemoryFileProtocol::BasicMoveFolder(
+        from_protocol_name, GetCanonicalPath(from_protocol_name, from_path),
+        to_protocol_name, GetCanonicalPath(to_protocol_name, to_path));
+  }
+  bool BasicMoveFile(std::string_view from_protocol_name,
+                     std::string_view from_path,
+                     std::string_view to_protocol_name,
+                     std::string_view to_path) override {
+    return MemoryFileProtocol::BasicMoveFile(
+        from_protocol_name, GetCanonicalPath(from_protocol_name, from_path),
+        to_protocol_name, GetCanonicalPath(to_protocol_name, to_path));
   }
 };
 
@@ -700,6 +717,122 @@ TEST(FileSystemTest, CopyBetweenNamesWithTheirOwnFiles) {
   // A file copied onto itself keeps its contents.
   EXPECT_TRUE(file_system.CopyFile("b:/file", "b:/file"));
   ASSERT_TRUE(file_system.ReadFile("b:/file", &contents));
+  EXPECT_EQ(contents, "12345");
+}
+
+TEST(FileSystemTest, RegisterProtocolMoveRequiresFileCreate) {
+  FileSystem file_system;
+  EXPECT_FALSE(file_system.Register(
+      std::make_unique<MemoryFileProtocol>(kReadOnlyFileProtocolFlags +
+                                           FileProtocolFlag::kMove),
+      "test"));
+  EXPECT_FALSE(file_system.IsRegistered("test"));
+  EXPECT_TRUE(
+      file_system.Register(std::make_unique<MemoryFileProtocol>(
+                               kReadOnlyFileProtocolFlags +
+                               FileProtocolFlags{FileProtocolFlag::kFileWrite,
+                                                 FileProtocolFlag::kFileCreate,
+                                                 FileProtocolFlag::kMove}),
+                           "test"));
+}
+
+TEST(FileSystemTest, MoveNeedsProtocolSupport) {
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(
+      std::make_unique<MemoryFileProtocol>(kReadWriteFileProtocolFlags),
+      "nomove"));
+  ASSERT_TRUE(file_system.Register(
+      std::make_unique<MemoryFileProtocol>(MemoryFileProtocol::kDefaultFlags -
+                                           FileProtocolFlag::kFolderCreate),
+      "nofolders"));
+  ASSERT_TRUE(file_system.CreateFolder("nomove:/folder"));
+  ASSERT_TRUE(file_system.WriteFile("nomove:/file", "12345"));
+  ASSERT_TRUE(file_system.WriteFile("nofolders:/file", "12345"));
+
+  EXPECT_FALSE(file_system.MoveFile("nomove:/file", "nomove:/moved"));
+  EXPECT_FALSE(file_system.MoveFolder("nomove:/folder", "nomove:/moved"));
+  EXPECT_FALSE(file_system.IsValidPath("nomove:/moved"));
+
+  // Files move without folder support.
+  EXPECT_TRUE(file_system.MoveFile("nofolders:/file", "nofolders:/moved"));
+  EXPECT_TRUE(file_system.IsValidFile("nofolders:/moved"));
+}
+
+TEST(FileSystemTest, MoveAcrossProtocolsFails) {
+  FileSystem file_system;
+  ASSERT_TRUE(
+      file_system.Register(std::make_unique<MemoryFileProtocol>(), "a"));
+  ASSERT_TRUE(
+      file_system.Register(std::make_unique<MemoryFileProtocol>(), "b"));
+  ASSERT_TRUE(file_system.CreateFolder("a:/folder"));
+  ASSERT_TRUE(file_system.WriteFile("a:/file", "12345"));
+
+  EXPECT_FALSE(file_system.MoveFile("a:/file", "b:/file"));
+  EXPECT_FALSE(file_system.MoveFolder("a:/folder", "b:/folder"));
+  EXPECT_FALSE(file_system.MoveFile("a:/file", "c:/file"));
+  EXPECT_TRUE(file_system.IsValidFile("a:/file"));
+  EXPECT_TRUE(file_system.IsValidFolder("a:/folder"));
+  EXPECT_FALSE(file_system.IsValidPath("b:/file"));
+  EXPECT_FALSE(file_system.IsValidPath("b:/folder"));
+}
+
+TEST(FileSystemTest, MoveNormalizesPaths) {
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(std::make_unique<MemoryFileProtocol>()));
+  ASSERT_TRUE(file_system.WriteFile("mem:/file", "12345"));
+  EXPECT_FALSE(file_system.MoveFile("mem:file", "mem:/moved"));
+  EXPECT_FALSE(file_system.MoveFile("mem:/file", "mem:moved"));
+  EXPECT_TRUE(file_system.MoveFile("MEM:/.\\abc///..\\file",
+                                   "MEM:/.\\abc///..\\moved"));
+  EXPECT_TRUE(file_system.IsValidFile("mem:/moved"));
+  EXPECT_FALSE(file_system.IsValidPath("mem:/file"));
+}
+
+// A protocol whose paths that differ only in case name the same file, though
+// it keeps each name in the case it was given.
+class IgnoreCaseProtocol : public MemoryFileProtocol {
+ public:
+  std::string GetCanonicalPath(std::string_view protocol_name,
+                               std::string_view path) const override {
+    return absl::AsciiStrToLower(path);
+  }
+};
+
+TEST(FileSystemTest, MoveChangesCaseWhereTheProtocolIgnoresIt) {
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(std::make_unique<IgnoreCaseProtocol>()));
+  ASSERT_TRUE(file_system.CreateFolder("mem:/folder"));
+  ASSERT_TRUE(file_system.WriteFile("mem:/folder/file", "12345"));
+
+  EXPECT_TRUE(file_system.MoveFile("mem:/folder/file", "mem:/folder/FILE"));
+  EXPECT_TRUE(file_system.MoveFolder("mem:/folder", "mem:/Folder"));
+  EXPECT_THAT(file_system.List("mem:/", FolderMode::kRecursive),
+              UnorderedElementsAre("mem:/Folder", "mem:/Folder/FILE"));
+}
+
+TEST(FileSystemTest, MoveBetweenNamesWithTheirOwnFiles) {
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(
+      std::make_unique<FolderPerNameProtocol>(
+          std::initializer_list<std::string_view>{"a", "b"}),
+      std::vector<std::string>{"a", "b"}));
+  ASSERT_TRUE(file_system.CreateFolder("a:/folder"));
+  ASSERT_TRUE(file_system.WriteFile("a:/folder/file", "12345"));
+  ASSERT_TRUE(file_system.CreateFolder("b:/folder"));
+
+  // The same path under another name isn't the same folder, so a folder can
+  // move into the one under the other name, but not into itself.
+  EXPECT_FALSE(file_system.MoveFolder("a:/folder", "a:/folder/sub"));
+  EXPECT_FALSE(file_system.MoveFolder("a:/folder", "b:/folder"));
+  EXPECT_TRUE(file_system.MoveFolder("a:/folder", "b:/folder/sub"));
+  EXPECT_FALSE(file_system.IsValidPath("a:/folder"));
+  std::string contents;
+  ASSERT_TRUE(file_system.ReadFile("b:/folder/sub/file", &contents));
+  EXPECT_EQ(contents, "12345");
+
+  EXPECT_TRUE(file_system.MoveFile("b:/folder/sub/file", "a:/file"));
+  EXPECT_FALSE(file_system.IsValidPath("b:/folder/sub/file"));
+  ASSERT_TRUE(file_system.ReadFile("a:/file", &contents));
   EXPECT_EQ(contents, "12345");
 }
 

@@ -29,7 +29,8 @@ INSTANTIATE_TEST_SUITE_P(MemoryFileProtocolTest, CommonProtocolTest,
 
 TEST(MemoryFileProtocolTest, Construct) {
   MemoryFileProtocol protocol;
-  EXPECT_EQ(protocol.GetFlags(), kReadWriteFileProtocolFlags);
+  EXPECT_EQ(protocol.GetFlags(),
+            kReadWriteFileProtocolFlags + FileProtocolFlag::kMove);
   EXPECT_THAT(protocol.GetDefaultNames(), ElementsAre("mem"));
 
   const FileProtocolFlags flags = {FileProtocolFlag::kInfo,
@@ -46,6 +47,35 @@ TEST(MemoryFileProtocolTest, DeleteOpenFile) {
   EXPECT_EQ(file_system.GetPathInfo("mem:/file").type, PathType::kFile);
   file.reset();
   EXPECT_TRUE(file_system.DeleteFile("mem:/file"));
+  EXPECT_EQ(file_system.GetPathInfo("mem:/file").type, PathType::kInvalid);
+}
+
+TEST(MemoryFileProtocolTest, MoveOpenFile) {
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(std::make_unique<MemoryFileProtocol>()));
+  ASSERT_TRUE(file_system.CreateFolder("mem:/folder"));
+  auto file = file_system.OpenFile("mem:/folder/file", kNewFileFlags);
+  EXPECT_NE(file, nullptr);
+  EXPECT_FALSE(file_system.MoveFile("mem:/folder/file", "mem:/folder/moved"));
+  EXPECT_FALSE(file_system.MoveFolder("mem:/folder", "mem:/moved"));
+  EXPECT_EQ(file_system.GetPathInfo("mem:/folder/file").type, PathType::kFile);
+  EXPECT_EQ(file_system.GetPathInfo("mem:/moved").type, PathType::kInvalid);
+  file.reset();
+  EXPECT_TRUE(file_system.MoveFile("mem:/folder/file", "mem:/folder/moved"));
+  EXPECT_TRUE(file_system.MoveFolder("mem:/folder", "mem:/moved"));
+  EXPECT_EQ(file_system.GetPathInfo("mem:/moved/moved").type, PathType::kFile);
+}
+
+TEST(MemoryFileProtocolTest, MoveIsCaseSensitive) {
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(std::make_unique<MemoryFileProtocol>()));
+  ASSERT_TRUE(file_system.WriteFile("mem:/file", "12345"));
+  ASSERT_TRUE(file_system.WriteFile("mem:/FILE", "abcde"));
+  EXPECT_FALSE(file_system.MoveFile("mem:/file", "mem:/FILE"));
+  EXPECT_TRUE(file_system.MoveFile("mem:/file", "mem:/File"));
+  std::string contents;
+  ASSERT_TRUE(file_system.ReadFile("mem:/File", &contents));
+  EXPECT_EQ(contents, "12345");
   EXPECT_EQ(file_system.GetPathInfo("mem:/file").type, PathType::kInvalid);
 }
 

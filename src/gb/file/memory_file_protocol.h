@@ -20,12 +20,16 @@ namespace gb {
 //
 // This class supports all file system operations, allocating memory as needed
 // from the heap. By default, it will register under the "mem" protocol name.
+// Paths are case-sensitive. A file that is open can't be deleted or moved, nor
+// can a folder with an open file in it be moved.
 //
 // This class is thread-safe.
 class MemoryFileProtocol : public FileProtocol {
  public:
-  explicit MemoryFileProtocol(
-      FileProtocolFlags flags = kReadWriteFileProtocolFlags);
+  static constexpr FileProtocolFlags kDefaultFlags = {
+      kReadWriteFileProtocolFlags, FileProtocolFlag::kMove};
+
+  explicit MemoryFileProtocol(FileProtocolFlags flags = kDefaultFlags);
   ~MemoryFileProtocol() override;
 
   // Public overrides for FileProtocol.
@@ -46,6 +50,14 @@ class MemoryFileProtocol : public FileProtocol {
                          std::string_view path) override;
   bool BasicDeleteFile(std::string_view protocol_name,
                        std::string_view path) override;
+  bool BasicMoveFolder(std::string_view from_protocol_name,
+                       std::string_view from_path,
+                       std::string_view to_protocol_name,
+                       std::string_view to_path) override;
+  bool BasicMoveFile(std::string_view from_protocol_name,
+                     std::string_view from_path,
+                     std::string_view to_protocol_name,
+                     std::string_view to_path) override;
   std::unique_ptr<RawFile> BasicOpenFile(std::string_view protocol_name,
                                          std::string_view path,
                                          FileFlags flags) override;

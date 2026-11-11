@@ -840,29 +840,6 @@ default writer write UTF-8 a console shows correctly, behind a `win_` / `gen_`
 split: `SetConsoleOutputCP(CP_UTF8)`, or `WriteConsoleW()` when the handle is
 a console. Check by hand first that the console garbles it.
 
-## Moving files
-
-- **Layers:** gb_file
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Requested by:** OZ-3 *Disk tools* (renaming files on a disk image)
-- **Background:** `FileSystem::CopyFile()`, `CopyFolder()`, and
-  `DeleteFile()` in `file_system.h`, and `FileProtocol`'s flags in
-  `file_types.h`
-
-`FileSystem` can copy and delete files and folders, but not move them, so a
-move or rename is a copy and a delete: slow for a large file, and not atomic,
-as a failure partway leaves both or neither. Add `FileSystem::MoveFile()` and
-`MoveFolder()`, taking the same parameters as `CopyFile()` and `CopyFolder()`,
-except that both paths must be in the same protocol, since a move between
-protocols is a copy, and fails. Each protocol implements the move itself, with
-a flag saying it can: `LocalFileProtocol` with `std::filesystem::rename()`,
-and `MemoryFileProtocol` by moving its entries. A move onto an existing file
-fails rather than replacing it, and a move that only changes case succeeds on
-a case-insensitive host. OZ-3's disk image protocol implements it as a rename
-within its one directory.
-
 ## Canonical local paths
 
 - **Layers:** gb_file
@@ -882,3 +859,43 @@ case in the path itself can't match Windows: NTFS compares names with an
 uppercase table of its own, and a folder can be made case-sensitive. A link
 under a rooted protocol that leads outside its root falls back to the path
 as written.
+
+## Local moves that never replace
+
+- **Layers:** gb_file
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** `RenamePath()` in `local_file_protocol.cc`, and the
+  `win_` / `gen_` split in the C++ style
+
+`LocalFileProtocol` moves fail when anything is at the new path, but the check
+comes before the rename, and `std::filesystem::rename()` replaces an existing
+file. A file another process creates at the new path in between is
+overwritten. Rename with the operating system's own no-replace move instead, so
+the check and the move are one step: `MoveFileExW()` without
+`MOVEFILE_REPLACE_EXISTING` in a `win_` file, and in the `gen_` file the
+current check and rename (or `renameat2()` with `RENAME_NOREPLACE` where
+there is a platform file for it). A move that only changes case must still
+succeed on Windows, where the no-replace move sees the new name as taken by
+the file itself.
+
+## Links in local files
+
+- **Layers:** gb_file
+- **Size:** medium
+- **Feature workflow:** yes
+- **Depends on:** nothing
+- **Background:** `LocalFileProtocol`'s class comment, and `RenamePath()` and
+  `ListFolder()` in `local_file_protocol.cc`
+
+`LocalFileProtocol` doesn't support links (symbolic links, junctions, and hard
+links). It follows them, so a link appears as what it leads to, and links can
+interfere with folder copying and deletion. Moving is affected too: a link at
+the new path that leads to the file or folder being moved counts as the same
+file, as a case-only rename does, so the move replaces the link instead of
+failing. With two hard links on POSIX, `rename()` does nothing and reports
+success, so both names remain. Decide what each operation does with a link
+(most likely: it is an entry of its own, which is listed, copied, moved, and
+deleted as a link, not as what it leads to), and test each one with links,
+which on Windows needs developer mode to create.

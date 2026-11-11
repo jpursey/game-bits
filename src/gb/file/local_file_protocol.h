@@ -37,11 +37,16 @@ namespace gb {
 // with GetPathInfo(). Links and other types of files can interfere with folder
 // copying and deletion.
 //
+// Moving a file or folder renames it in place, which the operating system can
+// only do within one volume. A move to another drive, or into a folder where
+// another volume is mounted, fails, even within one protocol name.
+//
 // This class is thread-safe.
 class LocalFileProtocol : public FileProtocol {
  public:
   static constexpr FileProtocolFlags kDefaultFlags = {
-      kReadWriteFileProtocolFlags, FileProtocolFlag::kCurrentPath};
+      kReadWriteFileProtocolFlags, FileProtocolFlag::kCurrentPath,
+      FileProtocolFlag::kMove};
 
   // Flags can be set to limit what operations are allowed when this protocol is
   // added to a FileSystem. By default, all operations are supported.
@@ -160,6 +165,13 @@ class LocalFileProtocol : public FileProtocol {
                   std::string_view to_path) override;
   bool DoDeleteFile(std::string_view protocol_name,
                     std::string_view path) override;
+  bool DoMoveFolder(std::string_view from_protocol_name,
+                    std::string_view from_path,
+                    std::string_view to_protocol_name,
+                    std::string_view to_path) override;
+  bool DoMoveFile(std::string_view from_protocol_name,
+                  std::string_view from_path, std::string_view to_protocol_name,
+                  std::string_view to_path) override;
   std::unique_ptr<RawFile> DoOpenFile(std::string_view protocol_name,
                                       std::string_view path,
                                       FileFlags flags) override;

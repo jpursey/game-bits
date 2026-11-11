@@ -118,6 +118,34 @@ bool FileProtocol::DeleteFile(std::string_view protocol_name,
   return result;
 }
 
+bool FileProtocol::MoveFolder(std::string_view from_protocol_name,
+                              std::string_view from_path,
+                              std::string_view to_protocol_name,
+                              std::string_view to_path) {
+  if (!IsValidPath(from_path) || !IsValidPath(to_path)) {
+    return false;
+  }
+  Lock(LockType::kModify);
+  auto result =
+      DoMoveFolder(from_protocol_name, from_path, to_protocol_name, to_path);
+  Unlock(LockType::kModify);
+  return result;
+}
+
+bool FileProtocol::MoveFile(std::string_view from_protocol_name,
+                            std::string_view from_path,
+                            std::string_view to_protocol_name,
+                            std::string_view to_path) {
+  if (!IsValidPath(from_path) || !IsValidPath(to_path)) {
+    return false;
+  }
+  Lock(LockType::kModify);
+  auto result =
+      DoMoveFile(from_protocol_name, from_path, to_protocol_name, to_path);
+  Unlock(LockType::kModify);
+  return result;
+}
+
 std::unique_ptr<RawFile> FileProtocol::OpenFile(std::string_view protocol_name,
                                                 std::string_view path,
                                                 FileFlags flags) {
@@ -347,6 +375,53 @@ bool FileProtocol::DoDeleteFile(std::string_view protocol_name,
   return BasicDeleteFile(protocol_name, path);
 }
 
+bool FileProtocol::DoMoveFolder(std::string_view from_protocol_name,
+                                std::string_view from_path,
+                                std::string_view to_protocol_name,
+                                std::string_view to_path) {
+  if (IsRootPath(from_path)) {
+    return false;
+  }
+  return MovePath(from_protocol_name, from_path, to_protocol_name, to_path,
+                  PathType::kFolder);
+}
+
+bool FileProtocol::DoMoveFile(std::string_view from_protocol_name,
+                              std::string_view from_path,
+                              std::string_view to_protocol_name,
+                              std::string_view to_path) {
+  return MovePath(from_protocol_name, from_path, to_protocol_name, to_path,
+                  PathType::kFile);
+}
+
+bool FileProtocol::MovePath(std::string_view from_protocol_name,
+                            std::string_view from_path,
+                            std::string_view to_protocol_name,
+                            std::string_view to_path, PathType type) {
+  if (DoGetPathInfo(from_protocol_name, from_path).type != type) {
+    return false;
+  }
+
+  // A path that names the same entry in another way (under another name, or in
+  // another case where the protocol ignores it) moves to change its name.
+  if (GetCanonicalPath(from_protocol_name, from_path) !=
+      GetCanonicalPath(to_protocol_name, to_path)) {
+    if (DoGetPathInfo(to_protocol_name, to_path).type != PathType::kInvalid ||
+        DoGetPathInfo(to_protocol_name, RemoveFilename(to_path)).type !=
+            PathType::kFolder) {
+      return false;
+    }
+  } else if (from_protocol_name == to_protocol_name && from_path == to_path) {
+    return true;
+  }
+  if (type == PathType::kFolder) {
+    return BasicMoveFolder(from_protocol_name, from_path, to_protocol_name,
+                           to_path);
+  }
+  return BasicMoveFile(from_protocol_name, from_path, to_protocol_name,
+                       to_path);
+}
+
 std::unique_ptr<RawFile> FileProtocol::DoOpenFile(
     std::string_view protocol_name, std::string_view path, FileFlags flags) {
   auto info = DoGetPathInfo(protocol_name, path);
@@ -415,6 +490,22 @@ bool FileProtocol::BasicCopyFile(std::string_view from_protocol_name,
 bool FileProtocol::BasicDeleteFile(std::string_view protocol_name,
                                    std::string_view path) {
   LOG(ERROR) << "FileProtocol::BasicDeleteFile not implemented.";
+  return false;
+}
+
+bool FileProtocol::BasicMoveFolder(std::string_view from_protocol_name,
+                                   std::string_view from_path,
+                                   std::string_view to_protocol_name,
+                                   std::string_view to_path) {
+  LOG(ERROR) << "FileProtocol::BasicMoveFolder not implemented.";
+  return false;
+}
+
+bool FileProtocol::BasicMoveFile(std::string_view from_protocol_name,
+                                 std::string_view from_path,
+                                 std::string_view to_protocol_name,
+                                 std::string_view to_path) {
+  LOG(ERROR) << "FileProtocol::BasicMoveFile not implemented.";
   return false;
 }
 

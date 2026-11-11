@@ -180,6 +180,26 @@ class FileSystem final {
   // to create the correct destination).
   bool CopyFile(std::string_view from_path, std::string_view to_path);
 
+  // Moves a folder, with all of its files and subfolders, to a new path.
+  //
+  // This works as MoveFile() does, except that the protocol must also support
+  // FileProtocolFlag::kFolderCreate, and the move fails if `to_path` is inside
+  // `from_path`. The root can't be moved.
+  bool MoveFolder(std::string_view from_path, std::string_view to_path);
+
+  // Moves a file to a new path.
+  //
+  // Both paths must be in the same protocol (which may be under different
+  // names), and the protocol must support FileProtocolFlag::kMove. This fails
+  // if anything is already at `to_path`, or if the folder that would hold it
+  // doesn't exist. Moving a file onto itself succeeds without changing it, and
+  // a move that only changes case succeeds on a protocol that ignores case.
+  //
+  // A protocol may also fail a move it can't make without copying, such as
+  // one between drives for local files (see LocalFileProtocol). To move
+  // between protocols, or where a move fails this way, copy and then delete.
+  bool MoveFile(std::string_view from_path, std::string_view to_path);
+
   // Returns true if the path exists and is accessible (folder can be
   // listed/deleted and file can be opened/deleted).
   //
@@ -210,8 +230,8 @@ class FileSystem final {
   // Opens a file given a path and specified file flags.
   //
   // It is undefined behavior if a file is opened more than once. It is also
-  // undefined behavior if the file is deleted, or is the source or destination
-  // of a copy operation while a file is open.
+  // undefined behavior if the file is deleted or moved, or is the source or
+  // destination of a copy operation while a file is open.
   //
   // If the file cannot be opened with the requested flags, this will return
   // nullptr.

@@ -247,6 +247,25 @@ std::vector<std::string> ListFolder(Iterator it, std::string_view root,
   return entries;
 }
 
+// Moves the file or folder at `full_from_path` to `full_to_path`.
+bool RenamePath(const fs::path& full_from_path, const fs::path& full_to_path) {
+  // std::filesystem replaces an existing file, so anything at the new path,
+  // even a link whose target is missing, fails the move. The new path may name
+  // the same file or folder (Windows paths ignore case), which is only moved
+  // to change the case of its name.
+  std::error_code error;
+  if (fs::exists(fs::symlink_status(full_to_path, error))) {
+    if (!fs::equivalent(full_from_path, full_to_path, error)) {
+      return false;
+    }
+    if (full_from_path == full_to_path) {
+      return true;
+    }
+  }
+  fs::rename(full_from_path, full_to_path, error);
+  return !error;
+}
+
 }  // namespace
 
 std::unique_ptr<LocalFileProtocol> LocalFileProtocol::Create(
@@ -645,6 +664,40 @@ bool LocalFileProtocol::DoDeleteFile(std::string_view protocol_name,
   }
 
   return fs::remove(*full_path, error);
+}
+
+bool LocalFileProtocol::DoMoveFolder(std::string_view from_protocol_name,
+                                     std::string_view from_path,
+                                     std::string_view to_protocol_name,
+                                     std::string_view to_path) {
+  // Neither the protocol's root nor a drive's root folder is moved.
+  auto full_from_path = GetFullPath(from_protocol_name, from_path);
+  auto full_to_path = GetFullPath(to_protocol_name, to_path);
+  if (!full_from_path || !full_to_path || IsRootPath(from_path) ||
+      !full_from_path->has_relative_path()) {
+    return false;
+  }
+  std::error_code error;
+  if (!fs::is_directory(*full_from_path, error)) {
+    return false;
+  }
+  return RenamePath(*full_from_path, *full_to_path);
+}
+
+bool LocalFileProtocol::DoMoveFile(std::string_view from_protocol_name,
+                                   std::string_view from_path,
+                                   std::string_view to_protocol_name,
+                                   std::string_view to_path) {
+  auto full_from_path = GetFullPath(from_protocol_name, from_path);
+  auto full_to_path = GetFullPath(to_protocol_name, to_path);
+  if (!full_from_path || !full_to_path) {
+    return false;
+  }
+  std::error_code error;
+  if (!fs::is_regular_file(*full_from_path, error)) {
+    return false;
+  }
+  return RenamePath(*full_from_path, *full_to_path);
 }
 
 std::unique_ptr<RawFile> LocalFileProtocol::DoOpenFile(

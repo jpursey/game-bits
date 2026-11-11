@@ -40,6 +40,9 @@ enum class FileProtocolFlag {
   kCurrentPath,   // Supports getting and setting the current path. If this is
                   // supported, then the FileSystem will support relative paths
                   // with this protocol.
+  kMove,          // Supports moving files, and folders if kFolderCreate is
+                  // also supported. If this is supported, then kFileCreate
+                  // must also be supported.
 };
 using FileProtocolFlags = Flags<FileProtocolFlag>;
 

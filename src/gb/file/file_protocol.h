@@ -133,6 +133,23 @@ class FileProtocol {
   // if DoDeleteFile is not implemented.
   bool DeleteFile(std::string_view protocol_name, std::string_view path);
 
+  // Moves a folder from one path to another.
+  //
+  // Derived classes must override DoMoveFolder or BasicMoveFolder to implement
+  // this if both FileProtocolFlag::kMove and FileProtocolFlag::kFolderCreate
+  // are supported. GetPathInfo is called if DoMoveFolder is not implemented.
+  bool MoveFolder(std::string_view from_protocol_name,
+                  std::string_view from_path, std::string_view to_protocol_name,
+                  std::string_view to_path);
+
+  // Moves a file from one path to another.
+  //
+  // Derived classes must override DoMoveFile or BasicMoveFile to implement
+  // this if FileProtocolFlag::kMove is supported. GetPathInfo is called if
+  // DoMoveFile is not implemented.
+  bool MoveFile(std::string_view from_protocol_name, std::string_view from_path,
+                std::string_view to_protocol_name, std::string_view to_path);
+
   // Opens a file for at the specified path.
   //
   // Derived classes must override DoOpenFile or BasicOpenFile to implement
@@ -294,6 +311,43 @@ class FileProtocol {
   virtual bool DoDeleteFile(std::string_view protocol_name,
                             std::string_view path);
 
+  // Moves a folder from one path to another.
+  //
+  // A protocol must implement this or BasicMoveFolder if both
+  // FileProtocolFlag::kMove and FileProtocolFlag::kFolderCreate are supported.
+  //
+  // MoveFolder should move the folder with everything in it, and fail if
+  // from_path is not a folder, anything is at to_path, or the parent of
+  // to_path is not the root or an existing folder. If both paths name the same
+  // folder (see GetCanonicalPath()), this should return true without changing
+  // anything, unless the protocol ignores case and the paths differ in case,
+  // when it should change the folder's name to to_path's.
+  //
+  // MoveFolder is only called if the protocol supports both
+  // FileProtocolFlag::kMove and FileProtocolFlag::kFolderCreate, and the
+  // canonical from_path is not the root or a parent of the canonical to_path.
+  // The protocol is responsible for all further validation.
+  virtual bool DoMoveFolder(std::string_view from_protocol_name,
+                            std::string_view from_path,
+                            std::string_view to_protocol_name,
+                            std::string_view to_path);
+
+  // Moves a file from one path to another.
+  //
+  // A protocol must implement this or BasicMoveFile if FileProtocolFlag::kMove
+  // is supported.
+  //
+  // MoveFile should fail if from_path is not a file, anything is at to_path, or
+  // the parent of to_path is not the root or an existing folder. Paths that
+  // name the same file are handled as for MoveFolder.
+  //
+  // MoveFile is only called if FileProtocolFlag::kMove is supported. The
+  // protocol is responsible for all further validation.
+  virtual bool DoMoveFile(std::string_view from_protocol_name,
+                          std::string_view from_path,
+                          std::string_view to_protocol_name,
+                          std::string_view to_path);
+
   // Opens a file for at the specified path.
   //
   // A protocol must implement this or BasicOpenFile.
@@ -380,6 +434,32 @@ class FileProtocol {
   virtual bool BasicDeleteFile(std::string_view protocol_name,
                                std::string_view path);
 
+  // File protocols may optionally override BasicMoveFolder instead of
+  // MoveFolder when FileProtocolFlag::kMove, FileProtocolFlag::kFolderCreate,
+  // and FileProtocolFlag::kInfo are supported.
+  //
+  // BasicMoveFolder is only called if from_path refers to an existing folder
+  // that is not the root, and either nothing is at to_path and the parent of
+  // to_path is an existing folder that is not inside from_path, or to_path is
+  // a different path that names the same folder (see GetCanonicalPath()), when
+  // the folder keeps its place and takes to_path's name.
+  virtual bool BasicMoveFolder(std::string_view from_protocol_name,
+                               std::string_view from_path,
+                               std::string_view to_protocol_name,
+                               std::string_view to_path);
+
+  // File protocols may optionally override BasicMoveFile instead of MoveFile
+  // when both FileProtocolFlag::kMove and FileProtocolFlag::kInfo are
+  // supported.
+  //
+  // BasicMoveFile is only called if from_path refers to an existing file, and
+  // either nothing is at to_path and the parent of to_path is an existing
+  // folder, or to_path names the same file as for BasicMoveFolder.
+  virtual bool BasicMoveFile(std::string_view from_protocol_name,
+                             std::string_view from_path,
+                             std::string_view to_protocol_name,
+                             std::string_view to_path);
+
   // File protocols may optionally override BasicOpenFile instead of OpenFile if
   // the FileProtocolFlag::kInfo flag is supported.
   //
@@ -393,6 +473,13 @@ class FileProtocol {
   virtual std::unique_ptr<RawFile> BasicOpenFile(std::string_view protocol_name,
                                                  std::string_view path,
                                                  FileFlags flags);
+
+ private:
+  // Implements DoMoveFolder and DoMoveFile with BasicMoveFolder or
+  // BasicMoveFile, for a `type` of PathType::kFolder or PathType::kFile.
+  bool MovePath(std::string_view from_protocol_name, std::string_view from_path,
+                std::string_view to_protocol_name, std::string_view to_path,
+                PathType type);
 };
 
 }  // namespace gb

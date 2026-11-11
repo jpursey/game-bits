@@ -29,6 +29,10 @@ bool ValidateProtocolFlags(FileProtocolFlags flags) {
       !flags.IsSet(FileProtocolFlag::kFileWrite)) {
     return false;
   }
+  if (flags.IsSet(FileProtocolFlag::kMove) &&
+      !flags.IsSet(FileProtocolFlag::kFileCreate)) {
+    return false;
+  }
   if (!flags.Intersects(
           {FileProtocolFlag::kFileRead, FileProtocolFlag::kFileWrite})) {
     return false;
@@ -289,6 +293,49 @@ bool FileSystem::CopyFile(std::string_view from_path,
   }
   return from_protocol->CopyFile(from_protocol_name, from_path,
                                  to_protocol_name, to_path);
+}
+
+bool FileSystem::MoveFolder(std::string_view from_path,
+                            std::string_view to_path) {
+  auto [normalized_from_path, from_protocol_name, from_protocol] =
+      GetNormalizedPath(from_path);
+  auto [normalized_to_path, to_protocol_name, to_protocol] =
+      GetNormalizedPath(to_path);
+  if (normalized_from_path.empty() || normalized_to_path.empty() ||
+      from_protocol != to_protocol ||
+      !from_protocol->GetFlags().IsSet(
+          {FileProtocolFlag::kMove, FileProtocolFlag::kFolderCreate})) {
+    return false;
+  }
+
+  // A folder can't be moved into itself, which may be named by another of the
+  // protocol's names.
+  const std::string canonical_from_path =
+      from_protocol->GetCanonicalPath(from_protocol_name, normalized_from_path);
+  const std::string canonical_to_path =
+      from_protocol->GetCanonicalPath(to_protocol_name, normalized_to_path);
+  if (IsRootPath(canonical_from_path) ||
+      absl::StartsWith(canonical_to_path,
+                       absl::StrCat(canonical_from_path, "/"))) {
+    return false;
+  }
+  return from_protocol->MoveFolder(from_protocol_name, normalized_from_path,
+                                   to_protocol_name, normalized_to_path);
+}
+
+bool FileSystem::MoveFile(std::string_view from_path,
+                          std::string_view to_path) {
+  auto [normalized_from_path, from_protocol_name, from_protocol] =
+      GetNormalizedPath(from_path);
+  auto [normalized_to_path, to_protocol_name, to_protocol] =
+      GetNormalizedPath(to_path);
+  if (normalized_from_path.empty() || normalized_to_path.empty() ||
+      from_protocol != to_protocol ||
+      !from_protocol->GetFlags().IsSet(FileProtocolFlag::kMove)) {
+    return false;
+  }
+  return from_protocol->MoveFile(from_protocol_name, normalized_from_path,
+                                 to_protocol_name, normalized_to_path);
 }
 
 PathInfo FileSystem::GetPathInfo(std::string_view path) {

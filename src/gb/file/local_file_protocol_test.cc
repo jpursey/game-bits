@@ -369,6 +369,47 @@ TEST(LocalFileProtocolTest, CopyFileOntoItselfByAnotherName) {
   EXPECT_EQ(contents, "12345");
 }
 
+TEST(LocalFileProtocolTest, MoveChangesCase) {
+  auto protocol = LocalFileProtocol::CreateTemp("gbtest");
+  ASSERT_NE(protocol, nullptr);
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(std::move(protocol)));
+  ASSERT_TRUE(file_system.WriteFile("file:/file", "12345"));
+  ASSERT_TRUE(file_system.WriteFile("file:/other", "abcde"));
+  ASSERT_TRUE(file_system.CreateFolder("file:/folder"));
+
+  // Windows paths ignore case, so another file's name in any case is taken,
+  // but a file or folder can change the case of its own name.
+  EXPECT_FALSE(file_system.MoveFile("file:/file", "file:/OTHER"));
+  EXPECT_FALSE(file_system.MoveFolder("file:/folder", "file:/OTHER"));
+  EXPECT_TRUE(file_system.MoveFile("file:/file", "file:/File"));
+  EXPECT_TRUE(file_system.MoveFolder("file:/folder", "file:/FOLDER"));
+  EXPECT_THAT(
+      file_system.List("file:/"),
+      UnorderedElementsAre("file:/File", "file:/FOLDER", "file:/other"));
+  std::string contents;
+  ASSERT_TRUE(file_system.ReadFile("file:/File", &contents));
+  EXPECT_EQ(contents, "12345");
+}
+
+TEST(LocalFileProtocolTest, MoveOpenFile) {
+  auto protocol = LocalFileProtocol::CreateTemp("gbtest");
+  ASSERT_NE(protocol, nullptr);
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(std::move(protocol)));
+  ASSERT_TRUE(file_system.CreateFolder("file:/folder"));
+
+  // Windows can't move a file that is open, nor the folder it is in.
+  auto file = file_system.OpenFile("file:/folder/file", kNewFileFlags);
+  ASSERT_NE(file, nullptr);
+  EXPECT_FALSE(file_system.MoveFile("file:/folder/file", "file:/moved"));
+  EXPECT_FALSE(file_system.MoveFolder("file:/folder", "file:/moved"));
+  EXPECT_FALSE(file_system.IsValidPath("file:/moved"));
+  file.reset();
+  EXPECT_TRUE(file_system.MoveFolder("file:/folder", "file:/moved"));
+  EXPECT_TRUE(file_system.IsValidFile("file:/moved/file"));
+}
+
 TEST(LocalFileProtocolTest, RecursiveDeleteFolderFailure) {
   auto protocol = LocalFileProtocol::CreateTemp("gbtest");
   ASSERT_NE(protocol, nullptr);

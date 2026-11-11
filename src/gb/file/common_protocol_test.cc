@@ -544,6 +544,126 @@ TEST_P(CommonProtocolTest, CopyFile) {
               CheckContents(file_system, "test:/file-2", "abcde"));
 }
 
+TEST_P(CommonProtocolTest, MoveFile) {
+  CommonProtocolTestInit init;
+  init.folders = {"/folder-1"};
+  init.files = {{"/file-1", "1234567890"}, {"/file-2", "abcde"}};
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(NewProtocol(init), "test"));
+  if (!file_system.GetFlags("test").IsSet(FileProtocolFlag::kMove)) {
+    return;
+  }
+  const bool check_info =
+      file_system.GetFlags("test").IsSet(FileProtocolFlag::kInfo);
+  const bool check_contents =
+      file_system.GetFlags("test").IsSet(FileProtocolFlag::kFileRead);
+
+  EXPECT_FALSE(file_system.MoveFile("test:/invalid", "test:/new-file"));
+  EXPECT_TRUE(!check_info || !file_system.IsValidPath("test:/new-file"));
+
+  EXPECT_FALSE(file_system.MoveFile("test:/folder-1", "test:/new-file"));
+  EXPECT_TRUE(!check_info || file_system.IsValidFolder("test:/folder-1"));
+  EXPECT_TRUE(!check_info || !file_system.IsValidPath("test:/new-file"));
+
+  // Nothing at the new path is replaced.
+  EXPECT_FALSE(file_system.MoveFile("test:/file-1", "test:/file-2"));
+  EXPECT_FALSE(file_system.MoveFile("test:/file-1", "test:/folder-1"));
+  EXPECT_TRUE(!check_info || file_system.IsValidFolder("test:/folder-1"));
+  EXPECT_TRUE(!check_contents ||
+              CheckContents(file_system, "test:/file-1", "1234567890"));
+  EXPECT_TRUE(!check_contents ||
+              CheckContents(file_system, "test:/file-2", "abcde"));
+
+  EXPECT_FALSE(file_system.MoveFile("test:/file-1", "test:/invalid/new-file"));
+  EXPECT_TRUE(!check_info || !file_system.IsValidPath("test:/invalid"));
+
+  EXPECT_TRUE(file_system.MoveFile("test:/file-1", "test:/file-1"));
+  EXPECT_TRUE(!check_contents ||
+              CheckContents(file_system, "test:/file-1", "1234567890"));
+
+  EXPECT_TRUE(file_system.MoveFile("test:/file-1", "test:/folder-1/new-file"));
+  EXPECT_TRUE(!check_info || !file_system.IsValidPath("test:/file-1"));
+  EXPECT_TRUE(
+      !check_contents ||
+      CheckContents(file_system, "test:/folder-1/new-file", "1234567890"));
+
+  EXPECT_TRUE(
+      file_system.MoveFile("test:/folder-1/new-file", "test:/folder-1/file-1"));
+  EXPECT_TRUE(!check_info ||
+              !file_system.IsValidPath("test:/folder-1/new-file"));
+  EXPECT_TRUE(
+      !check_contents ||
+      CheckContents(file_system, "test:/folder-1/file-1", "1234567890"));
+}
+
+TEST_P(CommonProtocolTest, MoveFolder) {
+  CommonProtocolTestInit init;
+  init.folders = {"/folder-1", "/folder-1/sub-1", "/folder-1-other",
+                  "/folder-2"};
+  init.files = {{"/file-0", "root file!"},
+                {"/folder-1/file-1", "1234567890"},
+                {"/folder-1/sub-1/file-2", "abcdefghij"},
+                {"/folder-1-other/file-3", "0987654321"}};
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(NewProtocol(init), "test"));
+  if (!file_system.GetFlags("test").IsSet(
+          {FileProtocolFlag::kMove, FileProtocolFlag::kFolderCreate})) {
+    return;
+  }
+  const bool check_info =
+      file_system.GetFlags("test").IsSet(FileProtocolFlag::kInfo);
+  const bool check_contents =
+      file_system.GetFlags("test").IsSet(FileProtocolFlag::kFileRead);
+
+  EXPECT_FALSE(file_system.MoveFolder("test:/invalid", "test:/new-folder"));
+  EXPECT_FALSE(file_system.MoveFolder("test:/file-0", "test:/new-folder"));
+  EXPECT_TRUE(!check_info || file_system.IsValidFile("test:/file-0"));
+  EXPECT_FALSE(file_system.MoveFolder("test:/", "test:/new-folder"));
+  EXPECT_TRUE(!check_info || !file_system.IsValidPath("test:/new-folder"));
+
+  // Nothing at the new path is replaced or merged with.
+  EXPECT_FALSE(file_system.MoveFolder("test:/folder-1", "test:/folder-2"));
+  EXPECT_FALSE(file_system.MoveFolder("test:/folder-1", "test:/file-0"));
+  EXPECT_TRUE(!check_info || file_system.IsValidFolder("test:/folder-1"));
+  EXPECT_TRUE(!check_info || file_system.IsValidFile("test:/file-0"));
+  EXPECT_TRUE(!check_info || !file_system.IsValidPath("test:/folder-2/file-1"));
+
+  EXPECT_FALSE(
+      file_system.MoveFolder("test:/folder-1", "test:/invalid/new-folder"));
+  EXPECT_FALSE(
+      file_system.MoveFolder("test:/folder-1", "test:/folder-1/sub-1/new"));
+  EXPECT_TRUE(!check_info ||
+              !file_system.IsValidPath("test:/folder-1/sub-1/new"));
+
+  EXPECT_TRUE(file_system.MoveFolder("test:/folder-1", "test:/folder-1"));
+  EXPECT_TRUE(!check_info || file_system.IsValidFolder("test:/folder-1"));
+
+  EXPECT_TRUE(file_system.MoveFolder("test:/folder-1", "test:/folder-2/moved"));
+  EXPECT_TRUE(!check_info || !file_system.IsValidPath("test:/folder-1"));
+  EXPECT_TRUE(!check_info ||
+              file_system.IsValidFolder("test:/folder-2/moved/sub-1"));
+  EXPECT_TRUE(
+      !check_contents ||
+      CheckContents(file_system, "test:/folder-2/moved/file-1", "1234567890"));
+  EXPECT_TRUE(!check_contents ||
+              CheckContents(file_system, "test:/folder-2/moved/sub-1/file-2",
+                            "abcdefghij"));
+
+  // A folder whose name starts with the moved folder's stays where it is.
+  EXPECT_TRUE(
+      !check_contents ||
+      CheckContents(file_system, "test:/folder-1-other/file-3", "0987654321"));
+  if (file_system.GetFlags("test").IsSet(FileProtocolFlag::kList)) {
+    EXPECT_THAT(file_system.List("test:/", FolderMode::kRecursive),
+                UnorderedElementsAre("test:/file-0", "test:/folder-1-other",
+                                     "test:/folder-1-other/file-3",
+                                     "test:/folder-2", "test:/folder-2/moved",
+                                     "test:/folder-2/moved/file-1",
+                                     "test:/folder-2/moved/sub-1",
+                                     "test:/folder-2/moved/sub-1/file-2"));
+  }
+}
+
 TEST_P(CommonProtocolTest, CreateFile) {
   CommonProtocolTestInit init;
   init.folders = {"/folder-1"};
