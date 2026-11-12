@@ -41,6 +41,13 @@ namespace gb {
 // only do within one volume. A move to another drive, or into a folder where
 // another volume is mounted, fails, even within one protocol name.
 //
+// Files and folders can be read-only, and on Windows also hidden (elsewhere,
+// hidden is a name starting with ".", which isn't an attribute that can be
+// set). These are the operating system's own: Windows' attributes, or no write
+// permission for anyone elsewhere. What they prevent is up to the operating
+// system. A link reports and sets the attributes of what it links to, and a
+// root folder (the protocol's, or a drive's) has none.
+//
 // This class is thread-safe.
 class LocalFileProtocol : public FileProtocol {
  public:
@@ -134,6 +141,7 @@ class LocalFileProtocol : public FileProtocol {
 
   // Public overrides for FileProtocol.
   FileProtocolFlags GetFlags() const override;
+  FileAttributes GetAttributeFlags() const override;
   std::vector<std::string> GetDefaultNames() const override;
 
   // For a protocol from CreateOsRoot(), a path with a drive's name has the
@@ -148,16 +156,14 @@ class LocalFileProtocol : public FileProtocol {
   // Protected overrides for FileProtocol.
   PathInfo DoGetPathInfo(std::string_view protocol_name,
                          std::string_view path) override;
+  bool BasicSetAttributes(std::string_view protocol_name, std::string_view path,
+                          FileAttributes attributes) override;
   std::vector<std::string> DoList(std::string_view protocol_name,
                                   std::string_view path,
                                   std::string_view pattern, FolderMode mode,
                                   PathTypes types) override;
   bool DoCreateFolder(std::string_view protocol_name, std::string_view path,
                       FolderMode mode) override;
-  bool DoCopyFolder(std::string_view from_protocol_name,
-                    std::string_view from_path,
-                    std::string_view to_protocol_name,
-                    std::string_view to_path) override;
   bool DoDeleteFolder(std::string_view protocol_name, std::string_view path,
                       FolderMode mode) override;
   bool DoCopyFile(std::string_view from_protocol_name,

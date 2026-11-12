@@ -25,8 +25,13 @@ override anything supports no attributes.
     read-only folder prevents, depends on the protocol. Moving it and changing
     its attributes are allowed.
   - `kHidden`: the file or folder is normally left out of what is shown to
-    people. It changes nothing a protocol does: `List()` still returns it, and
-    it can be opened, copied, moved, and deleted as any other.
+    people. `List()` still returns it, and what else it affects depends on
+    the protocol.
+- Attributes don't guarantee behavior: a file that isn't read-only may still
+  not be writable, for any number of reasons. A protocol whose file system
+  Game Bits controls (`MemoryFileProtocol`) specifies exactly what each
+  attribute does; one backed by another file system (`LocalFileProtocol`)
+  leaves it to that file system.
 - A protocol that supports an attribute supports it on both files and folders,
   even where it does nothing on one of them. A root folder never has
   attributes, so setting any on one fails.
@@ -65,14 +70,14 @@ override anything supports no attributes.
 
 Supports `kReadOnly` and `kHidden`. A read-only file can't be opened for
 writing. Its constructor gains optional `ReadOnlyFlags`, which add what else a
-read-only file prevents. With none (the default), it can still be deleted, as
-for `LocalFileProtocol`.
+read-only file prevents. With none (the default), it can still be deleted.
 - `kPreventDelete`: it can't be deleted either, as on OZ-3 disks and in
   Windows' own tools. A recursive folder delete fails at the first read-only
   file in it, having deleted what came before, as for any other partial delete.
 
 A read-only folder prevents nothing, as on Windows. Making it act as on POSIX
-would be another `ReadOnlyFlag` (see the backlog).
+would be another `ReadOnlyFlag` (see the backlog). A hidden file or folder
+prevents nothing.
 
 Attributes can be changed while a file is open, and an open file keeps the
 access it was opened with.
@@ -83,20 +88,14 @@ Supports `kReadOnly` everywhere, and `kHidden` on Windows. Elsewhere, hidden
 is a name starting with `.`, which is a naming convention rather than an
 attribute that can be set, so it is not supported.
 
-- Read-only is the operating system's: Windows' read-only attribute, or no
-  write permission elsewhere, for files and folders alike.
-- As `std::filesystem` does on every platform, including Windows (whose own
-  tools refuse), a read-only file can be deleted, and a recursive folder
-  delete removes read-only files in it.
-- On Windows, a read-only folder prevents nothing (Windows uses the attribute
-  to mark folders Explorer customizes). Elsewhere, nothing can be added to,
-  removed from, or renamed in a read-only folder, so a recursive delete fails
-  inside one, including the cleanup of a protocol with `kKeyDeleteAtExit`.
+- The attributes are the operating system's: Windows' read-only and hidden
+  attributes, or no write permission for anyone elsewhere, for files and
+  folders alike. What they prevent is up to the operating system, and isn't
+  specified or tested (Observed lists what Windows does).
 - Links are followed, as for everything else: a link reports and sets the
   attributes of what it links to.
-- On Windows, a hidden file can be written over (opened with
-  `FileFlag::kReset`, or copied onto) like any other, although Windows' file
-  creation refuses to replace one.
+- A drive's root folder, like the protocol's, has no attributes, although
+  Windows reports one as hidden.
 
 ## Design
 
@@ -129,9 +128,9 @@ enum class FileAttribute {
   // prevents, depends on the protocol.
   kReadOnly,
 
-  // The file or folder is normally left out of what is shown to people. This
-  // changes nothing a protocol does: List() still returns it, and it can be
-  // opened, copied, moved, and deleted as any other.
+  // The file or folder is normally left out of what is shown to people.
+  // List() still returns it, and what else it affects depends on the
+  // protocol.
   kHidden,
 };
 using FileAttributes = Flags<FileAttribute>;
@@ -292,15 +291,23 @@ bool SetLocalAttributes(const std::filesystem::path& path,
   isn't.
 - `LocalFileProtocol` overrides `GetAttributeFlags()` and `BasicSetAttributes`
   (the default `DoSetAttributes` validates first), and `DoGetPathInfo` adds
-  the attributes.
-- Windows' file creation (`CREATE_ALWAYS`, which `fopen` uses for its `"w"`
-  modes) refuses to replace a hidden file. `DoOpenFile` with `kReset` on an
-  existing file instead empties it with `std::filesystem::resize_file` and
-  opens it with `"r+b"`. `DoCopyFile` onto a hidden file clears its hidden
-  attribute first, since the copy gets the source's attributes anyway. Both
-  are portable code, needing no platform file.
+  the attributes, except for a root folder (`IsRootFolder()`, shared with the
+  delete and move checks for the protocol's root and a drive's).
+- Copying a file keeps attributes through `std::filesystem::copy_file`, which
+  copies them on Windows, onto an existing file too.
+- `LocalFileProtocol` no longer overrides `DoCopyFolder`. The recursive
+  `std::filesystem::copy` doesn't give the folders it creates the source's
+  attributes, so the default `DoCopyFolder` copies instead, through
+  `DoCopyFile`.
+- Opening and copying are unchanged, so what an attribute prevents is
+  whatever the operating system does (on Windows, a hidden file can't be
+  replaced, by `kReset` or by a copy).
+- Setting attributes keeps every other Windows attribute as it is, not only
+  a list of known ones. Windows ignores those that can't be set.
 - Performance: `DoGetPathInfo` makes one more system call
-  (`GetFileAttributesW`), plus an open and close only for a link.
+  (`GetFileAttributesW`), plus an open and close only for a link. A folder
+  copy queries each file and folder through the protocol, rather than in one
+  `std::filesystem::copy`.
 
 **Brittleness:**
 - A protocol must report only the attributes it supports. `FileProtocol`
@@ -311,20 +318,29 @@ bool SetLocalAttributes(const std::filesystem::path& path,
   one that overrides `DoCopyFile` or `DoCopyFolder` must keep attributes
   itself. The common protocol tests check both.
 
-### To confirm
+### Observed
 
-- CL3: `fopen` with `"wb"` fails on an existing hidden file on Windows, and
-  `"r+b"` after `resize_file` works on one.
-- CL3: `std::filesystem::copy_file` onto an existing hidden file fails on
-  Windows (`CopyFile`'s documentation says so for hidden and read-only).
-- CL3: `std::filesystem::copy_file` copies read-only and hidden to the new
-  file, and the recursive `std::filesystem::copy` gives the folders it creates
-  the source folders' attributes. If not, `LocalFileProtocol` sets them.
-- CL3: `GetFileAttributesW` on a link reports the link's own attributes, not
-  its target's (so links need the open).
-- Already confirmed: `std::filesystem::remove` deletes read-only files on
-  Windows, clearing the attribute first if it must (MSVC's `filesystem.cpp`),
-  so `delete_at_exit` cleans up read-only files too.
+What Windows does, with MSVC's `std::filesystem`. Only what the code relies on
+(copies keeping attributes, and how links report them) is tested; the rest is
+the operating system's to change.
+- `fopen` with `"wb"` or `"w+b"` fails on an existing hidden file, while
+  `"r+b"` works on one.
+- `std::filesystem::copy_file` onto an existing hidden or read-only file
+  fails.
+- `std::filesystem::copy_file` gives the copy the source's read-only and
+  hidden attributes, both for a new file and onto an existing one. The
+  recursive `std::filesystem::copy` doesn't give the folders it creates the
+  source folders' attributes.
+- `GetFileAttributesW` on a junction reports the link's own attributes, not
+  its target's, and opening it reports the target's.
+- A read-only folder prevents nothing: files can be added, renamed, and
+  removed in it, and it can be renamed and removed.
+- `std::filesystem::remove` and `remove_all` delete read-only files and
+  folders, so `delete_at_exit` cleans them up too.
+
+Off Windows, nothing is built or tested here. `gen_local_file_attributes.cc`
+relies on `std::filesystem::copy_file` copying permissions, as the standard
+says it does.
 
 ## CLs
 
@@ -389,23 +405,25 @@ Depends on: CL1.
   recursively (which deletes what came before it). Attributes change on an
   open file, which keeps its access.
 
-### CL3 [ ] file: LocalFileProtocol attributes
+### CL3 [x] file: LocalFileProtocol attributes
 
 Depends on: CL2 (for the common protocol tests).
 
 - `local_file_attributes.h`, with `win_local_file_attributes.cc` and
   `gen_local_file_attributes.cc`, chosen in `CMakeLists.txt`.
-- `LocalFileProtocol` reports and sets attributes, and writes over hidden
-  files on Windows.
-- Settles everything under To confirm, adjusting the design to match.
+- `LocalFileProtocol` reports and sets attributes. Its `DoCopyFolder`
+  override is removed, for the default.
+- `kHidden`'s comment says what it affects depends on the protocol, and
+  `MemoryFileProtocol`'s says hidden prevents nothing there.
+- The common `CopyFileKeepsAttributes` test lets a protocol refuse to copy
+  onto a hidden file.
+- Settles what was to be confirmed (see Observed).
 
 **Verify**
 - Standard checks.
 - Common protocol tests pass for `LocalFileProtocol`.
-- `win_local_file_protocol_test`: hidden files can be opened with `kReset`,
-  written with `FileSystem::WriteFile()`, and copied onto. Read-only files can
-  be deleted, and so can folders holding them, recursively. Read-only folders
-  are reported and set, and don't stop anything. Other Windows attributes
-  (archive) are kept when setting read-only and hidden. A link reports and
-  sets its target's attributes.
+- `win_local_file_protocol_test`: other Windows attributes (archive, not
+  content indexed) are kept when setting read-only and hidden. A link (a junction,
+  which needs no privileges) reports and sets its target's attributes. A
+  drive's root folder has no attributes.
 - A temporary protocol with `delete_at_exit` removes read-only files in it.

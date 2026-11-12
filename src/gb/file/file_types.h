@@ -130,9 +130,9 @@ enum class FileAttribute {
   // prevents, depends on the protocol.
   kReadOnly,
 
-  // The file or folder is normally left out of what is shown to people. This
-  // changes nothing a protocol does: List() still returns it, and it can be
-  // opened, copied, moved, and deleted as any other.
+  // The file or folder is normally left out of what is shown to people.
+  // List() still returns it, and what else it affects depends on the
+  // protocol.
   kHidden,
 };
 using FileAttributes = Flags<FileAttribute>;

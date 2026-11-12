@@ -18,6 +18,7 @@
 #include "gb/base/stdio_file.h"
 #include "gb/base/unicode.h"
 #include "gb/file/local_current_path.h"
+#include "gb/file/local_file_attributes.h"
 #include "gb/file/path.h"
 #include "gb/file/raw_file.h"
 
@@ -105,7 +106,7 @@ int64_t LocalFile::Read(void* buffer, int64_t size) {
     return -1;
   }
 
-  // Reaching the end sets the end-of-file indicator, which can stop later
+  // Reaching the end sets the end-of-file indicator, which can stop late
   // reads, so it is cleared to read anything appended to the file since.
   std::clearerr(file_);
   return count;
@@ -212,6 +213,12 @@ std::string ToProtocolPath(std::string_view root, std::string_view path) {
   return absl::StrCat("/", path);
 }
 
+// Returns true if `path` is the protocol's root folder, or `full_path` is a
+// drive's root folder.
+bool IsRootFolder(std::string_view path, const fs::path& full_path) {
+  return IsRootPath(path) || !full_path.has_relative_path();
+}
+
 template <typename Iterator>
 std::vector<std::string> ListFolder(Iterator it, std::string_view root,
                                     std::string_view protocol_name,
@@ -284,7 +291,7 @@ std::unique_ptr<LocalFileProtocol> LocalFileProtocol::Create(
     current_path = ToString(current_path_fs);
   }
 
-  // Change relative paths to be relative to the current working directory for
+  // Change relative paths to be relative to the current working directory fo
   // this process.
   const std::string requested_root = context.GetValue<std::string>(kKeyRoot);
   PathFlags failed_flag;
@@ -477,6 +484,10 @@ LocalFileProtocol::~LocalFileProtocol() {
 
 FileProtocolFlags LocalFileProtocol::GetFlags() const { return flags_; }
 
+FileAttributes LocalFileProtocol::GetAttributeFlags() const {
+  return internal::GetLocalAttributeFlags();
+}
+
 std::vector<std::string> LocalFileProtocol::GetDefaultNames() const {
   std::vector<std::string> names = {"file"};
   if (root_.empty() && HasDriveLetters()) {
@@ -519,15 +530,33 @@ PathInfo LocalFileProtocol::DoGetPathInfo(std::string_view protocol_name,
 
   std::error_code error;
   auto status = fs::status(*full_path, error);
+  PathInfo info;
   if (fs::is_directory(status)) {
-    return {PathType::kFolder};
+    info.type = PathType::kFolder;
   } else if (fs::is_regular_file(status)) {
     auto size = fs::file_size(*full_path, error);
-    if (!error) {
-      return {PathType::kFile, static_cast<int64_t>(size)};
+    if (error) {
+      return {};
     }
+    info.type = PathType::kFile;
+    info.size = static_cast<int64_t>(size);
+  } else {
+    return {};
   }
-  return {};
+  if (!IsRootFolder(path, *full_path)) {
+    info.attributes = internal::GetLocalAttributes(*full_path);
+  }
+  return info;
+}
+
+bool LocalFileProtocol::BasicSetAttributes(std::string_view protocol_name,
+                                           std::string_view path,
+                                           FileAttributes attributes) {
+  auto full_path = GetFullPath(protocol_name, path);
+  if (!full_path || IsRootFolder(path, *full_path)) {
+    return false;
+  }
+  return internal::SetLocalAttributes(*full_path, attributes);
 }
 
 std::vector<std::string> LocalFileProtocol::DoList(
@@ -580,36 +609,10 @@ bool LocalFileProtocol::DoCreateFolder(std::string_view protocol_name,
   }
 }
 
-bool LocalFileProtocol::DoCopyFolder(std::string_view from_protocol_name,
-                                     std::string_view from_path,
-                                     std::string_view to_protocol_name,
-                                     std::string_view to_path) {
-  auto full_from_path = GetFullPath(from_protocol_name, from_path);
-  auto full_to_path = GetFullPath(to_protocol_name, to_path);
-  if (!full_from_path || !full_to_path) {
-    return false;
-  }
-
-  std::error_code error;
-  if (!fs::is_directory(*full_from_path, error)) {
-    return false;
-  }
-  auto to_status = fs::status(*full_to_path, error);
-  if (!fs::is_directory(to_status) && fs::exists(to_status)) {
-    return false;
-  }
-
-  auto options =
-      fs::copy_options::overwrite_existing | fs::copy_options::recursive;
-  fs::copy(*full_from_path, *full_to_path, options, error);
-  return !error;
-}
-
 bool LocalFileProtocol::DoDeleteFolder(std::string_view protocol_name,
                                        std::string_view path, FolderMode mode) {
-  // Neither the protocol's root nor a drive's root folder is deleted.
   auto full_path = GetFullPath(protocol_name, path);
-  if (!full_path || IsRootPath(path) || !full_path->has_relative_path()) {
+  if (!full_path || IsRootFolder(path, *full_path)) {
     return false;
   }
 
@@ -643,6 +646,7 @@ bool LocalFileProtocol::DoCopyFile(std::string_view from_protocol_name,
   if (fs::equivalent(*full_from_path, *full_to_path, error)) {
     return fs::is_regular_file(*full_from_path, error);
   }
+
   return fs::copy_file(*full_from_path, *full_to_path,
                        fs::copy_options::overwrite_existing, error);
 }
@@ -670,11 +674,10 @@ bool LocalFileProtocol::DoMoveFolder(std::string_view from_protocol_name,
                                      std::string_view from_path,
                                      std::string_view to_protocol_name,
                                      std::string_view to_path) {
-  // Neither the protocol's root nor a drive's root folder is moved.
   auto full_from_path = GetFullPath(from_protocol_name, from_path);
   auto full_to_path = GetFullPath(to_protocol_name, to_path);
-  if (!full_from_path || !full_to_path || IsRootPath(from_path) ||
-      !full_from_path->has_relative_path()) {
+  if (!full_from_path || !full_to_path ||
+      IsRootFolder(from_path, *full_from_path)) {
     return false;
   }
   std::error_code error;

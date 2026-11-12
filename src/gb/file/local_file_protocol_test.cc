@@ -258,6 +258,25 @@ TEST(LocalFileProtocolTest, DeleteAtExit) {
   EXPECT_FALSE(fs::is_directory(unique_dir, error));
 }
 
+TEST(LocalFileProtocolTest, DeleteAtExitRemovesReadOnlyFiles) {
+  auto protocol = LocalFileProtocol::CreateTemp("gbtest");
+  ASSERT_NE(protocol, nullptr);
+  const std::string root = protocol->GetRoot();
+  {
+    FileSystem file_system;
+    ASSERT_TRUE(file_system.Register(std::move(protocol)));
+    ASSERT_TRUE(file_system.CreateFolder("file:/folder"));
+    ASSERT_TRUE(file_system.WriteFile("file:/folder/file", "file"));
+    ASSERT_TRUE(file_system.SetAttributes("file:/folder/file",
+                                          FileAttribute::kReadOnly));
+    ASSERT_TRUE(file_system.WriteFile("file:/file", "file"));
+    ASSERT_TRUE(
+        file_system.SetAttributes("file:/file", FileAttribute::kReadOnly));
+  }
+  std::error_code error;
+  EXPECT_FALSE(fs::exists(ToFsPath(root), error));
+}
+
 TEST(LocalFileProtocolTest, RootIsNormalized) {
   std::error_code error;
   fs::path root_path = GetUnusedTempPath();

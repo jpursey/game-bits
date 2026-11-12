@@ -235,6 +235,32 @@ TEST(MemoryFileProtocolTest, ReadOnlyFolderPreventsNothing) {
   EXPECT_FALSE(file_system.IsValidPath("mem:/folder"));
 }
 
+TEST(MemoryFileProtocolTest, HiddenPreventsNothing) {
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(std::make_unique<MemoryFileProtocol>(
+      MemoryFileProtocol::kDefaultFlags,
+      MemoryFileProtocol::ReadOnlyFlag::kPreventDelete)));
+  ASSERT_TRUE(file_system.CreateFolder("mem:/folder"));
+  ASSERT_TRUE(file_system.WriteFile("mem:/folder/file", "12345"));
+  ASSERT_TRUE(file_system.WriteFile("mem:/source", "source"));
+  ASSERT_TRUE(file_system.SetAttributes("mem:/folder", FileAttribute::kHidden));
+  ASSERT_TRUE(
+      file_system.SetAttributes("mem:/folder/file", FileAttribute::kHidden));
+
+  EXPECT_TRUE(file_system.WriteFile("mem:/folder/file", "abcde"));
+  EXPECT_TRUE(file_system.CopyFile("mem:/source", "mem:/folder/file"));
+  std::string contents;
+  EXPECT_TRUE(file_system.ReadFile("mem:/folder/file", &contents));
+  EXPECT_EQ(contents, "source");
+  EXPECT_TRUE(
+      file_system.SetAttributes("mem:/folder/file", FileAttribute::kHidden));
+  EXPECT_TRUE(file_system.MoveFile("mem:/folder/file", "mem:/folder/moved"));
+  EXPECT_TRUE(file_system.DeleteFile("mem:/folder/moved"));
+  EXPECT_TRUE(file_system.MoveFolder("mem:/folder", "mem:/moved"));
+  EXPECT_TRUE(file_system.DeleteFolder("mem:/moved"));
+  EXPECT_FALSE(file_system.IsValidPath("mem:/moved"));
+}
+
 TEST(MemoryFileProtocolTest, SetAttributesOnOpenFile) {
   FileSystem file_system;
   ASSERT_TRUE(file_system.Register(std::make_unique<MemoryFileProtocol>()));

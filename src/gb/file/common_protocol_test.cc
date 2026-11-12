@@ -814,16 +814,20 @@ TEST_P(CommonProtocolTest, CopyFileKeepsAttributes) {
   EXPECT_TRUE(!check_contents ||
               CheckContents(file_system, "test:/existing", "1234567890"));
 
-  // A file written over loses attributes the source doesn't have.
+  // A protocol may refuse to write over a file with other attributes (as
+  // Windows does for a hidden file), but one written over loses attributes
+  // the source doesn't have.
   const FileAttributes writable_attributes =
       attribute_flags - FileAttribute::kReadOnly;
   if (!writable_attributes.IsEmpty()) {
     ASSERT_TRUE(
         file_system.SetAttributes("test:/existing", writable_attributes));
-    EXPECT_TRUE(file_system.CopyFile("test:/plain", "test:/existing"));
-    EXPECT_TRUE(file_system.GetPathInfo("test:/existing").attributes.IsEmpty());
-    EXPECT_TRUE(!check_contents ||
-                CheckContents(file_system, "test:/existing", "abcde"));
+    if (file_system.CopyFile("test:/plain", "test:/existing")) {
+      EXPECT_TRUE(
+          file_system.GetPathInfo("test:/existing").attributes.IsEmpty());
+      EXPECT_TRUE(!check_contents ||
+                  CheckContents(file_system, "test:/existing", "abcde"));
+    }
   }
 }
 

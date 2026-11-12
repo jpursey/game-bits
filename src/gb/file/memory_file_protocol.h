@@ -26,8 +26,9 @@ namespace gb {
 //
 // Files and folders can be read-only and hidden. A read-only file can't be
 // opened for writing, and ReadOnlyFlags add what else it prevents. A read-only
-// folder prevents nothing. Attributes can be changed while a file is open, and
-// the open file keeps the access it was opened with.
+// folder, and a hidden file or folder, prevent nothing. Attributes can be
+// changed while a file is open, and the open file keeps the access it was
+// opened with.
 //
 // This class is thread-safe.
 class MemoryFileProtocol : public FileProtocol {
