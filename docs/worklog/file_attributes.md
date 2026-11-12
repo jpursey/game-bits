@@ -115,151 +115,62 @@ Everything is in `gb_file`.
   `kPreventDelete`, matching `FileFlag` and `FileProtocolFlag`. Flags, not a
   mode, so what a read-only folder prevents can be added as another flag.
 
-### file_types.h
+
+### FileProtocol and FileSystem
 
 ```
-// Attributes of a file or folder, which a protocol may support (see
-// FileProtocol::GetAttributeFlags()). A protocol that supports one supports
-// it on both files and folders. What each one does, beyond what is said here,
-// depends on the protocol, which follows the file system behind it.
-enum class FileAttribute {
-  // A read-only file can't be opened for writing, so it also can't be replaced
-  // by a copy. Whether it can be deleted, and what a read-only folder
-  // prevents, depends on the protocol.
-  kReadOnly,
-
-  // The file or folder is normally left out of what is shown to people.
-  // List() still returns it, and what else it affects depends on the
-  // protocol.
-  kHidden,
-};
-using FileAttributes = Flags<FileAttribute>;
-inline constexpr FileAttributes kAllFileAttributes = {
-    FileAttribute::kReadOnly,
-    FileAttribute::kHidden,
-};
-
-struct PathInfo {
-  PathInfo() = default;
-  PathInfo(PathType type, int64_t size = 0, FileAttributes attributes = {});
-
-  PathType type = PathType::kInvalid;  // Type of path.
-  int64_t size = 0;                    // Set only for PathType::kFile.
-  FileAttributes attributes;           // Only attributes the protocol
-                                       // supports.
-};
-```
-
-### FileProtocol
-
-```
-  // Returns the attributes this protocol supports, on both files and
-  // folders, which GetPathInfo() reports and SetAttributes() sets. They are
-  // only used if FileProtocolFlag::kInfo is supported.
-  //
-  // If not overridden, the protocol supports no attributes.
+  // FileProtocol: the attributes this protocol supports, on both files and
+  // folders (none by default). Only used with FileProtocolFlag::kInfo.
   virtual FileAttributes GetAttributeFlags() const;
 
-  // Changes the attributes in `mask` of the file or folder at the specified
-  // path to match `attributes`, leaving the others.
-  //
-  // Derived classes must override DoSetAttributes or BasicSetAttributes to
-  // implement this if GetAttributeFlags() isn't empty. GetPathInfo is called
-  // if DoSetAttributes is not implemented.
   bool SetAttributes(std::string_view protocol_name, std::string_view path,
                      FileAttributes attributes, FileAttributes mask);
 
  protected:
-  // SetAttributes should fail if nothing is at `path`.
-  //
-  // SetAttributes is only called if the protocol supports both
-  // FileProtocolFlag::kInfo and FileProtocolFlag::kFileWrite, `mask` holds
-  // only attributes in GetAttributeFlags(), and `attributes` only attributes
-  // in `mask`. The protocol is responsible for all further validation.
+  // Called only with kInfo and kFileWrite, `mask` holding only supported
+  // attributes, and `attributes` only attributes in `mask`.
   virtual bool DoSetAttributes(std::string_view protocol_name,
                                std::string_view path,
                                FileAttributes attributes, FileAttributes mask);
 
-  // BasicSetAttributes is only called on an existing path, with every
-  // attribute it should have, when they differ from what it has.
+  // Called only on an existing path, with every attribute it should have,
+  // when they differ from what it has.
   virtual bool BasicSetAttributes(std::string_view protocol_name,
                                   std::string_view path,
                                   FileAttributes attributes);
 ```
 
-- `FileSystem` removes unsupported attributes from `mask`, and attributes
-  outside `mask` from `attributes`, so protocols never see either.
-- `SetAttributes` validates the path like the other public functions, and
-  takes `LockType::kModify` (`MemoryFileProtocol` takes its writer lock for
-  anything but `kQuery`).
-- The default `DoSetAttributes` reads the path's attributes with
-  `DoGetPathInfo`, works out the new ones, and calls `BasicSetAttributes` only
-  if they differ, all under the one lock.
-- `DoGetPathInfo`'s comment says which attributes it must report.
-  `DoCopyFile` and `DoCopyFolder`'s comments say copies keep attributes.
-- The default `DoCopyFile` calls `DoSetAttributes` with the source's
-  attributes once `BasicCopyFile` has made the copy, so a protocol that
-  overrides only `BasicCopyFile` needn't copy attributes. The default
-  `DoCopyFolder` does the same for a folder it creates, after copying what is
-  in it. Both are within one protocol, so every attribute is supported on both
-  sides.
-- No cost for a protocol without attributes: the attribute checks compare
-  empty flags, and nothing more is queried.
-
-### FileSystem
-
-```
-  // Returns the attributes the protocol supports.
-  //
-  // If no protocol is registered with that name, or it doesn't support
-  // FileProtocolFlag::kInfo, this returns an empty set of attributes.
-  FileAttributes GetAttributeFlags(std::string_view protocol_name) const;
-
-  // Changes the attributes in `mask` of a file or folder to match
-  // `attributes`, leaving the others, as one operation: ...
-  bool SetAttributes(std::string_view path, FileAttributes attributes,
-                     FileAttributes mask = kAllFileAttributes);
-```
-
-- `CopyFile()` and `CopyFolder()`'s comments describe how copies keep
-  attributes.
-- `GenericCopyFile` and `GenericCopyFolder` (copies between protocols) work out
-  the attributes both protocols support. If there are any, they read the
-  source's, and set the destination's with that as the mask, after copying
-  (after the contents, for a folder). With none shared, they query nothing
-  more than now.
+- `FileSystem::SetAttributes()` checks the protocol's flags and the
+  attributes, then removes unsupported attributes from `mask`, and attributes
+  outside `mask` from `attributes`, so a protocol never sees either.
+- `FileProtocol::SetAttributes()` validates the path and takes
+  `LockType::kModify`. The default `DoSetAttributes` reads the attributes with
+  `DoGetPathInfo`, applies the mask, and calls `BasicSetAttributes` only if
+  they change, all under the one lock. A root folder has none, so setting any
+  on one fails.
+- The default `DoCopyFile` sets the copy's attributes with `DoSetAttributes`
+  after `BasicCopyFile`, so a protocol overriding only `BasicCopyFile` keeps
+  attributes for free. The default `DoCopyFolder` does the same for each
+  folder it creates, after copying what is in it.
+- `GenericCopyFile` and `GenericCopyFolder` (copies between protocols) work
+  out the attributes both protocols support, and set those on the copy, with
+  them as the mask. With none shared, they query nothing more than before.
+- A protocol without attributes costs nothing more: the checks compare empty
+  flags.
 
 ### MemoryFileProtocol
 
-```
-  // What a read-only file prevents, beyond opening it for writing. With none
-  // set, a read-only file can be deleted.
-  enum class ReadOnlyFlag {
-    // A read-only file can't be deleted, including in a recursive folder
-    // delete, which fails at the first read-only file, having deleted what came
-    // before it.
-    kPreventDelete,
-  };
-  using ReadOnlyFlags = Flags<ReadOnlyFlag>;
-
-  explicit MemoryFileProtocol(FileProtocolFlags flags = kDefaultFlags,
-                              ReadOnlyFlags read_only_flags = {});
-
-  FileAttributes GetAttributeFlags() const override;  // kReadOnly, kHidden.
-
- protected:
-  bool BasicSetAttributes(...) override;
-```
-
-- Each node holds its attributes. `DoGetPathInfo` reports them,
-  `BasicOpenFile` fails to open a read-only file for writing, and
-  `BasicDeleteFile` fails on a read-only file with `kPreventDelete`. Copies go
-  through the default `DoCopyFile`, which keeps attributes; moves keep the
-  node.
+- Each node holds its attributes, read and written only under the protocol's
+  lock. `DoGetPathInfo` reports them, `BasicOpenFile` refuses to open a
+  read-only file for writing, and `BasicDeleteFile` refuses a read-only file
+  with `kPreventDelete`.
+- Copies go through the default `DoCopyFile`, and moves keep the node, so both
+  keep attributes.
 
 ### LocalFileProtocol
 
-A new internal platform interface, as `local_current_path.h` is:
+An internal platform interface, `local_file_attributes.h`, as
+`local_current_path.h` is:
 
 ```
 namespace gb::internal {
@@ -272,51 +183,48 @@ FileAttributes GetLocalAttributeFlags();
 FileAttributes GetLocalAttributes(const std::filesystem::path& path);
 
 // Sets the attributes of the file or folder at `path`, following links, to
-// `attributes`, which are all supported. Returns false if it can't.
+// `attributes`, which must all be in GetLocalAttributeFlags(). Returns false if
+// it can't.
 bool SetLocalAttributes(const std::filesystem::path& path,
                         FileAttributes attributes);
 
 }  // namespace gb::internal
 ```
 
-- `win_local_file_attributes.cc` uses `GetFileAttributesW`, and for a link
-  (a reparse point) opens it to read what it links to, as `std::filesystem`
-  does. Setting opens the path (following links) and changes only the
-  read-only and hidden bits with `SetFileInformationByHandle`, keeping every
-  other bit (archive, system, and the rest).
+- `win_local_file_attributes.cc` reads with `GetFileAttributesW`, and opens a
+  link (a reparse point) to read what it links to. Setting opens the path,
+  following links, and changes only the read-only and hidden bits with
+  `SetFileInformationByHandle`, keeping every other attribute as it is
+  (Windows ignores those that can't be set).
 - `gen_local_file_attributes.cc` supports `kReadOnly` only, through
-  `std::filesystem` permissions: read-only is no write permission for anyone;
-  clearing it gives the owner write permission. It is compiled only off
-  Windows, so it isn't built or tested here, as `gen_local_current_path.cc`
-  isn't.
-- `LocalFileProtocol` overrides `GetAttributeFlags()` and `BasicSetAttributes`
-  (the default `DoSetAttributes` validates first), and `DoGetPathInfo` adds
-  the attributes, except for a root folder (`IsRootFolder()`, shared with the
-  delete and move checks for the protocol's root and a drive's).
-- Copying a file keeps attributes through `std::filesystem::copy_file`, which
-  copies them on Windows, onto an existing file too.
-- `LocalFileProtocol` no longer overrides `DoCopyFolder`. The recursive
+  `std::filesystem` permissions: read-only is no write permission for anyone,
+  and clearing it gives the owner write permission. It is compiled only off
+  Windows, so it hasn't been built or tested, and it relies on
+  `std::filesystem::copy_file` copying permissions, as the standard says.
+- `LocalFileProtocol` overrides `GetAttributeFlags()` and
+  `BasicSetAttributes`, and `DoGetPathInfo` adds the attributes, except for a
+  root folder. `IsRootFolder()` (the protocol's root, or a drive's) is shared
+  with the delete and move checks.
+- Copying a file keeps attributes through `std::filesystem::copy_file`.
+  `LocalFileProtocol` has no `DoCopyFolder` override: the recursive
   `std::filesystem::copy` doesn't give the folders it creates the source's
-  attributes, so the default `DoCopyFolder` copies instead, through
-  `DoCopyFile`.
-- Opening and copying are unchanged, so what an attribute prevents is
-  whatever the operating system does (on Windows, a hidden file can't be
-  replaced, by `kReset` or by a copy).
-- Setting attributes keeps every other Windows attribute as it is, not only
-  a list of known ones. Windows ignores those that can't be set.
+  attributes, so the default copies, through `DoCopyFile`.
+- Opening, copying, and deleting are otherwise unchanged, so what an
+  attribute prevents is whatever the operating system does.
 - Performance: `DoGetPathInfo` makes one more system call
-  (`GetFileAttributesW`), plus an open and close only for a link. A folder
-  copy queries each file and folder through the protocol, rather than in one
+  (`GetFileAttributesW`), plus an open and close for a link. A folder copy
+  lists and queries each folder through the protocol, rather than in one
   `std::filesystem::copy`.
 
 **Brittleness:**
 - A protocol must report only the attributes it supports. `FileProtocol`
-  doesn't mask what `DoGetPathInfo` returns, since its default implementations
-  call `DoGetPathInfo` directly too; the common protocol tests check every
-  protocol instead.
+  doesn't mask what `DoGetPathInfo` returns, since its own defaults call it
+  directly; the common protocol tests check every protocol instead.
 - A protocol that overrides `DoSetAttributes` must apply the mask itself, and
   one that overrides `DoCopyFile` or `DoCopyFolder` must keep attributes
   itself. The common protocol tests check both.
+- `MemoryFileProtocol`'s node attributes are guarded by a comment, not a
+  type: they are only safe to touch under the protocol's lock.
 
 ### Observed
 
@@ -337,93 +245,38 @@ the operating system's to change.
   removed in it, and it can be renamed and removed.
 - `std::filesystem::remove` and `remove_all` delete read-only files and
   folders, so `delete_at_exit` cleans them up too.
+- File symbolic links need developer mode, but junctions (links to folders)
+  need no privileges.
 
-Off Windows, nothing is built or tested here. `gen_local_file_attributes.cc`
-relies on `std::filesystem::copy_file` copying permissions, as the standard
-says it does.
+### Building blocks
 
-## CLs
+- **Common protocol tests** (`common_protocol_test.cc`): `GetAndSetAttributes`,
+  `ReadOnlyFile`, `CopyFileKeepsAttributes`, `CopyFolderKeepsAttributes`, and
+  `MoveKeepsAttributes` run for any protocol that supports attributes, and
+  skip themselves otherwise. A new protocol gets them by instantiating
+  `CommonProtocolTest`.
+- **`TestProtocol`** supports attributes configured in `State`
+  (`attribute_flags`), held in each `PathState`, with call counts for
+  `DoSetAttributes` and `BasicSetAttributes`.
+- **Default `DoSetAttributes`, `DoCopyFile`, and `DoCopyFolder`**: a protocol
+  that implements `BasicSetAttributes` and reports attributes in
+  `DoGetPathInfo` gets masking, and copies that keep attributes.
+- **`WinLocalFileAttributesTest::CreateJunction()`** in
+  `win_local_file_protocol_test.cc` makes a link to a folder without special
+  privileges, for testing links on any Windows machine.
 
-### CL1 [x] file: attribute API
+## Checks
 
-Depends on: nothing.
-
-- `file_types.h`: `FileAttribute`, `FileAttributes`, `kAllFileAttributes`,
-  and `PathInfo::attributes`.
-- `FileProtocol`: `GetAttributeFlags()`, `SetAttributes()`,
-  `DoSetAttributes()`, and `BasicSetAttributes()`. The default
-  `DoCopyFile()` and `DoCopyFolder()` keep attributes.
-- `FileSystem`: `GetAttributeFlags()` and `SetAttributes()`. Copies between
-  protocols keep the attributes both support.
-- `TestProtocol`: attributes configured in `State` (`attribute_flags`), held
-  in each `PathState`, with call counts for `DoSetAttributes` and
-  `BasicSetAttributes`.
-- No protocol in Game Bits supports an attribute yet, so no visible change.
-
-**Verify**
-- Standard checks (see CLAUDE.md).
-- `file_protocol_test`: `SetAttributes` validates paths and takes the modify
-  lock. The default `DoSetAttributes` fails for a missing path, applies the
-  mask, succeeds without calling `BasicSetAttributes` when nothing changes,
-  and calls it with the full new set otherwise. The default `DoCopyFile` and
-  `DoCopyFolder` copy attributes, replacing a destination file's, including
-  after a protocol's own `BasicCopyFile`, and only for folders they create.
-  (No protocol here has a read-only folder that stops changes, so setting a
-  folder's attributes after its contents is only checked by reading the code.)
-- `file_system_test`: `GetAttributeFlags` is empty for an unregistered
-  protocol or one without `kInfo`. `SetAttributes` fails without `kInfo` or
-  `kFileWrite`, for unsupported attributes, and for invalid paths, ignores
-  unsupported attributes in the mask, and otherwise reaches the protocol.
-  Copies between protocols keep the shared attributes, leave the
-  destination's others, and make no extra calls when none are shared.
-
-### CL2 [x] file: MemoryFileProtocol attributes
-
-Depends on: CL1.
-
-- `MemoryFileProtocol` supports `kReadOnly` and `kHidden`, with
-  `ReadOnlyFlags`.
-- Common protocol tests for attributes, for any protocol that supports them:
-  getting and setting each supported attribute on files and folders, with and
-  without a mask, failing for unsupported attributes, a read-only file failing
-  to open for writing or be copied onto, and copies and moves keeping
-  attributes (a folder copy giving the folders it creates the source's, even
-  when read-only).
-- Backlog: a `ReadOnlyFlag` for `MemoryFileProtocol` read-only folders to
-  prevent adding, removing, and renaming in them, as on POSIX.
-
-**Verify**
-- Standard checks.
-- Common protocol tests (`GetAndSetAttributes`, `ReadOnlyFile`,
-  `CopyFileKeepsAttributes`, `CopyFolderKeepsAttributes`,
-  `MoveKeepsAttributes`) pass for `MemoryFileProtocol` with and without
-  `kPreventDelete`, and are skipped for protocols without attributes
-  (`TestProtocol`'s common test factories support none, since it doesn't
-  enforce read-only).
-- `memory_file_protocol_test`: read-only files can be deleted by default, and
-  with `kPreventDelete` can't be, nor can a folder holding one be deleted
-  recursively (which deletes what came before it). Attributes change on an
-  open file, which keeps its access.
-
-### CL3 [x] file: LocalFileProtocol attributes
-
-Depends on: CL2 (for the common protocol tests).
-
-- `local_file_attributes.h`, with `win_local_file_attributes.cc` and
-  `gen_local_file_attributes.cc`, chosen in `CMakeLists.txt`.
-- `LocalFileProtocol` reports and sets attributes. Its `DoCopyFolder`
-  override is removed, for the default.
-- `kHidden`'s comment says what it affects depends on the protocol, and
-  `MemoryFileProtocol`'s says hidden prevents nothing there.
-- The common `CopyFileKeepsAttributes` test lets a protocol refuse to copy
-  onto a hidden file.
-- Settles what was to be confirmed (see Observed).
-
-**Verify**
-- Standard checks.
-- Common protocol tests pass for `LocalFileProtocol`.
-- `win_local_file_protocol_test`: other Windows attributes (archive, not
-  content indexed) are kept when setting read-only and hidden. A link (a junction,
-  which needs no privileges) reports and sets its target's attributes. A
-  drive's root folder has no attributes.
-- A temporary protocol with `delete_at_exit` removes read-only files in it.
+- `file_protocol_test` and `file_system_test`: validation, masking, locking,
+  and copies keeping attributes (within and between protocols), against
+  `TestProtocol`.
+- The common protocol tests pass for `MemoryFileProtocol` (with and without
+  `kPreventDelete`) and `LocalFileProtocol`.
+- `memory_file_protocol_test`: read-only files can be deleted by default but
+  not with `kPreventDelete` (a recursive delete stops at one); read-only
+  folders and hidden files and folders prevent nothing; attributes change on
+  an open file, which keeps its access.
+- `win_local_file_protocol_test`: other Windows attributes are kept when
+  setting, a junction reports and sets its target's attributes, and a drive's
+  root folder has none. `local_file_protocol_test`: `delete_at_exit` removes
+  read-only files.
