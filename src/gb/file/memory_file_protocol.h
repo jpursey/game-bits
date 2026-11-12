@@ -10,6 +10,7 @@
 #include <memory>
 
 #include "absl/synchronization/mutex.h"
+#include "gb/base/flags.h"
 #include "gb/base/string_util.h"
 #include "gb/file/file_protocol.h"
 #include "gb/file/file_types.h"
@@ -23,17 +24,34 @@ namespace gb {
 // Paths are case-sensitive. A file that is open can't be deleted or moved, nor
 // can a folder with an open file in it be moved.
 //
+// Files and folders can be read-only and hidden. A read-only file can't be
+// opened for writing, and ReadOnlyFlags add what else it prevents. A read-only
+// folder prevents nothing. Attributes can be changed while a file is open, and
+// the open file keeps the access it was opened with.
+//
 // This class is thread-safe.
 class MemoryFileProtocol : public FileProtocol {
  public:
   static constexpr FileProtocolFlags kDefaultFlags = {
       kReadWriteFileProtocolFlags, FileProtocolFlag::kMove};
 
-  explicit MemoryFileProtocol(FileProtocolFlags flags = kDefaultFlags);
+  // What a read-only file prevents, beyond opening it for writing. With none
+  // set, a read-only file can be deleted.
+  enum class ReadOnlyFlag {
+    // A read-only file can't be deleted, including in a recursive folder
+    // delete, which fails at the first read-only file, having deleted what came
+    // before it.
+    kPreventDelete,
+  };
+  using ReadOnlyFlags = Flags<ReadOnlyFlag>;
+
+  explicit MemoryFileProtocol(FileProtocolFlags flags = kDefaultFlags,
+                              ReadOnlyFlags read_only_flags = {});
   ~MemoryFileProtocol() override;
 
   // Public overrides for FileProtocol.
   FileProtocolFlags GetFlags() const override;
+  FileAttributes GetAttributeFlags() const override;
   std::vector<std::string> GetDefaultNames() const override;
 
  protected:
@@ -42,6 +60,8 @@ class MemoryFileProtocol : public FileProtocol {
   void Unlock(LockType type) override;
   PathInfo DoGetPathInfo(std::string_view protocol_name,
                          std::string_view path) override;
+  bool BasicSetAttributes(std::string_view protocol_name, std::string_view path,
+                          FileAttributes attributes) override;
   std::vector<std::string> BasicList(std::string_view protocol_name,
                                      std::string_view path) override;
   bool BasicCreateFolder(std::string_view protocol_name,
@@ -68,6 +88,7 @@ class MemoryFileProtocol : public FileProtocol {
   using Nodes = std::map<std::string, std::unique_ptr<Node>, StringKeyCompare>;
 
   const FileProtocolFlags flags_;
+  const ReadOnlyFlags read_only_flags_;
 
   absl::Mutex mutex_;
   Nodes nodes_;

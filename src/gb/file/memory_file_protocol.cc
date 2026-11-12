@@ -24,6 +24,9 @@ struct MemoryFileProtocol::Node final : WeakScope<MemoryFileProtocol::Node> {
   std::atomic<bool> open;
   std::atomic<int64_t> size;
   std::vector<uint8_t> contents;
+
+  // Read and written only under the protocol's lock.
+  FileAttributes attributes;
 };
 
 class MemoryFileProtocol::MemoryFile : public RawFile {
@@ -120,14 +123,19 @@ int64_t MemoryFileProtocol::MemoryFile::Read(void* buffer, int64_t size) {
   return size;
 }
 
-MemoryFileProtocol::MemoryFileProtocol(FileProtocolFlags flags)
-    : flags_(flags) {
+MemoryFileProtocol::MemoryFileProtocol(FileProtocolFlags flags,
+                                       ReadOnlyFlags read_only_flags)
+    : flags_(flags), read_only_flags_(read_only_flags) {
   nodes_["/"] = std::make_unique<Node>(PathType::kFolder);
 }
 
 MemoryFileProtocol::~MemoryFileProtocol() {}
 
 FileProtocolFlags MemoryFileProtocol::GetFlags() const { return flags_; }
+
+FileAttributes MemoryFileProtocol::GetAttributeFlags() const {
+  return {FileAttribute::kReadOnly, FileAttribute::kHidden};
+}
 
 std::vector<std::string> MemoryFileProtocol::GetDefaultNames() const {
   return {"mem"};
@@ -157,9 +165,16 @@ PathInfo MemoryFileProtocol::DoGetPathInfo(std::string_view protocol_name,
   }
   Node* node = it->second.get();
   if (node->type == PathType::kFolder) {
-    return {PathType::kFolder};
+    return {PathType::kFolder, 0, node->attributes};
   }
-  return {PathType::kFile, node->size};
+  return {PathType::kFile, node->size, node->attributes};
+}
+
+bool MemoryFileProtocol::BasicSetAttributes(std::string_view protocol_name,
+                                            std::string_view path,
+                                            FileAttributes attributes) {
+  nodes_.find(path)->second->attributes = attributes;
+  return true;
 }
 
 std::vector<std::string> MemoryFileProtocol::BasicList(
@@ -199,7 +214,12 @@ bool MemoryFileProtocol::BasicDeleteFolder(std::string_view protocol_name,
 bool MemoryFileProtocol::BasicDeleteFile(std::string_view protocol_name,
                                          std::string_view path) {
   auto it = nodes_.find(path);
-  if (it->second->open) {
+  Node* node = it->second.get();
+  if (node->open) {
+    return false;
+  }
+  if (read_only_flags_.IsSet(ReadOnlyFlag::kPreventDelete) &&
+      node->attributes.IsSet(FileAttribute::kReadOnly)) {
     return false;
   }
   nodes_.erase(it);
@@ -254,6 +274,10 @@ std::unique_ptr<RawFile> MemoryFileProtocol::BasicOpenFile(
 
   Node* node = nodes_.find(path)->second.get();
   if (node->open) {
+    return nullptr;
+  }
+  if (flags.IsSet(FileFlag::kWrite) &&
+      node->attributes.IsSet(FileAttribute::kReadOnly)) {
     return nullptr;
   }
   if (flags.IsSet(FileFlag::kReset)) {

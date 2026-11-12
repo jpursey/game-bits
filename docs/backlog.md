@@ -899,3 +899,18 @@ success, so both names remain. Decide what each operation does with a link
 (most likely: it is an entry of its own, which is listed, copied, moved, and
 deleted as a link, not as what it leads to), and test each one with links,
 which on Windows needs developer mode to create.
+
+## Read-only memory folders
+
+- **Layers:** gb_file
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [File attributes](worklog/file_attributes.md)
+
+A read-only folder in `MemoryFileProtocol` prevents nothing, as on Windows. Add
+a `ReadOnlyFlag` (off by default, as `kPreventDelete` is) where it acts as on
+POSIX: nothing can be created, deleted, or moved in a read-only folder, so a
+recursive delete fails inside one. This lets code meant to run on POSIX be tested against memory
+files, including that folder copies set a folder's attributes only after
+copying what is in it.

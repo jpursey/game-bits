@@ -63,15 +63,16 @@ override anything supports no attributes.
 
 ### MemoryFileProtocol
 
-Supports `kReadOnly` and `kHidden`. Its constructor gains an optional
-`ReadOnlyMode`, which says what a read-only file prevents:
-- `kNoWrite` (the default): only writing. It can still be deleted, as for
-  `LocalFileProtocol`.
-- `kNoWriteOrDelete`: writing and deleting, as on OZ-3 disks and in Windows'
-  own tools. A recursive folder delete fails at the first read-only file in it,
-  having deleted what came before, as for any other partial delete.
+Supports `kReadOnly` and `kHidden`. A read-only file can't be opened for
+writing. Its constructor gains optional `ReadOnlyFlags`, which add what else a
+read-only file prevents. With none (the default), it can still be deleted, as
+for `LocalFileProtocol`.
+- `kPreventDelete`: it can't be deleted either, as on OZ-3 disks and in
+  Windows' own tools. A recursive folder delete fails at the first read-only
+  file in it, having deleted what came before, as for any other partial delete.
 
-A read-only folder prevents nothing, as on Windows.
+A read-only folder prevents nothing, as on Windows. Making it act as on POSIX
+would be another `ReadOnlyFlag` (see the backlog).
 
 Attributes can be changed while a file is open, and an open file keeps the
 access it was opened with.
@@ -111,8 +112,9 @@ Everything is in `gb_file`.
 - `SetAttributes()`, with a `mask`: one call both replaces every attribute
   (the default mask) and changes some. `ChangeAttributes(path, add, remove)`
   reads better for one change, but can't replace them all.
-- `MemoryFileProtocol::ReadOnlyMode`, with `kNoWrite` and `kNoWriteOrDelete`,
-  matching `FolderMode`.
+- `MemoryFileProtocol::ReadOnlyFlag` and `ReadOnlyFlags`, with
+  `kPreventDelete`, matching `FileFlag` and `FileProtocolFlag`. Flags, not a
+  mode, so what a read-only folder prevents can be added as another flag.
 
 ### file_types.h
 
@@ -231,15 +233,18 @@ struct PathInfo {
 ### MemoryFileProtocol
 
 ```
-  // What a read-only file prevents, beyond opening it for writing.
-  enum class ReadOnlyMode {
-    kNoWrite,          // Nothing more: a read-only file can be deleted.
-    kNoWriteOrDelete,  // Deleting it, including in a recursive folder delete.
+  // What a read-only file prevents, beyond opening it for writing. With none
+  // set, a read-only file can be deleted.
+  enum class ReadOnlyFlag {
+    // A read-only file can't be deleted, including in a recursive folder
+    // delete, which fails at the first read-only file, having deleted what came
+    // before it.
+    kPreventDelete,
   };
+  using ReadOnlyFlags = Flags<ReadOnlyFlag>;
 
   explicit MemoryFileProtocol(FileProtocolFlags flags = kDefaultFlags,
-                              ReadOnlyMode read_only_mode =
-                                  ReadOnlyMode::kNoWrite);
+                              ReadOnlyFlags read_only_flags = {});
 
   FileAttributes GetAttributeFlags() const override;  // kReadOnly, kHidden.
 
@@ -249,7 +254,7 @@ struct PathInfo {
 
 - Each node holds its attributes. `DoGetPathInfo` reports them,
   `BasicOpenFile` fails to open a read-only file for writing, and
-  `BasicDeleteFile` fails on a read-only file in `kNoWriteOrDelete`. Copies go
+  `BasicDeleteFile` fails on a read-only file with `kPreventDelete`. Copies go
   through the default `DoCopyFile`, which keeps attributes; moves keep the
   node.
 
@@ -356,27 +361,31 @@ Depends on: nothing.
   Copies between protocols keep the shared attributes, leave the
   destination's others, and make no extra calls when none are shared.
 
-### CL2 [ ] file: MemoryFileProtocol attributes
+### CL2 [x] file: MemoryFileProtocol attributes
 
 Depends on: CL1.
 
 - `MemoryFileProtocol` supports `kReadOnly` and `kHidden`, with
-  `ReadOnlyMode`.
+  `ReadOnlyFlags`.
 - Common protocol tests for attributes, for any protocol that supports them:
   getting and setting each supported attribute on files and folders, with and
   without a mask, failing for unsupported attributes, a read-only file failing
   to open for writing or be copied onto, and copies and moves keeping
   attributes (a folder copy giving the folders it creates the source's, even
   when read-only).
-- Backlog: an option for `MemoryFileProtocol` read-only folders to prevent
-  adding, removing, and renaming in them, as on POSIX.
+- Backlog: a `ReadOnlyFlag` for `MemoryFileProtocol` read-only folders to
+  prevent adding, removing, and renaming in them, as on POSIX.
 
 **Verify**
 - Standard checks.
-- Common protocol tests pass for `MemoryFileProtocol`, and are skipped for
-  protocols without attributes.
-- `memory_file_protocol_test`: read-only files can be deleted in `kNoWrite`,
-  and in `kNoWriteOrDelete` can't be, nor can a folder holding one be deleted
+- Common protocol tests (`GetAndSetAttributes`, `ReadOnlyFile`,
+  `CopyFileKeepsAttributes`, `CopyFolderKeepsAttributes`,
+  `MoveKeepsAttributes`) pass for `MemoryFileProtocol` with and without
+  `kPreventDelete`, and are skipped for protocols without attributes
+  (`TestProtocol`'s common test factories support none, since it doesn't
+  enforce read-only).
+- `memory_file_protocol_test`: read-only files can be deleted by default, and
+  with `kPreventDelete` can't be, nor can a folder holding one be deleted
   recursively (which deletes what came before it). Attributes change on an
   open file, which keeps its access.
 

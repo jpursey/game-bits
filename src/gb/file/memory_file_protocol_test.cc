@@ -24,13 +24,23 @@ std::unique_ptr<FileProtocol> MemoryFileProtocolFactory(
   return init.DefaultInit(std::make_unique<MemoryFileProtocol>());
 }
 
+std::unique_ptr<FileProtocol> MemoryFileProtocolFactory_PreventDelete(
+    const CommonProtocolTestInit& init) {
+  return init.DefaultInit(std::make_unique<MemoryFileProtocol>(
+      MemoryFileProtocol::kDefaultFlags,
+      MemoryFileProtocol::ReadOnlyFlag::kPreventDelete));
+}
+
 INSTANTIATE_TEST_SUITE_P(MemoryFileProtocolTest, CommonProtocolTest,
-                         Values(MemoryFileProtocolFactory));
+                         Values(MemoryFileProtocolFactory,
+                                MemoryFileProtocolFactory_PreventDelete));
 
 TEST(MemoryFileProtocolTest, Construct) {
   MemoryFileProtocol protocol;
   EXPECT_EQ(protocol.GetFlags(),
             kReadWriteFileProtocolFlags + FileProtocolFlag::kMove);
+  EXPECT_EQ(protocol.GetAttributeFlags(),
+            FileAttributes({FileAttribute::kReadOnly, FileAttribute::kHidden}));
   EXPECT_THAT(protocol.GetDefaultNames(), ElementsAre("mem"));
 
   const FileProtocolFlags flags = {FileProtocolFlag::kInfo,
@@ -160,6 +170,86 @@ TEST(MemoryFileProtocolTest, CopyWithinProtocolWithTwoNames) {
   EXPECT_TRUE(file_system.CopyFile("a:/folder/file", "b:/copy"));
   ASSERT_TRUE(file_system.ReadFile("a:/copy", &contents));
   EXPECT_EQ(contents, "12345");
+}
+
+TEST(MemoryFileProtocolTest, DeleteReadOnlyFile) {
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(std::make_unique<MemoryFileProtocol>()));
+  ASSERT_TRUE(file_system.CreateFolder("mem:/folder"));
+  ASSERT_TRUE(file_system.WriteFile("mem:/file", "12345"));
+  ASSERT_TRUE(file_system.WriteFile("mem:/folder/file", "abcde"));
+  ASSERT_TRUE(file_system.SetAttributes("mem:/file", FileAttribute::kReadOnly));
+  ASSERT_TRUE(
+      file_system.SetAttributes("mem:/folder/file", FileAttribute::kReadOnly));
+
+  EXPECT_TRUE(file_system.DeleteFile("mem:/file"));
+  EXPECT_FALSE(file_system.IsValidPath("mem:/file"));
+  EXPECT_TRUE(file_system.DeleteFolder("mem:/folder", FolderMode::kRecursive));
+  EXPECT_FALSE(file_system.IsValidPath("mem:/folder"));
+}
+
+TEST(MemoryFileProtocolTest, PreventDeleteReadOnlyFile) {
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(std::make_unique<MemoryFileProtocol>(
+      MemoryFileProtocol::kDefaultFlags,
+      MemoryFileProtocol::ReadOnlyFlag::kPreventDelete)));
+  ASSERT_TRUE(file_system.CreateFolder("mem:/folder"));
+  ASSERT_TRUE(file_system.WriteFile("mem:/file", "12345"));
+  ASSERT_TRUE(file_system.WriteFile("mem:/folder/a", "abcde"));
+  ASSERT_TRUE(file_system.WriteFile("mem:/folder/b", "fghij"));
+  ASSERT_TRUE(file_system.SetAttributes("mem:/file", FileAttribute::kReadOnly));
+  ASSERT_TRUE(
+      file_system.SetAttributes("mem:/folder/b", FileAttribute::kReadOnly));
+
+  EXPECT_FALSE(file_system.DeleteFile("mem:/file"));
+  EXPECT_TRUE(file_system.IsValidFile("mem:/file"));
+
+  // A recursive delete stops at the read-only file, having deleted what came
+  // before it.
+  EXPECT_FALSE(file_system.DeleteFolder("mem:/folder", FolderMode::kRecursive));
+  EXPECT_FALSE(file_system.IsValidPath("mem:/folder/a"));
+  EXPECT_TRUE(file_system.IsValidFile("mem:/folder/b"));
+
+  ASSERT_TRUE(
+      file_system.SetAttributes("mem:/folder/b", {}, FileAttribute::kReadOnly));
+  EXPECT_TRUE(file_system.DeleteFolder("mem:/folder", FolderMode::kRecursive));
+  EXPECT_FALSE(file_system.IsValidPath("mem:/folder"));
+}
+
+TEST(MemoryFileProtocolTest, ReadOnlyFolderPreventsNothing) {
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(std::make_unique<MemoryFileProtocol>(
+      MemoryFileProtocol::kDefaultFlags,
+      MemoryFileProtocol::ReadOnlyFlag::kPreventDelete)));
+  ASSERT_TRUE(file_system.CreateFolder("mem:/folder"));
+  ASSERT_TRUE(file_system.WriteFile("mem:/folder/file", "12345"));
+  ASSERT_TRUE(
+      file_system.SetAttributes("mem:/folder", FileAttribute::kReadOnly));
+
+  EXPECT_TRUE(file_system.WriteFile("mem:/folder/file", "abcde"));
+  EXPECT_TRUE(file_system.WriteFile("mem:/folder/new", "fghij"));
+  EXPECT_TRUE(file_system.CreateFolder("mem:/folder/sub"));
+  EXPECT_TRUE(file_system.MoveFile("mem:/folder/new", "mem:/folder/moved"));
+  EXPECT_TRUE(file_system.DeleteFile("mem:/folder/moved"));
+  EXPECT_TRUE(file_system.DeleteFolder("mem:/folder", FolderMode::kRecursive));
+  EXPECT_FALSE(file_system.IsValidPath("mem:/folder"));
+}
+
+TEST(MemoryFileProtocolTest, SetAttributesOnOpenFile) {
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(std::make_unique<MemoryFileProtocol>()));
+  auto file = file_system.OpenFile("mem:/file", kNewFileFlags);
+  ASSERT_NE(file, nullptr);
+
+  // The open file can still be written.
+  EXPECT_TRUE(file_system.SetAttributes(
+      "mem:/file", {FileAttribute::kReadOnly, FileAttribute::kHidden}));
+  EXPECT_EQ(file->WriteString("12345"), 5);
+  file.reset();
+  std::string contents;
+  ASSERT_TRUE(file_system.ReadFile("mem:/file", &contents));
+  EXPECT_EQ(contents, "12345");
+  EXPECT_EQ(file_system.OpenFile("mem:/file", kWriteFileFlags), nullptr);
 }
 
 TEST(MemoryFileProtocolTest, RelativePathsAreRejected) {

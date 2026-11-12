@@ -664,6 +664,235 @@ TEST_P(CommonProtocolTest, MoveFolder) {
   }
 }
 
+// Every FileAttribute, to test each one a protocol supports.
+constexpr FileAttribute kEachFileAttribute[] = {FileAttribute::kReadOnly,
+                                                FileAttribute::kHidden};
+
+// A new FileAttribute must be added to kEachFileAttribute to be tested.
+TEST(CommonProtocolTestSupport, EachFileAttribute) {
+  FileAttributes each_attribute;
+  for (FileAttribute attribute : kEachFileAttribute) {
+    each_attribute += attribute;
+  }
+  EXPECT_EQ(each_attribute, kAllFileAttributes);
+}
+
+TEST_P(CommonProtocolTest, GetAndSetAttributes) {
+  CommonProtocolTestInit init;
+  init.folders = {"/folder"};
+  init.files = {{"/file", "1234567890"}};
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(NewProtocol(init), "test"));
+  const FileAttributes attribute_flags = file_system.GetAttributeFlags("test");
+  if (attribute_flags.IsEmpty()) {
+    return;
+  }
+
+  // Nothing has attributes until they are set.
+  EXPECT_TRUE(file_system.GetPathInfo("test:/").attributes.IsEmpty());
+  EXPECT_TRUE(file_system.GetPathInfo("test:/folder").attributes.IsEmpty());
+  EXPECT_TRUE(file_system.GetPathInfo("test:/file").attributes.IsEmpty());
+  if (!file_system.GetFlags("test").IsSet(FileProtocolFlag::kFileWrite)) {
+    EXPECT_FALSE(file_system.SetAttributes("test:/file", attribute_flags));
+    return;
+  }
+
+  for (std::string_view path : {"test:/file", "test:/folder"}) {
+    for (FileAttribute attribute : kEachFileAttribute) {
+      if (!attribute_flags.IsSet(attribute)) {
+        continue;
+      }
+      EXPECT_TRUE(file_system.SetAttributes(path, attribute, attribute))
+          << path;
+      EXPECT_EQ(file_system.GetPathInfo(path).attributes, attribute) << path;
+
+      // A mask leaves the attributes outside it.
+      EXPECT_TRUE(file_system.SetAttributes(path, attribute_flags,
+                                            attribute_flags - attribute))
+          << path;
+      EXPECT_EQ(file_system.GetPathInfo(path).attributes, attribute_flags)
+          << path;
+      EXPECT_TRUE(file_system.SetAttributes(path, {}, attribute)) << path;
+      EXPECT_EQ(file_system.GetPathInfo(path).attributes,
+                attribute_flags - attribute)
+          << path;
+
+      // The default mask replaces every attribute.
+      EXPECT_TRUE(file_system.SetAttributes(path, attribute)) << path;
+      EXPECT_EQ(file_system.GetPathInfo(path).attributes, attribute) << path;
+      EXPECT_TRUE(file_system.SetAttributes(path, {})) << path;
+      EXPECT_TRUE(file_system.GetPathInfo(path).attributes.IsEmpty()) << path;
+    }
+  }
+
+  const FileAttributes unsupported = kAllFileAttributes - attribute_flags;
+  if (!unsupported.IsEmpty()) {
+    EXPECT_FALSE(file_system.SetAttributes("test:/file", unsupported));
+    EXPECT_TRUE(file_system.GetPathInfo("test:/file").attributes.IsEmpty());
+  }
+  EXPECT_FALSE(file_system.SetAttributes("test:/invalid", attribute_flags));
+  EXPECT_FALSE(file_system.IsValidPath("test:/invalid"));
+
+  // The root has no attributes.
+  EXPECT_TRUE(file_system.SetAttributes("test:/", {}));
+  EXPECT_FALSE(file_system.SetAttributes("test:/", attribute_flags));
+  EXPECT_TRUE(file_system.GetPathInfo("test:/").attributes.IsEmpty());
+}
+
+TEST_P(CommonProtocolTest, ReadOnlyFile) {
+  CommonProtocolTestInit init;
+  init.files = {{"/file", "1234567890"}, {"/other", "abcde"}};
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(NewProtocol(init), "test"));
+  const FileProtocolFlags flags = file_system.GetFlags("test");
+  if (!file_system.GetAttributeFlags("test").IsSet(FileAttribute::kReadOnly) ||
+      !flags.IsSet(FileProtocolFlag::kFileWrite)) {
+    return;
+  }
+  const bool check_contents = flags.IsSet(FileProtocolFlag::kFileRead);
+  ASSERT_TRUE(file_system.SetAttributes("test:/file", FileAttribute::kReadOnly,
+                                        FileAttribute::kReadOnly));
+
+  // It can't be written, or written over.
+  EXPECT_EQ(file_system.OpenFile("test:/file", kWriteFileFlags), nullptr);
+  EXPECT_EQ(file_system.OpenFile("test:/file", kReadWriteFileFlags), nullptr);
+  EXPECT_EQ(
+      file_system.OpenFile("test:/file", kWriteFileFlags + FileFlag::kReset),
+      nullptr);
+  if (flags.IsSet(FileProtocolFlag::kFileCreate)) {
+    EXPECT_EQ(file_system.OpenFile("test:/file", kNewFileFlags), nullptr);
+    EXPECT_FALSE(file_system.CopyFile("test:/other", "test:/file"));
+  }
+  EXPECT_TRUE(!check_contents ||
+              CheckContents(file_system, "test:/file", "1234567890"));
+
+  // It can be moved, keeping its attributes.
+  if (flags.IsSet(FileProtocolFlag::kMove)) {
+    EXPECT_TRUE(file_system.MoveFile("test:/file", "test:/moved"));
+    EXPECT_EQ(file_system.GetPathInfo("test:/moved").attributes,
+              FileAttribute::kReadOnly);
+    EXPECT_EQ(file_system.OpenFile("test:/moved", kWriteFileFlags), nullptr);
+    EXPECT_TRUE(file_system.MoveFile("test:/moved", "test:/file"));
+  }
+
+  // Once it isn't read-only, it can be written again.
+  EXPECT_TRUE(
+      file_system.SetAttributes("test:/file", {}, FileAttribute::kReadOnly));
+  auto file = file_system.OpenFile("test:/file", kWriteFileFlags);
+  ASSERT_NE(file, nullptr);
+  EXPECT_EQ(file->WriteString("abc"), 3);
+  file.reset();
+  EXPECT_TRUE(!check_contents ||
+              CheckContents(file_system, "test:/file", "abc4567890"));
+}
+
+TEST_P(CommonProtocolTest, CopyFileKeepsAttributes) {
+  CommonProtocolTestInit init;
+  init.files = {
+      {"/file", "1234567890"}, {"/plain", "abcde"}, {"/existing", "ABCDE"}};
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(NewProtocol(init), "test"));
+  const FileProtocolFlags flags = file_system.GetFlags("test");
+  const FileAttributes attribute_flags = file_system.GetAttributeFlags("test");
+  if (attribute_flags.IsEmpty() ||
+      !flags.IsSet(FileProtocolFlag::kFileCreate)) {
+    return;
+  }
+  const bool check_contents = flags.IsSet(FileProtocolFlag::kFileRead);
+  ASSERT_TRUE(file_system.SetAttributes("test:/file", attribute_flags));
+
+  // A new file, and one written over, get the source's attributes, even when
+  // read-only.
+  EXPECT_TRUE(file_system.CopyFile("test:/file", "test:/new-file"));
+  EXPECT_EQ(file_system.GetPathInfo("test:/new-file").attributes,
+            attribute_flags);
+  EXPECT_TRUE(!check_contents ||
+              CheckContents(file_system, "test:/new-file", "1234567890"));
+  EXPECT_TRUE(file_system.CopyFile("test:/file", "test:/existing"));
+  EXPECT_EQ(file_system.GetPathInfo("test:/existing").attributes,
+            attribute_flags);
+  EXPECT_TRUE(!check_contents ||
+              CheckContents(file_system, "test:/existing", "1234567890"));
+
+  // A file written over loses attributes the source doesn't have.
+  const FileAttributes writable_attributes =
+      attribute_flags - FileAttribute::kReadOnly;
+  if (!writable_attributes.IsEmpty()) {
+    ASSERT_TRUE(
+        file_system.SetAttributes("test:/existing", writable_attributes));
+    EXPECT_TRUE(file_system.CopyFile("test:/plain", "test:/existing"));
+    EXPECT_TRUE(file_system.GetPathInfo("test:/existing").attributes.IsEmpty());
+    EXPECT_TRUE(!check_contents ||
+                CheckContents(file_system, "test:/existing", "abcde"));
+  }
+}
+
+TEST_P(CommonProtocolTest, CopyFolderKeepsAttributes) {
+  CommonProtocolTestInit init;
+  init.folders = {"/folder", "/folder/sub", "/existing"};
+  init.files = {{"/folder/file", "1234567890"}, {"/folder/sub/file", "abcde"}};
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(NewProtocol(init), "test"));
+  const FileProtocolFlags flags = file_system.GetFlags("test");
+  const FileAttributes attribute_flags = file_system.GetAttributeFlags("test");
+  if (attribute_flags.IsEmpty() ||
+      !flags.IsSet(
+          {FileProtocolFlag::kFolderCreate, FileProtocolFlag::kFileCreate})) {
+    return;
+  }
+  const bool check_contents = flags.IsSet(FileProtocolFlag::kFileRead);
+
+  // Read-only folders are copied with everything in them.
+  ASSERT_TRUE(file_system.SetAttributes("test:/folder", attribute_flags));
+  ASSERT_TRUE(file_system.SetAttributes("test:/folder/sub", attribute_flags));
+  ASSERT_TRUE(file_system.SetAttributes("test:/folder/file", attribute_flags));
+
+  EXPECT_TRUE(file_system.CopyFolder("test:/folder", "test:/copy"));
+  EXPECT_EQ(file_system.GetPathInfo("test:/copy").attributes, attribute_flags);
+  EXPECT_EQ(file_system.GetPathInfo("test:/copy/sub").attributes,
+            attribute_flags);
+  EXPECT_EQ(file_system.GetPathInfo("test:/copy/file").attributes,
+            attribute_flags);
+  EXPECT_TRUE(
+      file_system.GetPathInfo("test:/copy/sub/file").attributes.IsEmpty());
+  EXPECT_TRUE(!check_contents ||
+              CheckContents(file_system, "test:/copy/sub/file", "abcde"));
+
+  // A folder that already exists keeps its own attributes.
+  EXPECT_TRUE(file_system.CopyFolder("test:/folder", "test:/existing"));
+  EXPECT_TRUE(file_system.GetPathInfo("test:/existing").attributes.IsEmpty());
+  EXPECT_EQ(file_system.GetPathInfo("test:/existing/sub").attributes,
+            attribute_flags);
+  EXPECT_EQ(file_system.GetPathInfo("test:/existing/file").attributes,
+            attribute_flags);
+}
+
+TEST_P(CommonProtocolTest, MoveKeepsAttributes) {
+  CommonProtocolTestInit init;
+  init.folders = {"/folder"};
+  init.files = {{"/file", "1234567890"}, {"/folder/file", "abcde"}};
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(NewProtocol(init), "test"));
+  const FileAttributes attribute_flags = file_system.GetAttributeFlags("test");
+  if (attribute_flags.IsEmpty() ||
+      !file_system.GetFlags("test").IsSet(
+          {FileProtocolFlag::kMove, FileProtocolFlag::kFolderCreate})) {
+    return;
+  }
+  ASSERT_TRUE(file_system.SetAttributes("test:/file", attribute_flags));
+  ASSERT_TRUE(file_system.SetAttributes("test:/folder", attribute_flags));
+  ASSERT_TRUE(file_system.SetAttributes("test:/folder/file", attribute_flags));
+
+  EXPECT_TRUE(file_system.MoveFile("test:/file", "test:/moved-file"));
+  EXPECT_EQ(file_system.GetPathInfo("test:/moved-file").attributes,
+            attribute_flags);
+  EXPECT_TRUE(file_system.MoveFolder("test:/folder", "test:/moved-folder"));
+  EXPECT_EQ(file_system.GetPathInfo("test:/moved-folder").attributes,
+            attribute_flags);
+  EXPECT_EQ(file_system.GetPathInfo("test:/moved-folder/file").attributes,
+            attribute_flags);
+}
+
 TEST_P(CommonProtocolTest, CreateFile) {
   CommonProtocolTestInit init;
   init.folders = {"/folder-1"};
