@@ -30,6 +30,8 @@ std::string FileProtocol::GetCanonicalPath(std::string_view protocol_name,
   return std::string(path);
 }
 
+FileAttributes FileProtocol::GetAttributeFlags() const { return {}; }
+
 void FileProtocol::Lock(LockType type) {}
 void FileProtocol::Unlock(LockType type) {}
 
@@ -41,6 +43,19 @@ PathInfo FileProtocol::GetPathInfo(std::string_view protocol_name,
   Lock(LockType::kQuery);
   auto result = DoGetPathInfo(protocol_name, path);
   Unlock(LockType::kQuery);
+  return result;
+}
+
+bool FileProtocol::SetAttributes(std::string_view protocol_name,
+                                 std::string_view path,
+                                 FileAttributes attributes,
+                                 FileAttributes mask) {
+  if (!IsValidPath(path)) {
+    return false;
+  }
+  Lock(LockType::kModify);
+  auto result = DoSetAttributes(protocol_name, path, attributes, mask);
+  Unlock(LockType::kModify);
   return result;
 }
 
@@ -186,6 +201,24 @@ PathInfo FileProtocol::DoGetPathInfo(std::string_view protocol_name,
                                      std::string_view path) {
   LOG(ERROR) << "FileProtocol::DoGetPathInfo not implemented.";
   return {};
+}
+
+bool FileProtocol::DoSetAttributes(std::string_view protocol_name,
+                                   std::string_view path,
+                                   FileAttributes attributes,
+                                   FileAttributes mask) {
+  const PathInfo info = DoGetPathInfo(protocol_name, path);
+  if (info.type == PathType::kInvalid) {
+    return false;
+  }
+  const FileAttributes new_attributes = info.attributes - mask + attributes;
+  if (new_attributes == info.attributes) {
+    return true;
+  }
+  if (IsRootPath(path)) {
+    return false;
+  }
+  return BasicSetAttributes(protocol_name, path, new_attributes);
 }
 
 std::vector<std::string> FileProtocol::DoList(std::string_view protocol_name,
@@ -341,6 +374,12 @@ bool FileProtocol::DoCopyFolder(std::string_view from_protocol_name,
     }
   }
 
+  // The attributes are set last, as a read-only folder may stop the copy into
+  // it.
+  if (to_info.type == PathType::kInvalid && !from_info.attributes.IsEmpty()) {
+    return DoSetAttributes(to_protocol_name, to_path, from_info.attributes,
+                           GetAttributeFlags());
+  }
   return true;
 }
 
@@ -348,7 +387,8 @@ bool FileProtocol::DoCopyFile(std::string_view from_protocol_name,
                               std::string_view from_path,
                               std::string_view to_protocol_name,
                               std::string_view to_path) {
-  if (DoGetPathInfo(from_protocol_name, from_path).type != PathType::kFile) {
+  const PathInfo from_info = DoGetPathInfo(from_protocol_name, from_path);
+  if (from_info.type != PathType::kFile) {
     return false;
   }
   auto to_info = DoGetPathInfo(to_protocol_name, to_path);
@@ -362,8 +402,18 @@ bool FileProtocol::DoCopyFile(std::string_view from_protocol_name,
              GetCanonicalPath(to_protocol_name, to_path)) {
     return true;
   }
-  return BasicCopyFile(from_protocol_name, from_path, to_protocol_name,
-                       to_path);
+  if (!BasicCopyFile(from_protocol_name, from_path, to_protocol_name,
+                     to_path)) {
+    return false;
+  }
+
+  // A file that was replaced may keep its own attributes, and a new one may
+  // not get the source's. With none on either side, the copy has none.
+  if (from_info.attributes.IsEmpty() && to_info.attributes.IsEmpty()) {
+    return true;
+  }
+  return DoSetAttributes(to_protocol_name, to_path, from_info.attributes,
+                         GetAttributeFlags());
 }
 
 bool FileProtocol::DoDeleteFile(std::string_view protocol_name,
@@ -513,6 +563,13 @@ std::unique_ptr<RawFile> FileProtocol::BasicOpenFile(
     std::string_view protocol_name, std::string_view path, FileFlags flags) {
   LOG(ERROR) << "FileProtocol::BasicOpenFile not implemented.";
   return nullptr;
+}
+
+bool FileProtocol::BasicSetAttributes(std::string_view protocol_name,
+                                      std::string_view path,
+                                      FileAttributes attributes) {
+  LOG(ERROR) << "FileProtocol::BasicSetAttributes not implemented.";
+  return false;
 }
 
 }  // namespace gb

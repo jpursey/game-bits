@@ -120,12 +120,35 @@ inline constexpr PathTypes kAllPathTypes = {
     PathType::kFolder,
 };
 
+// Attributes of a file or folder, which a protocol may support (see
+// FileProtocol::GetAttributeFlags()). A protocol that supports one supports it
+// on both files and folders. What each one does, beyond what is said here,
+// depends on the protocol, which follows the file system behind it.
+enum class FileAttribute {
+  // A read-only file can't be opened for writing, so it also can't be replaced
+  // by a copy. Whether it can be deleted, and what a read-only folder
+  // prevents, depends on the protocol.
+  kReadOnly,
+
+  // The file or folder is normally left out of what is shown to people. This
+  // changes nothing a protocol does: List() still returns it, and it can be
+  // opened, copied, moved, and deleted as any other.
+  kHidden,
+};
+using FileAttributes = Flags<FileAttribute>;
+inline constexpr FileAttributes kAllFileAttributes = {
+    FileAttribute::kReadOnly,
+    FileAttribute::kHidden,
+};
+
 struct PathInfo {
   PathInfo() = default;
-  PathInfo(PathType type, int64_t size = 0) : type(type), size(size) {}
+  PathInfo(PathType type, int64_t size = 0, FileAttributes attributes = {})
+      : type(type), size(size), attributes(attributes) {}
 
   PathType type = PathType::kInvalid;  // Type of path.
   int64_t size = 0;                    // Set only for PathType::kFile.
+  FileAttributes attributes;           // Only attributes the protocol supports.
 };
 
 }  // namespace gb

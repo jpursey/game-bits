@@ -157,6 +157,8 @@ void TestProtocol::State::ResetCounts() {
   basic_delete_file_count = 0;
   basic_copy_file_count = 0;
   basic_open_file_count = 0;
+  set_attributes_count = 0;
+  basic_set_attributes_count = 0;
   for (auto& path_state : paths) {
     auto file_state = path_state.second.GetFile();
     if (file_state != nullptr) {
@@ -174,6 +176,10 @@ FileProtocolFlags TestProtocol::GetFlags() const { return state_->flags; }
 
 std::vector<std::string> TestProtocol::GetDefaultNames() const {
   return state_->default_names;
+}
+
+FileAttributes TestProtocol::GetAttributeFlags() const {
+  return state_->attribute_flags;
 }
 
 void TestProtocol::Lock(LockType type) {
@@ -201,7 +207,23 @@ PathInfo TestProtocol::DoGetPathInfo(std::string_view protocol_name,
     return {PathType::kFolder};
   }
   auto& path_state = state_->paths[absl::StrCat(path)];
-  return {path_state.GetType(), path_state.GetSize()};
+  return {path_state.GetType(), path_state.GetSize(),
+          Intersect(path_state.GetAttributes(), state_->attribute_flags)};
+}
+
+bool TestProtocol::DoSetAttributes(std::string_view protocol_name,
+                                   std::string_view path,
+                                   FileAttributes attributes,
+                                   FileAttributes mask) {
+  state_->set_attributes_count += 1;
+  if (!IsValidProtocolName(protocol_name) || !IsValidPath(path) ||
+      !state_->flags.IsSet(
+          {FileProtocolFlag::kInfo, FileProtocolFlag::kFileWrite}) ||
+      !state_->attribute_flags.IsSet(mask) || !mask.IsSet(attributes)) {
+    state_->invalid_call_count += 1;
+    return false;
+  }
+  return FileProtocol::DoSetAttributes(protocol_name, path, attributes, mask);
 }
 
 std::vector<std::string> TestProtocol::DoList(std::string_view protocol_name,
@@ -537,6 +559,28 @@ std::unique_ptr<RawFile> TestProtocol::BasicOpenFile(
     path_state.GetFile()->position = -1;
   }
   return raw_file;
+}
+
+bool TestProtocol::BasicSetAttributes(std::string_view protocol_name,
+                                      std::string_view path,
+                                      FileAttributes attributes) {
+  state_->basic_set_attributes_count += 1;
+  if (!IsValidProtocolName(protocol_name) || !IsValidPath(path) ||
+      path == "/" || !state_->attribute_flags.IsSet(attributes)) {
+    state_->invalid_call_count += 1;
+    return false;
+  }
+  if (path == state_->fail_path) {
+    return false;
+  }
+  auto& path_state = state_->paths[absl::StrCat(path)];
+  if (path_state.GetType() == PathType::kInvalid ||
+      path_state.GetAttributes() == attributes) {
+    state_->invalid_call_count += 1;
+    return false;
+  }
+  path_state.SetAttributes(attributes);
+  return true;
 }
 
 }  // namespace gb

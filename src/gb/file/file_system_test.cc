@@ -353,6 +353,80 @@ TEST(FileSystemTest, GetPathInfo) {
   EXPECT_EQ(state.invalid_call_count, 0);
 }
 
+TEST(FileSystemTest, GetAttributeFlags) {
+  TestProtocol::State state;
+  state.attribute_flags = FileAttribute::kHidden;
+  FileSystem file_system;
+  file_system.Register(std::make_unique<TestProtocol>(&state), "test");
+
+  EXPECT_EQ(file_system.GetAttributeFlags("test"), FileAttribute::kHidden);
+  EXPECT_TRUE(file_system.GetAttributeFlags("foo").IsEmpty());
+
+  // Attributes are only available with path info.
+  state.flags = FileProtocolFlag::kFileRead;
+  EXPECT_TRUE(file_system.GetAttributeFlags("test").IsEmpty());
+}
+
+TEST(FileSystemTest, GetPathInfoReportsAttributes) {
+  TestProtocol::State state;
+  state.attribute_flags = kAllFileAttributes;
+  state.paths["/file"] = TestProtocol::PathState::NewFile("1234567890");
+  state.paths["/file"].SetAttributes(FileAttribute::kReadOnly);
+  FileSystem file_system;
+  file_system.Register(std::make_unique<TestProtocol>(&state), "test");
+
+  EXPECT_EQ(file_system.GetPathInfo("test:/file").attributes,
+            FileAttribute::kReadOnly);
+  EXPECT_EQ(state.invalid_call_count, 0);
+}
+
+TEST(FileSystemTest, SetAttributes) {
+  TestProtocol::State state;
+  state.attribute_flags = FileAttribute::kHidden;
+  state.paths["/file"] = TestProtocol::PathState::NewFile("1234567890");
+  state.paths["/folder"] = TestProtocol::PathState::NewFolder();
+  FileSystem file_system;
+  file_system.Register(std::make_unique<TestProtocol>(&state), "test");
+
+  EXPECT_FALSE(file_system.SetAttributes("test:file", FileAttribute::kHidden));
+  EXPECT_FALSE(file_system.SetAttributes("foo:/file", FileAttribute::kHidden));
+  EXPECT_EQ(state.set_attributes_count, 0);
+  EXPECT_FALSE(
+      file_system.SetAttributes("test:/invalid", FileAttribute::kHidden));
+  EXPECT_EQ(state.set_attributes_count, 1);
+  state.ResetCounts();
+
+  // Setting an attribute the protocol doesn't support fails, but one only in
+  // the mask is ignored.
+  EXPECT_FALSE(
+      file_system.SetAttributes("test:/file", FileAttribute::kReadOnly));
+  EXPECT_FALSE(file_system.SetAttributes("test:/file", kAllFileAttributes));
+  EXPECT_EQ(state.set_attributes_count, 0);
+  EXPECT_TRUE(file_system.SetAttributes("test:/file", FileAttribute::kHidden));
+  EXPECT_EQ(state.paths["/file"].GetAttributes(), FileAttribute::kHidden);
+  EXPECT_TRUE(file_system.SetAttributes("test:/file", FileAttribute::kHidden,
+                                        FileAttribute::kHidden));
+  EXPECT_TRUE(file_system.SetAttributes("test:/file", FileAttribute::kHidden,
+                                        FileAttribute::kReadOnly));
+  EXPECT_EQ(state.paths["/file"].GetAttributes(), FileAttribute::kHidden);
+  EXPECT_TRUE(file_system.SetAttributes("test:/file", {}));
+  EXPECT_TRUE(state.paths["/file"].GetAttributes().IsEmpty());
+  EXPECT_TRUE(file_system.SetAttributes("TEST:/.\\abc///..\\folder",
+                                        FileAttribute::kHidden));
+  EXPECT_EQ(state.paths["/folder"].GetAttributes(), FileAttribute::kHidden);
+  EXPECT_EQ(state.basic_set_attributes_count, 3);
+  state.ResetCounts();
+
+  // Attributes are only set with both path info and writing.
+  state.flags -= FileProtocolFlag::kFileWrite;
+  EXPECT_FALSE(file_system.SetAttributes("test:/file", FileAttribute::kHidden));
+  state.flags += FileProtocolFlag::kFileWrite;
+  state.flags -= {FileProtocolFlag::kInfo, FileProtocolFlag::kList};
+  EXPECT_FALSE(file_system.SetAttributes("test:/file", FileAttribute::kHidden));
+  EXPECT_EQ(state.set_attributes_count, 0);
+  EXPECT_EQ(state.invalid_call_count, 0);
+}
+
 TEST(FileSystemTest, List) {
   TestProtocol::State state;
   state.paths["/file"] = TestProtocol::PathState::NewFile("1234567890");
@@ -655,6 +729,62 @@ TEST(FileSystemTest, CopyFolderAcrossProtocols) {
   EXPECT_FALSE(file_system.CopyFolder("test0:/folder", "test1:/folder"));
   EXPECT_EQ(state[1].paths["/folder"].GetType(), PathType::kFolder);
   EXPECT_EQ(state[1].paths["/folder/file"].GetType(), PathType::kInvalid);
+
+  EXPECT_EQ(state[0].invalid_call_count, 0);
+  EXPECT_EQ(state[1].invalid_call_count, 0);
+}
+
+TEST(FileSystemTest, CopyAcrossProtocolsKeepsSharedAttributes) {
+  TestProtocol::State state[2];
+  state[0].attribute_flags = FileAttribute::kHidden;
+  state[1].attribute_flags = kAllFileAttributes;
+  FileSystem file_system;
+  file_system.Register(std::make_unique<TestProtocol>(&state[0]), "test0");
+  file_system.Register(std::make_unique<TestProtocol>(&state[1]), "test1");
+
+  state[0].paths["/hidden"] = TestProtocol::PathState::NewFile("12345");
+  state[0].paths["/hidden"].SetAttributes(FileAttribute::kHidden);
+  state[0].paths["/plain"] = TestProtocol::PathState::NewFile("abc");
+  state[0].paths["/folder"] = TestProtocol::PathState::NewFolder();
+  state[0].paths["/folder"].SetAttributes(FileAttribute::kHidden);
+  state[0].paths["/folder/file"] = TestProtocol::PathState::NewFile("xyz");
+  state[0].paths["/folder/file"].SetAttributes(FileAttribute::kHidden);
+  state[1].paths["/read-only"] = TestProtocol::PathState::NewFile("67890");
+  state[1].paths["/read-only"].SetAttributes(FileAttribute::kReadOnly);
+  state[1].paths["/hidden"] = TestProtocol::PathState::NewFile("67890");
+  state[1].paths["/hidden"].SetAttributes(FileAttribute::kHidden);
+  state[1].paths["/existing"] = TestProtocol::PathState::NewFolder();
+
+  EXPECT_TRUE(file_system.CopyFile("test0:/hidden", "test1:/new-file"));
+  EXPECT_EQ(state[1].paths["/new-file"].GetAttributes(),
+            FileAttribute::kHidden);
+
+  // Attributes only the destination supports are kept, and shared ones are
+  // replaced.
+  EXPECT_TRUE(file_system.CopyFile("test0:/hidden", "test1:/read-only"));
+  EXPECT_EQ(state[1].paths["/read-only"].GetAttributes(), kAllFileAttributes);
+  EXPECT_TRUE(file_system.CopyFile("test0:/plain", "test1:/hidden"));
+  EXPECT_TRUE(state[1].paths["/hidden"].GetAttributes().IsEmpty());
+
+  // Only folders the copy creates get the source's attributes.
+  EXPECT_TRUE(file_system.CopyFolder("test0:/folder", "test1:/new-folder"));
+  EXPECT_EQ(state[1].paths["/new-folder"].GetAttributes(),
+            FileAttribute::kHidden);
+  EXPECT_EQ(state[1].paths["/new-folder/file"].GetAttributes(),
+            FileAttribute::kHidden);
+  EXPECT_TRUE(file_system.CopyFolder("test0:/folder", "test1:/existing"));
+  EXPECT_TRUE(state[1].paths["/existing"].GetAttributes().IsEmpty());
+  EXPECT_EQ(state[1].paths["/existing/file"].GetAttributes(),
+            FileAttribute::kHidden);
+
+  // Nothing more is done when no attributes are shared.
+  state[1].attribute_flags = FileAttribute::kReadOnly;
+  state[1].ResetCounts();
+  EXPECT_TRUE(file_system.CopyFile("test0:/hidden", "test1:/new-file-2"));
+  EXPECT_TRUE(file_system.CopyFolder("test0:/folder", "test1:/new-folder-2"));
+  EXPECT_TRUE(state[1].paths["/new-file-2"].GetAttributes().IsEmpty());
+  EXPECT_TRUE(state[1].paths["/new-folder-2"].GetAttributes().IsEmpty());
+  EXPECT_EQ(state[1].set_attributes_count, 0);
 
   EXPECT_EQ(state[0].invalid_call_count, 0);
   EXPECT_EQ(state[1].invalid_call_count, 0);

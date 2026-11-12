@@ -86,6 +86,13 @@ class FileSystem final {
   // of flags.
   FileProtocolFlags GetFlags(const std::string& protocol_name) const;
 
+  // Returns the attributes the specified protocol supports (see
+  // FileProtocol::GetAttributeFlags()).
+  //
+  // If no protocol is registered with that name, or it doesn't support
+  // FileProtocolFlag::kInfo, this will return an empty set of attributes.
+  FileAttributes GetAttributeFlags(std::string_view protocol_name) const;
+
   // Returns the current folder for the specified protocol.
   //
   // If the protocol is not registered, or the protocol does not support current
@@ -169,6 +176,11 @@ class FileSystem final {
   // over any existing files in the destination. Copying files over folders and
   // vice versa is not supported.
   //
+  // Files keep their attributes as for CopyFile(). Each folder the copy creates
+  // gets its source folder's attributes once everything in it is copied (only
+  // those both protocols support, between protocols), while folders that
+  // already existed keep their own.
+  //
   // If the copy failed or only partially succeeded, this will return false.
   bool CopyFolder(std::string_view from_path, std::string_view to_path);
 
@@ -178,6 +190,13 @@ class FileSystem final {
   // source file. Attempting to copy a file onto a folder will always fail (to
   // copy a file into a folder, use JoinPath(to_path, RemoveFolder(from_path))
   // to create the correct destination).
+  //
+  // The copy has the source file's attributes. Between protocols, it has the
+  // attributes both protocols support (see GetAttributeFlags()), and any others
+  // the destination supports are left as they were (none, for a new file).
+  // Copying onto a read-only file fails, as it can't be opened for writing (see
+  // FileAttribute::kReadOnly). If the attributes can't be set, this fails with
+  // the contents already copied.
   bool CopyFile(std::string_view from_path, std::string_view to_path);
 
   // Moves a folder, with all of its files and subfolders, to a new path.
@@ -227,6 +246,21 @@ class FileSystem final {
   // call, but may return an invalid path if the empty folder is queried.
   PathInfo GetPathInfo(std::string_view path);
 
+  // Changes the attributes in `mask` of a file or folder to match
+  // `attributes`, leaving the others, as one operation.
+  //
+  // With the default mask, this sets every attribute: SetAttributes(path, {})
+  // clears them all. To hide a path, leaving its other attributes:
+  // SetAttributes(path, FileAttribute::kHidden, FileAttribute::kHidden). To
+  // show it again: SetAttributes(path, {}, FileAttribute::kHidden).
+  //
+  // Attributes in `mask` that the protocol doesn't support are ignored. This
+  // fails if nothing is at the path, the protocol doesn't support both
+  // FileProtocolFlag::kInfo and FileProtocolFlag::kFileWrite, or an attribute
+  // in both `attributes` and `mask` isn't supported (see GetAttributeFlags()).
+  bool SetAttributes(std::string_view path, FileAttributes attributes,
+                     FileAttributes mask = kAllFileAttributes);
+
   // Opens a file given a path and specified file flags.
   //
   // It is undefined behavior if a file is opened more than once. It is also
@@ -265,6 +299,11 @@ class FileSystem final {
   // path. If the path is invalid, the normalized path will be empty.
   std::tuple<std::string, std::string, FileProtocol*> GetNormalizedPath(
       std::string_view path);
+
+  // Returns the attributes `protocol` supports, which are none if it doesn't
+  // support FileProtocolFlag::kInfo.
+  static FileAttributes DoGetAttributeFlags(const FileProtocol* protocol);
+
   bool GenericCopyFolder(std::string_view from_protocol_name,
                          FileProtocol* from_protocol,
                          std::string_view from_path,

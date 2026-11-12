@@ -118,6 +118,22 @@ FileProtocolFlags FileSystem::GetFlags(const std::string& protocol_name) const {
   return it->second->GetFlags();
 }
 
+FileAttributes FileSystem::GetAttributeFlags(
+    std::string_view protocol_name) const {
+  auto it = protocol_map_.find(protocol_name);
+  if (it == protocol_map_.end()) {
+    return {};
+  }
+  return DoGetAttributeFlags(it->second);
+}
+
+FileAttributes FileSystem::DoGetAttributeFlags(const FileProtocol* protocol) {
+  if (!protocol->GetFlags().IsSet(FileProtocolFlag::kInfo)) {
+    return {};
+  }
+  return protocol->GetAttributeFlags();
+}
+
 std::string FileSystem::GetCurrentFolder(std::string_view protocol_name) {
   auto it = protocol_map_.find(std::string(protocol_name));
   if (it == protocol_map_.end() ||
@@ -350,6 +366,23 @@ PathInfo FileSystem::GetPathInfo(std::string_view path) {
   return protocol->GetPathInfo(protocol_name, path);
 }
 
+bool FileSystem::SetAttributes(std::string_view path, FileAttributes attributes,
+                               FileAttributes mask) {
+  auto [normalized_path, protocol_name, protocol] = GetNormalizedPath(path);
+  if (normalized_path.empty() ||
+      !protocol->GetFlags().IsSet(
+          {FileProtocolFlag::kInfo, FileProtocolFlag::kFileWrite})) {
+    return false;
+  }
+  attributes = Intersect(attributes, mask);
+  const FileAttributes attribute_flags = protocol->GetAttributeFlags();
+  if (!attribute_flags.IsSet(attributes)) {
+    return false;
+  }
+  return protocol->SetAttributes(protocol_name, normalized_path, attributes,
+                                 Intersect(mask, attribute_flags));
+}
+
 std::unique_ptr<File> FileSystem::OpenFile(std::string_view path,
                                            FileFlags flags) {
   auto [normalized_path, protocol_name, protocol] = GetNormalizedPath(path);
@@ -422,10 +455,21 @@ bool FileSystem::GenericCopyFolder(std::string_view from_protocol_name,
                                    std::string_view to_protocol_name,
                                    FileProtocol* to_protocol,
                                    std::string_view to_path) {
-  if (from_protocol->GetPathInfo(from_protocol_name, from_path).type !=
-      PathType::kFolder) {
+  const PathInfo from_info =
+      from_protocol->GetPathInfo(from_protocol_name, from_path);
+  if (from_info.type != PathType::kFolder) {
     return false;
   }
+
+  // Only a folder the copy creates gets the source's attributes.
+  const FileAttributes shared_attribute_flags = Intersect(
+      DoGetAttributeFlags(from_protocol), DoGetAttributeFlags(to_protocol));
+  const FileAttributes attributes =
+      Intersect(from_info.attributes, shared_attribute_flags);
+  const bool set_attributes =
+      !attributes.IsEmpty() &&
+      to_protocol->GetPathInfo(to_protocol_name, to_path).type ==
+          PathType::kInvalid;
 
   // Ensure the folder is created.
   if (!to_protocol->CreateFolder(to_protocol_name, to_path,
@@ -457,6 +501,12 @@ bool FileSystem::GenericCopyFolder(std::string_view from_protocol_name,
     }
   }
 
+  // The attributes are set last, as a read-only folder may stop the copy into
+  // it.
+  if (set_attributes) {
+    return to_protocol->SetAttributes(to_protocol_name, to_path, attributes,
+                                      shared_attribute_flags);
+  }
   return true;
 }
 
@@ -477,7 +527,21 @@ bool FileSystem::GenericCopyFile(std::string_view from_protocol_name,
   if (to_file == nullptr) {
     return false;
   }
-  return CopyRawFile(from_file.get(), to_file.get());
+  if (!CopyRawFile(from_file.get(), to_file.get())) {
+    return false;
+  }
+  to_file.reset();
+
+  const FileAttributes shared_attribute_flags = Intersect(
+      DoGetAttributeFlags(from_protocol), DoGetAttributeFlags(to_protocol));
+  if (shared_attribute_flags.IsEmpty()) {
+    return true;
+  }
+  const FileAttributes attributes = Intersect(
+      from_protocol->GetPathInfo(from_protocol_name, from_path).attributes,
+      shared_attribute_flags);
+  return to_protocol->SetAttributes(to_protocol_name, to_path, attributes,
+                                    shared_attribute_flags);
 }
 
 }  // namespace gb

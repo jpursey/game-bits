@@ -73,6 +73,13 @@ class FileProtocol {
   virtual std::string GetCanonicalPath(std::string_view protocol_name,
                                        std::string_view path) const;
 
+  // Returns the attributes this protocol supports, on both files and folders,
+  // which GetPathInfo() reports and SetAttributes() sets. They are only used if
+  // FileProtocolFlag::kInfo is supported.
+  //
+  // If not overridden, the protocol supports no attributes.
+  virtual FileAttributes GetAttributeFlags() const;
+
   // Returns the path information for the specified path.
   //
   // Derived classes must override DoGetPathInfo to implement this if
@@ -80,6 +87,15 @@ class FileProtocol {
   // of the Do* functions require support for this regardless of file protocol
   // flags.
   PathInfo GetPathInfo(std::string_view protocol_name, std::string_view path);
+
+  // Changes the attributes in `mask` of the file or folder at the specified
+  // path to match `attributes`, leaving the others.
+  //
+  // Derived classes must override DoSetAttributes or BasicSetAttributes to
+  // implement this if GetAttributeFlags() isn't empty. GetPathInfo is called if
+  // DoSetAttributes is not implemented.
+  bool SetAttributes(std::string_view protocol_name, std::string_view path,
+                     FileAttributes attributes, FileAttributes mask);
 
   // Lists paths that match a pattern.
   //
@@ -206,11 +222,28 @@ class FileProtocol {
   // A protocol must implement this if the protocol supports
   // FileProtocolFlag::kInfo (which most should try to do). If implemented, it
   // must return PathInfo{PathType::kFolder} for any valid root path (generally
-  // the path "/").
+  // the path "/"), which has no attributes. The attributes it returns must all
+  // be in GetAttributeFlags().
   //
   // If the path is inaccessible, this should return {}.
   virtual PathInfo DoGetPathInfo(std::string_view protocol_name,
                                  std::string_view path);
+
+  // Changes the attributes in `mask` of the file or folder at the specified
+  // path to match `attributes`, leaving the others.
+  //
+  // A protocol must implement this or BasicSetAttributes if
+  // GetAttributeFlags() isn't empty. This should fail if nothing is at `path`,
+  // and for any attribute on a root path, which has none.
+  //
+  // SetAttributes is only called if the protocol supports both
+  // FileProtocolFlag::kInfo and FileProtocolFlag::kFileWrite, `mask` holds
+  // only attributes in GetAttributeFlags(), and `attributes` holds only
+  // attributes in `mask`. The protocol is responsible for all further
+  // validation.
+  virtual bool DoSetAttributes(std::string_view protocol_name,
+                               std::string_view path, FileAttributes attributes,
+                               FileAttributes mask);
 
   // Lists paths that match a pattern.
   //
@@ -252,7 +285,10 @@ class FileProtocol {
   // sub-folders and their files and folders. It is not valid to copy a file
   // onto a folder or vice versa, and this should return false if that occurs.
   // It is also should return false if the parent of 'to_path' is not the root
-  // or an existing folder.
+  // or an existing folder. Files copied should keep their attributes, as for
+  // CopyFile, and each folder it creates should get its source folder's
+  // attributes once everything in it is copied. Folders that already exist
+  // keep theirs.
   //
   // CopyFolder is only called if the protocol supports both
   // FileProtocolFlag::kFolderCreate and FileProtocolFlag::kFileCreate, and the
@@ -289,7 +325,8 @@ class FileProtocol {
   //
   // Copy file should replace any existing file at to_path, but should fail if
   // to_path refers to a folder, or the parent of to_path is not the root or an
-  // existing folder.
+  // existing folder. The copy should have the attributes of the file at
+  // from_path.
   //
   // CopyFile is only called if FileProtocolFlag::kFileCreate is supported. The
   // protocol is responsible for all further validation.
@@ -421,7 +458,8 @@ class FileProtocol {
   // implement either, however, as a valid default implementation exists.
   //
   // BasicCopyFile is only called if from_path refers to an existing file and
-  // to_path is not a folder.
+  // to_path is not a folder. It needn't copy attributes, which the default
+  // DoCopyFile sets afterwards.
   virtual bool BasicCopyFile(std::string_view from_protocol_name,
                              std::string_view from_path,
                              std::string_view to_protocol_name,
@@ -473,6 +511,16 @@ class FileProtocol {
   virtual std::unique_ptr<RawFile> BasicOpenFile(std::string_view protocol_name,
                                                  std::string_view path,
                                                  FileFlags flags);
+
+  // File protocols may optionally override BasicSetAttributes instead of
+  // SetAttributes if GetAttributeFlags() isn't empty.
+  //
+  // BasicSetAttributes is only called on an existing path that isn't a root,
+  // with every attribute it should have, when they differ from the attributes
+  // it has.
+  virtual bool BasicSetAttributes(std::string_view protocol_name,
+                                  std::string_view path,
+                                  FileAttributes attributes);
 
  private:
   // Implements DoMoveFolder and DoMoveFile with BasicMoveFolder or

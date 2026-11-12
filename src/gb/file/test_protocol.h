@@ -84,6 +84,8 @@ class TestProtocol : public FileProtocol {
     }
 
     PathType GetType() const { return type_; }
+    FileAttributes GetAttributes() const { return attributes_; }
+    void SetAttributes(FileAttributes attributes) { attributes_ = attributes; }
     int64_t GetSize() const {
       return (file_ != nullptr ? static_cast<int64_t>(file_->contents.size())
                                : 0);
@@ -105,6 +107,7 @@ class TestProtocol : public FileProtocol {
         : type_(PathType::kFile), file_() {}
 
     PathType type_ = PathType::kInvalid;
+    FileAttributes attributes_;
     std::unique_ptr<FileState> file_;
   };
   using PathStates = std::map<std::string, PathState>;
@@ -119,6 +122,7 @@ class TestProtocol : public FileProtocol {
     TestProtocol* protocol = nullptr;  // Non-null when part of a protocol.
 
     FileProtocolFlags flags = kReadWriteFileProtocolFlags;
+    FileAttributes attribute_flags;  // Attributes the protocol supports.
     std::string name;  // Name expected when matching calls. Empty accepts any.
     std::vector<std::string>
         default_names;  // Default names, for auto-registration.
@@ -154,6 +158,10 @@ class TestProtocol : public FileProtocol {
     int basic_delete_file_count = 0;    // Counts calls to BasicDeleteFile.
     int basic_open_file_count = 0;      // Counts calls to BasicOpenFile.
 
+    // Count calls to SetAttributes and BasicSetAttributes.
+    int set_attributes_count = 0;
+    int basic_set_attributes_count = 0;
+
     // Paths that were accessed through the protocol implicitly or explicitly.
     // Paths are never removed during FileProtocol operations, but become
     // kInvalid to indicate the path was accessed, but there is no file or
@@ -173,12 +181,15 @@ class TestProtocol : public FileProtocol {
   // Implementation for FileProtocol.
   FileProtocolFlags GetFlags() const override;
   std::vector<std::string> GetDefaultNames() const override;
+  FileAttributes GetAttributeFlags() const override;
 
   // These are deliberately public, so they can be called directly from tests.
   void Lock(LockType type) override;
   void Unlock(LockType type) override;
   PathInfo DoGetPathInfo(std::string_view protocol_name,
                          std::string_view path) override;
+  bool DoSetAttributes(std::string_view protocol_name, std::string_view path,
+                       FileAttributes attributes, FileAttributes mask) override;
   std::vector<std::string> DoList(std::string_view protocol_name,
                                   std::string_view path,
                                   std::string_view pattern, FolderMode mode,
@@ -214,6 +225,8 @@ class TestProtocol : public FileProtocol {
   std::unique_ptr<RawFile> BasicOpenFile(std::string_view protocol_name,
                                          std::string_view path,
                                          FileFlags flags) override;
+  bool BasicSetAttributes(std::string_view protocol_name, std::string_view path,
+                          FileAttributes attributes) override;
 
  private:
   bool IsValidProtocolName(std::string_view protocol_name) const {

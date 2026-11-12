@@ -339,6 +339,80 @@ TEST(TestProtocolTest, DeleteFile) {
   state.ResetCounts();
 }
 
+TEST(TestProtocolTest, SetAttributes) {
+  TestProtocol::State state;
+  state.name = "test";
+  state.attribute_flags = FileAttribute::kHidden;
+  state.paths["/file"] = TestProtocol::PathState::NewFile("1234567890");
+  TestProtocol protocol(&state);
+
+  EXPECT_TRUE(protocol.SetAttributes("test", "/file", FileAttribute::kHidden,
+                                     FileAttribute::kHidden));
+  EXPECT_EQ(state.invalid_call_count, 0);
+  EXPECT_EQ(state.set_attributes_count, 1);
+  EXPECT_EQ(state.basic_set_attributes_count, 1);
+  EXPECT_EQ(protocol.GetPathInfo("test", "/file").attributes,
+            FileAttribute::kHidden);
+  state.ResetCounts();
+
+  // Only supported attributes are reported.
+  state.paths["/file"].SetAttributes(kAllFileAttributes);
+  EXPECT_EQ(protocol.GetPathInfo("test", "/file").attributes,
+            FileAttribute::kHidden);
+  state.paths["/file"].SetAttributes(FileAttribute::kHidden);
+
+  // A mask with unsupported attributes, or attributes outside the mask, never
+  // reach a protocol from a FileSystem.
+  EXPECT_FALSE(protocol.SetAttributes("test", "/file", {}, kAllFileAttributes));
+  EXPECT_FALSE(
+      protocol.SetAttributes("test", "/file", FileAttribute::kHidden, {}));
+  EXPECT_EQ(state.invalid_call_count, 2);
+  EXPECT_EQ(state.basic_set_attributes_count, 0);
+  state.ResetCounts();
+
+  state.flags -= FileProtocolFlag::kFileWrite;
+  EXPECT_FALSE(
+      protocol.SetAttributes("test", "/file", {}, FileAttribute::kHidden));
+  EXPECT_EQ(state.invalid_call_count, 1);
+  state.ResetCounts();
+  state.flags += FileProtocolFlag::kFileWrite;
+
+  EXPECT_FALSE(
+      protocol.SetAttributes("other", "/file", {}, FileAttribute::kHidden));
+  EXPECT_EQ(state.invalid_call_count, 1);
+  EXPECT_EQ(state.basic_set_attributes_count, 0);
+  EXPECT_EQ(protocol.GetPathInfo("test", "/file").attributes,
+            FileAttribute::kHidden);
+  state.ResetCounts();
+}
+
+TEST(TestProtocolTest, BasicSetAttributes) {
+  TestProtocol::State state;
+  state.name = "test";
+  state.attribute_flags = FileAttribute::kHidden;
+  state.paths["/file"] = TestProtocol::PathState::NewFile("1234567890");
+  TestProtocol protocol(&state);
+
+  EXPECT_TRUE(
+      protocol.BasicSetAttributes("test", "/file", FileAttribute::kHidden));
+  EXPECT_EQ(state.invalid_call_count, 0);
+  EXPECT_EQ(state.paths["/file"].GetAttributes(), FileAttribute::kHidden);
+  state.ResetCounts();
+
+  // Each of these breaks a precondition.
+  EXPECT_FALSE(
+      protocol.BasicSetAttributes("test", "/file", FileAttribute::kHidden));
+  EXPECT_FALSE(protocol.BasicSetAttributes("test", "/invalid", {}));
+  EXPECT_FALSE(
+      protocol.BasicSetAttributes("test", "/file", FileAttribute::kReadOnly));
+  EXPECT_FALSE(protocol.BasicSetAttributes("other", "/file", {}));
+  EXPECT_FALSE(
+      protocol.BasicSetAttributes("test", "/", FileAttribute::kHidden));
+  EXPECT_EQ(state.invalid_call_count, 5);
+  EXPECT_EQ(state.basic_set_attributes_count, 5);
+  EXPECT_EQ(state.paths["/file"].GetAttributes(), FileAttribute::kHidden);
+}
+
 TEST(TestProtocolTest, CopyFile) {
   TestProtocol::State state;
   state.name = "test";
