@@ -1011,7 +1011,8 @@ std::unique_ptr<RenderPipeline> VulkanBackend::CreatePipeline(
   return VulkanRenderPipeline::Create(
       {}, this, static_cast<VulkanBindingLayout*>(binding_layout), vertex_type,
       bindings, static_cast<VulkanShaderCode*>(vertex_shader),
-      static_cast<VulkanShaderCode*>(fragment_shader), config, render_pass_);
+      static_cast<VulkanShaderCode*>(fragment_shader), config,
+      GetFrameRenderPass());
 }
 
 std::unique_ptr<RenderBuffer> VulkanBackend::CreateVertexBuffer(
@@ -1132,7 +1133,7 @@ void VulkanBackend::Draw(RenderInternal, RenderView* view,
   render_state_.buffers.insert(static_cast<VulkanRenderBuffer*>(vertices));
   render_state_.buffers.insert(static_cast<VulkanRenderBuffer*>(indices));
   render_state_
-      .draw[view->GetOrder()][static_cast<VulkanView*>(view)]
+      .draw[view->GetPass()][view->GetOrder()][static_cast<VulkanView*>(view)]
            [static_cast<VulkanRenderPipeline*>(pipeline)]
       .mesh[static_cast<VulkanBindingData*>(material_data)]
            [static_cast<VulkanRenderBuffer*>(vertices)]
@@ -1167,9 +1168,9 @@ void VulkanBackend::Draw(RenderInternal, RenderView* view,
   if (pipeline == nullptr) {
     return;
   }
-  auto& draw =
-      render_state_.draw[view->GetOrder()][static_cast<VulkanView*>(view)]
-                        [static_cast<VulkanRenderPipeline*>(pipeline)];
+  auto& draw = render_state_.draw[view->GetPass()][view->GetOrder()]
+                                 [static_cast<VulkanView*>(view)]
+                                 [static_cast<VulkanRenderPipeline*>(pipeline)];
   draw.commands.insert(draw.commands.end(), commands.begin(), commands.end());
   draw.commands.emplace_back(DrawCommand::Type::kReset);
 }
@@ -1377,12 +1378,6 @@ void VulkanBackend::EndFrameRenderPass() {
   auto& frame = frames_[frame_index_];
   auto& frame_buffer = frame_buffers_[frame_buffer_index_];
 
-  // Without multi-draw, each indirect draw call draws one range.
-  const uint32_t max_draw_indirect_count =
-      multi_draw_enabled_.load(std::memory_order_relaxed)
-          ? max_draw_indirect_count_
-          : 1;
-
   const std::array<vk::ClearValue, 2> kClearValues = {clear_color_,
                                                       kDepthClearValue};
   frame.commands.beginRenderPass(
@@ -1394,16 +1389,36 @@ void VulkanBackend::EndFrameRenderPass() {
           .setPClearValues(kClearValues.data()),
       vk::SubpassContents::eInline);
 
-  auto scissor = vk::Rect2D({0, 0}, swap_extent_);
   auto viewport =
       vk::Viewport(0.0f, 0.0f, static_cast<float>(swap_extent_.width),
                    static_cast<float>(swap_extent_.height), 0.0f, 1.0f);
   frame.commands.setViewport(0, {viewport});
-  frame.commands.setScissor(0, {scissor});
+  frame.commands.setScissor(0, {vk::Rect2D({0, 0}, swap_extent_)});
 
   CallFrameCallbacks(&begin_render_callbacks_);
 
-  for (const auto& view_group_it : render_state_.draw) {
+  DrawViews(render_state_.draw[nullptr], GetFrameRenderPass(), swap_extent_);
+
+  CallFrameCallbacks(&end_render_callbacks_);
+
+  frame.commands.endRenderPass();
+
+  CallFrameCallbacks(&post_render_callbacks_);
+}
+
+void VulkanBackend::DrawViews(const VulkanRenderState::ViewGroupDraw& views,
+                              const VulkanRenderPassInfo& pass,
+                              vk::Extent2D extent) {
+  auto& frame = frames_[frame_index_];
+
+  // Without multi-draw, each indirect draw call draws one range.
+  const uint32_t max_draw_indirect_count =
+      multi_draw_enabled_.load(std::memory_order_relaxed)
+          ? max_draw_indirect_count_
+          : 1;
+
+  auto scissor = vk::Rect2D({0, 0}, extent);
+  for (const auto& view_group_it : views) {
     for (const auto& view_it : view_group_it.second) {
       VulkanView* view = view_it.first;
       VulkanBindingData* view_data =
@@ -1417,46 +1432,53 @@ void VulkanBackend::EndFrameRenderPass() {
       }
       for (const auto& pipeline_it : view_it.second) {
         VulkanRenderPipeline* pipeline = pipeline_it.first;
-        frame.commands.bindPipeline(vk::PipelineBindPoint::eGraphics,
-                                    pipeline->Get());
         auto& pipeline_info = pipeline_it.second;
-        for (const auto& material_it : pipeline_info.mesh) {
-          VulkanBindingData* material_data = material_it.first;
-          auto material_descriptor_set =
-              material_data->GetDescriptorSet(frame_index_);
-          if (material_descriptor_set) {
-            frame.commands.bindDescriptorSets(
-                vk::PipelineBindPoint::eGraphics, pipeline->GetLayout(), 1,
-                {material_descriptor_set}, material_data->GetBufferOffsets());
-          }
-          for (const auto& vertex_it : material_it.second) {
-            VulkanRenderBuffer* vertex_buffer = vertex_it.first;
-            frame.commands.bindVertexBuffers(
-                0, {vertex_buffer->GetBuffer(frame_index_)}, {0});
-            for (const auto& index_it : vertex_it.second) {
-              VulkanRenderBuffer* index_buffer = index_it.first;
-              frame.commands.bindIndexBuffer(
-                  index_buffer->GetBuffer(frame_index_), 0,
-                  vk::IndexType::eUint16);
-              for (const auto& group_it : index_it.second) {
-                for (VulkanBindingData* instance_data : group_it.second) {
-                  auto instance_descriptor_set =
-                      instance_data->GetDescriptorSet(frame_index_);
-                  if (instance_descriptor_set) {
-                    frame.commands.bindDescriptorSets(
-                        vk::PipelineBindPoint::eGraphics, pipeline->GetLayout(),
-                        2, {instance_descriptor_set},
-                        instance_data->GetBufferOffsets());
-                  }
-                  frame.commands.drawIndexed(
-                      static_cast<uint32_t>(index_buffer->GetSize()), 1, 0, 0,
-                      0);
-                }  // InstanceDraw
-              }  // InstanceGroupDraw
-            }  // IndexDraw
-          }  // VertexDraw
-        }  // MaterialDraw
-        VulkanRenderPipeline* last_pipeline = pipeline;
+
+        // A pipeline that failed to be created for this pass (which is logged)
+        // draws nothing, here or in the commands below.
+        const vk::Pipeline pipeline_handle = pipeline->Get(pass);
+        VulkanRenderPipeline* last_pipeline = nullptr;
+        if (pipeline_handle) {
+          frame.commands.bindPipeline(vk::PipelineBindPoint::eGraphics,
+                                      pipeline_handle);
+          last_pipeline = pipeline;
+          for (const auto& material_it : pipeline_info.mesh) {
+            VulkanBindingData* material_data = material_it.first;
+            auto material_descriptor_set =
+                material_data->GetDescriptorSet(frame_index_);
+            if (material_descriptor_set) {
+              frame.commands.bindDescriptorSets(
+                  vk::PipelineBindPoint::eGraphics, pipeline->GetLayout(), 1,
+                  {material_descriptor_set}, material_data->GetBufferOffsets());
+            }
+            for (const auto& vertex_it : material_it.second) {
+              VulkanRenderBuffer* vertex_buffer = vertex_it.first;
+              frame.commands.bindVertexBuffers(
+                  0, {vertex_buffer->GetBuffer(frame_index_)}, {0});
+              for (const auto& index_it : vertex_it.second) {
+                VulkanRenderBuffer* index_buffer = index_it.first;
+                frame.commands.bindIndexBuffer(
+                    index_buffer->GetBuffer(frame_index_), 0,
+                    vk::IndexType::eUint16);
+                for (const auto& group_it : index_it.second) {
+                  for (VulkanBindingData* instance_data : group_it.second) {
+                    auto instance_descriptor_set =
+                        instance_data->GetDescriptorSet(frame_index_);
+                    if (instance_descriptor_set) {
+                      frame.commands.bindDescriptorSets(
+                          vk::PipelineBindPoint::eGraphics,
+                          pipeline->GetLayout(), 2, {instance_descriptor_set},
+                          instance_data->GetBufferOffsets());
+                    }
+                    frame.commands.drawIndexed(
+                        static_cast<uint32_t>(index_buffer->GetSize()), 1, 0, 0,
+                        0);
+                  }  // InstanceDraw
+                }  // InstanceGroupDraw
+              }  // IndexDraw
+            }  // VertexDraw
+          }  // MaterialDraw
+        }
         VulkanRenderPipeline* next_pipeline = pipeline;
         // Each command sets what the next draw binds, and a draw binds only
         // what differs from the last draw.
@@ -1523,8 +1545,12 @@ void VulkanBackend::EndFrameRenderPass() {
             case DrawCommand::Type::kDraw:
             case DrawCommand::Type::kIndirect: {
               if (next_pipeline != last_pipeline) {
+                const vk::Pipeline next_handle = next_pipeline->Get(pass);
+                if (!next_handle) {
+                  break;
+                }
                 frame.commands.bindPipeline(vk::PipelineBindPoint::eGraphics,
-                                            next_pipeline->Get());
+                                            next_handle);
                 last_pipeline = next_pipeline;
               }
               if (next_material_data != last_material_data) {
@@ -1563,7 +1589,7 @@ void VulkanBackend::EndFrameRenderPass() {
               break;
             }
             case DrawCommand::Type::kReset: {
-              scissor = vk::Rect2D({0, 0}, swap_extent_);
+              scissor = vk::Rect2D({0, 0}, extent);
               frame.commands.setScissor(0, {scissor});
               last_pipeline = nullptr;
               last_material_data = last_instance_data = nullptr;
@@ -1575,12 +1601,6 @@ void VulkanBackend::EndFrameRenderPass() {
       }  // PipelineDraw
     }  // ViewDraw
   }  // ViewGroupDraw
-
-  CallFrameCallbacks(&end_render_callbacks_);
-
-  frame.commands.endRenderPass();
-
-  CallFrameCallbacks(&post_render_callbacks_);
 }
 
 void VulkanBackend::DrawIndirect(vk::CommandBuffer commands,

@@ -12,6 +12,7 @@
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "gb/render/draw_list.h"
+#include "gb/render/render_pass.h"
 #include "gb/render/vulkan/vulkan_image.h"
 #include "gb/render/vulkan/vulkan_types.h"
 
@@ -35,6 +36,7 @@ struct VulkanRenderState {
   using PipelineDraw = absl::flat_hash_map<VulkanRenderPipeline*, MaterialDraw>;
   using ViewDraw = absl::flat_hash_map<VulkanView*, PipelineDraw>;
   using ViewGroupDraw = std::map<int, ViewDraw>;
+  using PassDraw = absl::flat_hash_map<RenderPass*, ViewGroupDraw>;
 
   // Prepares a layer of an image for its updates. If keep_contents is false,
   // the updates replace every pixel of every mip level.
@@ -140,8 +142,8 @@ struct VulkanRenderState {
   // Frame being renderered.
   int frame = 0;
 
-  // Draw lists.
-  ViewGroupDraw draw;
+  // Draw lists for each pass, keyed by the pass, or null for the frame.
+  PassDraw draw;
 
   // Accumulates all resources participating in a frame.
   absl::flat_hash_set<VulkanBindingData*> binding_data;

@@ -136,8 +136,6 @@ class VulkanBackend final : public RenderBackend {
     return queues_.graphics_index.value();
   }
   vk::Queue GetGraphicsQueue() const { return queues_.graphics; }
-  vk::RenderPass GetRenderPass() const { return render_pass_; }
-  vk::SampleCountFlagBits GetMsaaSampleCount() const { return msaa_count_; }
 
   // Allocator
   VmaAllocator GetAllocator() { return allocator_; }
@@ -319,6 +317,13 @@ class VulkanBackend final : public RenderBackend {
   void CleanUpSwap();
   bool RecreateSwap();
 
+  VulkanRenderPassInfo GetFrameRenderPass() const {
+    return {.render_pass = render_pass_,
+            .layout = {.color_format = format_.format,
+                       .depth_format = depth_format_,
+                       .sample_count = msaa_count_}};
+  }
+
   friend VkBool32 DebugMessageCallback(
       VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
       VkDebugUtilsMessageTypeFlagsEXT message_type,
@@ -347,6 +352,11 @@ class VulkanBackend final : public RenderBackend {
   void EndFrameUpdateImages();
   void EndFrameUpdateDescriptorSets();
   void EndFrameRenderPass();
+
+  // Records the draws of `views` in the render pass that has begun, which is
+  // `pass`, covering `extent`.
+  void DrawViews(const VulkanRenderState::ViewGroupDraw& views,
+                 const VulkanRenderPassInfo& pass, vk::Extent2D extent);
 
   // Records an indirect draw, in calls of at most `max_count` draws.
   void DrawIndirect(vk::CommandBuffer commands,

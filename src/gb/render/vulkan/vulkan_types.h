@@ -6,6 +6,8 @@
 #ifndef GB_RENDER_VULKAN_VULKAN_TYPES_H_
 #define GB_RENDER_VULKAN_VULKAN_TYPES_H_
 
+#include <utility>
+
 #include "gb/render/render_assert.h"
 
 // Must be after renderer/render_assert.h
@@ -57,6 +59,28 @@ inline constexpr int kMaxFramesInFlight = 2;
 inline constexpr int kMaxViewsPerGroup = 10;
 inline constexpr int kMaxMaterialsPerGroup = 50;
 inline constexpr int kMaxInstancesPerGroup = 250;
+
+// The attachments of a render pass with one subpass. A pipeline created for a
+// render pass draws in any render pass of the same layout.
+struct VulkanPassLayout {
+  bool operator==(const VulkanPassLayout&) const = default;
+
+  template <typename H>
+  friend H AbslHashValue(H h, const VulkanPassLayout& layout) {
+    return H::combine(std::move(h), layout.color_format, layout.depth_format,
+                      layout.sample_count);
+  }
+
+  vk::Format color_format = vk::Format::eUndefined;  // eUndefined for none.
+  vk::Format depth_format = vk::Format::eUndefined;  // eUndefined for none.
+  vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1;
+};
+
+// A render pass with one subpass, and its layout.
+struct VulkanRenderPassInfo {
+  vk::RenderPass render_pass;
+  VulkanPassLayout layout;
+};
 
 }  // namespace gb
 

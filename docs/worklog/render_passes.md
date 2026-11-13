@@ -276,10 +276,15 @@ sampling its own targets is left to the validation layers, as finding it in
 - **Pipelines per pass layout.** A `vk::Pipeline` can only draw in render
   passes compatible with the one it was created for: the same attachment
   formats and sample counts. `VulkanRenderPipeline` keeps one per layout
-  (color format or none, depth or none, sample count), creating each the first
-  time it is drawn in a pass of that layout. The frame's is created with the
-  material type, as now. Its blend state has one attachment, or none for a
-  depth-only pass.
+  (`VulkanPassLayout`: the color and depth formats, either of which may be
+  none, and the sample count), creating each the first time it is drawn in a
+  pass of that layout. It is given a `VulkanRenderPassInfo`, a render pass and
+  its layout, which are put together only where the render pass is created,
+  so they can't disagree. A pipeline that fails for a layout draws nothing in
+  it, and the failure is logged once. The frame's is created with the material type, as now,
+  so a material type that can't draw fails to be created. Its blend state has
+  one attachment, or none for a depth-only pass, and it does no depth test in
+  a pass without depth.
 - **Targets.** `VulkanRenderTarget` holds a `VulkanImage` usable as an
   attachment and sampled, with a version that changes as it is resized, so
   binding data rewrites its descriptors as it does for a texture that is
@@ -403,7 +408,7 @@ Depends on: CL1.
   and in the frame; each frame's passes, their draws, and what each reads; a
   pass with nothing drawn still recorded; destroying a pass with views left.
 
-### CL3 [ ] render_vulkan: Pipelines and drawing per pass
+### CL3 [x] render_vulkan: Pipelines and drawing per pass
 
 Depends on: CL2.
 
@@ -411,6 +416,8 @@ Depends on: CL2.
   only one used.
 - `VulkanRenderState::draw` per pass, and `EndFrameRenderPass()` drawing each,
   with the frame the only one, and the scissor from its size.
+- `VulkanBackend::GetRenderPass()` and `GetMsaaSampleCount()`, which nothing
+  else calls, are removed.
 - No visible change.
 
 **Verify**

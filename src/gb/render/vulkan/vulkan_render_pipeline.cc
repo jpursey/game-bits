@@ -11,7 +11,6 @@
 #include "absl/base/macros.h"
 #include "absl/log/log.h"
 #include "absl/memory/memory.h"
-#include "gb/render/material_config.h"
 #include "gb/render/vulkan/vulkan_backend.h"
 #include "gb/render/vulkan/vulkan_binding_layout.h"
 #include "gb/render/vulkan/vulkan_shader_code.h"
@@ -22,27 +21,46 @@ std::unique_ptr<VulkanRenderPipeline> VulkanRenderPipeline::Create(
     VulkanInternal, VulkanBackend* backend, VulkanBindingLayout* binding_layout,
     const VertexType* vertex_type, absl::Span<const Binding> bindings,
     VulkanShaderCode* vertex_shader, VulkanShaderCode* fragment_shader,
-    const MaterialConfig& config, vk::RenderPass render_pass) {
-  auto pipeline = absl::WrapUnique(new VulkanRenderPipeline());
-  if (!pipeline->Init(backend, binding_layout, vertex_type, bindings,
-                      vertex_shader, fragment_shader, config, render_pass)) {
+    const MaterialConfig& config, const VulkanRenderPassInfo& frame_pass) {
+  auto pipeline = absl::WrapUnique(new VulkanRenderPipeline(
+      backend, vertex_shader, fragment_shader, config));
+  if (!pipeline->Init(binding_layout, vertex_type, bindings) ||
+      !pipeline->Get(frame_pass)) {
     return nullptr;
   }
   return pipeline;
 }
 
+VulkanRenderPipeline::VulkanRenderPipeline(VulkanBackend* backend,
+                                           VulkanShaderCode* vertex_shader,
+                                           VulkanShaderCode* fragment_shader,
+                                           const MaterialConfig& config)
+    : backend_(backend),
+      vertex_shader_(vertex_shader),
+      fragment_shader_(fragment_shader),
+      config_(config) {}
+
 VulkanRenderPipeline::~VulkanRenderPipeline() {
   auto* gc = backend_->GetGarbageCollector();
-  gc->Dispose(pipeline_);
+  absl::MutexLock lock(&mutex_);
+  for (const auto& [layout, pipeline] : pipelines_) {
+    gc->Dispose(pipeline);
+  }
   gc->Dispose(pipeline_layout_);
 }
 
-bool VulkanRenderPipeline::Init(
-    VulkanBackend* backend, VulkanBindingLayout* binding_layout,
-    const VertexType* vertex_type, absl::Span<const Binding> bindings,
-    VulkanShaderCode* vertex_shader, VulkanShaderCode* fragment_shader,
-    const MaterialConfig& config, vk::RenderPass render_pass) {
-  backend_ = backend;
+vk::Pipeline VulkanRenderPipeline::Get(const VulkanRenderPassInfo& pass) {
+  absl::MutexLock lock(&mutex_);
+  auto [it, inserted] = pipelines_.try_emplace(pass.layout);
+  if (inserted) {
+    it->second = CreatePipeline(pass);
+  }
+  return it->second;
+}
+
+bool VulkanRenderPipeline::Init(VulkanBindingLayout* binding_layout,
+                                const VertexType* vertex_type,
+                                absl::Span<const Binding> bindings) {
   auto device = backend_->GetDevice();
 
   std::vector<Binding> material_bindings;
@@ -66,25 +84,12 @@ bool VulkanRenderPipeline::Init(
     return false;
   }
 
-  vk::PipelineShaderStageCreateInfo stages[] = {
-      vk::PipelineShaderStageCreateInfo()
-          .setStage(vk::ShaderStageFlagBits::eVertex)
-          .setModule(vertex_shader->Get())
-          .setPName("main"),
-      vk::PipelineShaderStageCreateInfo()
-          .setStage(vk::ShaderStageFlagBits::eFragment)
-          .setModule(fragment_shader->Get())
-          .setPName("main"),
-  };
-
-  auto vertex_binding = vk::VertexInputBindingDescription()
-                            .setBinding(0)
-                            .setStride(vertex_type->GetSize())
-                            .setInputRate(vk::VertexInputRate::eVertex);
-
+  vertex_binding_ = vk::VertexInputBindingDescription()
+                        .setBinding(0)
+                        .setStride(vertex_type->GetSize())
+                        .setInputRate(vk::VertexInputRate::eVertex);
   auto attributes = vertex_type->GetAttributes();
-  std::vector<vk::VertexInputAttributeDescription> vertex_attributes;
-  vertex_attributes.reserve(attributes.size());
+  vertex_attributes_.reserve(attributes.size());
   uint32_t location = 0;
   uint32_t offset = 0;
   for (const auto& attribute : attributes) {
@@ -259,7 +264,7 @@ bool VulkanRenderPipeline::Init(
         LOG(ERROR) << "Unhandled vertex attribute type";
         return false;
     }
-    vertex_attributes.emplace_back()
+    vertex_attributes_.emplace_back()
         .setBinding(0)
         .setLocation(location)
         .setFormat(format)
@@ -268,13 +273,45 @@ bool VulkanRenderPipeline::Init(
     offset += size;
   }
 
+  vk::DescriptorSetLayout descriptor_set_layouts[] = {
+      binding_layout->GetViewSetLayout(),
+      material_data_factory_->GetLayout(),
+      instance_data_factory_->GetLayout(),
+  };
+
+  auto [create_layout_result, pipeline_layout] = device.createPipelineLayout(
+      vk::PipelineLayoutCreateInfo()
+          .setSetLayoutCount(ABSL_ARRAYSIZE(descriptor_set_layouts))
+          .setPSetLayouts(descriptor_set_layouts));
+  if (create_layout_result != vk::Result::eSuccess) {
+    LOG(ERROR) << "Failed to create pipeline layout";
+    return false;
+  }
+  pipeline_layout_ = pipeline_layout;
+  return true;
+}
+
+vk::Pipeline VulkanRenderPipeline::CreatePipeline(
+    const VulkanRenderPassInfo& pass) {
+  const VulkanPassLayout& layout = pass.layout;
+  vk::PipelineShaderStageCreateInfo stages[] = {
+      vk::PipelineShaderStageCreateInfo()
+          .setStage(vk::ShaderStageFlagBits::eVertex)
+          .setModule(vertex_shader_->Get())
+          .setPName("main"),
+      vk::PipelineShaderStageCreateInfo()
+          .setStage(vk::ShaderStageFlagBits::eFragment)
+          .setModule(fragment_shader_->Get())
+          .setPName("main"),
+  };
+
   auto vertex_input_info =
       vk::PipelineVertexInputStateCreateInfo()
           .setVertexBindingDescriptionCount(1)
-          .setPVertexBindingDescriptions(&vertex_binding)
+          .setPVertexBindingDescriptions(&vertex_binding_)
           .setVertexAttributeDescriptionCount(
-              static_cast<uint32_t>(vertex_attributes.size()))
-          .setPVertexAttributeDescriptions(vertex_attributes.data());
+              static_cast<uint32_t>(vertex_attributes_.size()))
+          .setPVertexAttributeDescriptions(vertex_attributes_.data());
 
   auto input_assembly = vk::PipelineInputAssemblyStateCreateInfo().setTopology(
       vk::PrimitiveTopology::eTriangleList);
@@ -289,33 +326,38 @@ bool VulkanRenderPipeline::Init(
                             .setScissorCount(1)
                             .setPScissors(&scissor);
 
+  // A render pass without depth does no depth test.
+  const DepthMode depth_mode =
+      (layout.depth_format != vk::Format::eUndefined ? config_.depth_mode
+                                                     : DepthMode::kNone);
+
   vk::CullModeFlags cull_mode = {};
-  if (config.cull_mode == CullMode::kBack) {
+  if (config_.cull_mode == CullMode::kBack) {
     cull_mode = vk::CullModeFlagBits::eBack;
-  } else if (config.cull_mode == CullMode::kFront) {
+  } else if (config_.cull_mode == CullMode::kFront) {
     cull_mode = vk::CullModeFlagBits::eFront;
   }
   vk::PolygonMode polygon_mode =
-      (config.raster_mode == RasterMode::kFill ? vk::PolygonMode::eFill
-                                               : vk::PolygonMode::eLine);
+      (config_.raster_mode == RasterMode::kFill ? vk::PolygonMode::eFill
+                                                : vk::PolygonMode::eLine);
   auto rasterizer =
       vk::PipelineRasterizationStateCreateInfo()
           .setPolygonMode(polygon_mode)
           .setLineWidth(1.0f)
           .setCullMode(cull_mode)
           .setFrontFace(vk::FrontFace::eCounterClockwise)
-          .setDepthBiasEnable(config.depth_mode != DepthMode::kNone &&
-                              (config.depth_bias_constant != 0.0f ||
-                               config.depth_bias_slope != 0.0f))
-          .setDepthBiasConstantFactor(config.depth_bias_constant)
-          .setDepthBiasSlopeFactor(config.depth_bias_slope);
+          .setDepthBiasEnable(depth_mode != DepthMode::kNone &&
+                              (config_.depth_bias_constant != 0.0f ||
+                               config_.depth_bias_slope != 0.0f))
+          .setDepthBiasConstantFactor(config_.depth_bias_constant)
+          .setDepthBiasSlopeFactor(config_.depth_bias_slope);
 
   auto multisampling =
       vk::PipelineMultisampleStateCreateInfo().setRasterizationSamples(
-          backend_->GetMsaaSampleCount());
+          layout.sample_count);
 
   vk::CompareOp depth_compare_op = {};
-  switch (config.depth_test) {
+  switch (config_.depth_test) {
     case DepthTest::kLess:
       depth_compare_op = vk::CompareOp::eLess;
       break;
@@ -335,14 +377,14 @@ bool VulkanRenderPipeline::Init(
 
   // Vulkan only writes depth while the depth test is enabled, so writing
   // without a test is a test that always passes.
-  if (config.depth_mode == DepthMode::kWrite) {
+  if (depth_mode == DepthMode::kWrite) {
     depth_compare_op = vk::CompareOp::eAlways;
   }
   auto depth_stencil =
       vk::PipelineDepthStencilStateCreateInfo()
-          .setDepthTestEnable(config.depth_mode != DepthMode::kNone)
-          .setDepthWriteEnable(config.depth_mode == DepthMode::kWrite ||
-                               config.depth_mode == DepthMode::kTestAndWrite)
+          .setDepthTestEnable(depth_mode != DepthMode::kNone)
+          .setDepthWriteEnable(depth_mode == DepthMode::kWrite ||
+                               depth_mode == DepthMode::kTestAndWrite)
           .setDepthCompareOp(depth_compare_op)
           .setDepthBoundsTestEnable(VK_FALSE)
           .setMinDepthBounds(0.0f)
@@ -352,16 +394,16 @@ bool VulkanRenderPipeline::Init(
           .setBack({});
 
   vk::ColorComponentFlags color_write_mask = {};
-  if (config.color_channels.IsSet(ColorChannel::kRed)) {
+  if (config_.color_channels.IsSet(ColorChannel::kRed)) {
     color_write_mask |= vk::ColorComponentFlagBits::eR;
   }
-  if (config.color_channels.IsSet(ColorChannel::kGreen)) {
+  if (config_.color_channels.IsSet(ColorChannel::kGreen)) {
     color_write_mask |= vk::ColorComponentFlagBits::eG;
   }
-  if (config.color_channels.IsSet(ColorChannel::kBlue)) {
+  if (config_.color_channels.IsSet(ColorChannel::kBlue)) {
     color_write_mask |= vk::ColorComponentFlagBits::eB;
   }
-  if (config.color_channels.IsSet(ColorChannel::kAlpha)) {
+  if (config_.color_channels.IsSet(ColorChannel::kAlpha)) {
     color_write_mask |= vk::ColorComponentFlagBits::eA;
   }
   auto color_blend_attachment = vk::PipelineColorBlendAttachmentState()
@@ -371,7 +413,7 @@ bool VulkanRenderPipeline::Init(
 
   // With no color written, blending would read the frame for nothing.
   const BlendMode blend_mode =
-      (color_write_mask ? config.blend_mode : BlendMode::kNone);
+      (color_write_mask ? config_.blend_mode : BlendMode::kNone);
   switch (blend_mode) {
     case BlendMode::kNone:
       color_blend_attachment.setBlendEnable(VK_FALSE);
@@ -399,9 +441,12 @@ bool VulkanRenderPipeline::Init(
       break;
   }
 
-  auto color_blending = vk::PipelineColorBlendStateCreateInfo()
-                            .setAttachmentCount(1)
-                            .setPAttachments(&color_blend_attachment);
+  // A render pass without color (depth only) has no color attachment to blend.
+  auto color_blending =
+      vk::PipelineColorBlendStateCreateInfo()
+          .setAttachmentCount(layout.color_format != vk::Format::eUndefined ? 1
+                                                                            : 0)
+          .setPAttachments(&color_blend_attachment);
 
   vk::DynamicState dynamic_states[] = {vk::DynamicState::eViewport,
                                        vk::DynamicState::eScissor};
@@ -409,44 +454,27 @@ bool VulkanRenderPipeline::Init(
                            .setDynamicStateCount(ABSL_ARRAYSIZE(dynamic_states))
                            .setPDynamicStates(dynamic_states);
 
-  vk::DescriptorSetLayout descriptor_set_layouts[] = {
-      binding_layout->GetViewSetLayout(),
-      material_data_factory_->GetLayout(),
-      instance_data_factory_->GetLayout(),
-  };
-
-  auto [create_layout_result, pipeline_layout] = device.createPipelineLayout(
-      vk::PipelineLayoutCreateInfo()
-          .setSetLayoutCount(ABSL_ARRAYSIZE(descriptor_set_layouts))
-          .setPSetLayouts(descriptor_set_layouts));
-  if (create_layout_result != vk::Result::eSuccess) {
-    LOG(ERROR) << "Failed to create pipeline layout";
-    return false;
-  }
-  pipeline_layout_ = pipeline_layout;
-
-  auto [create_pipeline_result, pipeline] = device.createGraphicsPipeline(
-      {}, vk::GraphicsPipelineCreateInfo()
-              .setStageCount(ABSL_ARRAYSIZE(stages))
-              .setPStages(stages)
-              .setPVertexInputState(&vertex_input_info)
-              .setPInputAssemblyState(&input_assembly)
-              .setPViewportState(&viewport_state)
-              .setPRasterizationState(&rasterizer)
-              .setPMultisampleState(&multisampling)
-              .setPDepthStencilState(&depth_stencil)
-              .setPColorBlendState(&color_blending)
-              .setLayout(pipeline_layout_)
-              .setRenderPass(render_pass)
-              .setSubpass(0)
-              .setPDynamicState(&dynamic_state));
+  auto [create_pipeline_result, pipeline] =
+      backend_->GetDevice().createGraphicsPipeline(
+          {}, vk::GraphicsPipelineCreateInfo()
+                  .setStageCount(ABSL_ARRAYSIZE(stages))
+                  .setPStages(stages)
+                  .setPVertexInputState(&vertex_input_info)
+                  .setPInputAssemblyState(&input_assembly)
+                  .setPViewportState(&viewport_state)
+                  .setPRasterizationState(&rasterizer)
+                  .setPMultisampleState(&multisampling)
+                  .setPDepthStencilState(&depth_stencil)
+                  .setPColorBlendState(&color_blending)
+                  .setLayout(pipeline_layout_)
+                  .setRenderPass(pass.render_pass)
+                  .setSubpass(0)
+                  .setPDynamicState(&dynamic_state));
   if (create_pipeline_result != vk::Result::eSuccess) {
     LOG(ERROR) << "Failed to create pipeline";
-    return false;
+    return {};
   }
-  pipeline_ = pipeline;
-
-  return true;
+  return pipeline;
 }
 
 std::unique_ptr<BindingData> VulkanRenderPipeline::CreateMaterialBindingData() {
