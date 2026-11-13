@@ -21,8 +21,10 @@
 #include "gb/render/vulkan/vulkan_buffer.h"
 #include "gb/render/vulkan/vulkan_format.h"
 #include "gb/render/vulkan/vulkan_mesh_pool_buffers.h"
+#include "gb/render/vulkan/vulkan_pass.h"
 #include "gb/render/vulkan/vulkan_render_buffer.h"
 #include "gb/render/vulkan/vulkan_render_pipeline.h"
+#include "gb/render/vulkan/vulkan_render_target.h"
 #include "gb/render/vulkan/vulkan_shader_code.h"
 #include "gb/render/vulkan/vulkan_texture.h"
 #include "gb/render/vulkan/vulkan_texture_array.h"
@@ -63,7 +65,6 @@ namespace {
 
 static const vk::ClearColorValue kColorClearValue(std::array<float, 4>{
     0.0f, 0.0f, 0.0f, 1.0f});
-static const vk::ClearDepthStencilValue kDepthClearValue(1.0f, 0);
 
 // The channel order of swap chain images that frames are read back from.
 enum class ReadOrder { kUnsupported, kRgba, kBgra };
@@ -314,6 +315,19 @@ bool VulkanBackend::InitDevice(const std::vector<const char*>& layers) {
     return false;
   }
   depth_format_ = depth_format.value();
+
+  // Depth targets are drawn into and then sampled, which needs a format
+  // without stencil, so a view of its depth alone is a whole attachment. A
+  // device without one can't create depth targets.
+  depth_target_format_ =
+      FindSupportedFormat(
+          {vk::Format::eD32Sfloat, vk::Format::eX8D24UnormPack32},
+          vk::ImageTiling::eOptimal,
+          vk::FormatFeatureFlagBits::eDepthStencilAttachment |
+              vk::FormatFeatureFlagBits::eSampledImage)
+          .value_or(vk::Format::eUndefined);
+  LOG(INFO) << "Vulkan depth target format: "
+            << vk::to_string(depth_target_format_);
 
   const vk::SampleCountFlags sample_counts =
       physical_device_properties_.limits.framebufferColorSampleCounts &
@@ -855,12 +869,7 @@ vk::Sampler VulkanBackend::GetSampler(SamplerOptions options, int width,
 }
 
 void VulkanBackend::SetClearColor(RenderInternal, Pixel color) {
-  clear_color_.setFloat32(std::array<float, 4>({
-      static_cast<float>(color.r) / 255.0f,
-      static_cast<float>(color.g) / 255.0f,
-      static_cast<float>(color.b) / 255.0f,
-      static_cast<float>(color.a) / 255.0f,
-  }));
+  clear_color_ = GetClearColorValue(color);
 }
 
 void VulkanBackend::SetDefaultBindings(RenderInternal,
@@ -920,8 +929,15 @@ void VulkanBackend::UnregisterMeshPool(VulkanInternal,
   mesh_pools_.erase(buffers);
 }
 
+vk::Format VulkanBackend::GetVulkanFormat(TextureFormat format) const {
+  if (format == TextureFormat::kDepth) {
+    return depth_target_format_;
+  }
+  return GetVulkanTextureFormat(format).format;
+}
+
 bool VulkanBackend::CanFilter(RenderInternal, TextureFormat format) const {
-  const vk::Format vulkan_format = GetVulkanTextureFormat(format).format;
+  const vk::Format vulkan_format = GetVulkanFormat(format);
   if (vulkan_format == vk::Format::eUndefined) {
     return false;
   }
@@ -975,8 +991,20 @@ RenderTarget* VulkanBackend::CreateRenderTarget(RenderInternal,
                                                 const RenderTargetSize& size,
                                                 int width, int height,
                                                 const SamplerOptions& options) {
-  LOG(ERROR) << "Render targets are not supported by the Vulkan backend yet";
-  return nullptr;
+  const vk::Format vulkan_format = GetVulkanFormat(format);
+  if (vulkan_format == vk::Format::eUndefined) {
+    // Only depth targets' format depends on the device.
+    LOG(ERROR) << "The device has no depth format that can be drawn into and "
+                  "sampled, so it can't create depth targets";
+    return nullptr;
+  }
+  const vk::Sampler sampler = GetSampler(options, width, height);
+  if (!sampler) {
+    return nullptr;
+  }
+  return VulkanRenderTarget::Create(std::move(entry), this, sampler, format,
+                                    vulkan_format, size, width, height,
+                                    options);
 }
 
 std::unique_ptr<ShaderCode> VulkanBackend::CreateShaderCode(RenderInternal,
@@ -992,8 +1020,7 @@ std::unique_ptr<BindingLayout> VulkanBackend::CreateBindingLayout(
 
 std::unique_ptr<RenderPass> VulkanBackend::CreatePass(
     RenderInternal, const RenderPassConfig& config, int pass_order) {
-  LOG(ERROR) << "Render passes are not supported by the Vulkan backend yet";
-  return nullptr;
+  return VulkanPass::Create(this, config, pass_order);
 }
 
 std::unique_ptr<RenderView> VulkanBackend::CreateView(
@@ -1044,7 +1071,6 @@ std::unique_ptr<MeshPoolBuffers> VulkanBackend::CreateMeshPoolBuffers(
 
 bool VulkanBackend::BeginFrame(RenderInternal,
                                absl::Span<RenderPass* const> passes) {
-  // CreatePass() always fails, so there are no passes to draw.
   auto& frame = frames_[frame_index_];
   render_state_.frame = GetFrame();
 
@@ -1117,6 +1143,7 @@ bool VulkanBackend::BeginFrame(RenderInternal,
 
   CallFrameCallbacks(&begin_frame_callbacks_);
 
+  render_state_.passes = passes;
   return true;
 }
 
@@ -1223,6 +1250,10 @@ void VulkanBackend::EndFrameProcessUpdates() {
     volume_texture->OnRender(&render_state_);
   }
 
+  for (RenderPass* pass : render_state_.passes) {
+    static_cast<VulkanPass*>(pass)->OnRender(&render_state_);
+  }
+
   // Every mesh pool copies its writes, whether or not this frame draws it, so
   // a write is never more than a frame late.
   {
@@ -1238,6 +1269,9 @@ void VulkanBackend::EndFrameProcessUpdates() {
   }
   if (!render_state_.image_updates.empty()) {
     EndFrameUpdateImages();
+  }
+  if (!render_state_.target_clears.empty()) {
+    EndFrameClearTargets();
   }
   EndFrameUpdateDescriptorSets();
 }
@@ -1342,6 +1376,68 @@ void VulkanBackend::EndFrameUpdateImages() {
                                  {}, {}, barriers);
 }
 
+void VulkanBackend::EndFrameClearTargets() {
+  auto& frame = frames_[frame_index_];
+
+  // New images have no contents or earlier use to wait for.
+  std::vector<vk::ImageMemoryBarrier> barriers;
+  barriers.reserve(render_state_.target_clears.size());
+  for (VulkanImage* image : render_state_.target_clears) {
+    barriers.emplace_back()
+        .setOldLayout(vk::ImageLayout::eUndefined)
+        .setNewLayout(vk::ImageLayout::eTransferDstOptimal)
+        .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+        .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+        .setImage(image->Get())
+        .setSubresourceRange(
+            vk::ImageSubresourceRange()
+                .setAspectMask(IsDepthFormat(image->GetFormat())
+                                   ? vk::ImageAspectFlagBits::eDepth
+                                   : vk::ImageAspectFlagBits::eColor)
+                .setLevelCount(1)
+                .setLayerCount(1))
+        .setSrcAccessMask({})
+        .setDstAccessMask(vk::AccessFlagBits::eTransferWrite);
+  }
+  frame.commands.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
+                                 vk::PipelineStageFlagBits::eTransfer, {}, {},
+                                 {}, barriers);
+
+  // Color is cleared to transparent black, and depth to the far plane.
+  for (const vk::ImageMemoryBarrier& barrier : barriers) {
+    if (barrier.subresourceRange.aspectMask ==
+        vk::ImageAspectFlagBits::eDepth) {
+      frame.commands.clearDepthStencilImage(
+          barrier.image, vk::ImageLayout::eTransferDstOptimal, kDepthClearValue,
+          {barrier.subresourceRange});
+    } else {
+      frame.commands.clearColorImage(
+          barrier.image, vk::ImageLayout::eTransferDstOptimal,
+          GetClearColorValue(Pixel(0, 0, 0, 0)), {barrier.subresourceRange});
+    }
+  }
+
+  // Targets are kept ready to sample, outside the passes that draw them.
+  for (vk::ImageMemoryBarrier& barrier : barriers) {
+    barrier.setOldLayout(vk::ImageLayout::eTransferDstOptimal)
+        .setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+        .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
+        .setDstAccessMask(vk::AccessFlagBits::eShaderRead |
+                          vk::AccessFlagBits::eColorAttachmentRead |
+                          vk::AccessFlagBits::eColorAttachmentWrite |
+                          vk::AccessFlagBits::eDepthStencilAttachmentRead |
+                          vk::AccessFlagBits::eDepthStencilAttachmentWrite);
+  }
+  frame.commands.pipelineBarrier(
+      vk::PipelineStageFlagBits::eTransfer,
+      vk::PipelineStageFlagBits::eVertexShader |
+          vk::PipelineStageFlagBits::eFragmentShader |
+          vk::PipelineStageFlagBits::eEarlyFragmentTests |
+          vk::PipelineStageFlagBits::eLateFragmentTests |
+          vk::PipelineStageFlagBits::eColorAttachmentOutput,
+      {}, {}, {}, barriers);
+}
+
 void VulkanBackend::EndFrameUpdateDescriptorSets() {
   const int update_count =
       static_cast<int>(render_state_.set_image_updates.size() +
@@ -1376,24 +1472,15 @@ void VulkanBackend::EndFrameUpdateDescriptorSets() {
 
 void VulkanBackend::EndFrameRenderPass() {
   auto& frame = frames_[frame_index_];
-  auto& frame_buffer = frame_buffers_[frame_buffer_index_];
+  for (RenderPass* pass : render_state_.passes) {
+    DrawPass(static_cast<VulkanPass*>(pass));
+  }
 
-  const std::array<vk::ClearValue, 2> kClearValues = {clear_color_,
+  const std::array<vk::ClearValue, 2> clear_values = {clear_color_,
                                                       kDepthClearValue};
-  frame.commands.beginRenderPass(
-      vk::RenderPassBeginInfo()
-          .setRenderPass(render_pass_)
-          .setFramebuffer(frame_buffer.frame_buffer)
-          .setRenderArea({{0, 0}, swap_extent_})
-          .setClearValueCount(static_cast<uint32_t>(kClearValues.size()))
-          .setPClearValues(kClearValues.data()),
-      vk::SubpassContents::eInline);
-
-  auto viewport =
-      vk::Viewport(0.0f, 0.0f, static_cast<float>(swap_extent_.width),
-                   static_cast<float>(swap_extent_.height), 0.0f, 1.0f);
-  frame.commands.setViewport(0, {viewport});
-  frame.commands.setScissor(0, {vk::Rect2D({0, 0}, swap_extent_)});
+  BeginRenderPass(render_pass_,
+                  frame_buffers_[frame_buffer_index_].frame_buffer,
+                  swap_extent_, clear_values);
 
   CallFrameCallbacks(&begin_render_callbacks_);
 
@@ -1404,6 +1491,37 @@ void VulkanBackend::EndFrameRenderPass() {
   frame.commands.endRenderPass();
 
   CallFrameCallbacks(&post_render_callbacks_);
+}
+
+void VulkanBackend::DrawPass(VulkanPass* pass) {
+  const vk::Framebuffer framebuffer = pass->GetFramebuffer();
+  if (!framebuffer) {
+    // This is logged by GetFramebuffer(), and the pass is skipped.
+    return;
+  }
+  const vk::Extent2D extent = pass->GetExtent();
+  BeginRenderPass(pass->GetRenderPass().render_pass, framebuffer, extent,
+                  pass->GetClearValues());
+  DrawViews(render_state_.draw[pass], pass->GetRenderPass(), extent);
+  frames_[frame_index_].commands.endRenderPass();
+}
+
+void VulkanBackend::BeginRenderPass(
+    vk::RenderPass render_pass, vk::Framebuffer framebuffer,
+    vk::Extent2D extent, absl::Span<const vk::ClearValue> clear_values) {
+  auto& frame = frames_[frame_index_];
+  frame.commands.beginRenderPass(
+      vk::RenderPassBeginInfo()
+          .setRenderPass(render_pass)
+          .setFramebuffer(framebuffer)
+          .setRenderArea({{0, 0}, extent})
+          .setClearValueCount(static_cast<uint32_t>(clear_values.size()))
+          .setPClearValues(clear_values.data()),
+      vk::SubpassContents::eInline);
+  frame.commands.setViewport(
+      0, {vk::Viewport(0.0f, 0.0f, static_cast<float>(extent.width),
+                       static_cast<float>(extent.height), 0.0f, 1.0f)});
+  frame.commands.setScissor(0, {vk::Rect2D({0, 0}, extent)});
 }
 
 void VulkanBackend::DrawViews(const VulkanRenderState::ViewGroupDraw& views,

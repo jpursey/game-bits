@@ -27,7 +27,9 @@
 #include "gb/render/draw_list.h"
 #include "gb/render/material_config.h"
 #include "gb/render/mesh_pool.h"
+#include "gb/render/render_pass.h"
 #include "gb/render/render_system.h"
+#include "gb/render/render_view.h"
 #include "gb/render/storage_buffer.h"
 #include "gb/render/volume_texture.h"
 #include "gb/render/vulkan/vulkan_backend.h"
@@ -66,8 +68,8 @@ class LogCounter final : public absl::LogSink {
 
 // Exercises the Vulkan backend: window resizing, binding data churn, texture
 // and texture array updates while they are drawn, each texture format, volume
-// textures, storage buffers, mesh pools and indirect draws, and each material
-// blend mode.
+// textures, storage buffers, mesh pools and indirect draws, each material blend
+// mode, and render passes drawing into render targets.
 //
 // The checks are run by hand, or by a pilot in the context, whose scripts (in
 // scripts/) press the panel's buttons by their labels. A result that isn't as
@@ -87,9 +89,19 @@ class RenderCheck final : public gb::Game {
     float y;
   };
 
-  // Matches ViewData in shaders/quad.vert and shaders/volume.vert.
+  // Matches ViewData in the vertex shaders, which scale a pixel position by xy
+  // into clip space. shaders/pass.vert then adds zw, which the others assume
+  // is -1.
   struct ViewData {
     float pixel_to_clip[4];
+  };
+
+  // Matches PassQuadData in shaders/pass.vert: a quad turned about its center.
+  // The fragment shaders read the color as they need.
+  struct PassQuadData {
+    float rect[4];  // The center, and half the size, in pixels.
+    float color[4];
+    float params[4];  // The angle turned in radians, the depth, and a phase.
   };
 
   // Matches InstanceData in shaders/quad.vert and shaders/volume.vert, which
@@ -141,6 +153,7 @@ class RenderCheck final : public gb::Game {
   bool InitStorageBuffers();
   bool InitUnsetBindings();
   bool InitMeshPool();
+  bool InitPasses();
   bool InitPilot();
 
   bool ProcessEvents();
@@ -170,6 +183,7 @@ class RenderCheck final : public gb::Game {
   void DrawStorageGui();
   void DrawUnsetBindingsGui();
   void DrawMeshPoolGui();
+  void DrawPassesGui();
   void DrawLogGui();
   void DrawExtraRects();
   void DrawFormatTextures();
@@ -178,12 +192,14 @@ class RenderCheck final : public gb::Game {
   void DrawStorageLabels();
   void DrawUnsetBindingsLabel();
   void DrawMeshPoolLabel();
+  void DrawPassesLabels();
   void AddVolumeRegions();
   void DrawQuads();
   void DrawVolumes();
   void DrawStorageBuffers();
   void DrawUnsetBindings();
   void DrawMeshPool();
+  void DrawPasses();
 
   // Creates the mesh pool's shape at `index`, turned by `angle` radians, or
   // returns null if it couldn't.
@@ -202,6 +218,17 @@ class RenderCheck final : public gb::Game {
 
   // Returns a new material of the quad material type, with its own config.
   gb::Material* CreateQuadMaterial(const gb::MaterialConfig& config);
+
+  // Returns a new material of a type with the binding layout, vertex type, and
+  // vertex shader of `pass_type`, drawn with `fragment_shader` and `config`,
+  // or null if it couldn't be created.
+  gb::Material* CreatePassMaterial(const gb::MaterialType* pass_type,
+                                   gb::Shader* fragment_shader,
+                                   const gb::MaterialConfig& config);
+
+  // Sets a pass quad's data and draws it in `view`.
+  void DrawPassQuad(gb::RenderView* view, gb::Material* material,
+                    gb::BindingData* quad, const PassQuadData& data);
 
   // Adds a quad to the blend check's draw list. `material` may be null, if
   // creating it failed, which fails here.
@@ -303,6 +330,32 @@ class RenderCheck final : public gb::Game {
   bool replace_shapes_ = false;
   bool multi_draw_ = true;
   int64_t shapes_replaced_ = 0;
+
+  // The passes section, drawn by DrawPasses() over the grid while shown. The
+  // world pass draws turning quads into a color and a depth target the
+  // frame's size, and the depth-only pass draws them, with a material that
+  // writes no color, into a fixed-size depth target. Its composite view draws
+  // the world's color and depth over the section, and its water view then draws
+  // water over the middle, and the two depth targets beside the section.
+  bool show_passes_ = false;
+  std::unique_ptr<gb::RenderPass> world_pass_;
+  std::unique_ptr<gb::RenderPass> depth_only_pass_;
+  std::unique_ptr<gb::RenderView> world_view_;
+  std::unique_ptr<gb::RenderView> depth_only_view_;
+  std::unique_ptr<gb::RenderView> composite_view_;
+  std::unique_ptr<gb::RenderView> water_view_;
+  gb::Material* world_material_ = nullptr;
+  gb::Material* depth_write_material_ = nullptr;  // Writes no color.
+  gb::Material* composite_material_ = nullptr;
+  gb::Material* water_material_ = nullptr;
+  gb::Material* world_depth_material_ = nullptr;
+  gb::Material* depth_only_material_ = nullptr;
+  std::vector<std::unique_ptr<gb::BindingData>> world_quads_;
+  std::vector<std::unique_ptr<gb::BindingData>> depth_write_quads_;
+  std::unique_ptr<gb::BindingData> composite_quad_;
+  std::unique_ptr<gb::BindingData> water_quad_;
+  std::unique_ptr<gb::BindingData> world_depth_quad_;
+  std::unique_ptr<gb::BindingData> depth_only_quad_;
 
   // GUI.
   int extra_rects_ = 0;

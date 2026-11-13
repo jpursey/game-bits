@@ -18,6 +18,7 @@
 #include "gb/render/render_backend.h"
 #include "gb/render/render_types.h"
 #include "gb/render/storage_buffer.h"
+#include "gb/render/texture.h"
 #include "gb/render/vulkan/vulkan_render_buffer.h"
 #include "gb/render/vulkan/vulkan_types.h"
 
@@ -28,8 +29,9 @@ namespace gb {
 // This class is thread-compatible.
 class VulkanBindingData : public BindingData {
  public:
+  // A texture binding holds a VulkanTexture or a VulkanRenderTarget.
   struct TextureInfo {
-    VulkanTexture* texture;
+    Texture* texture;
     int bound[kMaxFramesInFlight];
   };
   struct TextureArrayInfo {
@@ -52,7 +54,7 @@ class VulkanBindingData : public BindingData {
   };
   struct DataItem {
     DataItem() : binding_type(BindingType::kNone) {}
-    explicit DataItem(VulkanTexture* texture_resource)
+    explicit DataItem(Texture* texture_resource)
         : binding_type(BindingType::kTexture) {
       texture.texture = texture_resource;
       std::memset(texture.bound, 0, sizeof(texture.bound));

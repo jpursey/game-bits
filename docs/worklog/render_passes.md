@@ -177,6 +177,15 @@ RenderPass* GetPass() const;  // Null for a view drawn in the frame.
 - Any material type draws in any pass. Its color channels, blend mode, and
   depth mode apply to the pass's targets: a depth-only pass writes no color,
   and a pass without depth does no depth test.
+- A depth-only pass is best drawn with material types that write no color: no
+  color channels, and a fragment shader that writes none (an empty `main()`,
+  or one that only discards), as engines draw shadow maps with a depth-only
+  variant of each material. One whose shader writes color draws correctly,
+  but does work the driver may not remove, and Vulkan's validation layers
+  warn about it as each pipeline is created. They warn too about a shader
+  that writes no color to channels that are written, which the frame's
+  pipeline, created with the material type, would be without the channels
+  off.
 - A pass draws without multisampling unless it is multisampled, while the
   frame keeps its multisampling. A multisampled pass resolves its color by
   averaging each pixel's samples, and its depth by taking the first sample.
@@ -289,10 +298,15 @@ sampling its own targets is left to the validation layers, as finding it in
   attachment and sampled, with a version that changes as it is resized, so
   binding data rewrites its descriptors as it does for a texture that is
   replaced (`VulkanTexels::ImageHandle`). A resized image goes to the garbage
-  collector. New and resized images are cleared at the start of the next frame.
-  `VulkanBindingData` tells a target from a texture by `IsRenderTarget()`.
+  collector. A new or resized image is cleared, into
+  `eShaderReadOnlyOptimal`, at the start of the first frame that draws into it
+  or samples it. `VulkanBindingData` tells a target from a texture by
+  `IsRenderTarget()`.
 - **Depth format.** Depth targets need a format that is both a depth
-  attachment and sampled; `D32_SFLOAT` is first choice, as for the frame.
+  attachment and sampled, and has no stencil, so a view of its depth is the
+  whole attachment: `D32_SFLOAT` first, as for the frame, then
+  `X8_D24_UNORM_PACK32`. On a device with neither, creating a depth target
+  fails.
 - **Passes.** `VulkanPass` holds a `vk::RenderPass` (clearing or loading each
   attachment as configured) and a framebuffer, recreated when a target's
   version changes. Each attachment's final layout is
@@ -339,9 +353,13 @@ These would go to the backlog once the feature is done:
 ### To confirm
 
 - Every device in use has a depth format that is both an attachment and
-  sampled, and can filter it. CL4.
+  sampled, and can filter it. CL4: the RTX 4070 Ti SUPER has `D32_SFLOAT`,
+  and filters it.
 - Validation layers accept a fragment shader writing color in a depth-only
-  pass, and report a pass sampling its own target. CL4.
+  pass, and report a pass sampling its own target. CL4: writing color with no
+  attachment is a warning (`Undefined-Value-ShaderOutputNotConsumed`), logged
+  once as each pipeline is created. A pass sampling its own targets is an
+  error (`VUID-VkDescriptorImageInfo-imageLayout-00344`), each frame.
 - The devices in use support `VK_KHR_depth_stencil_resolve` with sample zero
   (or Vulkan 1.2), and whether to require it or let a multisampled pass with
   depth fail without it. CL5.
@@ -425,7 +443,7 @@ Depends on: CL2.
 - Every render-check script runs, and its frames look as before.
 - block-world runs, and looks as before.
 
-### CL4 [ ] render_vulkan: Targets and passes in Vulkan
+### CL4 [x] render_vulkan: Targets and passes in Vulkan
 
 Depends on: CL3.
 
@@ -437,15 +455,24 @@ Depends on: CL3.
   its depth, then a "water" quad through the middle, depth tested against it,
   sampling the color offset by a moving wave and tinted by the depth below it.
   Beside it, the depth target is shown as gray. A depth-only pass draws the
-  same quads into a fixed-size depth target, shown as gray too.
-  `scripts/passes.txt` saves it.
+  same quads into a fixed-size depth target, with a material type that writes
+  no color (no color channels, and an empty fragment shader), shown as gray
+  too.
+  `scripts/passes.txt` saves it. The window has no room left, so the section
+  is drawn over the grid while shown (the S key), and `gui.txt` collapses its
+  header.
 
 **Verify**
 - Standard checks.
 - render-check's `passes.txt`: the water distorts and tints what is behind
   it, and is hidden where a quad is in front of it; both depths show the quads
   as gray; no validation errors.
-- Every other render-check script, unchanged.
+- Every other render-check script, unchanged apart from the panel's new
+  header and the memory it reports.
+- Checked once by hand-editing render-check: a pass that keeps its depth
+  target, without validation errors, and a pass sampling its own targets,
+  with them. The depth-only pass drawn with the world's color material, which
+  draws the same, with one validation warning.
 - By hand: resizing render-check's window resizes the targets that follow the
   frame, and the passes section keeps drawing.
 

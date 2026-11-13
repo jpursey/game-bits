@@ -1,0 +1,21 @@
+# Copyright (c) 2026 John Pursey
+#
+# Use of this source code is governed by an MIT-style License that can be found
+# in the LICENSE file or at https://opensource.org/licenses/MIT.
+
+# The Passes section, drawn over the grid while shown: a world pass of turning
+# quads with water over it in the frame, and the depth of the world pass and of
+# a depth-only pass beside it.
+wait 10
+key s
+wait 20
+save passes
+
+# The quads have turned, and the waves have moved.
+wait 30
+save passes_later
+
+# Hidden again, the grid is back.
+key s
+wait 2
+save hidden

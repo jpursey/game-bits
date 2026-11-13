@@ -7,6 +7,8 @@
 
 #include "absl/log/log.h"
 #include "gb/render/vulkan/vulkan_binding_data_factory.h"
+#include "gb/render/vulkan/vulkan_render_target.h"
+#include "gb/render/vulkan/vulkan_texels.h"
 #include "gb/render/vulkan/vulkan_texture.h"
 #include "gb/render/vulkan/vulkan_texture_array.h"
 #include "gb/render/vulkan/vulkan_volume_texture.h"
@@ -72,16 +74,25 @@ void VulkanBindingData::OnRender(VulkanRenderState* state,
         break;
       case BindingType::kTexture: {
         auto& info = item.texture;
-        auto* texture = info.texture != nullptr
-                            ? info.texture
-                            : static_cast<VulkanTexture*>(defaults.texture);
-        state->textures.insert(texture);
-        const auto& handle = texture->GetImageHandle(state->frame);
-        if (info.bound[index] != handle.version) {
-          info.bound[index] = handle.version;
-          state->set_image_updates.emplace_back(descriptor_set, binding,
-                                                texture->GetSampler(),
-                                                handle.image->GetView());
+        Texture* texture =
+            info.texture != nullptr ? info.texture : defaults.texture;
+        const VulkanTexels::ImageHandle* handle;
+        vk::Sampler sampler;
+        if (texture->IsRenderTarget()) {
+          auto* target = static_cast<VulkanRenderTarget*>(texture);
+          target->OnRender(state);
+          handle = &target->GetImageHandle();
+          sampler = target->GetSampler();
+        } else {
+          auto* vulkan_texture = static_cast<VulkanTexture*>(texture);
+          state->textures.insert(vulkan_texture);
+          handle = &vulkan_texture->GetImageHandle(state->frame);
+          sampler = vulkan_texture->GetSampler();
+        }
+        if (info.bound[index] != handle->version) {
+          info.bound[index] = handle->version;
+          state->set_image_updates.emplace_back(
+              descriptor_set, binding, sampler, handle->image->GetView());
         }
       } break;
       case BindingType::kTextureArray: {
@@ -242,7 +253,7 @@ void VulkanBindingData::DoSet(int index, const void* value) {
       item.constants.buffer->SetValue(buffer_offset_index_, value);
       break;
     case BindingType::kTexture: {
-      auto* texture = *static_cast<VulkanTexture* const*>(value);
+      auto* texture = *static_cast<Texture* const*>(value);
       auto& info = item.texture;
       if (texture != info.texture) {
         info.texture = texture;

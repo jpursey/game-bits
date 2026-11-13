@@ -23,6 +23,7 @@
 #include "gb/render/material_config.h"
 #include "gb/render/material_type.h"
 #include "gb/render/mesh.h"
+#include "gb/render/render_target.h"
 #include "gb/render/render_view.h"
 #include "gb/render/sampler_options.h"
 #include "gb/render/shader.h"
@@ -33,6 +34,11 @@
 #include "imgui_impl_sdl.h"
 
 // Game includes
+#include "shaders/pass_composite_frag.h"
+#include "shaders/pass_depth_frag.h"
+#include "shaders/pass_depth_write_frag.h"
+#include "shaders/pass_vert.h"
+#include "shaders/pass_water_frag.h"
 #include "shaders/pool_vert.h"
 #include "shaders/quad_frag.h"
 #include "shaders/quad_vert.h"
@@ -164,6 +170,31 @@ constexpr float kPoolSpacing = 34.0f;
 constexpr float kPoolTurn = 0.1f;
 constexpr float kPoolIndirectOffset = 56.0f;
 
+// The passes section is drawn over the grid while shown, as there is no room
+// left for it. The world pass draws turning quads, alternately in front of and
+// behind the water, into targets the frame's size, in which the section is
+// where it is in the frame. The world's depth is shown right of the section,
+// and below it the depth-only pass's target, which holds the section at the
+// size shown.
+constexpr float kPassesLeft = kGridLeft;
+constexpr float kPassesTop = kGridTop;
+constexpr float kPassesWidth = 320.0f;
+constexpr float kPassesHeight = 240.0f;
+constexpr int kPassesQuads = 5;
+constexpr float kPassesQuadSpacing = 50.0f;
+constexpr float kPassesQuadOffset = 35.0f;  // Above or below the middle.
+constexpr float kPassesQuadHalfSize = 38.0f;
+constexpr float kPassesQuadDepths[kPassesQuads] = {0.3f, 0.7f, 0.4f, 0.8f,
+                                                   0.35f};
+constexpr float kWaterTop = kPassesTop + 95.0f;
+constexpr float kWaterHeight = 50.0f;
+constexpr float kWaterDepth = 0.5f;
+constexpr float kDepthLeft = kPassesLeft + kPassesWidth + 20.0f;
+constexpr float kDepthTop = kPassesTop;
+constexpr int kDepthWidth = 160;
+constexpr int kDepthHeight = 120;
+constexpr float kDepthOnlyTop = kDepthTop + kDepthHeight + 20.0f;
+
 // Converts a hue in [0, 1) to a fully saturated color.
 gb::Pixel HueColor(float hue) {
   hue = hue - std::floor(hue);
@@ -253,7 +284,7 @@ bool RenderCheck::Init(const std::vector<std::string_view>& args) {
   return InitWindow() && InitPilot() && InitRenderSystem() && InitGui() &&
          InitQuads() && InitTextures() && InitBlendQuads() &&
          InitFormatTextures() && InitVolumes() && InitStorageBuffers() &&
-         InitUnsetBindings() && InitMeshPool();
+         InitUnsetBindings() && InitMeshPool() && InitPasses();
 }
 
 bool RenderCheck::InitWindow() {
@@ -903,7 +934,200 @@ bool RenderCheck::InitMeshPool() {
   return true;
 }
 
+bool RenderCheck::InitPasses() {
+  // The pass quads have a binding layout of their own, as the fragment shaders
+  // read the view's data too.
+  const gb::RenderDataType* view_constants =
+      render_system_->GetConstantsType("ViewData");
+  const gb::RenderDataType* quad_constants =
+      render_system_->RegisterConstantsType<PassQuadData>("PassQuadData");
+  if (quad_constants == nullptr) {
+    LOG(ERROR) << "Could not register pass quad type";
+    return false;
+  }
+  const gb::Binding view_binding =
+      gb::Binding()
+          .SetShaders({gb::ShaderType::kVertex, gb::ShaderType::kFragment})
+          .SetLocation(gb::BindingSet::kView, 0)
+          .SetConstants(view_constants, gb::DataVolatility::kPerFrame);
+  const gb::Binding quad_binding =
+      gb::Binding()
+          .SetShaders(gb::ShaderType::kVertex)
+          .SetLocation(gb::BindingSet::kInstance, 0)
+          .SetConstants(quad_constants, gb::DataVolatility::kPerFrame);
+  const gb::Binding color_binding =
+      gb::Binding()
+          .SetShaders(gb::ShaderType::kFragment)
+          .SetLocation(gb::BindingSet::kMaterial, 0)
+          .SetTexture();
+  const gb::Binding depth_binding =
+      gb::Binding()
+          .SetShaders(gb::ShaderType::kFragment)
+          .SetLocation(gb::BindingSet::kMaterial, 1)
+          .SetTexture();
+  gb::BindingLayout* binding_layout = render_system_->RegisterBindingLayout(
+      "PassQuad", {view_binding, quad_binding});
+  if (binding_layout == nullptr) {
+    LOG(ERROR) << "Could not register pass quad binding layout";
+    return false;
+  }
+
+  const gb::ShaderParam vec4_param(gb::ShaderValue::kVec4, 0);
+  gb::Shader* vertex_shader = render_system_->CreateShader(
+      &resources_, gb::ShaderType::kVertex,
+      render_system_->CreateShaderCode(kPassVertexShader.GetBytes()),
+      {view_binding, quad_binding},
+      {gb::ShaderParam(gb::ShaderValue::kVec2, 0)},
+      {vec4_param, gb::ShaderParam(gb::ShaderValue::kVec2, 1),
+       gb::ShaderParam(gb::ShaderValue::kVec4, 2)});
+  gb::Shader* color_shader = render_system_->CreateShader(
+      &resources_, gb::ShaderType::kFragment,
+      render_system_->CreateShaderCode(kQuadFragmentShader.GetBytes()), {},
+      {vec4_param}, {vec4_param});
+  gb::Shader* composite_shader = render_system_->CreateShader(
+      &resources_, gb::ShaderType::kFragment,
+      render_system_->CreateShaderCode(kPassCompositeFragmentShader.GetBytes()),
+      {view_binding, color_binding, depth_binding}, {}, {vec4_param});
+  gb::Shader* water_shader = render_system_->CreateShader(
+      &resources_, gb::ShaderType::kFragment,
+      render_system_->CreateShaderCode(kPassWaterFragmentShader.GetBytes()),
+      {view_binding, color_binding, depth_binding},
+      {vec4_param, gb::ShaderParam(gb::ShaderValue::kVec4, 2)}, {vec4_param});
+  gb::Shader* depth_shader = render_system_->CreateShader(
+      &resources_, gb::ShaderType::kFragment,
+      render_system_->CreateShaderCode(kPassDepthFragmentShader.GetBytes()),
+      {color_binding}, {vec4_param, gb::ShaderParam(gb::ShaderValue::kVec2, 1)},
+      {vec4_param});
+  gb::Shader* depth_write_shader = render_system_->CreateShader(
+      &resources_, gb::ShaderType::kFragment,
+      render_system_->CreateShaderCode(
+          kPassDepthWriteFragmentShader.GetBytes()),
+      {}, {}, {});
+  if (vertex_shader == nullptr || color_shader == nullptr ||
+      composite_shader == nullptr || water_shader == nullptr ||
+      depth_shader == nullptr || depth_write_shader == nullptr) {
+    LOG(ERROR) << "Could not create pass shaders";
+    return false;
+  }
+
+  gb::MaterialType* world_type = render_system_->CreateMaterialType(
+      &resources_, binding_layout, quad_material_->GetType()->GetVertexType(),
+      vertex_shader, color_shader,
+      QuadConfig().SetDepthMode(gb::DepthMode::kTestAndWrite));
+  if (world_type == nullptr) {
+    LOG(ERROR) << "Could not create world material type";
+    return false;
+  }
+  world_material_ = render_system_->CreateMaterial(&resources_, world_type);
+
+  // The depth-only pass draws the world's quads with a fragment shader that
+  // writes no color, as a depth-only pass is best drawn.
+  depth_write_material_ =
+      CreatePassMaterial(world_type, depth_write_shader,
+                         QuadConfig()
+                             .SetDepthMode(gb::DepthMode::kTestAndWrite)
+                             .SetColorChannels({}));
+  composite_material_ =
+      CreatePassMaterial(world_type, composite_shader,
+                         QuadConfig().SetDepthMode(gb::DepthMode::kWrite));
+  water_material_ =
+      CreatePassMaterial(world_type, water_shader,
+                         QuadConfig().SetDepthMode(gb::DepthMode::kTest));
+  world_depth_material_ =
+      CreatePassMaterial(world_type, depth_shader, QuadConfig());
+  if (world_depth_material_ != nullptr) {
+    depth_only_material_ = render_system_->CreateMaterial(
+        &resources_, world_depth_material_->GetType());
+  }
+  if (world_material_ == nullptr || depth_write_material_ == nullptr ||
+      composite_material_ == nullptr || water_material_ == nullptr ||
+      world_depth_material_ == nullptr || depth_only_material_ == nullptr) {
+    LOG(ERROR) << "Could not create pass materials";
+    return false;
+  }
+
+  // The world's targets follow the frame, and the depth-only pass's target
+  // has a fixed size.
+  gb::RenderTarget* world_color = render_system_->CreateRenderTarget(
+      &resources_, gb::TextureFormat::kRgba8Srgb,
+      gb::RenderTargetSize::Frame());
+  gb::RenderTarget* world_depth = render_system_->CreateRenderTarget(
+      &resources_, gb::TextureFormat::kDepth, gb::RenderTargetSize::Frame());
+  gb::RenderTarget* depth_only = render_system_->CreateRenderTarget(
+      &resources_, gb::TextureFormat::kDepth,
+      gb::RenderTargetSize::Pixels(kDepthWidth, kDepthHeight));
+  if (world_color == nullptr || world_depth == nullptr ||
+      depth_only == nullptr) {
+    LOG(ERROR) << "Could not create render targets";
+    return false;
+  }
+  world_pass_ =
+      render_system_->CreatePass(gb::RenderPassConfig()
+                                     .SetColor(world_color)
+                                     .SetDepth(world_depth)
+                                     .SetClearColor(gb::Pixel(100, 150, 210)));
+  depth_only_pass_ =
+      render_system_->CreatePass(gb::RenderPassConfig().SetDepth(depth_only));
+  if (world_pass_ == nullptr || depth_only_pass_ == nullptr) {
+    LOG(ERROR) << "Could not create passes";
+    return false;
+  }
+
+  // The water is drawn after the composite, which writes the depth it tests
+  // against, so it is in a later view.
+  world_view_ = render_system_->CreateView(world_pass_.get(), binding_layout);
+  depth_only_view_ =
+      render_system_->CreateView(depth_only_pass_.get(), binding_layout);
+  composite_view_ = render_system_->CreateView(binding_layout, 1);
+  water_view_ = render_system_->CreateView(binding_layout, 2);
+  if (world_view_ == nullptr || depth_only_view_ == nullptr ||
+      composite_view_ == nullptr || water_view_ == nullptr) {
+    LOG(ERROR) << "Could not create pass views";
+    return false;
+  }
+
+  for (gb::Material* material : {composite_material_, water_material_}) {
+    material->GetMaterialBindingData()->SetTexture(0, world_color);
+    material->GetMaterialBindingData()->SetTexture(1, world_depth);
+  }
+  world_depth_material_->GetMaterialBindingData()->SetTexture(0, world_depth);
+  depth_only_material_->GetMaterialBindingData()->SetTexture(0, depth_only);
+
+  for (int i = 0; i < kPassesQuads; ++i) {
+    auto quad = world_material_->CreateInstanceBindingData();
+    auto depth_quad = depth_write_material_->CreateInstanceBindingData();
+    if (quad == nullptr || depth_quad == nullptr) {
+      LOG(ERROR) << "Could not create world quad";
+      return false;
+    }
+    world_quads_.emplace_back(std::move(quad));
+    depth_write_quads_.emplace_back(std::move(depth_quad));
+  }
+  composite_quad_ = composite_material_->CreateInstanceBindingData();
+  water_quad_ = water_material_->CreateInstanceBindingData();
+  world_depth_quad_ = world_depth_material_->CreateInstanceBindingData();
+  depth_only_quad_ = depth_only_material_->CreateInstanceBindingData();
+  if (composite_quad_ == nullptr || water_quad_ == nullptr ||
+      world_depth_quad_ == nullptr || depth_only_quad_ == nullptr) {
+    LOG(ERROR) << "Could not create pass quads";
+    return false;
+  }
+  return true;
+}
+
 void RenderCheck::CleanUp() {
+  world_quads_.clear();
+  depth_write_quads_.clear();
+  composite_quad_.reset();
+  water_quad_.reset();
+  world_depth_quad_.reset();
+  depth_only_quad_.reset();
+  world_view_.reset();
+  depth_only_view_.reset();
+  composite_view_.reset();
+  water_view_.reset();
+  world_pass_.reset();
+  depth_only_pass_.reset();
   instances_.clear();
   blend_instances_.clear();
   volume_rows_.clear();
@@ -999,6 +1223,9 @@ void RenderCheck::OnKeyDown(SDL_Keycode key) {
       break;
     case SDLK_i:
       multi_draw_ = !multi_draw_;
+      break;
+    case SDLK_s:
+      show_passes_ = !show_passes_;
       break;
   }
 }
@@ -1118,6 +1345,7 @@ void RenderCheck::DrawGui() {
   DrawStorageGui();
   DrawUnsetBindingsGui();
   DrawMeshPoolGui();
+  DrawPassesGui();
   DrawLogGui();
   ImGui::End();
   DrawExtraRects();
@@ -1126,6 +1354,7 @@ void RenderCheck::DrawGui() {
   DrawStorageLabels();
   DrawUnsetBindingsLabel();
   DrawMeshPoolLabel();
+  DrawPassesLabels();
 }
 
 void RenderCheck::DrawFrameGui() {
@@ -1388,6 +1617,34 @@ void RenderCheck::DrawMeshPoolLabel() {
       multi_draw ? "Indirect, multi-draw" : "Indirect, a call per range");
 }
 
+void RenderCheck::DrawPassesGui() {
+  if (!ImGui::CollapsingHeader("Passes", ImGuiTreeNodeFlags_DefaultOpen)) {
+    return;
+  }
+  ImGui::Checkbox("Show passes over the grid (S)", &show_passes_);
+  ImGui::TextWrapped(
+      "In place of the grid, %d quads that turn as they overlap, from a world "
+      "pass drawn over a blue sky, with water across the middle. The water "
+      "ripples and tints what is behind it, more so the further behind, and "
+      "is hidden by the quads in front of it. Right of it, the world pass's "
+      "depth, and below that a depth-only pass's depth of the same quads, "
+      "both as gray quads on white.",
+      kPassesQuads);
+}
+
+void RenderCheck::DrawPassesLabels() {
+  if (!show_passes_) {
+    return;
+  }
+  ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
+  draw_list->AddText({kPassesLeft, kPassesTop - 16.0f}, IM_COL32_WHITE,
+                     "World pass, with water");
+  draw_list->AddText({kDepthLeft, kDepthTop - 16.0f}, IM_COL32_WHITE,
+                     "World depth");
+  draw_list->AddText({kDepthLeft, kDepthOnlyTop - 16.0f}, IM_COL32_WHITE,
+                     "Depth-only pass");
+}
+
 void RenderCheck::AddVolumeRegions() {
   for (const VolumeRow& row : volume_rows_) {
     const gb::TextureFormat format = row.volume->GetFormat();
@@ -1475,15 +1732,94 @@ void RenderCheck::DrawQuads() {
   view_data.pixel_to_clip[0] = 2.0f / size.width;
   view_data.pixel_to_clip[1] = 2.0f / size.height;
   view_->GetViewBindingData()->SetConstants<ViewData>(0, view_data);
-  for (const auto& instance : instances_) {
-    render_system_->Draw(view_.get(), quad_mesh_, quad_material_,
-                         instance.get());
+  if (show_passes_) {
+    DrawPasses();
+  } else {
+    for (const auto& instance : instances_) {
+      render_system_->Draw(view_.get(), quad_mesh_, quad_material_,
+                           instance.get());
+    }
   }
   render_system_->Draw(view_.get(), blend_draw_list_);
   DrawVolumes();
   DrawStorageBuffers();
   DrawUnsetBindings();
   DrawMeshPool();
+}
+
+void RenderCheck::DrawPasses() {
+  const gb::FrameDimensions size = render_system_->GetFrameDimensions();
+  const float frame_x = 2.0f / size.width;
+  const float frame_y = 2.0f / size.height;
+  const ViewData frame_view = {{frame_x, frame_y, -1.0f, -1.0f}};
+  world_view_->GetViewBindingData()->SetConstants<ViewData>(0, frame_view);
+  composite_view_->GetViewBindingData()->SetConstants<ViewData>(0, frame_view);
+  water_view_->GetViewBindingData()->SetConstants<ViewData>(0, frame_view);
+
+  // The depth-only pass's target holds the section.
+  const float section_x = 2.0f / kPassesWidth;
+  const float section_y = 2.0f / kPassesHeight;
+  const ViewData section_view = {{section_x, section_y,
+                                  -1.0f - kPassesLeft * section_x,
+                                  -1.0f - kPassesTop * section_y}};
+  depth_only_view_->GetViewBindingData()->SetConstants<ViewData>(0,
+                                                                 section_view);
+
+  // Neighboring quads turn in opposite directions.
+  const float turn = frame_ * 0.02f;
+  for (int i = 0; i < kPassesQuads; ++i) {
+    const QuadColor color =
+        ToQuadColor(HueColor(i / static_cast<float>(kPassesQuads)));
+    const PassQuadData data = {
+        {kPassesLeft + 60.0f + i * kPassesQuadSpacing,
+         kPassesTop + kPassesHeight / 2.0f +
+             (i % 2 == 0 ? -kPassesQuadOffset : kPassesQuadOffset),
+         kPassesQuadHalfSize, kPassesQuadHalfSize},
+        {color.color[0], color.color[1], color.color[2], color.color[3]},
+        {(i % 2 == 0 ? turn : -turn) + i, kPassesQuadDepths[i], 0.0f, 0.0f}};
+    DrawPassQuad(world_view_.get(), world_material_, world_quads_[i].get(),
+                 data);
+    DrawPassQuad(depth_only_view_.get(), depth_write_material_,
+                 depth_write_quads_[i].get(), data);
+  }
+
+  const float half_width = kPassesWidth / 2.0f;
+  const float half_height = kPassesHeight / 2.0f;
+  DrawPassQuad(composite_view_.get(), composite_material_,
+               composite_quad_.get(),
+               {{kPassesLeft + half_width, kPassesTop + half_height, half_width,
+                 half_height},
+                {},
+                {}});
+  DrawPassQuad(water_view_.get(), water_material_, water_quad_.get(),
+               {{kPassesLeft + half_width, kWaterTop + kWaterHeight / 2.0f,
+                 half_width, kWaterHeight / 2.0f},
+                {0.1f, 0.35f, 0.7f, 1.0f},
+                {0.0f, kWaterDepth, frame_ * 0.1f, 0.0f}});
+
+  // Each depth quad's color is the region of its target it shows.
+  const float depth_half_width = kDepthWidth / 2.0f;
+  const float depth_half_height = kDepthHeight / 2.0f;
+  DrawPassQuad(water_view_.get(), world_depth_material_,
+               world_depth_quad_.get(),
+               {{kDepthLeft + depth_half_width, kDepthTop + depth_half_height,
+                 depth_half_width, depth_half_height},
+                {kPassesLeft / size.width, kPassesTop / size.height,
+                 kPassesWidth / size.width, kPassesHeight / size.height},
+                {}});
+  DrawPassQuad(
+      water_view_.get(), depth_only_material_, depth_only_quad_.get(),
+      {{kDepthLeft + depth_half_width, kDepthOnlyTop + depth_half_height,
+        depth_half_width, depth_half_height},
+       {0.0f, 0.0f, 1.0f, 1.0f},
+       {}});
+}
+
+void RenderCheck::DrawPassQuad(gb::RenderView* view, gb::Material* material,
+                               gb::BindingData* quad,
+                               const PassQuadData& data) {
+  quad->SetConstants<PassQuadData>(0, data);
+  render_system_->Draw(view, quad_mesh_, material, quad);
 }
 
 void RenderCheck::DrawVolumes() {
@@ -1604,6 +1940,18 @@ gb::Material* RenderCheck::CreateQuadMaterial(
   gb::MaterialType* material_type = render_system_->CreateMaterialType(
       &resources_, quad_type->GetBindingLayout(), quad_type->GetVertexType(),
       quad_type->GetVertexShader(), quad_type->GetFragmentShader(), config);
+  if (material_type == nullptr) {
+    return nullptr;
+  }
+  return render_system_->CreateMaterial(&resources_, material_type);
+}
+
+gb::Material* RenderCheck::CreatePassMaterial(
+    const gb::MaterialType* pass_type, gb::Shader* fragment_shader,
+    const gb::MaterialConfig& config) {
+  gb::MaterialType* material_type = render_system_->CreateMaterialType(
+      &resources_, pass_type->GetBindingLayout(), pass_type->GetVertexType(),
+      pass_type->GetVertexShader(), fragment_shader, config);
   if (material_type == nullptr) {
     return nullptr;
   }

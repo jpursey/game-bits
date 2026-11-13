@@ -75,6 +75,16 @@ set(render_check_LIBS
 
 gb_add_win_executable(render_check)
 
+gb_embed_shader(render_check shaders/pass.vert shaders/pass_vert.h
+  kPassVertexShader)
+gb_embed_shader(render_check shaders/pass_composite.frag
+  shaders/pass_composite_frag.h kPassCompositeFragmentShader)
+gb_embed_shader(render_check shaders/pass_depth.frag shaders/pass_depth_frag.h
+  kPassDepthFragmentShader)
+gb_embed_shader(render_check shaders/pass_depth_write.frag
+  shaders/pass_depth_write_frag.h kPassDepthWriteFragmentShader)
+gb_embed_shader(render_check shaders/pass_water.frag shaders/pass_water_frag.h
+  kPassWaterFragmentShader)
 gb_embed_shader(render_check shaders/pool.vert shaders/pool_vert.h
   kPoolVertexShader)
 gb_embed_shader(render_check shaders/quad.frag shaders/quad_frag.h

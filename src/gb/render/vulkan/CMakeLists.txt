@@ -18,9 +18,11 @@ set(gb_render_vulkan_SOURCE
   vulkan_garbage_collector.cc vulkan_garbage_collector.h
   vulkan_image.cc vulkan_image.h
   vulkan_mesh_pool_buffers.cc vulkan_mesh_pool_buffers.h
+  vulkan_pass.cc vulkan_pass.h
   vulkan_render_buffer.cc vulkan_render_buffer.h
   vulkan_render_pipeline.cc vulkan_render_pipeline.h
   vulkan_render_state.h
+  vulkan_render_target.cc vulkan_render_target.h
   vulkan_shader_code.cc vulkan_shader_code.h
   vulkan_texels.cc vulkan_texels.h
   vulkan_texture.cc vulkan_texture.h

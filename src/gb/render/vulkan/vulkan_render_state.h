@@ -11,6 +11,7 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
+#include "absl/types/span.h"
 #include "gb/render/draw_list.h"
 #include "gb/render/render_pass.h"
 #include "gb/render/vulkan/vulkan_image.h"
@@ -142,6 +143,10 @@ struct VulkanRenderState {
   // Frame being renderered.
   int frame = 0;
 
+  // The passes drawn before the frame, in order, from BeginFrame() until the
+  // frame ends.
+  absl::Span<RenderPass* const> passes;
+
   // Draw lists for each pass, keyed by the pass, or null for the frame.
   PassDraw draw;
 
@@ -153,6 +158,7 @@ struct VulkanRenderState {
   absl::flat_hash_set<VulkanVolumeTexture*> volume_textures;
 
   // Accumulates all updates to resources in a frame.
+  std::vector<VulkanImage*> target_clears;  // Render target images to clear.
   std::vector<ImageBarrier> image_barriers;
   std::vector<ImageUpdate> image_updates;
   std::vector<BufferUpdate> buffer_updates;

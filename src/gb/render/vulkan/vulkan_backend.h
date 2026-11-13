@@ -342,6 +342,10 @@ class VulkanBackend final : public RenderBackend {
                                        int height);
   vk::Sampler GetSampler(SamplerOptions options, int width, int height);
 
+  // Returns the Vulkan format of textures and render targets in `format`, or
+  // eUndefined if the device has none.
+  vk::Format GetVulkanFormat(TextureFormat format) const;
+
   void CallFrameCallbacks(std::vector<FrameCallback>* callbacks);
 
   // Ends the frame, copying its image to `read_buffer` unless it is null.
@@ -350,8 +354,16 @@ class VulkanBackend final : public RenderBackend {
   void EndFrameProcessUpdates();
   void EndFrameUpdateBuffers();
   void EndFrameUpdateImages();
+  void EndFrameClearTargets();
   void EndFrameUpdateDescriptorSets();
   void EndFrameRenderPass();
+  void DrawPass(VulkanPass* pass);
+
+  // Begins a render pass covering `extent`, and sets the viewport and scissor
+  // to it.
+  void BeginRenderPass(vk::RenderPass render_pass, vk::Framebuffer framebuffer,
+                       vk::Extent2D extent,
+                       absl::Span<const vk::ClearValue> clear_values);
 
   // Records the draws of `views` in the render pass that has begun, which is
   // `pass`, covering `extent`.
@@ -392,6 +404,8 @@ class VulkanBackend final : public RenderBackend {
   vk::Device device_;
   Queues queues_;
   vk::Format depth_format_;
+  // eUndefined if the device can't create depth targets.
+  vk::Format depth_target_format_ = vk::Format::eUndefined;
   vk::SampleCountFlagBits msaa_count_ = vk::SampleCountFlagBits::e1;
   uint32_t max_draw_indirect_count_ = 1;  // One without multi-draw.
   VmaAllocator allocator_ = VK_NULL_HANDLE;

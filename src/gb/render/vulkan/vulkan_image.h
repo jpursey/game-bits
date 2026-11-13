@@ -86,6 +86,7 @@ class VulkanImage final {
   int GetHeight() const { return height_; }
   int GetLayers() const { return layers_; }
   int GetMipLevels() const { return mip_levels_; }
+  vk::Format GetFormat() const { return format_; }
 
   vk::Image Get() const { return image_; }
   vk::ImageView GetView() const { return image_view_; }

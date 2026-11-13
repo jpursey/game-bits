@@ -39,6 +39,11 @@ void VulkanGarbageCollector::DisposeDescriptorSetLayout(vk::Device device,
   device.destroyDescriptorSetLayout(static_cast<VkDescriptorSetLayout>(handle));
 }
 
+void VulkanGarbageCollector::DisposeFramebuffer(vk::Device device,
+                                                VulkanHandle handle) {
+  device.destroyFramebuffer(static_cast<VkFramebuffer>(handle));
+}
+
 void VulkanGarbageCollector::DisposeImage(vk::Device device,
                                           VulkanHandle handle) {
   device.destroyImage(static_cast<VkImage>(handle));
@@ -57,6 +62,11 @@ void VulkanGarbageCollector::DisposePipeline(vk::Device device,
 void VulkanGarbageCollector::DisposePipelineLayout(vk::Device device,
                                                    VulkanHandle handle) {
   device.destroyPipelineLayout(static_cast<VkPipelineLayout>(handle));
+}
+
+void VulkanGarbageCollector::DisposeRenderPass(vk::Device device,
+                                               VulkanHandle handle) {
+  device.destroyRenderPass(static_cast<VkRenderPass>(handle));
 }
 
 void VulkanGarbageCollector::DisposeShaderModule(vk::Device device,

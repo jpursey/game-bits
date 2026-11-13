@@ -25,10 +25,12 @@ class VulkanGarbageCollector {
   void Dispose(VkBuffer buffer, VmaAllocation allocation = VK_NULL_HANDLE);
   void Dispose(VkDescriptorPool descriptor_pool);
   void Dispose(VkDescriptorSetLayout descriptor_set_layout);
+  void Dispose(VkFramebuffer framebuffer);
   void Dispose(VkImage image, VmaAllocation allocation = VK_NULL_HANDLE);
   void Dispose(VkImageView image_view);
   void Dispose(VkPipeline pipeline);
   void Dispose(VkPipelineLayout pipeline_layout);
+  void Dispose(VkRenderPass render_pass);
   void Dispose(VkShaderModule shader);
 
   void Collect(vk::Device device, VmaAllocator allocator);
@@ -48,10 +50,12 @@ class VulkanGarbageCollector {
   static void DisposeDescriptorPool(vk::Device device, VulkanHandle handle);
   static void DisposeDescriptorSetLayout(vk::Device device,
                                          VulkanHandle handle);
+  static void DisposeFramebuffer(vk::Device device, VulkanHandle handle);
   static void DisposeImage(vk::Device device, VulkanHandle handle);
   static void DisposeImageView(vk::Device device, VulkanHandle handle);
   static void DisposePipeline(vk::Device device, VulkanHandle handle);
   static void DisposePipelineLayout(vk::Device device, VulkanHandle handle);
+  static void DisposeRenderPass(vk::Device device, VulkanHandle handle);
   static void DisposeShaderModule(vk::Device device, VulkanHandle handle);
 
   mutable absl::Mutex mutex_;
@@ -81,6 +85,13 @@ inline void VulkanGarbageCollector::Dispose(
   }
 }
 
+inline void VulkanGarbageCollector::Dispose(VkFramebuffer framebuffer) {
+  if (framebuffer) {
+    absl::MutexLock lock(&mutex_);
+    garbage_.push_back({DisposeFramebuffer, framebuffer});
+  }
+}
+
 inline void VulkanGarbageCollector::Dispose(VkImage image,
                                             VmaAllocation allocation) {
   if (image) {
@@ -107,6 +118,13 @@ inline void VulkanGarbageCollector::Dispose(VkPipelineLayout pipeline_layout) {
   if (pipeline_layout) {
     absl::MutexLock lock(&mutex_);
     garbage_.push_back({DisposePipelineLayout, pipeline_layout});
+  }
+}
+
+inline void VulkanGarbageCollector::Dispose(VkRenderPass render_pass) {
+  if (render_pass) {
+    absl::MutexLock lock(&mutex_);
+    garbage_.push_back({DisposeRenderPass, render_pass});
   }
 }
 

@@ -72,6 +72,14 @@ struct RenderPassConfig {
 // frame. A target sampled before the pass that draws it holds last frame's
 // contents. A pass must not sample its own targets.
 //
+// Any material type draws in any pass. A depth-only pass writes no color, so it
+// is best drawn with material types that write none: no color channels (see
+// MaterialConfig::SetColorChannels()), and a fragment shader that writes no
+// color (an empty main(), or one that only discards). One whose fragment shader
+// writes color does work that is thrown away, and Vulkan's validation layers
+// warn about it, as they do about a shader that writes no color to channels
+// that are written.
+//
 // A pass must outlive the views created in it: destroying one with views left
 // is a CHECK failure. It keeps its targets alive while it exists. It must be
 // destroyed before the RenderSystem that created it, and not between the

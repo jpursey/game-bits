@@ -6,13 +6,29 @@
 #ifndef GB_RENDER_VULKAN_VULKAN_FORMAT_H_
 #define GB_RENDER_VULKAN_VULKAN_FORMAT_H_
 
+#include <array>
+
+#include "gb/image/pixel.h"
 #include "gb/render/render_types.h"
 #include "gb/render/vulkan/vulkan_types.h"
 
 namespace gb {
 
+// The value depth images are cleared to: the far plane.
+inline constexpr vk::ClearDepthStencilValue kDepthClearValue(1.0f, 0);
+
+// Returns the value a color image is cleared to for `color`.
+inline vk::ClearColorValue GetClearColorValue(Pixel color) {
+  return vk::ClearColorValue(
+      std::array<float, 4>{static_cast<float>(color.r) / 255.0f,
+                           static_cast<float>(color.g) / 255.0f,
+                           static_cast<float>(color.b) / 255.0f,
+                           static_cast<float>(color.a) / 255.0f});
+}
+
 inline bool IsDepthFormat(vk::Format format) {
   return format == vk::Format::eD32Sfloat ||
+         format == vk::Format::eX8D24UnormPack32 ||
          format == vk::Format::eD32SfloatS8Uint ||
          format == vk::Format::eD24UnormS8Uint;
 }
@@ -47,7 +63,7 @@ inline VulkanTextureFormat GetVulkanTextureFormat(TextureFormat format) {
                   vk::ComponentSwizzle::eB, vk::ComponentSwizzle::eIdentity,
                   vk::ComponentSwizzle::eR, vk::ComponentSwizzle::eIdentity)};
     case TextureFormat::kDepth:
-      // Render targets aren't supported yet, so there is no depth format.
+      // The depth format depends on the device, so VulkanBackend chooses it.
       return {};
   }
   return {};
