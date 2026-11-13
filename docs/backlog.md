@@ -253,6 +253,101 @@ which Game Bits doesn't have yet, so it starts with them: a compute shader
 type, binding storage buffers it writes, and the barriers between it and the
 draws that read them.
 
+## Read-only depth attachments
+
+- **Layers:** render, render_vulkan
+- **Size:** medium
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Render passes and targets](worklog/render_passes.md)
+
+A view can't depth test against a depth target while it samples it. Water
+that samples the world's depth (for color by depth, and foam at the shore)
+tests against the frame's copy of it instead, which a full-frame view writes
+with `gl_FragDepth` first. A pass that uses its depth target as a read-only
+attachment (`eDepthStencilReadOnlyOptimal`, with depth writes off) could do
+both, without the copy. It would be a `RenderPassConfig` option, and only
+material types that don't write depth could draw in it.
+
+## Shadow map comparison samplers
+
+- **Layers:** render, render_vulkan
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Render passes and targets](worklog/render_passes.md)
+
+A depth target is sampled as one channel of depth, so a shadow map's shader
+compares depths itself, one texel at a time. A comparison sampler
+(`sampler2DShadow`, `SamplerOptions` with a compare op) compares in the
+sampler, with filtering between texels for softer edges at no extra cost.
+
+## Multisampled depth without storing it
+
+- **Layers:** render_vulkan
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Render passes and targets](worklog/render_passes.md)
+
+A multisampled pass stores its multisampled depth, though nothing reads it
+after its resolve, to work around NVIDIA's driver (610.88) leaving garbage in
+the resolved depth at some sizes when it isn't stored. Storing it writes about
+66 MB a frame at 8x and 1080p. With a newer driver, try `eDontCare` again
+(render-check's `scripts/passes.txt` resizes to a size that showed it), and
+make the image transient as color's is if it passes.
+
+## Multisampled targets that are kept
+
+- **Layers:** render, render_vulkan
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Render passes and targets](worklog/render_passes.md)
+
+A multisampled pass clears its targets: keeping either fails, as only the
+resolved targets last beyond the pass. Keeping them means keeping the
+multisampled images too, loading them as the pass begins, so a later pass can
+draw over an earlier one's multisampled world (such as decals, or a second
+camera).
+
+## Pipelines created before their first draw
+
+- **Layers:** render, render_vulkan
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Render passes and targets](worklog/render_passes.md)
+
+A material type's pipeline for a pass of a new layout (its formats and sample
+count) is created the first time it draws there, a stall of a few
+milliseconds. A way to name the passes a material type draws in, as it is
+created, would create them up front, as the frame's is.
+
+## Several color targets per pass
+
+- **Layers:** render, render_vulkan
+- **Size:** medium
+- **Feature workflow:** yes
+- **Depends on:** nothing
+- **Background:** [Render passes and targets](worklog/render_passes.md)
+
+A pass has at most one color target. Deferred shading, and writing normals or
+motion beside color for later passes, need several, each a fragment shader
+output, with blend state per target.
+
+## Floating point render targets
+
+- **Layers:** render, render_vulkan
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Render passes and targets](worklog/render_passes.md)
+
+Color targets are 8 bits a channel, so a pass can't hold light brighter than
+white for HDR, bloom, or tone mapping. A half-float format (`kRgba16f`) would
+be a new `TextureFormat`, for render targets at least.
+
 ## Job priorities and cancellation
 
 - **Layers:** job
