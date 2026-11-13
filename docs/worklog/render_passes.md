@@ -315,12 +315,20 @@ sampling its own targets is left to the validation layers, as finding it in
   after earlier fragment shader reads, and before later ones. All frames are
   drawn on one queue, so one image per target is enough: frames in flight
   are ordered by the same dependencies.
-- **Multisampled passes.** The pass holds transient multisampled color and
-  depth images of its targets' size, recreated with them, and resolves them
+- **Multisampled passes.** The pass holds multisampled color and depth
+  images of its targets' size, recreated with them, and resolves them
   into its targets: color with a resolve attachment, as the frame does, and
-  depth with `VK_KHR_depth_stencil_resolve` (sample zero), which needs
-  `vkCreateRenderPass2`. Multisampled images are never stored, which is why a
-  multisampled pass can't keep its targets.
+  depth with a depth resolve (sample zero), which needs `vkCreateRenderPass2`.
+  Both are core in Vulkan 1.2, which the backend now requires of its device,
+  and which guarantees resolving depth from sample zero. Every pass is created
+  with `vkCreateRenderPass2`, so passes have one path. The frame's render pass
+  is unchanged. Multisampled color is never stored, so it is transient.
+  Multisampled depth is stored, though nothing reads it after its resolve:
+  without that, NVIDIA's driver (610.88, RTX 4070 Ti SUPER) leaves parts of
+  the resolved depth undefined at some sizes (see CL5). Keeping a target would
+  need its samples loaded too, which is why a multisampled pass can't. On a
+  device that can't multisample, as the frame doesn't, a multisampled pass
+  draws with one sample.
 - **Drawing.** `VulkanRenderState::draw` is kept per pass, and
   `EndFrameRenderPass()` draws each pass in order, then the frame, setting the
   viewport and scissor (and `DrawCommand::kReset`'s scissor) to the pass's
@@ -336,7 +344,8 @@ version is the only signal that its framebuffers and descriptors are stale.
 - The first draw of a material type in a pass of a new layout creates a
   pipeline, a stall of a few milliseconds, once.
 - A multisampled pass costs what the frame's multisampling does, plus its
-  resolves.
+  resolves, and storing its multisampled depth: at 8x and 1080p, about 66 MB
+  written per frame.
 
 ### Left out
 
@@ -362,7 +371,10 @@ These would go to the backlog once the feature is done:
   error (`VUID-VkDescriptorImageInfo-imageLayout-00344`), each frame.
 - The devices in use support `VK_KHR_depth_stencil_resolve` with sample zero
   (or Vulkan 1.2), and whether to require it or let a multisampled pass with
-  depth fail without it. CL5.
+  depth fail without it. CL5: the RTX 4070 Ti SUPER has Vulkan 1.4, and
+  resolves depth from sample zero (also average, min, and max). The backend
+  requires Vulkan 1.2, current on every desktop driver since 2020, rather
+  than keeping a second render pass path for older devices.
 
 ## CLs
 
@@ -476,16 +488,37 @@ Depends on: CL3.
 - By hand: resizing render-check's window resizes the targets that follow the
   frame, and the passes section keeps drawing.
 
-### CL5 [ ] render_vulkan: Multisampled passes
+### CL5 [x] render_vulkan: Multisampled passes
 
 Depends on: CL4.
 
-- Multisampled passes, resolving color and depth into their targets.
-- render-check's passes section multisamples its color pass, with a checkbox
-  to turn it off.
+- Multisampled passes, resolving color and depth into their targets. Every
+  pass is created with `vkCreateRenderPass2`, and the backend requires a
+  Vulkan 1.2 device.
+- render-check's passes section multisamples its world pass, with a checkbox
+  to turn it off, which replaces the pass and its view before the frame
+  begins. A `resize_window` pilot command resizes the window, so
+  `passes.txt` checks the passes in a smaller one, until the pilot has a
+  step for it (backlog: *Pilot window resizing and polled mouse*).
+- The frame's render pass waits for the last frame's depth tests, and its
+  writes, before clearing its attachments. Found by the validation layers'
+  synchronization checks while looking into the depth resolve.
+
+The depth resolve first left tile-shaped garbage in the world's depth after a
+resize, changing each frame, at some sizes (1280x400, 1085x399, 1084x400) and
+not others (1280x800, 1281x800, 1100x700). Ruled out: synchronization (a full
+barrier after the pass, and the synchronization checks, found nothing),
+memory placement (dedicated allocations), the resolve mode (min), the target's
+load op and layouts, the transient flag, the depth format (D24), and the VMA
+API version. With 4 samples, the broken part was one triangle of the target,
+as if the driver resolves with a draw. Storing the multisampled depth fixed it
+at every size.
 
 **Verify**
 - Standard checks.
 - render-check's `passes.txt`, saving the section with and without
   multisampling: quad edges in the target are smooth only with it, and the
-  water still hides behind quads in both.
+  water still hides behind quads in both. Then in a smaller window: the
+  world's depth is still the quads'.
+- No hazards for the passes from the validation layers' synchronization
+  checks.

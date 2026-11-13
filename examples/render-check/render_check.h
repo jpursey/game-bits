@@ -15,8 +15,10 @@
 #include "SDL.h"
 #include "absl/base/thread_annotations.h"
 #include "absl/log/log_sink.h"
+#include "absl/status/status.h"
 #include "absl/synchronization/mutex.h"
 #include "absl/time/time.h"
+#include "absl/types/span.h"
 #include "gb/game/game.h"
 #include "gb/image/pixel.h"
 #include "gb/imgui/imgui_instance.h"
@@ -156,6 +158,10 @@ class RenderCheck final : public gb::Game {
   bool InitPasses();
   bool InitPilot();
 
+  // Creates the world pass and its view, replacing those already created.
+  // Returns false if either can't be created, leaving those already created.
+  bool CreateWorldPass(bool multisample);
+
   bool ProcessEvents();
 
   // Keys are shortcuts for some of the panel's checks.
@@ -164,6 +170,10 @@ class RenderCheck final : public gb::Game {
   // Returns false while "Go over the vertex limit for a second" keeps the GUI
   // over its vertex limit.
   bool IsGuiUnderLimit() const;
+
+  // The pilot's resize_window command: sets the window's size to `args`, its
+  // width and height in pixels.
+  absl::Status ResizeWindow(absl::Span<const std::string> args);
 
   void UpdateFrameStats();
   void UpdateInstances();
@@ -249,6 +259,7 @@ class RenderCheck final : public gb::Game {
   gb::MessageEndpointId sdl_channel_ = gb::kNoMessageEndpointId;
   std::unique_ptr<gb::PilotSdl> pilot_sdl_;
   gb::PilotHandle gui_under_limit_;
+  gb::PilotHandle resize_window_;
   std::unique_ptr<gb::ResourceSystem> resource_system_;
   std::unique_ptr<gb::RenderSystem> render_system_;
   gb::VulkanBackend* backend_ = nullptr;
@@ -338,6 +349,9 @@ class RenderCheck final : public gb::Game {
   // the world's color and depth over the section, and its water view then draws
   // water over the middle, and the two depth targets beside the section.
   bool show_passes_ = false;
+  gb::BindingLayout* pass_binding_layout_ = nullptr;
+  gb::RenderTarget* world_color_ = nullptr;
+  gb::RenderTarget* world_depth_ = nullptr;
   std::unique_ptr<gb::RenderPass> world_pass_;
   std::unique_ptr<gb::RenderPass> depth_only_pass_;
   std::unique_ptr<gb::RenderView> world_view_;

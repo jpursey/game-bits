@@ -240,8 +240,8 @@ CMake files that use Game Bits.
 If you are not using Game Bits for 3D graphics (specifically the render
 library), Vulkan is not required. Otherwise, the
 [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) must be installed separately.
-The renderer requests the Vulkan 1.1 API, so any reasonably current SDK will
-do. Installing the Vulkan SDK should set the `VULKAN_SDK` environment variable,
+The renderer requests the Vulkan 1.2 API, and needs a device that supports it,
+so any reasonably current SDK and driver will do. Installing the Vulkan SDK should set the `VULKAN_SDK` environment variable,
 which Game Bits depends on to locate the installed version. For example, at the
 time of this writing, Game Bits was built against Vulkan 1.3.283.0, where
 VULKAN_SDK is defined as `VULKAN_SDK=C:\VulkanSDK\1.3.283.0`

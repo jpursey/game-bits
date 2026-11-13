@@ -55,7 +55,8 @@ struct RenderPassConfig {
   Pixel clear_color = {0, 0, 0, 0};
 
   // Draws with as many samples as the frame, resolved into the targets as the
-  // pass ends. A multisampled pass clears its targets: keeping either fails.
+  // pass ends: color by averaging each pixel's samples, and depth by taking its
+  // first sample. A multisampled pass clears its targets: keeping either fails.
   bool multisample = false;
 };
 

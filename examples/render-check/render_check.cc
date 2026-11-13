@@ -15,6 +15,7 @@
 #include "absl/log/log.h"
 #include "absl/log/log_entry.h"
 #include "absl/log/log_sink_registry.h"
+#include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/types/span.h"
@@ -321,7 +322,23 @@ bool RenderCheck::InitPilot() {
   }
   gui_under_limit_ = pilot->AddCondition("gui_under_limit",
                                          [this] { return IsGuiUnderLimit(); });
+  resize_window_ = pilot->AddCommand(
+      "resize_window", [this](absl::Span<const std::string> args) {
+        return ResizeWindow(args);
+      });
   return true;
+}
+
+absl::Status RenderCheck::ResizeWindow(absl::Span<const std::string> args) {
+  int width = 0;
+  int height = 0;
+  if (args.size() != 2 || !absl::SimpleAtoi(args[0], &width) ||
+      !absl::SimpleAtoi(args[1], &height) || width <= 0 || height <= 0) {
+    return absl::InvalidArgumentError(
+        "resize_window takes a positive width and height");
+  }
+  SDL_SetWindowSize(window_, width, height);
+  return absl::OkStatus();
 }
 
 bool RenderCheck::InitRenderSystem() {
@@ -971,6 +988,7 @@ bool RenderCheck::InitPasses() {
     LOG(ERROR) << "Could not register pass quad binding layout";
     return false;
   }
+  pass_binding_layout_ = binding_layout;
 
   const gb::ShaderParam vec4_param(gb::ShaderValue::kVec4, 0);
   gb::Shader* vertex_shader = render_system_->CreateShader(
@@ -1048,49 +1066,46 @@ bool RenderCheck::InitPasses() {
 
   // The world's targets follow the frame, and the depth-only pass's target
   // has a fixed size.
-  gb::RenderTarget* world_color = render_system_->CreateRenderTarget(
+  world_color_ = render_system_->CreateRenderTarget(
       &resources_, gb::TextureFormat::kRgba8Srgb,
       gb::RenderTargetSize::Frame());
-  gb::RenderTarget* world_depth = render_system_->CreateRenderTarget(
+  world_depth_ = render_system_->CreateRenderTarget(
       &resources_, gb::TextureFormat::kDepth, gb::RenderTargetSize::Frame());
   gb::RenderTarget* depth_only = render_system_->CreateRenderTarget(
       &resources_, gb::TextureFormat::kDepth,
       gb::RenderTargetSize::Pixels(kDepthWidth, kDepthHeight));
-  if (world_color == nullptr || world_depth == nullptr ||
+  if (world_color_ == nullptr || world_depth_ == nullptr ||
       depth_only == nullptr) {
     LOG(ERROR) << "Could not create render targets";
     return false;
   }
-  world_pass_ =
-      render_system_->CreatePass(gb::RenderPassConfig()
-                                     .SetColor(world_color)
-                                     .SetDepth(world_depth)
-                                     .SetClearColor(gb::Pixel(100, 150, 210)));
+  if (!CreateWorldPass(/*multisample=*/true)) {
+    return false;
+  }
   depth_only_pass_ =
       render_system_->CreatePass(gb::RenderPassConfig().SetDepth(depth_only));
-  if (world_pass_ == nullptr || depth_only_pass_ == nullptr) {
-    LOG(ERROR) << "Could not create passes";
+  if (depth_only_pass_ == nullptr) {
+    LOG(ERROR) << "Could not create depth-only pass";
     return false;
   }
 
   // The water is drawn after the composite, which writes the depth it tests
   // against, so it is in a later view.
-  world_view_ = render_system_->CreateView(world_pass_.get(), binding_layout);
   depth_only_view_ =
       render_system_->CreateView(depth_only_pass_.get(), binding_layout);
   composite_view_ = render_system_->CreateView(binding_layout, 1);
   water_view_ = render_system_->CreateView(binding_layout, 2);
-  if (world_view_ == nullptr || depth_only_view_ == nullptr ||
-      composite_view_ == nullptr || water_view_ == nullptr) {
+  if (depth_only_view_ == nullptr || composite_view_ == nullptr ||
+      water_view_ == nullptr) {
     LOG(ERROR) << "Could not create pass views";
     return false;
   }
 
   for (gb::Material* material : {composite_material_, water_material_}) {
-    material->GetMaterialBindingData()->SetTexture(0, world_color);
-    material->GetMaterialBindingData()->SetTexture(1, world_depth);
+    material->GetMaterialBindingData()->SetTexture(0, world_color_);
+    material->GetMaterialBindingData()->SetTexture(1, world_depth_);
   }
-  world_depth_material_->GetMaterialBindingData()->SetTexture(0, world_depth);
+  world_depth_material_->GetMaterialBindingData()->SetTexture(0, world_depth_);
   depth_only_material_->GetMaterialBindingData()->SetTexture(0, depth_only);
 
   for (int i = 0; i < kPassesQuads; ++i) {
@@ -1112,6 +1127,29 @@ bool RenderCheck::InitPasses() {
     LOG(ERROR) << "Could not create pass quads";
     return false;
   }
+  return true;
+}
+
+bool RenderCheck::CreateWorldPass(bool multisample) {
+  auto pass =
+      render_system_->CreatePass(gb::RenderPassConfig()
+                                     .SetColor(world_color_)
+                                     .SetDepth(world_depth_)
+                                     .SetClearColor(gb::Pixel(100, 150, 210))
+                                     .SetMultisample(multisample));
+  if (pass == nullptr) {
+    LOG(ERROR) << "Could not create world pass";
+    return false;
+  }
+  auto view = render_system_->CreateView(pass.get(), pass_binding_layout_);
+  if (view == nullptr) {
+    LOG(ERROR) << "Could not create world view";
+    return false;
+  }
+
+  // A pass must outlive its views, so the old view goes first.
+  world_view_ = std::move(view);
+  world_pass_ = std::move(pass);
   return true;
 }
 
@@ -1622,13 +1660,22 @@ void RenderCheck::DrawPassesGui() {
     return;
   }
   ImGui::Checkbox("Show passes over the grid (S)", &show_passes_);
+
+  // The GUI is drawn before the frame begins, so the world pass isn't in a
+  // frame as it is replaced.
+  bool multisample = world_pass_->IsMultisampled();
+  if (ImGui::Checkbox("Multisample the world pass", &multisample)) {
+    CreateWorldPass(multisample);
+  }
   ImGui::TextWrapped(
       "In place of the grid, %d quads that turn as they overlap, from a world "
       "pass drawn over a blue sky, with water across the middle. The water "
       "ripples and tints what is behind it, more so the further behind, and "
       "is hidden by the quads in front of it. Right of it, the world pass's "
       "depth, and below that a depth-only pass's depth of the same quads, "
-      "both as gray quads on white.",
+      "both as gray quads on white. The quads' edges in the world pass's "
+      "color are smooth only while it is multisampled. Its depth takes one "
+      "sample of each pixel, so its edges stay sharp.",
       kPassesQuads);
 }
 

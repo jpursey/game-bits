@@ -153,7 +153,7 @@ bool VulkanBackend::InitInstance(std::vector<const char*>* layers) {
                       .setApplicationVersion(1)
                       .setPEngineName("Game Bits")
                       .setEngineVersion(1)
-                      .setApiVersion(VK_API_VERSION_1_1);
+                      .setApiVersion(VK_API_VERSION_1_2);
   vk::InstanceCreateInfo instance_create_info =
       vk::InstanceCreateInfo()
           .setFlags(vk::InstanceCreateFlags())
@@ -219,6 +219,15 @@ bool VulkanBackend::InitDevice(const std::vector<const char*>& layers) {
   std::vector<const char*> device_extensions = {
       VK_KHR_SWAPCHAIN_EXTENSION_NAME};
   for (const auto& physical_device : physical_devices) {
+    // Passes are created with vkCreateRenderPass2(), and multisampled passes
+    // resolve depth, both from Vulkan 1.2.
+    if (physical_device.getProperties().apiVersion < VK_API_VERSION_1_2) {
+      LOG(INFO) << "Vulkan device "
+                << physical_device.getProperties().deviceName.data()
+                << " is skipped, as it doesn't support Vulkan 1.2";
+      continue;
+    }
+
     // Validate required features are available.
     auto features = physical_device.getFeatures();
     if (!features.samplerAnisotropy || !features.drawIndirectFirstInstance) {
@@ -388,7 +397,7 @@ bool VulkanBackend::InitDevice(const std::vector<const char*>& layers) {
   allocator_create_info.pVulkanFunctions = NULL;
   allocator_create_info.pRecordSettings = NULL;  // Heap trace to file.
   allocator_create_info.instance = instance_;
-  allocator_create_info.vulkanApiVersion = VK_API_VERSION_1_1;
+  allocator_create_info.vulkanApiVersion = VK_API_VERSION_1_2;
   if (vmaCreateAllocator(&allocator_create_info, &allocator_) != VK_SUCCESS) {
     LOG(ERROR) << "Failed to create allocator";
     return false;
@@ -441,14 +450,22 @@ bool VulkanBackend::InitRenderPass() {
                      .setPColorAttachments(&color_attachement_ref)
                      .setPDepthStencilAttachment(&depth_attachment_ref)
                      .setPResolveAttachments(&resolve_attachment_ref);
+  // Clearing the attachments waits for the last frame's use of them, which
+  // includes its depth tests.
+  constexpr vk::PipelineStageFlags kAttachmentStages =
+      vk::PipelineStageFlagBits::eColorAttachmentOutput |
+      vk::PipelineStageFlagBits::eEarlyFragmentTests |
+      vk::PipelineStageFlagBits::eLateFragmentTests;
   auto subpass_dependency =
       vk::SubpassDependency()
           .setSrcSubpass(VK_SUBPASS_EXTERNAL)
-          .setSrcStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
-          .setSrcAccessMask({})
+          .setSrcStageMask(kAttachmentStages)
+          .setSrcAccessMask(vk::AccessFlagBits::eColorAttachmentWrite |
+                            vk::AccessFlagBits::eDepthStencilAttachmentWrite)
           .setDstSubpass(0)
-          .setDstStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
-          .setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite);
+          .setDstStageMask(kAttachmentStages)
+          .setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite |
+                            vk::AccessFlagBits::eDepthStencilAttachmentWrite);
 
   auto [create_result, render_pass] = device_.createRenderPass(
       vk::RenderPassCreateInfo()

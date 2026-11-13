@@ -143,6 +143,10 @@ class VulkanBackend final : public RenderBackend {
   // Returns true if the device can draw many indirect draws in one call.
   bool IsMultiDrawSupported() const { return max_draw_indirect_count_ > 1; }
 
+  // Returns the number of samples the frame, and multisampled passes, draw
+  // with. It is one on a device that can't multisample.
+  vk::SampleCountFlagBits GetMsaaSampleCount() const { return msaa_count_; }
+
   //----------------------------------------------------------------------------
   // Options
   //

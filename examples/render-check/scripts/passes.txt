@@ -5,15 +5,48 @@
 
 # The Passes section, drawn over the grid while shown: a world pass of turning
 # quads with water over it in the frame, and the depth of the world pass and of
-# a depth-only pass beside it.
+# a depth-only pass beside it. The world pass is multisampled, so the quads'
+# edges are smooth in its color, though not in its depth.
 wait 10
 key s
+
+# The sections above are collapsed to bring this one into the window.
+click "Frames"
+click "Instances"
+click "Textures"
+click "Texture arrays"
+click "GUI"
+click "Blend modes"
+click "Texture formats"
+click "Volume textures"
+click "Storage buffers"
+click "Unset bindings"
+click "Mesh pools"
 wait 20
 save passes
 
 # The quads have turned, and the waves have moved.
 wait 30
 save passes_later
+
+# Without multisampling, the quads' edges in the world pass's color are jagged.
+click "Multisample the world pass"
+wait 2
+save passes_single
+
+# Multisampled again.
+click "Multisample the world pass"
+wait 2
+save passes_multisampled
+
+# In a smaller window, the targets that follow the frame are smaller. The
+# world's depth is still the quads', at a size where NVIDIA's driver needs the
+# multisampled depth stored to resolve it (see VulkanPass).
+run resize_window 1085 399
+wait 10
+save passes_resized
+run resize_window 1280 800
+wait 10
 
 # Hidden again, the grid is back.
 key s
