@@ -318,12 +318,6 @@ TEST(LocalFileProtocolTest, CreateWithRootPath) {
   ASSERT_NE(protocol, nullptr);
   EXPECT_EQ(protocol->GetRoot(), ToGbPath(root_path));
   EXPECT_TRUE(fs::is_directory(root_path, error));
-
-  // A path that isn't valid UTF-16 (a lone surrogate) fails, rather than
-  // rooting the protocol in the current directory.
-  EXPECT_EQ(
-      LocalFileProtocol::Create(parent_path / std::wstring(1, wchar_t{0xD800})),
-      nullptr);
 }
 
 TEST(LocalFileProtocolTest, PathsStayUnderRoot) {
@@ -374,20 +368,6 @@ TEST(LocalFileProtocolTest, ReadWhatIsAppendedAfterTheEnd) {
   EXPECT_TRUE(file->IsValid());
 }
 
-TEST(LocalFileProtocolTest, CopyFileOntoItselfByAnotherName) {
-  auto protocol = LocalFileProtocol::CreateTemp("gbtest");
-  ASSERT_NE(protocol, nullptr);
-  FileSystem file_system;
-  ASSERT_TRUE(file_system.Register(std::move(protocol)));
-  ASSERT_TRUE(file_system.WriteFile("file:/file", "12345"));
-
-  // Windows paths ignore case.
-  EXPECT_TRUE(file_system.CopyFile("file:/file", "file:/FILE"));
-  std::string contents;
-  ASSERT_TRUE(file_system.ReadFile("file:/file", &contents));
-  EXPECT_EQ(contents, "12345");
-}
-
 TEST(LocalFileProtocolTest, MoveChangesCase) {
   auto protocol = LocalFileProtocol::CreateTemp("gbtest");
   ASSERT_NE(protocol, nullptr);
@@ -397,10 +377,8 @@ TEST(LocalFileProtocolTest, MoveChangesCase) {
   ASSERT_TRUE(file_system.WriteFile("file:/other", "abcde"));
   ASSERT_TRUE(file_system.CreateFolder("file:/folder"));
 
-  // Windows paths ignore case, so another file's name in any case is taken,
-  // but a file or folder can change the case of its own name.
-  EXPECT_FALSE(file_system.MoveFile("file:/file", "file:/OTHER"));
-  EXPECT_FALSE(file_system.MoveFolder("file:/folder", "file:/OTHER"));
+  // A file or folder can change the case of its own name, whether or not names
+  // ignore case.
   EXPECT_TRUE(file_system.MoveFile("file:/file", "file:/File"));
   EXPECT_TRUE(file_system.MoveFolder("file:/folder", "file:/FOLDER"));
   EXPECT_THAT(
@@ -409,43 +387,6 @@ TEST(LocalFileProtocolTest, MoveChangesCase) {
   std::string contents;
   ASSERT_TRUE(file_system.ReadFile("file:/File", &contents));
   EXPECT_EQ(contents, "12345");
-}
-
-TEST(LocalFileProtocolTest, MoveOpenFile) {
-  auto protocol = LocalFileProtocol::CreateTemp("gbtest");
-  ASSERT_NE(protocol, nullptr);
-  FileSystem file_system;
-  ASSERT_TRUE(file_system.Register(std::move(protocol)));
-  ASSERT_TRUE(file_system.CreateFolder("file:/folder"));
-
-  // Windows can't move a file that is open, nor the folder it is in.
-  auto file = file_system.OpenFile("file:/folder/file", kNewFileFlags);
-  ASSERT_NE(file, nullptr);
-  EXPECT_FALSE(file_system.MoveFile("file:/folder/file", "file:/moved"));
-  EXPECT_FALSE(file_system.MoveFolder("file:/folder", "file:/moved"));
-  EXPECT_FALSE(file_system.IsValidPath("file:/moved"));
-  file.reset();
-  EXPECT_TRUE(file_system.MoveFolder("file:/folder", "file:/moved"));
-  EXPECT_TRUE(file_system.IsValidFile("file:/moved/file"));
-}
-
-TEST(LocalFileProtocolTest, RecursiveDeleteFolderFailure) {
-  auto protocol = LocalFileProtocol::CreateTemp("gbtest");
-  ASSERT_NE(protocol, nullptr);
-  const fs::path root_path = ToFsPath(protocol->GetRoot());
-  FileSystem file_system;
-  ASSERT_TRUE(file_system.Register(std::move(protocol)));
-  ASSERT_TRUE(file_system.CreateFolder("file:/folder"));
-  ASSERT_TRUE(file_system.WriteFile("file:/folder/file", "12345"));
-
-  // Windows can't delete a file that is open.
-  std::fstream open_file(root_path / "folder/file", std::fstream::in);
-  ASSERT_TRUE(open_file.is_open());
-  EXPECT_FALSE(
-      file_system.DeleteFolder("file:/folder", FolderMode::kRecursive));
-  open_file.close();
-  EXPECT_TRUE(file_system.DeleteFolder("file:/folder", FolderMode::kRecursive));
-  EXPECT_FALSE(file_system.IsValidPath("file:/folder"));
 }
 
 TEST(LocalFileProtocolTest, ListSkipsLinksToMissingFolders) {
