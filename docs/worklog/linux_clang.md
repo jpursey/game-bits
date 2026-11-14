@@ -32,8 +32,8 @@ need SDL or Vulkan build and pass their tests; those that do aren't built yet.
 ### Compilers and platforms
 
 - Linux is built with clang only. GCC isn't a goal, and isn't checked.
-- The clang in CI is the one `ubuntu-latest` provides (18 today); this
-  session's is also 18.
+- The clang in CI is the one `ubuntu-24.04` provides (18); this session's
+  is also 18.
 - Code stays portable as the workflow's C++ style requires: no new `#ifdef`
   around portable code. Nothing here needs a Linux-specific implementation;
   `gen_` covers everything that builds (CL3 adds `gen_local_path_encoding.cc`).
@@ -116,7 +116,7 @@ are investigated in their own CLs.
 
 ### CI
 
-A second job in `.github/workflows/cmake.yml` on `ubuntu-latest`: configure
+A second job in `.github/workflows/cmake.yml` on `ubuntu-24.04`: configure
 with clang, build Debug, and run ctest. It runs as an ordinary user, so the
 read-only test means something. It has the same triggers as the Windows job
 (pushes to `main`, and by hand).
@@ -211,7 +211,7 @@ Depends on: CL2.
 - Standard checks.
 - ctest passes in full on Linux.
 
-### CL5 [ ] CI and docs: Linux job
+### CL5 [x] CI and docs: Linux job
 
 Depends on: CL3, CL4.
 

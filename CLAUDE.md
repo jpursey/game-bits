@@ -2,7 +2,7 @@
 
 This is a shared C++ library defining common functionality used for desktop or command line applications. It is designed as a cross-platform library, with platform-specific details separated from public interfaces and headers.
 
-This library is almost entirely self contained with all dependencies being brought in via submodules, with the exception being a dependency on the Vulkan SDK for graphics which must be installed on the machine. It currently only works on Windows, and is built with Visual Studio 2022 Community and CMake.
+This library is almost entirely self contained with all dependencies being brought in via submodules, with the exception being a dependency on the Vulkan SDK for graphics which must be installed on the machine. It is developed on Windows, built with Visual Studio 2022 Community and CMake, and also builds on Linux with clang, except for the libraries that need SDL or Vulkan (see Linux below).
 
 It is used by other projects via direct inclusion based on the "GB_DIR" environment variable being set to this directory, and Game Bits specific CMake commands (see CMake/GameBitsTargetCommands.cmake for details)
 
@@ -141,6 +141,20 @@ A session can run an example with a script of steps, and look at the frames it s
 
 The program exits once the script ends, so every run also checks that it shuts down cleanly. The run fails if the program exits with an error code, which it does when a step fails or anything logs an error (unless the script expects it), or is still running 60 seconds after it started (`-TimeoutSecs`). In that case the stack of each of its threads is saved to `hang-stacks.txt` there first, showing where it is stuck. `tools\dump-stacks.ps1 -ProcessId <id>` prints the same for any running program, such as one the user says has hung.
 
+### Linux
+
+Game Bits also builds and passes its tests on Linux with clang, apart from the libraries that need SDL or the Vulkan SDK (`gb_sdl`, `gb_imgui_sdl`, `gb_pilot_sdl`, `gb_render_vulkan`, `gb_render_vulkan_sdl`), which are left out of the build there, and the examples, which need them. It needs clang, CMake, and Ninja (Ubuntu's `clang`, `cmake`, and `ninja-build` packages), and no developer environment or PATH changes:
+
+```
+cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -S . -B out/build/linux-clang-Debug
+cmake -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -S . -B out/build/linux-clang-RelWithDebInfo
+cmake --build out/build/linux-clang-Debug
+ctest --test-dir out/build/linux-clang-Debug --output-on-failure
+out/build/linux-clang-Debug/src/gb/base/gb_base_test --gtest_filter=ContextTest.*
+```
+
+`flatc` is built from its submodule, so a full build is about 620 steps, about 4.5 minutes on 4 cores. Test binaries have no `.exe`. Run tests as an ordinary user: root ignores read-only permissions, so `CommonProtocolTest.ReadOnlyFile` fails as root.
+
 ### Checks
 
 Every change is checked as follows:
@@ -151,10 +165,11 @@ Every change is checked as follows:
 
 ### Cloud sessions
 
-A cloud session (see Cloud sessions in the workflow) runs on Linux, where none of the Windows commands above work, and Game Bits doesn't build on Linux yet. Until it does:
+A cloud session (see Cloud sessions in the workflow) runs on Linux, where it builds and tests with the Linux commands above, leaving Windows to CI:
 - Its clone starts with empty submodules. `git submodule update --init` checks them out.
+- It runs as root, so it runs the tests as an ordinary user it adds (see Linux above), who owns the build tree: `useradd -m gbtest` once, then `chown -R gbtest out/build/linux-clang-Debug` and `su gbtest -c "ctest --test-dir out/build/linux-clang-Debug --output-on-failure"` from the clone.
 - It formats with the same clang-format version from PyPI, installed in a virtual environment in the session's scratchpad: `python3 -m venv <dir>`, then `<dir>/bin/pip install clang-format==19.1.5`, then `<dir>/bin/clang-format` as above.
-- CI (`.github/workflows/cmake.yml`) builds and tests on Windows, in Release only, and builds block-world, in about 20 minutes. It runs by itself for pushes to `main` that change more than docs. On a PR's branch it runs only when started by hand (a `workflow_dispatch` run of the CMake workflow on that branch), which the session does as the workflow's Cloud sessions describes. The PR says that Debug, and anything only an example run can check, are left for the user.
+- CI (`.github/workflows/cmake.yml`) builds and tests on Windows, in Release only, and builds block-world, in about 20 minutes. Alongside it, a Linux job builds and tests in Debug with clang, as an ordinary user. It runs by itself for pushes to `main` that change more than docs. On a PR's branch it runs only when started by hand (a `workflow_dispatch` run of the CMake workflow on that branch), which the session does as the workflow's Cloud sessions describes. The PR says that Windows Debug, and anything only an example run can check, are left for the user.
 
 ## Local sessions
 

@@ -54,3 +54,24 @@ jobs:
         call "%VSPATH%\VC\Auxiliary\Build\vcvars64.bat" || exit /b 1
         cmake -G Ninja -DCMAKE_BUILD_TYPE=%GB_BUILD_TYPE% -S examples/block-world -B examples/block-world/out/build/ci || exit /b 1
         cmake --build examples/block-world/out/build/ci --target block_world || exit /b 1
+
+  # Linux builds every library but the SDL and Vulkan ones, with clang, in Debug
+  # so render asserts and death tests run. GitHub's runner is an ordinary user,
+  # so tests of read-only files mean something, which they don't as root.
+  build-linux:
+    runs-on: ubuntu-24.04
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: "recursive"
+
+    - name: Install Ninja
+      run: sudo apt-get install -y ninja-build
+
+    - name: Build and test Game Bits
+      working-directory: ${{github.workspace}}
+      run: |
+        cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -S . -B out/build/ci
+        cmake --build out/build/ci
+        ctest --test-dir out/build/ci --output-on-failure
