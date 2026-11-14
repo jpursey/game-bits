@@ -46,6 +46,23 @@ jobs:
         cmake --build out/build/ci || exit /b 1
         ctest --test-dir out/build/ci --output-on-failure || exit /b 1
 
+  # Block World builds its own copy of the Game Bits libraries it uses, so it
+  # runs as its own job, alongside the one above rather than after it.
+  build-block-world:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        submodules: "recursive"
+
+    - name: Setup Vulkan
+      uses: humbletim/setup-vulkan-sdk@v1.2.1
+      with:
+        vulkan-query-version: 1.3.283.0
+        vulkan-components: Vulkan-Headers, Vulkan-Loader
+        vulkan-use-cache: true
+
     - name: Build Block World example
       shell: cmd
       working-directory: ${{github.workspace}}
