@@ -39,10 +39,10 @@ also builds the Windows-only files and with more warnings:
   warnings as errors.
 
 This was found by clang-tidy, which parses with clang; there may be more in the
-`win_` files once clang-cl builds them. Building needs Visual Studio's "C++ Clang tools for Windows"
-component, as the MSVC standard library rejects older clang versions. Fix them,
-build and test both clang configurations, and consider building one in CI so it
-stays working.
+`win_` files once clang-cl builds them. Building needs Visual Studio's "C++
+Clang tools for Windows" component, as the MSVC standard library rejects older
+clang versions. Fix them, build and test both clang configurations, and
+consider building one in CI so it stays working.
 
 ## SDL from source
 

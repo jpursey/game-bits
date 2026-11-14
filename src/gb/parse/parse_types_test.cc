@@ -30,13 +30,13 @@ TEST(TokenIndexTest, OrderedByLineBeforeToken) {
 }
 
 TEST(TokenIndexTest, OrderedAcrossTheFullRange) {
-  // The largest value each field holds.
+  // The largest value each field holds: the end token sets every token bit.
   const TokenIndex last_line(kMaxLexerLines, 0);
-  const TokenIndex last_token(0, kMaxTokensPerLine);
-  EXPECT_LT(TokenIndex(0, 0), last_token);
-  EXPECT_LT(last_token, last_line);
-  EXPECT_LT(TokenIndex(kMaxLexerLines - 1, kMaxTokensPerLine), last_line);
-  EXPECT_LT(TokenIndex(1, 0), kInvalidTokenIndex);
+  const TokenIndex end_token(0, kTokenIndexEndToken);
+  EXPECT_LT(TokenIndex(0, kMaxTokensPerLine), end_token);
+  EXPECT_LT(end_token, TokenIndex(1, 0));
+  EXPECT_LT(TokenIndex(kMaxLexerLines - 1, kTokenIndexEndToken), last_line);
+  EXPECT_LT(last_line, TokenIndex(kMaxLexerLines, kTokenIndexEndToken));
 }
 
 }  // namespace

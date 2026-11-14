@@ -82,9 +82,10 @@ class TokenIndex {
   constexpr TokenIndex& operator=(const TokenIndex&) noexcept = default;
   ~TokenIndex() = default;
 
-  // Not defaulted, as a defaulted <=> would compare the bit fields as the int
-  // they promote to, which clang rejects as narrowing from uint32_t.
   constexpr bool operator==(const TokenIndex&) const = default;
+
+  // Orders by line, then token. The bit fields are compared as uint32_t, as
+  // they would otherwise promote to int.
   constexpr std::strong_ordering operator<=>(const TokenIndex& other) const {
     if (line != other.line) {
       return uint32_t{line} <=> uint32_t{other.line};
