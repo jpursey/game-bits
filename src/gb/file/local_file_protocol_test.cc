@@ -479,6 +479,29 @@ TEST(LocalFileProtocolTest, NonAsciiNames) {
       UnorderedElementsAre(folder, file, absl::StrCat("file:/", other_name)));
 }
 
+TEST(LocalFileProtocolTest, CreateWithNonUtf8RootPath) {
+  std::error_code error;
+  const fs::path temp_path = fs::temp_directory_path(error);
+  ASSERT_FALSE(error) << error.message();
+
+  // This fails, rather than rooting the protocol in the current directory.
+  EXPECT_EQ(LocalFileProtocol::Create(temp_path / internal::GetNonUtf8Name()),
+            nullptr);
+}
+
+TEST(LocalFileProtocolTest, ListSkipsNonUtf8Names) {
+  auto protocol = LocalFileProtocol::CreateTemp("gbtest");
+  ASSERT_NE(protocol, nullptr);
+  const fs::path root_path = internal::Utf8ToLocalPath(protocol->GetRoot());
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(std::move(protocol)));
+  ASSERT_TRUE(file_system.WriteFile("file:/file", "12345"));
+
+  // The operating system accepts the name, but no path can name it.
+  ASSERT_TRUE(WriteFile(root_path / internal::GetNonUtf8Name(), "name"));
+  EXPECT_THAT(file_system.List("file:/"), ElementsAre("file:/file"));
+}
+
 TEST(LocalFileProtocolTest, OsRoot) {
   std::error_code error;
   fs::path original_path = fs::current_path(error);

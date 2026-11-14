@@ -3,6 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
+#include <string>
+
 #include "gb/base/unicode.h"
 #include "gb/file/local_path_encoding.h"
 
@@ -41,5 +43,9 @@ fs::path Utf8ToLocalPath(std::string_view path) {
   }
   return fs::path(path, fs::path::generic_format);
 }
+
+// Names are bytes that aren't checked, so a byte that can't start a UTF-8
+// character is accepted.
+fs::path GetNonUtf8Name() { return fs::path(std::string(1, '\xFF')); }
 
 }  // namespace gb::internal

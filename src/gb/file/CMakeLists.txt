@@ -20,9 +20,6 @@ else()
     gen_local_file_attributes.cc
     gen_local_path_encoding.cc
   )
-  set(gb_file_internal_TEST_SOURCE
-    gen_local_file_protocol_test.cc
-  )
 endif()
 
 set(gb_file_SOURCE

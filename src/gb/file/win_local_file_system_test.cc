@@ -21,8 +21,6 @@ namespace {
 
 namespace fs = std::filesystem;
 
-using ::testing::ElementsAre;
-
 //------------------------------------------------------------------------------
 // Windows file system behavior: names ignore case, and open files can't be
 // moved or deleted.
@@ -82,36 +80,6 @@ TEST(WinLocalFileSystemTest, RecursiveDeleteFolderFailure) {
   open_file.close();
   EXPECT_TRUE(file_system.DeleteFolder("file:/folder", FolderMode::kRecursive));
   EXPECT_FALSE(file_system.IsValidPath("file:/folder"));
-}
-
-//------------------------------------------------------------------------------
-// Windows paths are UTF-16, so a lone surrogate isn't valid in one.
-//------------------------------------------------------------------------------
-
-fs::path GetInvalidName() { return fs::path(std::wstring(1, wchar_t{0xD800})); }
-
-TEST(WinLocalFilePathTest, CreateWithInvalidRootPath) {
-  std::error_code error;
-  const fs::path temp_path = fs::temp_directory_path(error);
-  ASSERT_FALSE(error) << error.message();
-
-  // This fails, rather than rooting the protocol in the current directory.
-  EXPECT_EQ(LocalFileProtocol::Create(temp_path / GetInvalidName()), nullptr);
-}
-
-TEST(WinLocalFilePathTest, ListSkipsInvalidNames) {
-  auto protocol = LocalFileProtocol::CreateTemp("gbtest");
-  ASSERT_NE(protocol, nullptr);
-  const fs::path root_path = internal::Utf8ToLocalPath(protocol->GetRoot());
-  FileSystem file_system;
-  ASSERT_TRUE(file_system.Register(std::move(protocol)));
-  ASSERT_TRUE(file_system.WriteFile("file:/file", "12345"));
-
-  // A name that can't be converted to UTF-8 can't be named by a path either.
-  std::fstream invalid_file(root_path / GetInvalidName(), std::fstream::out);
-  ASSERT_TRUE(invalid_file.is_open());
-  invalid_file.close();
-  EXPECT_THAT(file_system.List("file:/"), ElementsAre("file:/file"));
 }
 
 }  // namespace
