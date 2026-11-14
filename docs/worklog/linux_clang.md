@@ -119,7 +119,9 @@ are investigated in their own CLs.
 A second job in `.github/workflows/cmake.yml` on `ubuntu-24.04`: configure
 with clang, build Debug, and run ctest. It runs as an ordinary user, so the
 read-only test means something. It has the same triggers as the Windows job
-(pushes to `main`, and by hand).
+(pushes to `main`, and by hand). It is pinned to `ubuntu-24.04` rather than
+`ubuntu-latest`, which is moving to 26.04, where the build fails (see Left for
+later).
 
 ### To confirm
 
@@ -145,6 +147,13 @@ Each becomes a backlog item when this feature is complete:
   decision on where they come from.
 - clang-cl on Windows: the existing *clang-cl build* item, which this makes
   much smaller.
+- Newer clang: on `ubuntu-26.04` (clang 20 to 22, `ubuntu-latest` from late
+  2026), clang 21's `-Wcharacter-conversion` fires in `third_party/utfcpp`'s
+  headers, which Game Bits code includes and builds with warnings as errors,
+  so `gb/base/unicode.cc` fails to compile (the build stopped there, so there
+  may be more). Third-party headers could be included as system headers, so
+  their warnings never fail the build, then the CI job moves to
+  `ubuntu-latest`. CI stays on `ubuntu-24.04` (clang 18) until then.
 - Render asserts are one setting for the whole program, which creating a
   `RenderSystem` overwrites with its debug option, so a test or program that
   enables them must do so after creating it.
