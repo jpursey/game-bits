@@ -331,8 +331,6 @@ On an NVIDIA GeForce RTX 4070 Ti SUPER (Vulkan 1.4, driver 610.88):
   pass draws and reads.
 - `VulkanPassLayout` and `VulkanRenderPassInfo`, for anything else in the
   backend that draws in more than one kind of render pass.
-- render-check's `resize_window` pilot command, until the pilot has a step of
-  its own.
 
 ### Left out
 
