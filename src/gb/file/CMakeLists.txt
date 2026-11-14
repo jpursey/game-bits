@@ -12,6 +12,7 @@ if (WIN32)
   set(gb_file_internal_TEST_SOURCE
     win_local_file_protocol_drive_test.cc
     win_local_file_protocol_test.cc
+    win_local_file_system_test.cc
   )
 else()
   set(gb_file_internal_SOURCE
