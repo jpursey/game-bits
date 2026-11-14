@@ -156,9 +156,9 @@ A cloud session (see Cloud sessions in the workflow) runs on Linux, where none o
 - It formats with the same clang-format version from PyPI, installed in a virtual environment in the session's scratchpad: `python3 -m venv <dir>`, then `<dir>/bin/pip install clang-format==19.1.5`, then `<dir>/bin/clang-format` as above.
 - CI (`.github/workflows/cmake.yml`) builds and tests every push on Windows, in Release only, and builds block-world. The PR says that Debug, and anything only an example run can check, are left for the user.
 
-## Sessions
+## Local sessions
 
-These rules are for local sessions. A cloud session works in its own clone, so it needs no worktree, and its PRs reach `main` when the user merges them (see Cloud sessions in the workflow).
+These add to Local sessions in the workflow. A cloud session follows Cloud sessions there instead: it works in its own clone, so it needs no worktree, and its PRs reach `main` when the user merges them.
 
 Projects build against this checkout as it stands (see Game Bits in the workflow), so Game Bits code is never changed in it directly:
 - A Game Bits session works in its own git worktree, and builds and tests there (see Worktrees below).
