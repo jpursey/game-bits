@@ -175,15 +175,22 @@ these rules replace those for [Local sessions](#local-sessions):
 - The session subscribes to each PR it opens, so review comments and CI results
   reach it. It answers review comments with new commits rather than amending,
   so the user sees what changed since their last review.
-- PRs are squash merged, so `main` gets one commit per CL. A CL's `[x]` in its
-  worklog is part of its PR.
+- PRs are squash merged, so `main` gets one commit per CL, and its message is
+  the PR's title and description. Whenever the PR changes (a review fix, a
+  rebase, a change of approach), the session checks that the title and
+  description still describe the final change and how it was verified, and
+  updates them, so they are right whenever the user merges.
+- A CL's `[x]` in its worklog is part of its PR.
 - If `main` moves under an open PR and they conflict, the session rebases onto
   it and force-pushes.
 - Sessions start from `origin/main`. The user pushes their local `main` before
   starting a cloud session in a project, and pulls after merging, before working
   locally again.
 - A check the session can't run itself (such as a build on another platform) is
-  left to CI, which runs on every push, or to the user. The PR says which.
+  left to CI or to the user, and the PR says which. Where the project's CI on a
+  PR's branch is started by hand (see its CLAUDE.md), the session starts it once
+  the PR is ready for review, and again after its last change for review, not
+  on every push in between.
 
 ### Independent and dependent work
 
