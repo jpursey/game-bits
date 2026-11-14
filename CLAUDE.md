@@ -149,7 +149,16 @@ Every change is checked as follows:
 - Touched files pass the clang-format check (see Format above).
 - New and changed behavior has unit tests. Code that can't be unit tested (rendering, windows, input) is checked in an example, such as `examples/render-check`. The session builds it, runs it with `tools\run-program.ps1` (see Run an example above), and checks the saved frames itself. Only what the steps can't reach is left for the user to check by hand, and the hand-off says exactly what that is.
 
+### Cloud sessions
+
+A cloud session (see Cloud sessions in the workflow) runs on Linux, where none of the Windows commands above work, and Game Bits doesn't build on Linux yet. Until it does:
+- Its clone starts with empty submodules. `git submodule update --init` checks them out.
+- It formats with the same clang-format version from PyPI, installed in a virtual environment in the session's scratchpad: `python3 -m venv <dir>`, then `<dir>/bin/pip install clang-format==19.1.5`, then `<dir>/bin/clang-format` as above.
+- CI (`.github/workflows/cmake.yml`) builds and tests every push on Windows, in Release only, and builds block-world. The PR says that Debug, and anything only an example run can check, are left for the user.
+
 ## Sessions
+
+These rules are for local sessions. A cloud session works in its own clone, so it needs no worktree, and its PRs reach `main` when the user merges them (see Cloud sessions in the workflow).
 
 Projects build against this checkout as it stands (see Game Bits in the workflow), so Game Bits code is never changed in it directly:
 - A Game Bits session works in its own git worktree, and builds and tests there (see Worktrees below).

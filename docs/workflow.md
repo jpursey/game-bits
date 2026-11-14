@@ -15,6 +15,8 @@ from whichever project shows the need (see [Game Bits](#game-bits)).
   commit" are not approval. Show the final diff, with any temporary code
   removed, and wait.
 - Don't `git push`, or suggest pushing. The user pushes.
+- A cloud session commits and pushes for review instead, and the user's merge
+  is the approval (see [Cloud sessions](#cloud-sessions)).
 - Before handing a significant change (real code, not a one-line tweak or a doc
   edit) to the user, run `/simplify` and apply its fixes, then run
   `/code-review` at `medium`, and report what each found.
@@ -148,6 +150,61 @@ only way to learn this session's name and reference, which differ in every
 session. The prompt must be self-contained and include the project's parallel
 session rules along with that name and reference; without it, the side session
 is stranded and has to ask the user who to message.
+
+## Cloud sessions
+
+A cloud session (Claude Code on the web) works in its own fresh clone of each
+repository it was given, on a branch named for the session, with no access to
+the user's machine. The user reviews its work as GitHub pull requests (PRs),
+which replace committing on approval, landing on `main`, and the parallel
+session hand-off above:
+- Each CL is one PR against `main`. Once a CL is built, checked, and through
+  the reviews [Working with the user](#working-with-the-user) calls for, the
+  session commits it, pushes its branch, and opens the PR. The PR's title and
+  description are the CL's commit message, followed by how it was verified,
+  what each review found, and anything left for the user to check by hand.
+- Merging the PR is the user's approval. The session never merges, never
+  pushes to `main`, and pushes only its own branches, only to open or update
+  its PRs.
+- The session subscribes to each PR it opens, so review comments and CI results
+  reach it. It answers review comments with new commits rather than amending,
+  so the user sees what changed since their last review.
+- PRs are squash merged, so `main` gets one commit per CL. A CL's `[x]` in its
+  worklog is part of its PR.
+- If `main` moves under an open PR and they conflict, the session rebases onto
+  it and force-pushes.
+- Sessions start from `origin/main`. The user pushes their local `main` before
+  starting a cloud session in a project, and pulls after merging, before working
+  locally again.
+- A check the session can't run itself (such as a build on another platform) is
+  left to CI, which runs on every push, or to the user. The PR says which.
+
+### Independent and dependent work
+
+- Independent pieces of work run in separate cloud sessions, each with its own
+  branch and PR, as local worktrees do. If two conflict, whichever merges
+  second is rebased by its session.
+- CLs that build on each other can be stacked in one session, at most three
+  deep. The first CL is on the session's branch, and each one after it is on a
+  branch named the same with `-2`, `-3`, ... appended, started from the branch
+  below it. Its PR's base is that branch, so its diff holds only its own change.
+  The session may create and push these branches, and force-push any of its own
+  branches after a rebase.
+- When a PR in a stack is merged, the session rebases the next branch onto the
+  new `main` (`git rebase --onto main <merged branch> <next branch>`),
+  force-pushes it, and makes `main` its PR's base. A review fix lower in the
+  stack is a new commit on that branch, and each branch above it is rebased
+  and force-pushed.
+- Stack a CL only when the one below it is unlikely to change much in review.
+  Otherwise, wait for it to merge.
+
+### Other projects
+
+- A session in a project built on Game Bits builds against its Game Bits clone,
+  which it leaves at `origin/main`, so it builds only reviewed code as a local
+  session does.
+- A backlog item or workflow change it makes in Game Bits (see
+  [Game Bits](#game-bits)) is a PR of its own in Game Bits.
 
 ## Tests
 
