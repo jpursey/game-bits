@@ -10,13 +10,9 @@ from whichever project shows the need (see [Game Bits](#game-bits)).
 
 ## Working with the user
 
-- Commit only after the user explicitly approves the change, or says to commit.
-  Passing tests, answered questions, or no objection to "if you're happy I'll
-  commit" are not approval. Show the final diff, with any temporary code
-  removed, and wait.
-- Don't `git push`, or suggest pushing. The user pushes.
-- A cloud session commits and pushes for review instead, and the user's merge
-  is the approval (see [Cloud sessions](#cloud-sessions)).
+- How a change is committed, reviewed, and landed on `main` depends on where
+  the session runs: see [Local sessions](#local-sessions) and
+  [Cloud sessions](#cloud-sessions).
 - Before handing a significant change (real code, not a one-line tweak or a doc
   edit) to the user, run `/simplify` and apply its fixes, then run
   `/code-review` at `medium`, and report what each found.
@@ -129,7 +125,18 @@ beside it, as a sibling directory (`../game-bits`), and finds it through the
   that use it. A change that breaks a public API says so in its backlog item,
   so each project can add its own follow-up.
 
-## Parallel sessions
+## Local sessions
+
+A local session runs on the user's machine, in a project's main checkout or a
+git worktree of it. The user reviews its changes there before they are
+committed:
+- Commit only after the user explicitly approves the change, or says to commit.
+  Passing tests, answered questions, or no objection to "if you're happy I'll
+  commit" are not approval. Show the final diff, with any temporary code
+  removed, and wait.
+- Don't `git push`, or suggest pushing. The user pushes.
+
+### Parallel sessions
 
 Work can run in parallel sessions, each in its own git worktree. The project's
 CLAUDE.md says which work needs the main checkout, and who lands a side
@@ -155,9 +162,8 @@ is stranded and has to ask the user who to message.
 
 A cloud session (Claude Code on the web) works in its own fresh clone of each
 repository it was given, on a branch named for the session, with no access to
-the user's machine. The user reviews its work as GitHub pull requests (PRs),
-which replace committing on approval, landing on `main`, and the parallel
-session hand-off above:
+the user's machine. The user reviews its work as GitHub pull requests (PRs), so
+these rules replace those for [Local sessions](#local-sessions):
 - Each CL is one PR against `main`. Once a CL is built, checked, and through
   the reviews [Working with the user](#working-with-the-user) calls for, the
   session commits it, pushes its branch, and opens the PR. The PR's title and
