@@ -96,6 +96,46 @@ library) in the worklog.
 This changes what projects using `gb_sdl` see wherever they call SDL directly,
 so it needs a follow-up in each of them.
 
+## Graphics on Linux
+
+- **Layers:** build, sdl, imgui, pilot, render, examples, tools
+- **Size:** medium
+- **Feature workflow:** yes
+- **Depends on:** SDL from source
+- **Background:** [Linux and Clang](worklog/linux_clang.md);
+  `gb_external_libraries()` in `CMake/GameBitsExternalLibraries.cmake`
+
+Linux builds every library except those that need SDL or Vulkan (`gb_sdl`,
+`gb_imgui_sdl`, `gb_pilot_sdl`, `gb_render_vulkan`, `gb_render_vulkan_sdl`),
+and none of the examples. Build them there too, then the examples, and
+`tools/run-program` (a PowerShell script today) so a session can run an
+example on Linux and check its frames:
+- SDL comes from *SDL from source*.
+- Vulkan's headers and loader need a source on Linux: the Vulkan SDK, the
+  distribution's packages, or submodules. Decide which; the `Vulkan` target is
+  only defined on Windows today, following the Windows SDK's layout.
+- Shaders built with `gb_embed_shader` need `glslc`, from the same source.
+- CI on Linux has no GPU, so running examples there needs a software Vulkan
+  driver (such as Mesa's lavapipe), or stays local.
+
+## Linux threads and fibers
+
+- **Layers:** thread, job
+- **Size:** medium
+- **Feature workflow:** yes
+- **Depends on:** nothing
+- **Background:** [Linux and Clang](worklog/linux_clang.md); `gb/thread/thread.h`
+  and its `win_` and `gen_` files
+
+On Linux, threads and fibers come from the `gen_` implementations, which do less
+than Windows': fibers are unsupported, so the fiber job system isn't
+available, threads aren't named, and the CPU topology isn't known, so threads
+can't be pinned to cores. Linux can do all of them (`ucontext` or a small
+context switch for fibers, `pthread_setname_np`, `/sys/devices/system/cpu` and
+`pthread_setaffinity_np`). This needs a file name prefix for Linux, alongside
+`win_` and `gen_`, and the build choosing it on Linux, with its tests named the
+same way.
+
 ## flatc from source on Windows
 
 - **Layers:** build
@@ -273,6 +313,22 @@ until then, as a slot's frame part already works with its frame number. Do the
 same for slots, removing the baselines and the subtraction in every gather, at
 the cost of a compare as each point is recorded. Measure a timed point before
 and after.
+
+## Render asserts per render system
+
+- **Layers:** render
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Linux and Clang](worklog/linux_clang.md);
+  `gb/render/render_assert.h`
+
+Render asserts are one setting for the whole program
+(`SetRenderAssertEnabled()`), and creating a `RenderSystem` overwrites it with
+its own debug option. So a test or program that enables them must do so after
+creating the render system, and creating a second one changes them for the
+first. Make them part of each `RenderSystem` (set from its debug option, or
+its own option), so nothing has to be ordered around its constructor.
 
 ## Instanced draws
 
