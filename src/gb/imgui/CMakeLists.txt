@@ -3,7 +3,9 @@
 ## Use of this source code is governed by an MIT-style License that can be found
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-add_subdirectory(sdl)
+if (TARGET sdl2)
+  add_subdirectory(sdl)
+endif()
 
 set(gb_imgui_SOURCE
   gb_imconfig.h

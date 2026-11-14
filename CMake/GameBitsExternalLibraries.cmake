@@ -3,7 +3,15 @@
 ## Use of this source code is governed by an MIT-style License that can be found
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
+# Defines the sdl2, sdl2_main, and Vulkan targets, where they are available.
+# Both are prebuilt for Windows (SDL2 in third_party, Vulkan from the Vulkan
+# SDK), so elsewhere none are defined. Modules that need one are only added
+# when its target exists.
 function(gb_external_libraries)
+  if (NOT WIN32)
+    return()
+  endif()
+
   ####### SDL2
 
   add_library(sdl2 SHARED IMPORTED)

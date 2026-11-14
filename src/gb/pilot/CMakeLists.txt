@@ -4,7 +4,9 @@
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
 add_subdirectory(script)
-add_subdirectory(sdl)
+if (TARGET sdl2)
+  add_subdirectory(sdl)
+endif()
 
 set(gb_pilot_SOURCE
   pilot.cc pilot.h
