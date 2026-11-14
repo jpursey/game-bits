@@ -96,6 +96,32 @@ library) in the worklog.
 This changes what projects using `gb_sdl` see wherever they call SDL directly,
 so it needs a follow-up in each of them.
 
+## flatc from source on Windows
+
+- **Layers:** build
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** Linux and Clang's CL2, which builds `flatc` from source off
+  Windows
+- **Background:** [Linux and Clang](worklog/linux_clang.md); the flatbuffers
+  section of the root `CMakeLists.txt`; `flatbuffers_generate_headers` in
+  `third_party/flatbuffers/CMake/BuildFlatBuffers.cmake`
+
+Windows builds generate FlatBuffers headers with the checked-in
+`bin/flatc.exe`, while every other platform builds `flatc` from the
+flatbuffers submodule and uses that target. Windows already compiles that
+`flatc` too, since `FLATBUFFERS_BUILD_FLATC` defaults on, and then doesn't use
+it. Use it on Windows as well, and delete `bin/flatc.exe`:
+- The generated code then always comes from the same version as the
+  flatbuffers runtime headers, so updating the submodule can't leave a
+  mismatched `flatc` behind.
+- `flatc` is built once per build tree, and again only when flatbuffers'
+  sources change. A Debug build runs a Debug `flatc`, which costs little for
+  the few schemas Game Bits has.
+- Projects built on Game Bits that have their own schemas get the same `flatc`
+  through `<target>_FBS`, so nothing changes for them, but check that none
+  calls `bin/flatc.exe` directly.
+
 ## Block-world and ImGui shaders compiled by the build
 
 - **Layers:** CI, imgui, examples
