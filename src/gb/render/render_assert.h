@@ -39,7 +39,8 @@ namespace internal {
 // the condition is false.
 //
 // Tests check that misuse is caught with death tests, after enabling render
-// asserts (and skipping if kRenderAssertsCompiled is false):
+// asserts (and skipping if kRenderAssertsCompiled is false). Creating a
+// RenderSystem sets whether they are enabled, so they are enabled after it:
 //
 //   SetRenderAssertEnabled(true);
 //   EXPECT_DEATH(draw_list.SetMesh(nullptr), "mesh != nullptr");
