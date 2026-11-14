@@ -149,7 +149,7 @@ Depends on: nothing.
 - Standard checks (see CLAUDE.md), with the Windows build and ctest by CI.
 - These files compile with clang 18 on Linux (the full Linux build needs CL2).
 
-### CL2 [~] build: configure and build off Windows
+### CL2 [x] build: configure and build off Windows
 
 Depends on: CL1.
 
