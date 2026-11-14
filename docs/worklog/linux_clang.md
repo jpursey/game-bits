@@ -53,7 +53,9 @@ job. There is no public API change.
 - Implicit conversion warnings are off for every Game Bits target and anything
   that links one, mainly for third-party headers: C4244, C4267, and C4800 on
   MSVC, and clang's counterparts on clang and clang-cl, including clang 21's
-  `-Wcharacter-conversion` where clang has it.
+  `-Wcharacter-conversion` where clang has it. `gb_imgui` also turns off
+  clang's `-Wnontrivial-memcall`, which ImGui's headers fail (see the
+  backlog's *ImGui update*).
 
 ### Portable C++
 

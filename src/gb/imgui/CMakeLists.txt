@@ -54,3 +54,14 @@ set(gb_imgui_DEPS
 )
 
 gb_add_library(gb_imgui)
+
+# ImGui calls memset and memcpy on its own types that aren't trivially
+# copyable, which newer versions of clang warn about, in its headers as well as
+# its sources. Every target that includes them needs the warning off.
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  include(CheckCXXCompilerFlag)
+  check_cxx_compiler_flag(-Wnontrivial-memcall GB_HAS_NONTRIVIAL_MEMCALL)
+  if (GB_HAS_NONTRIVIAL_MEMCALL)
+    target_compile_options(gb_imgui PUBLIC -Wno-nontrivial-memcall)
+  endif()
+endif()
