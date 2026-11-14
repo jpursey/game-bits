@@ -114,9 +114,10 @@ read-only tests mean something. It has the same triggers as the Windows job
   moot by leaving `gb_sdl` out where SDL2 isn't available.
 - The two investigated failures (profiler, render pass) are real bugs or test
   assumptions, not something in the session. CL4 finds out.
-  - CL2 found the profiler failure is intermittent: about 1 run in 5 on Linux,
-    so the test's result depends on something it doesn't control, likely the
-    real CPU tick rate.
+  - CL2 found the profiler failure is intermittent: 1 run in 5 on Linux, so
+    the test's result depends on something it doesn't control. If that is real
+    time, the test breaks the workflow's rule that time comes from something
+    the test controls, and CL4 fixes the test.
 
 ### Left for later
 
