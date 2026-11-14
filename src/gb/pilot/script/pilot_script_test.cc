@@ -74,6 +74,7 @@ TEST(PilotScriptTest, ReadsEveryStep) {
                 "press\n"
                 "release\n"
                 "wheel -2\n"
+                "resize 1024 600\n"
                 "run reset_peaks\n"
                 "expect loaded\n"
                 "expect error \"cannot be edited\"\n"
@@ -83,8 +84,8 @@ TEST(PilotScriptTest, ReadsEveryStep) {
                   "key f1", "key w for 20", "press key \"Left Shift\"",
                   "release key \"Left Shift\"", "text \"hello\"",
                   "move 640 -400", "move by -10 5", "click", "press", "release",
-                  "wheel -2", "run reset_peaks", "expect loaded",
-                  "expect error \"cannot be edited\" 600",
+                  "wheel -2", "resize 1024 600", "run reset_peaks",
+                  "expect loaded", "expect error \"cannot be edited\" 600",
                   "expect error \"cannot be edited\" 10", "save get_layer_1"));
 }
 
@@ -252,6 +253,8 @@ TEST(PilotScriptTest, MissingValuesFail) {
             "(1:10): Parse error at \"\": Expected integer value");
   EXPECT_EQ(ReadError("move by 3\n"),
             "(1:10): Parse error at \"\": Expected integer value");
+  EXPECT_EQ(ReadError("resize 1024\n"),
+            "(1:12): Parse error at \"\": Expected integer value");
 }
 
 TEST(PilotScriptTest, LeftOverValuesFail) {
@@ -282,6 +285,13 @@ TEST(PilotScriptTest, NegativeFramesFail) {
             "(1:15): Parse error at \"-1\": Frames can't be negative");
   EXPECT_EQ(ReadError("expect error \"edited\" -1"),
             "(1:23): Parse error at \"-1\": Frames can't be negative");
+}
+
+TEST(PilotScriptTest, SizesThatArentPositiveFail) {
+  EXPECT_EQ(ReadError("resize 0 600"),
+            "(1:8): Parse error at \"0\": The size must be positive");
+  EXPECT_EQ(ReadError("resize 1024 -1"),
+            "(1:13): Parse error at \"-1\": The size must be positive");
 }
 
 TEST(PilotScriptTest, BadTokensFail) {

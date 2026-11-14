@@ -22,10 +22,14 @@ namespace gb {
 // - Create() checks the pilot's key names, and hides the window if the pilot
 //   asks.
 // - As each frame begins, it adds the frame's input to SDL's event queue, as
-//   key, text, mouse motion, mouse button, and mouse wheel events. It also sets
-//   the keyboard and modifier state that SDL_GetKeyboardState() and
-//   SDL_GetModState() return to the keys the pilot holds, with caps lock and
-//   num lock off, so a run doesn't depend on the user's.
+//   key, text, mouse motion, mouse button, and mouse wheel events. It resizes
+//   the window with SDL_SetWindowSize(), which queues SDL's own window events,
+//   among the others in order, and logs an error if the window doesn't take
+//   the size (such as when it is fullscreen, or the size is below its
+//   minimum). It also sets the keyboard and modifier state
+//   that SDL_GetKeyboardState() and SDL_GetModState() return to the keys the
+//   pilot holds, with caps lock and num lock off, so a run doesn't depend on
+//   the user's.
 // - While it exists, SDL's event filter drops the user's real keyboard, mouse,
 //   touch, and text input, and the window's keyboard and mouse focus changes,
 //   so the user can't change a run. Everything else still passes (such as
@@ -53,7 +57,8 @@ class PilotSdl final {
   // if any of the pilot's key names isn't a key that SDL knows.
   //
   // `pilot` must outlive this, and so must `window`, unless it is null. With no
-  // window, events have a window ID of 0, and nothing is hidden.
+  // window, events have a window ID of 0, nothing is hidden, and resizing logs
+  // an error.
   static std::unique_ptr<PilotSdl> Create(Pilot* pilot, SDL_Window* window);
 
   PilotSdl(const PilotSdl&) = delete;
@@ -61,7 +66,7 @@ class PilotSdl final {
   ~PilotSdl();
 
  private:
-  PilotSdl(Pilot* pilot, Uint32 window_id);
+  PilotSdl(Pilot* pilot, SDL_Window* window);
 
   // SDL's event filter, which returns whether to keep the event.
   static int SDLCALL FilterEvent(void* userdata, SDL_Event* event);
@@ -70,16 +75,22 @@ class PilotSdl final {
   // Adds the frame's input to SDL's event queue, and sets SDL's keyboard state.
   void AddInput();
 
-  // Each appends the SDL events for one input event.
-  void AppendEvents(const PilotKeyEvent& input, std::vector<SDL_Event>* events);
-  void AppendEvents(const PilotTextEvent& input,
-                    std::vector<SDL_Event>* events);
-  void AppendEvents(const PilotMouseMoveEvent& input,
-                    std::vector<SDL_Event>* events);
-  void AppendEvents(const PilotMouseButtonEvent& input,
-                    std::vector<SDL_Event>* events);
-  void AppendEvents(const PilotMouseWheelEvent& input,
-                    std::vector<SDL_Event>* events);
+  // Adds `events` to SDL's event queue, and clears it.
+  void AddEvents(std::vector<SDL_Event>* events);
+
+  // Each applies one input event. Most append its SDL events to `events`. A
+  // resize adds `events` to SDL's queue first, as SDL queues its own window
+  // events as the window is resized, so the order is kept.
+  void ApplyInput(const PilotKeyEvent& input, std::vector<SDL_Event>* events);
+  void ApplyInput(const PilotTextEvent& input, std::vector<SDL_Event>* events);
+  void ApplyInput(const PilotMouseMoveEvent& input,
+                  std::vector<SDL_Event>* events);
+  void ApplyInput(const PilotMouseButtonEvent& input,
+                  std::vector<SDL_Event>* events);
+  void ApplyInput(const PilotMouseWheelEvent& input,
+                  std::vector<SDL_Event>* events);
+  void ApplyInput(const PilotResizeEvent& input,
+                  std::vector<SDL_Event>* events);
 
   // Returns the modifier state of the keys the pilot holds.
   SDL_Keymod GetModState() const;
@@ -88,6 +99,7 @@ class PilotSdl final {
   void RestoreKeys();
 
   Pilot* const pilot_;
+  SDL_Window* const window_;
   const Uint32 window_id_;
   SDL_EventFilter previous_filter_ = nullptr;
   void* previous_userdata_ = nullptr;

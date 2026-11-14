@@ -15,7 +15,6 @@
 #include "absl/log/log.h"
 #include "absl/log/log_entry.h"
 #include "absl/log/log_sink_registry.h"
-#include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/types/span.h"
@@ -322,23 +321,7 @@ bool RenderCheck::InitPilot() {
   }
   gui_under_limit_ = pilot->AddCondition("gui_under_limit",
                                          [this] { return IsGuiUnderLimit(); });
-  resize_window_ = pilot->AddCommand(
-      "resize_window", [this](absl::Span<const std::string> args) {
-        return ResizeWindow(args);
-      });
   return true;
-}
-
-absl::Status RenderCheck::ResizeWindow(absl::Span<const std::string> args) {
-  int width = 0;
-  int height = 0;
-  if (args.size() != 2 || !absl::SimpleAtoi(args[0], &width) ||
-      !absl::SimpleAtoi(args[1], &height) || width <= 0 || height <= 0) {
-    return absl::InvalidArgumentError(
-        "resize_window takes a positive width and height");
-  }
-  SDL_SetWindowSize(window_, width, height);
-  return absl::OkStatus();
 }
 
 bool RenderCheck::InitRenderSystem() {

@@ -36,6 +36,14 @@ struct PilotPoint {
   int y = 0;
 };
 
+// The size of the program's window, in window pixels.
+struct PilotSize {
+  bool operator==(const PilotSize&) const = default;
+
+  int width = 0;
+  int height = 0;
+};
+
 enum class PilotMouseButton {
   kLeft,
   kMiddle,
@@ -86,10 +94,18 @@ struct PilotMouseWheelEvent {
   int amount = 0;
 };
 
+// The window is resized, as the user would by dragging its border.
+struct PilotResizeEvent {
+  bool operator==(const PilotResizeEvent&) const = default;
+
+  // The window's new size, which is positive.
+  PilotSize size;
+};
+
 // One input event of a frame.
 using PilotInput =
     std::variant<PilotKeyEvent, PilotTextEvent, PilotMouseMoveEvent,
-                 PilotMouseButtonEvent, PilotMouseWheelEvent>;
+                 PilotMouseButtonEvent, PilotMouseWheelEvent, PilotResizeEvent>;
 
 // The mouse, after a frame's input.
 struct PilotMouse {

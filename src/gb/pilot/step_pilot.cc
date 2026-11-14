@@ -209,7 +209,8 @@ void StepPilot::EndStepFrame() {
     finished = step_frames_ > key->frames;
   } else if (const auto* click = std::get_if<PilotMouseClickStep>(&step)) {
     finished = step_frames_ > step_press_frame_ + click->frames;
-  } else if (std::holds_alternative<PilotKeyPressStep>(step)) {
+  } else if (std::holds_alternative<PilotKeyPressStep>(step) ||
+             std::holds_alternative<PilotResizeStep>(step)) {
     finished = true;
   } else if (std::holds_alternative<PilotMousePressStep>(step)) {
     finished = step_frames_ > step_press_frame_;
@@ -336,6 +337,16 @@ bool StepPilot::RunStep(const PilotMouseWheelStep& step) {
   }
   input_.push_back(PilotMouseWheelEvent{.amount = step.amount});
   return true;
+}
+
+bool StepPilot::RunStep(const PilotResizeStep& step) {
+  // Once resized, it finishes at the end of the frame (in EndStepFrame()).
+  if (step.size.width <= 0 || step.size.height <= 0) {
+    FailStep("The size isn't positive");
+    return false;
+  }
+  input_.push_back(PilotResizeEvent{.size = step.size});
+  return false;
 }
 
 bool StepPilot::RunStep(const PilotRunStep& step) {

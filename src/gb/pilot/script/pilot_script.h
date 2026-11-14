@@ -46,13 +46,14 @@ struct PilotScript {
 //                                       PilotMousePressStep
 //   release [left|middle|right]         PilotMouseReleaseStep
 //   wheel <amount>                      PilotMouseWheelStep
+//   resize <width> <height>             PilotResizeStep
 //   run <command> <value>...            PilotRunStep
 //   expect <condition>                  PilotExpectStep
 //   expect error "<text>" [<frames>]    PilotExpectErrorStep
 //   save <name>                         PilotSaveStep
 //
-// Frames can't be negative. Each step converts to the line that reads back as
-// it (see step_pilot.h).
+// Frames can't be negative, and a size must be positive. Each step converts to
+// the line that reads back as it (see step_pilot.h).
 //
 // Returns an error giving the line and column of the first problem, after
 // `filename` if there is one. Keys, commands, and conditions are not checked

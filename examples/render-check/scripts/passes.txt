@@ -42,10 +42,10 @@ save passes_multisampled
 # In a smaller window, the targets that follow the frame are smaller. The
 # world's depth is still the quads', at a size where NVIDIA's driver needs the
 # multisampled depth stored to resolve it (see VulkanPass).
-run resize_window 1085 399
+resize 1085 399
 wait 10
 save passes_resized
-run resize_window 1280 800
+resize 1280 800
 wait 10
 
 # Hidden again, the grid is back.

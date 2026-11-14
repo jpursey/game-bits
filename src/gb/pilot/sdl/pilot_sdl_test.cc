@@ -5,6 +5,7 @@
 
 #include "gb/pilot/sdl/pilot_sdl.h"
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -61,14 +62,39 @@ class PilotSdlTest : public ::testing::Test {
   }
 
   void TearDown() override {
+    if (window_ != nullptr) {
+      SDL_DestroyWindow(window_);
+    }
+    if (video_initialized_) {
+      SDL_QuitSubSystem(SDL_INIT_VIDEO);
+    }
     SDL_SetEventFilter(nullptr, nullptr);
     SDL_QuitSubSystem(SDL_INIT_EVENTS);
   }
 
-  // Runs a frame with the input, returning the events queued during it.
+  // Initializes SDL's video and creates a hidden window, which are both ended
+  // with the test. Returns false if there is no video.
+  bool CreateWindow() {
+    if (SDL_InitSubSystem(SDL_INIT_VIDEO) != 0) {
+      return false;
+    }
+    video_initialized_ = true;
+    window_ =
+        SDL_CreateWindow("PilotSdlTest", 0, 0, 320, 200, SDL_WINDOW_HIDDEN);
+    if (window_ == nullptr) {
+      return false;
+    }
+    SDL_PumpEvents();
+    TakeEvents();
+    return true;
+  }
+
+  // Runs a frame with the input, pumping SDL's events as a program's loop
+  // does, and returns the events queued during it.
   std::vector<SDL_Event> RunFrame(std::vector<PilotInput> input) {
     pilot_.SetNextFrameInput(std::move(input));
     pilot_.BeginFrame();
+    SDL_PumpEvents();
     std::vector<SDL_Event> events = TakeEvents();
     pilot_.EndFrame();
     return events;
@@ -96,6 +122,8 @@ class PilotSdlTest : public ::testing::Test {
 
   LogErrorGuard log_error_guard_;
   FakePilot pilot_;
+  bool video_initialized_ = false;
+  SDL_Window* window_ = nullptr;
 };
 
 //------------------------------------------------------------------------------
@@ -322,6 +350,62 @@ TEST_F(PilotSdlTest, InputArrivesInOrder) {
   EXPECT_EQ(events[1].type, SDL_TEXTINPUT);
   EXPECT_EQ(events[2].type, SDL_KEYDOWN);
   EXPECT_EQ(events[3].type, SDL_MOUSEMOTION);
+}
+
+//------------------------------------------------------------------------------
+// Resizing
+//------------------------------------------------------------------------------
+
+TEST_F(PilotSdlTest, ResizesTheWindowAmongOtherInput) {
+  if (!CreateWindow()) {
+    GTEST_SKIP() << "No window: " << SDL_GetError();
+  }
+  std::unique_ptr<PilotSdl> pilot_sdl = PilotSdl::Create(&pilot_, window_);
+  std::vector<SDL_Event> events = RunFrame(
+      {PilotTextEvent{.text = "a"}, PilotResizeEvent{.size = {400, 300}},
+       PilotTextEvent{.text = "b"}});
+
+  int width = 0;
+  int height = 0;
+  SDL_GetWindowSize(window_, &width, &height);
+  EXPECT_EQ(width, 400);
+  EXPECT_EQ(height, 300);
+
+  // SDL sends the window's own events for the resize, between the text.
+  ASSERT_GE(events.size(), 3);
+  EXPECT_EQ(events.front().type, SDL_TEXTINPUT);
+  EXPECT_STREQ(events.front().text.text, "a");
+  EXPECT_EQ(events.back().type, SDL_TEXTINPUT);
+  EXPECT_STREQ(events.back().text.text, "b");
+  const auto size_changed = std::find_if(
+      events.begin() + 1, events.end() - 1, [](const SDL_Event& e) {
+        return e.type == SDL_WINDOWEVENT &&
+               e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED;
+      });
+  ASSERT_NE(size_changed, events.end() - 1);
+  EXPECT_EQ(size_changed->window.data1, 400);
+  EXPECT_EQ(size_changed->window.data2, 300);
+}
+
+TEST_F(PilotSdlTest, ResizeToASizeTheWindowCantTakeLogsError) {
+  if (!CreateWindow()) {
+    GTEST_SKIP() << "No window: " << SDL_GetError();
+  }
+  SDL_SetWindowMinimumSize(window_, 300, 250);
+  std::unique_ptr<PilotSdl> pilot_sdl = PilotSdl::Create(&pilot_, window_);
+  RunFrame({PilotResizeEvent{.size = {200, 100}}});
+  EXPECT_THAT(log_error_guard_.TakeMessages(),
+              ElementsAre(LogTextHas("to 200x100, but it is 300x250")));
+}
+
+TEST_F(PilotSdlTest, ResizeWithNoWindowLogsError) {
+  std::unique_ptr<PilotSdl> pilot_sdl = PilotSdl::Create(&pilot_, nullptr);
+  std::vector<SDL_Event> events = RunFrame(
+      {PilotResizeEvent{.size = {400, 300}}, PilotTextEvent{.text = "a"}});
+  ASSERT_EQ(events.size(), 1);
+  EXPECT_EQ(events[0].type, SDL_TEXTINPUT);
+  EXPECT_THAT(log_error_guard_.TakeMessages(),
+              ElementsAre(LogTextHas("no window to resize")));
 }
 
 //------------------------------------------------------------------------------

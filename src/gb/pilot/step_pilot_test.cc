@@ -57,6 +57,10 @@ PilotInput Button(PilotMouseButton button, bool down, int x, int y) {
 
 PilotInput Wheel(int amount) { return PilotMouseWheelEvent{.amount = amount}; }
 
+PilotInput Resize(int width, int height) {
+  return PilotResizeEvent{.size = {width, height}};
+}
+
 // Runs a frame as a program would, drawing `drawn` if it isn't null, and
 // returns the frame's input.
 std::vector<PilotInput> RunFrame(Pilot* pilot, const Image* drawn = nullptr) {
@@ -144,6 +148,8 @@ TEST(PilotStepTest, StepsAreWrittenAsScriptLines) {
       absl::StrCat(PilotMouseReleaseStep{.button = PilotMouseButton::kMiddle}),
       "release middle");
   EXPECT_EQ(absl::StrCat(PilotMouseWheelStep{.amount = -2}), "wheel -2");
+  EXPECT_EQ(absl::StrCat(PilotResizeStep{.size = {1024, 600}}),
+            "resize 1024 600");
   EXPECT_EQ(absl::StrCat(PilotRunStep{.command = "reset"}), "run reset");
   EXPECT_EQ(absl::StrCat(PilotRunStep{.command = "set",
                                       .args = {"speed", "-2", "two words"}}),
@@ -658,6 +664,54 @@ TEST_F(StepPilotTest, ClickAtAnAmbiguousLabelFails) {
   EXPECT_TRUE(pilot.HasFailed());
   EXPECT_THAT(log_error_guard_.TakeMessages(),
               ElementsAre(LogTextHas("2 items are labelled \"OK\"")));
+}
+
+//------------------------------------------------------------------------------
+// Resizing
+//------------------------------------------------------------------------------
+
+TEST_F(StepPilotTest, ResizeTakesAFrame) {
+  StepPilot pilot;
+  pilot.AddSteps({PilotMouseMoveStep{.position = {10, 20}},
+                  PilotResizeStep{.size = {640, 480}},
+                  PilotResizeStep{.size = {800, 600}},
+                  PilotTextStep{.text = "a"}});
+  EXPECT_THAT(
+      RunUntilDone(&pilot),
+      ElementsAre(ElementsAre(Move(10, 20), Resize(640, 480)),
+                  ElementsAre(Resize(800, 600)), ElementsAre(Text("a"))));
+  EXPECT_FALSE(pilot.HasFailed());
+}
+
+TEST_F(StepPilotTest, ClickAfterAResizeFindsItsItemInTheNextFrame) {
+  StepPilot pilot;
+  PilotPoint ok_point = {30, 40};
+  PilotHandle finder = pilot.AddItemFinder([&ok_point](std::string_view label) {
+    return label == "OK" ? std::vector<PilotPoint>{ok_point}
+                         : std::vector<PilotPoint>{};
+  });
+  pilot.AddSteps({PilotResizeStep{.size = {640, 480}},
+                  PilotMouseClickStep{.target = "OK"}});
+
+  // The program draws the frame at the new size, which moves the item.
+  EXPECT_THAT(RunFrame(&pilot), ElementsAre(Resize(640, 480)));
+  ok_point = {15, 20};
+  EXPECT_THAT(
+      RunUntilDone(&pilot),
+      ElementsAre(ElementsAre(Move(15, 20)),
+                  ElementsAre(Button(PilotMouseButton::kLeft, true, 15, 20)),
+                  ElementsAre(Button(PilotMouseButton::kLeft, false, 15, 20))));
+  EXPECT_FALSE(pilot.HasFailed());
+}
+
+TEST_F(StepPilotTest, ResizeToASizeThatIsntPositiveFails) {
+  StepPilot pilot;
+  pilot.AddSteps({PilotResizeStep{.size = {0, 480}}});
+  EXPECT_THAT(RunUntilDone(&pilot), ElementsAre(IsEmpty()));
+  EXPECT_TRUE(pilot.HasFailed());
+  EXPECT_THAT(log_error_guard_.TakeMessages(),
+              ElementsAre(LogText("Pilot frame 0: resize 0 480 failed: The "
+                                  "size isn't positive")));
 }
 
 //------------------------------------------------------------------------------

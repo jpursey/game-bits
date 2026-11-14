@@ -675,28 +675,24 @@ so a click at a point seen in a frame lands on what is drawn there. That is
 confirmed on a display at 100%, where SDL's window coordinates and the frame's
 pixels are the same. Check it on a display scaled above 100% (render-check's
 scripts click by label, so they show it), and if SDL's coordinates differ
-there, convert between them in `PilotSdl`.
+there, convert between them in `PilotSdl`. The same holds for a `resize` step's
+size, which `PilotSdl` passes to `SDL_SetWindowSize()` in SDL's coordinates.
 
-## Pilot window resizing and polled mouse
+## Pilot polled mouse
 
-- **Layers:** pilot, pilot_script, pilot_sdl
-- **Size:** medium
+- **Layers:** pilot_sdl
+- **Size:** small
 - **Feature workflow:** no
 - **Depends on:** nothing
 - **Background:** [Scripted runs](worklog/scripted_runs.md)
 
-No pilot step resizes the window, so render-check registers a
-`resize_window <width> <height>` command of its own, which
-`scripts/passes.txt` runs. Every program would need the same. A
-`resize <width> <height>` step would set the window's size through
-`PilotSdl`, and the frames after it would be saved at the new size; it
-replaces render-check's command. Resizing by hand isn't more thorough: the
-program stops drawing while the window is dragged, so it sees one sudden
-change, as the step does.
-Separately, a program that polls the mouse (`SDL_GetMouseState()`) rather than
-reading events still sees the real one, as SDL keeps that state itself; only
-ImGui, through `ImGuiInstance`, reads the pilot's mouse. Programs read mouse
-input from events until something needs polling.
+A program that polls the mouse (`SDL_GetMouseState()`) rather than reading
+events still sees the real one in a pilot run, as SDL keeps that state itself
+and SDL 2 has no way to set it, short of warping the user's real cursor. Only
+ImGui, through `ImGuiInstance`, reads the pilot's mouse (`Pilot::GetMouse()`).
+Nothing polls yet, so programs read the mouse from events. Once something
+needs to poll, give it a Game Bits call that returns the pilot's mouse in a
+run and SDL's otherwise.
 
 ## Pilot steps from a running session
 

@@ -119,18 +119,16 @@ std::unique_ptr<PilotSdl> PilotSdl::Create(Pilot* pilot, SDL_Window* window) {
     return nullptr;
   }
 
-  Uint32 window_id = 0;
-  if (window != nullptr) {
-    window_id = SDL_GetWindowID(window);
-    if (pilot->IsWindowHidden()) {
-      SDL_HideWindow(window);
-    }
+  if (window != nullptr && pilot->IsWindowHidden()) {
+    SDL_HideWindow(window);
   }
-  return absl::WrapUnique(new PilotSdl(pilot, window_id));
+  return absl::WrapUnique(new PilotSdl(pilot, window));
 }
 
-PilotSdl::PilotSdl(Pilot* pilot, Uint32 window_id)
-    : pilot_(pilot), window_id_(window_id) {
+PilotSdl::PilotSdl(Pilot* pilot, SDL_Window* window)
+    : pilot_(pilot),
+      window_(window),
+      window_id_(window != nullptr ? SDL_GetWindowID(window) : 0) {
   SDL_GetEventFilter(&previous_filter_, &previous_userdata_);
   SetEventFilterKeepingEvents(&FilterEvent, this, /*drop_user_input=*/true);
   frame_listener_ = pilot_->AddFrameListener([this] { AddInput(); });
@@ -171,32 +169,37 @@ void PilotSdl::AddInput() {
   for (const PilotInput& input : pilot_->GetInput()) {
     std::visit(
         [this, &events](const auto& alternative) {
-          AppendEvents(alternative, &events);
+          ApplyInput(alternative, &events);
         },
         input);
   }
   RestoreKeys();
-  if (events.empty()) {
+  AddEvents(&events);
+}
+
+void PilotSdl::AddEvents(std::vector<SDL_Event>* events) {
+  if (events->empty()) {
     return;
   }
 
   const Uint32 timestamp = SDL_GetTicks();
-  for (SDL_Event& event : events) {
+  for (SDL_Event& event : *events) {
     event.common.timestamp = timestamp;
   }
 
   // Added events skip the event filter.
-  const int count = static_cast<int>(events.size());
-  const int added = SDL_PeepEvents(events.data(), count, SDL_ADDEVENT,
+  const int count = static_cast<int>(events->size());
+  const int added = SDL_PeepEvents(events->data(), count, SDL_ADDEVENT,
                                    SDL_FIRSTEVENT, SDL_LASTEVENT);
   if (added != count) {
     LOG(ERROR) << "SDL's event queue took " << std::max(added, 0) << " of "
                << count << " pilot input events: " << SDL_GetError();
   }
+  events->clear();
 }
 
-void PilotSdl::AppendEvents(const PilotKeyEvent& input,
-                            std::vector<SDL_Event>* events) {
+void PilotSdl::ApplyInput(const PilotKeyEvent& input,
+                          std::vector<SDL_Event>* events) {
   const SDL_Scancode scancode = FindScancode(input.key);
   if (scancode == SDL_SCANCODE_UNKNOWN) {
     return;
@@ -214,8 +217,8 @@ void PilotSdl::AppendEvents(const PilotKeyEvent& input,
   event.key.keysym.mod = static_cast<Uint16>(GetModState());
 }
 
-void PilotSdl::AppendEvents(const PilotTextEvent& input,
-                            std::vector<SDL_Event>* events) {
+void PilotSdl::ApplyInput(const PilotTextEvent& input,
+                          std::vector<SDL_Event>* events) {
   // Each text event holds a few bytes, so longer text is split between
   // characters. UTF-8 continuation bytes are 10xxxxxx.
   constexpr int kMaxSize = SDL_TEXTINPUTEVENT_TEXT_SIZE - 1;
@@ -241,8 +244,8 @@ void PilotSdl::AppendEvents(const PilotTextEvent& input,
   }
 }
 
-void PilotSdl::AppendEvents(const PilotMouseMoveEvent& input,
-                            std::vector<SDL_Event>* events) {
+void PilotSdl::ApplyInput(const PilotMouseMoveEvent& input,
+                          std::vector<SDL_Event>* events) {
   SDL_Event& event = events->emplace_back();
   event.type = SDL_MOUSEMOTION;
   event.motion.windowID = window_id_;
@@ -254,8 +257,8 @@ void PilotSdl::AppendEvents(const PilotMouseMoveEvent& input,
   mouse_position_ = input.position;
 }
 
-void PilotSdl::AppendEvents(const PilotMouseButtonEvent& input,
-                            std::vector<SDL_Event>* events) {
+void PilotSdl::ApplyInput(const PilotMouseButtonEvent& input,
+                          std::vector<SDL_Event>* events) {
   const Uint8 button = ToSdlButton(input.button);
   if (input.down) {
     mouse_buttons_ |= SDL_BUTTON(button);
@@ -274,13 +277,33 @@ void PilotSdl::AppendEvents(const PilotMouseButtonEvent& input,
   event.button.y = input.position.y;
 }
 
-void PilotSdl::AppendEvents(const PilotMouseWheelEvent& input,
-                            std::vector<SDL_Event>* events) {
+void PilotSdl::ApplyInput(const PilotMouseWheelEvent& input,
+                          std::vector<SDL_Event>* events) {
   SDL_Event& event = events->emplace_back();
   event.type = SDL_MOUSEWHEEL;
   event.wheel.windowID = window_id_;
   event.wheel.y = input.amount;
   event.wheel.direction = SDL_MOUSEWHEEL_NORMAL;
+}
+
+void PilotSdl::ApplyInput(const PilotResizeEvent& input,
+                          std::vector<SDL_Event>* events) {
+  if (window_ == nullptr) {
+    LOG(ERROR) << "The pilot has no window to resize.";
+    return;
+  }
+  AddEvents(events);
+  SDL_SetWindowSize(window_, input.size.width, input.size.height);
+
+  // SDL leaves a fullscreen window's size alone, and keeps a window within its
+  // minimum and maximum sizes.
+  PilotSize size;
+  SDL_GetWindowSize(window_, &size.width, &size.height);
+  if (size != input.size) {
+    LOG(ERROR) << "The pilot resized the window to " << input.size.width << "x"
+               << input.size.height << ", but it is " << size.width << "x"
+               << size.height << ".";
+  }
 }
 
 SDL_Keymod PilotSdl::GetModState() const {

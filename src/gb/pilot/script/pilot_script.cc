@@ -70,6 +70,7 @@ constexpr std::string_view kScriptProgram = R"---(
     $press=("press" [$button=button] [$label=%string | $x=%int $y=%int]);
     $release=("release" [$button=button]);
     $wheel=("wheel" $amount=%int);
+    $resize=("resize" $width=%int $height=%int);
     $run=("run" $command=name $args=name*);
     $expect_error=("expect" "error" $text=%string [$frames=%int]);
     $expect=("expect" $condition=name);
@@ -117,6 +118,12 @@ std::string ReadName(const Lexer& lexer, const Token& token) {
 PilotPoint ReadPoint(const ParsedItem& values) {
   return {static_cast<int>(values.GetInt("x")),
           static_cast<int>(values.GetInt("y"))};
+}
+
+// Returns the size in `values`, which fits in an int as a point does.
+PilotSize ReadSize(const ParsedItem& values) {
+  return {static_cast<int>(values.GetInt("width")),
+          static_cast<int>(values.GetInt("height"))};
 }
 
 // Returns the button in `values`, or the left button if none is given.
@@ -204,6 +211,15 @@ absl::StatusOr<PilotStep> ReadStep(const Lexer& lexer, const ParsedItem& item) {
   if (type == "wheel") {
     return PilotMouseWheelStep{.amount =
                                    static_cast<int>(values->GetInt("amount"))};
+  }
+  if (type == "resize") {
+    for (const Token& token :
+         {values->GetToken("width"), values->GetToken("height")}) {
+      if (token.GetInt() <= 0) {
+        return ScriptError(lexer, token, "The size must be positive");
+      }
+    }
+    return PilotResizeStep{.size = ReadSize(*values)};
   }
   if (type == "run") {
     PilotRunStep step = {.command =

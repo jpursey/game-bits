@@ -234,6 +234,17 @@ struct PilotMouseWheelStep {
   int amount = 0;
 };
 
+// Resizes the program's window (see StepPilot for when).
+struct PilotResizeStep {
+  template <typename Sink>
+  friend void AbslStringify(Sink& sink, const PilotResizeStep& step) {
+    absl::Format(&sink, "resize %d %d", step.size.width, step.size.height);
+  }
+
+  // The window's new size. The step fails unless it is positive.
+  PilotSize size;
+};
+
 // Runs a program command (see Pilot::AddCommand()).
 struct PilotRunStep {
   template <typename Sink>
@@ -291,8 +302,8 @@ using PilotStep =
                  PilotKeyPressStep, PilotKeyReleaseStep, PilotTextStep,
                  PilotMouseMoveStep, PilotMouseMoveByStep, PilotMouseClickStep,
                  PilotMousePressStep, PilotMouseReleaseStep,
-                 PilotMouseWheelStep, PilotRunStep, PilotExpectStep,
-                 PilotExpectErrorStep, PilotSaveStep>;
+                 PilotMouseWheelStep, PilotResizeStep, PilotRunStep,
+                 PilotExpectStep, PilotExpectErrorStep, PilotSaveStep>;
 
 // Writes whichever step it holds. Abseil finds this through the steps' own
 // namespace, as PilotStep is a std::variant of them.
@@ -345,6 +356,9 @@ void AbslStringify(Sink& sink, const PilotStep& step) {
 // - PilotMouseWheelStep: in the frame the wheel turns in, which is the frame
 //   the step starts in only if the mouse doesn't move in that frame, and the
 //   next frame otherwise.
+// - PilotResizeStep: 1 frame after the window is resized, which is in the
+//   frame the step starts in. So a later step finds the program's items where
+//   they are drawn at the new size.
 // - PilotKeyReleaseStep and PilotMouseReleaseStep: 1 frame after the key or
 //   button is released, which is in a frame with no other input. That is the
 //   frame the step starts in if it has no input yet, or else the next frame.
@@ -366,6 +380,7 @@ void AbslStringify(Sink& sink, const PilotStep& step) {
 // - A click's or press's label is on no item, or on more than one.
 // - A key or button is pressed while it is held, released while it isn't, or
 //   still held when the last step finishes.
+// - A resize's width or height isn't positive.
 // - A save has no frame saver, the frame saver fails, or no frame is drawn
 //   within 600 frames.
 // - An error is logged, on any thread, from when the pilot is created until it
@@ -469,6 +484,7 @@ class StepPilot final : public Pilot {
   bool RunStep(const PilotMousePressStep& step);
   bool RunStep(const PilotMouseReleaseStep& step);
   bool RunStep(const PilotMouseWheelStep& step);
+  bool RunStep(const PilotResizeStep& step);
   bool RunStep(const PilotRunStep& step);
   bool RunStep(const PilotExpectStep& step);
   bool RunStep(const PilotExpectErrorStep& step);
