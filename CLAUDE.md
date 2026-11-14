@@ -154,7 +154,7 @@ Every change is checked as follows:
 A cloud session (see Cloud sessions in the workflow) runs on Linux, where none of the Windows commands above work, and Game Bits doesn't build on Linux yet. Until it does:
 - Its clone starts with empty submodules. `git submodule update --init` checks them out.
 - It formats with the same clang-format version from PyPI, installed in a virtual environment in the session's scratchpad: `python3 -m venv <dir>`, then `<dir>/bin/pip install clang-format==19.1.5`, then `<dir>/bin/clang-format` as above.
-- CI (`.github/workflows/cmake.yml`) builds and tests every push on Windows, in Release only, and builds block-world. The PR says that Debug, and anything only an example run can check, are left for the user.
+- CI (`.github/workflows/cmake.yml`) builds and tests on Windows, in Release only, and builds block-world, in about 20 minutes. It runs by itself for pushes to `main` that change more than docs. On a PR's branch it runs only when started by hand (a `workflow_dispatch` run of the CMake workflow on that branch), which the session does as the workflow's Cloud sessions describes. The PR says that Debug, and anything only an example run can check, are left for the user.
 
 ## Local sessions
 

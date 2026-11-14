@@ -183,7 +183,10 @@ these rules replace those for [Local sessions](#local-sessions):
   starting a cloud session in a project, and pulls after merging, before working
   locally again.
 - A check the session can't run itself (such as a build on another platform) is
-  left to CI, which runs on every push, or to the user. The PR says which.
+  left to CI or to the user, and the PR says which. Where the project's CI on a
+  PR's branch is started by hand (see its CLAUDE.md), the session starts it once
+  the PR is ready for review, and again after its last change for review, not
+  on every push in between.
 
 ### Independent and dependent work
 

@@ -1,6 +1,20 @@
 name: CMake
 
-on: [push]
+# Pushes to main run CI unless they only change docs. Any other branch, such as
+# a pull request's, runs it only when started by hand (Actions > CMake > Run
+# workflow), so a PR is checked when it is ready rather than on every push.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+  workflow_dispatch:
+
+# A newer run for the same branch cancels one still in progress.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
