@@ -167,8 +167,10 @@ these rules replace those for [Local sessions](#local-sessions):
 - Each CL is one PR against `main`. Once a CL is built, checked, and through
   the reviews [Working with the user](#working-with-the-user) calls for, the
   session commits it, pushes its branch, and opens the PR. The PR's title and
-  description are the CL's commit message, followed by how it was verified,
-  what each review found, and anything left for the user to check by hand.
+  description are the CL's commit message, followed by how it was verified
+  and what each review found. Anything left for the user to check by hand goes
+  in a comment on the PR rather than its description, which becomes the commit
+  message on `main`, where it doesn't belong.
 - Merging the PR is the user's approval. The session never merges, never
   pushes to `main`, and pushes only its own branches, only to open or update
   its PRs.
@@ -187,10 +189,10 @@ these rules replace those for [Local sessions](#local-sessions):
   starting a cloud session in a project, and pulls after merging, before working
   locally again.
 - A check the session can't run itself (such as a build on another platform) is
-  left to CI or to the user, and the PR says which. Where the project's CI on a
-  PR's branch is started by hand (see its CLAUDE.md), the session starts it once
-  the PR is ready for review, and again after its last change for review, not
-  on every push in between.
+  left to CI or to the user, and the PR says which (what is left to the user,
+  in its comment). Where the project's CI on a PR's branch is started by hand
+  (see its CLAUDE.md), the session starts it once the PR is ready for review,
+  and again after its last change for review, not on every push in between.
 
 ### Independent and dependent work
 

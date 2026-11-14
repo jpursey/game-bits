@@ -32,8 +32,8 @@ need SDL or Vulkan build and pass their tests; those that do aren't built yet.
 ### Compilers and platforms
 
 - Linux is built with clang only. GCC isn't a goal, and isn't checked.
-- The clang in CI is the one `ubuntu-latest` provides (18 today); this
-  session's is also 18.
+- The clang in CI is the one `ubuntu-24.04` provides (18); this session's
+  is also 18.
 - Code stays portable as the workflow's C++ style requires: no new `#ifdef`
   around portable code. Nothing here needs a Linux-specific implementation;
   `gen_` covers everything that builds (CL3 adds `gen_local_path_encoding.cc`).
@@ -116,10 +116,12 @@ are investigated in their own CLs.
 
 ### CI
 
-A second job in `.github/workflows/cmake.yml` on `ubuntu-latest`: configure
+A second job in `.github/workflows/cmake.yml` on `ubuntu-24.04`: configure
 with clang, build Debug, and run ctest. It runs as an ordinary user, so the
 read-only test means something. It has the same triggers as the Windows job
-(pushes to `main`, and by hand).
+(pushes to `main`, and by hand). It is pinned to `ubuntu-24.04` rather than
+`ubuntu-latest`, which is moving to 26.04, where the build fails (see Left for
+later).
 
 ### To confirm
 
@@ -145,6 +147,13 @@ Each becomes a backlog item when this feature is complete:
   decision on where they come from.
 - clang-cl on Windows: the existing *clang-cl build* item, which this makes
   much smaller.
+- Newer clang: on `ubuntu-26.04` (clang 20 to 22, `ubuntu-latest` from late
+  2026), clang 21's `-Wcharacter-conversion` fires in `third_party/utfcpp`'s
+  headers, which Game Bits code includes and builds with warnings as errors,
+  so `gb/base/unicode.cc` fails to compile (the build stopped there, so there
+  may be more). Third-party headers could be included as system headers, so
+  their warnings never fail the build, then the CI job moves to
+  `ubuntu-latest`. CI stays on `ubuntu-24.04` (clang 18) until then.
 - Render asserts are one setting for the whole program, which creating a
   `RenderSystem` overwrites with its debug option, so a test or program that
   enables them must do so after creating it.
@@ -211,7 +220,7 @@ Depends on: CL2.
 - Standard checks.
 - ctest passes in full on Linux.
 
-### CL5 [ ] CI and docs: Linux job
+### CL5 [x] CI and docs: Linux job
 
 Depends on: CL3, CL4.
 

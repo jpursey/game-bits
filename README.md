@@ -34,10 +34,11 @@ principles:
    Game Bits is generally an early adopter of new C++ revisions once compiler
    support becomes widespread.
 
-*  *Platform independent:* While Game Bits currently only supports Windows,
-   everything is built with cross-platform support in mind. All dependendencies
-   on libraries other than the standard C/C++ library are relegated to platform
-   specific implementations of a generic interface.
+*  *Platform independent:* Game Bits is developed on Windows and also builds on
+   Linux (except for its SDL and Vulkan libraries), and everything is built
+   with cross-platform support in mind. All dependencies on libraries other
+   than the standard C/C++ library are relegated to platform specific
+   implementations of a generic interface.
 
 *  *Multithreaded:* Game Bits libraries are designed with explicit thread
    guarantees, and most are intended to be used in multithreaded contexts.
@@ -191,11 +192,14 @@ sub-libraries (organized as subdirectories).
 
 # Getting started
 
-While Game Bits code is designed to be cross platform, it is currently only
-developed and maintained on Windows with Visual Studio 2022, building with
-CMake and the Ninja generator. CMake 3.13 or later is required; the copy that
-ships with Visual Studio is what is normally used. Programs using Game Bits
-require Windows 10 version 1903 or later, and older versions are not supported.
+While Game Bits code is designed to be cross platform, it is mainly developed
+and maintained on Windows with Visual Studio 2022, building with CMake and the
+Ninja generator. It also builds and passes its tests on Linux with clang,
+except for the libraries that need SDL or the Vulkan SDK, which aren't built
+there yet, so neither are the examples. CMake 3.13 or later is required; the
+copy that ships with Visual Studio is what is normally used. On Windows,
+programs using Game Bits require Windows 10 version 1903 or later, and older
+versions are not supported.
 
 Game Bits works only in UTF-8 (of which ASCII is a part): every `char` string
 it takes or returns, including paths and command line arguments, is UTF-8.
@@ -259,8 +263,9 @@ a program that calls it needs.
 
 Game Bits can be built directly from its own CMakeLists.txt file, or more
 commonly as part of another CMake driven application project. Either way, the
-build uses CMake with the Ninja generator and the Visual Studio 2022 toolchain
-(both the MSVC and LLVM clang-cl compilers are supported).
+build uses CMake with the Ninja generator and, on Windows, the Visual Studio
+2022 toolchain (both the MSVC and LLVM clang-cl compilers are supported). On
+Linux it uses clang (see [CLAUDE.md](CLAUDE.md) for the commands).
 
 If you have your own project (as is most likely), you can start from one of the
 [templates](templates) sub-directories: copy it to a new location, and define
