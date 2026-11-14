@@ -50,6 +50,10 @@ job. There is no public API change.
   nothing changed.
 - MSVC-only options are conditional on MSVC, such as `/bigobj` on
   `validated_context_test.cc`.
+- Implicit conversion warnings are off for every Game Bits target and anything
+  that links one, mainly for third-party headers: C4244, C4267, and C4800 on
+  MSVC, and clang's counterparts on clang and clang-cl, including clang 21's
+  `-Wcharacter-conversion` where clang has it.
 
 ### Portable C++
 
@@ -96,10 +100,9 @@ Two tests failed on Linux for reasons that weren't Linux's:
 
 `.github/workflows/cmake.yml` has a `build-linux` job beside the Windows one,
 with the same triggers. It configures with clang, builds Debug (so render
-asserts and death tests run), and runs ctest, as an ordinary user. It is pinned
-to `ubuntu-24.04` (clang 18): `ubuntu-latest` is moving to 26.04, where clang
-21's new `-Wcharacter-conversion` fires in `third_party/utfcpp`'s headers and
-fails the build.
+asserts and death tests run), and runs ctest, as an ordinary user. It runs on
+`ubuntu-latest`, as the Windows jobs run on `windows-latest`, so a newer clang's
+warnings are fixed as they arise.
 
 ### Developing on Linux
 
