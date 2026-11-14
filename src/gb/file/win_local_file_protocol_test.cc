@@ -15,6 +15,7 @@
 #include "gb/base/win_platform.h"
 #include "gb/file/file_system.h"
 #include "gb/file/local_file_protocol.h"
+#include "gb/file/local_path_encoding.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
@@ -41,13 +42,12 @@ class WinLocalFileProtocolTest : public ::testing::Test {
   void SetUp() override {
     auto protocol = LocalFileProtocol::CreateTemp("gbtest");
     ASSERT_NE(protocol, nullptr);
-    const std::string root = protocol->GetRoot();
+    const fs::path file_path =
+        internal::Utf8ToLocalPath(protocol->GetRoot()) / "file";
     ASSERT_TRUE(file_system_.Register(std::move(protocol)));
     ASSERT_TRUE(
         file_system_.WriteFile("file:/file", std::string(kFileSize, 'x')));
 
-    const fs::path file_path =
-        fs::path(std::u8string(root.begin(), root.end())) / "file";
     handle_ = ::CreateFileW(file_path.c_str(), GENERIC_READ | GENERIC_WRITE,
                             FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
                             OPEN_EXISTING, 0, nullptr);
@@ -127,8 +127,7 @@ class WinLocalFileAttributesTest : public ::testing::Test {
   void SetUp() override {
     auto protocol = LocalFileProtocol::CreateTemp("gbtest");
     ASSERT_NE(protocol, nullptr);
-    const std::string root = protocol->GetRoot();
-    root_path_ = fs::path(std::u8string(root.begin(), root.end()));
+    root_path_ = internal::Utf8ToLocalPath(protocol->GetRoot());
     ASSERT_TRUE(file_system_.Register(std::move(protocol)));
   }
 
@@ -148,7 +147,7 @@ class WinLocalFileAttributesTest : public ::testing::Test {
   }
 
   fs::path GetFullPath(std::string_view path) {
-    return root_path_ / fs::path(std::u8string(path.begin(), path.end()));
+    return root_path_ / internal::Utf8ToLocalPath(path);
   }
 
   // Creates a junction (a link to a folder, which needs no special privileges)

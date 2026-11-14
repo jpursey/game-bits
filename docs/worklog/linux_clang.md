@@ -36,8 +36,9 @@ need SDL or Vulkan build and pass their tests; those that do aren't built yet.
   session's is also 18.
 - Code stays portable as the workflow's C++ style requires: no new `#ifdef`
   around portable code. Nothing here needs a Linux-specific implementation;
-  `gen_` covers everything that builds. Linux implementations where `gen_`
-  falls short are left to the backlog (see below).
+  `gen_` covers everything that builds (CL3 adds `gen_local_path_encoding.cc`).
+  Linux implementations where `gen_` falls short are left to the backlog (see
+  below).
 
 ### Build system
 
@@ -83,32 +84,39 @@ but the SDL modules, and 7 of about 940 test cases failed:
   which Windows enforces and Linux doesn't.
 - `LocalFileProtocolTest.CreateWithRootPath`: `std::filesystem` throws
   converting the lone-surrogate path the test builds, which is only meaningful
-  for UTF-16 (Windows) paths.
-- `LocalFileProtocolTest.RecursiveDeleteFolderFailure` and
-  `CommonProtocolTest.ReadOnlyFile` (local files): the session ran as root,
-  which ignores read-only permissions. Likely to pass as an ordinary user.
+  for UTF-16 (Windows) paths. CL3 found that `LocalFileProtocol` itself throws
+  on Linux for a path that isn't valid UTF-8, as it converts paths with
+  `std::filesystem`, which throws for an invalid one.
+- `LocalFileProtocolTest.RecursiveDeleteFolderFailure`: assumes an open file
+  can't be deleted, which Windows enforces and Linux doesn't.
+- `CommonProtocolTest.ReadOnlyFile` (local files): the session ran as root,
+  which ignores read-only permissions. It passes as an ordinary user.
 - `ProfilerMutexTest.ContendedUnlockIsCountAndWait`: reads a wait of 7996 ns
   where it expects 8000 ± 2, apparently from converting between time and CPU
   ticks at a different tick rate.
 - `RenderPassTest.DrawingAViewBeforeItsPassIsDrawnFails`: a death test that
   doesn't die.
 
-Where the behavior is genuinely the platform's (case, moving open files,
-UTF-16 paths), the test moves to a `win_` test file or checks what the
-platform does; nothing in `LocalFileProtocol` changes for it. The rest are
-investigated in their own CLs.
+Where the behavior is genuinely the platform's (case, moving or deleting open
+files), the test moves to a `win_` test file, and what holds on every platform
+stays in the shared one. `LocalFileProtocol` converts paths with
+`local_path_encoding.h` rather than `std::filesystem`, implemented once for
+Windows (UTF-16) and once in `gen_` (bytes taken as UTF-8), so a path that
+isn't valid fails or is skipped on every platform. Its tests build an invalid
+name in each platform's own encoding, in the `win_` and `gen_` test files. The
+rest are investigated in their own CLs.
 
 ### CI
 
 A second job in `.github/workflows/cmake.yml` on `ubuntu-latest`: configure
 with clang, build Debug, and run ctest. It runs as an ordinary user, so the
-read-only tests mean something. It has the same triggers as the Windows job
+read-only test means something. It has the same triggers as the Windows job
 (pushes to `main`, and by hand).
 
 ### To confirm
 
-- The two read-only tests pass as an ordinary user. CL3 checks by running them
-  as a new user in the session, and CL5's CI job confirms it.
+- The read-only test passes as an ordinary user. CL3 found it does, running
+  `gb_file_test` as a new user in the session, and CL5's CI job confirms it.
 - `gb_sdl_test` passed on Linux, though `gb_sdl` names the Windows SDL2
   binaries: probably nothing in the test calls SDL. CL2 makes the question
   moot by leaving `gb_sdl` out where SDL2 isn't available.
@@ -165,13 +173,17 @@ Depends on: CL1.
   RelWithDebInfo, with every library but the SDL and Vulkan ones.
 - ctest on Linux: everything passes except the failures under Tests on Linux.
 
-### CL3 [ ] file: local file tests on Linux
+### CL3 [x] file: local file tests on Linux
 
 Depends on: CL2.
 
 - Split the local file tests that check Windows behavior (case-insensitive
-  names, moving open files, UTF-16 paths) so each platform checks its own.
-- Confirm the read-only tests pass as an ordinary user.
+  names, moving or deleting open files) so each platform checks its own.
+- `LocalFileProtocol` doesn't throw for a path that isn't valid UTF-8 on
+  Linux: `Create` and `CreateTemp` fail, and listing skips it quietly, as on
+  Windows. Path conversion moves to `local_path_encoding.h`, with `win_` and
+  `gen_` implementations.
+- Confirm the read-only test passes as an ordinary user.
 
 **Verify**
 - Standard checks.

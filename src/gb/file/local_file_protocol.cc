@@ -16,9 +16,9 @@
 #include "absl/strings/strip.h"
 #include "gb/base/context_builder.h"
 #include "gb/base/stdio_file.h"
-#include "gb/base/unicode.h"
 #include "gb/file/local_current_path.h"
 #include "gb/file/local_file_attributes.h"
+#include "gb/file/local_path_encoding.h"
 #include "gb/file/path.h"
 #include "gb/file/raw_file.h"
 
@@ -112,15 +112,13 @@ int64_t LocalFile::Read(void* buffer, int64_t size) {
   return count;
 }
 
-// Paths are UTF-8, which std::filesystem doesn't assume for char strings, and
-// its own UTF-8 conversion throws for an invalid string. These convert through
-// UTF-16 instead, which gives an empty string for an invalid one.
+// Paths are UTF-8, in the normalized form path.h describes.
 std::string ToString(const fs::path& path) {
-  return NormalizePath(ToUtf8(path.generic_u16string()));
+  return NormalizePath(internal::LocalPathToUtf8(path));
 }
 
 fs::path ToPath(std::string_view path) {
-  return fs::path(ToUtf16(path), fs::path::generic_format);
+  return internal::Utf8ToLocalPath(path);
 }
 
 // Returns true if operating system paths start with a drive letter, as Windows
@@ -226,7 +224,12 @@ std::vector<std::string> ListFolder(Iterator it, std::string_view root,
   std::error_code error;
   std::vector<std::string> entries;
   for (const Iterator end; it != end; it.increment(error)) {
+    // A name that isn't valid in the operating system's encoding can't be named
+    // by a path, so it is skipped.
     const std::string entry_path = ToString(it->path());
+    if (entry_path.empty()) {
+      continue;
+    }
     if (!pattern.empty() &&
         !PathMatchesPattern(RemoveFolder(entry_path), pattern)) {
       continue;
@@ -428,10 +431,15 @@ std::unique_ptr<LocalFileProtocol> LocalFileProtocol::CreateTemp(
                << error.message();
     return nullptr;
   }
+  const std::string temp_path_string = ToString(temp_path);
+  if (temp_path_string.empty()) {
+    LOG(ERROR) << "Temp directory could not be converted to a UTF-8 path";
+    return nullptr;
+  }
 
   return Create(ContextBuilder()
                     .SetValue<std::string>(
-                        kKeyRoot, JoinPath(ToString(temp_path), temp_prefix))
+                        kKeyRoot, JoinPath(temp_path_string, temp_prefix))
                     .SetValue<bool>(kKeyUniqueRoot, true)
                     .SetValue<bool>(kKeyDeleteAtExit, true)
                     .Build());

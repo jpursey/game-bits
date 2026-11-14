@@ -14,6 +14,7 @@
 #include "gb/base/scoped_call.h"
 #include "gb/file/common_protocol_test.h"
 #include "gb/file/file_system.h"
+#include "gb/file/local_path_encoding.h"
 #include "gb/file/path.h"
 #include "gb/file/raw_file.h"
 #include "gb/test/test_util.h"
@@ -32,17 +33,9 @@ using ::testing::Values;
 // U+65E5 U+672C in UTF-8, which most Windows code pages can't represent.
 constexpr std::string_view kNonAsciiName = "\xE6\x97\xA5\xE6\x9C\xAC";
 
-// Converts between UTF-8 paths and std::filesystem paths, either as the
-// operating system writes them or normalized as LocalFileProtocol does.
-fs::path ToFsPath(std::string_view path) {
-  return fs::path(std::u8string(path.begin(), path.end()));
-}
-std::string ToNativeString(const fs::path& path) {
-  const std::u8string utf8_path = path.u8string();
-  return std::string(utf8_path.begin(), utf8_path.end());
-}
+// Returns `path` as LocalFileProtocol names it: UTF-8, and normalized.
 std::string ToGbPath(const fs::path& path) {
-  return NormalizePath(ToNativeString(path));
+  return NormalizePath(internal::LocalPathToUtf8(path));
 }
 
 std::unique_ptr<FileProtocol> LocalFileProtocolFactory(
@@ -274,7 +267,7 @@ TEST(LocalFileProtocolTest, DeleteAtExitRemovesReadOnlyFiles) {
         file_system.SetAttributes("file:/file", FileAttribute::kReadOnly));
   }
   std::error_code error;
-  EXPECT_FALSE(fs::exists(ToFsPath(root), error));
+  EXPECT_FALSE(fs::exists(internal::Utf8ToLocalPath(root), error));
 }
 
 TEST(LocalFileProtocolTest, RootIsNormalized) {
@@ -313,17 +306,12 @@ TEST(LocalFileProtocolTest, CreateWithRootPath) {
   ASSERT_TRUE(fs::create_directory(parent_path, error)) << error.message();
   ScopedCall scoped([&] { fs::remove_all(parent_path, error); });
 
-  const fs::path root_path = parent_path / ToFsPath(kNonAsciiName);
+  const fs::path root_path =
+      parent_path / internal::Utf8ToLocalPath(kNonAsciiName);
   auto protocol = LocalFileProtocol::Create(root_path);
   ASSERT_NE(protocol, nullptr);
   EXPECT_EQ(protocol->GetRoot(), ToGbPath(root_path));
   EXPECT_TRUE(fs::is_directory(root_path, error));
-
-  // A path that isn't valid UTF-16 (a lone surrogate) fails, rather than
-  // rooting the protocol in the current directory.
-  EXPECT_EQ(
-      LocalFileProtocol::Create(parent_path / std::wstring(1, wchar_t{0xD800})),
-      nullptr);
 }
 
 TEST(LocalFileProtocolTest, PathsStayUnderRoot) {
@@ -374,20 +362,6 @@ TEST(LocalFileProtocolTest, ReadWhatIsAppendedAfterTheEnd) {
   EXPECT_TRUE(file->IsValid());
 }
 
-TEST(LocalFileProtocolTest, CopyFileOntoItselfByAnotherName) {
-  auto protocol = LocalFileProtocol::CreateTemp("gbtest");
-  ASSERT_NE(protocol, nullptr);
-  FileSystem file_system;
-  ASSERT_TRUE(file_system.Register(std::move(protocol)));
-  ASSERT_TRUE(file_system.WriteFile("file:/file", "12345"));
-
-  // Windows paths ignore case.
-  EXPECT_TRUE(file_system.CopyFile("file:/file", "file:/FILE"));
-  std::string contents;
-  ASSERT_TRUE(file_system.ReadFile("file:/file", &contents));
-  EXPECT_EQ(contents, "12345");
-}
-
 TEST(LocalFileProtocolTest, MoveChangesCase) {
   auto protocol = LocalFileProtocol::CreateTemp("gbtest");
   ASSERT_NE(protocol, nullptr);
@@ -397,10 +371,8 @@ TEST(LocalFileProtocolTest, MoveChangesCase) {
   ASSERT_TRUE(file_system.WriteFile("file:/other", "abcde"));
   ASSERT_TRUE(file_system.CreateFolder("file:/folder"));
 
-  // Windows paths ignore case, so another file's name in any case is taken,
-  // but a file or folder can change the case of its own name.
-  EXPECT_FALSE(file_system.MoveFile("file:/file", "file:/OTHER"));
-  EXPECT_FALSE(file_system.MoveFolder("file:/folder", "file:/OTHER"));
+  // A file or folder can change the case of its own name, whether or not names
+  // ignore case.
   EXPECT_TRUE(file_system.MoveFile("file:/file", "file:/File"));
   EXPECT_TRUE(file_system.MoveFolder("file:/folder", "file:/FOLDER"));
   EXPECT_THAT(
@@ -411,47 +383,10 @@ TEST(LocalFileProtocolTest, MoveChangesCase) {
   EXPECT_EQ(contents, "12345");
 }
 
-TEST(LocalFileProtocolTest, MoveOpenFile) {
-  auto protocol = LocalFileProtocol::CreateTemp("gbtest");
-  ASSERT_NE(protocol, nullptr);
-  FileSystem file_system;
-  ASSERT_TRUE(file_system.Register(std::move(protocol)));
-  ASSERT_TRUE(file_system.CreateFolder("file:/folder"));
-
-  // Windows can't move a file that is open, nor the folder it is in.
-  auto file = file_system.OpenFile("file:/folder/file", kNewFileFlags);
-  ASSERT_NE(file, nullptr);
-  EXPECT_FALSE(file_system.MoveFile("file:/folder/file", "file:/moved"));
-  EXPECT_FALSE(file_system.MoveFolder("file:/folder", "file:/moved"));
-  EXPECT_FALSE(file_system.IsValidPath("file:/moved"));
-  file.reset();
-  EXPECT_TRUE(file_system.MoveFolder("file:/folder", "file:/moved"));
-  EXPECT_TRUE(file_system.IsValidFile("file:/moved/file"));
-}
-
-TEST(LocalFileProtocolTest, RecursiveDeleteFolderFailure) {
-  auto protocol = LocalFileProtocol::CreateTemp("gbtest");
-  ASSERT_NE(protocol, nullptr);
-  const fs::path root_path = ToFsPath(protocol->GetRoot());
-  FileSystem file_system;
-  ASSERT_TRUE(file_system.Register(std::move(protocol)));
-  ASSERT_TRUE(file_system.CreateFolder("file:/folder"));
-  ASSERT_TRUE(file_system.WriteFile("file:/folder/file", "12345"));
-
-  // Windows can't delete a file that is open.
-  std::fstream open_file(root_path / "folder/file", std::fstream::in);
-  ASSERT_TRUE(open_file.is_open());
-  EXPECT_FALSE(
-      file_system.DeleteFolder("file:/folder", FolderMode::kRecursive));
-  open_file.close();
-  EXPECT_TRUE(file_system.DeleteFolder("file:/folder", FolderMode::kRecursive));
-  EXPECT_FALSE(file_system.IsValidPath("file:/folder"));
-}
-
 TEST(LocalFileProtocolTest, ListSkipsLinksToMissingFolders) {
   auto protocol = LocalFileProtocol::CreateTemp("gbtest");
   ASSERT_NE(protocol, nullptr);
-  const fs::path root_path = ToFsPath(protocol->GetRoot());
+  const fs::path root_path = internal::Utf8ToLocalPath(protocol->GetRoot());
   FileSystem file_system;
   ASSERT_TRUE(file_system.Register(std::move(protocol)));
   ASSERT_TRUE(file_system.CreateFolder("file:/a-folder"));
@@ -515,7 +450,7 @@ TEST(LocalFileProtocolTest, CurrentFolder) {
 TEST(LocalFileProtocolTest, NonAsciiNames) {
   auto protocol = LocalFileProtocol::CreateTemp("gbtest");
   ASSERT_NE(protocol, nullptr);
-  const fs::path root_path = ToFsPath(protocol->GetRoot());
+  const fs::path root_path = internal::Utf8ToLocalPath(protocol->GetRoot());
   FileSystem file_system;
   ASSERT_TRUE(file_system.Register(std::move(protocol)));
 
@@ -525,8 +460,10 @@ TEST(LocalFileProtocolTest, NonAsciiNames) {
   ASSERT_TRUE(file_system.CreateFolder(folder));
   ASSERT_TRUE(file_system.WriteFile(file, "12345"));
   std::error_code error;
-  EXPECT_TRUE(fs::is_regular_file(
-      root_path / ToFsPath(kNonAsciiName) / ToFsPath(kNonAsciiName), error));
+  EXPECT_TRUE(
+      fs::is_regular_file(root_path / internal::Utf8ToLocalPath(kNonAsciiName) /
+                              internal::Utf8ToLocalPath(kNonAsciiName),
+                          error));
   EXPECT_EQ(file_system.GetPathInfo(file).size, 5);
 
   // A path that isn't UTF-8 is invalid.
@@ -535,10 +472,34 @@ TEST(LocalFileProtocolTest, NonAsciiNames) {
 
   // Names from the operating system are listed as UTF-8.
   const std::string other_name = absl::StrCat(kNonAsciiName, "-2");
-  ASSERT_TRUE(WriteFile(root_path / ToFsPath(other_name), "2"));
+  ASSERT_TRUE(
+      WriteFile(root_path / internal::Utf8ToLocalPath(other_name), "2"));
   EXPECT_THAT(
       file_system.List("file:/", FolderMode::kRecursive),
       UnorderedElementsAre(folder, file, absl::StrCat("file:/", other_name)));
+}
+
+TEST(LocalFileProtocolTest, CreateWithNonUtf8RootPath) {
+  std::error_code error;
+  const fs::path temp_path = fs::temp_directory_path(error);
+  ASSERT_FALSE(error) << error.message();
+
+  // This fails, rather than rooting the protocol in the current directory.
+  EXPECT_EQ(LocalFileProtocol::Create(temp_path / internal::GetNonUtf8Name()),
+            nullptr);
+}
+
+TEST(LocalFileProtocolTest, ListSkipsNonUtf8Names) {
+  auto protocol = LocalFileProtocol::CreateTemp("gbtest");
+  ASSERT_NE(protocol, nullptr);
+  const fs::path root_path = internal::Utf8ToLocalPath(protocol->GetRoot());
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(std::move(protocol)));
+  ASSERT_TRUE(file_system.WriteFile("file:/file", "12345"));
+
+  // The operating system accepts the name, but no path can name it.
+  ASSERT_TRUE(WriteFile(root_path / internal::GetNonUtf8Name(), "name"));
+  EXPECT_THAT(file_system.List("file:/"), ElementsAre("file:/file"));
 }
 
 TEST(LocalFileProtocolTest, OsRoot) {
@@ -561,7 +522,8 @@ TEST(LocalFileProtocolTest, OsRoot) {
       << error.message();
   ASSERT_TRUE(WriteFile(parent_path / "src/main", "main"));
   ASSERT_TRUE(WriteFile(parent_path / "lib/include", "include"));
-  ASSERT_TRUE(WriteFile(parent_path / "lib" / ToFsPath(kNonAsciiName), "name"));
+  ASSERT_TRUE(WriteFile(
+      parent_path / "lib" / internal::Utf8ToLocalPath(kNonAsciiName), "name"));
 
   FileSystem file_system;
   ASSERT_TRUE(file_system.Register(LocalFileProtocol::CreateOsRoot()));
