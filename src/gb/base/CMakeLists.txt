@@ -74,9 +74,12 @@ set(gb_base_TEST_SOURCE
 set(gb_base_TEST_DEPS
   gb_test
 )
-set_source_files_properties(validated_context_test.cc
-  PROPERTIES COMPILE_FLAGS /bigobj
-)
+# MSVC, rather than a compiler ID check, as clang-cl needs /bigobj too.
+if (MSVC)
+  set_source_files_properties(validated_context_test.cc
+    PROPERTIES COMPILE_FLAGS /bigobj
+  )
+endif()
 
 set(gb_base_DEPS
   absl::any_invocable

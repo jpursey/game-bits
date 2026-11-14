@@ -120,7 +120,11 @@ endif()
 
 ####### flatbuffers
 
-set(FLATBUFFERS_FLATC_EXECUTABLE "${GB_DIR}/bin/flatc")
+# A Windows build machine uses the checked-in bin/flatc.exe. Elsewhere,
+# flatbuffers builds flatc from source and uses that.
+if (CMAKE_HOST_WIN32)
+  set(FLATBUFFERS_FLATC_EXECUTABLE "${GB_DIR}/bin/flatc")
+endif()
 option(FLATBUFFERS_BUILD_TESTS "" OFF)
 set(FLATBUFFERS_BUILD_TESTS OFF)
 option(FLATBUFFERS_INSTALL "" OFF)

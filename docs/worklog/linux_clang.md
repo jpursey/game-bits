@@ -114,6 +114,10 @@ read-only tests mean something. It has the same triggers as the Windows job
   moot by leaving `gb_sdl` out where SDL2 isn't available.
 - The two investigated failures (profiler, render pass) are real bugs or test
   assumptions, not something in the session. CL4 finds out.
+  - CL2 found the profiler failure is intermittent: 1 run in 5 on Linux, so
+    the test's result depends on something it doesn't control. If that is real
+    time, the test breaks the workflow's rule that time comes from something
+    the test controls, and CL4 fixes the test.
 
 ### Left for later
 
@@ -146,7 +150,7 @@ Depends on: nothing.
 - Standard checks (see CLAUDE.md), with the Windows build and ctest by CI.
 - These files compile with clang 18 on Linux (the full Linux build needs CL2).
 
-### CL2 [ ] build: configure and build off Windows
+### CL2 [x] build: configure and build off Windows
 
 Depends on: CL1.
 

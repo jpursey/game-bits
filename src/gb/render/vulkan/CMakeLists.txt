@@ -3,7 +3,9 @@
 ## Use of this source code is governed by an MIT-style License that can be found
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-add_subdirectory(sdl)
+if (TARGET sdl2)
+  add_subdirectory(sdl)
+endif()
 
 set(gb_render_vulkan_SOURCE
   ${GB_THIRD_PARTY_DIR}/VulkanMemoryAllocator/include/vk_mem_alloc.h

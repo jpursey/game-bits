@@ -3,7 +3,7 @@
 ## Use of this source code is governed by an MIT-style License that can be found
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-if(DEFINED ENV{VULKAN_SDK})
+if(TARGET Vulkan)
   add_subdirectory(vulkan)
 endif()
 
