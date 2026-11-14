@@ -44,29 +44,6 @@ Clang tools for Windows" component, as the MSVC standard library rejects older
 clang versions. Fix them, build and test both clang configurations, and
 consider building one in CI so it stays working.
 
-## Newer clang warnings in third-party headers
-
-- **Layers:** build
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** [Linux and Clang](worklog/linux_clang.md); `build-linux` in
-  `.github/workflows/cmake.yml`
-
-CI's Linux job is pinned to `ubuntu-24.04` (clang 18), because on
-`ubuntu-26.04` (clang 20 to 22), where `ubuntu-latest` is moving, the build
-fails. clang 21's new `-Wcharacter-conversion` fires in
-`third_party/utfcpp/source/utf8/core.h`, which `gb/base/unicode.cc` includes,
-and Game Bits code builds with warnings as errors. The build stopped at the
-first failure, so there may be more.
-
-Third-party headers are included like Game Bits' own, so their warnings count
-against Game Bits code. Include them as system headers (CMake's `SYSTEM`
-include directories, or `-isystem`), so only Game Bits' own code is held to
-warnings as errors, on every compiler. Then build on `ubuntu-26.04`, fix any
-warnings left in Game Bits code, and move the job to `ubuntu-latest`, as the
-Windows job uses `windows-latest`.
-
 ## SDL from source
 
 - **Layers:** build, sdl, imgui, pilot, render, examples, templates

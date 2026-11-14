@@ -97,9 +97,9 @@ Two tests failed on Linux for reasons that weren't Linux's:
 `.github/workflows/cmake.yml` has a `build-linux` job beside the Windows one,
 with the same triggers. It configures with clang, builds Debug (so render
 asserts and death tests run), and runs ctest, as an ordinary user. It is pinned
-to `ubuntu-24.04` (clang 18): `ubuntu-latest` is moving to 26.04, whose newer
-clang fails the build (see the backlog's *Newer clang warnings in third-party
-headers*).
+to `ubuntu-24.04` (clang 18): `ubuntu-latest` is moving to 26.04, where clang
+21's new `-Wcharacter-conversion` fires in `third_party/utfcpp`'s headers and
+fails the build.
 
 ### Developing on Linux
 
