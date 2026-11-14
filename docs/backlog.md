@@ -24,28 +24,25 @@ Each item carries:
 
 ## clang-cl build
 
-- **Layers:** container, parse, job
+- **Layers:** job
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** nothing
-- **Background:** [Code audit](worklog/code_audit.md)
+- **Background:** [Code audit](worklog/code_audit.md),
+  [Linux and Clang](worklog/linux_clang.md)
 
 Game Bits is meant to build with clang-cl as well as MSVC (CMakeSettings.json
-has `x64-Clang-Debug` and `x64-Clang-Release`), but clang 19 rejects some of
-it:
-- `TokenIndex`'s defaulted `operator<=>` in `parse_types.h` compares
-  `uint32_t` bit fields, which clang won't narrow to the `int` they promote
-  to. Every file that includes `parse_types.h` fails.
-- `array.h`'s `using` declarations of the base's dependent types need
-  `typename`, and one function reads the base's protected `data`.
+has `x64-Clang-Debug` and `x64-Clang-Release`). Linux and Clang's CL1 fixed what
+clang rejects in portable code, as clang 18 on Linux found it, but clang-cl
+also builds the Windows-only files and with more warnings:
 - `fiber_job_system_test.cc` has an unused lambda capture, an error with
   warnings as errors.
 
-These were found by clang-tidy, which parses with clang; there may be more
-once those build. Building needs Visual Studio's "C++ Clang tools for Windows"
-component, as the MSVC standard library rejects older clang versions. Fix them,
-build and test both clang configurations, and consider building one in CI so it
-stays working.
+This was found by clang-tidy, which parses with clang; there may be more in the
+`win_` files once clang-cl builds them. Building needs Visual Studio's "C++
+Clang tools for Windows" component, as the MSVC standard library rejects older
+clang versions. Fix them, build and test both clang configurations, and
+consider building one in CI so it stays working.
 
 ## SDL from source
 

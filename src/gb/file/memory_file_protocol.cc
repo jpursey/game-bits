@@ -75,8 +75,8 @@ int64_t MemoryFileProtocol::MemoryFile::SeekTo(int64_t position) {
   if (node == nullptr) {
     position_ = -1;
   } else {
-    position_ =
-        std::clamp(position, 0LL, static_cast<int64_t>(node->contents.size()));
+    position_ = std::clamp(position, int64_t{0},
+                           static_cast<int64_t>(node->contents.size()));
   }
   return position_;
 }

@@ -69,8 +69,8 @@ What clang rejects that MSVC accepts, found by building with clang 18:
 - `gb/imgui/imgui_instance.h`: uses `DrawList` without including
   `gb/render/draw_list.h`.
 
-These overlap the backlog's *clang-cl build* item, which lists the
-`parse_types.h` and `array.h` errors.
+The `parse_types.h` and `array.h` errors were also in the backlog's *clang-cl
+build* item, which CL1 drops them from.
 
 ### Tests on Linux
 
@@ -133,7 +133,7 @@ The status is `[ ]` not started, `[~]` in progress (set by the CL's first
 edit), or `[x]` submitted (set in the CL's own commit). Each CL is checked on
 Windows by CI on its PR.
 
-### CL1 [ ] base, container, parse, file, imgui: clang conformance fixes
+### CL1 [x] base, container, parse, file, imgui: clang conformance fixes
 
 Depends on: nothing.
 

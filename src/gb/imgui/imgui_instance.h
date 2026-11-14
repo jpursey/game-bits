@@ -15,6 +15,7 @@
 #include "gb/imgui/imgui_pilot_hooks.h"
 #include "gb/imgui/imgui_types.h"
 #include "gb/pilot/pilot.h"
+#include "gb/render/draw_list.h"
 #include "gb/render/render_types.h"
 #include "gb/resource/resource.h"
 #include "gb/resource/resource_set.h"

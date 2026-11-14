@@ -6,6 +6,7 @@
 #ifndef GB_PARSE_PARSE_TYPES_H_
 #define GB_PARSE_PARSE_TYPES_H_
 
+#include <compare>
 #include <cstdint>
 #include <string>
 
@@ -81,7 +82,16 @@ class TokenIndex {
   constexpr TokenIndex& operator=(const TokenIndex&) noexcept = default;
   ~TokenIndex() = default;
 
-  auto constexpr operator<=>(const TokenIndex&) const = default;
+  constexpr bool operator==(const TokenIndex&) const = default;
+
+  // Orders by line, then token. The bit fields are compared as uint32_t, as
+  // they would otherwise promote to int.
+  constexpr std::strong_ordering operator<=>(const TokenIndex& other) const {
+    if (line != other.line) {
+      return uint32_t{line} <=> uint32_t{other.line};
+    }
+    return uint32_t{token} <=> uint32_t{other.token};
+  }
 
  private:
   friend class Lexer;

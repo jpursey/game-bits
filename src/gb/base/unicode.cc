@@ -5,6 +5,7 @@
 
 #include "gb/base/unicode.h"
 
+#include <cstdint>
 #include <iterator>
 #include <optional>
 #include <string>
