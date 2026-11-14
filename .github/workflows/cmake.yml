@@ -74,11 +74,9 @@ jobs:
 
   # Linux builds every library but the SDL and Vulkan ones, with clang, in Debug
   # so render asserts and death tests run. GitHub's runner is an ordinary user,
-  # so tests of read-only files mean something, which they don't as root. It is
-  # pinned to 24.04 (clang 18), as clang 21's new warnings fail the build in
-  # third-party headers.
+  # so tests of read-only files mean something, which they don't as root.
   build-linux:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
 
     steps:
     - uses: actions/checkout@v7
