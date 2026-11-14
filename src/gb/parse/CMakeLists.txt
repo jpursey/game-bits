@@ -35,6 +35,7 @@ set(gb_parse_TEST_SOURCE
   lexer_test.cc
   parser_program_test.cc
   parser_rules_test.cc
+  parse_types_test.cc
   parser_test.cc
   symbol_test.cc
 )

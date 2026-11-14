@@ -63,16 +63,16 @@ class BaseArray : private std::array<Type, Size> {
   constexpr BaseArray() : Base() {}
 
   // Container types
-  using Base::const_iterator;
-  using Base::const_pointer;
-  using Base::const_reference;
-  using Base::difference_type;
-  using Base::iterator;
-  using Base::pointer;
-  using Base::reference;
-  using Base::reverse_iterator;
-  using Base::size_type;
-  using Base::value_type;
+  using typename Base::const_iterator;
+  using typename Base::const_pointer;
+  using typename Base::const_reference;
+  using typename Base::difference_type;
+  using typename Base::iterator;
+  using typename Base::pointer;
+  using typename Base::reference;
+  using typename Base::reverse_iterator;
+  using typename Base::size_type;
+  using typename Base::value_type;
 
   // Container iteration
   using Base::begin;
@@ -102,7 +102,8 @@ class BaseArray : private std::array<Type, Size> {
 
  protected:
   // Make available to derived classes
-  using Base::data;
+  constexpr Type* data() { return Base::data(); }
+  constexpr const Type* data() const { return Base::data(); }
 };
 
 }  // namespace internal

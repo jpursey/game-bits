@@ -6,6 +6,7 @@
 #ifndef GB_BASE_WEAK_PTR_H_
 #define GB_BASE_WEAK_PTR_H_
 
+#include <cstddef>
 #include <memory>
 #include <utility>
 
@@ -64,7 +65,7 @@ class WeakPtr {
  public:
   // Constructs a null WeakPtr.
   WeakPtr() = default;
-  WeakPtr(nullptr_t) : WeakPtr() {}
+  WeakPtr(std::nullptr_t) : WeakPtr() {}
 
   // Constructs a WeakPtr from a scope that can supply a WeakPtr of this Type.
   //
@@ -119,7 +120,7 @@ class WeakLock final {
   explicit WeakLock(const WeakPtr<Type>* ptr);
 
   // Construct a WeakLock from nullptr.
-  explicit WeakLock(nullptr_t) {}
+  explicit WeakLock(std::nullptr_t) {}
 
   // Default construction.
   WeakLock() = default;
@@ -144,22 +145,22 @@ class WeakLock final {
 };
 
 template <typename Type>
-inline bool operator==(const WeakLock<Type>& lock, nullptr_t) {
+inline bool operator==(const WeakLock<Type>& lock, std::nullptr_t) {
   return !lock;
 }
 
 template <typename Type>
-inline bool operator==(nullptr_t, const WeakLock<Type>& lock) {
+inline bool operator==(std::nullptr_t, const WeakLock<Type>& lock) {
   return !lock;
 }
 
 template <typename Type>
-inline bool operator!=(const WeakLock<Type>& lock, nullptr_t) {
+inline bool operator!=(const WeakLock<Type>& lock, std::nullptr_t) {
   return lock;
 }
 
 template <typename Type>
-inline bool operator!=(nullptr_t, const WeakLock<Type>& lock) {
+inline bool operator!=(std::nullptr_t, const WeakLock<Type>& lock) {
   return lock;
 }
 

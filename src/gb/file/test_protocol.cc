@@ -47,7 +47,7 @@ class TestFile : public RawFile {
       state_->position = -1;
       return -1;
     }
-    state_->position = std::clamp(position, 0LL, GetSize());
+    state_->position = std::clamp(position, int64_t{0}, GetSize());
     return state_->position;
   }
 

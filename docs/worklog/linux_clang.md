@@ -133,7 +133,7 @@ The status is `[ ]` not started, `[~]` in progress (set by the CL's first
 edit), or `[x]` submitted (set in the CL's own commit). Each CL is checked on
 Windows by CI on its PR.
 
-### CL1 [ ] base, container, parse, file, imgui: clang conformance fixes
+### CL1 [x] base, container, parse, file, imgui: clang conformance fixes
 
 Depends on: nothing.
 
