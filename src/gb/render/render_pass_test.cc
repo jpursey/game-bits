@@ -458,12 +458,12 @@ TEST_F(RenderPassTest, DrawingAViewBeforeItsPassIsDrawnFails) {
     GTEST_SKIP() << "Render asserts are only compiled in Debug";
   }
   CreatePassSystem();
-  CreateTexturedMaterial();
 
   // Creating the render system sets whether render asserts are enabled, so they
   // are enabled here, after it.
   const bool was_enabled = IsRenderAssertEnabled();
   SetRenderAssertEnabled(true);
+  CreateTexturedMaterial();
   ASSERT_TRUE(render_system_->BeginFrame());
   auto pass = CreateColorPass(0);
   auto view = render_system_->CreateView(pass.get(), binding_layout_);
