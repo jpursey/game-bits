@@ -23,11 +23,12 @@ namespace gb {
 // it resolves into the targets as it ends: color by averaging each pixel's
 // samples, and depth by taking the first.
 //
-// Each target is in eShaderReadOnlyOptimal layout as the pass begins and ends,
-// ready to sample. The render pass's dependencies order its writes after
-// earlier shader reads and attachment writes, and before later shader reads.
-// Every frame is submitted to the one queue, so this orders them with other
-// frames in flight too.
+// Each target is in its GetRenderTargetLayout() as the pass begins and ends,
+// ready to sample, and a read-only depth target stays in it throughout, so the
+// pass's draws can sample it. The render pass's dependencies order its writes
+// after earlier shader reads and attachment writes, and before later shader
+// reads. Every frame is submitted to the one queue, so this orders them with
+// other frames in flight too.
 //
 // This class is thread-compatible.
 class VulkanPass final : public RenderPass {

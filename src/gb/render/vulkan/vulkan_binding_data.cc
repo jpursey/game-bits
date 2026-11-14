@@ -78,11 +78,13 @@ void VulkanBindingData::OnRender(VulkanRenderState* state,
             info.texture != nullptr ? info.texture : defaults.texture;
         const VulkanTexels::ImageHandle* handle;
         vk::Sampler sampler;
+        vk::ImageLayout layout = vk::ImageLayout::eShaderReadOnlyOptimal;
         if (texture->IsRenderTarget()) {
           auto* target = static_cast<VulkanRenderTarget*>(texture);
           target->OnRender(state);
           handle = &target->GetImageHandle();
           sampler = target->GetSampler();
+          layout = GetRenderTargetLayout(handle->image->GetFormat());
         } else {
           auto* vulkan_texture = static_cast<VulkanTexture*>(texture);
           state->textures.insert(vulkan_texture);
@@ -92,7 +94,8 @@ void VulkanBindingData::OnRender(VulkanRenderState* state,
         if (info.bound[index] != handle->version) {
           info.bound[index] = handle->version;
           state->set_image_updates.emplace_back(
-              descriptor_set, binding, sampler, handle->image->GetView());
+              descriptor_set, binding, sampler, handle->image->GetView(),
+              layout);
         }
       } break;
       case BindingType::kTextureArray: {

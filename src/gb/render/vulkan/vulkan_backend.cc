@@ -9,7 +9,7 @@
 #include <limits>
 #include <memory>
 #include <set>
-#include <string_view>
+#include <string>
 #include <tuple>
 #include <vector>
 
@@ -65,6 +65,16 @@ namespace {
 
 static const vk::ClearColorValue kColorClearValue(std::array<float, 4>{
     0.0f, 0.0f, 0.0f, 1.0f});
+
+// Returns the names of the extensions a device supports.
+std::set<std::string> GetDeviceExtensions(vk::PhysicalDevice device) {
+  std::set<std::string> names;
+  auto [result, properties] = device.enumerateDeviceExtensionProperties();
+  for (const vk::ExtensionProperties& property : properties) {
+    names.insert(property.extensionName.data());
+  }
+  return names;
+}
 
 // The channel order of swap chain images that frames are read back from.
 enum class ReadOrder { kUnsupported, kRgba, kBgra };
@@ -261,17 +271,13 @@ bool VulkanBackend::InitDevice(const std::vector<const char*>& layers) {
     }
 
     // Validate all needed extensions are available.
-    auto [result, extension_properties] =
-        physical_device.enumerateDeviceExtensionProperties();
-    std::set<std::string_view> needed_extensions(device_extensions.begin(),
-                                                 device_extensions.end());
-    for (const auto& extension_property : extension_properties) {
-      if (needed_extensions.find(extension_property.extensionName) !=
-          needed_extensions.end()) {
-        needed_extensions.erase(extension_property.extensionName);
-      }
+    const std::set<std::string> available_extensions =
+        GetDeviceExtensions(physical_device);
+    bool has_extensions = true;
+    for (const char* extension : device_extensions) {
+      has_extensions &= available_extensions.contains(extension);
     }
-    if (!needed_extensions.empty()) {
+    if (!has_extensions) {
       continue;
     }
 
@@ -348,6 +354,21 @@ bool VulkanBackend::InitDevice(const std::vector<const char*>& layers) {
   } else if (sample_counts & vk::SampleCountFlagBits::e2) {
     msaa_count_ = vk::SampleCountFlagBits::e2;
   }
+
+  // Attachments a render pass only reads store nothing, where the device can
+  // (see GetReadOnlyStoreOp()).
+  const std::set<std::string> available_extensions =
+      GetDeviceExtensions(physical_device_);
+  for (const char* extension : {VK_KHR_LOAD_STORE_OP_NONE_EXTENSION_NAME,
+                                VK_EXT_LOAD_STORE_OP_NONE_EXTENSION_NAME}) {
+    if (available_extensions.contains(extension)) {
+      device_extensions.push_back(extension);
+      read_only_store_op_ = vk::AttachmentStoreOp::eNone;
+      break;
+    }
+  }
+  LOG(INFO) << "Vulkan read-only attachments store: "
+            << vk::to_string(read_only_store_op_);
 
   // Create the logical device and retrieve the needed queues.
   std::set<uint32_t> queue_families = {queues_.graphics_index.value(),
@@ -1435,9 +1456,12 @@ void VulkanBackend::EndFrameClearTargets() {
   }
 
   // Targets are kept ready to sample, outside the passes that draw them.
-  for (vk::ImageMemoryBarrier& barrier : barriers) {
-    barrier.setOldLayout(vk::ImageLayout::eTransferDstOptimal)
-        .setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+  const int barrier_count = static_cast<int>(barriers.size());
+  for (int i = 0; i < barrier_count; ++i) {
+    barriers[i]
+        .setOldLayout(vk::ImageLayout::eTransferDstOptimal)
+        .setNewLayout(
+            GetRenderTargetLayout(render_state_.target_clears[i]->GetFormat()))
         .setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
         .setDstAccessMask(vk::AccessFlagBits::eShaderRead |
                           vk::AccessFlagBits::eColorAttachmentRead |

@@ -253,22 +253,6 @@ which Game Bits doesn't have yet, so it starts with them: a compute shader
 type, binding storage buffers it writes, and the barriers between it and the
 draws that read them.
 
-## Read-only depth attachments
-
-- **Layers:** render, render_vulkan
-- **Size:** medium
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** [Render passes and targets](worklog/render_passes.md)
-
-A view can't depth test against a depth target while it samples it. Water
-that samples the world's depth (for color by depth, and foam at the shore)
-tests against the frame's copy of it instead, which a full-frame view writes
-with `gl_FragDepth` first. A pass that uses its depth target as a read-only
-attachment (`eDepthStencilReadOnlyOptimal`, with depth writes off) could do
-both, without the copy. It would be a `RenderPassConfig` option, and only
-material types that don't write depth could draw in it.
-
 ## Shadow map comparison samplers
 
 - **Layers:** render, render_vulkan

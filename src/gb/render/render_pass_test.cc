@@ -21,6 +21,7 @@
 namespace gb {
 namespace {
 
+using ::testing::Contains;
 using ::testing::ElementsAre;
 using ::testing::Field;
 using ::testing::HasSubstr;
@@ -125,13 +126,17 @@ TEST_F(RenderPassTest, ConfigSetters) {
   EXPECT_EQ(config.color, color.Get());
   EXPECT_TRUE(config.keep_color);
   EXPECT_EQ(config.depth, depth.Get());
-  EXPECT_FALSE(config.keep_depth);
+  EXPECT_EQ(config.depth_use, DepthUse::kClear);
   EXPECT_EQ(config.clear_color, Pixel(1, 2, 3, 4));
   EXPECT_TRUE(config.multisample);
 
-  config.SetDepth(nullptr, true);
+  config.SetDepth(nullptr, DepthUse::kKeep);
   EXPECT_EQ(config.depth, nullptr);
-  EXPECT_TRUE(config.keep_depth);
+  EXPECT_EQ(config.depth_use, DepthUse::kKeep);
+
+  config.SetDepth(depth.Get(), DepthUse::kReadOnly);
+  EXPECT_EQ(config.depth, depth.Get());
+  EXPECT_EQ(config.depth_use, DepthUse::kReadOnly);
 }
 
 TEST_F(RenderPassTest, CreateWithColorAndDepth) {
@@ -148,7 +153,7 @@ TEST_F(RenderPassTest, CreateWithColorAndDepth) {
   EXPECT_EQ(pass->GetColorTarget(), color.Get());
   EXPECT_EQ(pass->GetDepthTarget(), depth.Get());
   EXPECT_TRUE(pass->KeepsColor());
-  EXPECT_FALSE(pass->KeepsDepth());
+  EXPECT_EQ(pass->GetDepthUse(), DepthUse::kClear);
   EXPECT_FALSE(pass->IsMultisampled());
   EXPECT_EQ(pass->GetClearColor(), Pixel(1, 2, 3, 4));
   EXPECT_EQ(state_.invalid_call_count, 0);
@@ -166,11 +171,11 @@ TEST_F(RenderPassTest, CreateWithOneTarget) {
 
   auto depth = CreateDepth(RenderTargetSize::Pixels(256, 256));
   auto depth_pass = render_system_->CreatePass(
-      RenderPassConfig().SetDepth(depth.Get(), true));
+      RenderPassConfig().SetDepth(depth.Get(), DepthUse::kKeep));
   ASSERT_NE(depth_pass, nullptr);
   EXPECT_EQ(depth_pass->GetColorTarget(), nullptr);
   EXPECT_EQ(depth_pass->GetDepthTarget(), depth.Get());
-  EXPECT_TRUE(depth_pass->KeepsDepth());
+  EXPECT_EQ(depth_pass->GetDepthUse(), DepthUse::kKeep);
 }
 
 TEST_F(RenderPassTest, CreateMultisampled) {
@@ -279,12 +284,33 @@ TEST_F(RenderPassTest, MultisampledPassCannotKeepItsTargets) {
           RenderPassConfig().SetColor(color.Get(), true).SetMultisample(true)),
       nullptr);
   EXPECT_EQ(
-      render_system_->CreatePass(
-          RenderPassConfig().SetDepth(depth.Get(), true).SetMultisample(true)),
+      render_system_->CreatePass(RenderPassConfig()
+                                     .SetDepth(depth.Get(), DepthUse::kKeep)
+                                     .SetMultisample(true)),
+      nullptr);
+  EXPECT_EQ(
+      render_system_->CreatePass(RenderPassConfig()
+                                     .SetDepth(depth.Get(), DepthUse::kReadOnly)
+                                     .SetMultisample(true)),
       nullptr);
   EXPECT_THAT(log_error_guard.TakeMessages(),
               ElementsAre(LogTextHas("multisampled and keeps its targets"),
+                          LogTextHas("multisampled and keeps its targets"),
                           LogTextHas("multisampled and keeps its targets")));
+}
+
+TEST_F(RenderPassTest, CreateWithReadOnlyDepth) {
+  CreatePassSystem();
+  auto color = CreateColor();
+  auto depth = CreateDepth();
+  auto pass = render_system_->CreatePass(
+      RenderPassConfig()
+          .SetColor(color.Get(), true)
+          .SetDepth(depth.Get(), DepthUse::kReadOnly));
+  ASSERT_NE(pass, nullptr);
+  EXPECT_EQ(pass->GetDepthTarget(), depth.Get());
+  EXPECT_EQ(pass->GetDepthUse(), DepthUse::kReadOnly);
+  EXPECT_EQ(state_.invalid_call_count, 0);
 }
 
 TEST_F(RenderPassTest, FailCreate) {
@@ -590,6 +616,41 @@ TEST_F(RenderPassTest, ReadsAreTheTexturesBoundInEachPass) {
   EXPECT_THAT(state_.passes[1].reads,
               UnorderedElementsAre(world_color.Get(), world_depth.Get(),
                                    texture.Get()));
+  EXPECT_EQ(state_.invalid_call_count, 0);
+}
+
+// Draws water over the world in a pass of its own, which depth tests against
+// the world's depth while sampling it.
+TEST_F(RenderPassTest, PassReadsItsReadOnlyDepth) {
+  CreatePassSystem();
+  CreateTexturedMaterial();
+  auto world_color = CreateColor();
+  auto world_depth = CreateDepth();
+  auto world_pass =
+      render_system_->CreatePass(RenderPassConfig()
+                                     .SetColor(world_color.Get())
+                                     .SetDepth(world_depth.Get()));
+  auto water_pass = render_system_->CreatePass(
+      RenderPassConfig()
+          .SetColor(world_color.Get(), true)
+          .SetDepth(world_depth.Get(), DepthUse::kReadOnly),
+      1);
+  ASSERT_NE(world_pass, nullptr);
+  ASSERT_NE(water_pass, nullptr);
+  auto water_view =
+      render_system_->CreateView(water_pass.get(), binding_layout_);
+  ASSERT_NE(water_view, nullptr);
+  water_view->GetViewBindingData()->SetTexture(0, world_depth.Get());
+
+  ASSERT_TRUE(render_system_->BeginFrame());
+  render_system_->Draw(water_view.get(), mesh_, material_,
+                       instance_data_.get());
+  render_system_->EndFrame();
+
+  ASSERT_THAT(GetFramePasses(),
+              ElementsAre(world_pass.get(), water_pass.get(), nullptr));
+  EXPECT_THAT(state_.passes[0].reads, IsEmpty());
+  EXPECT_THAT(state_.passes[1].reads, Contains(world_depth.Get()));
   EXPECT_EQ(state_.invalid_call_count, 0);
 }
 

@@ -114,12 +114,15 @@ struct VulkanRenderState {
     vk::DeviceSize copy_size;
   };
 
+  // Binds an image, sampled in `layout`.
   struct SetImageUpdate {
-    SetImageUpdate(vk::DescriptorSet descriptor_set, uint32_t binding,
-                   vk::Sampler sampler, vk::ImageView image_view)
+    SetImageUpdate(
+        vk::DescriptorSet descriptor_set, uint32_t binding, vk::Sampler sampler,
+        vk::ImageView image_view,
+        vk::ImageLayout layout = vk::ImageLayout::eShaderReadOnlyOptimal)
         : descriptor_set(descriptor_set),
           binding(binding),
-          info(sampler, image_view, vk::ImageLayout::eShaderReadOnlyOptimal) {}
+          info(sampler, image_view, layout) {}
     vk::DescriptorSet descriptor_set;
     uint32_t binding;
     vk::DescriptorImageInfo info;

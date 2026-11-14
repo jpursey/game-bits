@@ -147,6 +147,13 @@ class VulkanBackend final : public RenderBackend {
   // with. It is one on a device that can't multisample.
   vk::SampleCountFlagBits GetMsaaSampleCount() const { return msaa_count_; }
 
+  // Returns the store op for an attachment a render pass only reads: eNone
+  // where the device supports it, and otherwise eStore, which writes back what
+  // it held, and which synchronization validation reports as a hazard.
+  vk::AttachmentStoreOp GetReadOnlyStoreOp() const {
+    return read_only_store_op_;
+  }
+
   //----------------------------------------------------------------------------
   // Options
   //
@@ -412,6 +419,7 @@ class VulkanBackend final : public RenderBackend {
   vk::Format depth_target_format_ = vk::Format::eUndefined;
   vk::SampleCountFlagBits msaa_count_ = vk::SampleCountFlagBits::e1;
   uint32_t max_draw_indirect_count_ = 1;  // One without multi-draw.
+  vk::AttachmentStoreOp read_only_store_op_ = vk::AttachmentStoreOp::eStore;
   VmaAllocator allocator_ = VK_NULL_HANDLE;
 
   // Render pass

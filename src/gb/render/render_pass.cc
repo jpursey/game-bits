@@ -15,7 +15,7 @@ RenderPass::RenderPass(const RenderPassConfig& config, int pass_order)
       color_(config.color),
       depth_(config.depth),
       keep_color_(config.keep_color),
-      keep_depth_(config.keep_depth),
+      depth_use_(config.depth_use),
       multisample_(config.multisample),
       clear_color_(config.clear_color) {}
 

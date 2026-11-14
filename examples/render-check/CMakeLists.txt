@@ -83,6 +83,8 @@ gb_embed_shader(render_check shaders/pass_depth.frag shaders/pass_depth_frag.h
   kPassDepthFragmentShader)
 gb_embed_shader(render_check shaders/pass_depth_write.frag
   shaders/pass_depth_write_frag.h kPassDepthWriteFragmentShader)
+gb_embed_shader(render_check shaders/pass_mist.frag shaders/pass_mist_frag.h
+  kPassMistFragmentShader)
 gb_embed_shader(render_check shaders/pass_water.frag shaders/pass_water_frag.h
   kPassWaterFragmentShader)
 gb_embed_shader(render_check shaders/pool.vert shaders/pool_vert.h

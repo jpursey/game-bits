@@ -38,20 +38,22 @@ constexpr vk::PipelineStageFlags kShaderStages =
 
 // Returns an attachment for a target's image, which is ready to sample once
 // the pass ends. It keeps (loads) what the image held, clears it, or does
-// neither, for one that is resolved into.
-vk::AttachmentDescription2 GetTargetAttachment(vk::Format format,
-                                               vk::AttachmentLoadOp load_op) {
+// neither, for one that is resolved into. It stores what is drawn, or nothing
+// for one the pass only reads.
+vk::AttachmentDescription2 GetTargetAttachment(
+    vk::Format format, vk::AttachmentLoadOp load_op,
+    vk::AttachmentStoreOp store_op = vk::AttachmentStoreOp::eStore) {
   return vk::AttachmentDescription2()
       .setFormat(format)
       .setSamples(vk::SampleCountFlagBits::e1)
       .setLoadOp(load_op)
-      .setStoreOp(vk::AttachmentStoreOp::eStore)
+      .setStoreOp(store_op)
       .setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
       .setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
       .setInitialLayout(load_op == vk::AttachmentLoadOp::eLoad
-                            ? vk::ImageLayout::eShaderReadOnlyOptimal
+                            ? GetRenderTargetLayout(format)
                             : vk::ImageLayout::eUndefined)
-      .setFinalLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
+      .setFinalLayout(GetRenderTargetLayout(format));
 }
 
 // Returns an attachment for a multisampled image, which is cleared as the pass
@@ -108,6 +110,7 @@ VulkanPass::~VulkanPass() {
 
 bool VulkanPass::Init() {
   VulkanPassLayout& layout = render_pass_.layout;
+  layout.depth_read_only = GetDepthUse() == DepthUse::kReadOnly;
   if (IsMultisampled()) {
     layout.sample_count = backend_->GetMsaaSampleCount();
   }
@@ -135,12 +138,15 @@ bool VulkanPass::Init() {
     const Attachment& attachment = attachments_[i];
     const vk::Format format =
         attachment.target->GetImageHandle().image->GetFormat();
-    const vk::ImageLayout draw_layout =
-        attachment.is_depth ? vk::ImageLayout::eDepthStencilAttachmentOptimal
-                            : vk::ImageLayout::eColorAttachmentOptimal;
     const auto index = static_cast<uint32_t>(i);
     const auto resolve_index = static_cast<uint32_t>(count + i);
+    const bool read_only = attachment.is_depth && layout.depth_read_only;
     if (attachment.is_depth) {
+      // A read-only depth target is drawn in the layout it is sampled in, so
+      // it is never transitioned.
+      const vk::ImageLayout draw_layout =
+          read_only ? GetRenderTargetLayout(format)
+                    : vk::ImageLayout::eDepthStencilAttachmentOptimal;
       layout.depth_format = format;
       depth_ref.setAttachment(index).setLayout(draw_layout);
       depth_resolve_ref.setAttachment(resolve_index).setLayout(draw_layout);
@@ -149,6 +155,8 @@ bool VulkanPass::Init() {
         subpass.setPNext(&depth_resolve);
       }
     } else {
+      const vk::ImageLayout draw_layout =
+          vk::ImageLayout::eColorAttachmentOptimal;
       layout.color_format = format;
       color_ref.setAttachment(index).setLayout(draw_layout);
       color_resolve_ref.setAttachment(resolve_index).setLayout(draw_layout);
@@ -163,10 +171,13 @@ bool VulkanPass::Init() {
       descriptions[count + i] =
           GetTargetAttachment(format, vk::AttachmentLoadOp::eDontCare);
     } else {
-      const bool keep = attachment.is_depth ? KeepsDepth() : KeepsColor();
-      descriptions[i] =
-          GetTargetAttachment(format, keep ? vk::AttachmentLoadOp::eLoad
-                                           : vk::AttachmentLoadOp::eClear);
+      const bool keep = attachment.is_depth ? GetDepthUse() != DepthUse::kClear
+                                            : KeepsColor();
+      descriptions[i] = GetTargetAttachment(
+          format,
+          keep ? vk::AttachmentLoadOp::eLoad : vk::AttachmentLoadOp::eClear,
+          read_only ? backend_->GetReadOnlyStoreOp()
+                    : vk::AttachmentStoreOp::eStore);
     }
   }
 

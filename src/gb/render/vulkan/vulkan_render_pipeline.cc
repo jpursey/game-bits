@@ -326,10 +326,18 @@ vk::Pipeline VulkanRenderPipeline::CreatePipeline(
                             .setScissorCount(1)
                             .setPScissors(&scissor);
 
-  // A render pass without depth does no depth test.
-  const DepthMode depth_mode =
+  // A render pass without depth does no depth test, and one with read-only
+  // depth doesn't write it.
+  DepthMode depth_mode =
       (layout.depth_format != vk::Format::eUndefined ? config_.depth_mode
                                                      : DepthMode::kNone);
+  if (layout.depth_read_only) {
+    if (depth_mode == DepthMode::kWrite) {
+      depth_mode = DepthMode::kNone;
+    } else if (depth_mode == DepthMode::kTestAndWrite) {
+      depth_mode = DepthMode::kTest;
+    }
+  }
 
   vk::CullModeFlags cull_mode = {};
   if (config_.cull_mode == CullMode::kBack) {

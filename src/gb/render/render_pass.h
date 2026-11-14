@@ -23,6 +23,20 @@ class RenderSystem;
 // RenderPassConfig
 //==============================================================================
 
+// What a pass does with its depth target.
+enum class DepthUse {
+  // Clears it to the far plane before drawing.
+  kClear,
+
+  // Keeps what it held, drawing over it.
+  kKeep,
+
+  // Keeps what it held, and depth tests against it without writing it, so the
+  // pass's draws can also sample it. Material types that write depth draw as if
+  // they only test (DepthMode::kTestAndWrite as kTest, and kWrite as kNone).
+  kReadOnly,
+};
+
 // How a pass draws: into which targets, and whether it clears them first.
 //
 // A pass has a color target, a depth target, or both, of the same
@@ -34,9 +48,10 @@ struct RenderPassConfig {
     keep_color = keep;
     return *this;
   }
-  RenderPassConfig& SetDepth(RenderTarget* target, bool keep = false) {
+  RenderPassConfig& SetDepth(RenderTarget* target,
+                             DepthUse use = DepthUse::kClear) {
     depth = target;
-    keep_depth = keep;
+    depth_use = use;
     return *this;
   }
   RenderPassConfig& SetClearColor(Pixel color) {
@@ -51,12 +66,13 @@ struct RenderPassConfig {
   RenderTarget* color = nullptr;  // Null for a depth-only pass.
   RenderTarget* depth = nullptr;  // Null for a pass without depth.
   bool keep_color = false;        // False clears to clear_color.
-  bool keep_depth = false;        // False clears to the far plane.
+  DepthUse depth_use = DepthUse::kClear;
   Pixel clear_color = {0, 0, 0, 0};
 
   // Draws with as many samples as the frame, resolved into the targets as the
   // pass ends: color by averaging each pixel's samples, and depth by taking its
-  // first sample. A multisampled pass clears its targets: keeping either fails.
+  // first sample. A multisampled pass clears its targets: keeping either, or
+  // reading depth only, fails.
   bool multisample = false;
 };
 
@@ -71,7 +87,8 @@ struct RenderPassConfig {
 //
 // A pass, or the frame, samples the targets of earlier passes as drawn this
 // frame. A target sampled before the pass that draws it holds last frame's
-// contents. A pass must not sample its own targets.
+// contents. A pass must not sample its own targets, except a depth target it
+// only reads (DepthUse::kReadOnly).
 //
 // Any material type draws in any pass. A depth-only pass writes no color, so it
 // is best drawn with material types that write none: no color channels (see
@@ -111,10 +128,12 @@ class RenderPass {
   RenderTarget* GetColorTarget() const { return color_.Get(); }
   RenderTarget* GetDepthTarget() const { return depth_.Get(); }
 
-  // Returns true if the pass keeps what its targets held, rather than clearing
-  // them before it draws.
+  // Returns true if the pass keeps what its color target held, rather than
+  // clearing it before it draws.
   bool KeepsColor() const { return keep_color_; }
-  bool KeepsDepth() const { return keep_depth_; }
+
+  // Returns what the pass does with its depth target.
+  DepthUse GetDepthUse() const { return depth_use_; }
 
   // Returns true if the pass draws with as many samples as the frame.
   bool IsMultisampled() const { return multisample_; }
@@ -140,7 +159,7 @@ class RenderPass {
   const ResourcePtr<RenderTarget> color_;
   const ResourcePtr<RenderTarget> depth_;
   const bool keep_color_;
-  const bool keep_depth_;
+  const DepthUse depth_use_;
   const bool multisample_;
   Pixel clear_color_;
 

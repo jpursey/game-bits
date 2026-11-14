@@ -37,6 +37,7 @@
 #include "shaders/pass_composite_frag.h"
 #include "shaders/pass_depth_frag.h"
 #include "shaders/pass_depth_write_frag.h"
+#include "shaders/pass_mist_frag.h"
 #include "shaders/pass_vert.h"
 #include "shaders/pass_water_frag.h"
 #include "shaders/pool_vert.h"
@@ -189,6 +190,12 @@ constexpr float kPassesQuadDepths[kPassesQuads] = {0.3f, 0.7f, 0.4f, 0.8f,
 constexpr float kWaterTop = kPassesTop + 95.0f;
 constexpr float kWaterHeight = 50.0f;
 constexpr float kWaterDepth = 0.5f;
+
+// The mist is a band down the section, between the quads behind it on its left
+// and in front of it on its right.
+constexpr float kMistCenterX = kPassesLeft + 135.0f;
+constexpr float kMistHalfWidth = 22.0f;
+constexpr float kMistDepth = 0.55f;
 constexpr float kDepthLeft = kPassesLeft + kPassesWidth + 20.0f;
 constexpr float kDepthTop = kPassesTop;
 constexpr int kDepthWidth = 160;
@@ -1004,9 +1011,14 @@ bool RenderCheck::InitPasses() {
       render_system_->CreateShaderCode(
           kPassDepthWriteFragmentShader.GetBytes()),
       {}, {}, {});
+  gb::Shader* mist_shader = render_system_->CreateShader(
+      &resources_, gb::ShaderType::kFragment,
+      render_system_->CreateShaderCode(kPassMistFragmentShader.GetBytes()),
+      {view_binding, depth_binding}, {vec4_param}, {vec4_param});
   if (vertex_shader == nullptr || color_shader == nullptr ||
       composite_shader == nullptr || water_shader == nullptr ||
-      depth_shader == nullptr || depth_write_shader == nullptr) {
+      depth_shader == nullptr || depth_write_shader == nullptr ||
+      mist_shader == nullptr) {
     LOG(ERROR) << "Could not create pass shaders";
     return false;
   }
@@ -1034,6 +1046,14 @@ bool RenderCheck::InitPasses() {
   water_material_ =
       CreatePassMaterial(world_type, water_shader,
                          QuadConfig().SetDepthMode(gb::DepthMode::kTest));
+
+  // The mist's material type writes depth, which the mist pass doesn't, so the
+  // world's depth shows no mist.
+  mist_material_ =
+      CreatePassMaterial(world_type, mist_shader,
+                         QuadConfig()
+                             .SetDepthMode(gb::DepthMode::kTestAndWrite)
+                             .SetBlendMode(gb::BlendMode::kPremultiplied));
   world_depth_material_ =
       CreatePassMaterial(world_type, depth_shader, QuadConfig());
   if (world_depth_material_ != nullptr) {
@@ -1042,7 +1062,8 @@ bool RenderCheck::InitPasses() {
   }
   if (world_material_ == nullptr || depth_write_material_ == nullptr ||
       composite_material_ == nullptr || water_material_ == nullptr ||
-      world_depth_material_ == nullptr || depth_only_material_ == nullptr) {
+      mist_material_ == nullptr || world_depth_material_ == nullptr ||
+      depth_only_material_ == nullptr) {
     LOG(ERROR) << "Could not create pass materials";
     return false;
   }
@@ -1072,14 +1093,27 @@ bool RenderCheck::InitPasses() {
     return false;
   }
 
+  // The mist pass draws after the world pass, which is recreated in pass order
+  // 0 as multisampling is turned on and off.
+  mist_pass_ = render_system_->CreatePass(
+      gb::RenderPassConfig()
+          .SetColor(world_color_, true)
+          .SetDepth(world_depth_, gb::DepthUse::kReadOnly),
+      1);
+  if (mist_pass_ == nullptr) {
+    LOG(ERROR) << "Could not create mist pass";
+    return false;
+  }
+
   // The water is drawn after the composite, which writes the depth it tests
   // against, so it is in a later view.
   depth_only_view_ =
       render_system_->CreateView(depth_only_pass_.get(), binding_layout);
+  mist_view_ = render_system_->CreateView(mist_pass_.get(), binding_layout);
   composite_view_ = render_system_->CreateView(binding_layout, 1);
   water_view_ = render_system_->CreateView(binding_layout, 2);
-  if (depth_only_view_ == nullptr || composite_view_ == nullptr ||
-      water_view_ == nullptr) {
+  if (depth_only_view_ == nullptr || mist_view_ == nullptr ||
+      composite_view_ == nullptr || water_view_ == nullptr) {
     LOG(ERROR) << "Could not create pass views";
     return false;
   }
@@ -1088,6 +1122,7 @@ bool RenderCheck::InitPasses() {
     material->GetMaterialBindingData()->SetTexture(0, world_color_);
     material->GetMaterialBindingData()->SetTexture(1, world_depth_);
   }
+  mist_material_->GetMaterialBindingData()->SetTexture(1, world_depth_);
   world_depth_material_->GetMaterialBindingData()->SetTexture(0, world_depth_);
   depth_only_material_->GetMaterialBindingData()->SetTexture(0, depth_only);
 
@@ -1103,10 +1138,12 @@ bool RenderCheck::InitPasses() {
   }
   composite_quad_ = composite_material_->CreateInstanceBindingData();
   water_quad_ = water_material_->CreateInstanceBindingData();
+  mist_quad_ = mist_material_->CreateInstanceBindingData();
   world_depth_quad_ = world_depth_material_->CreateInstanceBindingData();
   depth_only_quad_ = depth_only_material_->CreateInstanceBindingData();
   if (composite_quad_ == nullptr || water_quad_ == nullptr ||
-      world_depth_quad_ == nullptr || depth_only_quad_ == nullptr) {
+      mist_quad_ == nullptr || world_depth_quad_ == nullptr ||
+      depth_only_quad_ == nullptr) {
     LOG(ERROR) << "Could not create pass quads";
     return false;
   }
@@ -1141,14 +1178,17 @@ void RenderCheck::CleanUp() {
   depth_write_quads_.clear();
   composite_quad_.reset();
   water_quad_.reset();
+  mist_quad_.reset();
   world_depth_quad_.reset();
   depth_only_quad_.reset();
   world_view_.reset();
   depth_only_view_.reset();
+  mist_view_.reset();
   composite_view_.reset();
   water_view_.reset();
   world_pass_.reset();
   depth_only_pass_.reset();
+  mist_pass_.reset();
   instances_.clear();
   blend_instances_.clear();
   volume_rows_.clear();
@@ -1654,11 +1694,15 @@ void RenderCheck::DrawPassesGui() {
       "In place of the grid, %d quads that turn as they overlap, from a world "
       "pass drawn over a blue sky, with water across the middle. The water "
       "ripples and tints what is behind it, more so the further behind, and "
-      "is hidden by the quads in front of it. Right of it, the world pass's "
-      "depth, and below that a depth-only pass's depth of the same quads, "
-      "both as gray quads on white. The quads' edges in the world pass's "
-      "color are smooth only while it is multisampled. Its depth takes one "
-      "sample of each pixel, so its edges stay sharp.",
+      "is hidden by the quads in front of it. A band of white mist runs down "
+      "the section, from a pass that reads the world's depth: it is thick "
+      "over the sky, thinner over the quad behind it on its left, and hidden "
+      "by the quad in front of it on its right. Right of the section, the "
+      "world pass's depth, without the mist, and below that a depth-only "
+      "pass's depth of the same quads, both as gray quads on white. The "
+      "quads' edges in the world pass's color are smooth only while it is "
+      "multisampled. Its depth takes one sample of each pixel, so its edges "
+      "stay sharp.",
       kPassesQuads);
 }
 
@@ -1668,7 +1712,7 @@ void RenderCheck::DrawPassesLabels() {
   }
   ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
   draw_list->AddText({kPassesLeft, kPassesTop - 16.0f}, IM_COL32_WHITE,
-                     "World pass, with water");
+                     "World and mist passes, with water");
   draw_list->AddText({kDepthLeft, kDepthTop - 16.0f}, IM_COL32_WHITE,
                      "World depth");
   draw_list->AddText({kDepthLeft, kDepthOnlyTop - 16.0f}, IM_COL32_WHITE,
@@ -1783,6 +1827,7 @@ void RenderCheck::DrawPasses() {
   const float frame_y = 2.0f / size.height;
   const ViewData frame_view = {{frame_x, frame_y, -1.0f, -1.0f}};
   world_view_->GetViewBindingData()->SetConstants<ViewData>(0, frame_view);
+  mist_view_->GetViewBindingData()->SetConstants<ViewData>(0, frame_view);
   composite_view_->GetViewBindingData()->SetConstants<ViewData>(0, frame_view);
   water_view_->GetViewBindingData()->SetConstants<ViewData>(0, frame_view);
 
@@ -1815,6 +1860,11 @@ void RenderCheck::DrawPasses() {
 
   const float half_width = kPassesWidth / 2.0f;
   const float half_height = kPassesHeight / 2.0f;
+  DrawPassQuad(
+      mist_view_.get(), mist_material_, mist_quad_.get(),
+      {{kMistCenterX, kPassesTop + half_height, kMistHalfWidth, half_height},
+       {0.9f, 0.92f, 0.95f, 1.0f},
+       {0.0f, kMistDepth, 0.0f, 0.0f}});
   DrawPassQuad(composite_view_.get(), composite_material_,
                composite_quad_.get(),
                {{kPassesLeft + half_width, kPassesTop + half_height, half_width,

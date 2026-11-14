@@ -338,29 +338,35 @@ class RenderCheck final : public gb::Game {
   // The passes section, drawn by DrawPasses() over the grid while shown. The
   // world pass draws turning quads into a color and a depth target the
   // frame's size, and the depth-only pass draws them, with a material that
-  // writes no color, into a fixed-size depth target. Its composite view draws
-  // the world's color and depth over the section, and its water view then draws
-  // water over the middle, and the two depth targets beside the section.
+  // writes no color, into a fixed-size depth target. The mist pass then draws
+  // mist into the world's color, depth tested against the world's depth, which
+  // it only reads, and samples. The frame's composite view draws the world's
+  // color and depth over the section, and its water view then draws water over
+  // the middle, and the two depth targets beside the section.
   bool show_passes_ = false;
   gb::BindingLayout* pass_binding_layout_ = nullptr;
   gb::RenderTarget* world_color_ = nullptr;
   gb::RenderTarget* world_depth_ = nullptr;
   std::unique_ptr<gb::RenderPass> world_pass_;
   std::unique_ptr<gb::RenderPass> depth_only_pass_;
+  std::unique_ptr<gb::RenderPass> mist_pass_;
   std::unique_ptr<gb::RenderView> world_view_;
   std::unique_ptr<gb::RenderView> depth_only_view_;
+  std::unique_ptr<gb::RenderView> mist_view_;
   std::unique_ptr<gb::RenderView> composite_view_;
   std::unique_ptr<gb::RenderView> water_view_;
   gb::Material* world_material_ = nullptr;
   gb::Material* depth_write_material_ = nullptr;  // Writes no color.
   gb::Material* composite_material_ = nullptr;
   gb::Material* water_material_ = nullptr;
+  gb::Material* mist_material_ = nullptr;
   gb::Material* world_depth_material_ = nullptr;
   gb::Material* depth_only_material_ = nullptr;
   std::vector<std::unique_ptr<gb::BindingData>> world_quads_;
   std::vector<std::unique_ptr<gb::BindingData>> depth_write_quads_;
   std::unique_ptr<gb::BindingData> composite_quad_;
   std::unique_ptr<gb::BindingData> water_quad_;
+  std::unique_ptr<gb::BindingData> mist_quad_;
   std::unique_ptr<gb::BindingData> world_depth_quad_;
   std::unique_ptr<gb::BindingData> depth_only_quad_;
 

@@ -70,12 +70,15 @@ struct VulkanPassLayout {
   template <typename H>
   friend H AbslHashValue(H h, const VulkanPassLayout& layout) {
     return H::combine(std::move(h), layout.color_format, layout.depth_format,
-                      layout.sample_count);
+                      layout.sample_count, layout.depth_read_only);
   }
 
   vk::Format color_format = vk::Format::eUndefined;  // eUndefined for none.
   vk::Format depth_format = vk::Format::eUndefined;  // eUndefined for none.
   vk::SampleCountFlagBits sample_count = vk::SampleCountFlagBits::e1;
+
+  // True if the depth attachment is read-only, so pipelines don't write it.
+  bool depth_read_only = false;
 };
 
 // A render pass with one subpass, and its layout.

@@ -26,6 +26,11 @@ std::unique_ptr<VulkanImage> CreateTargetImage(VulkanBackend* backend,
 
 }  // namespace
 
+vk::ImageLayout GetRenderTargetLayout(vk::Format format) {
+  return IsDepthFormat(format) ? vk::ImageLayout::eDepthStencilReadOnlyOptimal
+                               : vk::ImageLayout::eShaderReadOnlyOptimal;
+}
+
 VulkanRenderTarget* VulkanRenderTarget::Create(
     ResourceEntry entry, VulkanBackend* backend, vk::Sampler sampler,
     TextureFormat format, vk::Format vulkan_format,

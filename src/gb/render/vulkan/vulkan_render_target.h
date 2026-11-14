@@ -19,11 +19,17 @@
 
 namespace gb {
 
+// Returns the layout a render target's image in `format` is in outside the
+// passes that draw into it, ready to sample: eShaderReadOnlyOptimal for color,
+// and eDepthStencilReadOnlyOptimal for depth, so a pass can also use a depth
+// target as a read-only attachment while its draws sample it.
+vk::ImageLayout GetRenderTargetLayout(vk::Format format);
+
 // Vulkan implementation of RenderTarget.
 //
-// Its image is in eShaderReadOnlyOptimal layout outside the passes that draw
-// into it. A new image is cleared into that layout at the start of the first
-// frame that uses it, and each pass leaves it there.
+// Its image is in its GetRenderTargetLayout() outside the passes that draw into
+// it. A new image is cleared into that layout at the start of the first frame
+// that uses it, and each pass leaves it there.
 //
 // This class is thread-compatible.
 class VulkanRenderTarget final : public RenderTarget {

@@ -544,7 +544,8 @@ bool ValidatePassConfig(const RenderPassConfig& config) {
                   "different sizes";
     return false;
   }
-  if (config.multisample && (config.keep_color || config.keep_depth)) {
+  if (config.multisample &&
+      (config.keep_color || config.depth_use != DepthUse::kClear)) {
     LOG(ERROR) << "Invalid render pass, which is multisampled and keeps its "
                   "targets (a multisampled pass clears them)";
     return false;

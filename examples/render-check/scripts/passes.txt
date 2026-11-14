@@ -4,9 +4,11 @@
 # in the LICENSE file or at https://opensource.org/licenses/MIT.
 
 # The Passes section, drawn over the grid while shown: a world pass of turning
-# quads with water over it in the frame, and the depth of the world pass and of
-# a depth-only pass beside it. The world pass is multisampled, so the quads'
-# edges are smooth in its color, though not in its depth.
+# quads, a mist pass that draws a band of mist into it, tested against and
+# sampling its depth, and water over it in the frame. The depth of the world
+# pass, without the mist, and of a depth-only pass are beside it. The world pass
+# is multisampled, so the quads' edges are smooth in its color, though not in
+# its depth.
 wait 10
 key s
 

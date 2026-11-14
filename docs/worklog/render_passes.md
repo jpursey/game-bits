@@ -100,17 +100,21 @@ RenderTarget* CreateRenderTarget(ResourceSet* resource_set, ...);
 ### Passes
 
 ```
+// What a pass does with its depth target.
+enum class DepthUse { kClear, kKeep, kReadOnly };
+
 // How a pass draws: into which targets, and whether it clears them first.
 struct RenderPassConfig {
   RenderPassConfig& SetColor(RenderTarget* target, bool keep = false);
-  RenderPassConfig& SetDepth(RenderTarget* target, bool keep = false);
+  RenderPassConfig& SetDepth(RenderTarget* target,
+                             DepthUse use = DepthUse::kClear);
   RenderPassConfig& SetClearColor(Pixel color);
   RenderPassConfig& SetMultisample(bool multisample);
 
   RenderTarget* color = nullptr;  // Null for a depth-only pass.
   RenderTarget* depth = nullptr;  // Null for a pass without depth.
   bool keep_color = false;        // False clears to clear_color.
-  bool keep_depth = false;        // False clears to the far plane.
+  DepthUse depth_use = DepthUse::kClear;
   Pixel clear_color = {0, 0, 0, 0};
   bool multisample = false;
 };
@@ -121,7 +125,7 @@ class RenderPass {
   RenderTarget* GetColorTarget() const;
   RenderTarget* GetDepthTarget() const;
   bool KeepsColor() const;
-  bool KeepsDepth() const;
+  DepthUse GetDepthUse() const;
   bool IsMultisampled() const;
   Pixel GetClearColor() const;
   void SetClearColor(Pixel color);  // From the next frame drawn.
@@ -164,11 +168,20 @@ RenderPass* GetPass() const;  // Null for a view drawn in the frame.
   frame keeps its multisampling. A multisampled pass draws with as many
   samples as the frame, and resolves its color by averaging each pixel's
   samples, and its depth by taking the first sample. It clears its targets:
-  keeping either fails.
+  keeping either, or reading depth only, fails.
 - A pass, or the frame, samples the targets of earlier passes as drawn this
   frame. A target sampled before the pass that draws it holds last frame's
   contents. A pass must not sample its own targets: Vulkan's validation
   layers (on in Debug) log that as an error.
+- A pass with read-only depth (`DepthUse::kReadOnly`) keeps its depth target
+  and depth tests against it without writing it, so its draws can sample it
+  too: water or soft particles drawn into the world's color, tested against
+  and reading the world's depth, without the frame's copy of it. Material
+  types that write depth draw in it as if they only test (`kTestAndWrite` as
+  `kTest`, and `kWrite` as `kNone`). It can't be multisampled, as that would
+  need the multisampled depth the target was resolved from. Clearing is a
+  write, so what a pass does with its depth target is one of three uses
+  rather than separate flags for keeping it and only reading it.
 - A pass must outlive the views created in it, and keeps its targets alive
   while it exists. It must be destroyed before the `RenderSystem` that
   created it, and not between the `BeginFrame()` that draws it and
@@ -263,10 +276,20 @@ through every draw's bindings.
   attachment and sampled, with a version that changes as it is resized, so
   binding data rewrites its descriptors as it does for a texture that is
   replaced (`VulkanTexels::ImageHandle`). A resized image goes to the garbage
-  collector. A new image is cleared, into `eShaderReadOnlyOptimal`, at the
-  start of the first frame that draws into it or samples it, and stays in
-  that layout outside passes. `VulkanBindingData` tells a target from a
-  texture by `IsRenderTarget()`.
+  collector. A new image is cleared, into its `GetRenderTargetLayout()`, at
+  the start of the first frame that draws into it or samples it, and stays in
+  that layout outside passes: `eShaderReadOnlyOptimal` for color, and
+  `eDepthStencilReadOnlyOptimal` for depth, which is sampled the same and is
+  also a read-only depth attachment. `VulkanBindingData` tells a target from
+  a texture by `IsRenderTarget()`, and binds it in its layout.
+- **Read-only depth.** A pass with read-only depth draws in its depth target's
+  layout throughout, with no transition, loading it, and storing nothing
+  (`eNone`, from `VK_KHR_load_store_op_none` or `VK_EXT_load_store_op_none`,
+  enabled where the device has either). Storing it would write back what it
+  already held, which the synchronization validation reports as a write after
+  the draws' reads, so a device with neither stores it as that harmless
+  fallback. `VulkanPassLayout` holds whether depth is read-only, and a
+  pipeline for such a layout turns depth writes off.
 - **Depth format.** Depth targets need a format that is both a depth
   attachment and sampled, and has no stencil, so a view of its depth is the
   whole attachment: `D32_SFLOAT` first, then `X8_D24_UNORM_PACK32`. On a
@@ -322,6 +345,10 @@ On an NVIDIA GeForce RTX 4070 Ti SUPER (Vulkan 1.4, driver 610.88):
   sampling its own targets is a validation error
   (`VUID-VkDescriptorImageInfo-imageLayout-00344`), each frame.
 - A pass that keeps its depth target draws without validation errors.
+- A pass that depth tests against a read-only depth target while sampling it
+  draws without validation errors. Stored with `eStore`, each frame is a
+  `SYNC-HAZARD-WRITE-AFTER-READ` (the store after the draws' reads); with
+  `eNone` (the device has `VK_EXT_load_store_op_none`), there is none.
 
 ### Building blocks
 
@@ -336,8 +363,8 @@ On an NVIDIA GeForce RTX 4070 Ti SUPER (Vulkan 1.4, driver 610.88):
 
 Each is in the backlog: *Multisampled targets that are kept*, *Several color
 targets per pass*, *Shadow map comparison samplers*, *Floating point render
-targets*, *Read-only depth attachments*, *Pipelines created before their first
-draw*, and *Multisampled depth without storing it*.
+targets*, *Pipelines created before their first draw*, and *Multisampled depth
+without storing it*.
 
 ## Structure
 
@@ -368,18 +395,24 @@ draw*, and *Multisampled depth without storing it*.
     frame changes; writes, reads, and saving failing; binding a target as a
     texture.
   - `render_pass_test.cc`: configs valid and not (no target, wrong formats,
-    mismatched sizes, keeping in a multisampled pass); pass order and ties;
+    mismatched sizes, keeping or reading depth only in a multisampled pass);
+    pass order and ties;
     views in passes and in the frame; each frame's passes, their draws, and
-    what each reads; a pass with nothing drawn still recorded; destroying a
-    pass with views left, or during a frame.
+    what each reads, including a pass reading its read-only depth; a pass
+    with nothing drawn still recorded; destroying a pass with views left, or
+    during a frame.
 - `examples/render-check`, `scripts/passes.txt`, shown over the grid (S):
   turning, overlapping quads from a multisampled world pass over a blue sky;
   the frame draws its color and depth, then water through the middle that
   ripples and tints what is behind it and hides behind the quads in front of
-  it. Beside it, the world's depth, and a depth-only pass's depth of the same
-  quads (a material type with no color channels and an empty fragment
-  shader), both as gray. It is saved with and without multisampling (quad
-  edges in the color are smooth only with it), and in a 1085x399 window. No
+  it. A mist pass, with read-only depth, draws a band of mist into the world's
+  color that is thick over the sky, thinner over the quad behind it, and
+  hidden by the quad in front of it. Beside it, the world's depth (with no
+  mist, though the mist's material type writes depth), and a depth-only
+  pass's depth of the same quads (a material type with no color channels and
+  an empty fragment shader), both as gray. It is saved with and without
+  multisampling (quad edges in the color are smooth only with it), and in a
+  1085x399 window. No
   validation messages, and no synchronization hazards for the passes with
   `VK_KHRONOS_VALIDATION_VALIDATE_SYNC=true`.
 - Every other render-check script, and block-world's, run as before.
