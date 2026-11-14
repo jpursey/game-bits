@@ -6,10 +6,10 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
-#include <string_view>
 
 #include "gb/file/file_system.h"
 #include "gb/file/local_file_protocol.h"
+#include "gb/file/local_path_encoding.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
@@ -24,10 +24,6 @@ using ::testing::ElementsAre;
 // where paths are taken as UTF-8.
 fs::path GetInvalidName() { return fs::path(std::string(1, '\xFF')); }
 
-fs::path ToFsPath(std::string_view path) {
-  return fs::path(std::u8string(path.begin(), path.end()));
-}
-
 TEST(GenLocalFilePathTest, CreateWithInvalidRootPath) {
   std::error_code error;
   const fs::path temp_path = fs::temp_directory_path(error);
@@ -40,7 +36,7 @@ TEST(GenLocalFilePathTest, CreateWithInvalidRootPath) {
 TEST(GenLocalFilePathTest, ListSkipsInvalidNames) {
   auto protocol = LocalFileProtocol::CreateTemp("gbtest");
   ASSERT_NE(protocol, nullptr);
-  const fs::path root_path = ToFsPath(protocol->GetRoot());
+  const fs::path root_path = internal::Utf8ToLocalPath(protocol->GetRoot());
   FileSystem file_system;
   ASSERT_TRUE(file_system.Register(std::move(protocol)));
   ASSERT_TRUE(file_system.WriteFile("file:/file", "12345"));

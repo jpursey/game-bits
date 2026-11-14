@@ -431,18 +431,18 @@ std::unique_ptr<LocalFileProtocol> LocalFileProtocol::CreateTemp(
                << error.message();
     return nullptr;
   }
-  const std::string temp_string = ToString(temp_path);
-  if (temp_string.empty()) {
+  const std::string temp_path_string = ToString(temp_path);
+  if (temp_path_string.empty()) {
     LOG(ERROR) << "Temp directory could not be converted to a UTF-8 path";
     return nullptr;
   }
 
-  return Create(
-      ContextBuilder()
-          .SetValue<std::string>(kKeyRoot, JoinPath(temp_string, temp_prefix))
-          .SetValue<bool>(kKeyUniqueRoot, true)
-          .SetValue<bool>(kKeyDeleteAtExit, true)
-          .Build());
+  return Create(ContextBuilder()
+                    .SetValue<std::string>(
+                        kKeyRoot, JoinPath(temp_path_string, temp_prefix))
+                    .SetValue<bool>(kKeyUniqueRoot, true)
+                    .SetValue<bool>(kKeyDeleteAtExit, true)
+                    .Build());
 }
 
 std::unique_ptr<LocalFileProtocol> LocalFileProtocol::CreateOsRoot() {

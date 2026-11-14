@@ -16,6 +16,7 @@
 #include "gb/base/win_platform.h"
 #include "gb/file/file_system.h"
 #include "gb/file/local_file_protocol.h"
+#include "gb/file/local_path_encoding.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
@@ -32,11 +33,6 @@ namespace fs = std::filesystem;
 using ::testing::ElementsAre;
 using ::testing::IsEmpty;
 
-// Converts a UTF-8 path, such as a protocol's root, to a std::filesystem path.
-fs::path ToFsPath(std::string_view path) {
-  return fs::path(std::u8string(path.begin(), path.end()));
-}
-
 constexpr int kFileSize = 100000;
 constexpr int kLockedOffset = kFileSize / 2;
 constexpr int kLockedSize = 1000;
@@ -48,7 +44,8 @@ class WinLocalFileProtocolTest : public ::testing::Test {
   void SetUp() override {
     auto protocol = LocalFileProtocol::CreateTemp("gbtest");
     ASSERT_NE(protocol, nullptr);
-    const fs::path file_path = ToFsPath(protocol->GetRoot()) / "file";
+    const fs::path file_path =
+        internal::Utf8ToLocalPath(protocol->GetRoot()) / "file";
     ASSERT_TRUE(file_system_.Register(std::move(protocol)));
     ASSERT_TRUE(
         file_system_.WriteFile("file:/file", std::string(kFileSize, 'x')));
@@ -132,7 +129,7 @@ class WinLocalFileAttributesTest : public ::testing::Test {
   void SetUp() override {
     auto protocol = LocalFileProtocol::CreateTemp("gbtest");
     ASSERT_NE(protocol, nullptr);
-    root_path_ = ToFsPath(protocol->GetRoot());
+    root_path_ = internal::Utf8ToLocalPath(protocol->GetRoot());
     ASSERT_TRUE(file_system_.Register(std::move(protocol)));
   }
 
@@ -152,7 +149,7 @@ class WinLocalFileAttributesTest : public ::testing::Test {
   }
 
   fs::path GetFullPath(std::string_view path) {
-    return root_path_ / fs::path(std::u8string(path.begin(), path.end()));
+    return root_path_ / internal::Utf8ToLocalPath(path);
   }
 
   // Creates a junction (a link to a folder, which needs no special privileges)
@@ -337,7 +334,7 @@ TEST(WinLocalFileSystemTest, MoveOpenFile) {
 TEST(WinLocalFileSystemTest, RecursiveDeleteFolderFailure) {
   auto protocol = LocalFileProtocol::CreateTemp("gbtest");
   ASSERT_NE(protocol, nullptr);
-  const fs::path root_path = ToFsPath(protocol->GetRoot());
+  const fs::path root_path = internal::Utf8ToLocalPath(protocol->GetRoot());
   FileSystem file_system;
   ASSERT_TRUE(file_system.Register(std::move(protocol)));
   ASSERT_TRUE(file_system.CreateFolder("file:/folder"));
@@ -371,7 +368,7 @@ TEST(WinLocalFilePathTest, CreateWithInvalidRootPath) {
 TEST(WinLocalFilePathTest, ListSkipsInvalidNames) {
   auto protocol = LocalFileProtocol::CreateTemp("gbtest");
   ASSERT_NE(protocol, nullptr);
-  const fs::path root_path = ToFsPath(protocol->GetRoot());
+  const fs::path root_path = internal::Utf8ToLocalPath(protocol->GetRoot());
   FileSystem file_system;
   ASSERT_TRUE(file_system.Register(std::move(protocol)));
   ASSERT_TRUE(file_system.WriteFile("file:/file", "12345"));
