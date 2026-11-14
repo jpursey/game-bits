@@ -23,23 +23,12 @@
 ## embeds the Game Bits manifest on Windows (see gb_embed_manifest).
 ###############################################################################
 
-# Clang's counterparts to the MSVC conversion warnings gb_set_target_properties
-# turns off, for clang and clang-cl. Most are off by default, but are listed so
-# that a newer clang turning one on doesn't fail the build in a third-party
-# header. -Wcharacter-conversion (between char8_t, char16_t, and char32_t) is
-# new in clang 21, so it is only turned off where clang has it.
+# -Wcharacter-conversion (between char8_t, char16_t, and char32_t) is new in
+# clang 21, so gb_set_target_properties only turns it off where clang has it.
+# The result is cached, so it is visible to projects that add Game Bits too.
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   include(CheckCXXCompilerFlag)
-  set(GB_CLANG_CONVERSION_OPTIONS
-    -Wno-shorten-64-to-32
-    -Wno-implicit-int-conversion
-    -Wno-implicit-float-conversion
-    -Wno-float-conversion
-  )
   check_cxx_compiler_flag(-Wcharacter-conversion GB_HAS_CHARACTER_CONVERSION)
-  if (GB_HAS_CHARACTER_CONVERSION)
-    list(APPEND GB_CLANG_CONVERSION_OPTIONS -Wno-character-conversion)
-  endif()
 endif()
 
 function(gb_set_target_properties NAME)
@@ -51,10 +40,21 @@ function(gb_set_target_properties NAME)
     gb_embed_manifest(${NAME})
   endif()
   # Implicit conversion warnings are off for every target that uses Game Bits,
-  # primarily for Abseil and other third-party headers.
+  # primarily for Abseil and other third-party headers. Clang's are the
+  # counterparts to MSVC's, for clang and clang-cl. Most are off by default, but
+  # are listed so that a newer clang turning one on doesn't fail the build in a
+  # third-party header.
   if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     target_compile_options(${NAME} PRIVATE -Wthread-safety)
-    target_compile_options(${NAME} PUBLIC ${GB_CLANG_CONVERSION_OPTIONS})
+    target_compile_options(${NAME} PUBLIC
+      -Wno-shorten-64-to-32
+      -Wno-implicit-int-conversion
+      -Wno-implicit-float-conversion
+      -Wno-float-conversion
+    )
+    if (GB_HAS_CHARACTER_CONVERSION)
+      target_compile_options(${NAME} PUBLIC -Wno-character-conversion)
+    endif()
   endif()
   if (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
     target_compile_options(${NAME} PUBLIC
