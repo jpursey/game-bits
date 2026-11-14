@@ -92,19 +92,27 @@ but the SDL modules, and 7 of about 940 test cases failed:
 - `CommonProtocolTest.ReadOnlyFile` (local files): the session ran as root,
   which ignores read-only permissions. It passes as an ordinary user.
 - `ProfilerMutexTest.ContendedUnlockIsCountAndWait`: reads a wait of 7996 ns
-  where it expects 8000 ± 2, apparently from converting between time and CPU
-  ticks at a different tick rate.
+  where it expects 8000 ± 2. CL4 found that Abseil's cycle clock rate is
+  measured at startup where the system doesn't report it, as in the cloud
+  session's VM: about 525 MHz, varying slightly from run to run. The test made
+  its waits by truncating 3 and 5 µs to whole cycles, so when the measured rate
+  came out just under 525 MHz each lost a cycle of about 1.9 ns. The tests now
+  expect the time of the whole cycles they record.
 - `RenderPassTest.DrawingAViewBeforeItsPassIsDrawnFails`: a death test that
-  doesn't die.
+  doesn't die. CL4 found it enabled render asserts before creating its render
+  system, whose constructor sets them from its debug option, turning them off
+  again. Nothing in that is Linux's, so it is expected to fail in a Windows
+  Debug build too (not yet run), and Windows CI only builds Release, where the
+  test is skipped. The test now enables them after.
 
 Where the behavior is genuinely the platform's (case, moving or deleting open
 files), the test moves to a `win_` test file, and what holds on every platform
 stays in the shared one. `LocalFileProtocol` converts paths with
 `local_path_encoding.h` rather than `std::filesystem`, implemented once for
 Windows (UTF-16) and once in `gen_` (bytes taken as UTF-8), so a path that
-isn't valid fails or is skipped on every platform. Its tests build an invalid
-name in each platform's own encoding, in the `win_` and `gen_` test files. The
-rest are investigated in their own CLs.
+isn't valid fails or is skipped on every platform. Its tests are shared, with
+`GetNonUtf8Name()` building a name in each platform's own encoding. The rest
+are investigated in their own CLs.
 
 ### CI
 
@@ -121,11 +129,10 @@ read-only test means something. It has the same triggers as the Windows job
   binaries: probably nothing in the test calls SDL. CL2 makes the question
   moot by leaving `gb_sdl` out where SDL2 isn't available.
 - The two investigated failures (profiler, render pass) are real bugs or test
-  assumptions, not something in the session. CL4 finds out.
-  - CL2 found the profiler failure is intermittent: 1 run in 5 on Linux, so
-    the test's result depends on something it doesn't control. If that is real
-    time, the test breaks the workflow's rule that time comes from something
-    the test controls, and CL4 fixes the test.
+  assumptions, not something in the session. CL4 found both are test bugs (see
+  Tests on Linux).
+  - CL2 found the profiler failure is intermittent: 1 run in 5 on Linux. It
+    doesn't depend on real time, but on the cycle clock's measured rate.
 
 ### Left for later
 
@@ -138,6 +145,9 @@ Each becomes a backlog item when this feature is complete:
   decision on where they come from.
 - clang-cl on Windows: the existing *clang-cl build* item, which this makes
   much smaller.
+- Render asserts are one setting for the whole program, which creating a
+  `RenderSystem` overwrites with its debug option, so a test or program that
+  enables them must do so after creating it.
 
 ## CLs
 
@@ -189,12 +199,13 @@ Depends on: CL2.
 - Standard checks.
 - `gb_file_test` passes on Linux (as an ordinary user) and on Windows.
 
-### CL4 [ ] profile, render: remaining Linux test failures
+### CL4 [x] profile, render: remaining Linux test failures
 
 Depends on: CL2.
 
 - Find and fix the cause of the profiler wait-time mismatch and the render
   death test. If either turns out to be a real bug, it may become its own CL.
+  Both are test bugs (see Tests on Linux), fixed here.
 
 **Verify**
 - Standard checks.

@@ -457,9 +457,12 @@ TEST_F(RenderPassTest, DrawingAViewBeforeItsPassIsDrawnFails) {
   if (!kRenderAssertsCompiled) {
     GTEST_SKIP() << "Render asserts are only compiled in Debug";
   }
+  CreatePassSystem();
+
+  // Creating the render system sets whether render asserts are enabled, so they
+  // are enabled here, after it.
   const bool was_enabled = IsRenderAssertEnabled();
   SetRenderAssertEnabled(true);
-  CreatePassSystem();
   CreateTexturedMaterial();
   ASSERT_TRUE(render_system_->BeginFrame());
   auto pass = CreateColorPass(0);
@@ -473,12 +476,12 @@ TEST_F(RenderPassTest, DrawingAViewBeforeItsPassIsDrawnFails) {
   draw_list.Draw();
   EXPECT_DEATH(render_system_->Draw(view.get(), draw_list), "in_frame_");
   render_system_->EndFrame();
-  SetRenderAssertEnabled(was_enabled);
 
   // From the next frame, it is drawn.
   ASSERT_TRUE(render_system_->BeginFrame());
   render_system_->Draw(view.get(), mesh_, material_, instance_data_.get());
   render_system_->EndFrame();
+  SetRenderAssertEnabled(was_enabled);
   ASSERT_THAT(state_.passes, SizeIs(2));
   EXPECT_THAT(state_.passes[0].draws, SizeIs(1));
   EXPECT_EQ(state_.invalid_call_count, 0);

@@ -38,10 +38,19 @@ class ProfilerMutexTest : public ::testing::Test {
     Profiler::RecordMutexWait(wait_cycles);
   }
 
-  // Returns the cycles of Abseil's cycle clock in `time`.
+  // Returns the whole cycles of Abseil's cycle clock in `time`.
   static int64_t ToCycles(absl::Duration time) {
     return static_cast<int64_t>(absl::ToDoubleSeconds(time) *
                                 absl::base_internal::CycleClock::Frequency());
+  }
+
+  // Returns the time `cycles` of Abseil's cycle clock take, in nanoseconds.
+  // ToCycles() drops part of a cycle, which can be a few nanoseconds, so a
+  // wait's expected time comes from its cycles, not the time they were made
+  // from.
+  static double ToNanoseconds(int64_t cycles) {
+    return static_cast<double>(cycles) * 1e9 /
+           absl::base_internal::CycleClock::Frequency();
   }
 };
 
@@ -1913,21 +1922,24 @@ int64_t SpinTicks(int64_t ticks) {
 TEST_F(ProfilerMutexTest, ContendedUnlockIsCountAndWait) {
   FakeProfilerCpu ticks;
   Profiler profiler({.fake_cpu = &ticks});
-  RecordMutexWait(ToCycles(absl::Microseconds(3)));
-  RecordMutexWait(ToCycles(absl::Microseconds(5)));
+  const int64_t first_cycles = ToCycles(absl::Microseconds(3));
+  const int64_t second_cycles = ToCycles(absl::Microseconds(5));
+  RecordMutexWait(first_cycles);
+  RecordMutexWait(second_cycles);
   EXPECT_EQ(profiler.GetCount("absl::Mutex"), 2);
   EXPECT_EQ(profiler.GetSelfTime("absl::Mutex"), absl::ZeroDuration());
   EXPECT_NEAR(absl::ToDoubleNanoseconds(profiler.GetWaitTime("absl::Mutex")),
-              8000, 2);
+              ToNanoseconds(first_cycles + second_cycles), 2);
 }
 
 TEST_F(ProfilerMutexTest, WaitIsOnTheUnlockingThread) {
   FakeProfilerCpu ticks;
   Profiler profiler({.fake_cpu = &ticks});
+  const int64_t wait_cycles = ToCycles(absl::Microseconds(4));
   {
     ProfiledThread thread(&profiler, "unlocker");
-    thread.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
-      RecordMutexWait(ToCycles(absl::Microseconds(4)));
+    thread.Run([wait_cycles](Profiler& profiler, FakeProfilerCpu& ticks) {
+      RecordMutexWait(wait_cycles);
     });
   }
 
@@ -1935,7 +1947,7 @@ TEST_F(ProfilerMutexTest, WaitIsOnTheUnlockingThread) {
   std::thread([] { RecordMutexWait(ToCycles(absl::Microseconds(1))); }).join();
   EXPECT_EQ(profiler.GetCount("absl::Mutex"), 1);
   EXPECT_NEAR(absl::ToDoubleNanoseconds(profiler.GetWaitTime("absl::Mutex")),
-              4000, 2);
+              ToNanoseconds(wait_cycles), 2);
 }
 
 // Other threads waited, so a frame's own time has no part of it, and it has no
