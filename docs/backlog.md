@@ -72,12 +72,36 @@ its version is pinned like every other dependency's:
 The API is close enough to 2.0.10 that little code should change. Check the
 examples and `templates/sdl` still build, and run render-check's scripts.
 
+## ImGui update
+
+- **Layers:** imgui, examples
+- **Size:** medium
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** ImGui's changelog (`docs/CHANGELOG.txt` in the ImGui
+  repository); `src/gb/imgui/CMakeLists.txt`
+
+ImGui's submodule is 1.84.1, from 2021. Update it to the current release. Its
+API has changed a lot since: keyboard and mouse input in `ImGuiIO`, the SDL
+backend (now `imgui_impl_sdl2`, beside `imgui_impl_sdl3`), and functions it has
+since removed, which matter as `gb_imgui` defines
+`IMGUI_DISABLE_OBSOLETE_FUNCTIONS`. ImGui is used by `gb_imgui`, `gb_imgui_sdl`,
+block-world, and render-check, which change with it.
+
+1.84 calls `memset` and `memcpy` on its own types that aren't trivially
+copyable, which newer clang's `-Wnontrivial-memcall` flags in its headers, so
+`gb_imgui` turns that warning off for every target that links it. Remove that
+if the new version no longer needs it.
+
+This changes the ImGui API that projects using `gb_imgui` see, so it needs a
+follow-up in each of them.
+
 ## SDL3
 
 - **Layers:** build, sdl, imgui, pilot, render, examples, templates
 - **Size:** medium
 - **Feature workflow:** yes
-- **Depends on:** SDL from source
+- **Depends on:** SDL from source, ImGui update
 - **Background:** SDL's migration guide (`docs/README-migration.md` in the SDL
   repository)
 
@@ -89,9 +113,8 @@ events report keyboard and mouse state). Game Bits uses SDL in `gb_sdl`,
 block-world, render-check, and `templates/sdl`.
 
 ImGui's submodule only has the SDL2 backend (`imgui_impl_sdl.cpp`), so this
-also updates ImGui to a version with `imgui_impl_sdl3`, which may change
-ImGui's own API for `gb_imgui`. Plan the order (ImGui, then SDL3 library by
-library) in the worklog.
+needs ImGui updated first, to a version with `imgui_impl_sdl3`. Plan the order
+of the libraries in the worklog.
 
 This changes what projects using `gb_sdl` see wherever they call SDL directly,
 so it needs a follow-up in each of them.

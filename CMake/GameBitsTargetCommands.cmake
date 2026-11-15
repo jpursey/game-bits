@@ -23,6 +23,14 @@
 ## embeds the Game Bits manifest on Windows (see gb_embed_manifest).
 ###############################################################################
 
+# -Wcharacter-conversion (between char8_t, char16_t, and char32_t) is new in
+# clang 21, so gb_set_target_properties only turns it off where clang has it.
+# The result is cached, so it is visible to projects that add Game Bits too.
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  include(CheckCXXCompilerFlag)
+  check_cxx_compiler_flag(-Wcharacter-conversion GB_HAS_CHARACTER_CONVERSION)
+endif()
+
 function(gb_set_target_properties NAME)
   if(DEFINED VS_FOLDER)
     set_target_properties(${NAME} PROPERTIES FOLDER ${VS_FOLDER})
@@ -31,12 +39,25 @@ function(gb_set_target_properties NAME)
   if (_type STREQUAL "EXECUTABLE")
     gb_embed_manifest(${NAME})
   endif()
+  # Implicit conversion warnings are off for every target that uses Game Bits,
+  # primarily for Abseil and other third-party headers. Clang's are the
+  # counterparts to MSVC's, for clang and clang-cl. Most are off by default, but
+  # are listed so that a newer clang turning one on doesn't fail the build in a
+  # third-party header.
   if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     target_compile_options(${NAME} PRIVATE -Wthread-safety)
+    target_compile_options(${NAME} PUBLIC
+      -Wno-shorten-64-to-32
+      -Wno-implicit-int-conversion
+      -Wno-implicit-float-conversion
+      -Wno-float-conversion
+    )
+    if (GB_HAS_CHARACTER_CONVERSION)
+      target_compile_options(${NAME} PUBLIC -Wno-character-conversion)
+    endif()
   endif()
   if (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
-    # These are primarily for Abseil
-    target_compile_options(${NAME} PUBLIC 
+    target_compile_options(${NAME} PUBLIC
       /wd4244 /wd4267 /wd4800  # 'type1' to 'type2', possible loss of data
     )
   endif()
