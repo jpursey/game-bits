@@ -167,10 +167,11 @@ these rules replace those for [Local sessions](#local-sessions):
 - Each CL is one PR against `main`. Once a CL is built, checked, and through
   the reviews [Working with the user](#working-with-the-user) calls for, the
   session commits it, pushes its branch, and opens the PR. The PR's title and
-  description are the CL's commit message, followed by how it was verified
-  and what each review found. Anything left for the user to check by hand goes
-  in a comment on the PR rather than its description, which becomes the commit
-  message on `main`, where it doesn't belong.
+  description are the CL's commit message: what the change is for, what it
+  ended up doing, and how it was verified. They become the commit message on
+  `main`, so what each review found is reported to the user in the session
+  instead, and anything left for the user to check by hand goes in a comment
+  on the PR.
 - Merging the PR is the user's approval. The session never merges, never
   pushes to `main`, and pushes only its own branches, only to open or update
   its PRs.
