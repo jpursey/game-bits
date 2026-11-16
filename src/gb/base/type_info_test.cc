@@ -109,6 +109,9 @@ TEST(TypeKeyTest, SetTypeName) {
 
 TEST(TypeKeyTest, SetTypeNameThreadAbuse) {
   struct TestType {};
+
+  // The name is set before the loops start, so "get" never sees it unset.
+  TypeKey::Get<TestType>()->SetTypeName("A");
   ThreadTester tester;
   tester.RunLoop(1, "set-a", []() {
     TypeKey::Get<TestType>()->SetTypeName("A");
