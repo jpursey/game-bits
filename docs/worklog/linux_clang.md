@@ -100,11 +100,11 @@ Two tests failed on Linux for reasons that weren't Linux's:
 
 ### CI
 
-`.github/workflows/cmake.yml` has a `build-linux` job beside the Windows one,
-with the same triggers. It configures with clang, builds Debug (so render
-asserts and death tests run), and runs ctest, as an ordinary user. It runs on
-`ubuntu-latest`, as the Windows jobs run on `windows-latest`, so a newer clang's
-warnings are fixed as they arise.
+`.github/workflows/cmake.yml` has `build-linux-debug` and `build-linux-release`
+jobs beside the Windows ones, with the same triggers. They configure with
+clang, build (Debug so render asserts and death tests run), and run ctest, as
+an ordinary user. They run on `ubuntu-latest`, as the Windows jobs run on
+`windows-latest`, so a newer clang's warnings are fixed as they arise.
 
 ### Developing on Linux
 

@@ -16,13 +16,22 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
-  GB_BUILD_TYPE: Release
-
+# Every job runs at once: build-windows-release, build-windows-debug,
+# build-block-world (Windows, Release), build-linux-debug, and
+# build-linux-release.
 jobs:
-  build:
+  build-windows:
+    name: build-windows-${{ matrix.config }}
     runs-on: windows-latest
+    strategy:
+      # One configuration failing doesn't cancel the others.
+      fail-fast: false
+      matrix:
+        include:
+          - config: release
+            build-type: Release
+          - config: debug
+            build-type: Debug
 
     steps:
     - uses: actions/checkout@v7
@@ -36,19 +45,26 @@ jobs:
         vulkan-components: Vulkan-Headers, Vulkan-Loader
         vulkan-use-cache: true
 
+    # Debug binaries link the debug CRT, which isn't on PATH even in a
+    # developer shell, so it is added from the toolset's redist directory.
     - name: Build and test Game Bits
       shell: cmd
       working-directory: ${{github.workspace}}
+      env:
+        GB_BUILD_TYPE: ${{ matrix.build-type }}
       run: |
         for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSPATH=%%i"
         call "%VSPATH%\VC\Auxiliary\Build\vcvars64.bat" || exit /b 1
+        if "%GB_BUILD_TYPE%"=="Debug" set "PATH=%VCToolsRedistDir%debug_nonredist\x64\Microsoft.VC143.DebugCRT;%PATH%"
         cmake -G Ninja -DCMAKE_BUILD_TYPE=%GB_BUILD_TYPE% -S . -B out/build/ci || exit /b 1
         cmake --build out/build/ci || exit /b 1
         ctest --test-dir out/build/ci --output-on-failure || exit /b 1
 
   # Block World builds its own copy of the Game Bits libraries it uses, so it
-  # runs as its own job, alongside the one above rather than after it.
+  # runs as its own job, alongside the ones above rather than after them. It
+  # builds only on Windows in Release.
   build-block-world:
+    name: build-block-world
     runs-on: windows-latest
 
     steps:
@@ -69,14 +85,24 @@ jobs:
       run: |
         for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSPATH=%%i"
         call "%VSPATH%\VC\Auxiliary\Build\vcvars64.bat" || exit /b 1
-        cmake -G Ninja -DCMAKE_BUILD_TYPE=%GB_BUILD_TYPE% -S examples/block-world -B examples/block-world/out/build/ci || exit /b 1
+        cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -S examples/block-world -B examples/block-world/out/build/ci || exit /b 1
         cmake --build examples/block-world/out/build/ci --target block_world || exit /b 1
 
-  # Linux builds every library but the SDL and Vulkan ones, with clang, in Debug
-  # so render asserts and death tests run. GitHub's runner is an ordinary user,
-  # so tests of read-only files mean something, which they don't as root.
+  # Linux builds every library but the SDL and Vulkan ones, with clang. Debug
+  # runs render asserts and death tests, and Release compiles asserts out, as
+  # the Windows release job does. GitHub's runner is an ordinary user, so tests
+  # of read-only files mean something, which they don't as root.
   build-linux:
+    name: build-linux-${{ matrix.config }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - config: debug
+            build-type: Debug
+          - config: release
+            build-type: Release
 
     steps:
     - uses: actions/checkout@v7
@@ -88,7 +114,9 @@ jobs:
 
     - name: Build and test Game Bits
       working-directory: ${{github.workspace}}
+      env:
+        GB_BUILD_TYPE: ${{ matrix.build-type }}
       run: |
-        cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -S . -B out/build/ci
+        cmake -G Ninja -DCMAKE_BUILD_TYPE=$GB_BUILD_TYPE -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -S . -B out/build/ci
         cmake --build out/build/ci
         ctest --test-dir out/build/ci --output-on-failure
