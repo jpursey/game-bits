@@ -5,11 +5,14 @@
 
 #include "gb/file/local_file_protocol.h"
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 
 #include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
+#include "absl/time/civil_time.h"
+#include "absl/time/time.h"
 #include "gb/base/context_builder.h"
 #include "gb/base/scoped_call.h"
 #include "gb/file/common_protocol_test.h"
@@ -360,6 +363,40 @@ TEST(LocalFileProtocolTest, ReadWhatIsAppendedAfterTheEnd) {
 
   EXPECT_EQ(file->ReadString(4), "def");
   EXPECT_TRUE(file->IsValid());
+}
+
+TEST(LocalFileProtocolTest, ModifiedTimes) {
+  auto protocol = LocalFileProtocol::CreateTemp("gbtest");
+  ASSERT_NE(protocol, nullptr);
+  const fs::path root_path = internal::Utf8ToLocalPath(protocol->GetRoot());
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(std::move(protocol)));
+  ASSERT_TRUE(file_system.CreateFolder("file:/folder"));
+  EXPECT_EQ(file_system.GetPathInfo("file:/folder").modified_time,
+            absl::InfinitePast());
+
+  // A new file's time is when it was written. The file system's clock can lag
+  // absl::Now() a little, and some file systems keep times only to 2 seconds.
+  const absl::Time before = absl::Now();
+  ASSERT_TRUE(file_system.WriteFile("file:/file", "abc"));
+  const absl::Time after = absl::Now();
+  const absl::Time written =
+      file_system.GetPathInfo("file:/file").modified_time;
+  EXPECT_GE(written, before - absl::Seconds(2));
+  EXPECT_LE(written, after + absl::Seconds(2));
+
+  // The operating system's time is reported exactly, and kept by a move.
+  const absl::Time time = absl::FromCivil(
+      absl::CivilSecond(2020, 2, 29, 12, 34, 56), absl::UTCTimeZone());
+  std::error_code error;
+  fs::last_write_time(root_path / "file",
+                      std::chrono::clock_cast<std::chrono::file_clock>(
+                          absl::ToChronoTime(time)),
+                      error);
+  ASSERT_FALSE(error) << error.message();
+  EXPECT_EQ(file_system.GetPathInfo("file:/file").modified_time, time);
+  ASSERT_TRUE(file_system.MoveFile("file:/file", "file:/moved"));
+  EXPECT_EQ(file_system.GetPathInfo("file:/moved").modified_time, time);
 }
 
 TEST(LocalFileProtocolTest, MoveChangesCase) {

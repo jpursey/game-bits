@@ -1101,26 +1101,6 @@ uppercase table of its own, and a folder can be made case-sensitive. A link
 under a rooted protocol that leads outside its root falls back to the path
 as written.
 
-## File modified times
-
-- **Layers:** gb_file
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Requested by:** OZ-3 *Modified times in oz3dsk dir*
-- **Background:** `PathInfo` in `file_types.h`, and `GetPathInfo()` in
-  `file_system.h`
-
-A file's last modified time, which a protocol may report as it reports
-attributes, and nothing has yet. `PathInfo` gains it (an `absl::Time`, or
-`absl::InfinitePast()` where the protocol has none). `LocalFileProtocol`
-reports it with `std::filesystem::last_write_time`, and `MemoryFileProtocol`
-keeps one per file, stamped when it is written, so tests can check it. A
-protocol whose times are coarser than `absl::Time` (a whole second, say)
-rounds as its files do. Times are only read: `FileSystem` has no call to set
-one, and a copy doesn't keep its source file's time, so a copied file's time
-is when it was written.
-
 ## File system errors as absl::Status
 
 - **Layers:** gb_file

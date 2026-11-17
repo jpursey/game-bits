@@ -10,6 +10,7 @@
 #include <memory>
 
 #include "absl/synchronization/mutex.h"
+#include "gb/base/clock.h"
 #include "gb/base/flags.h"
 #include "gb/base/string_util.h"
 #include "gb/file/file_protocol.h"
@@ -30,6 +31,11 @@ namespace gb {
 // changed while a file is open, and the open file keeps the access it was
 // opened with.
 //
+// Files keep their modified time to the nanosecond, from the clock passed to
+// the constructor. A file's time is set when it is created, reset by opening it
+// with FileFlag::kReset, or written to, and moving it or changing its
+// attributes keeps it.
+//
 // This class is thread-safe.
 class MemoryFileProtocol : public FileProtocol {
  public:
@@ -46,8 +52,10 @@ class MemoryFileProtocol : public FileProtocol {
   };
   using ReadOnlyFlags = Flags<ReadOnlyFlag>;
 
+  // `clock` gives files their modified times, and must outlive this.
   explicit MemoryFileProtocol(FileProtocolFlags flags = kDefaultFlags,
-                              ReadOnlyFlags read_only_flags = {});
+                              ReadOnlyFlags read_only_flags = {},
+                              Clock* clock = RealtimeClock::GetClock());
   ~MemoryFileProtocol() override;
 
   // Public overrides for FileProtocol.
@@ -90,6 +98,7 @@ class MemoryFileProtocol : public FileProtocol {
 
   const FileProtocolFlags flags_;
   const ReadOnlyFlags read_only_flags_;
+  Clock* const clock_;
 
   absl::Mutex mutex_;
   Nodes nodes_;

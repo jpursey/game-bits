@@ -5,6 +5,7 @@
 
 #include "gb/file/local_file_protocol.h"
 
+#include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <optional>
@@ -14,6 +15,7 @@
 #include "absl/strings/ascii.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/strip.h"
+#include "absl/time/time.h"
 #include "gb/base/context_builder.h"
 #include "gb/base/stdio_file.h"
 #include "gb/file/local_current_path.h"
@@ -548,6 +550,12 @@ PathInfo LocalFileProtocol::DoGetPathInfo(std::string_view protocol_name,
     }
     info.type = PathType::kFile;
     info.size = static_cast<int64_t>(size);
+    const fs::file_time_type modified_time =
+        fs::last_write_time(*full_path, error);
+    if (!error) {
+      info.modified_time = absl::FromChrono(
+          std::chrono::clock_cast<std::chrono::system_clock>(modified_time));
+    }
   } else {
     return {};
   }

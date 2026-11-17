@@ -6,6 +6,8 @@
 #include "gb/file/memory_file_protocol.h"
 
 #include "absl/strings/str_cat.h"
+#include "absl/time/time.h"
+#include "gb/base/fake_clock.h"
 #include "gb/file/common_protocol_test.h"
 #include "gb/file/file_system.h"
 #include "gb/file/raw_file.h"
@@ -276,6 +278,55 @@ TEST(MemoryFileProtocolTest, SetAttributesOnOpenFile) {
   ASSERT_TRUE(file_system.ReadFile("mem:/file", &contents));
   EXPECT_EQ(contents, "12345");
   EXPECT_EQ(file_system.OpenFile("mem:/file", kWriteFileFlags), nullptr);
+}
+
+TEST(MemoryFileProtocolTest, ModifiedTimes) {
+  FakeClock clock;
+  const absl::Time created = absl::FromUnixNanos(1'000'000'000'123);
+  clock.SetTime(created);
+  FileSystem file_system;
+  ASSERT_TRUE(file_system.Register(std::make_unique<MemoryFileProtocol>(
+      MemoryFileProtocol::kDefaultFlags, MemoryFileProtocol::ReadOnlyFlags{},
+      &clock)));
+  ASSERT_TRUE(file_system.CreateFolder("mem:/folder"));
+  ASSERT_TRUE(file_system.WriteFile("mem:/file", "12345"));
+  EXPECT_EQ(file_system.GetPathInfo("mem:/file").modified_time, created);
+  EXPECT_EQ(file_system.GetPathInfo("mem:/folder").modified_time,
+            absl::InfinitePast());
+  EXPECT_EQ(file_system.GetPathInfo("mem:/").modified_time,
+            absl::InfinitePast());
+
+  // Reading, opening for writing, and changing attributes don't change it.
+  clock.AdvanceTime(absl::Seconds(10));
+  std::string contents;
+  ASSERT_TRUE(file_system.ReadFile("mem:/file", &contents));
+  ASSERT_TRUE(file_system.SetAttributes("mem:/file", FileAttribute::kHidden));
+  auto file = file_system.OpenFile("mem:/file", kWriteFileFlags);
+  ASSERT_NE(file, nullptr);
+  EXPECT_EQ(file_system.GetPathInfo("mem:/file").modified_time, created);
+
+  // Writing does, while the file is open.
+  clock.AdvanceTime(absl::Seconds(10));
+  const absl::Time written = clock.GetTime();
+  ASSERT_EQ(file->WriteString("abc"), 3);
+  EXPECT_EQ(file_system.GetPathInfo("mem:/file").modified_time, written);
+  file.reset();
+
+  // So does resetting it, without writing.
+  clock.AdvanceTime(absl::Seconds(10));
+  const absl::Time reset = clock.GetTime();
+  ASSERT_NE(
+      file_system.OpenFile("mem:/file", {FileFlag::kWrite, FileFlag::kReset}),
+      nullptr);
+  EXPECT_EQ(file_system.GetPathInfo("mem:/file").modified_time, reset);
+
+  // A moved file keeps its time, and a copy's is when it was written.
+  clock.AdvanceTime(absl::Seconds(10));
+  ASSERT_TRUE(file_system.MoveFile("mem:/file", "mem:/moved"));
+  ASSERT_TRUE(file_system.CopyFile("mem:/moved", "mem:/copy"));
+  EXPECT_EQ(file_system.GetPathInfo("mem:/moved").modified_time, reset);
+  EXPECT_EQ(file_system.GetPathInfo("mem:/copy").modified_time,
+            clock.GetTime());
 }
 
 TEST(MemoryFileProtocolTest, RelativePathsAreRejected) {

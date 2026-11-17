@@ -223,7 +223,8 @@ class FileProtocol {
   // FileProtocolFlag::kInfo (which most should try to do). If implemented, it
   // must return PathInfo{PathType::kFolder} for any valid root path (generally
   // the path "/"), which has no attributes. The attributes it returns must all
-  // be in GetAttributeFlags().
+  // be in GetAttributeFlags(). A file's modified time is when it was last
+  // written, or absl::InfinitePast() if the protocol doesn't keep times.
   //
   // If the path is inaccessible, this should return {}.
   virtual PathInfo DoGetPathInfo(std::string_view protocol_name,

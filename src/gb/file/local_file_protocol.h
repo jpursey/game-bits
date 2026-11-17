@@ -48,6 +48,12 @@ namespace gb {
 // system. A link reports and sets the attributes of what it links to, and a
 // root folder (the protocol's, or a drive's) has none.
 //
+// Files have the operating system's modified times, to the precision its file
+// system keeps, and a link reports the time of the file it links to. A copy
+// within the protocol is the operating system's copy, which keeps the source
+// file's time on Windows, and elsewhere gives the copy the time it was
+// written.
+//
 // This class is thread-safe.
 class LocalFileProtocol : public FileProtocol {
  public:
