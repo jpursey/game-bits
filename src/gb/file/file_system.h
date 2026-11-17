@@ -198,8 +198,8 @@ class FileSystem final {
   // FileAttribute::kReadOnly). If the attributes can't be set, this fails with
   // the contents already copied.
   //
-  // The copy's modified time (see PathInfo) is when it was written, unless the
-  // protocol's own copy keeps the source's (see LocalFileProtocol).
+  // The copy's modified time (see PathInfo) is when it was written, not the
+  // source's.
   bool CopyFile(std::string_view from_path, std::string_view to_path);
 
   // Moves a folder, with all of its files and subfolders, to a new path.

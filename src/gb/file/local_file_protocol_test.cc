@@ -395,6 +395,18 @@ TEST(LocalFileProtocolTest, ModifiedTimes) {
   EXPECT_EQ(file_system.GetPathInfo("file:/file").modified_time, time);
   ASSERT_TRUE(file_system.MoveFile("file:/file", "file:/moved"));
   EXPECT_EQ(file_system.GetPathInfo("file:/moved").modified_time, time);
+
+  // A copy's time is when it was written, even of a read-only file.
+  ASSERT_TRUE(
+      file_system.SetAttributes("file:/moved", FileAttribute::kReadOnly));
+  const absl::Time before_copy = absl::Now();
+  ASSERT_TRUE(file_system.CopyFile("file:/moved", "file:/copy"));
+  const absl::Time after_copy = absl::Now();
+  const absl::Time copied = file_system.GetPathInfo("file:/copy").modified_time;
+  EXPECT_GE(copied, before_copy - absl::Seconds(2));
+  EXPECT_LE(copied, after_copy + absl::Seconds(2));
+  EXPECT_TRUE(file_system.GetPathInfo("file:/copy")
+                  .attributes.IsSet(FileAttribute::kReadOnly));
 }
 
 TEST(LocalFileProtocolTest, MoveChangesCase) {

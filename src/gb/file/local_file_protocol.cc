@@ -663,8 +663,15 @@ bool LocalFileProtocol::DoCopyFile(std::string_view from_protocol_name,
     return fs::is_regular_file(*full_from_path, error);
   }
 
-  return fs::copy_file(*full_from_path, *full_to_path,
-                       fs::copy_options::overwrite_existing, error);
+  if (!fs::copy_file(*full_from_path, *full_to_path,
+                     fs::copy_options::overwrite_existing, error)) {
+    return false;
+  }
+
+  // Windows' copy keeps the source's time, but a copy's time is when it was
+  // written. The copy is made either way, so failing to set it isn't a failure.
+  fs::last_write_time(*full_to_path, fs::file_time_type::clock::now(), error);
+  return true;
 }
 
 bool LocalFileProtocol::DoDeleteFile(std::string_view protocol_name,

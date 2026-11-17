@@ -327,7 +327,7 @@ class FileProtocol {
   // Copy file should replace any existing file at to_path, but should fail if
   // to_path refers to a folder, or the parent of to_path is not the root or an
   // existing folder. The copy should have the attributes of the file at
-  // from_path.
+  // from_path, and a modified time of when it was written, not the source's.
   //
   // CopyFile is only called if FileProtocolFlag::kFileCreate is supported. The
   // protocol is responsible for all further validation.
