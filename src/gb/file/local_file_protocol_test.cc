@@ -11,7 +11,6 @@
 
 #include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
-#include "absl/time/civil_time.h"
 #include "absl/time/time.h"
 #include "gb/base/context_builder.h"
 #include "gb/base/scoped_call.h"
@@ -386,8 +385,7 @@ TEST(LocalFileProtocolTest, ModifiedTimes) {
   EXPECT_LE(written, after + absl::Seconds(2));
 
   // The operating system's time is reported exactly, and kept by a move.
-  const absl::Time time = absl::FromCivil(
-      absl::CivilSecond(2020, 2, 29, 12, 34, 56), absl::UTCTimeZone());
+  const absl::Time time = absl::FromUnixSeconds(1582979696);  // 2020-02-29
   std::error_code error;
   fs::last_write_time(root_path / "file",
                       std::chrono::clock_cast<std::chrono::file_clock>(

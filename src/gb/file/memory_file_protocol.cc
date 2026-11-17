@@ -21,7 +21,6 @@ struct MemoryFileProtocol::Node final : WeakScope<MemoryFileProtocol::Node> {
       : WeakScope<Node>(this), type(type), open(false), size(0) {}
   ~Node() { InvalidateWeakPtrs(); }
 
-  // A file's modified time, kept to the nanosecond.
   absl::Time GetModifiedTime() const {
     return absl::FromUnixNanos(modified_time_ns);
   }

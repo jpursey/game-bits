@@ -143,14 +143,6 @@ inline constexpr FileAttributes kAllFileAttributes = {
 };
 
 struct PathInfo {
-  PathInfo() = default;
-  PathInfo(PathType type, int64_t size = 0, FileAttributes attributes = {},
-           absl::Time modified_time = absl::InfinitePast())
-      : type(type),
-        size(size),
-        attributes(attributes),
-        modified_time(modified_time) {}
-
   PathType type = PathType::kInvalid;  // Type of path.
   int64_t size = 0;                    // Set only for PathType::kFile.
   FileAttributes attributes;           // Only attributes the protocol supports.
