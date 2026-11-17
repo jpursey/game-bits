@@ -1123,6 +1123,33 @@ file, stamped when it is written, so copies between them keep times in tests.
 A protocol whose times are coarser than `absl::Time` (a whole second, say)
 rounds as its files do.
 
+## File system errors as absl::Status
+
+- **Layers:** gb_file
+- **Size:** large
+- **Feature workflow:** yes
+- **Depends on:** nothing
+- **Requested by:** OZ-3 *Disk tool failure reasons*
+- **Background:** `file_system.h`, `file_protocol.h`, `raw_file.h`, and
+  `file.h`
+
+`FileSystem`'s calls, and the `FileProtocol` and `RawFile` calls behind them,
+say only whether they failed (`bool`, an empty list, a `PathInfo` of
+`kInvalid`, a null `File`, or a short count), so a caller can't tell a missing
+file from a read-only one, a full disk, or a broken one, and can't pass the
+reason on. Each call that can fail returns an `absl::Status` instead (or an
+`absl::StatusOr` of what it returns now), with the code saying what kind of
+failure it was (`kNotFound`, `kAlreadyExists`, `kPermissionDenied`,
+`kResourceExhausted`, ...) and the message saying why, as the protocol has it.
+A protocol's `Do` calls return the status, so a protocol of a project's own
+(such as one over a disk image) can give its own reasons, and
+`LocalFileProtocol` turns the `std::error_code` it already gets into one.
+`RawFile`'s reads and writes keep their counts, with the failure behind them
+available, so a short read or write can say why. This changes every caller of
+`FileSystem`, in Game Bits and in every project, so the design settles how
+callers move over, such as in steps by call, and each project adds its own
+follow-up.
+
 ## Local moves that never replace
 
 - **Layers:** gb_file
