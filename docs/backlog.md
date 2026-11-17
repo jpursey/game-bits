@@ -155,9 +155,10 @@ than Windows': fibers are unsupported, so the fiber job system isn't
 available, threads aren't named, and the CPU topology isn't known, so threads
 can't be pinned to cores. Linux can do all of them (`ucontext` or a small
 context switch for fibers, `pthread_setname_np`, `/sys/devices/system/cpu` and
-`pthread_setaffinity_np`). This needs a file name prefix for Linux, alongside
-`win_` and `gen_`, and the build choosing it on Linux, with its tests named the
-same way.
+`pthread_setaffinity_np`). The workflow's `posix_` prefix is for what POSIX
+alone provides, so these, which are Linux's own, need one of their own beside
+it (such as `linux_`), and the build choosing it on Linux, with its tests named
+the same way.
 
 ## flatc from source on Windows
 
