@@ -7,6 +7,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <optional>
 
 #include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
@@ -372,17 +373,18 @@ TEST(LocalFileProtocolTest, ModifiedTimes) {
   ASSERT_TRUE(file_system.Register(std::move(protocol)));
   ASSERT_TRUE(file_system.CreateFolder("file:/folder"));
   EXPECT_EQ(file_system.GetPathInfo("file:/folder").modified_time,
-            absl::InfinitePast());
+            std::nullopt);
 
   // A new file's time is when it was written. The file system's clock can lag
   // absl::Now() a little, and some file systems keep times only to 2 seconds.
   const absl::Time before = absl::Now();
   ASSERT_TRUE(file_system.WriteFile("file:/file", "abc"));
   const absl::Time after = absl::Now();
-  const absl::Time written =
+  const std::optional<absl::Time> written =
       file_system.GetPathInfo("file:/file").modified_time;
-  EXPECT_GE(written, before - absl::Seconds(2));
-  EXPECT_LE(written, after + absl::Seconds(2));
+  ASSERT_TRUE(written.has_value());
+  EXPECT_GE(*written, before - absl::Seconds(2));
+  EXPECT_LE(*written, after + absl::Seconds(2));
 
   // The operating system's time is reported exactly, and kept by a move.
   const absl::Time time = absl::FromUnixSeconds(1582979696);  // 2020-02-29
@@ -400,9 +402,11 @@ TEST(LocalFileProtocolTest, ModifiedTimes) {
   const absl::Time before_copy = absl::Now();
   ASSERT_TRUE(file_system.CopyFile("file:/moved", "file:/copy"));
   const absl::Time after_copy = absl::Now();
-  const absl::Time copied = file_system.GetPathInfo("file:/copy").modified_time;
-  EXPECT_GE(copied, before_copy - absl::Seconds(2));
-  EXPECT_LE(copied, after_copy + absl::Seconds(2));
+  const std::optional<absl::Time> copied =
+      file_system.GetPathInfo("file:/copy").modified_time;
+  ASSERT_TRUE(copied.has_value());
+  EXPECT_GE(*copied, before_copy - absl::Seconds(2));
+  EXPECT_LE(*copied, after_copy + absl::Seconds(2));
   EXPECT_TRUE(file_system.GetPathInfo("file:/copy")
                   .attributes.IsSet(FileAttribute::kReadOnly));
 }

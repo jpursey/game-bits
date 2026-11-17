@@ -5,6 +5,8 @@
 
 #include "gb/file/memory_file_protocol.h"
 
+#include <optional>
+
 #include "absl/strings/str_cat.h"
 #include "absl/time/time.h"
 #include "gb/base/fake_clock.h"
@@ -291,10 +293,8 @@ TEST(MemoryFileProtocolTest, ModifiedTimes) {
   ASSERT_TRUE(file_system.CreateFolder("mem:/folder"));
   ASSERT_TRUE(file_system.WriteFile("mem:/file", "12345"));
   EXPECT_EQ(file_system.GetPathInfo("mem:/file").modified_time, created);
-  EXPECT_EQ(file_system.GetPathInfo("mem:/folder").modified_time,
-            absl::InfinitePast());
-  EXPECT_EQ(file_system.GetPathInfo("mem:/").modified_time,
-            absl::InfinitePast());
+  EXPECT_EQ(file_system.GetPathInfo("mem:/folder").modified_time, std::nullopt);
+  EXPECT_EQ(file_system.GetPathInfo("mem:/").modified_time, std::nullopt);
 
   // Reading, opening for writing, writing nothing, and changing attributes
   // don't change it.

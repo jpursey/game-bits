@@ -8,6 +8,7 @@
 
 #include <stdint.h>
 
+#include <optional>
 #include <string_view>
 
 #include "absl/time/time.h"
@@ -148,9 +149,9 @@ struct PathInfo {
   FileAttributes attributes;           // Only attributes the protocol supports.
 
   // When the file was last written, to the precision the protocol keeps. This
-  // is set only for PathType::kFile, and is absl::InfinitePast() for a
-  // protocol that doesn't keep times, or if the time can't be read.
-  absl::Time modified_time = absl::InfinitePast();
+  // is set only for PathType::kFile, and not if the protocol doesn't keep
+  // times or the time can't be read.
+  std::optional<absl::Time> modified_time;
 };
 
 }  // namespace gb
