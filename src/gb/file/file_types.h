@@ -149,7 +149,7 @@ struct PathInfo {
 
   // When the file was last written, to the precision the protocol keeps. This
   // is set only for PathType::kFile, and is absl::InfinitePast() for a
-  // protocol that doesn't keep times.
+  // protocol that doesn't keep times, or if the time can't be read.
   absl::Time modified_time = absl::InfinitePast();
 };
 

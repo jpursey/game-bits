@@ -106,7 +106,9 @@ int64_t MemoryFileProtocol::MemoryFile::Write(const void* buffer,
     node->size = position_ + size;
   }
   std::memcpy(node->contents.data() + position_, buffer, size);
-  node->SetModifiedTime(clock_->Now());
+  if (size > 0) {
+    node->SetModifiedTime(clock_->Now());
+  }
   position_ += size;
   return size;
 }

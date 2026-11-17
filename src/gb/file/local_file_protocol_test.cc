@@ -5,7 +5,6 @@
 
 #include "gb/file/local_file_protocol.h"
 
-#include <chrono>
 #include <filesystem>
 #include <fstream>
 
@@ -16,6 +15,7 @@
 #include "gb/base/scoped_call.h"
 #include "gb/file/common_protocol_test.h"
 #include "gb/file/file_system.h"
+#include "gb/file/local_file_time.h"
 #include "gb/file/local_path_encoding.h"
 #include "gb/file/path.h"
 #include "gb/file/raw_file.h"
@@ -387,9 +387,7 @@ TEST(LocalFileProtocolTest, ModifiedTimes) {
   // The operating system's time is reported exactly, and kept by a move.
   const absl::Time time = absl::FromUnixSeconds(1582979696);  // 2020-02-29
   std::error_code error;
-  fs::last_write_time(root_path / "file",
-                      std::chrono::clock_cast<std::chrono::file_clock>(
-                          absl::ToChronoTime(time)),
+  fs::last_write_time(root_path / "file", internal::ToLocalFileTime(time),
                       error);
   ASSERT_FALSE(error) << error.message();
   EXPECT_EQ(file_system.GetPathInfo("file:/file").modified_time, time);

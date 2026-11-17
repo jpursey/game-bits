@@ -296,13 +296,15 @@ TEST(MemoryFileProtocolTest, ModifiedTimes) {
   EXPECT_EQ(file_system.GetPathInfo("mem:/").modified_time,
             absl::InfinitePast());
 
-  // Reading, opening for writing, and changing attributes don't change it.
+  // Reading, opening for writing, writing nothing, and changing attributes
+  // don't change it.
   clock.AdvanceTime(absl::Seconds(10));
   std::string contents;
   ASSERT_TRUE(file_system.ReadFile("mem:/file", &contents));
   ASSERT_TRUE(file_system.SetAttributes("mem:/file", FileAttribute::kHidden));
   auto file = file_system.OpenFile("mem:/file", kWriteFileFlags);
   ASSERT_NE(file, nullptr);
+  ASSERT_EQ(file->Write(contents.data(), 0), 0);
   EXPECT_EQ(file_system.GetPathInfo("mem:/file").modified_time, created);
 
   // Writing does, while the file is open.

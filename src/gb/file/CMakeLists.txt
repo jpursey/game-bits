@@ -7,6 +7,7 @@ if (WIN32)
   set(gb_file_internal_SOURCE
     win_local_current_path.cc
     win_local_file_attributes.cc
+    win_local_file_time.cc
     win_local_path_encoding.cc
   )
   set(gb_file_internal_TEST_SOURCE
@@ -18,6 +19,7 @@ else()
   set(gb_file_internal_SOURCE
     gen_local_current_path.cc
     gen_local_file_attributes.cc
+    gen_local_file_time.cc
     gen_local_path_encoding.cc
   )
 endif()
@@ -32,6 +34,7 @@ set(gb_file_SOURCE
   file_types.h
   local_current_path.h
   local_file_attributes.h
+  local_file_time.h
   local_file_protocol.cc local_file_protocol.h
   local_path_encoding.h
   memory_file_protocol.cc memory_file_protocol.h
