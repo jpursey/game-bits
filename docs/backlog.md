@@ -1107,21 +1107,19 @@ as written.
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** nothing
-- **Requested by:** OZ-3 *File times in disk copies*
-- **Background:** `PathInfo` in `file_types.h`, and `CopyFile()` and
-  `SetAttributes()` in `file_system.h`
+- **Requested by:** OZ-3 *Modified times in oz3dsk dir*
+- **Background:** `PathInfo` in `file_types.h`, and `GetPathInfo()` in
+  `file_system.h`
 
-A file's last modified time, which a protocol may support as it supports
+A file's last modified time, which a protocol may report as it reports
 attributes, and nothing has yet. `PathInfo` gains it (an `absl::Time`, or
-`absl::InfinitePast()` where the protocol has none), and `FileSystem` gains a
-call to set it, refused by a protocol without times. A copy keeps its source
-file's time where both protocols support times, as it keeps the attributes
-both support, set once the copy is written and closed, so writing it doesn't
-replace the time. `LocalFileProtocol` reports and sets it with
-`std::filesystem::last_write_time`, and `MemoryFileProtocol` keeps one per
-file, stamped when it is written, so copies between them keep times in tests.
-A protocol whose times are coarser than `absl::Time` (a whole second, say)
-rounds as its files do.
+`absl::InfinitePast()` where the protocol has none). `LocalFileProtocol`
+reports it with `std::filesystem::last_write_time`, and `MemoryFileProtocol`
+keeps one per file, stamped when it is written, so tests can check it. A
+protocol whose times are coarser than `absl::Time` (a whole second, say)
+rounds as its files do. Times are only read: `FileSystem` has no call to set
+one, and a copy doesn't keep its source file's time, so a copied file's time
+is when it was written.
 
 ## File system errors as absl::Status
 
