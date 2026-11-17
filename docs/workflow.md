@@ -314,8 +314,9 @@ Beyond the Google C++ style guide
   platform check) around code in an otherwise portable file. Put what differs
   behind a small platform independent interface in its own header, and
   implement it once per platform, each in a file named for its platform: `win_`
-  for Windows, and `gen_` for a generic one on the standard library alone, for
-  any platform without its own. The build picks which file to compile.
+  for Windows, `posix_` for POSIX systems such as Linux and macOS, and `gen_`
+  for a generic one on the standard library alone, for any platform without
+  its own. The build picks which file to compile.
   Platform-specific tests are named the same way (`win_thread_test.cc`). Game
   Bits' `gb/thread/thread.h` and `gb/base/stdio_file.h` work this way.
   - Windows headers (`<windows.h>` and the rest of the Windows SDK) define
