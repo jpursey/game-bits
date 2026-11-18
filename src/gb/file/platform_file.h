@@ -42,6 +42,14 @@ std::filesystem::path Utf8ToLocalPath(std::string_view path);
 std::filesystem::path GetNonUtf8Name();
 
 //------------------------------------------------------------------------------
+// Allowed names
+//------------------------------------------------------------------------------
+
+// Returns true if the operating system allows every name in the UTF-8 `path`,
+// with '/' separators, as the name of a file or folder.
+bool IsAllowedLocalPath(std::string_view path);
+
+//------------------------------------------------------------------------------
 // Current path
 //------------------------------------------------------------------------------
 

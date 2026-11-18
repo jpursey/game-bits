@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "absl/strings/ascii.h"
@@ -29,6 +30,7 @@ namespace {
 
 namespace fs = std::filesystem;
 
+using ::testing::ElementsAre;
 using ::testing::IsEmpty;
 
 constexpr int kFileSize = 100000;
@@ -258,6 +260,106 @@ TEST_F(WinLocalFileAttributesTest, LinkHasTargetAttributes) {
   EXPECT_EQ(file_system_.GetPathInfo("file:/target").attributes,
             FileAttributes(FileAttribute::kHidden));
   EXPECT_EQ(GetWindowsAttributes("link"), link_attributes);
+}
+
+//------------------------------------------------------------------------------
+// Names Windows opens as devices are neither files nor folders.
+//------------------------------------------------------------------------------
+
+class WinLocalFileDeviceTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    auto protocol = LocalFileProtocol::CreateTemp("gbtest");
+    ASSERT_NE(protocol, nullptr);
+    root_path_ = internal::Utf8ToLocalPath(protocol->GetRoot());
+    ASSERT_TRUE(file_system_.Register(std::move(protocol)));
+  }
+
+  // Removes what the test created with literal paths, last created first,
+  // which the protocol can't delete when it deletes its root.
+  void TearDown() override {
+    for (auto it = literal_paths_.rbegin(); it != literal_paths_.rend(); ++it) {
+      if (!::DeleteFileW(it->c_str())) {
+        ::RemoveDirectoryW(it->c_str());
+      }
+    }
+  }
+
+  // Creates a file or folder at `path` under the root with a "\\?\" prefix,
+  // which Windows takes as it is, so a device name names a file or folder.
+  void CreateLiteralFile(std::string_view path);
+  void CreateLiteralFolder(std::string_view path);
+
+  std::wstring GetLiteralPath(std::string_view path) {
+    return L"\\\\?\\" + (root_path_ / internal::Utf8ToLocalPath(path))
+                            .make_preferred()
+                            .wstring();
+  }
+
+  FileSystem file_system_;
+  fs::path root_path_;
+  std::vector<std::wstring> literal_paths_;
+};
+
+void WinLocalFileDeviceTest::CreateLiteralFile(std::string_view path) {
+  std::wstring literal_path = GetLiteralPath(path);
+  const HANDLE handle =
+      ::CreateFileW(literal_path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
+                    FILE_ATTRIBUTE_NORMAL, nullptr);
+  ASSERT_NE(handle, INVALID_HANDLE_VALUE) << GetWindowsError();
+  ::CloseHandle(handle);
+  literal_paths_.push_back(std::move(literal_path));
+}
+
+void WinLocalFileDeviceTest::CreateLiteralFolder(std::string_view path) {
+  std::wstring literal_path = GetLiteralPath(path);
+  ASSERT_TRUE(::CreateDirectoryW(literal_path.c_str(), nullptr))
+      << GetWindowsError();
+  literal_paths_.push_back(std::move(literal_path));
+}
+
+TEST_F(WinLocalFileDeviceTest, DeviceNamesAreInvalid) {
+  for (std::string_view name :
+       {"CON",         "con",      "Prn",     "aux",        "NUL",
+        "com0",        "COM9",     "lpt1",    "LPT9",       "COM\xC2\xB9",
+        "lpt\xC2\xB3", "conin$",   "CONOUT$", "nul.txt",    "Aux.tar.gz",
+        "con ",        "con .txt", "con.",    "folder/con", "folder/nul.txt",
+        "con/file"}) {
+    SCOPED_TRACE(name);
+    const std::string path = absl::StrCat("file:/", name);
+    EXPECT_EQ(file_system_.GetPathInfo(path).type, PathType::kInvalid);
+    EXPECT_FALSE(file_system_.WriteFile(path, "file"));
+    std::string contents;
+    EXPECT_FALSE(file_system_.ReadFile(path, &contents));
+    EXPECT_EQ(file_system_.OpenFile(path, kReadFileFlags), nullptr);
+    EXPECT_FALSE(file_system_.CreateFolder(path, FolderMode::kRecursive));
+  }
+
+  // A root can't be a device either.
+  EXPECT_EQ(LocalFileProtocol::Create(root_path_ / "nul"), nullptr);
+}
+
+TEST_F(WinLocalFileDeviceTest, OtherNamesAreFiles) {
+  for (std::string_view name : {"cons", "xcon", "con_x", "com", "com10", "lpta",
+                                ".con", "a.con", "conin"}) {
+    SCOPED_TRACE(name);
+    const std::string path = absl::StrCat("file:/", name);
+    EXPECT_TRUE(file_system_.WriteFile(path, "file"));
+    EXPECT_EQ(file_system_.GetPathInfo(path).type, PathType::kFile);
+  }
+}
+
+TEST_F(WinLocalFileDeviceTest, ListSkipsDeviceNames) {
+  // A literal path creates a file or folder with any name, as can Windows 11
+  // for a name with an extension.
+  ASSERT_NO_FATAL_FAILURE(CreateLiteralFile("con.txt"));
+  ASSERT_NO_FATAL_FAILURE(CreateLiteralFolder("nul"));
+  ASSERT_NO_FATAL_FAILURE(CreateLiteralFile("nul/file"));
+  ASSERT_TRUE(file_system_.WriteFile("file:/file", "file"));
+
+  EXPECT_THAT(file_system_.List("file:/"), ElementsAre("file:/file"));
+  EXPECT_THAT(file_system_.List("file:/", FolderMode::kRecursive),
+              ElementsAre("file:/file"));
 }
 
 TEST(WinLocalFileProtocolOsRootTest, DriveFolders) {

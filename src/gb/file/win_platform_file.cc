@@ -6,9 +6,14 @@
 #include <direct.h>
 
 #include <string>
+#include <string_view>
 
+#include "absl/algorithm/container.h"
+#include "absl/base/no_destructor.h"
+#include "absl/strings/str_split.h"
 #include "gb/base/unicode.h"
 #include "gb/file/platform_file.h"
+#include "re2/re2.h"
 
 // MUST be last, as windows pollutes the global namespace with many macros.
 #define WIN32_LEAN_AND_MEAN
@@ -25,6 +30,17 @@ namespace fs = std::filesystem;
 // loads the time zone database to look up leap seconds.
 constexpr absl::Duration kFileTimeTick = absl::Nanoseconds(100);
 constexpr absl::Time kFileTimeEpoch = absl::FromUnixSeconds(-11644473600);
+
+// Returns true if Windows opens a file or folder named `name` as a device: if,
+// in any case, its part before the first '.' or ':', less trailing spaces, is a
+// device name. Windows 11 no longer reads a name with an extension as a device,
+// but earlier versions do, so it is one here on every version.
+bool IsDeviceName(std::string_view name) {
+  // COM and LPT ports are numbered with a digit, or a superscript 1, 2, or 3.
+  static const absl::NoDestructor<RE2> s_device_name(
+      R"((?is)(con|prn|aux|nul|conin\$|conout\$|(com|lpt)[0-9\x{B9}\x{B2}\x{B3}]) *([.:].*)?)");
+  return RE2::FullMatch(name, *s_device_name);
+}
 
 // Opens the file or folder at `path`, following links, with `access`.
 HANDLE OpenPath(const fs::path& path, DWORD access) {
@@ -64,6 +80,17 @@ fs::path Utf8ToLocalPath(std::string_view path) {
 // Names are UTF-16 code units that aren't checked, so a lone surrogate is
 // accepted.
 fs::path GetNonUtf8Name() { return fs::path(std::wstring(1, wchar_t{0xD800})); }
+
+//------------------------------------------------------------------------------
+// Allowed names
+//
+// A name Windows opens as a device rather than as a file or folder isn't
+// allowed.
+//------------------------------------------------------------------------------
+
+bool IsAllowedLocalPath(std::string_view path) {
+  return absl::c_none_of(absl::StrSplit(path, '/'), IsDeviceName);
+}
 
 //------------------------------------------------------------------------------
 // Current path

@@ -29,6 +29,10 @@ namespace gb {
 // Paths are UTF-8. A path with a host (such as "file://host/a") isn't under the
 // root, so it is invalid.
 //
+// A path with a name that the operating system doesn't allow as the name of a
+// file or folder is invalid, as is a root with one, and listing skips such
+// names and anything in them.
+//
 // Only directories and regular files are supported. Links (symbolic links and
 // junctions) are followed, so a link appears as the file or folder it links to,
 // except that recursive listing doesn't descend into a linked folder, and
