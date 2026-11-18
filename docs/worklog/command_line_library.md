@@ -322,6 +322,12 @@ they are written:
     create them when the file doesn't exist yet.
 
   It reads the context as the others do. The file may or may not exist.
+- `kCliFileWritableOrFolder` accepts either an existing folder to write into
+  under a name the program chooses, or a file `kCliFileWritable` accepts, as
+  `cp` and `mv` take their destination. A folder whose protocol can't write
+  and create files fails with `"x" can't be written into`, and a path that is
+  neither gets `kCliFileWritable`'s error. It reads the context as the others
+  do.
 - A run function that opens the paths lists `kConstraintCliFileSystem` in its
   command's constraints, as the example does.
 

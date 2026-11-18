@@ -74,6 +74,18 @@ absl::StatusOr<PathType> GetExistingPathType(const ValidatedContext& context,
   return type;
 }
 
+// Returns the flags of the protocol that `file_path`, a path in the file
+// system, is opened with. A protocol the file system doesn't have has no flags.
+FileProtocolFlags GetProtocolFlags(const FileSystem& file_system,
+                                   std::string_view file_path) {
+  std::string protocol;
+  RemoveProtocol(NormalizePath(file_path), &protocol);
+  if (protocol.empty()) {
+    protocol = file_system.GetDefaultProtocolName();
+  }
+  return file_system.GetFlags(protocol);
+}
+
 absl::Status ValidatePathExists(const ValidatedContext& context,
                                 const std::string_view& path) {
   return GetExistingPathType(context, path).status();
@@ -139,14 +151,8 @@ absl::Status ValidateFileWritable(const ValidatedContext& context,
         absl::StrCat("\"", path, "\" is a folder"));
   }
 
-  // Writing a file that doesn't exist yet creates it. A protocol the file
-  // system doesn't have has no flags.
-  std::string protocol;
-  RemoveProtocol(file_path, &protocol);
-  if (protocol.empty()) {
-    protocol = file_system->GetDefaultProtocolName();
-  }
-  const FileProtocolFlags flags = file_system->GetFlags(protocol);
+  // Writing a file that doesn't exist yet creates it.
+  const FileProtocolFlags flags = GetProtocolFlags(*file_system, file_path);
   if (!flags.IsSet(FileProtocolFlag::kFileWrite) ||
       (type != PathType::kFile &&
        !flags.IsSet(FileProtocolFlag::kFileCreate))) {
@@ -165,13 +171,24 @@ absl::Status ValidateFileWritable(const ValidatedContext& context,
 
 absl::Status ValidateFileWritableOrFolder(const ValidatedContext& context,
                                           const std::string_view& path) {
-  // A file system without the protocol fails ValidateFileWritable() the same
-  // way.
-  const absl::StatusOr<PathType> type = GetExistingPathType(context, path);
-  if (type.ok() && *type == PathType::kFolder) {
-    return absl::OkStatus();
+  const absl::StatusOr<std::string> file_path = GetFilePath(context, path);
+  if (!file_path.ok()) {
+    return file_path.status();
   }
-  return ValidateFileWritable(context, path);
+
+  // An empty path would otherwise read as the current folder.
+  FileSystem* file_system = context.GetPtr<FileSystem>();
+  if (path.empty() ||
+      file_system->GetPathInfo(*file_path).type != PathType::kFolder) {
+    return ValidateFileWritable(context, path);
+  }
+  const FileProtocolFlags flags = GetProtocolFlags(*file_system, *file_path);
+  if (!flags.IsSet(
+          {FileProtocolFlag::kFileWrite, FileProtocolFlag::kFileCreate})) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("\"", path, "\" can't be written into"));
+  }
+  return absl::OkStatus();
 }
 
 }  // namespace

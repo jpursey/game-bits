@@ -87,11 +87,11 @@ extern const CliValidator<std::string_view> kCliFolderExists;
 extern const CliValidator<std::string_view> kCliFileWritable;
 
 // Validates that a path given on the command line is either an existing folder
-// (as kCliFolderExists validates) or a file that can be written (as
-// kCliFileWritable validates), as the destination `cp` takes: a folder to write
-// into under a name of the program's choosing, or the file to write. If it is
-// neither, the error is kCliFileWritable's. This reads the context as the
-// validators above do, and fails parsing the same way.
+// whose protocol can write and create files in it, or a file that can be
+// written (as kCliFileWritable validates), as the destination `cp` takes: a
+// folder to write into under a name of the program's choosing, or the file to
+// write. If it is neither, the error is kCliFileWritable's. This reads the
+// context as the validators above do, and fails parsing the same way.
 extern const CliValidator<std::string_view> kCliFileWritableOrFolder;
 
 }  // namespace gb

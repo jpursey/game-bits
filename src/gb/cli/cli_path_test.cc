@@ -172,14 +172,23 @@ TEST_F(CliPathTest, FileWritableOrFolder) {
   EXPECT_TRUE(Validate(kCliFileWritableOrFolder, "C:\\src").ok());
   EXPECT_TRUE(Validate(kCliFileWritableOrFolder, ".").ok());
   EXPECT_TRUE(Validate(kCliFileWritableOrFolder, "/data/output.bin").ok());
-  EXPECT_TRUE(Validate(kCliFileWritableOrFolder, "/data/input.txt").ok());
-  EXPECT_TRUE(Validate(kCliFileWritableOrFolder, "output.bin").ok());
+
+  // A path that is neither gets kCliFileWritable's error.
   EXPECT_EQ(Validate(kCliFileWritableOrFolder, "/missing/output.bin").message(),
             "\"/missing/output.bin\"'s folder doesn't exist");
   EXPECT_EQ(Validate(kCliFileWritableOrFolder, "/missing/").message(),
             "\"/missing/\" has no file name");
   EXPECT_EQ(Validate(kCliFileWritableOrFolder, "").message(),
             "\"\" has no file name");
+}
+
+TEST_F(CliPathTest, FileWritableOrFolderForAReadOnlyProtocol) {
+  EXPECT_TRUE(file_system_.Register(
+      std::make_unique<MemoryFileProtocol>(kReadOnlyFileProtocolFlags), "ro"));
+  EXPECT_EQ(Validate(kCliFileWritableOrFolder, "ro:/").message(),
+            "\"ro:/\" can't be written into");
+  EXPECT_EQ(Validate(kCliFileWritableOrFolder, "ro:/output.bin").message(),
+            "\"ro:/output.bin\" can't be written");
 }
 
 TEST_F(CliPathTest, FileWritableOrFolderUsesTheContextsProtocol) {
