@@ -163,6 +163,17 @@ absl::Status ValidateFileWritable(const ValidatedContext& context,
   return absl::OkStatus();
 }
 
+absl::Status ValidateFileWritableOrFolder(const ValidatedContext& context,
+                                          const std::string_view& path) {
+  // A file system without the protocol fails ValidateFileWritable() the same
+  // way.
+  const absl::StatusOr<PathType> type = GetExistingPathType(context, path);
+  if (type.ok() && *type == PathType::kFolder) {
+    return absl::OkStatus();
+  }
+  return ValidateFileWritable(context, path);
+}
+
 }  // namespace
 
 std::unique_ptr<FileSystem> CreateCliFileSystem() {
@@ -189,6 +200,11 @@ const CliValidator<std::string_view> kCliFolderExists = {
 
 const CliValidator<std::string_view> kCliFileWritable = {
     .validate = ValidateFileWritable,
+    .constraints = {&kConstraintCliFileSystem, &kConstraintCliFileProtocol},
+};
+
+const CliValidator<std::string_view> kCliFileWritableOrFolder = {
+    .validate = ValidateFileWritableOrFolder,
     .constraints = {&kConstraintCliFileSystem, &kConstraintCliFileProtocol},
 };
 

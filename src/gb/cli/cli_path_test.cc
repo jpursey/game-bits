@@ -166,6 +166,29 @@ TEST_F(CliPathTest, FileWritableForAReadOnlyProtocol) {
             "\"zz:/output.bin\" can't be written");
 }
 
+TEST_F(CliPathTest, FileWritableOrFolder) {
+  EXPECT_TRUE(Validate(kCliFileWritableOrFolder, "/data").ok());
+  EXPECT_TRUE(Validate(kCliFileWritableOrFolder, "/data/").ok());
+  EXPECT_TRUE(Validate(kCliFileWritableOrFolder, "C:\\src").ok());
+  EXPECT_TRUE(Validate(kCliFileWritableOrFolder, ".").ok());
+  EXPECT_TRUE(Validate(kCliFileWritableOrFolder, "/data/output.bin").ok());
+  EXPECT_TRUE(Validate(kCliFileWritableOrFolder, "/data/input.txt").ok());
+  EXPECT_TRUE(Validate(kCliFileWritableOrFolder, "output.bin").ok());
+  EXPECT_EQ(Validate(kCliFileWritableOrFolder, "/missing/output.bin").message(),
+            "\"/missing/output.bin\"'s folder doesn't exist");
+  EXPECT_EQ(Validate(kCliFileWritableOrFolder, "/missing/").message(),
+            "\"/missing/\" has no file name");
+  EXPECT_EQ(Validate(kCliFileWritableOrFolder, "").message(),
+            "\"\" has no file name");
+}
+
+TEST_F(CliPathTest, FileWritableOrFolderUsesTheContextsProtocol) {
+  context_.SetValue<std::string>(kKeyCliFileProtocol, "mem");
+  EXPECT_TRUE(Validate(kCliFileWritableOrFolder, "/").ok());
+  EXPECT_FALSE(Validate(kCliFileWritableOrFolder, "/data/").ok());
+  EXPECT_TRUE(Validate(kCliFileWritableOrFolder, "file:/data/").ok());
+}
+
 TEST_F(CliPathTest, ValidatorsUseTheContextsProtocol) {
   EXPECT_FALSE(Validate(kCliFileExists, "/mem_only.txt").ok());
   context_.SetValue<std::string>(kKeyCliFileProtocol, "mem");
@@ -188,8 +211,8 @@ TEST_F(CliPathTest, ValidatorsWithAnEmptyProtocol) {
 TEST_F(CliPathTest, ValidatorsWithAMissingProtocol) {
   context_.SetValue<std::string>(kKeyCliFileProtocol, "missing");
   for (const CliValidator<std::string_view>* validator :
-       {&kCliPathExists, &kCliFileExists, &kCliFolderExists,
-        &kCliFileWritable}) {
+       {&kCliPathExists, &kCliFileExists, &kCliFolderExists, &kCliFileWritable,
+        &kCliFileWritableOrFolder}) {
     const absl::Status status = Validate(*validator, "/data/input.txt");
     EXPECT_TRUE(absl::IsFailedPrecondition(status)) << status;
     EXPECT_EQ(status.message(),
