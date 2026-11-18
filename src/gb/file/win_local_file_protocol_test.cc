@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "absl/strings/ascii.h"
@@ -274,16 +275,21 @@ class WinLocalFileDeviceTest : public ::testing::Test {
     ASSERT_TRUE(file_system_.Register(std::move(protocol)));
   }
 
-  // Removes what the test created with device names, which the protocol
-  // can't delete when it deletes its root.
+  // Removes what the test created with literal paths, last created first,
+  // which the protocol can't delete when it deletes its root.
   void TearDown() override {
-    ::DeleteFileW(GetLiteralPath("nul/file").c_str());
-    ::RemoveDirectoryW(GetLiteralPath("nul").c_str());
-    ::DeleteFileW(GetLiteralPath("con.txt").c_str());
+    for (auto it = literal_paths_.rbegin(); it != literal_paths_.rend(); ++it) {
+      if (!::DeleteFileW(it->c_str())) {
+        ::RemoveDirectoryW(it->c_str());
+      }
+    }
   }
 
-  // Returns the path of `path` under the root with a "\\?\" prefix, which
-  // Windows takes as it is, so a device name names a file or folder.
+  // Creates a file or folder at `path` under the root with a "\\?\" prefix,
+  // which Windows takes as it is, so a device name names a file or folder.
+  void CreateLiteralFile(std::string_view path);
+  void CreateLiteralFolder(std::string_view path);
+
   std::wstring GetLiteralPath(std::string_view path) {
     return L"\\\\?\\" + (root_path_ / internal::Utf8ToLocalPath(path))
                             .make_preferred()
@@ -292,7 +298,25 @@ class WinLocalFileDeviceTest : public ::testing::Test {
 
   FileSystem file_system_;
   fs::path root_path_;
+  std::vector<std::wstring> literal_paths_;
 };
+
+void WinLocalFileDeviceTest::CreateLiteralFile(std::string_view path) {
+  std::wstring literal_path = GetLiteralPath(path);
+  const HANDLE handle =
+      ::CreateFileW(literal_path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
+                    FILE_ATTRIBUTE_NORMAL, nullptr);
+  ASSERT_NE(handle, INVALID_HANDLE_VALUE) << GetWindowsError();
+  ::CloseHandle(handle);
+  literal_paths_.push_back(std::move(literal_path));
+}
+
+void WinLocalFileDeviceTest::CreateLiteralFolder(std::string_view path) {
+  std::wstring literal_path = GetLiteralPath(path);
+  ASSERT_TRUE(::CreateDirectoryW(literal_path.c_str(), nullptr))
+      << GetWindowsError();
+  literal_paths_.push_back(std::move(literal_path));
+}
 
 TEST_F(WinLocalFileDeviceTest, DeviceNamesAreInvalid) {
   for (std::string_view name :
@@ -326,20 +350,11 @@ TEST_F(WinLocalFileDeviceTest, OtherNamesAreFiles) {
 }
 
 TEST_F(WinLocalFileDeviceTest, ListSkipsDeviceNames) {
-  // Windows 11 no longer opens a name with an extension as a device, but a
-  // literal path creates any of them.
-  const HANDLE handle =
-      ::CreateFileW(GetLiteralPath("con.txt").c_str(), GENERIC_WRITE, 0,
-                    nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
-  ASSERT_NE(handle, INVALID_HANDLE_VALUE) << GetWindowsError();
-  ::CloseHandle(handle);
-  ASSERT_TRUE(::CreateDirectoryW(GetLiteralPath("nul").c_str(), nullptr))
-      << GetWindowsError();
-  const HANDLE nul_handle =
-      ::CreateFileW(GetLiteralPath("nul/file").c_str(), GENERIC_WRITE, 0,
-                    nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
-  ASSERT_NE(nul_handle, INVALID_HANDLE_VALUE) << GetWindowsError();
-  ::CloseHandle(nul_handle);
+  // A literal path creates a file or folder with any name, as can Windows 11
+  // for a name with an extension.
+  ASSERT_NO_FATAL_FAILURE(CreateLiteralFile("con.txt"));
+  ASSERT_NO_FATAL_FAILURE(CreateLiteralFolder("nul"));
+  ASSERT_NO_FATAL_FAILURE(CreateLiteralFile("nul/file"));
   ASSERT_TRUE(file_system_.WriteFile("file:/file", "file"));
 
   EXPECT_THAT(file_system_.List("file:/"), ElementsAre("file:/file"));

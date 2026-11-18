@@ -29,20 +29,19 @@ namespace fs = std::filesystem;
 constexpr absl::Duration kFileTimeTick = absl::Nanoseconds(100);
 constexpr absl::Time kFileTimeEpoch = absl::FromUnixSeconds(-11644473600);
 
-// Names Windows opens as devices, in lowercase. COM and LPT ports are also
-// devices, followed by a digit (see IsDeviceName()).
+// Names Windows opens as devices, in lowercase, apart from the COM and LPT
+// ports.
 constexpr std::string_view kDeviceNames[] = {"con", "prn",    "aux",
                                              "nul", "conin$", "conout$"};
 
 // Returns true if Windows opens a file or folder named `name` as a device: if,
-// in any case, its part before any extension or stream (the first '.' or ':'),
-// less trailing spaces, is a device name. Windows 11 no longer reads a name
-// with an extension as a device, but earlier versions do, so it is one here on
-// every version.
+// in any case, its part before the first '.' or ':', less trailing spaces, is a
+// device name. Windows 11 no longer reads a name with an extension as a device,
+// but earlier versions do, so it is one here on every version.
 bool IsDeviceName(const fs::path& name) {
   const std::string lower = absl::AsciiStrToLower(LocalPathToUtf8(name));
-  std::string_view base = lower;
-  base = base.substr(0, base.find_first_of(".:"));
+  std::string_view base =
+      std::string_view(lower).substr(0, lower.find_first_of(".:"));
   while (!base.empty() && base.back() == ' ') {
     base.remove_suffix(1);
   }
@@ -100,12 +99,7 @@ fs::path GetNonUtf8Name() { return fs::path(std::wstring(1, wchar_t{0xD800})); }
 //------------------------------------------------------------------------------
 
 bool HasLocalDeviceName(const fs::path& path) {
-  for (const fs::path& name : path) {
-    if (IsDeviceName(name)) {
-      return true;
-    }
-  }
-  return false;
+  return absl::c_any_of(path, IsDeviceName);
 }
 
 //------------------------------------------------------------------------------

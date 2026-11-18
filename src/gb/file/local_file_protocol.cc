@@ -186,7 +186,9 @@ std::optional<fs::path> ToFullPath(std::string_view root,
   }
   fs::path full_path =
       ToPath(root.empty() ? OsRootToFullPath(path) : JoinPath(root, path));
-  if (full_path.empty() || internal::HasLocalDeviceName(full_path)) {
+
+  // Create() rejects a root with a device name, so only the path is checked.
+  if (full_path.empty() || internal::HasLocalDeviceName(ToPath(path))) {
     return std::nullopt;
   }
   return full_path;
