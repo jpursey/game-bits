@@ -29,6 +29,7 @@ namespace {
 
 namespace fs = std::filesystem;
 
+using ::testing::ElementsAre;
 using ::testing::IsEmpty;
 
 constexpr int kFileSize = 100000;
@@ -258,6 +259,92 @@ TEST_F(WinLocalFileAttributesTest, LinkHasTargetAttributes) {
   EXPECT_EQ(file_system_.GetPathInfo("file:/target").attributes,
             FileAttributes(FileAttribute::kHidden));
   EXPECT_EQ(GetWindowsAttributes("link"), link_attributes);
+}
+
+//------------------------------------------------------------------------------
+// Names Windows opens as devices are neither files nor folders.
+//------------------------------------------------------------------------------
+
+class WinLocalFileDeviceTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    auto protocol = LocalFileProtocol::CreateTemp("gbtest");
+    ASSERT_NE(protocol, nullptr);
+    root_path_ = internal::Utf8ToLocalPath(protocol->GetRoot());
+    ASSERT_TRUE(file_system_.Register(std::move(protocol)));
+  }
+
+  // Removes what the test created with device names, which the protocol
+  // can't delete when it deletes its root.
+  void TearDown() override {
+    ::DeleteFileW(GetLiteralPath("nul/file").c_str());
+    ::RemoveDirectoryW(GetLiteralPath("nul").c_str());
+    ::DeleteFileW(GetLiteralPath("con.txt").c_str());
+  }
+
+  // Returns the path of `path` under the root with a "\\?\" prefix, which
+  // Windows takes as it is, so a device name names a file or folder.
+  std::wstring GetLiteralPath(std::string_view path) {
+    return L"\\\\?\\" + (root_path_ / internal::Utf8ToLocalPath(path))
+                            .make_preferred()
+                            .wstring();
+  }
+
+  FileSystem file_system_;
+  fs::path root_path_;
+};
+
+TEST_F(WinLocalFileDeviceTest, DeviceNamesAreInvalid) {
+  for (std::string_view name :
+       {"CON",         "con",      "Prn",     "aux",        "NUL",
+        "com0",        "COM9",     "lpt1",    "LPT9",       "COM\xC2\xB9",
+        "lpt\xC2\xB3", "conin$",   "CONOUT$", "nul.txt",    "Aux.tar.gz",
+        "con ",        "con .txt", "con.",    "folder/con", "folder/nul.txt",
+        "con/file"}) {
+    SCOPED_TRACE(name);
+    const std::string path = absl::StrCat("file:/", name);
+    EXPECT_EQ(file_system_.GetPathInfo(path).type, PathType::kInvalid);
+    EXPECT_FALSE(file_system_.WriteFile(path, "file"));
+    std::string contents;
+    EXPECT_FALSE(file_system_.ReadFile(path, &contents));
+    EXPECT_EQ(file_system_.OpenFile(path, kReadFileFlags), nullptr);
+    EXPECT_FALSE(file_system_.CreateFolder(path, FolderMode::kRecursive));
+  }
+
+  // A root can't be a device either.
+  EXPECT_EQ(LocalFileProtocol::Create(root_path_ / "nul"), nullptr);
+}
+
+TEST_F(WinLocalFileDeviceTest, OtherNamesAreFiles) {
+  for (std::string_view name : {"cons", "xcon", "con_x", "com", "com10", "lpta",
+                                ".con", "a.con", "conin"}) {
+    SCOPED_TRACE(name);
+    const std::string path = absl::StrCat("file:/", name);
+    EXPECT_TRUE(file_system_.WriteFile(path, "file"));
+    EXPECT_EQ(file_system_.GetPathInfo(path).type, PathType::kFile);
+  }
+}
+
+TEST_F(WinLocalFileDeviceTest, ListSkipsDeviceNames) {
+  // Windows 11 no longer opens a name with an extension as a device, but a
+  // literal path creates any of them.
+  const HANDLE handle =
+      ::CreateFileW(GetLiteralPath("con.txt").c_str(), GENERIC_WRITE, 0,
+                    nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+  ASSERT_NE(handle, INVALID_HANDLE_VALUE) << GetWindowsError();
+  ::CloseHandle(handle);
+  ASSERT_TRUE(::CreateDirectoryW(GetLiteralPath("nul").c_str(), nullptr))
+      << GetWindowsError();
+  const HANDLE nul_handle =
+      ::CreateFileW(GetLiteralPath("nul/file").c_str(), GENERIC_WRITE, 0,
+                    nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+  ASSERT_NE(nul_handle, INVALID_HANDLE_VALUE) << GetWindowsError();
+  ::CloseHandle(nul_handle);
+  ASSERT_TRUE(file_system_.WriteFile("file:/file", "file"));
+
+  EXPECT_THAT(file_system_.List("file:/"), ElementsAre("file:/file"));
+  EXPECT_THAT(file_system_.List("file:/", FolderMode::kRecursive),
+              ElementsAre("file:/file"));
 }
 
 TEST(WinLocalFileProtocolOsRootTest, DriveFolders) {

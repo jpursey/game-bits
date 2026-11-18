@@ -553,25 +553,6 @@ which also has `Cancel()` and `Invoke()`. Switch Game Bits' own uses to
 Removing `ScopedCall` breaks every project that uses it, so each one switches
 first, and it is removed once they have.
 
-## Windows device names
-
-- **Layers:** file
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** none
-
-Windows opens some file names as devices rather than files: `CON`, `PRN`,
-`AUX`, `NUL`, `COM0` to `COM9`, and `LPT0` to `LPT9`, in any case, with any
-extension and in any folder (`out\CON.TXT` is the console), and `CONIN$` and
-`CONOUT$`. `LocalFileProtocol` on Windows opens them as it does any path, so
-writing one writes to the device, and a program that names a host file from
-outside data (a name the user typed, or one stored in a file it is extracting)
-can't tell. The protocol should treat a device path as neither a file nor a
-folder: `GetPathInfo` doesn't report it, and writing, reading, or creating it
-fails, so every program refuses it with nothing of its own to check. The test
-needs Windows.
-
 ## Typed values in gb_base
 
 - **Layers:** base, cli, pilot

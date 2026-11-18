@@ -61,6 +61,15 @@ fs::path Utf8ToLocalPath(std::string_view path) {
 fs::path GetNonUtf8Name() { return fs::path(std::string(1, '\xFF')); }
 
 //------------------------------------------------------------------------------
+// Device names
+//
+// Devices have paths of their own (such as "/dev/null"), which aren't regular
+// files, rather than names that are devices in every folder.
+//------------------------------------------------------------------------------
+
+bool HasLocalDeviceName(const fs::path& path) { return false; }
+
+//------------------------------------------------------------------------------
 // Current path
 //------------------------------------------------------------------------------
 

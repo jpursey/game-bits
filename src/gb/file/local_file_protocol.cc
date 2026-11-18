@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <optional>
 #include <random>
+#include <type_traits>
 
 #include "absl/log/log.h"
 #include "absl/strings/ascii.h"
@@ -176,7 +177,8 @@ std::string FullToOsRootPath(std::string_view path) {
 
 // Returns the operating system path for a protocol path under the root (an
 // empty root is the operating system's root), or nullopt for an invalid path:
-// one with a host, which isn't under the root, or one that isn't valid UTF-8.
+// one with a host, which isn't under the root, one that isn't valid UTF-8, or
+// one with a name that is a device.
 std::optional<fs::path> ToFullPath(std::string_view root,
                                    std::string_view path) {
   if (!GetHostName(path).empty()) {
@@ -184,7 +186,7 @@ std::optional<fs::path> ToFullPath(std::string_view root,
   }
   fs::path full_path =
       ToPath(root.empty() ? OsRootToFullPath(path) : JoinPath(root, path));
-  if (full_path.empty()) {
+  if (full_path.empty() || internal::HasLocalDeviceName(full_path)) {
     return std::nullopt;
   }
   return full_path;
@@ -226,6 +228,15 @@ std::vector<std::string> ListFolder(Iterator it, std::string_view root,
     // by a path, so it is skipped.
     const std::string entry_path = ToString(it->path());
     if (entry_path.empty()) {
+      continue;
+    }
+
+    // Nor can a name that is a device, or anything in a folder with one.
+    if (internal::HasLocalDeviceName(it->path().filename())) {
+      if constexpr (std::is_same_v<Iterator,
+                                   fs::recursive_directory_iterator>) {
+        it.disable_recursion_pending();
+      }
       continue;
     }
     if (!pattern.empty() &&
@@ -329,6 +340,12 @@ std::unique_ptr<LocalFileProtocol> LocalFileProtocol::Create(
         root = absl::StrCat(current_protocol_name, ":", root);
       }
     }
+  }
+
+  if (internal::HasLocalDeviceName(ToPath(root))) {
+    LOG(ERROR) << "Requested root path \"" << requested_root
+               << "\" has a name that is a device.";
+    return nullptr;
   }
 
   // Determine the root directory and requested sub directory to make into the

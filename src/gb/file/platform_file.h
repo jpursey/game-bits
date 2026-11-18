@@ -42,6 +42,14 @@ std::filesystem::path Utf8ToLocalPath(std::string_view path);
 std::filesystem::path GetNonUtf8Name();
 
 //------------------------------------------------------------------------------
+// Device names
+//------------------------------------------------------------------------------
+
+// Returns true if any name in `path` is one the operating system opens as a
+// device rather than as a file or folder, in whatever folder it is.
+bool HasLocalDeviceName(const std::filesystem::path& path);
+
+//------------------------------------------------------------------------------
 // Current path
 //------------------------------------------------------------------------------
 

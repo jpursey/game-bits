@@ -6,7 +6,10 @@
 #include <direct.h>
 
 #include <string>
+#include <string_view>
 
+#include "absl/algorithm/container.h"
+#include "absl/strings/ascii.h"
 #include "gb/base/unicode.h"
 #include "gb/file/platform_file.h"
 
@@ -25,6 +28,33 @@ namespace fs = std::filesystem;
 // loads the time zone database to look up leap seconds.
 constexpr absl::Duration kFileTimeTick = absl::Nanoseconds(100);
 constexpr absl::Time kFileTimeEpoch = absl::FromUnixSeconds(-11644473600);
+
+// Names Windows opens as devices, in lowercase. COM and LPT ports are also
+// devices, followed by a digit (see IsDeviceName()).
+constexpr std::string_view kDeviceNames[] = {"con", "prn",    "aux",
+                                             "nul", "conin$", "conout$"};
+
+// Returns true if Windows opens a file or folder named `name` as a device: if,
+// in any case, its part before any extension or stream (the first '.' or ':'),
+// less trailing spaces, is a device name. Windows 11 no longer reads a name
+// with an extension as a device, but earlier versions do, so it is one here on
+// every version.
+bool IsDeviceName(const fs::path& name) {
+  const std::string lower = absl::AsciiStrToLower(LocalPathToUtf8(name));
+  std::string_view base = lower;
+  base = base.substr(0, base.find_first_of(".:"));
+  while (!base.empty() && base.back() == ' ') {
+    base.remove_suffix(1);
+  }
+
+  // Ports are numbered with a digit, or a superscript 1, 2, or 3 (in UTF-8).
+  if (base.starts_with("com") || base.starts_with("lpt")) {
+    const std::string_view number = base.substr(3);
+    return (number.size() == 1 && absl::ascii_isdigit(number[0])) ||
+           number == "\xC2\xB9" || number == "\xC2\xB2" || number == "\xC2\xB3";
+  }
+  return absl::c_linear_search(kDeviceNames, base);
+}
 
 // Opens the file or folder at `path`, following links, with `access`.
 HANDLE OpenPath(const fs::path& path, DWORD access) {
@@ -64,6 +94,19 @@ fs::path Utf8ToLocalPath(std::string_view path) {
 // Names are UTF-16 code units that aren't checked, so a lone surrogate is
 // accepted.
 fs::path GetNonUtf8Name() { return fs::path(std::wstring(1, wchar_t{0xD800})); }
+
+//------------------------------------------------------------------------------
+// Device names
+//------------------------------------------------------------------------------
+
+bool HasLocalDeviceName(const fs::path& path) {
+  for (const fs::path& name : path) {
+    if (IsDeviceName(name)) {
+      return true;
+    }
+  }
+  return false;
+}
 
 //------------------------------------------------------------------------------
 // Current path

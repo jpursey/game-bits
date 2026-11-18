@@ -49,6 +49,7 @@ set(gb_file_TEST_SOURCE
 )
 
 set(gb_file_DEPS
+  absl::algorithm_container
   absl::flat_hash_map
   absl::time
   gb_base
