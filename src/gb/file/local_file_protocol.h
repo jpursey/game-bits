@@ -31,10 +31,7 @@ namespace gb {
 //
 // A path with a name that the operating system doesn't allow as the name of a
 // file or folder is invalid, as is a root with one, and listing skips such
-// names and anything in them. On Windows these are "CON", "PRN", "AUX",
-// "NUL", "COM0" to "COM9" and "LPT0" to "LPT9" (and with a superscript 1, 2,
-// or 3), "CONIN$", and "CONOUT$", in any case, with any extension, and in any
-// folder ("a/con.txt").
+// names and anything in them.
 //
 // Only directories and regular files are supported. Links (symbolic links and
 // junctions) are followed, so a link appears as the file or folder it links to,
