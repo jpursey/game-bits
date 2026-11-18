@@ -68,7 +68,7 @@ missing include in `imgui_instance.h`.
 
 ### Local file paths
 
-`gb/file/local_path_encoding.h` (in `gb::internal`) converts between UTF-8
+`gb/file/platform_file.h` (in `gb::internal`) converts between UTF-8
 paths and `std::filesystem::path`, in place of `std::filesystem`'s own
 conversions, which throw for a path that isn't valid:
 - `LocalPathToUtf8()` returns an empty string for a path that can't be
@@ -76,8 +76,8 @@ conversions, which throw for a path that isn't valid:
   valid UTF-8.
 - `GetNonUtf8Name()` returns a name the operating system accepts but that
   can't be converted, for tests of how such names are handled.
-- `win_local_path_encoding.cc` converts to and from UTF-16;
-  `gen_local_path_encoding.cc` takes the path's bytes as UTF-8.
+- `win_platform_file.cc` converts to and from UTF-16;
+  `gen_platform_file.cc` takes the path's bytes as UTF-8.
 
 The local file tests are shared, and use these rather than their own
 conversions. The Windows-only ones are in `win_local_file_system_test.cc`

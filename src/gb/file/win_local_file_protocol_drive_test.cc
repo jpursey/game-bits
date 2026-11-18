@@ -14,8 +14,8 @@
 #include "gb/base/context_builder.h"
 #include "gb/base/unicode.h"
 #include "gb/file/file_system.h"
-#include "gb/file/local_current_path.h"
 #include "gb/file/local_file_protocol.h"
+#include "gb/file/platform_file.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 

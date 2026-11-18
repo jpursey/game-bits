@@ -148,9 +148,8 @@ struct PathInfo {
   int64_t size = 0;                    // Set only for PathType::kFile.
   FileAttributes attributes;           // Only attributes the protocol supports.
 
-  // When the file was last written, to the precision the protocol keeps. This
-  // is set only for PathType::kFile, and not if the protocol doesn't keep
-  // times or the time can't be read.
+  // When the file or folder was last modified, to the precision the protocol
+  // keeps, or empty if the protocol has no time for it.
   std::optional<absl::Time> modified_time;
 };
 

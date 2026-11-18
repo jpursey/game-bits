@@ -16,9 +16,8 @@
 #include "gb/base/scoped_call.h"
 #include "gb/file/common_protocol_test.h"
 #include "gb/file/file_system.h"
-#include "gb/file/local_file_time.h"
-#include "gb/file/local_path_encoding.h"
 #include "gb/file/path.h"
+#include "gb/file/platform_file.h"
 #include "gb/file/raw_file.h"
 #include "gb/test/test_util.h"
 #include "gmock/gmock.h"
@@ -371,20 +370,22 @@ TEST(LocalFileProtocolTest, ModifiedTimes) {
   const fs::path root_path = internal::Utf8ToLocalPath(protocol->GetRoot());
   FileSystem file_system;
   ASSERT_TRUE(file_system.Register(std::move(protocol)));
-  ASSERT_TRUE(file_system.CreateFolder("file:/folder"));
-  EXPECT_EQ(file_system.GetPathInfo("file:/folder").modified_time,
-            std::nullopt);
+  EXPECT_EQ(file_system.GetPathInfo("file:/").modified_time, std::nullopt);
 
-  // A new file's time is when it was written. The file system's clock can lag
-  // absl::Now() a little, and some file systems keep times only to 2 seconds.
+  // A new file or folder's time is when it was written. The file system's clock
+  // can lag absl::Now() a little, and some file systems keep times only to 2
+  // seconds.
   const absl::Time before = absl::Now();
+  ASSERT_TRUE(file_system.CreateFolder("file:/folder"));
   ASSERT_TRUE(file_system.WriteFile("file:/file", "abc"));
   const absl::Time after = absl::Now();
-  const std::optional<absl::Time> written =
-      file_system.GetPathInfo("file:/file").modified_time;
-  ASSERT_TRUE(written.has_value());
-  EXPECT_GE(*written, before - absl::Seconds(2));
-  EXPECT_LE(*written, after + absl::Seconds(2));
+  for (std::string_view path : {"file:/folder", "file:/file"}) {
+    const std::optional<absl::Time> written =
+        file_system.GetPathInfo(path).modified_time;
+    ASSERT_TRUE(written.has_value()) << path;
+    EXPECT_GE(*written, before - absl::Seconds(2)) << path;
+    EXPECT_LE(*written, after + absl::Seconds(2)) << path;
+  }
 
   // The operating system's time is reported exactly, and kept by a move.
   const absl::Time time = absl::FromUnixSeconds(1582979696);  // 2020-02-29
@@ -395,20 +396,6 @@ TEST(LocalFileProtocolTest, ModifiedTimes) {
   EXPECT_EQ(file_system.GetPathInfo("file:/file").modified_time, time);
   ASSERT_TRUE(file_system.MoveFile("file:/file", "file:/moved"));
   EXPECT_EQ(file_system.GetPathInfo("file:/moved").modified_time, time);
-
-  // A copy's time is when it was written, even of a read-only file.
-  ASSERT_TRUE(
-      file_system.SetAttributes("file:/moved", FileAttribute::kReadOnly));
-  const absl::Time before_copy = absl::Now();
-  ASSERT_TRUE(file_system.CopyFile("file:/moved", "file:/copy"));
-  const absl::Time after_copy = absl::Now();
-  const std::optional<absl::Time> copied =
-      file_system.GetPathInfo("file:/copy").modified_time;
-  ASSERT_TRUE(copied.has_value());
-  EXPECT_GE(*copied, before_copy - absl::Seconds(2));
-  EXPECT_LE(*copied, after_copy + absl::Seconds(2));
-  EXPECT_TRUE(file_system.GetPathInfo("file:/copy")
-                  .attributes.IsSet(FileAttribute::kReadOnly));
 }
 
 TEST(LocalFileProtocolTest, MoveChangesCase) {

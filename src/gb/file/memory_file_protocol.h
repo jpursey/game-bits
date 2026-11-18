@@ -34,7 +34,7 @@ namespace gb {
 // Files keep their modified time to the nanosecond, from the clock passed to
 // the constructor. A file's time is set when it is created, reset by opening it
 // with FileFlag::kReset, or written to, and moving it or changing its
-// attributes keeps it.
+// attributes keeps it. Folders have no time.
 //
 // This class is thread-safe.
 class MemoryFileProtocol : public FileProtocol {

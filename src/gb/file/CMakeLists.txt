@@ -5,10 +5,7 @@
 
 if (WIN32)
   set(gb_file_internal_SOURCE
-    win_local_current_path.cc
-    win_local_file_attributes.cc
-    win_local_file_time.cc
-    win_local_path_encoding.cc
+    win_platform_file.cc
   )
   set(gb_file_internal_TEST_SOURCE
     win_local_file_protocol_drive_test.cc
@@ -17,10 +14,7 @@ if (WIN32)
   )
 else()
   set(gb_file_internal_SOURCE
-    gen_local_current_path.cc
-    gen_local_file_attributes.cc
-    gen_local_file_time.cc
-    gen_local_path_encoding.cc
+    gen_platform_file.cc
   )
 endif()
 
@@ -32,13 +26,10 @@ set(gb_file_SOURCE
   file_protocol.cc file_protocol.h
   file_system.cc file_system.h
   file_types.h
-  local_current_path.h
-  local_file_attributes.h
-  local_file_time.h
   local_file_protocol.cc local_file_protocol.h
-  local_path_encoding.h
   memory_file_protocol.cc memory_file_protocol.h
   path.cc path.h
+  platform_file.h
   raw_file.cc raw_file.h
   ${gb_file_internal_SOURCE}
 )

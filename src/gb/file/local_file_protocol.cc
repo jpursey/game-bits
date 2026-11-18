@@ -16,11 +16,8 @@
 #include "absl/strings/strip.h"
 #include "gb/base/context_builder.h"
 #include "gb/base/stdio_file.h"
-#include "gb/file/local_current_path.h"
-#include "gb/file/local_file_attributes.h"
-#include "gb/file/local_file_time.h"
-#include "gb/file/local_path_encoding.h"
 #include "gb/file/path.h"
+#include "gb/file/platform_file.h"
 #include "gb/file/raw_file.h"
 
 namespace gb {
@@ -549,16 +546,16 @@ PathInfo LocalFileProtocol::DoGetPathInfo(std::string_view protocol_name,
     }
     info.type = PathType::kFile;
     info.size = static_cast<int64_t>(size);
-    const fs::file_time_type modified_time =
-        fs::last_write_time(*full_path, error);
-    if (!error) {
-      info.modified_time = internal::FromLocalFileTime(modified_time);
-    }
   } else {
     return {};
   }
   if (!IsRootFolder(path, *full_path)) {
     info.attributes = internal::GetLocalAttributes(*full_path);
+    const fs::file_time_type modified_time =
+        fs::last_write_time(*full_path, error);
+    if (!error) {
+      info.modified_time = internal::FromLocalFileTime(modified_time);
+    }
   }
   return info;
 }
@@ -661,15 +658,8 @@ bool LocalFileProtocol::DoCopyFile(std::string_view from_protocol_name,
     return fs::is_regular_file(*full_from_path, error);
   }
 
-  if (!fs::copy_file(*full_from_path, *full_to_path,
-                     fs::copy_options::overwrite_existing, error)) {
-    return false;
-  }
-
-  // Windows' copy keeps the source's time, but a copy's time is when it was
-  // written. The copy is made either way, so failing to set it isn't a failure.
-  fs::last_write_time(*full_to_path, fs::file_time_type::clock::now(), error);
-  return true;
+  return fs::copy_file(*full_from_path, *full_to_path,
+                       fs::copy_options::overwrite_existing, error);
 }
 
 bool LocalFileProtocol::DoDeleteFile(std::string_view protocol_name,

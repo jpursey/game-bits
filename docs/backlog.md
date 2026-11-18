@@ -1191,11 +1191,11 @@ copying what is in it.
 - **Depends on:** nothing
 - **Background:** [File attributes](worklog/file_attributes.md)
 
-`LocalFileProtocol::DoGetPathInfo()` makes three system calls for a file
-(`std::filesystem::status`, `file_size`, then the attributes), where
-`GetFileAttributesExW` returns all three at once. A `GetLocalPathInfo()` in
-`local_file_attributes.h` could return the type, size, and attributes
-together, in one call on Windows. Folder copies also use `FileProtocol`'s
+`LocalFileProtocol::DoGetPathInfo()` makes four system calls for a file
+(`std::filesystem::status`, `file_size`, the attributes, then
+`last_write_time`), where `GetFileAttributesExW` returns all four at once. A
+`GetLocalPathInfo()` in `platform_file.h` could return the type, size,
+attributes, and modified time together, in one call on Windows. Folder copies also use `FileProtocol`'s
 default `DoCopyFolder`, which lists each folder twice (files, then folders)
 and queries every entry. An override that lists each folder once, copying
 through `DoCopyFile` and setting the folder's attributes last, would do less.
