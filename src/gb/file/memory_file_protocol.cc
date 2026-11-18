@@ -10,6 +10,7 @@
 
 #include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
+#include "absl/time/time.h"
 #include "gb/base/weak_ptr.h"
 #include "gb/file/raw_file.h"
 
@@ -20,9 +21,17 @@ struct MemoryFileProtocol::Node final : WeakScope<MemoryFileProtocol::Node> {
       : WeakScope<Node>(this), type(type), open(false), size(0) {}
   ~Node() { InvalidateWeakPtrs(); }
 
+  absl::Time GetModifiedTime() const {
+    return absl::FromUnixNanos(modified_time_ns);
+  }
+  void SetModifiedTime(absl::Time time) {
+    modified_time_ns = absl::ToUnixNanos(time);
+  }
+
   const PathType type;
   std::atomic<bool> open;
   std::atomic<int64_t> size;
+  std::atomic<int64_t> modified_time_ns = 0;
   std::vector<uint8_t> contents;
 
   // Read and written only under the protocol's lock.
@@ -31,7 +40,8 @@ struct MemoryFileProtocol::Node final : WeakScope<MemoryFileProtocol::Node> {
 
 class MemoryFileProtocol::MemoryFile : public RawFile {
  public:
-  explicit MemoryFile(Node* node);
+  // `clock` must outlive the node.
+  MemoryFile(Node* node, Clock* clock);
   ~MemoryFile() override;
 
   // Public overrides for RawFile.
@@ -43,10 +53,12 @@ class MemoryFileProtocol::MemoryFile : public RawFile {
 
  private:
   WeakPtr<Node> node_;
+  Clock* const clock_;
   int64_t position_ = 0;
 };
 
-MemoryFileProtocol::MemoryFile::MemoryFile(Node* node) : node_(node) {
+MemoryFileProtocol::MemoryFile::MemoryFile(Node* node, Clock* clock)
+    : node_(node), clock_(clock) {
   node->open = true;
 }
 
@@ -94,6 +106,9 @@ int64_t MemoryFileProtocol::MemoryFile::Write(const void* buffer,
     node->size = position_ + size;
   }
   std::memcpy(node->contents.data() + position_, buffer, size);
+  if (size > 0) {
+    node->SetModifiedTime(clock_->Now());
+  }
   position_ += size;
   return size;
 }
@@ -124,8 +139,9 @@ int64_t MemoryFileProtocol::MemoryFile::Read(void* buffer, int64_t size) {
 }
 
 MemoryFileProtocol::MemoryFileProtocol(FileProtocolFlags flags,
-                                       ReadOnlyFlags read_only_flags)
-    : flags_(flags), read_only_flags_(read_only_flags) {
+                                       ReadOnlyFlags read_only_flags,
+                                       Clock* clock)
+    : flags_(flags), read_only_flags_(read_only_flags), clock_(clock) {
   nodes_["/"] = std::make_unique<Node>(PathType::kFolder);
 }
 
@@ -167,7 +183,8 @@ PathInfo MemoryFileProtocol::DoGetPathInfo(std::string_view protocol_name,
   if (node->type == PathType::kFolder) {
     return {PathType::kFolder, 0, node->attributes};
   }
-  return {PathType::kFile, node->size, node->attributes};
+  return {PathType::kFile, node->size, node->attributes,
+          node->GetModifiedTime()};
 }
 
 bool MemoryFileProtocol::BasicSetAttributes(std::string_view protocol_name,
@@ -269,7 +286,8 @@ std::unique_ptr<RawFile> MemoryFileProtocol::BasicOpenFile(
   if (flags.IsSet(FileFlag::kCreate)) {
     auto& new_node = nodes_[absl::StrCat(path)];
     new_node = std::make_unique<Node>(PathType::kFile);
-    return std::make_unique<MemoryFile>(new_node.get());
+    new_node->SetModifiedTime(clock_->Now());
+    return std::make_unique<MemoryFile>(new_node.get(), clock_);
   }
 
   Node* node = nodes_.find(path)->second.get();
@@ -283,8 +301,9 @@ std::unique_ptr<RawFile> MemoryFileProtocol::BasicOpenFile(
   if (flags.IsSet(FileFlag::kReset)) {
     node->contents.clear();
     node->size = 0;
+    node->SetModifiedTime(clock_->Now());
   }
-  return std::make_unique<MemoryFile>(node);
+  return std::make_unique<MemoryFile>(node, clock_);
 }
 
 }  // namespace gb

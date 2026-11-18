@@ -169,8 +169,7 @@ Everything is in `gb_file`.
 
 ### LocalFileProtocol
 
-An internal platform interface, `local_file_attributes.h`, as
-`local_current_path.h` is:
+An internal platform interface, in `platform_file.h`:
 
 ```
 namespace gb::internal {
@@ -191,12 +190,12 @@ bool SetLocalAttributes(const std::filesystem::path& path,
 }  // namespace gb::internal
 ```
 
-- `win_local_file_attributes.cc` reads with `GetFileAttributesW`, and opens a
+- `win_platform_file.cc` reads with `GetFileAttributesW`, and opens a
   link (a reparse point) to read what it links to. Setting opens the path,
   following links, and changes only the read-only and hidden bits with
   `SetFileInformationByHandle`, keeping every other attribute as it is
   (Windows ignores those that can't be set).
-- `gen_local_file_attributes.cc` supports `kReadOnly` only, through
+- `gen_platform_file.cc` supports `kReadOnly` only, through
   `std::filesystem` permissions: read-only is no write permission for anyone,
   and clearing it gives the owner write permission. It is compiled only off
   Windows, so it hasn't been built or tested, and it relies on

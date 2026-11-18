@@ -223,7 +223,7 @@ class FileProtocol {
   // FileProtocolFlag::kInfo (which most should try to do). If implemented, it
   // must return PathInfo{PathType::kFolder} for any valid root path (generally
   // the path "/"), which has no attributes. The attributes it returns must all
-  // be in GetAttributeFlags().
+  // be in GetAttributeFlags(). A modified time is optional (see PathInfo).
   //
   // If the path is inaccessible, this should return {}.
   virtual PathInfo DoGetPathInfo(std::string_view protocol_name,
@@ -326,7 +326,7 @@ class FileProtocol {
   // Copy file should replace any existing file at to_path, but should fail if
   // to_path refers to a folder, or the parent of to_path is not the root or an
   // existing folder. The copy should have the attributes of the file at
-  // from_path.
+  // from_path, and a modified time.
   //
   // CopyFile is only called if FileProtocolFlag::kFileCreate is supported. The
   // protocol is responsible for all further validation.

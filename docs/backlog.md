@@ -1102,26 +1102,6 @@ uppercase table of its own, and a folder can be made case-sensitive. A link
 under a rooted protocol that leads outside its root falls back to the path
 as written.
 
-## File modified times
-
-- **Layers:** gb_file
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Requested by:** OZ-3 *Modified times in oz3dsk dir*
-- **Background:** `PathInfo` in `file_types.h`, and `GetPathInfo()` in
-  `file_system.h`
-
-A file's last modified time, which a protocol may report as it reports
-attributes, and nothing has yet. `PathInfo` gains it (an `absl::Time`, or
-`absl::InfinitePast()` where the protocol has none). `LocalFileProtocol`
-reports it with `std::filesystem::last_write_time`, and `MemoryFileProtocol`
-keeps one per file, stamped when it is written, so tests can check it. A
-protocol whose times are coarser than `absl::Time` (a whole second, say)
-rounds as its files do. Times are only read: `FileSystem` has no call to set
-one, and a copy doesn't keep its source file's time, so a copied file's time
-is when it was written.
-
 ## File system errors as absl::Status
 
 - **Layers:** gb_file
@@ -1212,11 +1192,11 @@ copying what is in it.
 - **Depends on:** nothing
 - **Background:** [File attributes](worklog/file_attributes.md)
 
-`LocalFileProtocol::DoGetPathInfo()` makes three system calls for a file
-(`std::filesystem::status`, `file_size`, then the attributes), where
-`GetFileAttributesExW` returns all three at once. A `GetLocalPathInfo()` in
-`local_file_attributes.h` could return the type, size, and attributes
-together, in one call on Windows. Folder copies also use `FileProtocol`'s
+`LocalFileProtocol::DoGetPathInfo()` makes four system calls for a file
+(`std::filesystem::status`, `file_size`, the attributes, then
+`last_write_time`), where `GetFileAttributesExW` returns all four at once. A
+`GetLocalPathInfo()` in `platform_file.h` could return the type, size,
+attributes, and modified time together, in one call on Windows. Folder copies also use `FileProtocol`'s
 default `DoCopyFolder`, which lists each folder twice (files, then folders)
 and queries every entry. An override that lists each folder once, copying
 through `DoCopyFile` and setting the folder's attributes last, would do less.

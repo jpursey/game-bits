@@ -9,7 +9,7 @@
 
 #include "gb/file/file_system.h"
 #include "gb/file/local_file_protocol.h"
-#include "gb/file/local_path_encoding.h"
+#include "gb/file/platform_file.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 

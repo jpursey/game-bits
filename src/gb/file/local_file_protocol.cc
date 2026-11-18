@@ -16,10 +16,8 @@
 #include "absl/strings/strip.h"
 #include "gb/base/context_builder.h"
 #include "gb/base/stdio_file.h"
-#include "gb/file/local_current_path.h"
-#include "gb/file/local_file_attributes.h"
-#include "gb/file/local_path_encoding.h"
 #include "gb/file/path.h"
+#include "gb/file/platform_file.h"
 #include "gb/file/raw_file.h"
 
 namespace gb {
@@ -553,6 +551,11 @@ PathInfo LocalFileProtocol::DoGetPathInfo(std::string_view protocol_name,
   }
   if (!IsRootFolder(path, *full_path)) {
     info.attributes = internal::GetLocalAttributes(*full_path);
+    const fs::file_time_type modified_time =
+        fs::last_write_time(*full_path, error);
+    if (!error) {
+      info.modified_time = internal::FromLocalFileTime(modified_time);
+    }
   }
   return info;
 }

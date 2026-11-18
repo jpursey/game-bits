@@ -8,8 +8,10 @@
 
 #include <stdint.h>
 
+#include <optional>
 #include <string_view>
 
+#include "absl/time/time.h"
 #include "gb/base/flags.h"
 
 namespace gb {
@@ -142,13 +144,13 @@ inline constexpr FileAttributes kAllFileAttributes = {
 };
 
 struct PathInfo {
-  PathInfo() = default;
-  PathInfo(PathType type, int64_t size = 0, FileAttributes attributes = {})
-      : type(type), size(size), attributes(attributes) {}
-
   PathType type = PathType::kInvalid;  // Type of path.
   int64_t size = 0;                    // Set only for PathType::kFile.
   FileAttributes attributes;           // Only attributes the protocol supports.
+
+  // When the file or folder was last modified, to the precision the protocol
+  // keeps, or empty if the protocol has no time for it.
+  std::optional<absl::Time> modified_time;
 };
 
 }  // namespace gb

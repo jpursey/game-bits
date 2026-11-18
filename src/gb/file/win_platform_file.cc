@@ -3,7 +3,12 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "gb/file/local_file_attributes.h"
+#include <direct.h>
+
+#include <string>
+
+#include "gb/base/unicode.h"
+#include "gb/file/platform_file.h"
 
 // MUST be last, as windows pollutes the global namespace with many macros.
 #define WIN32_LEAN_AND_MEAN
@@ -13,8 +18,16 @@ namespace gb::internal {
 
 namespace {
 
+namespace fs = std::filesystem;
+
+// Windows file times count 100 nanosecond ticks from 1601-01-01 UTC, as
+// FILETIME does. std::chrono's own conversion goes through utc_clock, which
+// loads the time zone database to look up leap seconds.
+constexpr absl::Duration kFileTimeTick = absl::Nanoseconds(100);
+constexpr absl::Time kFileTimeEpoch = absl::FromUnixSeconds(-11644473600);
+
 // Opens the file or folder at `path`, following links, with `access`.
-HANDLE OpenPath(const std::filesystem::path& path, DWORD access) {
+HANDLE OpenPath(const fs::path& path, DWORD access) {
   return ::CreateFileW(path.c_str(), access,
                        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                        nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS,
@@ -34,11 +47,44 @@ FileAttributes ToFileAttributes(DWORD windows_attributes) {
 
 }  // namespace
 
+//------------------------------------------------------------------------------
+// Path encoding
+//
+// Windows paths are UTF-16.
+//------------------------------------------------------------------------------
+
+std::string LocalPathToUtf8(const fs::path& path) {
+  return ToUtf8(path.generic_u16string());
+}
+
+fs::path Utf8ToLocalPath(std::string_view path) {
+  return fs::path(ToUtf16(path), fs::path::generic_format);
+}
+
+// Names are UTF-16 code units that aren't checked, so a lone surrogate is
+// accepted.
+fs::path GetNonUtf8Name() { return fs::path(std::wstring(1, wchar_t{0xD800})); }
+
+//------------------------------------------------------------------------------
+// Current path
+//------------------------------------------------------------------------------
+
+bool SetLocalCurrentPath(const fs::path& path) {
+  // Unlike SetCurrentDirectoryW(), this also sets the drive's current folder
+  // (the "=C:" environment variable), which a drive on its own ("c:")
+  // resolves to while another drive is current.
+  return _wchdir(path.c_str()) == 0;
+}
+
+//------------------------------------------------------------------------------
+// Attributes
+//------------------------------------------------------------------------------
+
 FileAttributes GetLocalAttributeFlags() {
   return {FileAttribute::kReadOnly, FileAttribute::kHidden};
 }
 
-FileAttributes GetLocalAttributes(const std::filesystem::path& path) {
+FileAttributes GetLocalAttributes(const fs::path& path) {
   const DWORD windows_attributes = ::GetFileAttributesW(path.c_str());
   if (windows_attributes == INVALID_FILE_ATTRIBUTES) {
     return {};
@@ -63,8 +109,7 @@ FileAttributes GetLocalAttributes(const std::filesystem::path& path) {
   return ToFileAttributes(info.FileAttributes);
 }
 
-bool SetLocalAttributes(const std::filesystem::path& path,
-                        FileAttributes attributes) {
+bool SetLocalAttributes(const fs::path& path, FileAttributes attributes) {
   const HANDLE handle =
       OpenPath(path, FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES);
   if (handle == INVALID_HANDLE_VALUE) {
@@ -97,6 +142,19 @@ bool SetLocalAttributes(const std::filesystem::path& path,
   }
   ::CloseHandle(handle);
   return success;
+}
+
+//------------------------------------------------------------------------------
+// File times
+//------------------------------------------------------------------------------
+
+absl::Time FromLocalFileTime(fs::file_time_type time) {
+  return kFileTimeEpoch + kFileTimeTick * time.time_since_epoch().count();
+}
+
+fs::file_time_type ToLocalFileTime(absl::Time time) {
+  return fs::file_time_type(
+      fs::file_time_type::duration((time - kFileTimeEpoch) / kFileTimeTick));
 }
 
 }  // namespace gb::internal
