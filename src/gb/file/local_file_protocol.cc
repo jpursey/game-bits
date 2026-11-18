@@ -181,14 +181,13 @@ std::string FullToOsRootPath(std::string_view path) {
 // one with a name that is a device.
 std::optional<fs::path> ToFullPath(std::string_view root,
                                    std::string_view path) {
-  if (!GetHostName(path).empty()) {
+  // Create() rejects a root with a device name, so only the path is checked.
+  if (!GetHostName(path).empty() || internal::HasLocalDeviceName(path)) {
     return std::nullopt;
   }
   fs::path full_path =
       ToPath(root.empty() ? OsRootToFullPath(path) : JoinPath(root, path));
-
-  // Create() rejects a root with a device name, so only the path is checked.
-  if (full_path.empty() || internal::HasLocalDeviceName(ToPath(path))) {
+  if (full_path.empty()) {
     return std::nullopt;
   }
   return full_path;
@@ -234,7 +233,7 @@ std::vector<std::string> ListFolder(Iterator it, std::string_view root,
     }
 
     // Nor can a name that is a device, or anything in a folder with one.
-    if (internal::HasLocalDeviceName(it->path().filename())) {
+    if (internal::HasLocalDeviceName(RemoveFolder(entry_path))) {
       if constexpr (std::is_same_v<Iterator,
                                    fs::recursive_directory_iterator>) {
         it.disable_recursion_pending();
@@ -344,7 +343,7 @@ std::unique_ptr<LocalFileProtocol> LocalFileProtocol::Create(
     }
   }
 
-  if (internal::HasLocalDeviceName(ToPath(root))) {
+  if (internal::HasLocalDeviceName(root)) {
     LOG(ERROR) << "Requested root path \"" << requested_root
                << "\" has a name that is a device.";
     return nullptr;

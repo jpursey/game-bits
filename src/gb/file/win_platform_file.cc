@@ -10,6 +10,7 @@
 
 #include "absl/algorithm/container.h"
 #include "absl/strings/ascii.h"
+#include "absl/strings/str_split.h"
 #include "gb/base/unicode.h"
 #include "gb/file/platform_file.h"
 
@@ -38,8 +39,8 @@ constexpr std::string_view kDeviceNames[] = {"con", "prn",    "aux",
 // in any case, its part before the first '.' or ':', less trailing spaces, is a
 // device name. Windows 11 no longer reads a name with an extension as a device,
 // but earlier versions do, so it is one here on every version.
-bool IsDeviceName(const fs::path& name) {
-  const std::string lower = absl::AsciiStrToLower(LocalPathToUtf8(name));
+bool IsDeviceName(std::string_view name) {
+  const std::string lower = absl::AsciiStrToLower(name);
   std::string_view base =
       std::string_view(lower).substr(0, lower.find_first_of(".:"));
   while (!base.empty() && base.back() == ' ') {
@@ -98,8 +99,8 @@ fs::path GetNonUtf8Name() { return fs::path(std::wstring(1, wchar_t{0xD800})); }
 // Device names
 //------------------------------------------------------------------------------
 
-bool HasLocalDeviceName(const fs::path& path) {
-  return absl::c_any_of(path, IsDeviceName);
+bool HasLocalDeviceName(std::string_view path) {
+  return absl::c_any_of(absl::StrSplit(path, '/'), IsDeviceName);
 }
 
 //------------------------------------------------------------------------------

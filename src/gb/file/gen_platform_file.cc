@@ -67,7 +67,7 @@ fs::path GetNonUtf8Name() { return fs::path(std::string(1, '\xFF')); }
 // files, rather than names that are devices in every folder.
 //------------------------------------------------------------------------------
 
-bool HasLocalDeviceName(const fs::path& path) { return false; }
+bool HasLocalDeviceName(std::string_view path) { return false; }
 
 //------------------------------------------------------------------------------
 // Current path
