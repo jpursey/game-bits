@@ -178,11 +178,12 @@ std::string FullToOsRootPath(std::string_view path) {
 // Returns the operating system path for a protocol path under the root (an
 // empty root is the operating system's root), or nullopt for an invalid path:
 // one with a host, which isn't under the root, one that isn't valid UTF-8, or
-// one with a name that is a device.
+// one with a name the operating system doesn't allow.
 std::optional<fs::path> ToFullPath(std::string_view root,
                                    std::string_view path) {
-  // Create() rejects a root with a device name, so only the path is checked.
-  if (!GetHostName(path).empty() || internal::HasLocalDeviceName(path)) {
+  // Create() rejects a root with a name that isn't allowed, so only the path is
+  // checked.
+  if (!GetHostName(path).empty() || !internal::IsAllowedLocalPath(path)) {
     return std::nullopt;
   }
   fs::path full_path =
@@ -232,8 +233,9 @@ std::vector<std::string> ListFolder(Iterator it, std::string_view root,
       continue;
     }
 
-    // Nor can a name that is a device, or anything in a folder with one.
-    if (internal::HasLocalDeviceName(RemoveFolder(entry_path))) {
+    // Nor can a name the operating system doesn't allow, or anything in a
+    // folder with one.
+    if (!internal::IsAllowedLocalPath(RemoveFolder(entry_path))) {
       if constexpr (std::is_same_v<Iterator,
                                    fs::recursive_directory_iterator>) {
         it.disable_recursion_pending();
@@ -343,9 +345,9 @@ std::unique_ptr<LocalFileProtocol> LocalFileProtocol::Create(
     }
   }
 
-  if (internal::HasLocalDeviceName(root)) {
+  if (!internal::IsAllowedLocalPath(root)) {
     LOG(ERROR) << "Requested root path \"" << requested_root
-               << "\" has a name that is a device.";
+               << "\" has a name the operating system doesn't allow.";
     return nullptr;
   }
 

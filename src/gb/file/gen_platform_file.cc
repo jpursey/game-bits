@@ -61,13 +61,14 @@ fs::path Utf8ToLocalPath(std::string_view path) {
 fs::path GetNonUtf8Name() { return fs::path(std::string(1, '\xFF')); }
 
 //------------------------------------------------------------------------------
-// Device names
+// Allowed names
 //
-// Devices have paths of their own (such as "/dev/null"), which aren't regular
-// files, rather than names that are devices in every folder.
+// Any name is allowed. Devices have paths of their own (such as "/dev/null"),
+// which aren't regular files, rather than names that are devices in every
+// folder.
 //------------------------------------------------------------------------------
 
-bool HasLocalDeviceName(std::string_view path) { return false; }
+bool IsAllowedLocalPath(std::string_view path) { return true; }
 
 //------------------------------------------------------------------------------
 // Current path

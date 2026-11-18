@@ -96,11 +96,14 @@ fs::path Utf8ToLocalPath(std::string_view path) {
 fs::path GetNonUtf8Name() { return fs::path(std::wstring(1, wchar_t{0xD800})); }
 
 //------------------------------------------------------------------------------
-// Device names
+// Allowed names
+//
+// A name Windows opens as a device rather than as a file or folder isn't
+// allowed.
 //------------------------------------------------------------------------------
 
-bool HasLocalDeviceName(std::string_view path) {
-  return absl::c_any_of(absl::StrSplit(path, '/'), IsDeviceName);
+bool IsAllowedLocalPath(std::string_view path) {
+  return absl::c_none_of(absl::StrSplit(path, '/'), IsDeviceName);
 }
 
 //------------------------------------------------------------------------------

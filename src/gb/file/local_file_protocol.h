@@ -29,9 +29,9 @@ namespace gb {
 // Paths are UTF-8. A path with a host (such as "file://host/a") isn't under the
 // root, so it is invalid.
 //
-// A path with a name that the operating system opens as a device rather than
-// as a file or folder is invalid, as is a root with one, and listing skips
-// such names and anything in them. On Windows these are "CON", "PRN", "AUX",
+// A path with a name that the operating system doesn't allow as the name of a
+// file or folder is invalid, as is a root with one, and listing skips such
+// names and anything in them. On Windows these are "CON", "PRN", "AUX",
 // "NUL", "COM0" to "COM9" and "LPT0" to "LPT9" (and with a superscript 1, 2,
 // or 3), "CONIN$", and "CONOUT$", in any case, with any extension, and in any
 // folder ("a/con.txt").

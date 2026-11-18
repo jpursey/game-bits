@@ -17,8 +17,8 @@ namespace {
 
 using ::testing::UnorderedElementsAre;
 
-// Names Windows opens as devices are ordinary names elsewhere.
-TEST(GenLocalFileProtocolTest, WindowsDeviceNamesAreFiles) {
+// Names Windows doesn't allow are ordinary names elsewhere.
+TEST(GenLocalFileProtocolTest, WindowsNamesAreAllowed) {
   FileSystem file_system;
   ASSERT_TRUE(file_system.Register(LocalFileProtocol::CreateTemp("gbtest")));
   for (std::string_view name : {"con", "NUL", "com1", "aux.txt"}) {
