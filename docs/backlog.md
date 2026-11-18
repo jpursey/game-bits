@@ -559,20 +559,18 @@ first, and it is removed once they have.
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** nothing
-- **Requested by:** OZ-3 *oz3dsk on Game Bits' path checks*
 - **Background:** none
 
 Windows opens some file names as devices rather than files: `CON`, `PRN`,
 `AUX`, `NUL`, `COM0` to `COM9`, and `LPT0` to `LPT9`, in any case, with any
 extension and in any folder (`out\CON.TXT` is the console), and `CONIN$` and
-`CONOUT$`. Writing one writes to the device. Nothing in `gb/file` can tell, so
-a program that names a host file from outside data (a name the user typed, or
-one stored in a file it is extracting) has to keep its own list or miss it.
-Add a portable check in `gb/file/path.h`, such as `IsWindowsDeviceName()` on a
-file name, that holds on every platform, so a program can refuse such a name
-the same way everywhere. Separately, `LocalFileProtocol` on Windows could
-report a device path as neither a file nor a folder, so `GetPathInfo` doesn't
-call it a file that can be written; a test there needs Windows.
+`CONOUT$`. `LocalFileProtocol` on Windows opens them as it does any path, so
+writing one writes to the device, and a program that names a host file from
+outside data (a name the user typed, or one stored in a file it is extracting)
+can't tell. The protocol should treat a device path as neither a file nor a
+folder: `GetPathInfo` doesn't report it, and writing, reading, or creating it
+fails, so every program refuses it with nothing of its own to check. The test
+needs Windows.
 
 ## Command line folder or file
 
@@ -580,7 +578,7 @@ call it a file that can be written; a test there needs Windows.
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** nothing
-- **Requested by:** OZ-3 *oz3dsk on Game Bits' path checks*
+- **Requested by:** OZ-3 *oz3dsk get on Game Bits' folder or file*
 - **Background:** none
 
 A command's output argument is often either a file to write or an existing
