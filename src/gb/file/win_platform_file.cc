@@ -9,10 +9,11 @@
 #include <string_view>
 
 #include "absl/algorithm/container.h"
-#include "absl/strings/ascii.h"
+#include "absl/base/no_destructor.h"
 #include "absl/strings/str_split.h"
 #include "gb/base/unicode.h"
 #include "gb/file/platform_file.h"
+#include "re2/re2.h"
 
 // MUST be last, as windows pollutes the global namespace with many macros.
 #define WIN32_LEAN_AND_MEAN
@@ -30,30 +31,15 @@ namespace fs = std::filesystem;
 constexpr absl::Duration kFileTimeTick = absl::Nanoseconds(100);
 constexpr absl::Time kFileTimeEpoch = absl::FromUnixSeconds(-11644473600);
 
-// Names Windows opens as devices, in lowercase, apart from the COM and LPT
-// ports.
-constexpr std::string_view kDeviceNames[] = {"con", "prn",    "aux",
-                                             "nul", "conin$", "conout$"};
-
 // Returns true if Windows opens a file or folder named `name` as a device: if,
 // in any case, its part before the first '.' or ':', less trailing spaces, is a
 // device name. Windows 11 no longer reads a name with an extension as a device,
 // but earlier versions do, so it is one here on every version.
 bool IsDeviceName(std::string_view name) {
-  const std::string lower = absl::AsciiStrToLower(name);
-  std::string_view base =
-      std::string_view(lower).substr(0, lower.find_first_of(".:"));
-  while (!base.empty() && base.back() == ' ') {
-    base.remove_suffix(1);
-  }
-
-  // Ports are numbered with a digit, or a superscript 1, 2, or 3 (in UTF-8).
-  if (base.starts_with("com") || base.starts_with("lpt")) {
-    const std::string_view number = base.substr(3);
-    return (number.size() == 1 && absl::ascii_isdigit(number[0])) ||
-           number == "\xC2\xB9" || number == "\xC2\xB2" || number == "\xC2\xB3";
-  }
-  return absl::c_linear_search(kDeviceNames, base);
+  // COM and LPT ports are numbered with a digit, or a superscript 1, 2, or 3.
+  static const absl::NoDestructor<RE2> s_device_name(
+      R"((?is)(con|prn|aux|nul|conin\$|conout\$|(com|lpt)[0-9\x{B9}\x{B2}\x{B3}]) *([.:].*)?)");
+  return RE2::FullMatch(name, *s_device_name);
 }
 
 // Opens the file or folder at `path`, following links, with `access`.

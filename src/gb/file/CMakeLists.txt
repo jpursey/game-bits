@@ -7,6 +7,11 @@ if (WIN32)
   set(gb_file_internal_SOURCE
     win_platform_file.cc
   )
+  set(gb_file_internal_DEPS
+    absl::algorithm_container
+    absl::no_destructor
+    re2
+  )
   set(gb_file_internal_TEST_SOURCE
     win_local_file_protocol_drive_test.cc
     win_local_file_protocol_test.cc
@@ -52,10 +57,10 @@ set(gb_file_TEST_SOURCE
 )
 
 set(gb_file_DEPS
-  absl::algorithm_container
   absl::flat_hash_map
   absl::time
   gb_base
+  ${gb_file_internal_DEPS}
 )
 
 set(gb_file_TEST_DEPS
