@@ -662,8 +662,6 @@ bool VulkanBackend::InitFrames() {
 }
 
 void VulkanBackend::CleanUp() {
-  LOG_IF(ERROR, !context_.Complete())
-      << "Failed to complete VulkanBackend context.";
   if (device_) {
     auto result = device_.waitIdle();
     if (result != vk::Result::eSuccess) {
@@ -714,6 +712,10 @@ void VulkanBackend::CleanUp() {
   if (instance_) {
     instance_.destroy();
   }
+
+  // Completing the context may destroy the window it owns, so it comes last.
+  LOG_IF(ERROR, !context_.Complete())
+      << "Failed to complete VulkanBackend context.";
 }
 
 void VulkanBackend::CleanUpSwap() {

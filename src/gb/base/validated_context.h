@@ -172,7 +172,7 @@ class ValidatedContext final {
   }
   ValidatedContext(std::shared_ptr<Context> shared_context,
                    std::vector<ContextConstraint> constraints) {
-    Assign(shared_context, std::move(constraints));
+    Assign(std::move(shared_context), std::move(constraints));
   }
 
   // Const copy construction is not allowed, as it could allow the underlying
@@ -236,14 +236,13 @@ class ValidatedContext final {
   // transferred). To avoid unexpected and/or unhandled completion failures, it
   // is recommeneded to call and check Complete() explicitly before
   // move-assignment.
+  //
+  // A raw context is not owned, unless it is the context this already holds,
+  // which keeps its ownership.
   bool Assign(Context* context, std::vector<ContextConstraint> constraints);
   bool Assign(ValidatedContext& context,
               std::vector<ContextConstraint> constraints) {
-    if (!Assign(context.context_, std::move(constraints))) {
-      return false;
-    }
-    shared_context_ = context.shared_context_;
-    return true;
+    return Assign(context.context_, std::move(constraints));
   }
   bool Assign(Context&& context, std::vector<ContextConstraint> constraints) {
     return Assign(std::make_shared<Context>(std::move(context)),
@@ -255,13 +254,7 @@ class ValidatedContext final {
                   std::move(constraints));
   }
   bool Assign(std::shared_ptr<Context> context,
-              std::vector<ContextConstraint> constraints) {
-    if (!Assign(context.get(), std::move(constraints))) {
-      return false;
-    }
-    shared_context_ = context;
-    return true;
-  }
+              std::vector<ContextConstraint> constraints);
 
   // Move assignment from another ValidatedContext or ContextContract.
   //
@@ -282,8 +275,9 @@ class ValidatedContext final {
   // constraints.
   //
   // On success, the resulting context is reset to an uninitialized state
-  // (IsValid() will return false), and this will return true. Otherwise, this
-  // returns false, and the underlying context remains unmodified.
+  // (IsValid() will return false), releasing its ownership of the context if
+  // it had any, and this will return true. Otherwise, this returns false, and
+  // the underlying context remains unmodified.
   //
   // If the context is already uninitialized (IsValid() returns false),
   // Complete() will trivially succeed and return true.
@@ -306,9 +300,11 @@ class ValidatedContext final {
   // to defeat the read/write safeguards provided by this class.
   //
   // The returned context must not be destroyed or moved-from as long as any
-  // ValidatedContext or ContextContract continues to reference it.
-  const Context* GetContext() const { return context_; }
-  Context* GetContext() { return context_; }
+  // ValidatedContext or ContextContract continues to reference it. If this is
+  // the last owner of the context, completing it (or destroying it) destroys
+  // the context and everything in it.
+  const Context* GetContext() const { return context_.get(); }
+  Context* GetContext() { return context_.get(); }
 
   // Returns all constraints used to enforce validation by this class.
   const std::vector<ContextConstraint>& GetConstraints() const {
@@ -478,8 +474,9 @@ class ValidatedContext final {
   bool CanComplete(bool report_errors) const;
   void ReportError(const std::string& message) const;
 
-  std::shared_ptr<Context> shared_context_;
-  Context* context_ = nullptr;
+  // The context, which is shared with its other owners, if any. A raw context
+  // is held with no owner.
+  std::shared_ptr<Context> context_;
   std::vector<ContextConstraint> constraints_;
 };
 
@@ -535,7 +532,7 @@ class ContextContract final {
 
   // Constructs a contract with shared ownership of the context.
   ContextContract(std::shared_ptr<Context> context)
-      : context_(context, {Constraints...}) {}
+      : context_(std::move(context), {Constraints...}) {}
 
   // Standard copy construction is not allowed, as it could allow the underlying
   // const context to be modified.
