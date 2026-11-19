@@ -60,6 +60,17 @@ std::string ContextConstraint::ToString() const {
 
 bool ValidatedContext::Assign(Context* context,
                               std::vector<ContextConstraint> constraints) {
+  // Assign() completes the current context before holding the new one, so
+  // the current owner is passed in to keep it alive.
+  if (context == context_.get()) {
+    return Assign(context_, std::move(constraints));
+  }
+  return Assign(std::shared_ptr<Context>(std::shared_ptr<Context>(), context),
+                std::move(constraints));
+}
+
+bool ValidatedContext::Assign(std::shared_ptr<Context> context,
+                              std::vector<ContextConstraint> constraints) {
   if (context == nullptr) {
     ReportError("Context passed to ValidatedContext was null");
     return false;
@@ -101,16 +112,14 @@ bool ValidatedContext::Assign(Context* context,
                       constraint.default_value);
     }
   }
-  context_ = context;
+  context_ = std::move(context);
   constraints_ = std::move(constraints);
   return true;
 }
 
 bool ValidatedContext::Assign(ValidatedContext&& context) {
   bool result = Complete();
-  shared_context_ = std::move(context.shared_context_);
-  context_ = context.context_;
-  context.context_ = nullptr;
+  context_ = std::move(context.context_);
   constraints_ = std::move(context.constraints_);
   return result;
 }

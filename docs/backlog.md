@@ -22,29 +22,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Release ownership when a validated context completes
-
-- **Layers:** base
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** `ValidatedContext` in `src/gb/base/validated_context.h` and
-  `.cc`, and the `AssignSharedContextAgain` test
-
-`ValidatedContext` keeps its context in two fields that every `Assign` overload
-keeps in sync by hand: `context_`, the pointer it uses, and `shared_context_`,
-the ownership. `Complete()` and `Assign(Context*, ...)` reset `context_` but not
-`shared_context_`, so a `ValidatedContext` that owned a context keeps it, and
-everything in it, alive after it completes or is pointed at a raw context. A
-contract made from it then shares that stale ownership too.
-
-Hold one `std::shared_ptr<Context>`, wrapping a raw context with the aliasing
-constructor and no owner, so the pointer and its ownership can't diverge, and
-reset it on completion. Assigning the context it already points at, as
-`AssignSharedContextAgain` does, keeps its ownership. Tests check that an
-owned context is destroyed when its `ValidatedContext` completes, and when it
-is assigned a raw context.
-
 ## clang-cl build
 
 - **Layers:** job

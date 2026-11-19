@@ -1563,6 +1563,31 @@ TEST_F(ContextOwnershipTest, AssignSharedContextAgain) {
   EXPECT_EQ(counts.destruct, 0);
 }
 
+TEST_F(ContextOwnershipTest, CompleteReleasesOwnedContext) {
+  Counts counts;
+  Context context;
+  context.SetNew<Item>(&counts);
+  ValidatedContext validated_context(std::move(context), {kInRequiredItem});
+  EXPECT_EQ(counts.destruct, 0);
+
+  EXPECT_TRUE(validated_context.Complete());
+  EXPECT_EQ(counts.destruct, 1);
+  EXPECT_EQ(this->GetErrorCount(), 0);
+}
+
+TEST_F(ContextOwnershipTest, AssignRawContextReleasesOwnedContext) {
+  Counts counts;
+  Context context;
+  context.SetNew<Item>(&counts);
+  ValidatedContext validated_context(std::move(context), {kInRequiredItem});
+
+  Context raw_context;
+  EXPECT_TRUE(validated_context.Assign(&raw_context, {}));
+  EXPECT_EQ(counts.destruct, 1);
+  EXPECT_EQ(validated_context.GetContext(), &raw_context);
+  EXPECT_EQ(this->GetErrorCount(), 0);
+}
+
 TEST(ValidatedContextErrorTest, NullCallbackRestoresLogging) {
   int error_count = 0;
   ValidatedContext::SetGlobalErrorCallback(
