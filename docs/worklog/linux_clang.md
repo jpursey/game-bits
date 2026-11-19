@@ -39,10 +39,10 @@ job. There is no public API change.
 
 ### Build system
 
-- `flatc`: Windows uses the checked-in `bin/flatc.exe`. Elsewhere,
-  `FLATBUFFERS_FLATC_EXECUTABLE` is left unset, so flatbuffers'
+- `flatc`: `FLATBUFFERS_FLATC_EXECUTABLE` is left unset, so flatbuffers'
   `BuildFlatBuffers.cmake` builds `flatc` from the submodule and uses that
-  target.
+  target. Windows did the same later (backlog item *flatc from source on
+  Windows*), replacing the checked-in `bin/flatc.exe`.
 - `gb_external_libraries()` only defines the `sdl2` and `Vulkan` targets where
   they exist (SDL2 on Windows, from its prebuilt binaries; Vulkan on Windows
   where `VULKAN_SDK` is set). Each module that needs one is only added when its

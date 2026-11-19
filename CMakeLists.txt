@@ -120,17 +120,20 @@ endif()
 
 ####### flatbuffers
 
-# A Windows build machine uses the checked-in bin/flatc.exe. Elsewhere,
-# flatbuffers builds flatc from source and uses that.
-if (CMAKE_HOST_WIN32)
-  set(FLATBUFFERS_FLATC_EXECUTABLE "${GB_DIR}/bin/flatc")
-endif()
+# flatbuffers builds flatc from source, and flatbuffers_generate_headers uses
+# that target, so generated code always matches the runtime headers.
 option(FLATBUFFERS_BUILD_TESTS "" OFF)
 set(FLATBUFFERS_BUILD_TESTS OFF)
 option(FLATBUFFERS_INSTALL "" OFF)
 set(FLATBUFFERS_INSTALL OFF)
 add_subdirectory("${GB_THIRD_PARTY_DIR}/flatbuffers")
 set_target_properties(flatbuffers flatc PROPERTIES FOLDER External/flatbuffers)
+
+# The build runs flatc, and a Debug flatc linked to the debug CRT DLL can't
+# start, as that DLL isn't on PATH. Linking it statically lets it run anywhere.
+if (MSVC)
+  target_compile_options(flatc PRIVATE $<$<CONFIG:Debug>:/MTd>)
+endif()
 unset(FLATBUFFERS_BUILD_TESTS)
 unset(FLATBUFFERS_INSTALL)
 

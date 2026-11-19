@@ -26,7 +26,7 @@ This is a CMake project, starting at the root. The directory structure is as fol
                    (forks are avoided)
   examples/     -- Full runnable sample projects
   templates/    -- Starter projects that can be copied to start something new
-  bin/          -- Compiled binary files used by compilation or execution
+  bin/          -- Example programs, built here locally (not checked in)
   out/          -- Generated output from building locally. This is transient
                    and can get deleted at any time.
   assets/       -- Assets used at runtime by examples
@@ -153,7 +153,7 @@ ctest --test-dir out/build/linux-clang-Debug --output-on-failure
 out/build/linux-clang-Debug/src/gb/base/gb_base_test --gtest_filter=ContextTest.*
 ```
 
-`flatc` is built from its submodule, so a full build is about 620 steps, about 4.5 minutes on 4 cores. Test binaries have no `.exe`. Run tests as an ordinary user: root ignores read-only permissions, so `CommonProtocolTest.ReadOnlyFile` fails as root.
+A full build is about 620 steps, about 4.5 minutes on 4 cores. Test binaries have no `.exe`. Run tests as an ordinary user: root ignores read-only permissions, so `CommonProtocolTest.ReadOnlyFile` fails as root.
 
 ### Checks
 
