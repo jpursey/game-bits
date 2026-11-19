@@ -1508,6 +1508,49 @@ TEST_F(ContextOwnershipTest, AssignTakesSharedOwnership) {
   EXPECT_EQ(validated_context_c->GetValue<int>(), kDefaultInValue);
 }
 
+TEST_F(ContextOwnershipTest, ContractFromValidatedContextSharesOwnership) {
+  Counts counts;
+  Context context;
+  context.SetNew<Item>(&counts);
+  auto validated_context = std::make_unique<ValidatedContext>(
+      std::move(context), std::vector<ContextConstraint>{kInRequiredItem});
+
+  ContextContract<kInRequiredItem> contract(*validated_context);
+  validated_context = nullptr;
+  EXPECT_EQ(counts.destruct, 0);
+
+  auto contract_context =
+      std::make_unique<ValidatedContext>(std::move(contract));
+  EXPECT_NE(contract_context->GetPtr<Item>(), nullptr);
+  EXPECT_EQ(counts.destruct, 0);
+
+  contract_context = nullptr;
+  EXPECT_EQ(counts.destruct, 1);
+  EXPECT_EQ(this->GetErrorCount(), 0);
+}
+
+TEST_F(ContextOwnershipTest, ContractFromContractSharesOwnership) {
+  Counts counts;
+  Context context;
+  context.SetNew<Item>(&counts);
+  auto owner =
+      std::make_unique<ContextContract<kInRequiredItem>>(std::move(context));
+
+  ContextContract<kInRequiredItem, kInOptionalValue> contract(*owner);
+  owner = nullptr;
+  EXPECT_EQ(counts.destruct, 0);
+
+  auto contract_context =
+      std::make_unique<ValidatedContext>(std::move(contract));
+  EXPECT_NE(contract_context->GetPtr<Item>(), nullptr);
+  EXPECT_EQ(contract_context->GetValue<int>(), kDefaultInValue);
+  EXPECT_EQ(counts.destruct, 0);
+
+  contract_context = nullptr;
+  EXPECT_EQ(counts.destruct, 1);
+  EXPECT_EQ(this->GetErrorCount(), 0);
+}
+
 TEST_F(ContextOwnershipTest, AssignSharedContextAgain) {
   Counts counts;
   auto context = std::make_shared<Context>();

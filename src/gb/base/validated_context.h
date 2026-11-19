@@ -542,16 +542,18 @@ class ContextContract final {
   ContextContract(const ContextContract<Constraints...>&) = delete;
 
   // Construct one contract from another. As long as the underlying context is
-  // valid for both contracts, the resulting ValidatedContext will be valid.
+  // valid for both contracts, the resulting ValidatedContext will be valid. If
+  // `other` owns its context, this contract shares that ownership.
   template <const ContextConstraint&... OtherConstraints>
   ContextContract(ContextContract<OtherConstraints...>& other)
-      : context_(other.context_.context_, {Constraints...}) {}
+      : context_(other.context_, {Constraints...}) {}
 
   // Construct a contract from a ValidatedContext. As long as the underlying
   // context is valid for this contract as well, the resulting ValidatedContext
-  // will be valid.
+  // will be valid. If `other` owns its context, this contract shares that
+  // ownership.
   ContextContract(ValidatedContext& other)
-      : context_(other.context_, {Constraints...}) {}
+      : context_(other, {Constraints...}) {}
 
   // Move construction is supported, but only for the exact same contract.
   // Otherwise, the previous contract may not have its output and scope
@@ -580,6 +582,8 @@ class ContextContract final {
 
  private:
   friend class ValidatedContext;
+  template <const ContextConstraint&... OtherConstraints>
+  friend class ContextContract;
 
   ValidatedContext context_;
 };
