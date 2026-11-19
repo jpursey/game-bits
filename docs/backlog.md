@@ -22,6 +22,35 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
+## Contracts own their contexts
+
+- **Layers:** base, resource, render
+- **Size:** medium
+- **Feature workflow:** yes
+- **Depends on:** nothing
+- **Background:** the `Context*` constructors and `Assign` of
+  `ValidatedContext` and `ContextContract` in `src/gb/base/validated_context.h`
+
+A `ValidatedContext` or `ContextContract` made from a raw `Context*` doesn't own
+it, so one kept after the context is destroyed points at a destroyed context,
+and nothing checks that the caller kept it alive. Every other way to make one
+owns or shares its context. Remove the raw `Context*` forms, so every
+`ValidatedContext` keeps its context alive. That also removes the special case
+where assigning the raw context it already holds keeps its ownership.
+
+The raw form is used to lend a context for the length of a call:
+- The resource layer passes loaders and writers a `Context*`
+  (`ResourceManager`, `ResourceSystem`, `ResourceFileReader`, and
+  `ResourceFileWriter`), which `RenderSystem` makes contracts from. These take
+  a form that shares ownership instead, such as a `ValidatedContext&`.
+- `RunCommandLine()` is called with a `Context` on `main()`'s stack in both
+  examples, which can move it in instead.
+- About 50 test call sites, mostly `Create(&context)`. Tests that read the
+  context's outputs afterwards keep a `std::shared_ptr<Context>` to it.
+
+This breaks the public API for any project that makes a contract from a
+`Context*`.
+
 ## clang-cl build
 
 - **Layers:** job
