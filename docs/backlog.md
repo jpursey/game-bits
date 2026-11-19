@@ -120,31 +120,6 @@ of the libraries in the worklog.
 This changes what projects using `gb_sdl` see wherever they call SDL directly,
 so it needs a follow-up in each of them.
 
-## Graphics on Linux
-
-- **Layers:** build, sdl, imgui, pilot, render, examples, tools
-- **Size:** medium
-- **Feature workflow:** yes
-- **Depends on:** nothing
-- **Background:** [Linux and Clang](worklog/linux_clang.md); SDL in the root
-  `CMakeLists.txt`; `gb_external_libraries()` in
-  `CMake/GameBitsExternalLibraries.cmake`
-
-Linux builds every library except those that need SDL or Vulkan (`gb_sdl`,
-`gb_imgui_sdl`, `gb_pilot_sdl`, `gb_render_vulkan`, `gb_render_vulkan_sdl`),
-and none of the examples. Build them there too, then the examples, and
-`tools/run-program` (a PowerShell script today) so a session can run an
-example on Linux and check its frames:
-- SDL is built from its submodule (`third_party/SDL`), but only on Windows.
-  On Linux it needs the system's windowing headers (X11, Wayland), which SDL
-  loads at run time. Say which packages in CLAUDE.md, and install them in CI.
-- Vulkan's headers and loader need a source on Linux: the Vulkan SDK, the
-  distribution's packages, or submodules. Decide which; the `Vulkan` target is
-  only defined on Windows today, following the Windows SDK's layout.
-- Shaders built with `gb_embed_shader` need `glslc`, from the same source.
-- CI on Linux has no GPU, so running examples there needs a software Vulkan
-  driver (such as Mesa's lavapipe), or stays local.
-
 ## Linux threads and fibers
 
 - **Layers:** thread, job
