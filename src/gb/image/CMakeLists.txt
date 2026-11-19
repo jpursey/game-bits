@@ -17,12 +17,9 @@ set(gb_image_DEPS
   absl::span
   gb_base
   gb_file
+  glm
   stb_image
   stb_image_write
-)
-
-set(gb_image_LIBS
-  glm
 )
 
 # Reads files with gb_file's test protocol.

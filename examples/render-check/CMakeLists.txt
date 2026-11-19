@@ -43,6 +43,7 @@ set(render_check_SOURCE
 )
 
 set(render_check_DEPS
+  absl::log
   absl::log_entry
   absl::log_sink
   absl::log_sink_registry
@@ -67,10 +68,6 @@ set(render_check_DEPS
   gb_resource
   sdl2
   sdl2_main
-)
-
-set(render_check_LIBS
-  absl::log
 )
 
 gb_add_win_executable(render_check)

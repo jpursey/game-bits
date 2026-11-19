@@ -57,7 +57,9 @@ set(gb_file_TEST_SOURCE
 )
 
 set(gb_file_DEPS
+  absl::check
   absl::flat_hash_map
+  absl::log
   absl::time
   gb_base
   ${gb_file_internal_DEPS}
@@ -65,11 +67,6 @@ set(gb_file_DEPS
 
 set(gb_file_TEST_DEPS
   gb_test
-)
-
-set(gb_file_LIBS
-  absl::check
-  absl::log
 )
 
 gb_add_library(gb_file)

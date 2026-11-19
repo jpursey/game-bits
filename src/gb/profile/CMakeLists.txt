@@ -26,7 +26,9 @@ set(gb_profile_DEPS
   absl::algorithm_container
   absl::any_invocable
   absl::base
+  absl::check
   absl::flat_hash_map
+  absl::log
   absl::no_destructor
   absl::span
   absl::str_format
@@ -35,11 +37,6 @@ set(gb_profile_DEPS
   absl::time
   gb_base
   gb_thread
-)
-
-set(gb_profile_LIBS
-  absl::check
-  absl::log
 )
 
 gb_add_library(gb_profile)

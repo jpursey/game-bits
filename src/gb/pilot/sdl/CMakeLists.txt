@@ -16,14 +16,11 @@ set(gb_pilot_sdl_TEST_DEPS
 )
 
 set(gb_pilot_sdl_DEPS
+  absl::check
+  absl::log
   absl::memory
   gb_pilot
   sdl2
-)
-
-set(gb_pilot_sdl_LIBS
-  absl::check
-  absl::log
 )
 
 gb_add_library(gb_pilot_sdl)

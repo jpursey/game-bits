@@ -56,6 +56,8 @@ set(block_world_SOURCE
 )
 
 set(block_world_DEPS
+  absl::check
+  absl::log
   absl::statusor
   absl::strings
   gb_base
@@ -76,11 +78,6 @@ set(block_world_DEPS
   sdl2
   sdl2_main
   stb_perlin
-)
-
-set(block_world_LIBS
-  absl::check
-  absl::log
 )
 
 gb_add_win_executable(block_world)

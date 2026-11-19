@@ -84,7 +84,9 @@ endif()
 set(gb_base_DEPS
   absl::any_invocable
   absl::base
+  absl::check
   absl::flat_hash_map
+  absl::log
   absl::log_entry
   absl::log_initialize
   absl::log_severity
@@ -96,11 +98,6 @@ set(gb_base_DEPS
   absl::strings
   absl::synchronization
   absl::time
-)
-
-set(gb_base_LIBS
-  absl::check
-  absl::log
 )
 
 gb_add_library(gb_base)

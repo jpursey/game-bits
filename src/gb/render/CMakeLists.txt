@@ -78,9 +78,11 @@ set(gb_render_TEST_DEPS
 )
 
 set(gb_render_DEPS
+  absl::check
   absl::flat_hash_map
   absl::flat_hash_set
   absl::inlined_vector
+  absl::log
   absl::memory
   absl::span
   absl::strings
@@ -92,11 +94,6 @@ set(gb_render_DEPS
   gb_pilot
   gb_resource
   stb_image_resize
-)
-
-set(gb_render_LIBS
-  absl::check
-  absl::log
 )
 
 gb_add_library(gb_render)
@@ -121,6 +118,8 @@ set(gb_render_testing_SOURCE
 )
 
 set(gb_render_testing_DEPS
+  absl::check
+  absl::log
   absl::span
   absl::synchronization
   gb_base
@@ -130,11 +129,6 @@ set(gb_render_testing_DEPS
   gb_render
   gb_resource
   gtest
-)
-
-set(gb_render_testing_LIBS
-  absl::check
-  absl::log
 )
 
 gb_add_library(gb_render_testing)

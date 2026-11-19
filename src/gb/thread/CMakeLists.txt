@@ -17,10 +17,6 @@ if (WIN32)
     absl::synchronization
     gb_base
   )
-  set(gb_thread_internal_LIBS
-    absl::check
-    absl::log
-  )
   set(gb_thread_internal_TEST_SOURCE
     win_cpu_topology_test.cc
     win_thread_test.cc
@@ -38,10 +34,6 @@ else()
     absl::synchronization
     gb_base
   )
-  set(gb_thread_internal_LIBS
-    absl::check
-    absl::log
-  )
 endif()
 
 set(gb_thread_SOURCE
@@ -58,14 +50,12 @@ set(gb_thread_SOURCE
 
 set(gb_thread_DEPS
   absl::algorithm_container
+  absl::check
+  absl::log
   absl::span
   absl::strings
   gb_base
   ${gb_thread_internal_DEPS}
-)
-
-set(gb_thread_LIBS
-  ${gb_thread_internal_LIBS}
 )
 
 set(gb_thread_TEST_SOURCE
@@ -79,16 +69,13 @@ set(gb_thread_TEST_SOURCE
 
 set(gb_thread_TEST_DEPS
   absl::algorithm_container
+  absl::check
   absl::cleanup
   absl::flat_hash_map
   absl::flat_hash_set
+  absl::log
   absl::synchronization
   gb_base
-)
-
-set(gb_thread_TEST_LIBS
-  absl::check
-  absl::log
 )
 
 gb_add_library(gb_thread)

@@ -18,7 +18,9 @@ set(gb_test_TEST_SOURCE
 )
 
 set(gb_test_DEPS
+  absl::check
   absl::flat_hash_map
+  absl::log
   absl::log_entry
   absl::log_severity
   absl::log_sink
@@ -27,11 +29,6 @@ set(gb_test_DEPS
   absl::strings
   absl::synchronization
   gtest
-)
-
-set(gb_test_LIBS
-  absl::check
-  absl::log
 )
 
 gb_add_library(gb_test)

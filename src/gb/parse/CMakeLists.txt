@@ -19,15 +19,12 @@ set(gb_parse_SOURCE
 
 set(gb_parse_DEPS
   absl::any_invocable
+  absl::check
+  absl::log
   absl::node_hash_set
   absl::strings
   gb_base
   re2
-)
-
-set(gb_parse_LIBS
-  absl::check
-  absl::log
 )
 
 set(gb_parse_TEST_SOURCE

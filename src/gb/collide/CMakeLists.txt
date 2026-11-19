@@ -14,9 +14,6 @@ set(gb_collide_DEPS
   absl::log
   absl::span
   ccd
-)
-
-set(gb_collide_LIBS
   glm
 )
 

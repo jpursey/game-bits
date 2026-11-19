@@ -46,6 +46,8 @@ set(gb_render_vulkan_DEFINES
 
 set(gb_render_vulkan_DEPS
   absl::any_invocable
+  absl::check
+  absl::log
   absl::memory
   absl::time
   gb_base
@@ -53,8 +55,6 @@ set(gb_render_vulkan_DEPS
 )
 
 set(gb_render_vulkan_LIBS
-  absl::check
-  absl::log
   Vulkan
 )
 

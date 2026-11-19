@@ -19,22 +19,19 @@ set(gb_resource_SOURCE
 
 set(gb_resource_DEPS
   absl::any_invocable
+  absl::check
   absl::flat_hash_map
   absl::flat_hash_set
   absl::inlined_vector
+  absl::log
   absl::memory
   absl::node_hash_map
   absl::strings
   absl::synchronization
   absl::time
+  flatbuffers
   gb_base
   gb_file
-)
-
-set(gb_resource_LIBS
-  flatbuffers
-  absl::check
-  absl::log
 )
 
 set(gb_resource_TEST_SOURCE

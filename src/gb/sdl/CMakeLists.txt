@@ -8,12 +8,9 @@ set(gb_sdl_SOURCE
 )
 
 set(gb_sdl_DEPS
-  sdl2
-)
-
-set(gb_sdl_LIBS
   absl::check
   absl::log
+  sdl2
 )
 
 set(gb_sdl_TEST_SOURCE

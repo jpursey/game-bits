@@ -31,12 +31,9 @@ set(gb_container_TEST_DEPS
 
 set(gb_container_DEPS
   absl::btree
-  gb_base
-)
-
-set(gb_container_LIBS
   absl::check
   absl::log
+  gb_base
   glm
 )
 

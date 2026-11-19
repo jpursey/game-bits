@@ -15,6 +15,7 @@ set(gb_cli_SOURCE
 )
 
 set(gb_cli_DEPS
+  absl::check
   absl::flat_hash_map
   absl::flat_hash_set
   absl::status
@@ -22,10 +23,6 @@ set(gb_cli_DEPS
   absl::strings
   gb_base
   gb_file
-)
-
-set(gb_cli_LIBS
-  absl::check
 )
 
 set(gb_cli_TEST_SOURCE
