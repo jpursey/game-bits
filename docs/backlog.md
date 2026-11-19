@@ -22,6 +22,32 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
+## Shared ownership in contracts from contexts
+
+- **Layers:** base
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Requested by:** OZ-3 *Device context*
+- **Background:** the `ContextContract` constructors in
+  `src/gb/base/validated_context.h`, and `ValidatedContext::Assign` for a
+  `ValidatedContext&`
+
+A `ValidatedContext` made from a `Context&&`, `unique_ptr`, or `shared_ptr`
+owns its context, and one made from another `ValidatedContext&` shares that
+ownership (`Assign` copies `shared_context_`). But a `ContextContract` made from
+a `ValidatedContext&`, or from another `ContextContract&`, keeps only the raw
+`Context*`, and so does the `ValidatedContext` it becomes. So once the
+`ValidatedContext` that owns the context is destroyed or assigned another, the
+contract made from it points at a destroyed context. Callers have to keep the
+owner alive themselves, such as by declaring it ahead of the objects that hold
+contracts made from it, which nothing checks.
+
+Have those constructors share ownership as `Assign` does, so every
+`ValidatedContext` keeps alive a context any of them owned. A test makes a
+contract from a `ValidatedContext` that owns its context, destroys that
+`ValidatedContext`, and still reads the context through the contract's.
+
 ## clang-cl build
 
 - **Layers:** job
