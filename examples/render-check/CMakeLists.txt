@@ -65,12 +65,12 @@ set(render_check_DEPS
   gb_render_vulkan
   gb_render_vulkan_sdl
   gb_resource
+  sdl2
+  sdl2_main
 )
 
 set(render_check_LIBS
   absl::log
-  sdl2
-  sdl2_main
 )
 
 gb_add_win_executable(render_check)

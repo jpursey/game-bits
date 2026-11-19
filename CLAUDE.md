@@ -195,9 +195,15 @@ A new worktree has no submodules checked out, and configuring fails with "does n
 git submodule update --init --reference <main checkout>/third_party/<name> -- third_party/<name>
 ```
 
+The exception is a submodule marked `shallow = true` in `.gitmodules` (SDL), which git refuses to use as a reference ("reference repository ... is shallow"). Initialize it without `--reference`, which fetches only its pinned commit:
+
+```
+git submodule update --init -- third_party/SDL
+```
+
 The worktree has its own `out/`, so its first build in each configuration is a full build.
 
-To land the change, leave the worktree first, keeping it (ExitWorktree with `keep`), since a session in a worktree can't run git against the main checkout. Then merge from the main checkout as above.
+To land the change, leave the worktree first, keeping it (ExitWorktree with `keep`), since a session in a worktree can't run git against the main checkout. Then merge from the main checkout as above. If the change adds a submodule or moves one to another commit, run `git submodule update --init -- third_party/<name>` in the main checkout too, as projects build against it and a merge doesn't update submodules.
 
 Once landed, remove the worktree from the main checkout. First check that `git status` in the worktree is clean, and that no shell is still inside it. `--force` is needed because it has submodules:
 
@@ -215,7 +221,7 @@ If removal fails with "Permission denied", git has already unregistered the work
 - Defining `<target>_TEST_SOURCE` automatically creates a `<target>_test` executable that links GoogleTest/GoogleMock and registers a ctest test of the same name.
 - `gb_embed_data(<target> <file> <header> <name>)` builds a file's bytes into a target as a `gb::EmbeddedData` (see `gb/base/embedded_data.h`), for data the program needs with nothing to open at run time.
 - `gb_embed_shader(<target> <file> <header> <name>)` does the same for a GLSL shader, compiled to SPIR-V with `glslc` from the Vulkan SDK, for `RenderSystem::CreateShaderCode()`. render-check's shaders are built this way; block-world's and gb_imgui's are not yet (see the backlog).
-- `<target>_DEPS` is for other CMake targets in the build (including `absl::*`); `<target>_LIBS` is for external libraries (Vulkan, SDL).
+- `<target>_DEPS` is for other CMake targets in the build (including `absl::*`); `<target>_LIBS` is for external libraries (Vulkan).
 - On Windows, every executable these commands define embeds `CMake/GameBits.manifest`, which makes its code page UTF-8, so `main()`'s arguments are UTF-8. A DLL gets its host's code page, so nothing else relies on it: code converts to and from UTF-16 when it calls Windows (see README.md).
 - A module picks its platform implementations (see C++ style in the workflow) in an `if (WIN32) ... else() ... endif()` block at the top of its `CMakeLists.txt`, which sets `<target>_internal_SOURCE` and `<target>_internal_TEST_SOURCE` for the main lists to include, as in `src/gb/base/CMakeLists.txt`.
 - Library tiers are described in README.md. A library may depend freely on lower tiers, minimally within its own tier, and never on a higher tier.

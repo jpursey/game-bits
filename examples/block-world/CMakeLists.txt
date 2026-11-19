@@ -73,14 +73,14 @@ set(block_world_DEPS
   gb_render_vulkan
   gb_render_vulkan_sdl
   gb_resource
+  sdl2
+  sdl2_main
   stb_perlin
 )
 
 set(block_world_LIBS
   absl::check
   absl::log
-  sdl2
-  sdl2_main
 )
 
 gb_add_win_executable(block_world)

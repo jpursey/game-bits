@@ -14,9 +14,6 @@ set(gb_imgui_sdl_INCLUDES
 
 set(gb_imgui_sdl_DEPS
   gb_imgui
-)
-
-set(gb_imgui_sdl_LIBS
   sdl2
 )
 

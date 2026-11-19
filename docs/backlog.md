@@ -73,34 +73,6 @@ Clang tools for Windows" component, as the MSVC standard library rejects older
 clang versions. Fix them, build and test both clang configurations, and
 consider building one in CI so it stays working.
 
-## SDL from source
-
-- **Layers:** build, sdl, imgui, pilot, render, examples, templates
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** `gb_external_libraries()` in
-  `CMake/GameBitsExternalLibraries.cmake`; `third_party/SDL2-2.0.10`
-
-SDL2 is the only third-party library that isn't a submodule: `third_party`
-holds SDL 2.0.10 (2019) as prebuilt Windows binaries and headers, so it only
-works on Windows, and every program needs `SDL2.dll` copied beside it. Make
-it a submodule of `libsdl-org/SDL` at the newest SDL2 release tag
-(`release-2.32.10` today), built from source with the rest of the build, so
-its version is pinned like every other dependency's:
-- Add it as a static library (`SDL_STATIC` on, `SDL_SHARED` and its tests off),
-  turning off the subsystems Game Bits doesn't use. Game Bits uses SDL for
-  windowing and input, not audio or SDL's own renderer.
-- Mark the submodule `shallow = true`, as SDL's history is large.
-- Keep the `sdl2` and `sdl2_main` target names, or rename their uses, and drop
-  the step that copies `SDL2.dll` (`gb_pilot_sdl_test`).
-- On Linux, building SDL needs the system's windowing headers (X11, Wayland),
-  which SDL loads at run time. Say which packages in CLAUDE.md, when Linux
-  builds SDL.
-
-The API is close enough to 2.0.10 that little code should change. Check the
-examples and `templates/sdl` still build, and run render-check's scripts.
-
 ## ImGui update
 
 - **Layers:** imgui, examples
@@ -130,7 +102,7 @@ follow-up in each of them.
 - **Layers:** build, sdl, imgui, pilot, render, examples, templates
 - **Size:** medium
 - **Feature workflow:** yes
-- **Depends on:** SDL from source, ImGui update
+- **Depends on:** ImGui update
 - **Background:** SDL's migration guide (`docs/README-migration.md` in the SDL
   repository)
 
@@ -153,16 +125,19 @@ so it needs a follow-up in each of them.
 - **Layers:** build, sdl, imgui, pilot, render, examples, tools
 - **Size:** medium
 - **Feature workflow:** yes
-- **Depends on:** SDL from source
-- **Background:** [Linux and Clang](worklog/linux_clang.md);
-  `gb_external_libraries()` in `CMake/GameBitsExternalLibraries.cmake`
+- **Depends on:** nothing
+- **Background:** [Linux and Clang](worklog/linux_clang.md); SDL in the root
+  `CMakeLists.txt`; `gb_external_libraries()` in
+  `CMake/GameBitsExternalLibraries.cmake`
 
 Linux builds every library except those that need SDL or Vulkan (`gb_sdl`,
 `gb_imgui_sdl`, `gb_pilot_sdl`, `gb_render_vulkan`, `gb_render_vulkan_sdl`),
 and none of the examples. Build them there too, then the examples, and
 `tools/run-program` (a PowerShell script today) so a session can run an
 example on Linux and check its frames:
-- SDL comes from *SDL from source*.
+- SDL is built from its submodule (`third_party/SDL`), but only on Windows.
+  On Linux it needs the system's windowing headers (X11, Wayland), which SDL
+  loads at run time. Say which packages in CLAUDE.md, and install them in CI.
 - Vulkan's headers and loader need a source on Linux: the Vulkan SDK, the
   distribution's packages, or submodules. Decide which; the `Vulkan` target is
   only defined on Windows today, following the Windows SDK's layout.

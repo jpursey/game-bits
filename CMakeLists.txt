@@ -179,6 +179,26 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
   target_compile_options(ccd PRIVATE ${GB_3P_MSVC_COMPILE_OPTIONS})
 endif()
 
+####### SDL
+# A static library, for windowing and input, so its audio and its own renderer
+# are left out. Programs link sdl2, and sdl2_main for SDL's main(). It is only
+# built on Windows so far, as on Linux it needs the system's windowing headers.
+
+if (WIN32)
+  set(SDL_TEST OFF)
+  set(SDL_AUDIO OFF)
+  set(SDL_RENDER OFF)
+  set(SDL2_DISABLE_UNINSTALL ON)
+  add_subdirectory("${GB_THIRD_PARTY_DIR}/SDL")
+  set_target_properties(SDL2-static SDL2main PROPERTIES FOLDER External/SDL)
+  add_library(sdl2 ALIAS SDL2-static)
+  add_library(sdl2_main ALIAS SDL2main)
+  unset(SDL_TEST)
+  unset(SDL_AUDIO)
+  unset(SDL_RENDER)
+  unset(SDL2_DISABLE_UNINSTALL)
+endif()
+
 ###############################################################################
 ## Add Game Bits source
 ###############################################################################

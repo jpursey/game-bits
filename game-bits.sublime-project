@@ -40,7 +40,7 @@
 		},
 		{
 			"name": "sdl",
-			"path": "third_party/SDL2-2.0.10/include"
+			"path": "third_party/SDL/include"
 		}
 	]
 }

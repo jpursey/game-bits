@@ -214,9 +214,8 @@ from UTF-16 when it calls Windows.
 ## Dependencies
 
 Game Bits stores most of its library dependencies in the third_party directory.
-All of these dependencies except SDL are referenced in via git submodules, and
-so must be updated after cloning, or whenever the dependent libraries are
-updated.
+All of these dependencies are referenced in via git submodules, and so must be
+updated after cloning, or whenever the dependent libraries are updated.
 
 ``` 
 git submodule update --init --recursive
@@ -235,9 +234,11 @@ layer implementation. There are no direct dependencies on SDL from any Game
 Bits library, except those that implement required platform abstraction
 interfaces in terms of SDL as a convenience.
 
-The Windows build of SDL 2.0.10 is included in `third_party/` and `bin/` folders
-as a convenience. It can be linked to directly via the `sdl` library target in
-CMake files that use Game Bits.
+SDL 2 is a submodule in `third_party/SDL`, built from source as a static
+library for windowing and input (its audio and its own renderer are left out),
+so programs need no SDL DLL beside them. It is only built on Windows so far.
+CMake files that use Game Bits can link to it directly with the `sdl2` library
+target, and `sdl2_main` for SDL's `main()`.
 
 ### Vulkan
 
@@ -395,7 +396,7 @@ the target. If used, these variables *must* be defined before calling
 | `Target_SOURCE`      | Source files to build for the target. This should include headers and implementation files. |
 | `Target_FBS`         | FlatBuffer schema files for this target. These are compiled with flatc and the corresponding generated headers are made available to this Target |
 | `Target_DEPS`        | Target dependencies. Dependencies are any other CMake target defined in the project. These should always be libraries. Changing a source in a dependency results in this target rebuilding. Dependencies are always linked to the target. |
-| `Target_LIBS`        | External libraries for this target. This is for external dependencies (aka Vulkan, SDL, or any other externally built library). |
+| `Target_LIBS`        | External libraries for this target. This is for external dependencies (aka Vulkan, or any other externally built library). |
 | `Target_DEFINES`     | Additional preprocessor defines for this target. |
 | `Target_INCLUDES`    | Additional include directories for this target. |
 | `Target_TEST_SOURCE` | Source files to build unit tests. If this is defined, then an additional `Target_test` target will be built that implicitly depends on `Target` and links in Google Test libraries and corresponding `main` function. All test targets are put under a `Test` subfolder in Visual Studio. |
