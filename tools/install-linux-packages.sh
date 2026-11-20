@@ -4,17 +4,11 @@
 # Use of this source code is governed by an MIT-style License that can be found
 # in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-# Installs the Ubuntu 24.04 packages Game Bits builds and runs with on Linux:
-# clang, CMake, and Ninja; SDL's windowing headers (without them SDL builds, but
-# can't open a window); Mesa's Vulkan drivers (including lavapipe, which renders
-# on the CPU where there is no GPU); a virtual X server (Xvfb, for where there is
-# no display); and gdb, which saves a hung program's stacks. The Vulkan SDK
-# comes from install-vulkan-sdk.sh instead, as Ubuntu's is too old.
+# Installs the Ubuntu 24.04 packages Game Bits builds and runs with on Linux
+# (see Linux in CLAUDE.md). The Vulkan SDK comes from install-vulkan-sdk.sh.
 #
 # Usage:
 #   sudo tools/install-linux-packages.sh
-#
-# CI and the devcontainer (.devcontainer/) install with this too.
 
 set -euo pipefail
 

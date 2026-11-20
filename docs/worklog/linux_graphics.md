@@ -304,9 +304,9 @@ Depends on: CL2.
 Depends on: CL3 (gdb in the Linux packages).
 
 - `.devcontainer/devcontainer.json` and its Dockerfile, as under Devcontainer.
-- `tools/install-linux-packages.sh` installs the Linux packages, for CI's
-  `linux-packages` action, the Dockerfile, and CLAUDE.md, which each listed
-  them before.
+- `tools/install-linux-packages.sh` installs the Linux packages, for CI, the
+  Dockerfile, and CLAUDE.md, which each listed them before. It replaces CI's
+  `linux-packages` action.
 - README.md: opening the container, and viewing its desktop in the browser.
 
 **Verify**

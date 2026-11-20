@@ -300,8 +300,8 @@ allow you to navigate more easily to Game Bits source files.
 everything a Linux build needs, including the Vulkan SDK. It can be opened as a
 GitHub Codespace (Code > Codespaces), or with Visual Studio Code's Dev
 Containers extension. The submodules are checked out when it is created, and
-every terminal has the Vulkan SDK's environment set up, so the Linux commands
-in [CLAUDE.md](CLAUDE.md) work as they are.
+the Vulkan SDK's environment is set up, so the Linux commands in
+[CLAUDE.md](CLAUDE.md) work as they are, without sourcing its `setup-env.sh`.
 
 It also runs a light desktop, viewed in the browser. Open the forwarded
 "Desktop" port (6080) from the Ports panel, choose Connect, and enter the

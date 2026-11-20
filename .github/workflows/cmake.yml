@@ -108,7 +108,7 @@ jobs:
 
     - name: Install packages
       if: runner.os == 'Linux'
-      uses: ./.github/actions/linux-packages
+      run: sudo tools/install-linux-packages.sh
 
     - name: Install the Vulkan SDK
       uses: ./.github/actions/vulkan-sdk
@@ -186,7 +186,7 @@ jobs:
         submodules: "recursive"
 
     - name: Install packages
-      uses: ./.github/actions/linux-packages
+      run: sudo tools/install-linux-packages.sh
 
     - name: Install the Vulkan SDK
       uses: ./.github/actions/vulkan-sdk

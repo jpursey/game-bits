@@ -29,14 +29,16 @@
       "label": "Desktop"
     }
   },
-  // Lets gdb (tools/dump-stacks.sh) attach to any of the user's programs.
+  // Lets gdb attach to any of the user's programs (as tools/dump-stacks.sh
+  // does), and run programs without address randomization.
   "capAdd": ["SYS_PTRACE"],
   "securityOpt": ["seccomp=unconfined"],
-  // More shared memory than Docker's default, as desktop-lite recommends.
-  "runArgs": ["--shm-size=1g"],
   // Programs render on the CPU, and a full build is 990 steps.
   "hostRequirements": {
     "cpus": 4
   },
-  "postCreateCommand": "git submodule update --init"
+  // Also runs when a Codespace prebuild is made, so a prebuilt Codespace starts
+  // with its submodules. SDL's history is shallow (.gitmodules), and the
+  // others' files are fetched only for the commit checked out.
+  "updateContentCommand": "git submodule update --init --jobs 8 --filter=blob:none"
 }
