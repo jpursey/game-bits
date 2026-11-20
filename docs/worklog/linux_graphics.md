@@ -226,8 +226,8 @@ on 4 cores, counting startup.
 - Confirmed in CL4: Vulkan through SDL works on the devcontainer's VNC server
   as it does on Xvfb, once its color depth is 24-bit. render-check takes clicks
   and keys from noVNC, and closes cleanly from its window's close button.
-- Whether render-check is responsive enough to use from the browser in a
-  Codespace (CL4, checked by hand).
+- Confirmed in CL4: render-check is responsive enough to use from the browser
+  in a 4-core Codespace, drawing about 25 frames a second.
 
 ### Left for later
 
