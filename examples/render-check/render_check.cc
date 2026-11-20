@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstring>
 #include <numbers>
+#include <optional>
 #include <utility>
 
 #include "absl/base/log_severity.h"
@@ -19,6 +20,7 @@
 #include "absl/strings/str_format.h"
 #include "absl/types/span.h"
 #include "gb/base/context_builder.h"
+#include "gb/base/process_memory.h"
 #include "gb/render/material.h"
 #include "gb/render/material_config.h"
 #include "gb/render/material_type.h"
@@ -48,18 +50,6 @@
 #include "shaders/unset_frag.h"
 #include "shaders/volume_frag.h"
 #include "shaders/volume_vert.h"
-
-// Windows is included last, as its macros rename functions declared above.
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <windows.h>
-
-// Must be after windows.h.
-#include <psapi.h>
 
 namespace {
 
@@ -1302,12 +1292,9 @@ void RenderCheck::UpdateFrameStats() {
   gpu_bytes_ = static_cast<int64_t>(stats.total.usedBytes);
   peak_gpu_bytes_ = std::max(peak_gpu_bytes_, gpu_bytes_);
 
-  PROCESS_MEMORY_COUNTERS_EX counters = {};
-  if (K32GetProcessMemoryInfo(
-          GetCurrentProcess(),
-          reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&counters),
-          sizeof(counters))) {
-    process_bytes_ = static_cast<int64_t>(counters.PrivateUsage);
+  if (const std::optional<int64_t> bytes = gb::GetProcessMemoryBytes();
+      bytes.has_value()) {
+    process_bytes_ = *bytes;
     peak_process_bytes_ = std::max(peak_process_bytes_, process_bytes_);
   }
 }
@@ -1442,8 +1429,8 @@ void RenderCheck::DrawInstanceGui() {
   }
   ImGui::Checkbox("Recreate every instance each frame", &churn_);
   ImGui::Text("Instances: %d   Created: %lld   Failed: %d",
-              static_cast<int>(instances_.size()), instances_created_,
-              failed_instances_);
+              static_cast<int>(instances_.size()),
+              static_cast<long long>(instances_created_), failed_instances_);
   ImGui::TextWrapped(
       "The grid to the right should keep %d evenly spaced quads, with colors "
       "that shift smoothly while recreating.",

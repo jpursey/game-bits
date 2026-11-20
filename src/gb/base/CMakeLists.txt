@@ -8,10 +8,12 @@ if (WIN32)
     win_aligned_memory.cc
     win_local_time.cc
     win_platform.cc win_platform.h
+    win_process_memory.cc
     win_sleep.cc
     win_stdio_file.cc
   )
   set(gb_base_internal_TEST_SOURCE
+    process_memory_test.cc
     win_manifest_test.cc
     win_platform_test.cc
   )
@@ -22,6 +24,14 @@ else()
     gen_sleep.cc
     gen_stdio_file.cc
   )
+
+  # Process memory is read from /proc, which is Linux's alone.
+  if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    list(APPEND gb_base_internal_SOURCE linux_process_memory.cc)
+    set(gb_base_internal_TEST_SOURCE process_memory_test.cc)
+  else()
+    list(APPEND gb_base_internal_SOURCE gen_process_memory.cc)
+  endif()
 endif()
 
 set(gb_base_SOURCE
@@ -40,6 +50,7 @@ set(gb_base_SOURCE
   local_time.h
   log_file.cc log_file.h
   platform_requirements.cc platform_requirements.h
+  process_memory.h
   scoped_call.h
   sleep.h
   stdio_file.h

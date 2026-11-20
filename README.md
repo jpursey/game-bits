@@ -193,11 +193,11 @@ sub-libraries (organized as subdirectories).
 
 While Game Bits code is designed to be cross platform, it is mainly developed
 and maintained on Windows with Visual Studio 2022, building with CMake and the
-Ninja generator. It also builds and passes its tests on Linux with clang, but
-the examples don't build there yet. CMake 3.15 or later is required; the
-copy that ships with Visual Studio is what is normally used. On Windows,
-programs using Game Bits require Windows 10 version 1903 or later, and older
-versions are not supported.
+Ninja generator. It also builds and passes its tests on Linux with clang, and
+the RenderCheck example and the templates build there too, though BlockWorld
+doesn't yet. CMake 3.15 or later is required; the copy that ships with Visual
+Studio is what is normally used. On Windows, programs using Game Bits require
+Windows 10 version 1903 or later, and older versions are not supported.
 
 Game Bits works only in UTF-8 (of which ASCII is a part): every `char` string
 it takes or returns, including paths and command line arguments, is UTF-8.
@@ -356,6 +356,18 @@ cmake --build examples/render-check/out/build/x64-Release
 
 The resulting executable is written to `bin/render_check.exe`. Its shaders are
 compiled in the build and built into it, so it needs no assets.
+
+On Linux, it builds with clang, in a shell with the Vulkan SDK's environment
+set up (see [CLAUDE.md](CLAUDE.md)), and is written to `bin/render_check`:
+
+```
+cmake -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -S examples/render-check -B examples/render-check/out/build/linux-clang-RelWithDebInfo
+cmake --build examples/render-check/out/build/linux-clang-RelWithDebInfo
+```
+
+Where there is no GPU, Mesa's lavapipe driver renders it on the CPU, and where
+there is no display, it runs in a virtual X server, such as `xvfb-run -a -s
+'-screen 0 1920x1080x24' bin/render_check`.
 
 The same checks can run without a user, from scripts in
 [examples/render-check/scripts](examples/render-check/scripts), one for each

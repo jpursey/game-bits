@@ -249,7 +249,7 @@ Depends on: nothing.
 - On Linux, every library builds in Debug and RelWithDebInfo, and ctest
   passes as an ordinary user, with and without `xvfb-run`.
 
-### CL2 [ ] base, examples: process memory, and render-check on Linux
+### CL2 [x] base, examples: process memory, and render-check on Linux
 
 Depends on: CL1.
 
@@ -259,7 +259,8 @@ Depends on: CL1.
 - `templates/sdl` builds on Linux.
 - `.gitignore` ignores `bin/`, which holds only built programs now that SDL's
   and flatc's binaries are gone from it.
-- README.md: building render-check on Linux (`bin/render_check`).
+- README.md: building render-check on Linux (`bin/render_check`). README.md
+  and CLAUDE.md: render-check and the templates build on Linux.
 
 **Verify**
 - Standard checks.

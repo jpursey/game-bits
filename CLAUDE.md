@@ -2,7 +2,7 @@
 
 This is a shared C++ library defining common functionality used for desktop or command line applications. It is designed as a cross-platform library, with platform-specific details separated from public interfaces and headers.
 
-This library is almost entirely self contained with all dependencies being brought in via submodules, with the exception being a dependency on the Vulkan SDK for graphics which must be installed on the machine. It is developed on Windows, built with Visual Studio 2022 Community and CMake, and also builds on Linux with clang, apart from the examples (see Linux below).
+This library is almost entirely self contained with all dependencies being brought in via submodules, with the exception being a dependency on the Vulkan SDK for graphics which must be installed on the machine. It is developed on Windows, built with Visual Studio 2022 Community and CMake, and also builds on Linux with clang, apart from block-world (see Linux below).
 
 It is used by other projects via direct inclusion based on the "GB_DIR" environment variable being set to this directory, and Game Bits specific CMake commands (see CMake/GameBitsTargetCommands.cmake for details)
 
@@ -143,7 +143,7 @@ The program exits once the script ends, so every run also checks that it shuts d
 
 ### Linux
 
-Game Bits also builds and passes its tests on Linux with clang, apart from the examples, which don't build there yet. It needs Ubuntu 24.04's packages for clang, CMake, and Ninja, SDL's windowing headers (without them SDL builds, but can't open a window), and to run graphical programs, Mesa's Vulkan drivers (including lavapipe, which renders on the CPU where there is no GPU) and a virtual X server (where there is no display):
+Game Bits also builds and passes its tests on Linux with clang, and render-check and the templates build there too, though block-world doesn't yet. It needs Ubuntu 24.04's packages for clang, CMake, and Ninja, SDL's windowing headers (without them SDL builds, but can't open a window), and to run graphical programs, Mesa's Vulkan drivers (including lavapipe, which renders on the CPU where there is no GPU) and a virtual X server (where there is no display):
 
 ```
 sudo apt-get install clang cmake ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxkbcommon-dev libwayland-dev wayland-protocols libdecor-0-dev libegl-dev libdbus-1-dev libudev-dev mesa-vulkan-drivers xvfb
