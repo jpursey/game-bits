@@ -204,9 +204,11 @@ on 4 cores, counting startup.
 - Confirmed in CL1: its validation layer accepts `VK_KHR_load_store_op_none`
   with lavapipe, and every render-check script passes with it, in a trial
   build of render-check with CL2's changes.
-- `gdb` can attach to the program from the script as an ordinary user, where
-  Ubuntu's `ptrace_scope` only lets a process trace its own descendants (CL3).
-  If not, the script runs the program under `gdb` from the start.
+- Confirmed in CL3: `gdb` can attach to the program from the script as an
+  ordinary user, where Ubuntu's `ptrace_scope` only lets a process trace its
+  own descendants. The script starts the program from a subshell that `exec`s
+  `dump-stacks.sh`, which `exec`s `gdb`, so `gdb` is the program's ancestor.
+  CI's hang check passes on GitHub's Ubuntu runner.
 - Vulkan through SDL works on the devcontainer's VNC server as it does on Xvfb
   (both are X servers without GPU access), and is responsive enough to use
   render-check from the browser (CL4, checked by hand).
@@ -272,15 +274,17 @@ Depends on: CL1.
   grows when the test commits a large allocation.
 - render-check builds on Linux and Windows, and shows its process memory.
 
-### CL3 [ ] tools, CI: running programs on Linux
+### CL3 [x] tools, CI: running programs on Linux
 
 Depends on: CL2.
 
 - `tools/run-program.sh` and `tools/dump-stacks.sh`, as under Running programs
   on Linux.
-- CLAUDE.md's Run an example gains the Linux commands.
+- CLAUDE.md's Run an example, and README.md's RenderCheck section, gain the
+  Linux commands. `gdb` joins the Linux packages.
 - CI's `build-render-check-linux` job runs render-check's scripts, and uploads
-  the frames.
+  the frames. It also checks that a script that hangs times out with its
+  stacks saved.
 
 **Verify**
 - Standard checks.
