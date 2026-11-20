@@ -24,7 +24,10 @@
     "VNC_RESOLUTION": "1920x1080x24",
     // Builds use clang, as on CI, including CMake Tools' [Unspecified] kit.
     "CC": "clang",
-    "CXX": "clang++"
+    "CXX": "clang++",
+    // For the templates, and projects made from them, which find Game Bits
+    // through it.
+    "GB_DIR": "${containerWorkspaceFolder}"
   },
   "forwardPorts": [6080],
   "portsAttributes": {

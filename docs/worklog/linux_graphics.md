@@ -199,7 +199,8 @@ Ninja in the build directories the command line uses. So the IDE builds, runs,
 debugs (gdb), and tests (the Testing view) as the commands do. The settings
 live only in `devcontainer.json`, not in a `CMakePresets.json` or
 `.vscode/settings.json`, which a local checkout's Visual Studio or VS Code
-would also read.
+would also read. The container sets `GB_DIR` to its checkout, and `CC` and
+`CXX` to clang, so the templates, and projects made from them, build there.
 
 Lavapipe renders on the CPU, so this suits programs of ImGui's weight:
 render-check's scripts ran at 30 to 45 frames a second at 1280x800 under Xvfb

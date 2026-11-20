@@ -303,6 +303,9 @@ Containers extension on an x86_64 machine (the Vulkan SDK isn't built for ARM
 Linux). The submodules are checked out when it is created, and
 the Vulkan SDK's environment is set up, so the Linux commands in
 [CLAUDE.md](CLAUDE.md) work as they are, without sourcing its `setup-env.sh`.
+`GB_DIR` is set to the checkout, and `CC` and `CXX` to clang, so the templates,
+and a project made from one that is cloned beside it in `/workspaces`, build
+against it without further setup.
 
 It also runs a light desktop, viewed in the browser. Open the forwarded
 "Desktop" port (6080) from the Ports panel, choose Connect, and enter the
