@@ -135,9 +135,9 @@ available, threads aren't named, and the CPU topology isn't known, so threads
 can't be pinned to cores. Linux can do all of them (`ucontext` or a small
 context switch for fibers, `pthread_setname_np`, `/sys/devices/system/cpu` and
 `pthread_setaffinity_np`). The workflow's `posix_` prefix is for what POSIX
-alone provides, so these, which are Linux's own, need one of their own beside
-it (such as `linux_`), and the build choosing it on Linux, with its tests named
-the same way.
+alone provides, so these, which are Linux's own, go in `linux_` files, as
+`gb/base`'s process memory does, with the build choosing them on Linux, and
+their tests named the same way.
 
 ## Block-world and ImGui shaders compiled by the build
 
@@ -156,11 +156,61 @@ hand and their bytes pasted into `imgui_instance.cc`. Compile both with
 `gb_embed_shader`, as render-check does, and remove the script.
 
 CI builds block-world, and every project that links gb_imgui (including its
-unit tests, which draw with the test backend) would then need `glslc`. It comes
-with the Vulkan SDK, but CI's Vulkan setup (`.github/workflows/cmake.yml`,
-`humbletim/setup-vulkan-sdk`) installs only the headers and loader and can't
-install `glslc`, so CI first needs an action that installs the whole SDK. CI
-changes can only be checked by pushing.
+unit tests, which draw with the test backend) would then need `glslc`. Every CI
+job already has it, as each installs the Vulkan SDK, `glslc` included, with
+`.github/actions/vulkan-sdk` ([Graphics on Linux](worklog/linux_graphics.md)).
+
+## Block-world on Linux
+
+- **Layers:** CI, examples
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** *Block-world and ImGui shaders compiled by the build*
+- **Background:** [Graphics on Linux](worklog/linux_graphics.md)
+
+Block-world builds and runs only on Windows, where everything else built on
+Game Bits' graphics libraries also runs on Linux. Its code has nothing
+Windows-specific, but its shaders are compiled by a Windows batch file, and it
+has never been built on Linux. Build it there, add it to CI on Linux beside
+render-check (`build-render-check-linux`), and update CLAUDE.md and README.md,
+which say it doesn't build there. On lavapipe it is far too slow to play, but
+its scripts can still run in CI, checking that it draws with no validation
+errors.
+
+## Tests registered with their programs' paths
+
+- **Layers:** build
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** `gb_add_test` in `CMake/GameBitsTargetCommands.cmake`
+
+`gb_add_test` registers each test with `add_test(<name> <target>)`, whose
+program ctest only finds when it runs, so until a test is built, ctest's list
+of tests (`ctest --show-only=json-v1`) gives it no program. VS Code's CMake
+Tools runs tests from that list, so its Testing view fails with "Could not
+determine the test program" until the build is done. Register them with
+`add_test(NAME <name> COMMAND <target>)`, which gives each its program's path
+when CMake configures.
+
+## Devcontainers for projects built on Game Bits
+
+- **Layers:** devcontainer
+- **Size:** medium
+- **Feature workflow:** yes
+- **Depends on:** nothing
+- **Background:** [Graphics on Linux](worklog/linux_graphics.md)'s
+  Devcontainer; `.devcontainer/`
+
+Game Bits' devcontainer builds, tests, runs, and debugs Game Bits itself, but a
+project built on Game Bits also needs Game Bits checked out beside it, found
+through `GB_DIR`, which a Codespace of the project doesn't have. Make Game
+Bits' setup reusable by such a project, so its own devcontainer is small: an
+image or devcontainer feature with the packages, the Vulkan SDK, and the
+desktop's settings; a way to clone Game Bits beside the project (a Codespace
+can be given access to a second repository); and VS Code settings for the
+project's CMake projects. Each project then adds its own devcontainer, as an
+item in its own backlog.
 
 ## Profile timelines
 
