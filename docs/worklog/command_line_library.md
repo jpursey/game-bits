@@ -195,8 +195,8 @@ absl::StatusOr<CliCommandLine> ParseCommandLine(
   unknown flag or command, a flag that isn't repeated given twice, a missing
   value, a value that isn't of the type or one of the choices, a value a
   validator rejects, a missing required argument or flag, or an extra
-  argument. Each names the command path, and says how to get help: `oz3asm: unknown flag "--foo". Run "oz3asm
-  --help" for help.`
+  argument. Each names the command path, and says how to get help: `oz3asm:
+  unknown flag "--foo". Run "oz3asm --help" for help.`
 - A context that fails `gb_cli`'s own constraints (a null `Context*`, or a
   width that isn't an `int`), or is missing a value a validator reads, is a
   `FailedPrecondition` error, as is a validator's error other than

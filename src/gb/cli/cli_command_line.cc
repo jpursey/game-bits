@@ -365,9 +365,9 @@ bool CliCommandLine::Get(const CliFlag<bool>& flag) const {
 
 template <typename T>
 std::optional<T> CliCommandLine::Get(const CliFlag<T>& flag) const {
+  const absl::Span<const internal::CliValue> values = Find(&flag);
   CHECK(!flag.repeated) << "Get() called for repeated flag \"--" << flag.name
                         << "\", which needs GetAll()";
-  const absl::Span<const internal::CliValue> values = Find(&flag);
   if (values.empty()) {
     return flag.default_value;
   }
@@ -376,10 +376,11 @@ std::optional<T> CliCommandLine::Get(const CliFlag<T>& flag) const {
 
 template <typename T>
 std::vector<T> CliCommandLine::GetAll(const CliFlag<T>& flag) const {
+  const absl::Span<const internal::CliValue> values = Find(&flag);
   CHECK(flag.repeated) << "GetAll() called for flag \"--" << flag.name
                        << "\", which isn't repeated";
   std::vector<T> result;
-  for (const internal::CliValue& value : Find(&flag)) {
+  for (const internal::CliValue& value : values) {
     result.push_back(*std::get_if<T>(&value));
   }
   return result;

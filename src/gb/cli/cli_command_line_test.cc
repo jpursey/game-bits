@@ -1282,6 +1282,10 @@ TEST(ParseCommandLineDeathTest, GetOutsideCommandPath) {
   ASSERT_TRUE(command_line.ok()) << command_line.status();
   EXPECT_DEATH(command_line->Get(kForce), "doesn't belong");
   EXPECT_DEATH(command_line->Get(kName), "doesn't belong");
+
+  // Not belonging is the mistake reported, even with the wrong accessor.
+  EXPECT_DEATH(command_line->Get(kDefine), "doesn't belong");
+  EXPECT_DEATH(command_line->GetAll(kOutput), "doesn't belong");
 }
 
 TEST(ParseCommandLineDeathTest, GetForRepeatedFlag) {
