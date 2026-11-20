@@ -299,7 +299,8 @@ allow you to navigate more easily to Game Bits source files.
 [.devcontainer](.devcontainer) defines an Ubuntu 24.04 container with
 everything a Linux build needs, including the Vulkan SDK. It can be opened as a
 GitHub Codespace (Code > Codespaces), or with Visual Studio Code's Dev
-Containers extension. The submodules are checked out when it is created, and
+Containers extension on an x86_64 machine (the Vulkan SDK isn't built for ARM
+Linux). The submodules are checked out when it is created, and
 the Vulkan SDK's environment is set up, so the Linux commands in
 [CLAUDE.md](CLAUDE.md) work as they are, without sourcing its `setup-env.sh`.
 

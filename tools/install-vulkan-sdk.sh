@@ -21,7 +21,7 @@
 
 set -euo pipefail
 
-if [[ $# -ne 2 ]]; then
+if [[ $# -ne 2 || -z "$1" || -z "$2" ]]; then
   echo "Usage: $0 <dir> <version>" >&2
   exit 2
 fi

@@ -5,7 +5,8 @@
 
 # The devcontainer's image (see devcontainer.json): Ubuntu 24.04 with everything
 # a Linux build of Game Bits needs, and the Vulkan SDK's environment set up for
-# every process, as the SDK's setup-env.sh would.
+# every process, as the SDK's setup-env.sh would. It needs an x86_64 host, as
+# the SDK is only built for x86_64 Linux.
 FROM mcr.microsoft.com/devcontainers/base:ubuntu-24.04
 
 COPY tools/install-linux-packages.sh /tmp/gb-tools/

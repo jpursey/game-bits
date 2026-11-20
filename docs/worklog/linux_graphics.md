@@ -307,6 +307,8 @@ Depends on: CL3 (gdb in the Linux packages).
 - `tools/install-linux-packages.sh` installs the Linux packages, for CI, the
   Dockerfile, and CLAUDE.md, which each listed them before. It replaces CI's
   `linux-packages` action.
+- `.gitattributes` checks out shell scripts with LF line endings, on Windows
+  too, so the container runs them from a Windows checkout.
 - README.md: opening the container, and viewing its desktop in the browser.
 
 **Verify**
