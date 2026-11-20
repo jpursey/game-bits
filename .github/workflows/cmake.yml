@@ -11,7 +11,8 @@ on:
       - '**.md'
   workflow_dispatch:
 
-# The Vulkan SDK every job builds with (see .github/actions/vulkan-sdk).
+# The Vulkan SDK every job builds with (see .github/actions/vulkan-sdk), which
+# the devcontainer (.devcontainer/devcontainer.json) also installs.
 env:
   VULKAN_SDK_VERSION: 1.4.363.1
 
@@ -107,7 +108,7 @@ jobs:
 
     - name: Install packages
       if: runner.os == 'Linux'
-      uses: ./.github/actions/linux-packages
+      run: sudo tools/install-linux-packages.sh
 
     - name: Install the Vulkan SDK
       uses: ./.github/actions/vulkan-sdk
@@ -185,7 +186,7 @@ jobs:
         submodules: "recursive"
 
     - name: Install packages
-      uses: ./.github/actions/linux-packages
+      run: sudo tools/install-linux-packages.sh
 
     - name: Install the Vulkan SDK
       uses: ./.github/actions/vulkan-sdk

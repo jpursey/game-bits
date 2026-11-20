@@ -188,7 +188,25 @@ build needs (clang, CMake, Ninja, the SDK, SDL's packages, lavapipe, Xvfb, gdb)
 and the devcontainers `desktop-lite` feature: a light desktop on a VNC server,
 viewed in the browser through noVNC on a forwarded port. A program started
 from the container's terminal appears on that desktop, and takes the mouse and
-keyboard from the browser.
+keyboard from the browser. The desktop is 1920x1080 in 24-bit color:
+desktop-lite's default of 16-bit color fails the first frame Vulkan presents,
+with an X `BadLength` error from `PutImage`, as Mesa's software swapchain sends
+32-bit pixels. Its window manager, fluxbox, uses the dark `bora_black` style
+rather than desktop-lite's light one. Its other dark styles set an image as the
+background, which fails without a wallpaper tool, with a popup. Its programs,
+such as its terminal (Tilix), use GTK's dark Adwaita theme: the system's GTK
+settings name Yaru, which isn't installed, and GTK drops the dark variant when
+it falls back from a missing theme, so the user's settings name Adwaita. Tilix
+also needs its own `theme-variant` setting, set in a schema override.
+
+In VS Code, the container installs CMake Tools and C/C++, and its settings set
+up two CMake projects, Game Bits and render-check, each built with clang and
+Ninja in the build directories the command line uses. So the IDE builds, runs,
+debugs (gdb), and tests (the Testing view) as the commands do. The settings
+live only in `devcontainer.json`, not in a `CMakePresets.json` or
+`.vscode/settings.json`, which a local checkout's Visual Studio or VS Code
+would also read. The container sets `GB_DIR` to its checkout, and `CC` and
+`CXX` to clang, so the templates, and projects made from them, build there.
 
 Lavapipe renders on the CPU, so this suits programs of ImGui's weight:
 render-check's scripts ran at 30 to 45 frames a second at 1280x800 under Xvfb
@@ -209,9 +227,11 @@ on 4 cores, counting startup.
   own descendants. The script starts the program from a subshell that `exec`s
   `dump-stacks.sh`, which `exec`s `gdb`, so `gdb` is the program's ancestor.
   CI's hang check passes on GitHub's Ubuntu runner.
-- Vulkan through SDL works on the devcontainer's VNC server as it does on Xvfb
-  (both are X servers without GPU access), and is responsive enough to use
-  render-check from the browser (CL4, checked by hand).
+- Confirmed in CL4: Vulkan through SDL works on the devcontainer's VNC server
+  as it does on Xvfb, once its color depth is 24-bit. render-check takes clicks
+  and keys from noVNC, and closes cleanly from its window's close button.
+- Confirmed in CL4: render-check is responsive enough to use from the browser
+  in a 4-core Codespace, drawing about 25 frames a second.
 
 ### Left for later
 
@@ -294,15 +314,25 @@ Depends on: CL2.
   and `hang-stacks.txt` shows the main thread's stack.
 - CI's `build-render-check-linux` job passes and its frames can be downloaded.
 
-### CL4 [ ] devcontainer: graphical programs in the browser
+### CL4 [x] devcontainer: graphical programs in the browser
 
-Depends on: CL2.
+Depends on: CL3 (gdb in the Linux packages).
 
 - `.devcontainer/devcontainer.json` and its Dockerfile, as under Devcontainer.
-- README.md: opening the container, building render-check, and viewing it in
-  the browser.
+- `tools/install-linux-packages.sh` installs the Linux packages, for CI, the
+  Dockerfile, and CLAUDE.md, which each listed them before. It replaces CI's
+  `linux-packages` action.
+- `.gitattributes` checks out shell scripts with LF line endings, on Windows
+  too, so the container runs them from a Windows checkout.
+- README.md: opening the container, viewing its desktop in the browser, and
+  building, running, debugging, and testing from VS Code.
 
 **Verify**
-- The session can't run a devcontainer, so it is checked by hand: in a
-  Codespace, the build and ctest pass, and render-check runs on the desktop in
-  the browser and responds to the mouse and keyboard.
+- The session builds and starts the devcontainer with Docker and the
+  devcontainers CLI. In it, as its ordinary user, the build and ctest pass,
+  and render-check's scripts pass with `run-program.sh`.
+- render-check runs on the container's desktop, viewed through noVNC in a
+  browser (Playwright), and responds to its mouse and keyboard.
+- Checked by hand: the same in a GitHub Codespace, and from VS Code there:
+  building and running the unit tests, and building, running, and debugging
+  render-check.

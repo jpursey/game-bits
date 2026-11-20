@@ -1,0 +1,74 @@
+// A container that builds and runs Game Bits on Linux, such as a GitHub
+// Codespace. Programs run from its terminal appear on a desktop viewed in the
+// browser, through the forwarded "Desktop" port. See README.md.
+{
+  "name": "Game Bits",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": "..",
+    "args": {
+      // The version CI uses, its VULKAN_SDK_VERSION
+      // (.github/workflows/cmake.yml).
+      "VULKAN_SDK_VERSION": "1.4.363.1"
+    }
+  },
+  "features": {
+    // A light desktop on a VNC server, viewed in the browser through noVNC.
+    // Its password is "vscode".
+    "ghcr.io/devcontainers/features/desktop-lite:1": {}
+  },
+  "containerEnv": {
+    // The desktop's size and color depth. It needs 24-bit color, rather than
+    // desktop-lite's default of 16, as Mesa's Vulkan drivers can't present to
+    // a 16-bit window. 1920x1080 fits render-check's 1280x800 window.
+    "VNC_RESOLUTION": "1920x1080x24",
+    // Builds use clang, as on CI, including CMake Tools' [Unspecified] kit.
+    "CC": "clang",
+    "CXX": "clang++",
+    // For the templates, and projects made from them, which find Game Bits
+    // through it.
+    "GB_DIR": "${containerWorkspaceFolder}"
+  },
+  "forwardPorts": [6080],
+  "portsAttributes": {
+    "6080": {
+      "label": "Desktop"
+    }
+  },
+  // Lets gdb attach to any of the user's programs (as tools/dump-stacks.sh
+  // does), and run programs without address randomization.
+  "capAdd": ["SYS_PTRACE"],
+  "securityOpt": ["seccomp=unconfined"],
+  // Programs render on the CPU, and a full build is 990 steps.
+  "hostRequirements": {
+    "cpus": 4
+  },
+  // Also runs when a Codespace prebuild is made, so a prebuilt Codespace starts
+  // with its submodules. SDL's history is shallow (.gitmodules), and the
+  // others' files are fetched only for the commit checked out.
+  "updateContentCommand": "git submodule update --init --jobs 8 --filter=blob:none",
+  // VS Code's settings in the container only, so they never change a local
+  // checkout's IDE setup.
+  "customizations": {
+    "vscode": {
+      // CMake Tools builds, runs, and tests from the CMake panel and the status
+      // bar. C/C++ debugs with gdb.
+      "extensions": ["ms-vscode.cmake-tools", "ms-vscode.cpptools"],
+      "settings": {
+        // Game Bits itself, with its unit tests, and render-check, which is a
+        // CMake project of its own.
+        "cmake.sourceDirectory": [
+          "${workspaceFolder}",
+          "${workspaceFolder}/examples/render-check"
+        ],
+        // The build directories CLAUDE.md and README.md use on Linux.
+        "cmake.buildDirectory": "${sourceDirectory}/out/build/linux-clang-${buildType}",
+        "cmake.generator": "Ninja",
+
+        // Source Control shows only Game Bits' own changes, not the
+        // submodules', and doesn't warn that there are too many to open.
+        "git.detectSubmodules": false
+      }
+    }
+  }
+}

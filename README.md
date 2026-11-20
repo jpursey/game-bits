@@ -294,6 +294,43 @@ For the best Visual Studio experience using Game Bits, it is recommended to
 switch the Solution Explorer view to be the "CMake Targets View", as it will
 allow you to navigate more easily to Game Bits source files.
 
+### Building in a devcontainer
+
+[.devcontainer](.devcontainer) defines an Ubuntu 24.04 container with
+everything a Linux build needs, including the Vulkan SDK. It can be opened as a
+GitHub Codespace (Code > Codespaces), or with Visual Studio Code's Dev
+Containers extension on an x86_64 machine (the Vulkan SDK isn't built for ARM
+Linux). The submodules are checked out when it is created, and
+the Vulkan SDK's environment is set up, so the Linux commands in
+[CLAUDE.md](CLAUDE.md) work as they are, without sourcing its `setup-env.sh`.
+`GB_DIR` is set to the checkout, and `CC` and `CXX` to clang, so the templates,
+and a project made from one that is cloned beside it in `/workspaces`, build
+against it without further setup.
+
+It also runs a light desktop, viewed in the browser. Open the forwarded
+"Desktop" port (6080) from the Ports panel, choose Connect, and enter the
+password `vscode`. The desktop is 1920x1080, so in a smaller browser window,
+set noVNC's Scaling mode (in its settings) to Local scaling. A program run from
+the container's terminal appears there, and takes the mouse and keyboard from
+the browser. Build in VS Code's terminal rather than the desktop's own, which
+runs programs but lacks the build environment (the desktop is started through
+sudo, which clears it). It renders on the CPU, with Mesa's lavapipe driver,
+which suits programs of ImGui's weight such as RenderCheck, but is far too slow
+for BlockWorld.
+
+In VS Code, the CMake Tools extension builds, runs, debugs, and tests from its
+CMake panel and the status bar. It has two projects: Game Bits itself, with its
+unit tests, and RenderCheck. Choose which one is active with the edit icon on
+Project Status's Folder entry, and configure it with the icon on its Configure
+entry. On its first configure, choose the [Unspecified] kit, which uses clang
+(the container sets `CC` and `CXX`). The Project Outline lists each project once
+it is configured. Each builds in the same directories as the commands in
+[CLAUDE.md](CLAUDE.md) and below. The unit tests run from the Test entry, or
+from the Testing view once they are built (until then, it fails to find their
+programs). A program run or debugged from VS Code appears on the desktop, as
+from the terminal. These settings are in `devcontainer.json`, so they apply
+only in the container.
+
 ### Building from the command line
 
 The same build can be driven from a shell that has an x64 MSVC developer
