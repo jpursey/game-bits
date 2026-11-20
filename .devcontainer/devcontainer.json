@@ -1,0 +1,36 @@
+// A container that builds and runs Game Bits on Linux, such as a GitHub
+// Codespace. Programs run from its terminal appear on a desktop viewed in the
+// browser, through the forwarded "Desktop" port. See README.md.
+{
+  "name": "Game Bits",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": "..",
+    "args": {
+      // The version CI uses, its VULKAN_SDK_VERSION
+      // (.github/workflows/cmake.yml).
+      "VULKAN_SDK_VERSION": "1.4.363.1"
+    }
+  },
+  "features": {
+    // A light desktop on a VNC server, viewed in the browser through noVNC.
+    // Its password is "vscode".
+    "ghcr.io/devcontainers/features/desktop-lite:1": {}
+  },
+  "forwardPorts": [6080],
+  "portsAttributes": {
+    "6080": {
+      "label": "Desktop"
+    }
+  },
+  // Lets gdb (tools/dump-stacks.sh) attach to any of the user's programs.
+  "capAdd": ["SYS_PTRACE"],
+  "securityOpt": ["seccomp=unconfined"],
+  // More shared memory than Docker's default, as desktop-lite recommends.
+  "runArgs": ["--shm-size=1g"],
+  // Programs render on the CPU, and a full build is 990 steps.
+  "hostRequirements": {
+    "cpus": 4
+  },
+  "postCreateCommand": "git submodule update --init"
+}

@@ -149,10 +149,10 @@ The program exits once the script ends, so every run also checks that it shuts d
 
 ### Linux
 
-Game Bits also builds and passes its tests on Linux with clang, and render-check and the templates build there too, though block-world doesn't yet. It needs Ubuntu 24.04's packages for clang, CMake, and Ninja, SDL's windowing headers (without them SDL builds, but can't open a window), and to run graphical programs, Mesa's Vulkan drivers (including lavapipe, which renders on the CPU where there is no GPU) and a virtual X server (where there is no display), and gdb, which saves a hung program's stacks:
+Game Bits also builds and passes its tests on Linux with clang, and render-check and the templates build there too, though block-world doesn't yet. It needs Ubuntu 24.04's packages for clang, CMake, and Ninja, SDL's windowing headers (without them SDL builds, but can't open a window), and to run graphical programs, Mesa's Vulkan drivers (including lavapipe, which renders on the CPU where there is no GPU) and a virtual X server (where there is no display), and gdb, which saves a hung program's stacks. `tools/install-linux-packages.sh` installs them, as CI and the devcontainer do:
 
 ```
-sudo apt-get install clang cmake ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxkbcommon-dev libwayland-dev wayland-protocols libdecor-0-dev libegl-dev libdbus-1-dev libudev-dev mesa-vulkan-drivers xvfb gdb
+sudo tools/install-linux-packages.sh
 ```
 
 Vulkan comes from LunarG's Vulkan SDK, as on Windows, as Ubuntu's Vulkan packages are older than Game Bits needs. `tools/install-vulkan-sdk.sh` installs the parts of it Game Bits uses, once. Then each shell that builds or runs Game Bits sources its `setup-env.sh`, much as the developer environment on Windows, which sets `VULKAN_SDK`. Without it, the Vulkan libraries (`gb_render_vulkan`, `gb_render_vulkan_sdl`) are left out of the build.

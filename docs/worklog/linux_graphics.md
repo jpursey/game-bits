@@ -294,15 +294,20 @@ Depends on: CL2.
   and `hang-stacks.txt` shows the main thread's stack.
 - CI's `build-render-check-linux` job passes and its frames can be downloaded.
 
-### CL4 [ ] devcontainer: graphical programs in the browser
+### CL4 [x] devcontainer: graphical programs in the browser
 
-Depends on: CL2.
+Depends on: CL3 (gdb in the Linux packages).
 
 - `.devcontainer/devcontainer.json` and its Dockerfile, as under Devcontainer.
-- README.md: opening the container, building render-check, and viewing it in
-  the browser.
+- `tools/install-linux-packages.sh` installs the Linux packages, for CI's
+  `linux-packages` action, the Dockerfile, and CLAUDE.md, which each listed
+  them before.
+- README.md: opening the container, and viewing its desktop in the browser.
 
 **Verify**
-- The session can't run a devcontainer, so it is checked by hand: in a
-  Codespace, the build and ctest pass, and render-check runs on the desktop in
-  the browser and responds to the mouse and keyboard.
+- The session builds and starts the devcontainer with Docker and the
+  devcontainers CLI. In it, as its ordinary user, the build and ctest pass,
+  and render-check's scripts pass with `run-program.sh`.
+- render-check runs on the container's desktop, viewed through noVNC in a
+  browser (Playwright), and responds to its mouse.
+- Checked by hand: the same in a GitHub Codespace.

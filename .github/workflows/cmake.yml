@@ -11,7 +11,8 @@ on:
       - '**.md'
   workflow_dispatch:
 
-# The Vulkan SDK every job builds with (see .github/actions/vulkan-sdk).
+# The Vulkan SDK every job builds with (see .github/actions/vulkan-sdk), which
+# the devcontainer (.devcontainer/devcontainer.json) also installs.
 env:
   VULKAN_SDK_VERSION: 1.4.363.1
 

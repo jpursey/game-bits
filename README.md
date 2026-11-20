@@ -294,6 +294,22 @@ For the best Visual Studio experience using Game Bits, it is recommended to
 switch the Solution Explorer view to be the "CMake Targets View", as it will
 allow you to navigate more easily to Game Bits source files.
 
+### Building in a devcontainer
+
+[.devcontainer](.devcontainer) defines an Ubuntu 24.04 container with
+everything a Linux build needs, including the Vulkan SDK. It can be opened as a
+GitHub Codespace (Code > Codespaces), or with Visual Studio Code's Dev
+Containers extension. The submodules are checked out when it is created, and
+every terminal has the Vulkan SDK's environment set up, so the Linux commands
+in [CLAUDE.md](CLAUDE.md) work as they are.
+
+It also runs a light desktop, viewed in the browser. Open the forwarded
+"Desktop" port (6080) from the Ports panel, choose Connect, and enter the
+password `vscode`. A program run from the container's terminal appears there,
+and takes the mouse and keyboard from the browser. It renders on the CPU, with
+Mesa's lavapipe driver, which suits programs of ImGui's weight such as
+RenderCheck, but is far too slow for BlockWorld.
+
 ### Building from the command line
 
 The same build can be driven from a shell that has an x64 MSVC developer
