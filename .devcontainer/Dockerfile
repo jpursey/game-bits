@@ -17,10 +17,19 @@ COPY tools/install-vulkan-sdk.sh /tmp/gb-tools/
 RUN /tmp/gb-tools/install-vulkan-sdk.sh /opt/vulkan-sdk "${VULKAN_SDK_VERSION}"
 ENV VULKAN_SDK=/opt/vulkan-sdk/${VULKAN_SDK_VERSION}/x86_64
 ENV PATH=${VULKAN_SDK}/bin:${PATH} \
-  LD_LIBRARY_PATH=${VULKAN_SDK}/lib/VulkanLoader/lib \
-  VK_ADD_LAYER_PATH=${VULKAN_SDK}/share/vulkan/explicit_layer.d \
   PKG_CONFIG_PATH=${VULKAN_SDK}/lib/VulkanLoader/lib/pkgconfig:${VULKAN_SDK}/share/pkgconfig:${VULKAN_SDK}/lib/pkgconfig \
   CMAKE_PREFIX_PATH=${VULKAN_SDK}:${VULKAN_SDK}/lib/VulkanLoader
+
+# Programs find the SDK's Vulkan loader and validation layer where the system's
+# would be, rather than through the environment setup-env.sh sets. So they work
+# however they are started, including from the desktop, which desktop-lite
+# starts through sudo, clearing the environment.
+RUN echo "${VULKAN_SDK}/lib/VulkanLoader/lib" > /etc/ld.so.conf.d/000-vulkan-sdk.conf \
+  && ldconfig \
+  && mkdir -p /usr/local/share/vulkan/explicit_layer.d \
+  && sed "s#\"library_path\": \"[^\"]*\"#\"library_path\": \"${VULKAN_SDK}/lib/libVkLayer_khronos_validation.so\"#" \
+    "${VULKAN_SDK}/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json" \
+    > /usr/local/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json
 
 # The desktop's window manager settings: desktop-lite's own, with a dark style
 # rather than its light one. desktop-lite only writes its own when there are
