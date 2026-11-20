@@ -64,7 +64,7 @@ sets once for every job (`VULKAN_SDK_VERSION`). It has the headers, loader,
 validation layers, and `glslc` together, at matching versions. The version is
 1.4.363.1, the latest: LunarG no longer offers Windows CI's 1.3.283 for Linux.
 
-`tools/install-vulkan-sdk.sh <dir>` installs it from LunarG's Linux tarball,
+`tools/install-vulkan-sdk.sh <dir> <version>` installs it from LunarG's Linux tarball,
 taking only the parts Game Bits uses (the headers, loader, validation layer,
 and `glslc`, about 450 MB of the SDK's 1.9 GB), and each shell sources its
 `setup-env.sh`, which sets `VULKAN_SDK`.
@@ -91,8 +91,8 @@ The alternatives:
 the SDK through it on Windows and Linux alike, replacing the paths written for
 the Windows SDK's layout. Without `VULKAN_SDK`, the Vulkan libraries are left
 out, so a distribution's older Vulkan is never picked up by accident.
-`gb_embed_shader` looks for `glslc` in the SDK's `Bin` (Windows) or `bin`
-(Linux) first, then on the `PATH` as before.
+`gb_embed_shader` takes `glslc` from it too (`Vulkan_GLSLC_EXECUTABLE`), falling
+back to the `PATH` as before.
 
 Lavapipe comes from Mesa's `mesa-vulkan-drivers` package, the only part of
 Vulkan that comes from Ubuntu. A machine with a GPU uses its own driver.

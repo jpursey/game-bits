@@ -204,9 +204,9 @@ endfunction()
 # found in the Vulkan SDK or on the PATH, which only a project that calls this
 # needs.
 function(gb_embed_shader TARGET FILE HEADER NAME)
-  find_program(GB_GLSLC glslc
-    HINTS "$ENV{VULKAN_SDK}/Bin" "$ENV{VULKAN_SDK}/bin")
-  if (NOT GB_GLSLC)
+  # FindVulkan has already found it in the SDK, if there is one.
+  find_program(Vulkan_GLSLC_EXECUTABLE glslc)
+  if (NOT Vulkan_GLSLC_EXECUTABLE)
     message(FATAL_ERROR
       "gb_embed_shader: glslc was not found in the Vulkan SDK or on the PATH")
   endif()
@@ -216,7 +216,7 @@ function(gb_embed_shader TARGET FILE HEADER NAME)
     "${CMAKE_CURRENT_BINARY_DIR}/${TARGET}_shaders/${HEADER}")
   add_custom_command(
     OUTPUT "${_output}"
-    COMMAND "${GB_GLSLC}" -Werror -MD -MF "${_output}.d" -o "${_output}"
+    COMMAND "${Vulkan_GLSLC_EXECUTABLE}" -Werror -MD -MF "${_output}.d" -o "${_output}"
       "${_input}"
     DEPENDS "${_input}"
     DEPFILE "${_output}.d"

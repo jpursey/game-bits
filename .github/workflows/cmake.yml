@@ -11,8 +11,7 @@ on:
       - '**.md'
   workflow_dispatch:
 
-# The Vulkan SDK every job builds with (see .github/actions/vulkan-sdk). Linux
-# installs it with tools/install-vulkan-sdk.sh, whose version changes with this.
+# The Vulkan SDK every job builds with (see .github/actions/vulkan-sdk).
 env:
   VULKAN_SDK_VERSION: 1.4.363.1
 
@@ -88,7 +87,7 @@ jobs:
   # Linux builds every library with clang. Debug runs render asserts and death
   # tests, and Release compiles asserts out, as the Windows release job does.
   # The tests run in a virtual X server, so SDL's window tests use its X11
-  # driver, as programs do, rather than its offscreen fallback. GitHub's
+  # driver, as programs do. GitHub's
   # runner is an ordinary user, so tests of read-only files mean something,
   # which they don't as root.
   build-linux:

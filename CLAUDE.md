@@ -152,7 +152,7 @@ sudo apt-get install clang cmake ninja-build libx11-dev libxext-dev libxrandr-de
 Vulkan comes from LunarG's Vulkan SDK, as on Windows, as Ubuntu's Vulkan packages are older than Game Bits needs. `tools/install-vulkan-sdk.sh` installs the parts of it Game Bits uses, once. Then each shell that builds or runs Game Bits sources its `setup-env.sh`, much as the developer environment on Windows, which sets `VULKAN_SDK`. Without it, the Vulkan libraries (`gb_render_vulkan`, `gb_render_vulkan_sdl`) are left out of the build.
 
 ```
-tools/install-vulkan-sdk.sh ~/vulkan-sdk
+tools/install-vulkan-sdk.sh ~/vulkan-sdk 1.4.363.1
 source ~/vulkan-sdk/1.4.363.1/setup-env.sh
 ```
 
@@ -166,7 +166,7 @@ xvfb-run -a ctest --test-dir out/build/linux-clang-Debug --output-on-failure
 out/build/linux-clang-Debug/src/gb/base/gb_base_test --gtest_filter=ContextTest.*
 ```
 
-A full build is about 990 steps, about 8 minutes on 4 cores. Test binaries have no `.exe`. `xvfb-run -a` runs the tests in a virtual X server, so SDL's window tests use its X11 driver, as programs do (with no display, SDL falls back to its offscreen driver, and they pass there too); where there is a display already, ctest runs on its own. Run tests as an ordinary user: root ignores read-only permissions, so `CommonProtocolTest.ReadOnlyFile` fails as root.
+A full build is about 990 steps, about 8 minutes on 4 cores. Test binaries have no `.exe`. `xvfb-run -a` runs the tests in a virtual X server, so SDL's window tests use its X11 driver, as programs do; where there is a display already, ctest runs on its own. Run tests as an ordinary user: root ignores read-only permissions, so `CommonProtocolTest.ReadOnlyFile` fails as root.
 
 ### Checks
 

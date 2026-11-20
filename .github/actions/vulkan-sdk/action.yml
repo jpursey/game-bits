@@ -13,7 +13,7 @@ runs:
     uses: actions/cache@v6
     with:
       path: ${{ runner.os == 'Windows' && 'C:\VulkanSDK' || '~/vulkan-sdk' }}
-      key: vulkan-sdk-${{ runner.os }}-${{ env.VULKAN_SDK_VERSION }}-${{ hashFiles('tools/install-vulkan-sdk.sh') }}
+      key: vulkan-sdk-${{ runner.os }}-${{ env.VULKAN_SDK_VERSION }}${{ runner.os == 'Linux' && format('-{0}', hashFiles('tools/install-vulkan-sdk.sh')) || '' }}
 
   - name: Install the Vulkan SDK on Windows
     if: runner.os == 'Windows' && steps.cache.outputs.cache-hit != 'true'
@@ -34,15 +34,14 @@ runs:
   - name: Install the Vulkan SDK on Linux
     if: runner.os == 'Linux' && steps.cache.outputs.cache-hit != 'true'
     shell: bash
-    run: tools/install-vulkan-sdk.sh ~/vulkan-sdk
+    run: tools/install-vulkan-sdk.sh ~/vulkan-sdk "$VULKAN_SDK_VERSION"
 
-  # Sourcing setup-env.sh fails if the script installed another version.
   - name: Use the Vulkan SDK on Linux
     if: runner.os == 'Linux'
     shell: bash
     run: |
       source ~/vulkan-sdk/$VULKAN_SDK_VERSION/setup-env.sh
       echo "$VULKAN_SDK/bin" >> $GITHUB_PATH
-      for name in VULKAN_SDK LD_LIBRARY_PATH VK_ADD_LAYER_PATH CMAKE_PREFIX_PATH; do
+      for name in VULKAN_SDK LD_LIBRARY_PATH VK_ADD_LAYER_PATH CMAKE_PREFIX_PATH PKG_CONFIG_PATH; do
         echo "$name=${!name}" >> $GITHUB_ENV
       done

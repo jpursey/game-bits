@@ -10,36 +10,33 @@
 # use; these parts are about 450 MB, nearly all of it the validation layer.
 #
 # Usage:
-#   tools/install-vulkan-sdk.sh <dir>
+#   tools/install-vulkan-sdk.sh <dir> <version>
 #
-# The SDK is installed in <dir>/<version>. Source <dir>/<version>/setup-env.sh
+# <version> is the one CI uses, its VULKAN_SDK_VERSION
+# (.github/workflows/cmake.yml). The SDK is installed in <dir>/<version>. Source <dir>/<version>/setup-env.sh
 # in each shell that builds or runs Game Bits programs, as with the full SDK.
 # It sets VULKAN_SDK, which CMake finds Vulkan from, and puts the SDK's loader,
 # layer, and glslc ahead of any the system has.
-#
-# The version is the one CI uses on Windows (.github/workflows/cmake.yml), and
-# changes with it.
 
 set -euo pipefail
 
-readonly kVersion="1.4.363.1"
-
-if [[ $# -ne 1 ]]; then
-  echo "Usage: $0 <dir>" >&2
+if [[ $# -ne 2 ]]; then
+  echo "Usage: $0 <dir> <version>" >&2
   exit 2
 fi
 dir="$1"
+version="$2"
 
-url="https://sdk.lunarg.com/sdk/download/${kVersion}/linux/vulkansdk-linux-x86_64-${kVersion}.tar.xz"
-sdk="${kVersion}/x86_64"
+url="https://sdk.lunarg.com/sdk/download/${version}/linux/vulkansdk-linux-x86_64-${version}.tar.xz"
+sdk="${version}/x86_64"
 mkdir -p "${dir}"
 curl -fsSL "${url}" | tar -xJ -C "${dir}" \
-  "${kVersion}/setup-env.sh" \
+  "${version}/setup-env.sh" \
   "${sdk}/include/vulkan" \
   "${sdk}/include/vk_video" \
   "${sdk}/lib/VulkanLoader" \
   "${sdk}/lib/libVkLayer_khronos_validation.so" \
   "${sdk}/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json" \
   "${sdk}/bin/glslc"
-echo "Installed the Vulkan SDK ${kVersion} in ${dir}/${kVersion}."
-echo "Source ${dir}/${kVersion}/setup-env.sh to use it."
+echo "Installed the Vulkan SDK ${version} in ${dir}/${version}."
+echo "Source ${dir}/${version}/setup-env.sh to use it."
