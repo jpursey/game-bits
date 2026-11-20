@@ -135,7 +135,7 @@ struct CliChoice {
 //
 // A CliFlag<bool> takes no value: it is given as `--name` or `-n`, which makes
 // it true, and is otherwise false. It must leave `value_name`, `optional`,
-// `choices`, `default_value`, and `validators` unset.
+// `repeated`, `choices`, `default_value`, and `validators` unset.
 template <typename T>
 struct CliFlag {
   static_assert(std::is_same_v<T, bool> ||
@@ -166,6 +166,13 @@ struct CliFlag {
   // (`.optional = false`) of a command in the path isn't given, unless help is
   // asked for. A required flag can't have a default value.
   bool optional = true;
+
+  // Whether the flag may be given any number of times, once for each value,
+  // as a list (`-D A=1 -D B=2`). Each value is validated on its own. A
+  // repeated flag's values are read with CliCommandLine::GetAll(), not Get().
+  // A required repeated flag must be given at least once. A repeated flag
+  // can't have a default value, as it has no values if it isn't given.
+  bool repeated = false;
 
   // The values a string flag accepts, if it only accepts some. Each must be
   // unique. Only a string flag can have choices.

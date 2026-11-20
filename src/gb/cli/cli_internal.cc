@@ -39,6 +39,7 @@ CliFlagFields GetFields(const CliFlag<T>& flag) {
       .name = flag.name,
       .short_name = flag.short_name,
       .optional = flag.optional,
+      .repeated = flag.repeated,
   };
 }
 

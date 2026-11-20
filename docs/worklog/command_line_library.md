@@ -113,6 +113,12 @@ A program with nothing in its context calls `RunCommandLine(&kProgram, args)`.
   required by default. A required flag (`.optional = false`) must be given,
   and has no default. A `CliFlag<bool>` takes no value: it is true if given
   and false otherwise, and can't be required.
+- **Repeated flags:** a flag with `.repeated = true` may be given any number
+  of times, once for each value, as a list (`-D A=1 -D B=2`), rather than
+  taking a list in one value that the program splits itself. Each value is
+  parsed and validated on its own. A repeated flag has no default, as it has
+  no values if it isn't given, and a required one must be given at least
+  once. A bool flag can't be repeated.
 - **Positional arguments:** a `CliArg<T>` has a name, shown in help as
   `<name>`, help, choices, and validators. Optional arguments
   (`.optional = true`) follow the required ones, and may have a default.
@@ -132,10 +138,11 @@ A program with nothing in its context calls `RunCommandLine(&kProgram, args)`.
   name that is `-`, `.`, a digit, or not visible ASCII, a flag named `--help`
   or `-h`, an optional argument before a required one, an optional argument
   on a command with subcommands, a bool flag with a value name, default,
-  validators, or `.optional = false`, a required flag with a default, choices
-  on a type other than a string, a choice that is empty, a duplicate, or
-  starts with `-`, a null constraint on a command, and a null validator, one
-  with no function, or one with a constraint that is null or isn't an input.
+  validators, `.optional = false`, or `.repeated = true`, a required or
+  repeated flag with a default, choices on a type other than a string, a
+  choice that is empty, a duplicate, or starts with `-`, a null constraint on
+  a command, and a null validator, one with no function, or one with a
+  constraint that is null or isn't an input.
 
 ### Validators
 
@@ -185,10 +192,10 @@ absl::StatusOr<CliCommandLine> ParseCommandLine(
 - A command's flags are accepted anywhere after its name, including after its
   subcommands' names, and can be read by the command that runs.
 - Errors are an `InvalidArgument` status whose message is ready to show: an
-  unknown flag or command, a flag given twice, a missing value, a value that
-  isn't of the type or one of the choices, a value a validator rejects, a
-  missing required argument or flag, or an extra argument. Each names the command
-  path, and says how to get help: `oz3asm: unknown flag "--foo". Run "oz3asm
+  unknown flag or command, a flag that isn't repeated given twice, a missing
+  value, a value that isn't of the type or one of the choices, a value a
+  validator rejects, a missing required argument or flag, or an extra
+  argument. Each names the command path, and says how to get help: `oz3asm: unknown flag "--foo". Run "oz3asm
   --help" for help.`
 - A context that fails `gb_cli`'s own constraints (a null `Context*`, or a
   width that isn't an `int`), or is missing a value a validator reads, is a
@@ -210,6 +217,7 @@ class CliCommandLine {
 
   bool Get(const CliFlag<bool>& flag) const;
   template <typename T> std::optional<T> Get(const CliFlag<T>& flag) const;
+  template <typename T> std::vector<T> GetAll(const CliFlag<T>& flag) const;
   template <typename T> std::optional<T> Get(const CliArg<T>& arg) const;
 };
 ```
@@ -218,8 +226,11 @@ class CliCommandLine {
   move-only. A context passed as a `Context*` must outlive it.
 - `Get()` returns the given value, else the default, else `std::nullopt`. A
   required argument is always set, and a bool flag reads as a plain `bool`.
-  `Get()` CHECKs on a flag or argument outside the command path, and on the
-  values of a request for help.
+  `GetAll()` returns a repeated flag's values in the order they were given,
+  empty if it wasn't given. Each CHECKs on a flag or argument outside the
+  command path, and on the values of a request for help. `Get()` CHECKs on a
+  repeated flag, as it would drop values, and `GetAll()` on a flag that isn't
+  repeated, which would ignore its default.
 - `Run()` writes the command's help if it was asked for, or the command has no
   run function, and returns true. Otherwise it validates the context against
   `CliContract` and the constraints of every command in the path, and calls
@@ -245,8 +256,8 @@ class CliCommandLine {
   the path: a usage line, the help paragraphs, then the arguments and those
   of the commands above it, the subcommands (with the first paragraph of their
   help), and the flags and those of the commands above it, nearest first.
-  Choices are listed with their help, defaults as `(default: <value>)`, and
-  required flags as `(required)`.
+  Choices are listed with their help, defaults as `(default: <value>)`,
+  required flags as `(required)`, and repeated flags as `(can be repeated)`.
 - Help is in a column shared by all the lists, and an entry wider than 26
   columns has its help start on the next line. Lines wrap at words, by code
   point, up to the width; the usage line doesn't wrap.

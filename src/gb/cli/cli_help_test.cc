@@ -316,6 +316,30 @@ TEST(FormatCliHelpTest, ChoicesAndDefaults) {
             "  -h, --help           Writes help for this command.\n");
 }
 
+TEST(FormatCliHelpTest, RepeatedFlags) {
+  static const CliFlag<std::string_view> kDefine = {
+      .name = "define",
+      .short_name = 'D',
+      .value_name = "name=value",
+      .help = "Defines a macro.",
+      .repeated = true,
+  };
+  static const CliFlag<std::string_view> kSource = {
+      .name = "source",
+      .optional = false,
+      .repeated = true,
+  };
+  static const CliCommand kProgram = {.name = "prog",
+                                      .flags = {&kDefine, &kSource}};
+  EXPECT_EQ(GetHelp(&kProgram, {"--help"}),
+            "Usage: prog [<flags>]\n"
+            "\n"
+            "Flags:\n"
+            "  -D, --define <name=value>  Defines a macro. (can be repeated)\n"
+            "      --source <source>      (required) (can be repeated)\n"
+            "  -h, --help                 Writes help for this command.\n");
+}
+
 TEST(FormatCliHelpTest, FloatingPointDefaultsAreExact) {
   static const CliFlag<double> kA = {.name = "a", .default_value = 0.1234567};
   static const CliFlag<double> kB = {.name = "b", .default_value = 1234567.0};

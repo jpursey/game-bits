@@ -236,6 +236,39 @@ TEST(ValidateCliCommandTest, RequiredFlagWithDefault) {
             "prog: flag \"--a\" is required, so can't have a default value");
 }
 
+TEST(ValidateCliCommandTest, ValidRepeatedFlags) {
+  static const CliFlag<std::string_view> kOptional = {.name = "a",
+                                                      .repeated = true};
+  static const CliFlag<int64_t> kRequired = {
+      .name = "b",
+      .optional = false,
+      .repeated = true,
+  };
+  static const CliCommand kProgram = {.name = "prog",
+                                      .flags = {&kOptional, &kRequired}};
+  EXPECT_TRUE(ValidateCliCommand(&kProgram).ok());
+}
+
+TEST(ValidateCliCommandTest, RepeatedBoolFlag) {
+  static const CliFlag<bool> kRepeatedFlag = {.name = "a", .repeated = true};
+  static const CliCommand kProgram = {.name = "prog",
+                                      .flags = {&kRepeatedFlag}};
+  EXPECT_EQ(ValidateCliCommand(&kProgram).message(),
+            "prog: flag \"--a\" is a bool, so can't be repeated");
+}
+
+TEST(ValidateCliCommandTest, RepeatedFlagWithDefault) {
+  static const CliFlag<double> kRepeatedFlag = {
+      .name = "a",
+      .repeated = true,
+      .default_value = 1.0,
+  };
+  static const CliCommand kProgram = {.name = "prog",
+                                      .flags = {&kRepeatedFlag}};
+  EXPECT_EQ(ValidateCliCommand(&kProgram).message(),
+            "prog: flag \"--a\" is repeated, so can't have a default value");
+}
+
 TEST(ValidateCliCommandTest, ValidChoices) {
   static const CliFlag<std::string_view> kFlag = {
       .name = "color",

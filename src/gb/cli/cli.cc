@@ -94,6 +94,9 @@ absl::Status ValidateValueFields(const CliFlag<T>& flag) {
     if (!flag.optional) {
       return absl::InvalidArgumentError("is a bool, so can't be required");
     }
+    if (flag.repeated) {
+      return absl::InvalidArgumentError("is a bool, so can't be repeated");
+    }
     if (flag.default_value.has_value()) {
       return absl::InvalidArgumentError(
           "is a bool, so can't have a default value");
@@ -105,6 +108,10 @@ absl::Status ValidateValueFields(const CliFlag<T>& flag) {
   if (!flag.optional && flag.default_value.has_value()) {
     return absl::InvalidArgumentError(
         "is required, so can't have a default value");
+  }
+  if (flag.repeated && flag.default_value.has_value()) {
+    return absl::InvalidArgumentError(
+        "is repeated, so can't have a default value");
   }
   const absl::Status status = ValidateValidators<T>(flag.validators);
   if (!status.ok()) {

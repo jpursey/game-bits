@@ -28,6 +28,7 @@ namespace {
 
 using ::testing::ElementsAre;
 using ::testing::HasSubstr;
+using ::testing::IsEmpty;
 using ::testing::Optional;
 using ::testing::StartsWith;
 
@@ -391,6 +392,99 @@ TEST(ParseCommandLineTest, ValidatorsFail) {
             "convert: \"--label\": is empty");
   EXPECT_EQ(ParseError(&kConvert, {"--label", "a b", "in.txt"}),
             "convert: \"--label\": contains a space");
+}
+
+//==============================================================================
+// Repeated flags
+//==============================================================================
+
+const CliFlag<std::string_view> kDefine = {
+    .name = "define",
+    .short_name = 'D',
+    .repeated = true,
+    .validators = {&kNotEmpty, &kNoSpaces},
+};
+const CliFlag<std::string_view> kTarget = {
+    .name = "target",
+    .repeated = true,
+    .choices = {{.name = "x86"}, {.name = "arm"}},
+};
+const CliFlag<int64_t> kLevel = {.name = "level", .repeated = true};
+const CliFlag<double> kWeight = {.name = "weight", .repeated = true};
+const CliFlag<std::string_view> kInclude = {
+    .name = "include",
+    .short_name = 'I',
+    .optional = false,
+    .repeated = true,
+};
+const CliCommand kLink = {.name = "link", .run = RunNothing};
+const CliCommand kCompiler = {
+    .name = "cc",
+    .flags = {&kDefine, &kTarget, &kLevel, &kWeight, &kInclude},
+    .commands = {&kLink},
+    .run = RunNothing,
+};
+
+TEST(ParseCommandLineTest, RepeatedFlagValuesInOrder) {
+  const std::vector<std::string_view> args = {
+      "-I", "inc", "--define", "A=1", "-D", "B=2", "--define=C=3", "-D", "A=4"};
+  absl::StatusOr<CliCommandLine> command_line =
+      ParseCommandLine(&kCompiler, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->GetAll(kDefine),
+              ElementsAre("A=1", "B=2", "C=3", "A=4"));
+}
+
+TEST(ParseCommandLineTest, RepeatedFlagGivenOnce) {
+  const std::vector<std::string_view> args = {"-I", "inc"};
+  absl::StatusOr<CliCommandLine> command_line =
+      ParseCommandLine(&kCompiler, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->GetAll(kInclude), ElementsAre("inc"));
+}
+
+TEST(ParseCommandLineTest, RepeatedFlagNotGiven) {
+  const std::vector<std::string_view> args = {"-I", "inc"};
+  absl::StatusOr<CliCommandLine> command_line =
+      ParseCommandLine(&kCompiler, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->GetAll(kDefine), IsEmpty());
+  EXPECT_THAT(command_line->GetAll(kLevel), IsEmpty());
+}
+
+TEST(ParseCommandLineTest, RepeatedNumberFlags) {
+  const std::vector<std::string_view> args = {
+      "-I", "inc", "--level", "3", "--weight", "0.5", "--level=-1"};
+  absl::StatusOr<CliCommandLine> command_line =
+      ParseCommandLine(&kCompiler, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->GetAll(kLevel), ElementsAre(3, -1));
+  EXPECT_THAT(command_line->GetAll(kWeight), ElementsAre(0.5));
+}
+
+TEST(ParseCommandLineTest, RepeatedFlagBeforeAndAfterSubcommand) {
+  const std::vector<std::string_view> args = {"-I", "a", "link", "-I", "b"};
+  absl::StatusOr<CliCommandLine> command_line =
+      ParseCommandLine(&kCompiler, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_EQ(command_line->GetCommand(), &kLink);
+  EXPECT_THAT(command_line->GetAll(kInclude), ElementsAre("a", "b"));
+}
+
+TEST(ParseCommandLineTest, RepeatedFlagValidatesEachValue) {
+  EXPECT_EQ(ParseError(&kCompiler, {"-I", "inc", "-D", "A", "-D", "B C"}),
+            "cc: \"-D\": contains a space");
+  EXPECT_EQ(ParseError(&kCompiler, {"-I", "inc", "-D", "A", "--define="}),
+            "cc: \"--define\": is empty");
+  EXPECT_EQ(
+      ParseError(&kCompiler, {"-I", "inc", "--target", "arm", "--target", "z"}),
+      "cc: \"--target\": \"z\" is not one of: x86, arm");
+  EXPECT_EQ(ParseError(&kCompiler, {"-I", "inc", "--level", "1", "--level=x"}),
+            "cc: \"--level\": \"x\" is not an integer");
+}
+
+TEST(ParseCommandLineTest, MissingRequiredRepeatedFlag) {
+  EXPECT_EQ(ParseError(&kCompiler, {"-D", "A"}), "cc: missing \"--include\"");
 }
 
 //==============================================================================
@@ -1190,6 +1284,38 @@ TEST(ParseCommandLineDeathTest, GetOutsideCommandPath) {
   ASSERT_TRUE(command_line.ok()) << command_line.status();
   EXPECT_DEATH(command_line->Get(kForce), "doesn't belong");
   EXPECT_DEATH(command_line->Get(kName), "doesn't belong");
+}
+
+TEST(ParseCommandLineDeathTest, GetForRepeatedFlag) {
+  const std::vector<std::string_view> args = {"-I", "inc"};
+  absl::StatusOr<CliCommandLine> command_line =
+      ParseCommandLine(&kCompiler, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_DEATH(command_line->Get(kInclude), "needs GetAll");
+}
+
+TEST(ParseCommandLineDeathTest, GetAllForFlagThatIsNotRepeated) {
+  const std::vector<std::string_view> args = {"in.txt"};
+  absl::StatusOr<CliCommandLine> command_line =
+      ParseCommandLine(&kConvert, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_DEATH(command_line->GetAll(kOutput), "isn't repeated");
+}
+
+TEST(ParseCommandLineDeathTest, GetAllOutsideCommandPath) {
+  const std::vector<std::string_view> args = {"in.txt"};
+  absl::StatusOr<CliCommandLine> command_line =
+      ParseCommandLine(&kConvert, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_DEATH(command_line->GetAll(kDefine), "doesn't belong");
+}
+
+TEST(ParseCommandLineDeathTest, GetAllForHelp) {
+  const std::vector<std::string_view> args = {"-D", "A", "--help"};
+  absl::StatusOr<CliCommandLine> command_line =
+      ParseCommandLine(&kCompiler, args);
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_DEATH(command_line->GetAll(kDefine), "asks for help");
 }
 
 TEST(ParseCommandLineDeathTest, GetForHelp) {
