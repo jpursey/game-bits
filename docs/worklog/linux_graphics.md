@@ -64,10 +64,10 @@ sets once for every job (`VULKAN_SDK_VERSION`). It has the headers, loader,
 validation layers, and `glslc` together, at matching versions. The version is
 1.4.363.1, the latest: LunarG no longer offers Windows CI's 1.3.283 for Linux.
 
-`tools/install-vulkan-sdk.sh <dir> <version>` installs it from LunarG's Linux tarball,
-taking only the parts Game Bits uses (the headers, loader, validation layer,
-and `glslc`, about 450 MB of the SDK's 1.9 GB), and each shell sources its
-`setup-env.sh`, which sets `VULKAN_SDK`.
+`tools/install-vulkan-sdk.sh <dir> <version>` installs it from LunarG's Linux
+tarball, taking only the parts Game Bits uses (the headers, loader, validation
+layer, and `glslc`, about 450 MB of the SDK's 1.9 GB), and each shell sources
+its `setup-env.sh`, which sets `VULKAN_SDK`.
 
 vulkan.hpp 1.4 marks results `[[nodiscard]]` and deprecates device layers and
 the C form of the debug callback, so `vulkan_backend.cc` checks the results of

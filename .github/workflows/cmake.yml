@@ -87,9 +87,8 @@ jobs:
   # Linux builds every library with clang. Debug runs render asserts and death
   # tests, and Release compiles asserts out, as the Windows release job does.
   # The tests run in a virtual X server, so SDL's window tests use its X11
-  # driver, as programs do. GitHub's
-  # runner is an ordinary user, so tests of read-only files mean something,
-  # which they don't as root.
+  # driver, as programs do. GitHub's runner is an ordinary user, so tests of
+  # read-only files mean something, which they don't as root.
   build-linux:
     name: build-linux-${{ matrix.config }}
     runs-on: ubuntu-latest

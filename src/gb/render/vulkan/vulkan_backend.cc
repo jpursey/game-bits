@@ -1140,6 +1140,20 @@ bool VulkanBackend::BeginFrame(RenderInternal,
     return false;
   }
 
+  // Recreate the primary command buffer. This comes before acquiring an image,
+  // as nothing presents an acquired image if the frame fails after that.
+  // Resetting the pool also ends any recording left by a frame that failed.
+  if (device_.resetCommandPool(frame.command_pool, {}) !=
+      vk::Result::eSuccess) {
+    LOG_EVERY_N(ERROR, 100) << "Failed to reset command pool";
+    return false;
+  }
+  if (frame.commands.begin(vk::CommandBufferBeginInfo()) !=
+      vk::Result::eSuccess) {
+    LOG_EVERY_N(ERROR, 100) << "Failed to begin command buffer";
+    return false;
+  }
+
   auto [acquire_result, image_index] = device_.acquireNextImageKHR(
       swap_chain_, std::numeric_limits<uint64_t>::max(),
       frame.image_available_semaphore, {});
@@ -1156,18 +1170,6 @@ bool VulkanBackend::BeginFrame(RenderInternal,
     return false;
   }
   frame_buffer_index_ = image_index;
-
-  // Recreate the primary command buffer.
-  if (device_.resetCommandPool(frame.command_pool, {}) !=
-      vk::Result::eSuccess) {
-    LOG_EVERY_N(ERROR, 100) << "Failed to reset command pool";
-    return false;
-  }
-  if (frame.commands.begin(vk::CommandBufferBeginInfo()) !=
-      vk::Result::eSuccess) {
-    LOG_EVERY_N(ERROR, 100) << "Failed to begin command buffer";
-    return false;
-  }
 
   // Any data from this frame is now unused, so collect the next set of garbage.
   // This is only done once the frame has begun, as each collection must be

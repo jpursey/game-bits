@@ -35,9 +35,9 @@ principles:
    support becomes widespread.
 
 *  *Platform independent:* Game Bits is developed on Windows and also builds on
-   Linux, and everything is built with cross-platform support in mind. All dependencies on libraries other
-   than the standard C/C++ library are relegated to platform specific
-   implementations of a generic interface.
+   Linux, and everything is built with cross-platform support in mind. All
+   dependencies on libraries other than the standard C/C++ library are
+   relegated to platform specific implementations of a generic interface.
 
 *  *Multithreaded:* Game Bits libraries are designed with explicit thread
    guarantees, and most are intended to be used in multithreaded contexts.

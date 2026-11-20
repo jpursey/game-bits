@@ -13,10 +13,11 @@
 #   tools/install-vulkan-sdk.sh <dir> <version>
 #
 # <version> is the one CI uses, its VULKAN_SDK_VERSION
-# (.github/workflows/cmake.yml). The SDK is installed in <dir>/<version>. Source <dir>/<version>/setup-env.sh
-# in each shell that builds or runs Game Bits programs, as with the full SDK.
-# It sets VULKAN_SDK, which CMake finds Vulkan from, and puts the SDK's loader,
-# layer, and glslc ahead of any the system has.
+# (.github/workflows/cmake.yml). The SDK is installed in <dir>/<version>.
+# Source <dir>/<version>/setup-env.sh in each shell that builds or runs Game
+# Bits programs, as with the full SDK. It sets VULKAN_SDK, which CMake finds
+# Vulkan from, and puts the SDK's loader, layer, and glslc ahead of any the
+# system has.
 
 set -euo pipefail
 
