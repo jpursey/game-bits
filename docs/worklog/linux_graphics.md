@@ -188,7 +188,10 @@ build needs (clang, CMake, Ninja, the SDK, SDL's packages, lavapipe, Xvfb, gdb)
 and the devcontainers `desktop-lite` feature: a light desktop on a VNC server,
 viewed in the browser through noVNC on a forwarded port. A program started
 from the container's terminal appears on that desktop, and takes the mouse and
-keyboard from the browser.
+keyboard from the browser. The desktop is 1920x1080 in 24-bit color:
+desktop-lite's default of 16-bit color fails the first frame Vulkan presents,
+with an X `BadLength` error from `PutImage`, as Mesa's software swapchain sends
+32-bit pixels.
 
 Lavapipe renders on the CPU, so this suits programs of ImGui's weight:
 render-check's scripts ran at 30 to 45 frames a second at 1280x800 under Xvfb
@@ -209,9 +212,11 @@ on 4 cores, counting startup.
   own descendants. The script starts the program from a subshell that `exec`s
   `dump-stacks.sh`, which `exec`s `gdb`, so `gdb` is the program's ancestor.
   CI's hang check passes on GitHub's Ubuntu runner.
-- Vulkan through SDL works on the devcontainer's VNC server as it does on Xvfb
-  (both are X servers without GPU access), and is responsive enough to use
-  render-check from the browser (CL4, checked by hand).
+- Confirmed in CL4: Vulkan through SDL works on the devcontainer's VNC server
+  as it does on Xvfb, once its color depth is 24-bit. render-check takes clicks
+  and keys from noVNC, and closes cleanly from its window's close button.
+- Whether render-check is responsive enough to use from the browser in a
+  Codespace (CL4, checked by hand).
 
 ### Left for later
 
@@ -309,5 +314,5 @@ Depends on: CL3 (gdb in the Linux packages).
   devcontainers CLI. In it, as its ordinary user, the build and ctest pass,
   and render-check's scripts pass with `run-program.sh`.
 - render-check runs on the container's desktop, viewed through noVNC in a
-  browser (Playwright), and responds to its mouse.
+  browser (Playwright), and responds to its mouse and keyboard.
 - Checked by hand: the same in a GitHub Codespace.

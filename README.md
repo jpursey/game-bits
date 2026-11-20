@@ -305,10 +305,12 @@ in [CLAUDE.md](CLAUDE.md) work as they are.
 
 It also runs a light desktop, viewed in the browser. Open the forwarded
 "Desktop" port (6080) from the Ports panel, choose Connect, and enter the
-password `vscode`. A program run from the container's terminal appears there,
-and takes the mouse and keyboard from the browser. It renders on the CPU, with
-Mesa's lavapipe driver, which suits programs of ImGui's weight such as
-RenderCheck, but is far too slow for BlockWorld.
+password `vscode`. The desktop is 1920x1080, so in a smaller browser window,
+set noVNC's Scaling mode (in its settings) to Local scaling. A program run from
+the container's terminal appears there, and takes the mouse and keyboard from
+the browser. It renders on the CPU, with Mesa's lavapipe driver, which suits
+programs of ImGui's weight such as RenderCheck, but is far too slow for
+BlockWorld.
 
 ### Building from the command line
 

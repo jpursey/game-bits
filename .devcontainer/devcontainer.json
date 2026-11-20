@@ -17,6 +17,12 @@
     // Its password is "vscode".
     "ghcr.io/devcontainers/features/desktop-lite:1": {}
   },
+  "containerEnv": {
+    // The desktop's size and color depth. It needs 24-bit color, rather than
+    // desktop-lite's default of 16, as Mesa's Vulkan drivers can't present to
+    // a 16-bit window. 1920x1080 fits render-check's 1280x800 window.
+    "VNC_RESOLUTION": "1920x1080x24"
+  },
   "forwardPorts": [6080],
   "portsAttributes": {
     "6080": {
