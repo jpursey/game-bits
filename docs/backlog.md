@@ -1055,31 +1055,6 @@ uppercase table of its own, and a folder can be made case-sensitive. A link
 under a rooted protocol that leads outside its root falls back to the path
 as written.
 
-## Repeated command line flags
-
-- **Layers:** gb_cli
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Requested by:** OZ-3 *Program macros and conditional assembly*
-- **Background:** `CliFlag` in `src/gb/cli/cli.h`, and `CliCommandLine::Get()`
-  in `cli_command_line.h`
-
-A flag can only be given once: a second one is an error ("was given twice").
-Some flags are naturally lists, such as a compiler's `-D NAME=value` or `-I
-<path>`, which are given once for each value. Without repeating, a program has
-to take a list in one value and split it itself (`-D A=1,B=2`), which can't
-hold a value with the separator in it, and gets no help or validation per
-value. A flag gains `repeated` (off by default), which lets it be given any
-number of times, and `CliCommandLine::GetAll()` returns its values in the
-order they were given, as a `std::vector<T>`, empty if it wasn't given. Each
-value is validated on its own, with the flag's choices and validators, and
-`Get()` on a repeated flag is a programming error (CHECK), as it would drop
-values. `ValidateCliCommand()` rejects a repeated `bool` flag, which has no
-values to keep, and a repeated flag with a default value, as an empty list is
-its default. A required repeated flag must be given at least once. Help shows
-that the flag can be repeated.
-
 ## File system errors as absl::Status
 
 - **Layers:** gb_file

@@ -28,6 +28,10 @@ namespace internal {
 // A value given on the command line. A bool flag that is given is true.
 using CliValue = std::variant<bool, std::string_view, int64_t, double>;
 
+// The values given for each flag and argument, by definition, in the order
+// they were given. Only a repeated flag has more than one.
+using CliValueMap = absl::flat_hash_map<const void*, std::vector<CliValue>>;
+
 }  // namespace internal
 
 //==============================================================================
@@ -124,10 +128,22 @@ class CliCommandLine {
   // Returns a flag's value if it was given, else its default value, else
   // std::nullopt.
   //
-  // The flag must belong to a command in the command path, and the command
-  // line must not ask for help (CHECK).
+  // The flag must belong to a command in the command path, must not be
+  // repeated (use GetAll()), and the command line must not ask for help
+  // (CHECK).
   template <typename T>
   std::optional<T> Get(const CliFlag<T>& flag) const;
+
+  // Returns a repeated flag's values, in the order they were given, or none
+  // if it wasn't given.
+  //
+  // The flag must belong to a command in the command path, must be repeated,
+  // and the command line must not ask for help (CHECK).
+  template <typename T>
+  std::vector<T> GetAll(const CliFlag<T>& flag) const;
+
+  // A bool flag can't be repeated.
+  std::vector<bool> GetAll(const CliFlag<bool>& flag) const = delete;
 
   // Returns an argument's value if it was given, else its default value, else
   // std::nullopt. A required argument is always given.
@@ -143,23 +159,23 @@ class CliCommandLine {
       absl::Span<const std::string_view> args);
 
   CliCommandLine(ValidatedContext context, std::vector<const CliCommand*> path,
-                 absl::flat_hash_map<const void*, internal::CliValue> values,
-                 bool is_help)
+                 internal::CliValueMap values, bool is_help)
       : context_(std::move(context)),
         path_(std::move(path)),
         values_(std::move(values)),
         is_help_(is_help) {}
 
-  // Returns the value given for `definition`, or null if none was. CHECKs that
-  // `definition` belongs to the command path, and that this isn't help.
-  const internal::CliValue* Find(const void* definition) const;
+  // Returns the values given for `definition`, which are empty if none were.
+  // CHECKs that `definition` belongs to the command path, and that this isn't
+  // help.
+  absl::Span<const internal::CliValue> Find(const void* definition) const;
 
   // Returns whether `definition` belongs to a command in the command path.
   bool IsInPath(const void* definition) const;
 
   ValidatedContext context_;
   std::vector<const CliCommand*> path_;
-  absl::flat_hash_map<const void*, internal::CliValue> values_;
+  internal::CliValueMap values_;
 
   // Whether the command line asks for help. Parsing stops at "--help" or "-h",
   // so values may be missing, including required arguments.

@@ -143,6 +143,9 @@ Entry GetEntry(const CliFlag<T>& flag) {
   if (!flag.optional) {
     AddNote("(required)", &entry.paragraphs);
   }
+  if (flag.repeated) {
+    AddNote("(can be repeated)", &entry.paragraphs);
+  }
   return entry;
 }
 

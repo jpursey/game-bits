@@ -40,6 +40,9 @@ struct CliFlagFields {
 
   // Whether the flag may be left out.
   bool optional = true;
+
+  // Whether the flag may be given more than once.
+  bool repeated = false;
 };
 
 // The fields every positional argument has, whatever its value type.

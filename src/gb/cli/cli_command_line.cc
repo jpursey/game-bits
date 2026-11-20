@@ -63,9 +63,7 @@ class CliParser {
 
   bool IsHelp() const { return help_flag_given_ || help_command_given_; }
   std::vector<const CliCommand*> TakePath() { return std::move(path_); }
-  absl::flat_hash_map<const void*, internal::CliValue> TakeValues() {
-    return std::move(values_);
-  }
+  internal::CliValueMap TakeValues() { return std::move(values_); }
 
  private:
   // Parses the flag at `args[*index]`, advancing `*index` past its value if it
@@ -104,7 +102,7 @@ class CliParser {
 
   ValidatedContext* const context_;
   std::vector<const CliCommand*> path_;
-  absl::flat_hash_map<const void*, internal::CliValue> values_;
+  internal::CliValueMap values_;
 
   // The index of the next positional argument of the command at the end of
   // the path.
@@ -170,7 +168,7 @@ absl::Status CliParser::ParseFlag(absl::Span<const std::string_view> args,
     return Error(absl::StrCat("unknown flag \"", flag_text, "\""));
   }
   const internal::CliFlagFields fields = internal::GetCliFlagFields(*flag);
-  if (values_.contains(fields.definition)) {
+  if (!fields.repeated && values_.contains(fields.definition)) {
     return Error(absl::StrCat("\"", flag_text, "\" was given twice"));
   }
 
@@ -195,7 +193,7 @@ absl::Status CliParser::ParseFlag(absl::Span<const std::string_view> args,
   if (!value.ok()) {
     return ValueError(absl::StrCat("\"", flag_text, "\""), value.status());
   }
-  values_[fields.definition] = *std::move(value);
+  values_[fields.definition].push_back(*std::move(value));
   return absl::OkStatus();
 }
 
@@ -233,7 +231,7 @@ absl::Status CliParser::ParseWord(std::string_view word) {
   if (!value.ok()) {
     return ValueError(absl::StrCat("<", fields.name, ">"), value.status());
   }
-  values_[fields.definition] = *std::move(value);
+  values_[fields.definition].push_back(*std::move(value));
   ++next_arg_;
   return absl::OkStatus();
 }
@@ -362,25 +360,39 @@ bool CliCommandLine::Run() {
 }
 
 bool CliCommandLine::Get(const CliFlag<bool>& flag) const {
-  return Find(&flag) != nullptr;
+  return !Find(&flag).empty();
 }
 
 template <typename T>
 std::optional<T> CliCommandLine::Get(const CliFlag<T>& flag) const {
-  const internal::CliValue* value = Find(&flag);
-  if (value == nullptr) {
+  const absl::Span<const internal::CliValue> values = Find(&flag);
+  CHECK(!flag.repeated) << "Get() called for repeated flag \"--" << flag.name
+                        << "\", which needs GetAll()";
+  if (values.empty()) {
     return flag.default_value;
   }
-  return *std::get_if<T>(value);
+  return *std::get_if<T>(&values.front());
+}
+
+template <typename T>
+std::vector<T> CliCommandLine::GetAll(const CliFlag<T>& flag) const {
+  const absl::Span<const internal::CliValue> values = Find(&flag);
+  CHECK(flag.repeated) << "GetAll() called for flag \"--" << flag.name
+                       << "\", which isn't repeated";
+  std::vector<T> result;
+  for (const internal::CliValue& value : values) {
+    result.push_back(*std::get_if<T>(&value));
+  }
+  return result;
 }
 
 template <typename T>
 std::optional<T> CliCommandLine::Get(const CliArg<T>& arg) const {
-  const internal::CliValue* value = Find(&arg);
-  if (value == nullptr) {
+  const absl::Span<const internal::CliValue> values = Find(&arg);
+  if (values.empty()) {
     return arg.default_value;
   }
-  return *std::get_if<T>(value);
+  return *std::get_if<T>(&values.front());
 }
 
 template std::optional<std::string_view> CliCommandLine::Get(
@@ -389,6 +401,12 @@ template std::optional<int64_t> CliCommandLine::Get(
     const CliFlag<int64_t>& flag) const;
 template std::optional<double> CliCommandLine::Get(
     const CliFlag<double>& flag) const;
+template std::vector<std::string_view> CliCommandLine::GetAll(
+    const CliFlag<std::string_view>& flag) const;
+template std::vector<int64_t> CliCommandLine::GetAll(
+    const CliFlag<int64_t>& flag) const;
+template std::vector<double> CliCommandLine::GetAll(
+    const CliFlag<double>& flag) const;
 template std::optional<std::string_view> CliCommandLine::Get(
     const CliArg<std::string_view>& arg) const;
 template std::optional<int64_t> CliCommandLine::Get(
@@ -396,18 +414,19 @@ template std::optional<int64_t> CliCommandLine::Get(
 template std::optional<double> CliCommandLine::Get(
     const CliArg<double>& arg) const;
 
-const internal::CliValue* CliCommandLine::Find(const void* definition) const {
+absl::Span<const internal::CliValue> CliCommandLine::Find(
+    const void* definition) const {
   CHECK(!is_help_) << "Flag or argument read from a command line for \""
                    << internal::GetCliPathName(path_)
                    << "\" that asks for help";
   const auto it = values_.find(definition);
   if (it != values_.end()) {
-    return &it->second;
+    return it->second;
   }
   CHECK(IsInPath(definition))
       << "Flag or argument read from a command line for \""
       << internal::GetCliPathName(path_) << "\", which it doesn't belong to";
-  return nullptr;
+  return {};
 }
 
 bool CliCommandLine::IsInPath(const void* definition) const {
