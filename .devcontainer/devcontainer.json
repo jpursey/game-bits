@@ -40,5 +40,14 @@
   // Also runs when a Codespace prebuild is made, so a prebuilt Codespace starts
   // with its submodules. SDL's history is shallow (.gitmodules), and the
   // others' files are fetched only for the commit checked out.
-  "updateContentCommand": "git submodule update --init --jobs 8 --filter=blob:none"
+  "updateContentCommand": "git submodule update --init --jobs 8 --filter=blob:none",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        // Source Control shows only Game Bits' own changes, not the
+        // submodules', and doesn't warn that there are too many to open.
+        "git.detectSubmodules": false
+      }
+    }
+  }
 }
