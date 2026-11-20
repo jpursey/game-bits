@@ -21,7 +21,8 @@ concurrency:
   cancel-in-progress: true
 
 # Every job runs at once: build-windows-release, build-windows-debug,
-# build-block-world (Windows, Release), build-linux-debug, and
+# build-block-world (Windows, Release), build-render-check-windows and
+# build-render-check-linux (Release), build-linux-debug, and
 # build-linux-release.
 jobs:
   build-windows:
@@ -84,6 +85,49 @@ jobs:
         cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -S examples/block-world -B examples/block-world/out/build/ci || exit /b 1
         cmake --build examples/block-world/out/build/ci --target block_world || exit /b 1
 
+  # RenderCheck also builds its own copy of the Game Bits libraries it uses, so
+  # it runs as its own job on each platform, in Release.
+  build-render-check:
+    name: build-render-check-${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows
+            runner: windows-latest
+          - os: linux
+            runner: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        submodules: "recursive"
+
+    - name: Install packages
+      if: runner.os == 'Linux'
+      uses: ./.github/actions/linux-packages
+
+    - name: Install the Vulkan SDK
+      uses: ./.github/actions/vulkan-sdk
+
+    - name: Build RenderCheck on Windows
+      if: runner.os == 'Windows'
+      shell: cmd
+      working-directory: ${{github.workspace}}
+      run: |
+        for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSPATH=%%i"
+        call "%VSPATH%\VC\Auxiliary\Build\vcvars64.bat" || exit /b 1
+        cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -S examples/render-check -B examples/render-check/out/build/ci || exit /b 1
+        cmake --build examples/render-check/out/build/ci --target render_check || exit /b 1
+
+    - name: Build RenderCheck on Linux
+      if: runner.os == 'Linux'
+      working-directory: ${{github.workspace}}
+      run: |
+        cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -S examples/render-check -B examples/render-check/out/build/ci
+        cmake --build examples/render-check/out/build/ci --target render_check
+
   # Linux builds every library with clang. Debug runs render asserts and death
   # tests, and Release compiles asserts out, as the Windows release job does.
   # The tests run in a virtual X server, so SDL's window tests use its X11
@@ -106,11 +150,8 @@ jobs:
       with:
         submodules: "recursive"
 
-    # The packages CLAUDE.md lists for Linux.
     - name: Install packages
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxkbcommon-dev libwayland-dev wayland-protocols libdecor-0-dev libegl-dev libdbus-1-dev libudev-dev mesa-vulkan-drivers xvfb
+      uses: ./.github/actions/linux-packages
 
     - name: Install the Vulkan SDK
       uses: ./.github/actions/vulkan-sdk

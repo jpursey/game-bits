@@ -2,7 +2,7 @@
 
 This is a shared C++ library defining common functionality used for desktop or command line applications. It is designed as a cross-platform library, with platform-specific details separated from public interfaces and headers.
 
-This library is almost entirely self contained with all dependencies being brought in via submodules, with the exception being a dependency on the Vulkan SDK for graphics which must be installed on the machine. It is developed on Windows, built with Visual Studio 2022 Community and CMake, and also builds on Linux with clang, apart from the examples (see Linux below).
+This library is almost entirely self contained with all dependencies being brought in via submodules, with the exception being a dependency on the Vulkan SDK for graphics which must be installed on the machine. It is developed on Windows, built with Visual Studio 2022 Community and CMake, and also builds on Linux with clang, apart from block-world (see Linux below).
 
 It is used by other projects via direct inclusion based on the "GB_DIR" environment variable being set to this directory, and Game Bits specific CMake commands (see CMake/GameBitsTargetCommands.cmake for details)
 
@@ -143,7 +143,7 @@ The program exits once the script ends, so every run also checks that it shuts d
 
 ### Linux
 
-Game Bits also builds and passes its tests on Linux with clang, apart from the examples, which don't build there yet. It needs Ubuntu 24.04's packages for clang, CMake, and Ninja, SDL's windowing headers (without them SDL builds, but can't open a window), and to run graphical programs, Mesa's Vulkan drivers (including lavapipe, which renders on the CPU where there is no GPU) and a virtual X server (where there is no display):
+Game Bits also builds and passes its tests on Linux with clang, and render-check and the templates build there too, though block-world doesn't yet. It needs Ubuntu 24.04's packages for clang, CMake, and Ninja, SDL's windowing headers (without them SDL builds, but can't open a window), and to run graphical programs, Mesa's Vulkan drivers (including lavapipe, which renders on the CPU where there is no GPU) and a virtual X server (where there is no display):
 
 ```
 sudo apt-get install clang cmake ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxkbcommon-dev libwayland-dev wayland-protocols libdecor-0-dev libegl-dev libdbus-1-dev libudev-dev mesa-vulkan-drivers xvfb
@@ -183,7 +183,7 @@ A cloud session (see Cloud sessions in the workflow) runs on Linux, where it bui
 - Its environment (`game-bits`) installs the packages and the Vulkan SDK above when it starts, with the SDK in `/opt/vulkan-sdk`. Each shell command is a new shell, so every command that configures, builds, or runs starts with `source /opt/vulkan-sdk/1.4.363.1/setup-env.sh &&`. Where they are missing (such as in another environment), it installs them as above.
 - It runs as root, so it runs the tests as an ordinary user it adds (see Linux above), who owns the build tree: `useradd -m gbtest` once, then `chown -R gbtest out/build/linux-clang-Debug` and `su gbtest -c "xvfb-run -a ctest --test-dir out/build/linux-clang-Debug --output-on-failure"` from the clone.
 - It formats with the same clang-format version from PyPI, installed in a virtual environment in the session's scratchpad: `python3 -m venv <dir>`, then `<dir>/bin/pip install clang-format==19.1.5`, then `<dir>/bin/clang-format` as above.
-- CI (`.github/workflows/cmake.yml`) runs five jobs at once, in about 20 minutes (the Windows builds and tests): `build-windows-release` and `build-windows-debug` build and test on Windows, `build-block-world` builds block-world on Windows in Release, and `build-linux-debug` and `build-linux-release` build and test with clang, as an ordinary user. Every job installs the Vulkan SDK with `.github/actions/vulkan-sdk`, at the workflow's `VULKAN_SDK_VERSION`. It runs by itself for pushes to `main` that change more than docs. On a PR's branch it runs only when started by hand (a `workflow_dispatch` run of the CMake workflow on that branch), which the session does as the workflow's Cloud sessions describes. The PR's verification comment says that anything only an example run can check is left for the user.
+- CI (`.github/workflows/cmake.yml`) runs seven jobs at once, in about 20 minutes (the Windows builds and tests): `build-windows-release` and `build-windows-debug` build and test on Windows, `build-block-world` builds block-world on Windows in Release, `build-render-check-windows` and `build-render-check-linux` build render-check in Release, and `build-linux-debug` and `build-linux-release` build and test with clang, as an ordinary user. Every job installs the Vulkan SDK with `.github/actions/vulkan-sdk`, at the workflow's `VULKAN_SDK_VERSION`, and the Linux jobs install the packages above with `.github/actions/linux-packages`. It runs by itself for pushes to `main` that change more than docs. On a PR's branch it runs only when started by hand (a `workflow_dispatch` run of the CMake workflow on that branch), which the session does as the workflow's Cloud sessions describes. The PR's verification comment says that anything only an example run can check is left for the user.
 
 ## Local sessions
 

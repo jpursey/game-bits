@@ -164,9 +164,10 @@ either way.
 
 The Linux jobs install the Vulkan SDK, lavapipe, Xvfb, and SDL's packages,
 then build everything and run ctest under `xvfb-run`, so the SDL window tests
-run. The release job also builds render-check, runs each of its scripts with
-`run-program.sh`, and uploads the saved frames, so they can be looked at from
-the run's page. A script fails on any error logged, including Vulkan
+run. A `build-render-check` job builds render-check on Windows and Linux, as
+its own project (as block-world's job does). On Linux, it also runs each of
+its scripts with `run-program.sh`, and uploads the saved frames, so they can be
+looked at from the run's page. A script fails on any error logged, including Vulkan
 validation errors, so this checks rendering on every push to `main`.
 
 Every job installs the SDK with a local composite action,
@@ -249,7 +250,7 @@ Depends on: nothing.
 - On Linux, every library builds in Debug and RelWithDebInfo, and ctest
   passes as an ordinary user, with and without `xvfb-run`.
 
-### CL2 [ ] base, examples: process memory, and render-check on Linux
+### CL2 [x] base, examples: process memory, and render-check on Linux
 
 Depends on: CL1.
 
@@ -259,7 +260,11 @@ Depends on: CL1.
 - `templates/sdl` builds on Linux.
 - `.gitignore` ignores `bin/`, which holds only built programs now that SDL's
   and flatc's binaries are gone from it.
-- README.md: building render-check on Linux (`bin/render_check`).
+- README.md: building render-check on Linux (`bin/render_check`). README.md
+  and CLAUDE.md: render-check and the templates build on Linux.
+- CI: `build-render-check-windows` and `build-render-check-linux` build
+  render-check in Release. The Linux packages move to a local composite
+  action, `.github/actions/linux-packages`, which both Linux jobs use.
 
 **Verify**
 - Standard checks.
@@ -274,7 +279,7 @@ Depends on: CL2.
 - `tools/run-program.sh` and `tools/dump-stacks.sh`, as under Running programs
   on Linux.
 - CLAUDE.md's Run an example gains the Linux commands.
-- CI's Linux release job builds render-check, runs its scripts, and uploads
+- CI's `build-render-check-linux` job runs render-check's scripts, and uploads
   the frames.
 
 **Verify**
@@ -283,7 +288,7 @@ Depends on: CL2.
   checks the frames.
 - A script that hangs (`wait until` a condition that never comes) times out,
   and `hang-stacks.txt` shows the main thread's stack.
-- CI's Linux release job passes and its frames can be downloaded.
+- CI's `build-render-check-linux` job passes and its frames can be downloaded.
 
 ### CL4 [ ] devcontainer: graphical programs in the browser
 
