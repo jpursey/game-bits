@@ -29,8 +29,9 @@ if [[ $# -ne 1 ]]; then
 fi
 
 # exec, so that gdb is the same process as this script, and so an ancestor of
-# any program this script is an ancestor of.
+# any program this script is an ancestor of. run-program.sh relies on this.
 exec gdb --batch --nx --pid "$1" \
   -ex "set pagination off" \
   -ex "set print thread-events off" \
+  -ex "set debuginfod enabled off" \
   -ex "thread apply all backtrace"

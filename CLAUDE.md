@@ -141,7 +141,7 @@ tools/run-program.sh --exe bin/render_check --script examples/render-check/scrip
 tools/run-program.sh --exe bin/render_check --steps 'hide window; wait 30; click "Reset peaks"; wait 2; save peaks'
 ```
 
-On Linux, `tools/run-program.sh` takes the same options, spelled `--exe`, `--script`, `--steps`, `--arguments`, `--out-dir`, `--working-directory`, and `--timeout-secs`, and runs the program in a virtual X server of its own, so it needs no display (see Linux below).
+On Linux, `tools/run-program.sh` takes the same options, spelled as `--exe`, `--timeout-secs`, and so on, and runs the program in a virtual X server of its own, so it needs no display (see Linux below).
 
 `-Steps` is a script written inline, with `;` between steps. `src/gb/pilot/script/pilot_script.h` lists the steps: they wait a number of frames or for a condition the program names, press and hold keys, move, click, and drag the mouse (on an ImGui item by its label, too), resize the window, run the program's commands, and save frames. Time is counted in frames on a fixed time step, so a run is the same every time. The user's real keyboard and mouse don't reach the program, and `hide window` keeps it off the desktop. The saved frames (`<name>.png`), and the program's stdout and stderr, go to `out\run\<program>\`. Read the PNGs to see what was drawn.
 

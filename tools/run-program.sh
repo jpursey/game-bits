@@ -41,8 +41,7 @@ set -euo pipefail
 tools_dir="$(dirname "$(realpath "$0")")"
 exe=""
 script=""
-steps="hide window; wait 30; save frame"
-has_steps=false
+steps=""
 arguments=""
 out_dir=""
 working_directory=""
@@ -60,7 +59,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --exe) exe="$2" ;;
     --script) script="$2" ;;
-    --steps) steps="$2"; has_steps=true ;;
+    --steps) steps="$2" ;;
     --arguments) arguments="$2" ;;
     --out-dir) out_dir="$2" ;;
     --working-directory) working_directory="$2" ;;
@@ -76,17 +75,13 @@ fi
 if [[ ! -x "$exe" ]]; then
   fail "$exe is not built."
 fi
-if [[ -n "$script" && "$has_steps" == true ]]; then
+if [[ -n "$script" && -n "$steps" ]]; then
   fail "Give --script or --steps, not both."
 fi
 exe="$(realpath "$exe")"
 name="$(basename "$exe")"
-if [[ -z "$out_dir" ]]; then
-  out_dir="out/run/$name"
-fi
-if [[ -z "$working_directory" ]]; then
-  working_directory="$PWD"
-fi
+out_dir="${out_dir:-out/run/$name}"
+working_directory="${working_directory:-$PWD}"
 
 # Full paths, as the program runs in its own working directory.
 mkdir -p "$out_dir"
@@ -95,6 +90,7 @@ if [[ -n "$script" ]]; then
   script="$(realpath "$script")"
 else
   script="$out_dir/steps.txt"
+  steps="${steps:-hide window; wait 30; save frame}"
   printf '%s\n' "${steps//;/$'\n'}" > "$script"
 fi
 
@@ -112,9 +108,11 @@ log="$out_dir/stderr.txt"
 stacks="$out_dir/hang-stacks.txt"
 rm -f "$stacks"
 
-# The program runs as a descendant of this subshell, which becomes gdb if the
-# program times out: where ptrace is limited to a process's descendants (as
-# Ubuntu's Yama does by default), only an ancestor can read its stacks. The
+# The program runs as a descendant of this subshell, which becomes gdb (through
+# dump-stacks.sh) if the program times out: where ptrace is limited to a
+# process's descendants (as Ubuntu's Yama does by default), only an ancestor can
+# read its stacks. The subshell's polling can't be replaced by a command that
+# waits with a timeout, as that command would be the program's parent. The
 # program writes its own process ID to $work/pid, as xvfb-run runs it in a shell
 # of its own.
 status=0
@@ -127,7 +125,6 @@ status=0
   deadline=$((SECONDS + timeout_secs))
   while [[ -n "$(jobs -rp)" ]]; do
     if ((SECONDS >= deadline)); then
-      touch "$work/timed-out"
       exec "$tools_dir/dump-stacks.sh" "$(cat "$work/pid")" > "$stacks" 2>&1
     fi
     sleep 0.1
@@ -136,17 +133,9 @@ status=0
 ) || status=$?
 
 failure=""
-if [[ -e "$work/timed-out" ]]; then
+if [[ -e "$stacks" ]]; then
   echo "Saved thread stacks to $stacks"
-  pid="$(cat "$work/pid")"
-  kill "$pid" 2> /dev/null || true
-  for _ in $(seq 100); do
-    if ! kill -0 "$pid" 2> /dev/null; then
-      break
-    fi
-    sleep 0.1
-  done
-  kill -9 "$pid" 2> /dev/null || true
+  kill -9 "$(cat "$work/pid")" 2> /dev/null || true
   failure="$name was still running $timeout_secs seconds after it started."
 elif [[ $status -ne 0 ]]; then
   failure="$name exited with code $status."
