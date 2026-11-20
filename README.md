@@ -313,6 +313,15 @@ the browser. It renders on the CPU, with Mesa's lavapipe driver, which suits
 programs of ImGui's weight such as RenderCheck, but is far too slow for
 BlockWorld.
 
+In VS Code, the CMake Tools extension builds, runs, debugs, and tests from its
+CMake panel and the status bar. It has two projects: Game Bits itself, whose
+unit tests are listed in the Testing view, and RenderCheck. Choose which one is
+active in the CMake panel, and on its first configure, choose the Clang kit
+(or [Unspecified], which also uses clang). Each builds in the same directories
+as the commands in [CLAUDE.md](CLAUDE.md) and below. A program run or debugged
+from VS Code appears on the desktop, as from the terminal. These settings are in
+`devcontainer.json`, so they apply only in the container.
+
 ### Building from the command line
 
 The same build can be driven from a shell that has an x64 MSVC developer

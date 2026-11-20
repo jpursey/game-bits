@@ -21,7 +21,10 @@
     // The desktop's size and color depth. It needs 24-bit color, rather than
     // desktop-lite's default of 16, as Mesa's Vulkan drivers can't present to
     // a 16-bit window. 1920x1080 fits render-check's 1280x800 window.
-    "VNC_RESOLUTION": "1920x1080x24"
+    "VNC_RESOLUTION": "1920x1080x24",
+    // Builds use clang, as on CI, including CMake Tools' [Unspecified] kit.
+    "CC": "clang",
+    "CXX": "clang++"
   },
   "forwardPorts": [6080],
   "portsAttributes": {
@@ -41,9 +44,24 @@
   // with its submodules. SDL's history is shallow (.gitmodules), and the
   // others' files are fetched only for the commit checked out.
   "updateContentCommand": "git submodule update --init --jobs 8 --filter=blob:none",
+  // VS Code's settings in the container only, so they never change a local
+  // checkout's IDE setup.
   "customizations": {
     "vscode": {
+      // CMake Tools builds, runs, and tests from the CMake panel and the status
+      // bar. C/C++ debugs with gdb.
+      "extensions": ["ms-vscode.cmake-tools", "ms-vscode.cpptools"],
       "settings": {
+        // Game Bits itself, with its unit tests, and render-check, which is a
+        // CMake project of its own.
+        "cmake.sourceDirectory": [
+          "${workspaceFolder}",
+          "${workspaceFolder}/examples/render-check"
+        ],
+        // The build directories CLAUDE.md and README.md use on Linux.
+        "cmake.buildDirectory": "${sourceDirectory}/out/build/linux-clang-${buildType}",
+        "cmake.generator": "Ninja",
+
         // Source Control shows only Game Bits' own changes, not the
         // submodules', and doesn't warn that there are too many to open.
         "git.detectSubmodules": false

@@ -193,6 +193,14 @@ desktop-lite's default of 16-bit color fails the first frame Vulkan presents,
 with an X `BadLength` error from `PutImage`, as Mesa's software swapchain sends
 32-bit pixels.
 
+In VS Code, the container installs CMake Tools and C/C++, and its settings set
+up two CMake projects, Game Bits and render-check, each built with clang and
+Ninja in the build directories the command line uses. So the IDE builds, runs,
+debugs (gdb), and tests (the Testing view) as the commands do. The settings
+live only in `devcontainer.json`, not in a `CMakePresets.json` or
+`.vscode/settings.json`, which a local checkout's Visual Studio or VS Code
+would also read.
+
 Lavapipe renders on the CPU, so this suits programs of ImGui's weight:
 render-check's scripts ran at 30 to 45 frames a second at 1280x800 under Xvfb
 on 4 cores, counting startup.
@@ -309,7 +317,8 @@ Depends on: CL3 (gdb in the Linux packages).
   `linux-packages` action.
 - `.gitattributes` checks out shell scripts with LF line endings, on Windows
   too, so the container runs them from a Windows checkout.
-- README.md: opening the container, and viewing its desktop in the browser.
+- README.md: opening the container, viewing its desktop in the browser, and
+  building, running, debugging, and testing from VS Code.
 
 **Verify**
 - The session builds and starts the devcontainer with Docker and the
@@ -317,4 +326,6 @@ Depends on: CL3 (gdb in the Linux packages).
   and render-check's scripts pass with `run-program.sh`.
 - render-check runs on the container's desktop, viewed through noVNC in a
   browser (Playwright), and responds to its mouse and keyboard.
-- Checked by hand: the same in a GitHub Codespace.
+- Checked by hand: the same in a GitHub Codespace, and from VS Code there:
+  building and running the unit tests, and building, running, and debugging
+  render-check.
