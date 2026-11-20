@@ -11,6 +11,11 @@ on:
       - '**.md'
   workflow_dispatch:
 
+# The Vulkan SDK every job builds with (see .github/actions/vulkan-sdk). Linux
+# installs it with tools/install-vulkan-sdk.sh, whose version changes with this.
+env:
+  VULKAN_SDK_VERSION: 1.4.363.1
+
 # A newer run for the same branch cancels one still in progress.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -38,12 +43,8 @@ jobs:
       with:
         submodules: "recursive"
 
-    - name: Setup Vulkan
-      uses: humbletim/setup-vulkan-sdk@v1.2.1
-      with:
-        vulkan-query-version: 1.3.283.0
-        vulkan-components: Vulkan-Headers, Vulkan-Loader
-        vulkan-use-cache: true
+    - name: Install the Vulkan SDK
+      uses: ./.github/actions/vulkan-sdk
 
     # Debug binaries link the debug CRT, which isn't on PATH even in a
     # developer shell, so it is added from the toolset's redist directory.
@@ -72,12 +73,8 @@ jobs:
       with:
         submodules: "recursive"
 
-    - name: Setup Vulkan
-      uses: humbletim/setup-vulkan-sdk@v1.2.1
-      with:
-        vulkan-query-version: 1.3.283.0
-        vulkan-components: Vulkan-Headers, Vulkan-Loader
-        vulkan-use-cache: true
+    - name: Install the Vulkan SDK
+      uses: ./.github/actions/vulkan-sdk
 
     - name: Build Block World example
       shell: cmd
@@ -88,10 +85,12 @@ jobs:
         cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -S examples/block-world -B examples/block-world/out/build/ci || exit /b 1
         cmake --build examples/block-world/out/build/ci --target block_world || exit /b 1
 
-  # Linux builds every library but the SDL and Vulkan ones, with clang. Debug
-  # runs render asserts and death tests, and Release compiles asserts out, as
-  # the Windows release job does. GitHub's runner is an ordinary user, so tests
-  # of read-only files mean something, which they don't as root.
+  # Linux builds every library with clang. Debug runs render asserts and death
+  # tests, and Release compiles asserts out, as the Windows release job does.
+  # The tests run in a virtual X server, so SDL's window tests use its X11
+  # driver, as programs do, rather than its offscreen fallback. GitHub's
+  # runner is an ordinary user, so tests of read-only files mean something,
+  # which they don't as root.
   build-linux:
     name: build-linux-${{ matrix.config }}
     runs-on: ubuntu-latest
@@ -109,8 +108,14 @@ jobs:
       with:
         submodules: "recursive"
 
-    - name: Install Ninja
-      run: sudo apt-get install -y ninja-build
+    # The packages CLAUDE.md lists for Linux.
+    - name: Install packages
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxkbcommon-dev libwayland-dev wayland-protocols libdecor-0-dev libegl-dev libdbus-1-dev libudev-dev mesa-vulkan-drivers xvfb
+
+    - name: Install the Vulkan SDK
+      uses: ./.github/actions/vulkan-sdk
 
     - name: Build and test Game Bits
       working-directory: ${{github.workspace}}
@@ -119,4 +124,4 @@ jobs:
       run: |
         cmake -G Ninja -DCMAKE_BUILD_TYPE=$GB_BUILD_TYPE -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -S . -B out/build/ci
         cmake --build out/build/ci
-        ctest --test-dir out/build/ci --output-on-failure
+        xvfb-run -a ctest --test-dir out/build/ci --output-on-failure

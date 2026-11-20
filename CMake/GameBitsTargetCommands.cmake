@@ -204,7 +204,8 @@ endfunction()
 # found in the Vulkan SDK or on the PATH, which only a project that calls this
 # needs.
 function(gb_embed_shader TARGET FILE HEADER NAME)
-  find_program(GB_GLSLC glslc HINTS "$ENV{VULKAN_SDK}/Bin")
+  find_program(GB_GLSLC glslc
+    HINTS "$ENV{VULKAN_SDK}/Bin" "$ENV{VULKAN_SDK}/bin")
   if (NOT GB_GLSLC)
     message(FATAL_ERROR
       "gb_embed_shader: glslc was not found in the Vulkan SDK or on the PATH")

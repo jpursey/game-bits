@@ -303,12 +303,16 @@ class VulkanBackend final : public RenderBackend {
     vk::Image image;
     vk::ImageView image_view;
     vk::Framebuffer frame_buffer;
+
+    // Presenting the image waits on this, and it is only safe to signal again
+    // once the image is acquired again, so there is one per image rather than
+    // one per frame in flight.
+    vk::Semaphore render_finished_semaphore;
     vk::Fence render_finished_fence;
   };
 
   struct Frame {
     vk::Semaphore image_available_semaphore;
-    vk::Semaphore render_finished_semaphore;
     vk::Fence render_finished_fence;
     vk::CommandPool command_pool;
     vk::CommandBuffer commands;
@@ -317,9 +321,9 @@ class VulkanBackend final : public RenderBackend {
   VulkanBackend(gb::ValidatedContext context);
 
   bool Init();
-  bool InitInstance(std::vector<const char*>* layers);
+  bool InitInstance();
   bool InitWindow();
-  bool InitDevice(const std::vector<const char*>& layers);
+  bool InitDevice();
   void InitFormat(const std::vector<vk::SurfaceFormatKHR>& formats);
   bool InitRenderPass();
   bool InitSwapChain();
@@ -335,10 +339,10 @@ class VulkanBackend final : public RenderBackend {
                        .sample_count = msaa_count_}};
   }
 
-  friend VkBool32 DebugMessageCallback(
-      VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
-      VkDebugUtilsMessageTypeFlagsEXT message_type,
-      const VkDebugUtilsMessengerCallbackDataEXT* callback_data,
+  friend vk::Bool32 DebugMessageCallback(
+      vk::DebugUtilsMessageSeverityFlagBitsEXT message_severity,
+      vk::DebugUtilsMessageTypeFlagsEXT message_type,
+      const vk::DebugUtilsMessengerCallbackDataEXT* callback_data,
       void* user_data);
   void OnDebugMessage(
       vk::DebugUtilsMessageSeverityFlagBitsEXT message_severity,
