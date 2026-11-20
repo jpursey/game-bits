@@ -177,22 +177,6 @@ which say it doesn't build there. On lavapipe it is far too slow to play, but
 its scripts can still run in CI, checking that it draws with no validation
 errors.
 
-## Tests registered with their programs' paths
-
-- **Layers:** build
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** `gb_add_test` in `CMake/GameBitsTargetCommands.cmake`
-
-`gb_add_test` registers each test with `add_test(<name> <target>)`, whose
-program ctest only finds when it runs, so until a test is built, ctest's list
-of tests (`ctest --show-only=json-v1`) gives it no program. VS Code's CMake
-Tools runs tests from that list, so its Testing view fails with "Could not
-determine the test program" until the build is done. Register them with
-`add_test(NAME <name> COMMAND <target>)`, which gives each its program's path
-when CMake configures.
-
 ## Devcontainers for projects built on Game Bits
 
 - **Layers:** devcontainer

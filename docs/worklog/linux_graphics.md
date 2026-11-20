@@ -192,8 +192,9 @@ debugs (gdb), and tests as the commands do. The settings live only in
 `devcontainer.json`, not in a `CMakePresets.json` or `.vscode/settings.json`,
 which a local checkout's Visual Studio or VS Code would also read. VS Code's
 submodule detection is off, so Source Control shows only Game Bits' own
-changes. CMake Tools' Testing view runs a test only once it is built (see the
-backlog's *Tests registered with their programs' paths*).
+changes. CMake Tools' Testing view runs a test only once it is built, as tests
+are registered with `add_test(<name> <target>)`, whose program ctest only finds
+when it runs.
 
 ### Confirmed
 
