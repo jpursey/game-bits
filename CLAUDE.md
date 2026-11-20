@@ -135,18 +135,24 @@ A session can run an example with a script of steps, and look at the frames it s
 # PowerShell
 .\tools\run-program.ps1 -Exe bin\render_check.exe -Script examples\render-check\scripts\textures.txt
 .\tools\run-program.ps1 -Exe bin\render_check.exe -Steps 'hide window; wait 30; click "Reset peaks"; wait 2; save peaks'
+
+# bash, on Linux
+tools/run-program.sh --exe bin/render_check --script examples/render-check/scripts/textures.txt
+tools/run-program.sh --exe bin/render_check --steps 'hide window; wait 30; click "Reset peaks"; wait 2; save peaks'
 ```
+
+On Linux, `tools/run-program.sh` takes the same options, spelled as `--exe`, `--timeout-secs`, and so on, and runs the program in a virtual X server of its own, so it needs no display (see Linux below).
 
 `-Steps` is a script written inline, with `;` between steps. `src/gb/pilot/script/pilot_script.h` lists the steps: they wait a number of frames or for a condition the program names, press and hold keys, move, click, and drag the mouse (on an ImGui item by its label, too), resize the window, run the program's commands, and save frames. Time is counted in frames on a fixed time step, so a run is the same every time. The user's real keyboard and mouse don't reach the program, and `hide window` keeps it off the desktop. The saved frames (`<name>.png`), and the program's stdout and stderr, go to `out\run\<program>\`. Read the PNGs to see what was drawn.
 
-The program exits once the script ends, so every run also checks that it shuts down cleanly. The run fails if the program exits with an error code, which it does when a step fails or anything logs an error (unless the script expects it), or is still running 60 seconds after it started (`-TimeoutSecs`). In that case the stack of each of its threads is saved to `hang-stacks.txt` there first, showing where it is stuck. `tools\dump-stacks.ps1 -ProcessId <id>` prints the same for any running program, such as one the user says has hung.
+The program exits once the script ends, so every run also checks that it shuts down cleanly. The run fails if the program exits with an error code, which it does when a step fails or anything logs an error (unless the script expects it), or is still running 60 seconds after it started (`-TimeoutSecs`). In that case the stack of each of its threads is saved to `hang-stacks.txt` there first, showing where it is stuck. `tools\dump-stacks.ps1 -ProcessId <id>` prints the same for any running program, such as one the user says has hung, as does `tools/dump-stacks.sh <id>` on Linux, with gdb. Ubuntu lets a process debug only its own descendants, so for any other program `dump-stacks.sh` needs `sudo`; `run-program.sh` starts its program so that it doesn't.
 
 ### Linux
 
-Game Bits also builds and passes its tests on Linux with clang, and render-check and the templates build there too, though block-world doesn't yet. It needs Ubuntu 24.04's packages for clang, CMake, and Ninja, SDL's windowing headers (without them SDL builds, but can't open a window), and to run graphical programs, Mesa's Vulkan drivers (including lavapipe, which renders on the CPU where there is no GPU) and a virtual X server (where there is no display):
+Game Bits also builds and passes its tests on Linux with clang, and render-check and the templates build there too, though block-world doesn't yet. It needs Ubuntu 24.04's packages for clang, CMake, and Ninja, SDL's windowing headers (without them SDL builds, but can't open a window), and to run graphical programs, Mesa's Vulkan drivers (including lavapipe, which renders on the CPU where there is no GPU) and a virtual X server (where there is no display), and gdb, which saves a hung program's stacks:
 
 ```
-sudo apt-get install clang cmake ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxkbcommon-dev libwayland-dev wayland-protocols libdecor-0-dev libegl-dev libdbus-1-dev libudev-dev mesa-vulkan-drivers xvfb
+sudo apt-get install clang cmake ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxkbcommon-dev libwayland-dev wayland-protocols libdecor-0-dev libegl-dev libdbus-1-dev libudev-dev mesa-vulkan-drivers xvfb gdb
 ```
 
 Vulkan comes from LunarG's Vulkan SDK, as on Windows, as Ubuntu's Vulkan packages are older than Game Bits needs. `tools/install-vulkan-sdk.sh` installs the parts of it Game Bits uses, once. Then each shell that builds or runs Game Bits sources its `setup-env.sh`, much as the developer environment on Windows, which sets `VULKAN_SDK`. Without it, the Vulkan libraries (`gb_render_vulkan`, `gb_render_vulkan_sdl`) are left out of the build.
@@ -174,7 +180,7 @@ Every change is checked as follows:
 - It builds cleanly (warnings are errors) in both Debug and Release.
 - `ctest` passes in Debug.
 - Touched files pass the clang-format check (see Format above).
-- New and changed behavior has unit tests. Code that can't be unit tested (rendering, windows, input) is checked in an example, such as `examples/render-check`. The session builds it, runs it with `tools\run-program.ps1` (see Run an example above), and checks the saved frames itself. Only what the steps can't reach is left for the user to check by hand, and the hand-off says exactly what that is.
+- New and changed behavior has unit tests. Code that can't be unit tested (rendering, windows, input) is checked in an example, such as `examples/render-check`. The session builds it, runs it with `tools\run-program.ps1`, or `tools/run-program.sh` on Linux (see Run an example above), and checks the saved frames itself. Only what the steps can't reach is left for the user to check by hand, and the hand-off says exactly what that is.
 
 ### Cloud sessions
 
@@ -183,7 +189,7 @@ A cloud session (see Cloud sessions in the workflow) runs on Linux, where it bui
 - Its environment (`game-bits`) installs the packages and the Vulkan SDK above when it starts, with the SDK in `/opt/vulkan-sdk`. Each shell command is a new shell, so every command that configures, builds, or runs starts with `source /opt/vulkan-sdk/1.4.363.1/setup-env.sh &&`. Where they are missing (such as in another environment), it installs them as above.
 - It runs as root, so it runs the tests as an ordinary user it adds (see Linux above), who owns the build tree: `useradd -m gbtest` once, then `chown -R gbtest out/build/linux-clang-Debug` and `su gbtest -c "xvfb-run -a ctest --test-dir out/build/linux-clang-Debug --output-on-failure"` from the clone.
 - It formats with the same clang-format version from PyPI, installed in a virtual environment in the session's scratchpad: `python3 -m venv <dir>`, then `<dir>/bin/pip install clang-format==19.1.5`, then `<dir>/bin/clang-format` as above.
-- CI (`.github/workflows/cmake.yml`) runs seven jobs at once, in about 20 minutes (the Windows builds and tests): `build-windows-release` and `build-windows-debug` build and test on Windows, `build-block-world` builds block-world on Windows in Release, `build-render-check-windows` and `build-render-check-linux` build render-check in Release, and `build-linux-debug` and `build-linux-release` build and test with clang, as an ordinary user. Every job installs the Vulkan SDK with `.github/actions/vulkan-sdk`, at the workflow's `VULKAN_SDK_VERSION`, and the Linux jobs install the packages above with `.github/actions/linux-packages`. It runs by itself for pushes to `main` that change more than docs. On a PR's branch it runs only when started by hand (a `workflow_dispatch` run of the CMake workflow on that branch), which the session does as the workflow's Cloud sessions describes. The PR's verification comment says that anything only an example run can check is left for the user.
+- CI (`.github/workflows/cmake.yml`) runs seven jobs at once, in about 20 minutes (the Windows builds and tests): `build-windows-release` and `build-windows-debug` build and test on Windows, `build-block-world` builds block-world on Windows in Release, `build-render-check-windows` and `build-render-check-linux` build render-check in Release (on Linux, it also runs each of its scripts, and uploads the frames they save as the run's `render-check-frames` artifact), and `build-linux-debug` and `build-linux-release` build and test with clang, as an ordinary user. Every job installs the Vulkan SDK with `.github/actions/vulkan-sdk`, at the workflow's `VULKAN_SDK_VERSION`, and the Linux jobs install the packages above with `.github/actions/linux-packages`. It runs by itself for pushes to `main` that change more than docs. On a PR's branch it runs only when started by hand (a `workflow_dispatch` run of the CMake workflow on that branch), which the session does as the workflow's Cloud sessions describes. The PR's verification comment says that anything only an example run on Windows can check, such as block-world, is left for the user.
 
 ## Local sessions
 

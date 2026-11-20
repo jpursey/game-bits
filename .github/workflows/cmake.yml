@@ -86,7 +86,8 @@ jobs:
         cmake --build examples/block-world/out/build/ci --target block_world || exit /b 1
 
   # RenderCheck also builds its own copy of the Game Bits libraries it uses, so
-  # it runs as its own job on each platform, in Release.
+  # it runs as its own job on each platform, in Release. On Linux, it also runs
+  # RenderCheck's scripts on lavapipe, and uploads the frames they save.
   build-render-check:
     name: build-render-check-${{ matrix.os }}
     runs-on: ${{ matrix.runner }}
@@ -127,6 +128,39 @@ jobs:
       run: |
         cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -S examples/render-check -B examples/render-check/out/build/ci
         cmake --build examples/render-check/out/build/ci --target render_check
+
+    # Every script runs, even after one fails, so all their frames are uploaded.
+    - name: Run RenderCheck's scripts
+      if: runner.os == 'Linux'
+      working-directory: ${{github.workspace}}
+      run: |
+        failed=0
+        for script in examples/render-check/scripts/*.txt; do
+          echo "::group::$script"
+          tools/run-program.sh --exe bin/render_check --script "$script" --out-dir "out/run/render_check/$(basename "$script" .txt)" || failed=1
+          echo "::endgroup::"
+        done
+        exit $failed
+
+    # A program that hangs has its threads' stacks saved, which needs gdb to
+    # attach to it under Ubuntu's ptrace restrictions.
+    - name: Check that a hang saves stacks
+      if: runner.os == 'Linux'
+      working-directory: ${{github.workspace}}
+      run: |
+        if tools/run-program.sh --exe bin/render_check --steps "hide window; wait 100000" --timeout-secs 5 --out-dir out/run/hang; then
+          echo "The run should have timed out."
+          exit 1
+        fi
+        grep " main (" out/run/hang/hang-stacks.txt
+
+    - name: Upload RenderCheck's frames
+      if: runner.os == 'Linux' && always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: render-check-frames
+        path: out/run/
+        if-no-files-found: ignore
 
   # Linux builds every library with clang. Debug runs render asserts and death
   # tests, and Release compiles asserts out, as the Windows release job does.

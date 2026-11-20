@@ -380,7 +380,13 @@ expected fails the run. They are run with
 .\tools\run-program.ps1 -Exe bin\render_check.exe -Script examples\render-check\scripts\textures.txt
 ```
 
-The frames are saved to `out\run\render_check\`.
+The frames are saved to `out\run\render_check\`. On Linux, they are run with
+[tools/run-program.sh](tools/run-program.sh), which runs the program in a
+virtual X server of its own:
+
+```
+tools/run-program.sh --exe bin/render_check --script examples/render-check/scripts/textures.txt
+```
 
 ## Using Game Bits CMake commands
 
