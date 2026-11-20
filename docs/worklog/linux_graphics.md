@@ -191,7 +191,9 @@ from the container's terminal appears on that desktop, and takes the mouse and
 keyboard from the browser. The desktop is 1920x1080 in 24-bit color:
 desktop-lite's default of 16-bit color fails the first frame Vulkan presents,
 with an X `BadLength` error from `PutImage`, as Mesa's software swapchain sends
-32-bit pixels.
+32-bit pixels. Its window manager, fluxbox, uses the dark `bora_black` style
+rather than desktop-lite's light one. Its other dark styles set an image as the
+background, which fails without a wallpaper tool, with a popup.
 
 In VS Code, the container installs CMake Tools and C/C++, and its settings set
 up two CMake projects, Game Bits and render-check, each built with clang and

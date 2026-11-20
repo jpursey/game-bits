@@ -1,0 +1,10 @@
+session.configVersion: 13
+session.menuFile: ~/.fluxbox/menu
+session.keyFile: ~/.fluxbox/keys
+session.styleFile: /usr/share/fluxbox/styles/bora_black
+session.screen0.workspaces: 1
+session.screen0.workspacewarping: false
+session.screen0.toolbar.widthPercent: 100
+session.screen0.strftimeFormat: %a %l:%M %p
+session.screen0.toolbar.tools: RootMenu, clock, iconbar, systemtray
+session.screen0.workspaceNames: One,

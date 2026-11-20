@@ -21,3 +21,8 @@ ENV PATH=${VULKAN_SDK}/bin:${PATH} \
   VK_ADD_LAYER_PATH=${VULKAN_SDK}/share/vulkan/explicit_layer.d \
   PKG_CONFIG_PATH=${VULKAN_SDK}/lib/VulkanLoader/lib/pkgconfig:${VULKAN_SDK}/share/pkgconfig:${VULKAN_SDK}/lib/pkgconfig \
   CMAKE_PREFIX_PATH=${VULKAN_SDK}:${VULKAN_SDK}/lib/VulkanLoader
+
+# The desktop's window manager settings: desktop-lite's own, with a dark style
+# rather than its light one. desktop-lite only writes its own when there are
+# none, so these take their place.
+COPY --chown=vscode:vscode .devcontainer/fluxbox-init /home/vscode/.fluxbox/init
