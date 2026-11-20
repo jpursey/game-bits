@@ -193,7 +193,11 @@ desktop-lite's default of 16-bit color fails the first frame Vulkan presents,
 with an X `BadLength` error from `PutImage`, as Mesa's software swapchain sends
 32-bit pixels. Its window manager, fluxbox, uses the dark `bora_black` style
 rather than desktop-lite's light one. Its other dark styles set an image as the
-background, which fails without a wallpaper tool, with a popup.
+background, which fails without a wallpaper tool, with a popup. Its programs,
+such as its terminal (Tilix), use GTK's dark Adwaita theme: the system's GTK
+settings name Yaru, which isn't installed, and GTK drops the dark variant when
+it falls back from a missing theme, so the user's settings name Adwaita. Tilix
+also needs its own `theme-variant` setting, set in a schema override.
 
 In VS Code, the container installs CMake Tools and C/C++, and its settings set
 up two CMake projects, Game Bits and render-check, each built with clang and

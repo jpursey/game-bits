@@ -314,9 +314,9 @@ set noVNC's Scaling mode (in its settings) to Local scaling. A program run from
 the container's terminal appears there, and takes the mouse and keyboard from
 the browser. Build in VS Code's terminal rather than the desktop's own, which
 runs programs but lacks the build environment (the desktop is started through
-sudo, which clears it). It renders on the CPU, with Mesa's lavapipe driver, which suits
-programs of ImGui's weight such as RenderCheck, but is far too slow for
-BlockWorld.
+sudo, which clears it). It renders on the CPU, with Mesa's lavapipe driver,
+which suits programs of ImGui's weight such as RenderCheck, but is far too slow
+for BlockWorld.
 
 In VS Code, the CMake Tools extension builds, runs, debugs, and tests from its
 CMake panel and the status bar. It has two projects: Game Bits itself, whose

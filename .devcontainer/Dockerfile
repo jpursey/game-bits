@@ -35,3 +35,11 @@ RUN echo "${VULKAN_SDK}/lib/VulkanLoader/lib" > /etc/ld.so.conf.d/000-vulkan-sdk
 # rather than its light one. desktop-lite only writes its own when there are
 # none, so these take their place.
 COPY --chown=vscode:vscode .devcontainer/fluxbox-init /home/vscode/.fluxbox/init
+
+# The desktop's programs, such as its terminal (Tilix), use GTK's dark theme.
+# The system's settings name a theme that isn't installed, and GTK drops the
+# dark variant when it falls back from it, so these name GTK's own, Adwaita.
+# Tilix chooses its variant itself, from its settings' schema, which desktop-lite
+# compiles with this override when it installs Tilix.
+COPY --chown=vscode:vscode .devcontainer/gtk-settings.ini /home/vscode/.config/gtk-3.0/settings.ini
+COPY .devcontainer/tilix.gschema.override /usr/share/glib-2.0/schemas/90_tilix.gschema.override
