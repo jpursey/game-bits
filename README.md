@@ -35,10 +35,9 @@ principles:
    support becomes widespread.
 
 *  *Platform independent:* Game Bits is developed on Windows and also builds on
-   Linux (except for its SDL and Vulkan libraries), and everything is built
-   with cross-platform support in mind. All dependencies on libraries other
-   than the standard C/C++ library are relegated to platform specific
-   implementations of a generic interface.
+   Linux, and everything is built with cross-platform support in mind. All
+   dependencies on libraries other than the standard C/C++ library are
+   relegated to platform specific implementations of a generic interface.
 
 *  *Multithreaded:* Game Bits libraries are designed with explicit thread
    guarantees, and most are intended to be used in multithreaded contexts.
@@ -194,9 +193,8 @@ sub-libraries (organized as subdirectories).
 
 While Game Bits code is designed to be cross platform, it is mainly developed
 and maintained on Windows with Visual Studio 2022, building with CMake and the
-Ninja generator. It also builds and passes its tests on Linux with clang,
-except for the libraries that need SDL or the Vulkan SDK, which aren't built
-there yet, so neither are the examples. CMake 3.13 or later is required; the
+Ninja generator. It also builds and passes its tests on Linux with clang, but
+the examples don't build there yet. CMake 3.13 or later is required; the
 copy that ships with Visual Studio is what is normally used. On Windows,
 programs using Game Bits require Windows 10 version 1903 or later, and older
 versions are not supported.
@@ -236,7 +234,8 @@ interfaces in terms of SDL as a convenience.
 
 SDL 2 is a submodule in `third_party/SDL`, built from source as a static
 library for windowing and input (its audio and its own renderer are left out),
-so programs need no SDL DLL beside them. It is only built on Windows so far.
+so programs need no SDL DLL beside them. On Linux, it needs the system's
+windowing headers to open windows (see [CLAUDE.md](CLAUDE.md) for the packages).
 CMake files that use Game Bits can link to it directly with the `sdl2` library
 target, and `sdl2_main` for SDL's `main()`.
 
@@ -246,10 +245,17 @@ If you are not using Game Bits for 3D graphics (specifically the render
 library), Vulkan is not required. Otherwise, the
 [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) must be installed separately.
 The renderer requests the Vulkan 1.2 API, and needs a device that supports it,
-so any reasonably current SDK and driver will do. Installing the Vulkan SDK should set the `VULKAN_SDK` environment variable,
-which Game Bits depends on to locate the installed version. For example, at the
-time of this writing, Game Bits was built against Vulkan 1.3.283.0, where
-VULKAN_SDK is defined as `VULKAN_SDK=C:\VulkanSDK\1.3.283.0`
+so any reasonably current driver will do. The SDK should be the version CI
+builds with (`VULKAN_SDK_VERSION` in
+[.github/workflows/cmake.yml](.github/workflows/cmake.yml)), or newer.
+
+Game Bits finds the SDK through the `VULKAN_SDK` environment variable, and
+leaves out its Vulkan libraries where it isn't set. On Windows, the SDK's
+installer sets it (such as `VULKAN_SDK=C:\VulkanSDK\1.4.363.1`). On Linux,
+[tools/install-vulkan-sdk.sh](tools/install-vulkan-sdk.sh) installs the parts
+of the SDK Game Bits uses, and sourcing its `setup-env.sh` sets it, in each
+shell (see [CLAUDE.md](CLAUDE.md)). Linux distributions package Vulkan too, but
+older than Game Bits needs.
 
 Vulkan may be linked to by depending on the `Vulkan` library target in CMake
 files that use Game Bits and have Vulkan installed.

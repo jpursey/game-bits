@@ -1,0 +1,47 @@
+# Installs the Vulkan SDK at the workflow's VULKAN_SDK_VERSION, cached between
+# runs, and sets VULKAN_SDK and PATH for the job's later steps (on Linux, with
+# the rest of what the SDK's setup-env.sh sets). It needs the repository checked
+# out first.
+name: Vulkan SDK
+description: Installs the Vulkan SDK and sets up the job to use it.
+
+runs:
+  using: composite
+  steps:
+  - name: Cache the Vulkan SDK
+    id: cache
+    uses: actions/cache@v6
+    with:
+      path: ${{ runner.os == 'Windows' && 'C:\VulkanSDK' || '~/vulkan-sdk' }}
+      key: vulkan-sdk-${{ runner.os }}-${{ env.VULKAN_SDK_VERSION }}${{ runner.os == 'Linux' && format('-{0}', hashFiles('tools/install-vulkan-sdk.sh')) || '' }}
+
+  - name: Install the Vulkan SDK on Windows
+    if: runner.os == 'Windows' && steps.cache.outputs.cache-hit != 'true'
+    shell: pwsh
+    run: |
+      $installer = "$env:RUNNER_TEMP\vulkan-sdk.exe"
+      Invoke-WebRequest -OutFile $installer "https://sdk.lunarg.com/sdk/download/$env:VULKAN_SDK_VERSION/windows/vulkansdk-windows-X64-$env:VULKAN_SDK_VERSION.exe"
+      & $installer --root "C:\VulkanSDK\$env:VULKAN_SDK_VERSION" --accept-licenses --default-answer --confirm-command install
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  - name: Use the Vulkan SDK on Windows
+    if: runner.os == 'Windows'
+    shell: pwsh
+    run: |
+      "VULKAN_SDK=C:\VulkanSDK\$env:VULKAN_SDK_VERSION" >> $env:GITHUB_ENV
+      "C:\VulkanSDK\$env:VULKAN_SDK_VERSION\Bin" >> $env:GITHUB_PATH
+
+  - name: Install the Vulkan SDK on Linux
+    if: runner.os == 'Linux' && steps.cache.outputs.cache-hit != 'true'
+    shell: bash
+    run: tools/install-vulkan-sdk.sh ~/vulkan-sdk "$VULKAN_SDK_VERSION"
+
+  - name: Use the Vulkan SDK on Linux
+    if: runner.os == 'Linux'
+    shell: bash
+    run: |
+      source ~/vulkan-sdk/$VULKAN_SDK_VERSION/setup-env.sh
+      echo "$VULKAN_SDK/bin" >> $GITHUB_PATH
+      for name in VULKAN_SDK LD_LIBRARY_PATH VK_ADD_LAYER_PATH CMAKE_PREFIX_PATH PKG_CONFIG_PATH; do
+        echo "$name=${!name}" >> $GITHUB_ENV
+      done

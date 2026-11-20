@@ -97,16 +97,13 @@ ReadOrder GetReadOrder(vk::Format format) {
 //------------------------------------------------------------------------------
 // Helper functions and types.
 
-VKAPI_ATTR VkBool32 VKAPI_CALL DebugMessageCallback(
-    VkDebugUtilsMessageSeverityFlagBitsEXT c_message_severity,
-    VkDebugUtilsMessageTypeFlagsEXT c_message_type,
-    const VkDebugUtilsMessengerCallbackDataEXT* c_callback_data,
+VKAPI_ATTR vk::Bool32 VKAPI_CALL DebugMessageCallback(
+    vk::DebugUtilsMessageSeverityFlagBitsEXT message_severity,
+    vk::DebugUtilsMessageTypeFlagsEXT message_type,
+    const vk::DebugUtilsMessengerCallbackDataEXT* callback_data,
     void* user_data) {
-  const vk::DebugUtilsMessengerCallbackDataEXT callback_data(*c_callback_data);
   static_cast<VulkanBackend*>(user_data)->OnDebugMessage(
-      static_cast<vk::DebugUtilsMessageSeverityFlagBitsEXT>(c_message_severity),
-      static_cast<vk::DebugUtilsMessageTypeFlagsEXT>(c_message_type),
-      callback_data);
+      message_severity, message_type, *callback_data);
   return VK_FALSE;
 }
 
@@ -137,23 +134,23 @@ VulkanBackend::VulkanBackend(gb::ValidatedContext context)
 VulkanBackend::~VulkanBackend() { CleanUp(); }
 
 bool VulkanBackend::Init() {
-  std::vector<const char*> layers;
-  if (!InitInstance(&layers) || !InitWindow() || !InitDevice(layers) ||
-      !InitRenderPass() || !InitSwapChain() || !InitFrames()) {
+  if (!InitInstance() || !InitWindow() || !InitDevice() || !InitRenderPass() ||
+      !InitSwapChain() || !InitFrames()) {
     return false;
   }
   context_.SetPtr<VulkanBackend>(this);
   return true;
 }
 
-bool VulkanBackend::InitInstance(std::vector<const char*>* layers) {
+bool VulkanBackend::InitInstance() {
+  std::vector<const char*> layers;
   std::vector<const char*> extensions;
   if (!window_->GetExtensions(instance_, &extensions)) {
     LOG(ERROR) << "Failed to get required instance extensions";
     return false;
   }
   if (debug_) {
-    layers->push_back("VK_LAYER_KHRONOS_validation");
+    layers.push_back("VK_LAYER_KHRONOS_validation");
     extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
   }
 
@@ -170,8 +167,8 @@ bool VulkanBackend::InitInstance(std::vector<const char*>* layers) {
           .setPApplicationInfo(&app_info)
           .setEnabledExtensionCount(static_cast<uint32_t>(extensions.size()))
           .setPpEnabledExtensionNames(extensions.data())
-          .setEnabledLayerCount(static_cast<uint32_t>(layers->size()))
-          .setPpEnabledLayerNames(layers->data());
+          .setEnabledLayerCount(static_cast<uint32_t>(layers.size()))
+          .setPpEnabledLayerNames(layers.data());
 
   vk::Result result;
   std::tie(result, instance_) = vk::createInstance(instance_create_info);
@@ -220,7 +217,7 @@ void VulkanBackend::InitFormat(
   }
 }
 
-bool VulkanBackend::InitDevice(const std::vector<const char*>& layers) {
+bool VulkanBackend::InitDevice() {
   auto [result, physical_devices] = instance_.enumeratePhysicalDevices();
   if (result != vk::Result::eSuccess || physical_devices.empty()) {
     LOG(ERROR) << "No devices found supporting Vulkan.";
@@ -392,8 +389,6 @@ bool VulkanBackend::InitDevice(const std::vector<const char*>& layers) {
               static_cast<uint32_t>(queue_create_infos.size()))
           .setPQueueCreateInfos(queue_create_infos.data())
           .setPEnabledFeatures(&device_features)
-          .setEnabledLayerCount(static_cast<uint32_t>(layers.size()))
-          .setPpEnabledLayerNames(layers.data())
           .setEnabledExtensionCount(
               static_cast<uint32_t>(device_extensions.size()))
           .setPpEnabledExtensionNames(device_extensions.data()));
@@ -623,6 +618,10 @@ bool VulkanBackend::InitSwapChain() {
       return false;
     }
     buffer.frame_buffer = frame_buffer;
+    if (!CreateSemaphore({}, &buffer.render_finished_semaphore)) {
+      LOG(ERROR) << "Failed to create semaphore for swapchain";
+      return false;
+    }
   }
   return true;
 }
@@ -630,7 +629,6 @@ bool VulkanBackend::InitSwapChain() {
 bool VulkanBackend::InitFrames() {
   for (auto& frame : frames_) {
     if (!CreateSemaphore({}, &frame.image_available_semaphore) ||
-        !CreateSemaphore({}, &frame.render_finished_semaphore) ||
         !CreateFence({vk::FenceCreateFlagBits::eSignaled},
                      &frame.render_finished_fence)) {
       LOG(ERROR) << "Failed to create frame synchronization objects";
@@ -682,9 +680,6 @@ void VulkanBackend::CleanUp() {
     if (frame.image_available_semaphore) {
       device_.destroySemaphore(frame.image_available_semaphore);
     }
-    if (frame.render_finished_semaphore) {
-      device_.destroySemaphore(frame.render_finished_semaphore);
-    }
     if (frame.render_finished_fence) {
       device_.destroyFence(frame.render_finished_fence);
     }
@@ -720,6 +715,9 @@ void VulkanBackend::CleanUp() {
 
 void VulkanBackend::CleanUpSwap() {
   for (auto& buffer : frame_buffers_) {
+    if (buffer.render_finished_semaphore) {
+      device_.destroySemaphore(buffer.render_finished_semaphore);
+    }
     if (buffer.frame_buffer) {
       device_.destroyFramebuffer(buffer.frame_buffer);
     }
@@ -1142,6 +1140,20 @@ bool VulkanBackend::BeginFrame(RenderInternal,
     return false;
   }
 
+  // Recreate the primary command buffer. This comes before acquiring an image,
+  // as nothing presents an acquired image if the frame fails after that.
+  // Resetting the pool also ends any recording left by a frame that failed.
+  if (device_.resetCommandPool(frame.command_pool, {}) !=
+      vk::Result::eSuccess) {
+    LOG_EVERY_N(ERROR, 100) << "Failed to reset command pool";
+    return false;
+  }
+  if (frame.commands.begin(vk::CommandBufferBeginInfo()) !=
+      vk::Result::eSuccess) {
+    LOG_EVERY_N(ERROR, 100) << "Failed to begin command buffer";
+    return false;
+  }
+
   auto [acquire_result, image_index] = device_.acquireNextImageKHR(
       swap_chain_, std::numeric_limits<uint64_t>::max(),
       frame.image_available_semaphore, {});
@@ -1158,14 +1170,6 @@ bool VulkanBackend::BeginFrame(RenderInternal,
     return false;
   }
   frame_buffer_index_ = image_index;
-
-  // Recreate the primary command buffer.
-  device_.resetCommandPool(frame.command_pool, {});
-  if (frame.commands.begin(vk::CommandBufferBeginInfo()) !=
-      vk::Result::eSuccess) {
-    LOG_EVERY_N(ERROR, 100) << "Failed to begin command buffer";
-    return false;
-  }
 
   // Any data from this frame is now unused, so collect the next set of garbage.
   // This is only done once the frame has begun, as each collection must be
@@ -1862,7 +1866,12 @@ vk::Fence VulkanBackend::EndFramePresent() {
     }
   }
   frame_buffer.render_finished_fence = frame.render_finished_fence;
-  device_.resetFences({frame.render_finished_fence});
+  if (device_.resetFences({frame.render_finished_fence}) !=
+      vk::Result::eSuccess) {
+    // The fence is still signaled, so the next wait on it would not wait for
+    // this frame's submission.
+    LOG(FATAL) << "Failed to reset render finished fence";
+  }
 
   vk::PipelineStageFlags wait_stages =
       vk::PipelineStageFlagBits::eColorAttachmentOutput;
@@ -1874,7 +1883,7 @@ vk::Fence VulkanBackend::EndFramePresent() {
            .setCommandBufferCount(1)
            .setPCommandBuffers(&frame.commands)
            .setSignalSemaphoreCount(1)
-           .setPSignalSemaphores(&frame.render_finished_semaphore)},
+           .setPSignalSemaphores(&frame_buffer.render_finished_semaphore)},
       frame.render_finished_fence);
   if (submit_result != vk::Result::eSuccess) {
     // TODO: Handle this more gracefully...
@@ -1887,7 +1896,7 @@ vk::Fence VulkanBackend::EndFramePresent() {
   auto present_result = queues_.present.presentKHR(
       vk::PresentInfoKHR()
           .setWaitSemaphoreCount(1)
-          .setPWaitSemaphores(&frame.render_finished_semaphore)
+          .setPWaitSemaphores(&frame_buffer.render_finished_semaphore)
           .setSwapchainCount(1)
           .setPSwapchains(&swap_chain_)
           .setPImageIndices(&frame_buffer_index_));

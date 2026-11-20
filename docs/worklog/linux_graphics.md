@@ -59,10 +59,24 @@ come from one source, at least as new as Windows'.
 
 ### Vulkan from the SDK
 
-Linux uses LunarG's Vulkan SDK, as Windows does, at the same version as CI's
-Windows jobs (1.3.283), installed from its Linux tarball with `VULKAN_SDK`
-set. It has the headers, loader, validation layers, and `glslc` together, at
-matching versions.
+Linux uses LunarG's Vulkan SDK, as Windows does, at the same version, which CI
+sets once for every job (`VULKAN_SDK_VERSION`). It has the headers, loader,
+validation layers, and `glslc` together, at matching versions. The version is
+1.4.363.1, the latest: LunarG no longer offers Windows CI's 1.3.283 for Linux.
+
+`tools/install-vulkan-sdk.sh <dir> <version>` installs it from LunarG's Linux
+tarball, taking only the parts Game Bits uses (the headers, loader, validation
+layer, and `glslc`, about 450 MB of the SDK's 1.9 GB), and each shell sources
+its `setup-env.sh`, which sets `VULKAN_SDK`.
+
+vulkan.hpp 1.4 marks results `[[nodiscard]]` and deprecates device layers and
+the C form of the debug callback, so `vulkan_backend.cc` checks the results of
+`resetCommandPool` and `resetFences`, stops passing layers to the device
+(Vulkan has ignored them since 1.0), and takes vulkan.hpp's types in its
+debug callback. The newer validation layer also checks that a semaphore
+presenting waits on isn't signaled again before its image is acquired again,
+which reusing one per frame in flight broke, so there is one per swapchain
+image instead.
 
 The alternatives:
 - Ubuntu's packages: too old, as above, for both the headers and the layers,
@@ -73,10 +87,12 @@ The alternatives:
   of Game Bits together.
 
 `gb_external_libraries()` defines the `Vulkan` target from CMake's own
-`find_package(Vulkan)` on every platform, which finds the SDK through
-`VULKAN_SDK` on Windows and Linux alike, replacing the paths written for the
-Windows SDK's layout. `gb_embed_shader` takes `glslc` from it too
-(`Vulkan_GLSLC_EXECUTABLE`), falling back to the `PATH` as now.
+`find_package(Vulkan)` on every platform, when `VULKAN_SDK` is set, which finds
+the SDK through it on Windows and Linux alike, replacing the paths written for
+the Windows SDK's layout. Without `VULKAN_SDK`, the Vulkan libraries are left
+out, so a distribution's older Vulkan is never picked up by accident.
+`gb_embed_shader` takes `glslc` from it too (`Vulkan_GLSLC_EXECUTABLE`), falling
+back to the `PATH` as before.
 
 Lavapipe comes from Mesa's `mesa-vulkan-drivers` package, the only part of
 Vulkan that comes from Ubuntu. A machine with a GPU uses its own driver.
@@ -153,9 +169,16 @@ run. The release job also builds render-check, runs each of its scripts with
 the run's page. A script fails on any error logged, including Vulkan
 validation errors, so this checks rendering on every push to `main`.
 
-The Windows jobs move to an action that installs the whole SDK, as the Linux
-jobs need, which also gives them `glslc` (see the backlog's *Block-world and
-ImGui shaders compiled by the build*, which this unblocks).
+Every job installs the SDK with a local composite action,
+`.github/actions/vulkan-sdk`, cached by version: on Windows the whole SDK from
+its installer, which also gives the Windows jobs `glslc` (see the backlog's
+*Block-world and ImGui shaders compiled by the build*, which this unblocks),
+and on Linux with `install-vulkan-sdk.sh`. No third-party action installs the
+SDK at a pinned version on both platforms.
+
+SDL's window tests pass both with no display (where SDL falls back to its
+offscreen driver) and under Xvfb, which runs them through its X11 driver, as
+programs run, so CI runs ctest under `xvfb-run`.
 
 ### Devcontainer
 
@@ -172,13 +195,14 @@ on 4 cores, counting startup.
 
 ### To confirm
 
-- The SDK's 1.3.283 Linux tarball runs on Ubuntu 24.04, and its validation
-  layer accepts `VK_KHR_load_store_op_none` with lavapipe (CL1). Its download
-  host (`sdk.lunarg.com`) isn't on this cloud environment's network allowlist,
-  so CL1 first asks to add it.
-- An action installs the whole SDK on both Windows and Linux runners at a
-  pinned version, with a cache (CL1). If none does, CI downloads the tarball
-  itself on Linux.
+- Confirmed in CL1: the SDK's Linux tarball (1.4.363.1, as 1.3.283's is gone)
+  runs on Ubuntu 24.04, and the `game-bits` cloud environment allows its
+  download host, `sdk.lunarg.com`.
+- Confirmed in CL1: no action installs the SDK at a pinned version on both
+  platforms, so CI uses a local one.
+- Confirmed in CL1: its validation layer accepts `VK_KHR_load_store_op_none`
+  with lavapipe, and every render-check script passes with it, in a trial
+  build of render-check with CL2's changes.
 - `gdb` can attach to the program from the script as an ordinary user, where
   Ubuntu's `ptrace_scope` only lets a process trace its own descendants (CL3).
   If not, the script runs the program under `gdb` from the start.
@@ -201,16 +225,19 @@ The status is `[ ]` not started, `[~]` in progress (set by the CL's first
 edit), or `[x]` submitted (set in the CL's own commit). Each CL is checked on
 Windows by CI on its PR.
 
-### CL1 [ ] build, CI: SDL and Vulkan on Linux
+### CL1 [x] build, CI: SDL and Vulkan on Linux
 
 Depends on: nothing.
 
 - `gb_external_libraries()` defines `Vulkan` from `find_package(Vulkan)` on
-  every platform; `gb_embed_shader` finds `glslc` from it.
+  every platform; `gb_embed_shader` finds `glslc` in the SDK.
 - The root `CMakeLists.txt` builds SDL on every platform.
-- CI: every job installs the SDK at 1.3.283 with the same action. The Linux
-  jobs also install SDL's packages, lavapipe, and Xvfb, and run ctest under
-  `xvfb-run`.
+- `tools/install-vulkan-sdk.sh` installs the SDK on Linux.
+- `vulkan_backend.cc` builds with vulkan.hpp 1.4, and has a render finished
+  semaphore per swapchain image, as 1.4's validation layer requires.
+- CI: every job installs the SDK at 1.4.363.1 with
+  `.github/actions/vulkan-sdk`. The Linux jobs also install SDL's packages,
+  lavapipe, and Xvfb, and run ctest under `xvfb-run`.
 - CLAUDE.md's Linux and Cloud sessions sections: the packages, installing the
   SDK, and that every library builds there. README.md's platform notes.
 - This cloud environment: `sdk.lunarg.com` allowed, and a setup script that

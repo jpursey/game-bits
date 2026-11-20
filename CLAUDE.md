@@ -2,7 +2,7 @@
 
 This is a shared C++ library defining common functionality used for desktop or command line applications. It is designed as a cross-platform library, with platform-specific details separated from public interfaces and headers.
 
-This library is almost entirely self contained with all dependencies being brought in via submodules, with the exception being a dependency on the Vulkan SDK for graphics which must be installed on the machine. It is developed on Windows, built with Visual Studio 2022 Community and CMake, and also builds on Linux with clang, except for the libraries that need SDL or Vulkan (see Linux below).
+This library is almost entirely self contained with all dependencies being brought in via submodules, with the exception being a dependency on the Vulkan SDK for graphics which must be installed on the machine. It is developed on Windows, built with Visual Studio 2022 Community and CMake, and also builds on Linux with clang, apart from the examples (see Linux below).
 
 It is used by other projects via direct inclusion based on the "GB_DIR" environment variable being set to this directory, and Game Bits specific CMake commands (see CMake/GameBitsTargetCommands.cmake for details)
 
@@ -143,17 +143,30 @@ The program exits once the script ends, so every run also checks that it shuts d
 
 ### Linux
 
-Game Bits also builds and passes its tests on Linux with clang, apart from the libraries that need SDL or the Vulkan SDK (`gb_sdl`, `gb_imgui_sdl`, `gb_pilot_sdl`, `gb_render_vulkan`, `gb_render_vulkan_sdl`), which are left out of the build there, and the examples, which need them. It needs clang, CMake, and Ninja (Ubuntu's `clang`, `cmake`, and `ninja-build` packages), and no developer environment or PATH changes:
+Game Bits also builds and passes its tests on Linux with clang, apart from the examples, which don't build there yet. It needs Ubuntu 24.04's packages for clang, CMake, and Ninja, SDL's windowing headers (without them SDL builds, but can't open a window), and to run graphical programs, Mesa's Vulkan drivers (including lavapipe, which renders on the CPU where there is no GPU) and a virtual X server (where there is no display):
+
+```
+sudo apt-get install clang cmake ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxkbcommon-dev libwayland-dev wayland-protocols libdecor-0-dev libegl-dev libdbus-1-dev libudev-dev mesa-vulkan-drivers xvfb
+```
+
+Vulkan comes from LunarG's Vulkan SDK, as on Windows, as Ubuntu's Vulkan packages are older than Game Bits needs. `tools/install-vulkan-sdk.sh` installs the parts of it Game Bits uses, once. Then each shell that builds or runs Game Bits sources its `setup-env.sh`, much as the developer environment on Windows, which sets `VULKAN_SDK`. Without it, the Vulkan libraries (`gb_render_vulkan`, `gb_render_vulkan_sdl`) are left out of the build.
+
+```
+tools/install-vulkan-sdk.sh ~/vulkan-sdk 1.4.363.1
+source ~/vulkan-sdk/1.4.363.1/setup-env.sh
+```
+
+Then:
 
 ```
 cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -S . -B out/build/linux-clang-Debug
 cmake -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -S . -B out/build/linux-clang-RelWithDebInfo
 cmake --build out/build/linux-clang-Debug
-ctest --test-dir out/build/linux-clang-Debug --output-on-failure
+xvfb-run -a ctest --test-dir out/build/linux-clang-Debug --output-on-failure
 out/build/linux-clang-Debug/src/gb/base/gb_base_test --gtest_filter=ContextTest.*
 ```
 
-A full build is about 620 steps, about 4.5 minutes on 4 cores. Test binaries have no `.exe`. Run tests as an ordinary user: root ignores read-only permissions, so `CommonProtocolTest.ReadOnlyFile` fails as root.
+A full build is about 990 steps, about 8 minutes on 4 cores. Test binaries have no `.exe`. `xvfb-run -a` runs the tests in a virtual X server, so SDL's window tests use its X11 driver, as programs do; where there is a display already, ctest runs on its own. Run tests as an ordinary user: root ignores read-only permissions, so `CommonProtocolTest.ReadOnlyFile` fails as root.
 
 ### Checks
 
@@ -167,9 +180,10 @@ Every change is checked as follows:
 
 A cloud session (see Cloud sessions in the workflow) runs on Linux, where it builds and tests with the Linux commands above, leaving Windows to CI:
 - Its clone starts with empty submodules. `git submodule update --init` checks them out.
-- It runs as root, so it runs the tests as an ordinary user it adds (see Linux above), who owns the build tree: `useradd -m gbtest` once, then `chown -R gbtest out/build/linux-clang-Debug` and `su gbtest -c "ctest --test-dir out/build/linux-clang-Debug --output-on-failure"` from the clone.
+- Its environment (`game-bits`) installs the packages and the Vulkan SDK above when it starts, with the SDK in `/opt/vulkan-sdk`. Each shell command is a new shell, so every command that configures, builds, or runs starts with `source /opt/vulkan-sdk/1.4.363.1/setup-env.sh &&`. Where they are missing (such as in another environment), it installs them as above.
+- It runs as root, so it runs the tests as an ordinary user it adds (see Linux above), who owns the build tree: `useradd -m gbtest` once, then `chown -R gbtest out/build/linux-clang-Debug` and `su gbtest -c "xvfb-run -a ctest --test-dir out/build/linux-clang-Debug --output-on-failure"` from the clone.
 - It formats with the same clang-format version from PyPI, installed in a virtual environment in the session's scratchpad: `python3 -m venv <dir>`, then `<dir>/bin/pip install clang-format==19.1.5`, then `<dir>/bin/clang-format` as above.
-- CI (`.github/workflows/cmake.yml`) runs five jobs at once, in about 20 minutes (the Windows builds and tests): `build-windows-release` and `build-windows-debug` build and test on Windows, `build-block-world` builds block-world on Windows in Release, and `build-linux-debug` and `build-linux-release` build and test with clang, as an ordinary user. It runs by itself for pushes to `main` that change more than docs. On a PR's branch it runs only when started by hand (a `workflow_dispatch` run of the CMake workflow on that branch), which the session does as the workflow's Cloud sessions describes. The PR's verification comment says that anything only an example run can check is left for the user.
+- CI (`.github/workflows/cmake.yml`) runs five jobs at once, in about 20 minutes (the Windows builds and tests): `build-windows-release` and `build-windows-debug` build and test on Windows, `build-block-world` builds block-world on Windows in Release, and `build-linux-debug` and `build-linux-release` build and test with clang, as an ordinary user. Every job installs the Vulkan SDK with `.github/actions/vulkan-sdk`, at the workflow's `VULKAN_SDK_VERSION`. It runs by itself for pushes to `main` that change more than docs. On a PR's branch it runs only when started by hand (a `workflow_dispatch` run of the CMake workflow on that branch), which the session does as the workflow's Cloud sessions describes. The PR's verification comment says that anything only an example run can check is left for the user.
 
 ## Local sessions
 
