@@ -78,10 +78,17 @@ fi
 if [[ -n "$script" && -n "$steps" ]]; then
   fail "Give --script or --steps, not both."
 fi
+if [[ ! "$timeout_secs" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+  fail "--timeout-secs must be a number of seconds."
+fi
+timeout_us="$(awk -v secs="$timeout_secs" 'BEGIN { printf "%d", secs * 1000000 }')"
 exe="$(realpath "$exe")"
 name="$(basename "$exe")"
 out_dir="${out_dir:-out/run/$name}"
 working_directory="${working_directory:-$PWD}"
+if [[ ! -d "$working_directory" ]]; then
+  fail "$working_directory is not a directory."
+fi
 
 # Full paths, as the program runs in its own working directory.
 mkdir -p "$out_dir"
@@ -98,7 +105,11 @@ fi
 # expanding anything.
 program_args=()
 if [[ -n "$arguments" ]]; then
-  mapfile -t program_args < <(printf '%s' "$arguments" | xargs printf '%s\n')
+  split="$(printf '%s' "$arguments" | xargs printf '%s\n')" ||
+    fail "Could not split --arguments."
+  if [[ -n "$split" ]]; then
+    mapfile -t program_args <<< "$split"
+  fi
 fi
 
 work="$(mktemp -d)"
@@ -114,18 +125,26 @@ rm -f "$stacks"
 # read its stacks. The subshell's polling can't be replaced by a command that
 # waits with a timeout, as that command would be the program's parent. The
 # program writes its own process ID to $work/pid, as xvfb-run runs it in a shell
-# of its own.
+# of its own, and the timeout counts from then.
 status=0
 (
   xvfb-run -a -s "-screen 0 1920x1080x24" \
-    bash -c 'echo $$ > "$1"; cd "$2"; exec "${@:5}" > "$3" 2> "$4"' \
+    bash -c 'cd "$2" && echo $$ > "$1" && exec "${@:5}" > "$3" 2> "$4"' \
     -- "$work/pid" "$working_directory" "$out_dir/stdout.txt" "$log" \
     "$exe" "${program_args[@]}" --pilot "$script" --pilot-output "$out_dir" &
   runner=$!
-  deadline=$((SECONDS + timeout_secs))
+  deadline_us=""
   while [[ -n "$(jobs -rp)" ]]; do
-    if ((SECONDS >= deadline)); then
-      exec "$tools_dir/dump-stacks.sh" "$(cat "$work/pid")" > "$stacks" 2>&1
+    now_us="${EPOCHREALTIME/[.,]/}"
+    if [[ -z "$deadline_us" ]]; then
+      if [[ -s "$work/pid" ]]; then
+        deadline_us=$((now_us + timeout_us))
+      fi
+    elif ((now_us >= deadline_us)); then
+      pid="$(cat "$work/pid")"
+      if kill -0 "$pid" 2> /dev/null; then
+        exec "$tools_dir/dump-stacks.sh" "$pid" > "$stacks" 2>&1
+      fi
     fi
     sleep 0.1
   done
@@ -135,7 +154,16 @@ status=0
 failure=""
 if [[ -e "$stacks" ]]; then
   echo "Saved thread stacks to $stacks"
-  kill -9 "$(cat "$work/pid")" 2> /dev/null || true
+  pid="$(cat "$work/pid")"
+  kill -9 "$pid" 2> /dev/null || true
+
+  # xvfb-run ends its X server once the program is gone.
+  for _ in $(seq 50); do
+    if ! kill -0 "$pid" 2> /dev/null; then
+      break
+    fi
+    sleep 0.1
+  done
   failure="$name was still running $timeout_secs seconds after it started."
 elif [[ $status -ne 0 ]]; then
   failure="$name exited with code $status."
@@ -146,7 +174,7 @@ find "$out_dir" -maxdepth 1 -name '*.png' -newer "$work/started" \
 echo "Log: $log"
 
 # Errors and fatal errors, as Abseil logs them, and the pilot's summary.
-grep -E '^[EF][0-9]{4} |Pilot run ' "$log" || true
+grep -sE '^[EF][0-9]{4} |Pilot run ' "$log" || true
 if [[ -n "$failure" ]]; then
   fail "$failure"
 fi
