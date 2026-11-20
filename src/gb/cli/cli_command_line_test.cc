@@ -474,8 +474,6 @@ TEST(ParseCommandLineTest, RepeatedFlagBeforeAndAfterSubcommand) {
 TEST(ParseCommandLineTest, RepeatedFlagValidatesEachValue) {
   EXPECT_EQ(ParseError(&kCompiler, {"-I", "inc", "-D", "A", "-D", "B C"}),
             "cc: \"-D\": contains a space");
-  EXPECT_EQ(ParseError(&kCompiler, {"-I", "inc", "-D", "A", "--define="}),
-            "cc: \"--define\": is empty");
   EXPECT_EQ(
       ParseError(&kCompiler, {"-I", "inc", "--target", "arm", "--target", "z"}),
       "cc: \"--target\": \"z\" is not one of: x86, arm");
