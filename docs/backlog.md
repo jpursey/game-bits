@@ -73,42 +73,6 @@ Clang tools for Windows" component, as the MSVC standard library rejects older
 clang versions. Fix them, build and test both clang configurations, and
 consider building one in CI so it stays working.
 
-## Debug flatc's CRT without overriding flags
-
-- **Layers:** build, examples, templates
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** the commit "flatc from source on Windows", and the flatbuffers
-  section of the root `CMakeLists.txt`
-
-The build runs flatc, and a Debug flatc linked to the debug CRT DLL can't
-start, as that DLL isn't on PATH, so the root `CMakeLists.txt` compiles it
-with `/MTd` in Debug. CMake already puts `/MDd` in `CMAKE_CXX_FLAGS_DEBUG`, as
-policy CMP0091 is OLD: Game Bits asks for CMake 3.13, and the examples and
-templates for 3.8, both from before 3.15 brought the policy in. So each flatc
-source should compile with both flags, MSVC warning `D9025: overriding '/MDd'
-with '/MTd'`, and the result relies on the last flag winning. Third-party code
-isn't built with warnings as errors, so nothing fails. Check the warning in a
-Windows Debug build's output first.
-
-The clean form is CMake's `MSVC_RUNTIME_LIBRARY` property on flatc
-(`MultiThreaded$<$<CONFIG:Debug>:Debug>`), which replaces the flag rather than
-adding one. It only takes effect when CMP0091 is NEW at the build's first
-`project()`, which for a project that adds Game Bits as a subdirectory is the
-project's own. One way:
-- Raise `cmake_minimum_required` to 3.15 or later in Game Bits, the examples,
-  and the templates, so their builds use the property.
-- Keep `/MTd` only where the policy is OLD, so a project that still asks for
-  an older CMake keeps building. CMake records which applied in
-  `CMAKE_MSVC_RUNTIME_LIBRARY_DEFAULT`, which is empty when it is OLD (confirm
-  this in the CMake version Visual Studio ships).
-
-Verify with a Debug build with nothing added to PATH (flatc runs, and no
-D9025 for its sources), Release, ctest in Debug, and a Debug build of
-block-world, which adds Game Bits as a subdirectory as the projects built on
-it do.
-
 ## ImGui update
 
 - **Layers:** imgui, examples

@@ -194,7 +194,7 @@ sub-libraries (organized as subdirectories).
 While Game Bits code is designed to be cross platform, it is mainly developed
 and maintained on Windows with Visual Studio 2022, building with CMake and the
 Ninja generator. It also builds and passes its tests on Linux with clang, but
-the examples don't build there yet. CMake 3.13 or later is required; the
+the examples don't build there yet. CMake 3.15 or later is required; the
 copy that ships with Visual Studio is what is normally used. On Windows,
 programs using Game Bits require Windows 10 version 1903 or later, and older
 versions are not supported.

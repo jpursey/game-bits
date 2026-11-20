@@ -62,6 +62,12 @@ function(gb_set_target_properties NAME)
     )
   endif()
 
+  # CMake 3.15 leaves MSVC's warning level out of its default flags (policy
+  # CMP0092), which would leave targets at MSVC's /W1.
+  if (MSVC)
+    target_compile_options(${NAME} PRIVATE /W3)
+  endif()
+
   target_include_directories(${NAME} PUBLIC "${GB_DIR}/src" ${GB_INCLUDE_DIRS})
   if(DEFINED ${NAME}_INCLUDES)
     target_include_directories(${NAME} PUBLIC ${${NAME}_INCLUDES})

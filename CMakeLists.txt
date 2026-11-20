@@ -3,7 +3,7 @@
 ## Use of this source code is governed by an MIT-style License that can be found
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-cmake_minimum_required(VERSION 3.13 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.15 FATAL_ERROR)
 set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 
 ###############################################################################
@@ -131,8 +131,15 @@ set_target_properties(flatbuffers flatc PROPERTIES FOLDER External/flatbuffers)
 
 # The build runs flatc, and a Debug flatc linked to the debug CRT DLL can't
 # start, as that DLL isn't on PATH. Linking it statically lets it run anywhere.
+# MSVC_RUNTIME_LIBRARY needs policy CMP0091 NEW (CMake 3.15) at the build's
+# first project(). Where it is OLD, flatc gets /MTd after CMake's own /MDd.
 if (MSVC)
-  target_compile_options(flatc PRIVATE $<$<CONFIG:Debug>:/MTd>)
+  if (CMAKE_MSVC_RUNTIME_LIBRARY_DEFAULT)
+    set_target_properties(flatc PROPERTIES MSVC_RUNTIME_LIBRARY
+      "$<IF:$<CONFIG:Debug>,MultiThreadedDebug,MultiThreadedDLL>")
+  else()
+    target_compile_options(flatc PRIVATE $<$<CONFIG:Debug>:/MTd>)
+  endif()
 endif()
 unset(FLATBUFFERS_BUILD_TESTS)
 unset(FLATBUFFERS_INSTALL)
