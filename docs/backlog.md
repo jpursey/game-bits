@@ -895,28 +895,6 @@ Only tests keep them alike. One function in `gb_config` that formats a source,
 a `ConfigLocation` and a message, leaving out what isn't known, would serve
 both, and remove the special branch.
 
-## Lexer text of a token range
-
-- **Layers:** parse
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Requested by:** OZ-3 *Program macros and conditional assembly*
-- **Background:** `GetTokenText()` and `GetLineText()` in
-  `src/gb/parse/lexer.h`
-
-`Lexer` gives the text of a line, of what is left of the current line, and of
-one token, but not of a run of tokens, such as an argument a parser matched
-from its first token to its last. A caller can only build that view from the
-two tokens' texts, assuming both are views of the same content's text.
-
-Add `GetTokenRangeText(first, last)`, the content's text from the start of
-`first` to the end of `last`, with the spaces, comments, and line breaks
-between them as written. It returns an empty string if either token has no
-text (an invalid token or the end of the content), they are in different
-content, or `last` is before `first`. Tests cover a range of one token, a range
-with a comment inside it, a range across lines, and each of those cases.
-
 ## Collision precision and conversions
 
 - **Layers:** collide

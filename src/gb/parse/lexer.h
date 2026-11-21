@@ -288,6 +288,15 @@ class Lexer final {
   std::string_view GetTokenText(const Token& token) const;
   std::string_view GetTokenText(TokenIndex index) const;
 
+  // Returns the content's text from the start of `first` to the end of `last`,
+  // with any spaces and comments between them as written, and each line break
+  // as "\n" (as the lexer stores content, whatever line endings it was given).
+  //
+  // Returns an empty string if either token has no text (an invalid token or
+  // an end token), they are in different content, or `last` is before `first`.
+  std::string_view GetTokenRangeText(const Token& first,
+                                     const Token& last) const;
+
   // Returns true if the token starts exactly where the token before it ends,
   // with no space or comment between them.
   //
