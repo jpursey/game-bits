@@ -310,6 +310,26 @@ std::string_view Lexer::GetTokenText(TokenIndex index) const {
   return line->line.substr(token_info.column, token_info.size);
 }
 
+std::string_view Lexer::GetTokenRangeText(const Token& first,
+                                          const Token& last) const {
+  const std::string_view first_text = GetTokenText(first);
+  const std::string_view last_text = GetTokenText(last);
+  if (first_text.empty() || last_text.empty() ||
+      GetTokenLine(first.token_index_)->id !=
+          GetTokenLine(last.token_index_)->id) {
+    return {};
+  }
+
+  // Lines are views of their content's text, so the range is the span between
+  // the two tokens' texts.
+  const char* const begin = first_text.data();
+  const char* const end = last_text.data() + last_text.size();
+  if (last_text.data() < begin) {
+    return {};
+  }
+  return std::string_view(begin, end - begin);
+}
+
 bool Lexer::IsTokenAdjacent(const Token& token) const {
   const TokenIndex index = token.token_index_;
   const Line* line = GetTokenLine(index);

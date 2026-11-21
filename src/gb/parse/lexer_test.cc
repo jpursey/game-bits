@@ -353,6 +353,82 @@ TEST(LexerTest, IsTokenAdjacent) {
   EXPECT_FALSE(lexer->IsTokenAdjacent(Token()));
 }
 
+TEST(LexerTest, GetTokenRangeTextOfOneToken) {
+  auto lexer = Lexer::Create(kCStyleLexerConfig);
+  ASSERT_NE(lexer, nullptr);
+  LexerContentId content = lexer->AddContent("a bc d");
+  lexer->NextToken(content);
+  Token token = lexer->NextToken(content);
+  EXPECT_EQ(lexer->GetTokenRangeText(token, token), "bc");
+}
+
+TEST(LexerTest, GetTokenRangeTextWithCommentInside) {
+  auto lexer = Lexer::Create(kCStyleLexerConfig);
+  ASSERT_NE(lexer, nullptr);
+  LexerContentId content = lexer->AddContent("x (a, /* b */ c)  y");
+  lexer->NextToken(content);
+  Token first = lexer->NextToken(content);
+  Token last;
+  for (int i = 0; i < 4; ++i) {
+    last = lexer->NextToken(content);
+  }
+  EXPECT_EQ(lexer->GetTokenRangeText(first, last), "(a, /* b */ c)");
+}
+
+TEST(LexerTest, GetTokenRangeTextAcrossLines) {
+  auto lexer = Lexer::Create(kCStyleLexerConfig);
+  ASSERT_NE(lexer, nullptr);
+  LexerContentId content = lexer->AddContent(
+      "x a // one\n"
+      "b /* two\n"
+      "three */ c y");
+  lexer->NextToken(content);
+  Token first = lexer->NextToken(content);
+  lexer->NextToken(content);
+  Token last = lexer->NextToken(content);
+  EXPECT_EQ(lexer->GetTokenText(last), "c");
+  EXPECT_EQ(lexer->GetTokenRangeText(first, last),
+            "a // one\n"
+            "b /* two\n"
+            "three */ c");
+}
+
+TEST(LexerTest, GetTokenRangeTextOfInvalidTokens) {
+  auto lexer = Lexer::Create(kCStyleLexerConfig);
+  ASSERT_NE(lexer, nullptr);
+  LexerContentId content = lexer->AddContent("a b");
+  Token a = lexer->NextToken(content);
+  lexer->NextToken(content);
+  Token end = lexer->NextToken(content);
+  ASSERT_TRUE(end.IsEnd());
+  EXPECT_EQ(lexer->GetTokenRangeText(Token(), a), "");
+  EXPECT_EQ(lexer->GetTokenRangeText(a, Token()), "");
+  EXPECT_EQ(lexer->GetTokenRangeText(a, end), "");
+  EXPECT_EQ(lexer->GetTokenRangeText(end, end), "");
+}
+
+TEST(LexerTest, GetTokenRangeTextInDifferentContent) {
+  auto lexer = Lexer::Create(kCStyleLexerConfig);
+  ASSERT_NE(lexer, nullptr);
+  LexerContentId content_1 = lexer->AddContent("a");
+  LexerContentId content_2 = lexer->AddContent("b");
+  Token a = lexer->NextToken(content_1);
+  Token b = lexer->NextToken(content_2);
+  EXPECT_EQ(lexer->GetTokenRangeText(a, b), "");
+  EXPECT_EQ(lexer->GetTokenRangeText(b, a), "");
+}
+
+TEST(LexerTest, GetTokenRangeTextWithLastBeforeFirst) {
+  auto lexer = Lexer::Create(kCStyleLexerConfig);
+  ASSERT_NE(lexer, nullptr);
+  LexerContentId content = lexer->AddContent("a b\nc");
+  Token a = lexer->NextToken(content);
+  Token b = lexer->NextToken(content);
+  Token c = lexer->NextToken(content);
+  EXPECT_EQ(lexer->GetTokenRangeText(b, a), "");
+  EXPECT_EQ(lexer->GetTokenRangeText(c, a), "");
+}
+
 TEST(LexerTest, EndTokenIsNeverAdjacent) {
   auto lexer = Lexer::Create(kCStyleLexerConfig);
   ASSERT_NE(lexer, nullptr);
