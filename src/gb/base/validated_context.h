@@ -29,7 +29,7 @@ struct ContextConstraint {
   // constraints for a ValidatedContext or ContextContract list as long as they
   // have different compatible Presence values (see below).
   enum Presence {
-    kInOptional,  // Value may be in the context at constuction or assignment.
+    kInOptional,  // Value may be in the context at construction or assignment.
                   // Cannot be used in conjunction with kInRequired.
     kInRequired,  // Value must be in the context at construction or assignment.
                   // Cannot be used in conjunction with kInOptional.
@@ -63,7 +63,7 @@ struct ContextConstraint {
   TypeInfo* const any_type = nullptr;
 
   // If this is set for a kInOptional or kOutOptional constraint, and it is not
-  // specified during assignment or completion (resepctively) of the
+  // specified during assignment or completion (respectively) of the
   // ValidatedContext, then it will be set to this value automatically.
   // kInRequired, kOutRequired, and kScoped values may not have a default value
   // (it will be ignored, if specified).
@@ -77,7 +77,7 @@ struct ContextConstraint {
 // Helper macros to initialize ContextConstraint objects. These are defined
 // inline, which means they can be used in header files safely (which is the
 // common pattern). When used in a class, be sure to add "static" before the
-// macro. See ValidatedContext for example uses.
+// macro. See ContextContract for example uses.
 
 #define GB_CONTEXT_CONSTRAINT(ConstantName, Presence, Type)   \
   inline const gb::ContextConstraint ConstantName = {         \
@@ -125,7 +125,7 @@ class ContextContract;
 // addresses these issues by explicitly enforcing the preconditions at
 // construction and post-conditions at destruction.
 //
-// Classes that get a ValidatedContext can only read or write depending based on
+// Classes that get a ValidatedContext can only read or write based on
 // the ContextConstraint parameters defined as part of the ValidatedContext type
 // definition.
 //
@@ -197,11 +197,11 @@ class ValidatedContext final {
   //
   // If this context has any existing context and/or constraints, then it
   // will be completed first (as if calling Complete()). This ValidatedContext
-  // will now maintain the constraints from for moved-from context or contract.
+  // will now maintain the constraints from the moved-from context or contract.
   //
   // In all cases, the moved-from context or contract will become uninitialized
   // (IsValid() will return false). To avoid unexpected and/or unhandled
-  // completion failures, it is recommeneded to call and check Complete()
+  // completion failures, it is recommended to call and check Complete()
   // explicitly before move-assignment.
   ValidatedContext& operator=(ValidatedContext&& other) {
     Assign(std::move(other));
@@ -222,7 +222,7 @@ class ValidatedContext final {
   // instead of LOG(ERROR). A null callback restores LOG(ERROR).
   static void SetGlobalErrorCallback(ErrorCallback callback);
 
-  // Assignment from from a Context or ValidatedContext and set of valid context
+  // Assignment from a Context or ValidatedContext and set of valid context
   // constraints.
   //
   // Validation on the new context and constraints is performed, and only
@@ -234,7 +234,7 @@ class ValidatedContext final {
   // If Assign fails (returns false) then no completion or assignment is done
   // and or modification to any context is made (unless ownership was
   // transferred). To avoid unexpected and/or unhandled completion failures, it
-  // is recommeneded to call and check Complete() explicitly before
+  // is recommended to call and check Complete() explicitly before
   // move-assignment.
   //
   // A raw context is not owned, unless it is the context this already holds,
@@ -260,12 +260,12 @@ class ValidatedContext final {
   //
   // If this context has any existing context and/or constraints, then it
   // will be completed first (as if calling Complete()). This ValidatedContext
-  // will now maintain the constraints from for moved-from context or contract,
+  // will now maintain the constraints from the moved-from context or contract,
   // and this will return true if completion was successful.
   //
   // In all cases, the moved-from context or contract will become uninitialized
   // (IsValid() will return false). To avoid unexpected and/or unhandled
-  // completion failures, it is recommeneded to call and check Complete()
+  // completion failures, it is recommended to call and check Complete()
   // explicitly before move-assignment.
   bool Assign(ValidatedContext&& context);
   template <const ContextConstraint&... Constraints>
@@ -295,7 +295,7 @@ class ValidatedContext final {
   // Returns the context managed by this ValidatedContext.
   //
   // In order to get the best use of the ValidatedContext, it is highly
-  // recommended to use the methods directly on ValidateContext instead of
+  // recommended to use the methods directly on ValidatedContext instead of
   // calling methods directly on the underlying context. Otherwise, it is easy
   // to defeat the read/write safeguards provided by this class.
   //
@@ -480,34 +480,34 @@ class ValidatedContext final {
   std::vector<ContextConstraint> constraints_;
 };
 
-// This class defines a contract for a ValidateContext as part of the type
+// This class defines a contract for a ValidatedContext as part of the type
 // definition.
 //
 // This allows the specification for contract validation to be an enforced part
-// of an APIs contract in the header. This gives a stronger guarantee to the
+// of an API's contract in the header. This gives a stronger guarantee to the
 // caller than just documentation, as the contract is enforced at runtime. A
-// ContextContract must be converted to a ValidatedContract before it can be
+// ContextContract must be converted to a ValidatedContext before it can be
 // used. It is highly recommended that public APIs use a ContextContract instead
 // of Context or ValidatedContext directly.
-
+//
 // The GB_CONTEXT_* family of macros provide a more streamlined way to define
 // ContextConstraint constants, however their use is simply syntactic sugar and
 // is completely optional.
 //
 // Example with a global function:
 //
-//   GB_CONTEXT_CONSTRAINT(kSize, kOptional, int);
+//   GB_CONTEXT_CONSTRAINT_NAMED(kSize, kInOptional, int, "size");
 //
-//   void DoSomething(ValidatedContext<kSize> context, ...);
+//   bool DoSomething(ContextContract<kSize> contract, ...);
 //
 // Example as part of a class:
 //
 //   class Foo {
 //    public:
-//     static GB_CONTEXT_CONSTRAINT_NAMED(kSize, kRequired, int, "size");
-//     using ConstructionContext = ValidatedContext<kSize>;
+//     static GB_CONTEXT_CONSTRAINT_NAMED(kSize, kInRequired, int, "size");
+//     using Contract = ContextContract<kSize>;
 //
-//     Foo(ConstructionContext context, ...);
+//     static std::unique_ptr<Foo> Create(Contract contract, ...);
 //
 //     ...
 //   };
@@ -517,16 +517,17 @@ template <const ContextConstraint&... Constraints>
 class ContextContract final {
  public:
   // Constructs a contract from a raw context. The passed in context must
-  // outlive this contract or any resulting ValidateContext that is built from
+  // outlive this contract or any resulting ValidatedContext that is built from
   // it.
   ContextContract(Context* context) : context_(context, {Constraints...}) {}
 
-  // Constucts a contract from a raw context, taking ownership over the context
+  // Constructs a contract from a raw context, taking ownership over the context
   // via move-semantics.
   ContextContract(Context&& context)
       : context_(std::move(context), {Constraints...}) {}
 
-  // Constucts a contract from a raw context, taking ownership over the context.
+  // Constructs a contract from a raw context, taking ownership over the
+  // context.
   ContextContract(std::unique_ptr<Context> context)
       : context_(std::move(context), {Constraints...}) {}
 
@@ -563,12 +564,12 @@ class ContextContract final {
   ContextContract<Constraints...>& operator=(
       ContextContract<Constraints...>&&) = delete;
 
-  // Unless this contract was moved to a ValidatedContract, the contract will be
+  // Unless this contract was moved to a ValidatedContext, the contract will be
   // enforced (any optional exports will receive their default values and any
   // required exports that are missing will generate errors).
   ~ContextContract() = default;
 
-  // True if the contract was met and the resulting ValidaredContext will be
+  // True if the contract was met and the resulting ValidatedContext will be
   // valid.
   bool IsValid() const { return context_.IsValid(); }
 
