@@ -43,8 +43,6 @@ The raw form is used to lend a context for the length of a call:
   (`ResourceManager`, `ResourceSystem`, `ResourceFileReader`, and
   `ResourceFileWriter`), which `RenderSystem` makes contracts from. These take
   a form that shares ownership instead, such as a `ValidatedContext&`.
-- `RunCommandLine()` is called with a `Context` on `main()`'s stack in both
-  examples, which can move it in instead.
 - About 50 test call sites, mostly `Create(&context)`. Tests that read the
   context's outputs afterwards keep a `std::shared_ptr<Context>` to it.
 

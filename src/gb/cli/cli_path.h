@@ -25,10 +25,9 @@ namespace gb {
 // the context:
 //
 //   int main(int argc, char* argv[]) {
-//     gb::Context context;
-//     context.SetOwned(gb::CreateCliFileSystem());
-//     return gb::RunCommandLine(&context, &kProgram,
-//                               gb::GetMainArgs(argc, argv));
+//     return gb::RunCommandLine(
+//         gb::ContextBuilder().SetOwned(gb::CreateCliFileSystem()).Build(),
+//         &kProgram, gb::GetMainArgs(argc, argv));
 //   }
 //
 // The path validators below read the context, and list what they read in
