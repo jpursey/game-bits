@@ -10,9 +10,13 @@ description: How to lex and parse text with Game Bits' gb_parse library (gb/pars
 **Any code that reads structured text uses `gb_parse`'s lexer and parser rather
 than hand-written tokenizing or parsing.** That includes small cases: a
 command syntax, an expression, a value inside a config, a line-based script.
-Splitting strings, scanning characters, and hand-written recursive descent are
-what it replaces. Lean on the grammar for as much of the parsing as it can do,
-and keep the C++ for what the grammar can't express.
+Scanning characters and hand-written recursive descent are what it replaces.
+Lean on the grammar for as much of the parsing as it can do, and keep the C++
+for what the grammar can't express.
+
+The one exception is text that is only a list of strings separated by a
+delimiter, with nothing else to it: no whitespace to skip, comments, quoting,
+or nesting. Split that with `absl::StrSplit`.
 
 The lexer and parser aren't fully general, but the text they can read is
 generally text that is also easy for people to read. If a format is hard or
