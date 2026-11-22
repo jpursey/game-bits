@@ -259,5 +259,9 @@ These add to the C++ style in the workflow.
 - Unit tests live next to the code they test as `<file>_test.cc`, are written with GoogleTest/GoogleMock inside `namespace gb { namespace { ... } }`, and use the shared helpers in `gb_test` (`src/gb/test`) for threading and other cross-cutting test support.
 - C++20, built with both MSVC and clang-cl.
 
+## Skills
+
+`.claude/skills/` holds skills on how to use parts of Game Bits, for sessions here and in projects built on it: `gb-context` (`Context`, `ValidatedContext`, and contracts). A change to what one describes updates the skill in the same CL.
+
 ## Don't
 - Don't generate or build Visual Studio solutions; build with Ninja as described above.
