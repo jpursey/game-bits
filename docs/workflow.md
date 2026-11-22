@@ -124,6 +124,13 @@ beside it, as a sibling directory (`../game-bits`), and finds it through the
 - Game Bits is verified by its own unit tests, never by building the projects
   that use it. A change that breaks a public API says so in its backlog item,
   so each project can add its own follow-up.
+- Game Bits' skills on how to use its libraries live in its
+  `.claude/skills/`, which a session in another project doesn't load. Each
+  project has a stub skill for each of them in its own `.claude/skills/`, with
+  the same `name` and `description` (which decides when it loads), whose body
+  only says to read and follow `../game-bits/.claude/skills/<name>/SKILL.md`.
+  A Game Bits change that adds a skill or changes a description says so in its
+  PR, so each project can add or update its stub.
 
 ## Local sessions
 
