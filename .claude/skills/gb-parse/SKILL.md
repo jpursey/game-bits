@@ -265,10 +265,10 @@ grammar, the C++ can drive the parse a piece at a time:
 - **Skip or take raw lines.** `lexer.NextLine(content)` returns the rest of the
   current line without lexing it, and moves to the next line. A line-based
   format can embed text in another syntax this way, and hand those lines to
-  that syntax's own reader (with its own lexer). After a parse that ends by
-  matching `%linebreak`, the lexer is still on that line, so the first
-  `NextLine()` returns its empty remainder; check `GetCurrentLine()` to know
-  which line comes next.
+  that syntax's own reader (with its own lexer). Reading a line's last token
+  (or its `%linebreak`, which is just the newline as a token) doesn't move to
+  the next line, so `NextLine()` then returns that line's empty remainder;
+  `GetCurrentLine()` says which line comes next.
 
 ## Reading the tree
 
