@@ -261,7 +261,7 @@ These add to the C++ style in the workflow.
 
 ## Skills
 
-`.claude/skills/` holds skills on how to use parts of Game Bits, for sessions here and in projects built on it: `gb-context` (`Context`, `ValidatedContext`, and contracts). A change to what one describes updates the skill in the same CL.
+`.claude/skills/` holds skills on how to use parts of Game Bits, for sessions here and in projects built on it: `gb-context` (`Context`, `ValidatedContext`, and contracts) and `gb-parse` (lexers, grammars, and parse results). A change to what one describes updates the skill in the same CL.
 
 ## Don't
 - Don't generate or build Visual Studio solutions; build with Ninja as described above.

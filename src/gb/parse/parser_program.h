@@ -35,9 +35,12 @@ namespace gb {
 //   %char       Matches any character token (as configured in the lexer).
 //   %ident      Matches any identifier token (as configured in the lexer).
 //   %linebreak  Matches the end-of-line token (must be enabled in the lexer).
+//   %end        Matches the end of the content.
 // User token types can be defined in the lexer specification, and can be
 // referenced in the parser rules as %token-type once defined:
 //   %token-type = int-value ;
+// where int-value is the token type's offset from kTokenUser (so 1 names the
+// LexerConfig::UserToken with type kTokenUser + 1).
 //
 // Parser rules are defined as a text with the following syntax:
 //   rule_name {
@@ -46,12 +49,12 @@ namespace gb {
 //     rule_item... ;
 //   }
 // Each list of rule_items within a rule is separated by a semicolon, and
-// represents a mututally exclusive alternative for the rule. Note that this is
+// represents a mutually exclusive alternative for the rule. Note that this is
 // effectively lower precedence than the '|' operator described below.
 //
 // Each rule_item can be a token type, a token literal, a rule name, or a
 // group of rule_items enclosed in parentheses (required) or square brackets
-// (optional). Token types can be one of: %int, %float, %string, %char, %ident.
+// (optional). Token types are the predefined and user token types above.
 // For example:
 //   %int                 Matches any integer token.
 //   "token"              Matches the token literal "token".
@@ -70,7 +73,7 @@ namespace gb {
 //   %int,+            Matches one or more integers separated by commas.
 //
 // A rule_item can be further annotated with an error message, which is used to
-// provide a custom error if the rule_item fails to match. This is specifed by
+// provide a custom error if the rule_item fails to match. This is specified by
 // appending a ':' followed by the error message string. For example:
 //   %int:"Expected an integer"
 // If this is not specified, then a default error message states the unexpected
