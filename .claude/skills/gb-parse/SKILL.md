@@ -127,6 +127,20 @@ through the lexer, its text as written (`GetTokenText()`) and its location
 (`GetTokenLocation()`), which every later error message needs. Copy a value out
 only when it has to outlive the lexer.
 
+**Each piece of content is stored as one string** (with every line break as
+`"\n"`, whatever line endings it was given), so any range of text within it is
+a `std::string_view` into that string, with nothing copied. The lexer gives
+these views directly:
+- `GetContentText()`: the whole content.
+- `GetLineText()`: a whole line, and `NextLine()`: the rest of the current
+  line.
+- `GetTokenText()`: a token as written.
+- `GetTokenRangeText(first, last)`: the text from the start of one token to
+  the end of another in the same content, with the spaces and comments between
+  them as written. This is how to get the raw text of something the grammar
+  matched, such as an argument matched as `$arg=!(%linebreak | ',')*`: pass
+  the first and last of its items' tokens.
+
 ## The lexer
 
 **Use the lexer's own forms for identifiers, numbers, strings, and comments**,
