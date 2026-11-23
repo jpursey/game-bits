@@ -141,11 +141,12 @@ these views directly:
   matched, such as an argument matched as `$arg=!(%linebreak | ',')*`: pass
   the first and last of its items' tokens.
 
-**To rebuild text from matched tokens**, rather than take the raw range, join
-each token's `GetTokenText()` with `IsTokenAdjacent()`, which says whether a
-token touches the one before it. Add one space where it doesn't, so runs of
-spaces and comments become one space, with none at either end, and don't
-re-scan the text:
+**When the text is wanted flattened**, with its spaces and comments collapsed
+(as a stringified macro argument is), rather than exactly as written, which is
+`GetTokenRangeText()`, build it from the matched tokens. Join each token's
+`GetTokenText()` with `IsTokenAdjacent()`, which says whether a token touches
+the one before it, adding one space where it doesn't, so runs of spaces and
+comments become one space, with none at either end:
 
 ```cpp
 std::string text;
