@@ -141,6 +141,26 @@ these views directly:
   matched, such as an argument matched as `$arg=!(%linebreak | ',')*`: pass
   the first and last of its items' tokens.
 
+**When the text is wanted flattened**, with its spaces and comments collapsed
+(as a stringified macro argument is), rather than exactly as written, which is
+`GetTokenRangeText()`, build it from the matched tokens. Join each token's
+`GetTokenText()` with `IsTokenAdjacent()`, which says whether a token touches
+the one before it, adding one space where it doesn't, so runs of spaces and
+comments become one space, with none at either end:
+
+```cpp
+std::string text;
+for (const Token& token : tokens) {
+  absl::StrAppend(&text,
+                  !text.empty() && !lexer.IsTokenAdjacent(token) ? " " : "",
+                  lexer.GetTokenText(token));
+}
+```
+
+`GetTokenText()` is always the text as written, even where the lexer changes
+a token's value (an identifier made upper case, a string's escapes decoded),
+which `GetString()` and the other value getters return.
+
 ## The lexer
 
 **Use the lexer's own forms for identifiers, numbers, strings, and comments**,
@@ -253,7 +273,29 @@ Only named items are kept in the tree. Everything else is matched and dropped.
   enclosing rule's own. `text_config.cc` promotes its `Value` rule this way.
 - **Name each alternative** (`$number=%int`, `$group=Expression`) when the
   reader needs to know which one matched, then switch on `GetMatchName()`,
-  which returns the single name matched in the item.
+  which returns the single name matched in the item. When the alternatives are
+  only different words, name the group instead, and check the token:
+  `$kind=("STR" | "PSTR")`, then `GetToken("kind").IsIdent("PSTR")`.
+- **Promote a recursive rule to get one flat list.** When the reader needs
+  every token of a nested match in order, but not its nesting, give each token
+  the same name and promote the rule into itself and into its user. The
+  matches then arrive as one list, in source order, with no tree to walk:
+
+  ```
+    Text {
+      $kind=("STR" | "PSTR") '(' <TextToken>* ')';
+    }
+    TextToken {
+      $token=!(%linebreak | '(' | ')' | '[' | ']');
+      $token='(' <TextToken>* $token=')';
+      $token='[' <TextToken>* $token=']';
+    }
+  ```
+
+  `GetItems("token")` on a `Text` item is every token between its
+  parentheses, brackets included. Naming the nested uses instead
+  (`$tokens=TextToken*`, `$last=')'`) builds a tree that the reader has to walk
+  recursively to get the same list.
 
 ### Error messages
 
