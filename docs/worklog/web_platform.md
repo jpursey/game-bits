@@ -235,7 +235,7 @@ Depends on: nothing.
 - Standard checks. On Linux, the same number of tests run and pass as before,
   and a death test still fails when its statement doesn't die.
 
-### CL3 [ ] container: queue buckets aligned for their elements
+### CL3 [x] container: queue buckets aligned for their elements
 
 Depends on: nothing.
 
