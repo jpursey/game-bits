@@ -222,13 +222,15 @@ Depends on: nothing.
 - A test program whose stack use is deepest (`gb_parse_test`) passes with the
   stack sizes chosen.
 
-### CL2 [~] tests: death tests only where GoogleTest has them
+### CL2 [x] tests: death tests only where GoogleTest has them
 
 Depends on: nothing.
 
 - `EXPECT_DEATH` becomes `EXPECT_DEATH_IF_SUPPORTED` in the test files that
-  use it, and the tests using `EXPECT_DEBUG_DEATH` (`pilot_test.cc`,
-  `sdl_glog_test.cc`) are compiled only where there are death tests.
+  use it. The tests using `EXPECT_DEBUG_DEATH` in `pilot_test.cc` are compiled
+  only where there are death tests, and `sdl_glog_test.cc`'s, which also
+  checks what a release build logs, splits on `NDEBUG` so that check runs
+  everywhere.
 - CLAUDE.md's Conventions say to use it.
 
 **Verify**

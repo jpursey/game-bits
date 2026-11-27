@@ -69,8 +69,8 @@ TEST(SdlGLogTest, VerboseIsVLogLevelOne) {
       ElementsAre(IsMessage(absl::LogSeverity::kInfo, "SDL(app) shown")));
 }
 
-// EXPECT_DEBUG_DEATH exists only where GoogleTest has death tests, so this
-// spells out what it checks in each build.
+// A critical message is fatal in a debug build, and logged as an error in
+// release.
 TEST(SdlGLogTest, CriticalIsDebugFatal) {
   LogRecorder log_recorder;
 #ifdef NDEBUG
