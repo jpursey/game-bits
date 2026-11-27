@@ -222,7 +222,7 @@ Depends on: nothing.
 - A test program whose stack use is deepest (`gb_parse_test`) passes with the
   stack sizes chosen.
 
-### CL2 [ ] tests: death tests only where GoogleTest has them
+### CL2 [~] tests: death tests only where GoogleTest has them
 
 Depends on: nothing.
 
