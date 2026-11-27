@@ -29,6 +29,15 @@ TEST(RealtimeClockTest, SleepFor) {
   EXPECT_LT(after, now + sleep_duration + absl::Seconds(1));
 }
 
+TEST(RealtimeClockTest, SleepUntil) {
+  RealtimeClock clock;
+  auto time = absl::Now() + absl::Milliseconds(10);
+  clock.SleepUntil(time);
+  auto after = absl::Now();
+  EXPECT_GE(after, time);
+  EXPECT_LT(after, time + absl::Seconds(1));
+}
+
 TEST(FakeClockTest, StartsAtEpoch) {
   FakeClock clock;
   EXPECT_EQ(clock.Now(), absl::Time());
@@ -112,6 +121,34 @@ TEST(FakeClockTest, AutoAdvanceDoesNotAffectSleepFor) {
   auto sleep_amount = absl::Seconds(1);
   clock.SleepFor(sleep_amount);
   EXPECT_EQ(clock.GetTime(), now + sleep_amount);
+}
+
+TEST(FakeClockTest, SleepUntilAdvances) {
+  FakeClock clock;
+  auto now = absl::Now();
+  clock.SetTime(now);
+  clock.SleepUntil(now + absl::Seconds(1));
+  EXPECT_EQ(clock.GetTime(), now + absl::Seconds(1));
+}
+
+TEST(FakeClockTest, SleepUntilWithOffset) {
+  FakeClock clock;
+  auto now = absl::Now();
+  clock.SetTime(now);
+  auto sleep_offset = absl::Milliseconds(1);
+  clock.SetSleepOffset(sleep_offset);
+  clock.SleepUntil(now + absl::Seconds(1));
+  EXPECT_EQ(clock.GetTime(), now + absl::Seconds(1) + sleep_offset);
+}
+
+TEST(FakeClockTest, SleepUntilPastTimeDoesNotAdvance) {
+  FakeClock clock;
+  auto now = absl::Now();
+  clock.SetTime(now);
+  clock.SetSleepOffset(absl::Milliseconds(1));
+  clock.SleepUntil(now - absl::Seconds(1));
+  clock.SleepUntil(now);
+  EXPECT_EQ(clock.GetTime(), now);
 }
 
 }  // namespace

@@ -907,26 +907,33 @@ the direction's length. Separately, `CLine` and `CTriangle` convert implicitly
 from a pointer to an array, so any pointer converts; making them `explicit`
 breaks callers that rely on it.
 
-## Game loop waits without spinning
+## Windows frame wait spins less
 
-- **Layers:** base, game
+- **Layers:** base
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** nothing
 - **Requested by:** OZ-3 *App structure*
-- **Background:** `Game::GameLoop` in `src/gb/game/game.cc`
+- **Background:** `PreciseSleepUntil` in `src/gb/base/win_sleep.cc`
 
-`Game::GameLoop` sleeps until a millisecond before each frame is due, then
-reads the clock in a busy loop for the rest. At 60 frames a second that keeps
-about 6% of a core busy even while the game has nothing to do, as an app that
-mostly waits on its user (such as OZ-3's `ozzy`) does. `RealtimeClock` already
-sleeps with `PreciseSleepFor`, so the loop could sleep once for the whole time
-remaining, or spin only where the platform's sleep can't wake close enough to
-the frame (deciding that in `gb_base`, beside `PreciseSleepFor`, rather than
-in the loop). Frames must stay as evenly paced as now, which is measured on
-Windows and Linux before and after. `game_test.cc`'s tests drive the loop with
-a `FakeClock` that advances on each read, and a clock that fails on any
-sleep, so they change with it, still never waiting on real time.
+`Game::GameLoop` waits for each frame with `PreciseSleepUntil`, which sleeps
+until a platform's margin (`kSpinTime`) before the frame is due, then spins for
+the rest, as the sleep can wake late. On Linux, a 500 us margin keeps frames as
+evenly paced as a 1 ms one (the middle 98% within a few microseconds at 60
+frames a second) at 2.5% of a core rather than 5.5%, while sleeping the whole
+way spends 0.2% but spreads frames by a few hundred microseconds. Windows keeps
+the 1 ms margin the loop had before, as its high resolution timer's lateness
+hasn't been measured. Measure it on Windows (frame delta spread and process CPU
+for a few hundred frames at 60 frames a second, over several margins), and
+lower the margin as far as frames stay as even as they are with 1 ms.
+
+The 500 us margin is in `gen_sleep.cc`, so macOS also gets it unmeasured; once
+it is measured there too, a platform whose margin differs gets its own file.
+Linux may need less margin if its sleep wakes closer to the time: sleeping to
+an absolute time with `clock_nanosleep(TIMER_ABSTIME)` and lowering the
+thread's timer slack (`prctl(PR_SET_TIMERSLACK)`), measured as above. The
+generic spin also has no CPU pause hint, which `win_sleep.cc` has
+(`YieldProcessor()`).
 
 ## Game state trace details
 
