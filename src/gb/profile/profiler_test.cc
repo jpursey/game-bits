@@ -74,8 +74,8 @@ class ProfilerTest : public ::testing::Test {
 };
 
 TEST_F(ProfilerTest, OnePerThread) {
-  EXPECT_DEATH(Profiler({.fake_cpu = &ticks_}),
-               "Only one Profiler may exist per thread");
+  EXPECT_DEATH_IF_SUPPORTED(Profiler({.fake_cpu = &ticks_}),
+                            "Only one Profiler may exist per thread");
 }
 
 TEST_F(ProfilerTest, EachThreadRecordsItsOwn) {
@@ -104,9 +104,12 @@ TEST_F(ProfilerTest, UnknownPointsAreZero) {
 TEST_F(ProfilerTest, ReadingWrongKindDies) {
   ProfilePoint counter(ProfilePoint::Kind::kCounter, "ProfilerTest/Counter");
   ProfilePoint value(ProfilePoint::Kind::kValue, "ProfilerTest/Value");
-  EXPECT_DEATH(profiler_.GetSelfTime("ProfilerTest/Counter"), "wrong kind");
-  EXPECT_DEATH(profiler_.GetValue("ProfilerTest/Counter"), "wrong kind");
-  EXPECT_DEATH(profiler_.GetCount("ProfilerTest/Value"), "wrong kind");
+  EXPECT_DEATH_IF_SUPPORTED(profiler_.GetSelfTime("ProfilerTest/Counter"),
+                            "wrong kind");
+  EXPECT_DEATH_IF_SUPPORTED(profiler_.GetValue("ProfilerTest/Counter"),
+                            "wrong kind");
+  EXPECT_DEATH_IF_SUPPORTED(profiler_.GetCount("ProfilerTest/Value"),
+                            "wrong kind");
 }
 
 TEST_F(ProfilerTest, ResetClearsEverything) {
@@ -127,7 +130,8 @@ TEST_F(ProfilerTest, ResetClearsEverything) {
 
 TEST_F(ProfilerTest, ResetInTimerDies) {
   ProfileScope<"ProfilerTest/ResetInTimer"> scope;
-  EXPECT_DEATH(profiler_.Reset(), "can't be reset in a timed point");
+  EXPECT_DEATH_IF_SUPPORTED(profiler_.Reset(),
+                            "can't be reset in a timed point");
 }
 
 //------------------------------------------------------------------------------
@@ -311,7 +315,7 @@ TEST_F(ProfilerTest, ResetClearsEveryThread) {
 }
 
 TEST_F(ProfilerTest, ThreadCantTimeFrames) {
-  EXPECT_DEATH(
+  EXPECT_DEATH_IF_SUPPORTED(
       {
         ProfiledThread thread(&profiler_);
         thread.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
@@ -322,7 +326,7 @@ TEST_F(ProfilerTest, ThreadCantTimeFrames) {
 }
 
 TEST_F(ProfilerTest, ThreadCantReset) {
-  EXPECT_DEATH(
+  EXPECT_DEATH_IF_SUPPORTED(
       {
         ProfiledThread thread(&profiler_);
         thread.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
@@ -333,7 +337,7 @@ TEST_F(ProfilerTest, ThreadCantReset) {
 }
 
 TEST_F(ProfilerTest, ThreadNeedsMainTickRate) {
-  EXPECT_DEATH(
+  EXPECT_DEATH_IF_SUPPORTED(
       {
         std::thread thread([this] {
           FakeProfilerCpu ticks(2e9);
@@ -345,7 +349,7 @@ TEST_F(ProfilerTest, ThreadNeedsMainTickRate) {
 }
 
 TEST_F(ProfilerTest, MainCantBeJoined) {
-  EXPECT_DEATH(
+  EXPECT_DEATH_IF_SUPPORTED(
       {
         ProfiledThread thread(&profiler_);
         thread.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
@@ -388,7 +392,7 @@ TEST_F(ProfilerTest, ThreadWithNameOfDestroyedOneCarriesOn) {
 // has, and only those that still exist when the main Profiler is destroyed are
 // an error.
 TEST(ProfilerThreadSetupTest, MainMustOutliveThreads) {
-  EXPECT_DEATH(
+  EXPECT_DEATH_IF_SUPPORTED(
       {
         FakeProfilerCpu ticks;
         std::optional<Profiler> main(std::in_place,
@@ -404,7 +408,7 @@ TEST(ProfilerThreadSetupTest, MainMustOutliveThreads) {
 }
 
 TEST(ProfilerThreadSetupTest, MainMustOutliveNamedThread) {
-  EXPECT_DEATH(
+  EXPECT_DEATH_IF_SUPPORTED(
       {
         FakeProfilerCpu ticks;
         std::optional<Profiler> main(std::in_place,
@@ -423,7 +427,7 @@ struct NamedThreadJoiner {
 };
 
 TEST(ProfilerThreadSetupTest, NameDefaultsToThreadName) {
-  EXPECT_DEATH(
+  EXPECT_DEATH_IF_SUPPORTED(
       {
         FakeProfilerCpu ticks;
         std::optional<Profiler> main(std::in_place,
@@ -483,7 +487,8 @@ TEST_F(ProfilerTest, FrameInsideScope) {
 
 TEST_F(ProfilerTest, NestedFramesDie) {
   ProfileFrame<"ProfilerTest/Outer"> frame;
-  EXPECT_DEATH({ ProfileFrame<"ProfilerTest/Inner"> inner; }, "can't nest");
+  EXPECT_DEATH_IF_SUPPORTED(
+      { ProfileFrame<"ProfilerTest/Inner"> inner; }, "can't nest");
 }
 
 TEST_F(ProfilerTest, FrameSummaryWithNoFrames) {
@@ -1024,7 +1029,7 @@ TEST_F(ProfilerTest, DestroyedThreadStaysIdle) {
 }
 
 TEST_F(ProfilerTest, IdleTimerInTimedPointDies) {
-  EXPECT_DEATH(
+  EXPECT_DEATH_IF_SUPPORTED(
       {
         ProfiledThread thread(&profiler_);
         thread.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
@@ -1035,7 +1040,7 @@ TEST_F(ProfilerTest, IdleTimerInTimedPointDies) {
       "outside every timed point");
 
   // The same holds on the main thread, whose frames are timed points.
-  EXPECT_DEATH(
+  EXPECT_DEATH_IF_SUPPORTED(
       {
         ProfileFrame<"ThreadIdleTest/Frame"> frame;
         ProfileIdleTimer idle;
@@ -1044,7 +1049,7 @@ TEST_F(ProfilerTest, IdleTimerInTimedPointDies) {
 }
 
 TEST_F(ProfilerTest, TimedPointInIdleTimerDies) {
-  EXPECT_DEATH(
+  EXPECT_DEATH_IF_SUPPORTED(
       {
         ProfiledThread thread(&profiler_);
         thread.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
@@ -1056,7 +1061,7 @@ TEST_F(ProfilerTest, TimedPointInIdleTimerDies) {
 }
 
 TEST_F(ProfilerTest, NestedIdleTimersDie) {
-  EXPECT_DEATH(
+  EXPECT_DEATH_IF_SUPPORTED(
       {
         ProfiledThread thread(&profiler_);
         thread.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
@@ -1068,7 +1073,7 @@ TEST_F(ProfilerTest, NestedIdleTimersDie) {
 }
 
 TEST_F(ProfilerTest, DestroyingProfilerInIdleTimerDies) {
-  EXPECT_DEATH(
+  EXPECT_DEATH_IF_SUPPORTED(
       {
         std::thread thread([this] {
           std::optional<Profiler> profiler(
@@ -1083,8 +1088,9 @@ TEST_F(ProfilerTest, DestroyingProfilerInIdleTimerDies) {
 
 TEST_F(ProfilerTest, ReadingValueAsSlowestFrameDies) {
   ProfilePoint value(ProfilePoint::Kind::kValue, "ProfilerTest/SlowestValue");
-  EXPECT_DEATH(profiler_.GetSlowestFrameCount("ProfilerTest/SlowestValue"),
-               "wrong kind");
+  EXPECT_DEATH_IF_SUPPORTED(
+      profiler_.GetSlowestFrameCount("ProfilerTest/SlowestValue"),
+      "wrong kind");
 }
 
 //------------------------------------------------------------------------------
@@ -1115,7 +1121,8 @@ TEST_F(ProfilerTest, JobSummaryWithNoRuns) {
 
 TEST_F(ProfilerTest, ReadingNonJobAsJobDies) {
   ProfilePoint scope(ProfilePoint::Kind::kScope, "JobTest/Scope");
-  EXPECT_DEATH(profiler_.GetJobSummary("JobTest/Scope"), "wrong kind");
+  EXPECT_DEATH_IF_SUPPORTED(profiler_.GetJobSummary("JobTest/Scope"),
+                            "wrong kind");
 }
 
 TEST_F(ProfilerTest, JobPercentiles) {
@@ -1364,7 +1371,7 @@ loop         700ns  1.00us   100%     100%
 }
 
 TEST_F(ProfilerThreadlessTest, OneFrameAtATime) {
-  EXPECT_DEATH(
+  EXPECT_DEATH_IF_SUPPORTED(
       {
         ProfiledThread thread_a(&profiler_);
         ProfiledThread thread_b(&profiler_);
@@ -1379,7 +1386,7 @@ TEST_F(ProfilerThreadlessTest, OneFrameAtATime) {
 }
 
 TEST_F(ProfilerThreadlessTest, FramesCantNest) {
-  EXPECT_DEATH(
+  EXPECT_DEATH_IF_SUPPORTED(
       {
         ProfiledThread thread(&profiler_);
         thread.Run([](Profiler& profiler, FakeProfilerCpu& ticks) {
@@ -1409,7 +1416,7 @@ TEST_F(ProfilerThreadlessTest, ResetBetweenFrames) {
 }
 
 TEST_F(ProfilerThreadlessTest, ResetDuringFrameDies) {
-  EXPECT_DEATH(
+  EXPECT_DEATH_IF_SUPPORTED(
       {
         ProfiledThread thread(&profiler_);
         thread.Run([this](Profiler& profiler, FakeProfilerCpu& ticks) {
@@ -1422,7 +1429,7 @@ TEST_F(ProfilerThreadlessTest, ResetDuringFrameDies) {
 
 TEST_F(ProfilerThreadlessTest, CantHaveMain) {
   Profiler main({.fake_cpu = &ticks_, .threadless = true});
-  EXPECT_DEATH(
+  EXPECT_DEATH_IF_SUPPORTED(
       Profiler({.fake_cpu = &ticks_, .main = &main, .threadless = true}),
       "A threadless Profiler can't have a main");
 }

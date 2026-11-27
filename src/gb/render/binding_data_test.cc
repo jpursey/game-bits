@@ -207,8 +207,9 @@ TEST_F(BindingDataTest, StorageBufferOfWrongTypeDies) {
                                     .SetLocation(BindingSet::kView, 1)
                                     .SetStorageBuffer(vector2_type)});
 
-  EXPECT_DEATH(binding_data.SetStorageBuffer(1, storage_buffer.Get()),
-               "ValidateDataType");
+  EXPECT_DEATH_IF_SUPPORTED(
+      binding_data.SetStorageBuffer(1, storage_buffer.Get()),
+      "ValidateDataType");
 }
 
 TEST_F(BindingDataTest, AccessWithWrongTypeOrIndexDies) {
@@ -239,20 +240,24 @@ TEST_F(BindingDataTest, AccessWithWrongTypeOrIndexDies) {
   binding_data.GetTexture(1);
 
   Vector3 vector3;
-  EXPECT_DEATH(binding_data.SetConstants(0, Vector3{1.0f, 2.0f, 3.0f}),
-               "Validate");
-  EXPECT_DEATH(binding_data.GetConstants(0, &vector3), "Validate");
-  EXPECT_DEATH(binding_data.GetConstants(1, &vector2), "Validate");
-  EXPECT_DEATH(binding_data.GetConstants(2, &vector2), "Validate");
-  EXPECT_DEATH(binding_data.SetTexture(0, texture.Get()), "Validate");
-  EXPECT_DEATH(binding_data.GetTexture(0), "Validate");
-  EXPECT_DEATH(binding_data.GetTexture(-1), "Validate");
-  EXPECT_DEATH(binding_data.SetTextureArray(1, nullptr), "Validate");
-  EXPECT_DEATH(binding_data.GetTextureArray(1), "Validate");
-  EXPECT_DEATH(binding_data.SetVolumeTexture(1, nullptr), "Validate");
-  EXPECT_DEATH(binding_data.GetVolumeTexture(1), "Validate");
-  EXPECT_DEATH(binding_data.SetStorageBuffer(1, nullptr), "Validate");
-  EXPECT_DEATH(binding_data.GetStorageBuffer(1), "Validate");
+  EXPECT_DEATH_IF_SUPPORTED(
+      binding_data.SetConstants(0, Vector3{1.0f, 2.0f, 3.0f}), "Validate");
+  EXPECT_DEATH_IF_SUPPORTED(binding_data.GetConstants(0, &vector3), "Validate");
+  EXPECT_DEATH_IF_SUPPORTED(binding_data.GetConstants(1, &vector2), "Validate");
+  EXPECT_DEATH_IF_SUPPORTED(binding_data.GetConstants(2, &vector2), "Validate");
+  EXPECT_DEATH_IF_SUPPORTED(binding_data.SetTexture(0, texture.Get()),
+                            "Validate");
+  EXPECT_DEATH_IF_SUPPORTED(binding_data.GetTexture(0), "Validate");
+  EXPECT_DEATH_IF_SUPPORTED(binding_data.GetTexture(-1), "Validate");
+  EXPECT_DEATH_IF_SUPPORTED(binding_data.SetTextureArray(1, nullptr),
+                            "Validate");
+  EXPECT_DEATH_IF_SUPPORTED(binding_data.GetTextureArray(1), "Validate");
+  EXPECT_DEATH_IF_SUPPORTED(binding_data.SetVolumeTexture(1, nullptr),
+                            "Validate");
+  EXPECT_DEATH_IF_SUPPORTED(binding_data.GetVolumeTexture(1), "Validate");
+  EXPECT_DEATH_IF_SUPPORTED(binding_data.SetStorageBuffer(1, nullptr),
+                            "Validate");
+  EXPECT_DEATH_IF_SUPPORTED(binding_data.GetStorageBuffer(1), "Validate");
 }
 
 }  // namespace

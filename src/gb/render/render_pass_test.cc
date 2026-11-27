@@ -468,13 +468,14 @@ TEST_F(RenderPassTest, DrawingAViewBeforeItsPassIsDrawnFails) {
   auto pass = CreateColorPass(0);
   auto view = render_system_->CreateView(pass.get(), binding_layout_);
   ASSERT_NE(view, nullptr);
-  EXPECT_DEATH(
+  EXPECT_DEATH_IF_SUPPORTED(
       render_system_->Draw(view.get(), mesh_, material_, instance_data_.get()),
       "in_frame_");
   DrawList draw_list;
   draw_list.SetMesh(mesh_, material_, instance_data_.get());
   draw_list.Draw();
-  EXPECT_DEATH(render_system_->Draw(view.get(), draw_list), "in_frame_");
+  EXPECT_DEATH_IF_SUPPORTED(render_system_->Draw(view.get(), draw_list),
+                            "in_frame_");
   render_system_->EndFrame();
 
   // From the next frame, it is drawn.
@@ -493,14 +494,14 @@ TEST_F(RenderPassTest, DestroyingAPassWithViewsLeftFails) {
   auto pass = CreateColorPass(0);
   auto view = render_system_->CreateView(pass.get(), binding_layout_);
   ASSERT_NE(view, nullptr);
-  EXPECT_DEATH(pass.reset(), "views left in it");
+  EXPECT_DEATH_IF_SUPPORTED(pass.reset(), "views left in it");
 }
 
 TEST_F(RenderPassTest, DestroyingAPassDuringAFrameFails) {
   CreatePassSystem();
   auto pass = CreateColorPass(0);
   ASSERT_TRUE(render_system_->BeginFrame());
-  EXPECT_DEATH(pass.reset(), "destroyed between BeginFrame");
+  EXPECT_DEATH_IF_SUPPORTED(pass.reset(), "destroyed between BeginFrame");
   render_system_->EndFrame();
 }
 
@@ -518,8 +519,9 @@ TEST_F(RenderPassTest, DestroyingAPassAfterAFailedBeginFrame) {
 TEST_F(RenderPassTest, DestroyingTheSystemWithPassesLeftFails) {
   CreatePassSystem();
   auto pass = CreateColorPass(0);
-  EXPECT_DEATH(render_system_.reset(),
-               "passes must be destroyed before the render system");
+  EXPECT_DEATH_IF_SUPPORTED(
+      render_system_.reset(),
+      "passes must be destroyed before the render system");
 }
 
 //------------------------------------------------------------------------------

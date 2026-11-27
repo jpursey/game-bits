@@ -673,7 +673,7 @@ TEST_F(TextureTest, Edit) {
 }
 
 TEST_F(TextureTest, DeleteWhileEditing) {
-  EXPECT_DEATH(
+  EXPECT_DEATH_IF_SUPPORTED(
       {
         CreateSystem();
         auto texture = render_system_->CreateTexture(

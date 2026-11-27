@@ -159,7 +159,7 @@ TEST(FakeJobSystemTest, ImmediateJobCanWait) {
 }
 
 TEST(FakeJobSystemDeathTest, WaitWithNoQueuedJobsLeftFails) {
-  EXPECT_DEATH(
+  EXPECT_DEATH_IF_SUPPORTED(
       {
         FakeJobSystem job_system;
         JobCounter counter;

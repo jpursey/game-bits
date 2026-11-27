@@ -42,8 +42,9 @@ TEST(RenderAssertDeathTest, FailedAssertIsFatal) {
     GTEST_SKIP() << "Render asserts are compiled out";
   }
   SetRenderAssertEnabled(true);
-  EXPECT_DEATH(RENDER_ASSERT(1 == 2),
-               "render_assert_test.cc.*Render assert failed: 1 == 2");
+  EXPECT_DEATH_IF_SUPPORTED(
+      RENDER_ASSERT(1 == 2),
+      "render_assert_test.cc.*Render assert failed: 1 == 2");
 }
 
 }  // namespace

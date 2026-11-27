@@ -388,6 +388,8 @@ TEST(PilotTest, DeltaTimeIsAtLeastMinimum) {
   EXPECT_EQ(pilot.GetDeltaTime(), Pilot::kMinDeltaTime);
 }
 
+// EXPECT_DEBUG_DEATH exists only where GoogleTest has death tests.
+#ifdef GTEST_HAS_DEATH_TEST
 TEST(PilotTest, BeginFrameTwiceIsDebugFatal) {
   FakePilot pilot;
   pilot.BeginFrame();
@@ -415,6 +417,7 @@ TEST(PilotTest, SaveFrameOutsideFrameIsDebugFatal) {
   Image image(1, 1);
   EXPECT_DEBUG_DEATH(pilot.SaveFrame(image), "outside a frame");
 }
+#endif  // GTEST_HAS_DEATH_TEST
 
 TEST(PilotTest, SaveFrameTwiceIsDebugFatal) {
   FakePilot pilot;
@@ -422,7 +425,9 @@ TEST(PilotTest, SaveFrameTwiceIsDebugFatal) {
   Image image(1, 1);
   pilot.BeginFrame();
   pilot.SaveFrame(image);
+#ifdef GTEST_HAS_DEATH_TEST
   EXPECT_DEBUG_DEATH(pilot.SaveFrame(image), "again in the same frame");
+#endif  // GTEST_HAS_DEATH_TEST
   pilot.EndFrame();
 
   // Each frame can be saved once.
@@ -450,7 +455,7 @@ TEST(PilotTest, SavingOnlyInAFrameUntilSaved) {
 
 #ifndef NDEBUG
 TEST(PilotTest, HandleOutlivingPilotIsDebugFatal) {
-  EXPECT_DEATH(
+  EXPECT_DEATH_IF_SUPPORTED(
       {
         PilotHandle handle;
         {

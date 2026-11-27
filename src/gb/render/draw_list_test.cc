@@ -206,47 +206,51 @@ TEST_F(DrawListTest, SwitchBetweenMeshAndPool) {
 
 TEST_F(DrawListDeathTest, MeshDrawsNeedAMesh) {
   draw_list_.SetMeshPool(pool_, material_, instance_data_.get());
-  EXPECT_DEATH(draw_list_.Draw(), "current_mesh_ != nullptr");
-  EXPECT_DEATH(draw_list_.DrawPartial(0, 1), "current_mesh_ != nullptr");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.Draw(), "current_mesh_ != nullptr");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.DrawPartial(0, 1),
+                            "current_mesh_ != nullptr");
 }
 
 TEST_F(DrawListDeathTest, PoolDrawsNeedAPool) {
   const MeshDraw draw = pooled_mesh_->GetDraw();
-  EXPECT_DEATH(draw_list_.Draw(draw), "current_mesh_pool_ != nullptr");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.Draw(draw),
+                            "current_mesh_pool_ != nullptr");
   draw_list_.SetMesh(mesh_, material_, instance_data_.get());
-  EXPECT_DEATH(draw_list_.Draw(draw), "current_mesh_pool_ != nullptr");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.Draw(draw),
+                            "current_mesh_pool_ != nullptr");
 
   // A mesh replaces the pool.
   draw_list_.SetMeshPool(pool_);
   draw_list_.SetMesh(mesh_);
-  EXPECT_DEATH(draw_list_.Draw(draw), "current_mesh_pool_ != nullptr");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.Draw(draw),
+                            "current_mesh_pool_ != nullptr");
 }
 
 TEST_F(DrawListDeathTest, PoolDrawWithoutInstanceData) {
   draw_list_.SetMeshPool(pool_, material_);
-  EXPECT_DEATH(draw_list_.Draw(pooled_mesh_->GetDraw()),
-               "current_instance_data_ != nullptr");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.Draw(pooled_mesh_->GetDraw()),
+                            "current_instance_data_ != nullptr");
 }
 
 TEST_F(DrawListDeathTest, PoolDrawWithManyInstances) {
   draw_list_.SetMeshPool(pool_, material_, instance_data_.get());
   MeshDraw draw = pooled_mesh_->GetDraw();
   draw.instance_count = 2;
-  EXPECT_DEATH(draw_list_.Draw(draw), "draw.instance_count == 1");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.Draw(draw), "draw.instance_count == 1");
 }
 
 TEST_F(DrawListDeathTest, IndirectDrawsNeedAPool) {
-  EXPECT_DEATH(draw_list_.DrawIndirect(draws_, 0, 1),
-               "current_mesh_pool_ != nullptr");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.DrawIndirect(draws_, 0, 1),
+                            "current_mesh_pool_ != nullptr");
   draw_list_.SetMesh(mesh_, material_, instance_data_.get());
-  EXPECT_DEATH(draw_list_.DrawIndirect(draws_, 0, 1),
-               "current_mesh_pool_ != nullptr");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.DrawIndirect(draws_, 0, 1),
+                            "current_mesh_pool_ != nullptr");
 }
 
 TEST_F(DrawListDeathTest, IndirectDrawWithoutInstanceData) {
   draw_list_.SetMeshPool(pool_, material_);
-  EXPECT_DEATH(draw_list_.DrawIndirect(draws_, 0, 1),
-               "current_instance_data_ != nullptr");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.DrawIndirect(draws_, 0, 1),
+                            "current_instance_data_ != nullptr");
 }
 
 TEST_F(DrawListDeathTest, IndirectDrawOfOtherType) {
@@ -258,25 +262,32 @@ TEST_F(DrawListDeathTest, IndirectDrawOfOtherType) {
   ASSERT_NE(other_draws, nullptr);
 
   draw_list_.SetMeshPool(pool_, material_, instance_data_.get());
-  EXPECT_DEATH(draw_list_.DrawIndirect(nullptr, 0, 1), "draws != nullptr");
-  EXPECT_DEATH(draw_list_.DrawIndirect(other_draws, 0, 1), "GetType");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.DrawIndirect(nullptr, 0, 1),
+                            "draws != nullptr");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.DrawIndirect(other_draws, 0, 1),
+                            "GetType");
 }
 
 TEST_F(DrawListDeathTest, IndirectDrawOutOfRange) {
   draw_list_.SetMeshPool(pool_, material_, instance_data_.get());
-  EXPECT_DEATH(draw_list_.DrawIndirect(draws_, -1, 1), "first >= 0");
-  EXPECT_DEATH(draw_list_.DrawIndirect(draws_, 0, -1), "count >= 0");
-  EXPECT_DEATH(draw_list_.DrawIndirect(draws_, 0, kDrawCount + 1), "GetCount");
-  EXPECT_DEATH(draw_list_.DrawIndirect(draws_, kDrawCount, 1), "GetCount");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.DrawIndirect(draws_, -1, 1),
+                            "first >= 0");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.DrawIndirect(draws_, 0, -1),
+                            "count >= 0");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.DrawIndirect(draws_, 0, kDrawCount + 1),
+                            "GetCount");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.DrawIndirect(draws_, kDrawCount, 1),
+                            "GetCount");
 }
 
 TEST_F(DrawListDeathTest, NullPool) {
-  EXPECT_DEATH(draw_list_.SetMeshPool(nullptr, material_), "pool != nullptr");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.SetMeshPool(nullptr, material_),
+                            "pool != nullptr");
 }
 
 TEST_F(DrawListDeathTest, PoolWithoutMaterial) {
-  EXPECT_DEATH(draw_list_.SetMeshPool(pool_),
-               "current_material_type_ != nullptr");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.SetMeshPool(pool_),
+                            "current_material_type_ != nullptr");
 }
 
 TEST_F(DrawListDeathTest, PoolWithOtherVertexType) {
@@ -286,7 +297,8 @@ TEST_F(DrawListDeathTest, PoolWithOtherVertexType) {
       &temp_resource_set_, vertex_type, IndexType::kUint16, 16, 16);
   ASSERT_NE(other_pool, nullptr);
 
-  EXPECT_DEATH(draw_list_.SetMeshPool(other_pool, material_), "GetVertexType");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.SetMeshPool(other_pool, material_),
+                            "GetVertexType");
 }
 
 TEST_F(DrawListDeathTest, MaterialWithOtherVertexTypeThanPool) {
@@ -302,7 +314,8 @@ TEST_F(DrawListDeathTest, MaterialWithOtherVertexTypeThanPool) {
   ASSERT_NE(other_material, nullptr);
 
   draw_list_.SetMeshPool(pool_, material_);
-  EXPECT_DEATH(draw_list_.SetMaterial(other_material), "GetVertexType");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.SetMaterial(other_material),
+                            "GetVertexType");
 
   // Once the pool is cleared, any material can be set.
   draw_list_.ClearBindings();
@@ -310,36 +323,47 @@ TEST_F(DrawListDeathTest, MaterialWithOtherVertexTypeThanPool) {
 }
 
 TEST_F(DrawListDeathTest, NullArguments) {
-  EXPECT_DEATH(draw_list_.SetMesh(nullptr, material_), "mesh != nullptr");
-  EXPECT_DEATH(draw_list_.SetMaterial(nullptr), "material != nullptr");
-  EXPECT_DEATH(draw_list_.SetMaterialData(nullptr), "material_data != nullptr");
-  EXPECT_DEATH(draw_list_.SetInstanceData(nullptr), "instance_data != nullptr");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.SetMesh(nullptr, material_),
+                            "mesh != nullptr");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.SetMaterial(nullptr),
+                            "material != nullptr");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.SetMaterialData(nullptr),
+                            "material_data != nullptr");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.SetInstanceData(nullptr),
+                            "instance_data != nullptr");
 }
 
 TEST_F(DrawListDeathTest, MeshWithoutMaterial) {
-  EXPECT_DEATH(draw_list_.SetMesh(mesh_), "current_material_type_ != nullptr");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.SetMesh(mesh_),
+                            "current_material_type_ != nullptr");
 }
 
 TEST_F(DrawListDeathTest, DrawWithoutMesh) {
   draw_list_.SetMaterial(material_);
   draw_list_.SetInstanceData(instance_data_.get());
-  EXPECT_DEATH(draw_list_.Draw(), "current_mesh_ != nullptr");
-  EXPECT_DEATH(draw_list_.DrawPartial(0, 1), "current_mesh_ != nullptr");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.Draw(), "current_mesh_ != nullptr");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.DrawPartial(0, 1),
+                            "current_mesh_ != nullptr");
 }
 
 TEST_F(DrawListDeathTest, DrawWithoutInstanceData) {
   draw_list_.SetMesh(mesh_, material_);
-  EXPECT_DEATH(draw_list_.Draw(), "current_instance_data_ != nullptr");
-  EXPECT_DEATH(draw_list_.DrawPartial(0, 1),
-               "current_instance_data_ != nullptr");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.Draw(),
+                            "current_instance_data_ != nullptr");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.DrawPartial(0, 1),
+                            "current_instance_data_ != nullptr");
 }
 
 TEST_F(DrawListDeathTest, DrawPartialOutOfRange) {
   draw_list_.SetMesh(mesh_, material_, instance_data_.get());
-  EXPECT_DEATH(draw_list_.DrawPartial(-1, 1), "first_triangle >= 0");
-  EXPECT_DEATH(draw_list_.DrawPartial(0, -1), "triangle_count >= 0");
-  EXPECT_DEATH(draw_list_.DrawPartial(0, 1, -1), "first_vertex >= 0");
-  EXPECT_DEATH(draw_list_.DrawPartial(0, 1, 3), "GetVertexCapacity");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.DrawPartial(-1, 1),
+                            "first_triangle >= 0");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.DrawPartial(0, -1),
+                            "triangle_count >= 0");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.DrawPartial(0, 1, -1),
+                            "first_vertex >= 0");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.DrawPartial(0, 1, 3),
+                            "GetVertexCapacity");
 }
 
 TEST_F(DrawListDeathTest, MeshWithOtherVertexType) {
@@ -349,33 +373,37 @@ TEST_F(DrawListDeathTest, MeshWithOtherVertexType) {
       &temp_resource_set_, vertex_type, DataVolatility::kPerFrame, 3, 1);
   ASSERT_NE(other_mesh, nullptr);
 
-  EXPECT_DEATH(draw_list_.SetMesh(other_mesh, material_, instance_data_.get()),
-               "GetVertexType");
+  EXPECT_DEATH_IF_SUPPORTED(
+      draw_list_.SetMesh(other_mesh, material_, instance_data_.get()),
+      "GetVertexType");
 }
 
 TEST_F(DrawListDeathTest, InstanceDataWithoutMaterial) {
-  EXPECT_DEATH(draw_list_.SetInstanceData(instance_data_.get()),
-               "current_material_type_ != nullptr");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.SetInstanceData(instance_data_.get()),
+                            "current_material_type_ != nullptr");
 }
 
 TEST_F(DrawListDeathTest, InstanceDataFromMaterialSet) {
   draw_list_.SetMaterial(material_);
-  EXPECT_DEATH(draw_list_.SetInstanceData(material_->GetMaterialBindingData()),
-               "ValidateInstanceBindingData");
+  EXPECT_DEATH_IF_SUPPORTED(
+      draw_list_.SetInstanceData(material_->GetMaterialBindingData()),
+      "ValidateInstanceBindingData");
 }
 
 TEST_F(DrawListDeathTest, MaterialDataFromOtherPipeline) {
   TestBindingData other_data(nullptr, BindingSet::kMaterial, {});
-  EXPECT_DEATH(draw_list_.SetMaterialData(&other_data),
-               "current_material_type_ != nullptr");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.SetMaterialData(&other_data),
+                            "current_material_type_ != nullptr");
   draw_list_.SetMaterial(material_);
-  EXPECT_DEATH(draw_list_.SetMaterialData(&other_data),
-               "material_data->GetPipeline");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.SetMaterialData(&other_data),
+                            "material_data->GetPipeline");
 }
 
 TEST_F(DrawListDeathTest, ScissorOutOfRange) {
-  EXPECT_DEATH(draw_list_.SetScissor(-1, 0, 1, 1), "FitsUint16.x.");
-  EXPECT_DEATH(draw_list_.SetScissor(0, 0, 65536, 1), "FitsUint16.width.");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.SetScissor(-1, 0, 1, 1),
+                            "FitsUint16.x.");
+  EXPECT_DEATH_IF_SUPPORTED(draw_list_.SetScissor(0, 0, 65536, 1),
+                            "FitsUint16.width.");
 }
 
 }  // namespace

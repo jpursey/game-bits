@@ -257,6 +257,7 @@ These add to the C++ style in the workflow.
 - Headers use include guards of the form `GB_<DIR>_<FILE>_H_` (not `#pragma once`), and end with `}  // namespace gb` followed by `#endif  // GB_<DIR>_<FILE>_H_`.
 - Include order: the file's own header first, then C/C++ standard headers in angle brackets, then third-party and Game Bits headers in quotes (`"absl/..."`, `"gtest/gtest.h"`, `"gb/..."`), with blank lines between groups.
 - Unit tests live next to the code they test as `<file>_test.cc`, are written with GoogleTest/GoogleMock inside `namespace gb { namespace { ... } }`, and use the shared helpers in `gb_test` (`src/gb/test`) for threading and other cross-cutting test support.
+- Death tests use `EXPECT_DEATH_IF_SUPPORTED` (or `ASSERT_DEATH_IF_SUPPORTED`), not `EXPECT_DEATH`, which GoogleTest defines only where it has death tests (not on the web). `EXPECT_DEBUG_DEATH` has no such form, so it goes inside `#ifdef GTEST_HAS_DEATH_TEST`, unless the test checks more in a release build than that the statement survives: then the test splits on `NDEBUG` instead, running the statement and its checks in release and `EXPECT_DEATH_IF_SUPPORTED` in debug (as `sdl_glog_test.cc` does).
 - C++20, built with both MSVC and clang-cl.
 
 ## Skills

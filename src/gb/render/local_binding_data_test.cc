@@ -395,8 +395,9 @@ TEST_F(LocalBindingDataTest, StorageBufferOfWrongTypeDies) {
                                      .SetLocation(BindingSet::kView, 1)
                                      .SetStorageBuffer(vector2_type)});
 
-  EXPECT_DEATH(binding_data.SetStorageBuffer(1, storage_buffer.Get()),
-               "ValidateDataType");
+  EXPECT_DEATH_IF_SUPPORTED(
+      binding_data.SetStorageBuffer(1, storage_buffer.Get()),
+      "ValidateDataType");
 }
 
 }  // namespace
