@@ -907,6 +907,27 @@ the direction's length. Separately, `CLine` and `CTriangle` convert implicitly
 from a pointer to an array, so any pointer converts; making them `explicit`
 breaks callers that rely on it.
 
+## Game loop waits without spinning
+
+- **Layers:** base, game
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Requested by:** OZ-3 *App structure*
+- **Background:** `Game::GameLoop` in `src/gb/game/game.cc`
+
+`Game::GameLoop` sleeps until a millisecond before each frame is due, then
+reads the clock in a busy loop for the rest. At 60 frames a second that keeps
+about 6% of a core busy even while the game has nothing to do, as an app that
+mostly waits on its user (such as OZ-3's `ozzy`) does. `RealtimeClock` already
+sleeps with `PreciseSleepFor`, so the loop could sleep once for the whole time
+remaining, or spin only where the platform's sleep can't wake close enough to
+the frame (deciding that in `gb_base`, beside `PreciseSleepFor`, rather than
+in the loop). Frames must stay as evenly paced as now, which is measured on
+Windows and Linux before and after. `game_test.cc`'s tests drive the loop with
+a `FakeClock` that advances on each read, and a clock that fails on any
+sleep, so they change with it, still never waiting on real time.
+
 ## Game state trace details
 
 - **Layers:** game
