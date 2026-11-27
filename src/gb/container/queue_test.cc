@@ -5,6 +5,7 @@
 
 #include "gb/container/queue.h"
 
+#include <cstdint>
 #include <deque>
 #include <memory>
 #include <random>
@@ -592,6 +593,75 @@ TEST(QueueTest, MatchesDeque) {
     }
     EXPECT_EQ(counts.init_construct + counts.copy_construct, counts.destruct);
   }
+}
+
+// An element that holds a queue of its own type, so Type is incomplete where
+// Queue<Type> is declared.
+struct TreeNode {
+  int value = 0;
+  Queue<TreeNode> children{1};
+};
+
+TEST(QueueTest, ElementHoldsQueueOfItsOwnType) {
+  TreeNode root;
+  root.children.push({1});
+  root.children.front().children.push({2});
+  ASSERT_EQ(root.children.size(), 1);
+  EXPECT_EQ(root.children.front().value, 1);
+  ASSERT_EQ(root.children.front().children.size(), 1);
+  EXPECT_EQ(root.children.front().children.front().value, 2);
+}
+
+// An element aligned to more than a pointer.
+struct alignas(16) Aligned16 {
+  int value;
+};
+
+// An element aligned to more than std::malloc() guarantees.
+struct alignas(64) Aligned64 {
+  int value;
+};
+
+template <typename Type>
+class QueueAlignmentTest : public ::testing::Test {};
+
+using AlignedTypes = ::testing::Types<Aligned16, Aligned64>;
+TYPED_TEST_SUITE(QueueAlignmentTest, AlignedTypes);
+
+template <typename Type>
+bool IsAligned(const Type& value) {
+  return reinterpret_cast<uintptr_t>(&value) % alignof(Type) == 0;
+}
+
+// Grows the queue into several buckets, and wraps around within them, checking
+// every element is aligned and holds what was pushed.
+TYPED_TEST(QueueAlignmentTest, HoldsElementsAligned) {
+  Queue<TypeParam> queue(3, 2);
+  std::deque<int> expected;
+  int next_value = 0;
+  for (int round = 0; round < 20; ++round) {
+    const int push_count = round % 2 == 0 ? 5 : 2;
+    for (int i = 0; i < push_count; ++i) {
+      queue.push({next_value});
+      expected.push_back(next_value++);
+      ASSERT_TRUE(IsAligned(queue.back())) << "value " << queue.back().value;
+      ASSERT_EQ(queue.back().value, expected.back());
+    }
+    for (int i = 0; i < 3 && !expected.empty(); ++i) {
+      ASSERT_TRUE(IsAligned(queue.front())) << "value " << queue.front().value;
+      ASSERT_EQ(queue.front().value, expected.front());
+      queue.pop();
+      expected.pop_front();
+    }
+  }
+  EXPECT_GT(queue.capacity(), 3);
+  Queue<TypeParam> copy(queue);
+  for (int value : expected) {
+    ASSERT_TRUE(IsAligned(copy.front())) << "value " << value;
+    ASSERT_EQ(copy.front().value, value);
+    copy.pop();
+  }
+  EXPECT_TRUE(copy.empty());
 }
 
 }  // namespace

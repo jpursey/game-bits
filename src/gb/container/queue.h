@@ -15,6 +15,7 @@
 #include <utility>
 
 #include "absl/log/check.h"
+#include "gb/base/aligned_memory.h"
 
 namespace gb {
 
@@ -103,15 +104,19 @@ class Queue {
   static inline constexpr size_type kInvalidIndex =
       std::numeric_limits<size_type>::max();
 
-  // Represents a chunk of storage for the queue. Buckets are stored in a
-  // circular linked list.
+  // Represents a chunk of storage for the queue, with its elements directly
+  // after it in the same allocation. Buckets are stored in a circular linked
+  // list.
   struct Bucket {
     Bucket() = default;
 
     // True if this bucket can be pushed to at the front. This is set to true
     // when front_ consumes the first element, and is cleared when back_ points
     // to the first element.
-    bool can_push = false;
+    //
+    // Its alignment makes the bucket aligned for its elements, so they start
+    // aligned right after it.
+    alignas(Type) bool can_push = false;
 
     // How many elements this bucket can hold.
     size_type capacity = 0;
@@ -132,8 +137,14 @@ class Queue {
       return reinterpret_cast<Type*>(this + 1) + index;
     }
   };
-  static_assert(std::is_trivially_destructible_v<Bucket>,
-                "Buckets have their memory freed and are never destructed");
+
+  // True if a bucket needs more alignment than std::malloc() guarantees. This
+  // is a function rather than a constant so Type may be incomplete wherever
+  // Queue<Type> is declared, as it is for an element that holds a queue of
+  // its own type.
+  static constexpr bool IsOverAligned() {
+    return alignof(Bucket) > alignof(std::max_align_t);
+  }
 
   // Represents a position in the queue.
   struct Position {
@@ -150,6 +161,9 @@ class Queue {
   // Allocates a new bucket, pointing to itself. If the capacity is 0, this
   // returns null.
   Bucket* NewBucket(size_type capacity);
+
+  // Frees a bucket allocated by NewBucket().
+  static void FreeBucket(Bucket* bucket);
 
   // Allocates a new bucket of size grow_capacity_ and inserts it after
   // prev_bucket. The queue must be able to grow (grow_capacity_ is not zero).
@@ -191,16 +205,33 @@ class Queue {
 
 template <typename Type>
 typename Queue<Type>::Bucket* Queue<Type>::NewBucket(size_type capacity) {
-  static_assert(alignof(Bucket) >= alignof(Type));
+  static_assert(std::is_trivially_destructible_v<Bucket>,
+                "Buckets have their memory freed and are never destructed");
   if (capacity == 0) {
     return nullptr;
   }
-  Bucket* bucket =
-      new (std::malloc(sizeof(Bucket) + sizeof(Type) * capacity)) Bucket;
+  const size_type size = sizeof(Bucket) + sizeof(Type) * capacity;
+  void* memory;
+  if constexpr (IsOverAligned()) {
+    memory = internal::AllocAligned(size, alignof(Bucket));
+  } else {
+    memory = std::malloc(size);
+  }
+  CHECK(memory != nullptr) << "Queue failed to allocate a bucket";
+  Bucket* bucket = new (memory) Bucket;
   bucket->capacity = capacity;
   bucket->next = bucket->prev = bucket;
   capacity_ += capacity;
   return bucket;
+}
+
+template <typename Type>
+void Queue<Type>::FreeBucket(Bucket* bucket) {
+  if constexpr (IsOverAligned()) {
+    internal::FreeAligned(bucket);
+  } else {
+    std::free(bucket);
+  }
 }
 
 template <typename Type>
@@ -242,7 +273,7 @@ void Queue<Type>::Clear() {
     Bucket* bucket = buckets_;
     do {
       Bucket* next = bucket->next;
-      std::free(bucket);
+      FreeBucket(bucket);
       bucket = next;
     } while (bucket != buckets_);
   }
