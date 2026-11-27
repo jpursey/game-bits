@@ -74,5 +74,36 @@ TEST(SleepTest, ReturnsAtOnceWhenNotPositive) {
   EXPECT_LT(absl::Now() - start, absl::Milliseconds(500));
 }
 
+TEST(SleepTest, SleepsUntilTime) {
+  const absl::Time time = absl::Now() + absl::Milliseconds(10);
+  PreciseSleepUntil(time);
+  const absl::Time after = absl::Now();
+  EXPECT_GE(after, time);
+  EXPECT_LT(after, time + absl::Seconds(1));
+}
+
+TEST(SleepTest, WakesCloseToTime) {
+  // Were they only woken at the system timer's tick, each of these short
+  // sleeps would wake up to a whole 15.6 ms tick late. A busy machine can delay
+  // any one of them, so this only needs one to wake well within a tick.
+  const absl::Duration duration = absl::Milliseconds(2);
+  const absl::Duration within_tick = absl::Milliseconds(4);
+  const int kMaxSleepCount = 100;
+  absl::Duration closest = absl::InfiniteDuration();
+  for (int i = 0; i < kMaxSleepCount && closest >= within_tick; ++i) {
+    const absl::Time time = absl::Now() + duration;
+    PreciseSleepUntil(time);
+    closest = std::min(closest, absl::Now() - time);
+  }
+  EXPECT_LT(closest, within_tick);
+}
+
+TEST(SleepTest, SleepUntilReturnsAtOnceWhenPast) {
+  const absl::Time start = absl::Now();
+  PreciseSleepUntil(start);
+  PreciseSleepUntil(start - absl::Seconds(1));
+  EXPECT_LT(absl::Now() - start, absl::Milliseconds(500));
+}
+
 }  // namespace
 }  // namespace gb

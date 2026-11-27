@@ -4,6 +4,7 @@
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
 #include "absl/log/check.h"
+#include "absl/time/clock.h"
 #include "gb/base/sleep.h"
 #include "gb/base/win_platform.h"
 
@@ -37,6 +38,10 @@ class HighResolutionTimer {
   const HANDLE handle_;
 };
 
+// PreciseSleepUntil() sets the high resolution timer to wake this long before
+// its time, as a margin for the timer waking late, and spins for the rest.
+constexpr absl::Duration kSpinTime = absl::Milliseconds(1);
+
 }  // namespace
 
 void PreciseSleepFor(absl::Duration duration) {
@@ -58,6 +63,20 @@ void PreciseSleepFor(absl::Duration duration) {
       << "SetWaitableTimer failed: " << GetWindowsError();
   CHECK(WaitForSingleObject(timer, INFINITE) == WAIT_OBJECT_0)
       << "WaitForSingleObject failed: " << GetWindowsError();
+}
+
+void PreciseSleepUntil(absl::Time time) {
+  // Sleeps again if woken early, or if the clock was set back, so only the last
+  // kSpinTime is ever spun.
+  absl::Duration remaining = time - absl::Now();
+  while (remaining > kSpinTime) {
+    PreciseSleepFor(remaining - kSpinTime);
+    remaining = time - absl::Now();
+  }
+  while (remaining > absl::ZeroDuration()) {
+    YieldProcessor();
+    remaining = time - absl::Now();
+  }
 }
 
 }  // namespace gb

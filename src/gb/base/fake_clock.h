@@ -22,6 +22,11 @@ class FakeClock : public Clock {
   void SleepFor(absl::Duration duration) override {
     now_ += duration + sleep_offset_;
   }
+  void SleepUntil(absl::Time time) override {
+    if (now_ < time) {
+      now_ = time + sleep_offset_;
+    }
+  }
 
   absl::Time GetTime() { return now_; }
   void SetTime(absl::Time now) { now_ = now; }

@@ -61,7 +61,6 @@ void Game::GameLoop() {
   absl::Duration delta_time;
   do {
     absl::Time now = clock_->Now();
-    delta_time = now - last_time;
     absl::Duration time_remaining = next_time - now;
     if (time_remaining < absl::ZeroDuration()) {
       // The game is running slower than the desired frame rate (or the frame
@@ -74,23 +73,11 @@ void Game::GameLoop() {
         next_time = now;
       }
     } else {
-      // We have extra time on our hands. Be nice first, and yield time to the
-      // system if we need to wait more than a millisecond.
-      while (time_remaining > absl::Milliseconds(1)) {
-        clock_->SleepFor(time_remaining - absl::Milliseconds(1));
-        now = clock_->Now();
-        time_remaining = next_time - now;
-      }
-
-      // Busy loop the rest of the time, if there is any.
-      while (time_remaining > absl::ZeroDuration()) {
-        now = clock_->Now();
-        time_remaining = next_time - now;
-      }
-
-      // Calculate the actual delta.
-      delta_time = now - last_time;
+      // We have extra time on our hands, so wait until the frame is due.
+      clock_->SleepUntil(next_time);
+      now = clock_->Now();
     }
+    delta_time = now - last_time;
 
     // Advance the next time by min_delta_time (rather than from now) so we can
     // maintain a reliable frame rate. Otherwise we will drift slightly slower

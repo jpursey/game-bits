@@ -23,6 +23,10 @@ class Clock {
   // Sleeps the current thread for the specified duration.
   virtual void SleepFor(absl::Duration duration) = 0;
 
+  // Sleeps the current thread until `time`, waking as close to it as the clock
+  // allows. Returns immediately if `time` has passed.
+  virtual void SleepUntil(absl::Time time) = 0;
+
  protected:
   Clock() = default;
 };
@@ -39,6 +43,7 @@ class RealtimeClock : public Clock {
 
   absl::Time Now() override { return absl::Now(); }
   void SleepFor(absl::Duration duration) override { PreciseSleepFor(duration); }
+  void SleepUntil(absl::Time time) override { PreciseSleepUntil(time); }
 };
 
 }  // namespace gb

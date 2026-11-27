@@ -18,6 +18,15 @@ namespace gb {
 // of a frame.
 void PreciseSleepFor(absl::Duration duration);
 
+// Sleeps the current thread until `time` (as absl::Now() reads it), waking as
+// close to it as the platform allows, to pace work such as a game's frames.
+// Returns immediately if `time` has passed.
+//
+// Where the platform's sleep can't wake close enough, this sleeps until shortly
+// before `time` and spins for the rest, keeping a core busy for that part. To
+// wait without ever spinning, use PreciseSleepFor().
+void PreciseSleepUntil(absl::Time time);
+
 }  // namespace gb
 
 #endif  // GB_BASE_SLEEP_H_

@@ -251,6 +251,22 @@ TEST_F(GameTest, GameFrameRateRecoversAfterSlowFrame) {
             absl::Milliseconds(10) + absl::Microseconds(100));
 }
 
+TEST_F(GameTest, GameWaitsForEachFrameWithoutSpinning) {
+  // The clock only moves when the game sleeps, so a game that read the clock
+  // until a frame was due would never get there.
+  clock_.SetAutoAdvance(absl::ZeroDuration());
+  context_.SetValue<int>(Game::kKeyMaxFps, 100);
+
+  TestGame game;
+  game.SetUpdateCount(10);
+
+  const absl::Time start = clock_.GetTime();
+  EXPECT_TRUE(game.Run(&context_, {}));
+  EXPECT_EQ(clock_.GetTime() - start, absl::Milliseconds(100));
+  EXPECT_EQ(game.GetLastDeltaTime(), absl::Milliseconds(10));
+  EXPECT_EQ(game.GetTotalUpdateTime(), absl::Milliseconds(100));
+}
+
 //------------------------------------------------------------------------------
 // Piloted games
 //------------------------------------------------------------------------------
@@ -265,6 +281,9 @@ class UnusedClock final : public Clock {
   }
   void SleepFor(absl::Duration duration) override {
     ADD_FAILURE() << "SleepFor() called";
+  }
+  void SleepUntil(absl::Time time) override {
+    ADD_FAILURE() << "SleepUntil() called";
   }
 };
 
