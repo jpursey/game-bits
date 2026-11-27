@@ -174,6 +174,29 @@ out/build/linux-clang-Debug/src/gb/base/gb_base_test --gtest_filter=ContextTest.
 
 A full build is about 990 steps, about 8 minutes on 4 cores. Test binaries have no `.exe`. `xvfb-run -a` runs the tests in a virtual X server, so SDL's window tests use its X11 driver, as programs do; where there is a display already, ctest runs on its own. Run tests as an ordinary user: root ignores read-only permissions, so `CommonProtocolTest.ReadOnlyFile` fails as root.
 
+### Web
+
+Game Bits also builds for the web with Emscripten, on Linux, and its tests run under Node. A web build is either without threads, the default, which runs anywhere, or with them (`-DGB_WEB_THREADS=ON`), which in a browser only runs on a page served with cross-origin isolation headers. One build can't be both. `tools/install-emsdk.sh` installs the Emscripten SDK, with the Node it runs programs with (about 1.6 GB), once. Then each shell that builds or runs a web build sources its `emsdk_env.sh`, which puts `emcmake` and `node` on the PATH:
+
+```
+tools/install-emsdk.sh ~/emsdk 7.0.1
+source ~/emsdk/emsdk_env.sh
+```
+
+Then, with `emcmake`, which configures with Emscripten's toolchain:
+
+```
+emcmake cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -S . -B out/build/web-Debug
+emcmake cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DGB_WEB_THREADS=ON -S . -B out/build/web-threads-Debug
+cmake --build out/build/web-Debug --target gb_parse_test
+ctest --test-dir out/build/web-Debug --output-on-failure -R gb_parse_test
+node out/build/web-Debug/src/gb/parse/gb_parse_test.js --gtest_filter=LexerTest.*
+```
+
+Configuring takes about 150 seconds, mostly Emscripten compiling CMake's feature checks, and a full build about 15 minutes on 4 cores. A program is `<name>.js`, beside its `<name>.wasm`, which `node` runs with the machine's own files and environment, and ctest runs each test that way. A web build leaves out `gb_render_vulkan` and `gb_render_vulkan_sdl`, `gb_job`, which needs fibers, and `gb_profile`, which needs the x86 timestamp counter (`cpu_ticks.h`, left out of `gb_thread` with it).
+
+Until the rest of the Web platform feature (`docs/worklog/web_platform.md`) is done, some libraries and tests don't compile for the web yet, so a full web build fails. Build the test programs that do compile by name (`gb_collide_test`, `gb_config_test`, `gb_game_test`, `gb_image_test`, `gb_message_test`, `gb_parse_test`, `gb_pilot_script_test`, `gb_resource_test`, and `gb_test_test`), and run only those with `ctest -R`. In a build without threads, the tests that start threads fail.
+
 ### Checks
 
 Every change is checked as follows:

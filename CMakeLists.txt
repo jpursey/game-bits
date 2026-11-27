@@ -48,6 +48,20 @@ if (MSVC)
   endforeach()
 endif()
 
+# A web build (emcmake cmake) is either without threads, the default, or with
+# them. With threads, everything in Game Bits, third-party code included, is
+# compiled and linked with -pthread, as code compiled without it can't link
+# with code compiled with it. Game Bits' libraries pass it on, so a project's
+# own targets that use them get it too (see gb_set_target_properties). Any
+# other target in a project needs it added by the project.
+if (EMSCRIPTEN)
+  option(GB_WEB_THREADS "Build for the web with threads" OFF)
+  if (GB_WEB_THREADS)
+    add_compile_options(-pthread)
+    add_link_options(-pthread)
+  endif()
+endif()
+
 list(APPEND CMAKE_MODULE_PATH
   "${GB_DIR}/CMake"
 )
@@ -143,6 +157,10 @@ if (MSVC)
 endif()
 unset(FLATBUFFERS_BUILD_TESTS)
 unset(FLATBUFFERS_INSTALL)
+
+# In a web build, the build runs flatc under Node, where it reads and writes
+# the machine's files.
+gb_set_web_program_properties(flatc)
 
 ####### libccd
 # Instead of add_subdirectory, define the ccd target directly to avoid

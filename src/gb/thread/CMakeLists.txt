@@ -36,15 +36,26 @@ else()
   )
 endif()
 
+# The CPU's timestamp counter (cpu_ticks.h) is x86's, which the web doesn't
+# have.
+if (NOT EMSCRIPTEN)
+  set(gb_thread_cpu_ticks_SOURCE
+    cpu_ticks.cc cpu_ticks.h
+    cpu_ticks_internal.cc cpu_ticks_internal.h
+  )
+  set(gb_thread_cpu_ticks_TEST_SOURCE
+    cpu_ticks_test.cc
+  )
+endif()
+
 set(gb_thread_SOURCE
-  cpu_ticks.cc cpu_ticks.h
-  cpu_ticks_internal.cc cpu_ticks_internal.h
   cpu_topology.h
   cpu_topology_internal.cc cpu_topology_internal.h
   fiber.h
   thread.h
   thread_placement.cc thread_placement.h
   thread_types.h
+  ${gb_thread_cpu_ticks_SOURCE}
   ${gb_thread_internal_SOURCE}
 )
 
@@ -59,11 +70,11 @@ set(gb_thread_DEPS
 )
 
 set(gb_thread_TEST_SOURCE
-  cpu_ticks_test.cc
   cpu_topology_test.cc
   fiber_test.cc
   thread_placement_test.cc
   thread_test.cc
+  ${gb_thread_cpu_ticks_TEST_SOURCE}
   ${gb_thread_internal_TEST_SOURCE}
 )
 

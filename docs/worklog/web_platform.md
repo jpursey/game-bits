@@ -189,6 +189,13 @@ Recorded here as it was found:
   with threads. (`gb_job` is left out.)
 - Emscripten's default stack is 64 KiB, for `main()` and each thread. Nothing
   overflowed it, but nothing deep was looked for. (CL1)
+- CL1 makes every stack 1 MiB (`-sSTACK_SIZE`, which threads also take), as on
+  Windows. `gb_parse_test`, the deepest, passes at 64 KiB and overflows at
+  16 KiB, in `ParserProgramTest.SelfParse`.
+- Without threads, all 35 tests that fail in the nine test programs CL1 builds
+  abort constructing a `std::thread` ("thread constructor failed"): 2 in
+  `gb_config_test`, 1 in `gb_game_test`, 10 in `gb_message_test`, 2 in
+  `gb_resource_test`, and 20 in `gb_test_test`.
 - Abseil reports "Symbolization unavailable" once in every test program: the
   pinned copy needs an Emscripten option that was removed in 4.0.14. It is
   harmless. (*Abseil and GoogleTest update*)
@@ -199,7 +206,7 @@ Not yet checked:
 
 ## CLs
 
-### CL1 [ ] build: Emscripten and a web build
+### CL1 [x] build: Emscripten and a web build
 
 Depends on: nothing.
 
