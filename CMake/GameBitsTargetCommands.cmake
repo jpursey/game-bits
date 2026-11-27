@@ -20,7 +20,8 @@
 ##  Target_TEST_LIBS    Additional external libraries for this unit test target
 ##
 ## Every executable these define, and any other given gb_set_target_properties,
-## embeds the Game Bits manifest on Windows (see gb_embed_manifest).
+## embeds the Game Bits manifest on Windows (see gb_embed_manifest), and in a
+## web build is a program for Node (see gb_set_web_program_properties).
 ###############################################################################
 
 # -Wcharacter-conversion (between char8_t, char16_t, and char32_t) is new in
@@ -38,6 +39,7 @@ function(gb_set_target_properties NAME)
   get_target_property(_type ${NAME} TYPE)
   if (_type STREQUAL "EXECUTABLE")
     gb_embed_manifest(${NAME})
+    gb_set_web_program_properties(${NAME})
   endif()
   # Implicit conversion warnings are off for every target that uses Game Bits,
   # primarily for Abseil and other third-party headers. Clang's are the
@@ -56,6 +58,18 @@ function(gb_set_target_properties NAME)
       target_compile_options(${NAME} PUBLIC -Wno-character-conversion)
     endif()
   endif()
+
+  # Abseil's headers use Emscripten's old version macros, which Emscripten 7
+  # deprecates. With threads, whatever uses Game Bits is built with -pthread,
+  # as Game Bits is.
+  if (EMSCRIPTEN)
+    target_compile_options(${NAME} PUBLIC -Wno-deprecated-pragma)
+    if (GB_WEB_THREADS)
+      target_compile_options(${NAME} PUBLIC -pthread)
+      target_link_options(${NAME} PUBLIC -pthread)
+    endif()
+  endif()
+
   if (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
     target_compile_options(${NAME} PUBLIC
       /wd4244 /wd4267 /wd4800  # 'type1' to 'type2', possible loss of data
@@ -113,6 +127,37 @@ endfunction()
 function(gb_embed_manifest NAME)
   if (WIN32)
     target_sources(${NAME} PRIVATE "${GB_DIR}/CMake/GameBits.manifest")
+  endif()
+endfunction()
+
+# In a web build, makes an executable a program for Node (node <name>.js), as a
+# command line program is on any other platform: it uses the machine's own
+# files and environment, exits with main()'s result, and its memory grows as it
+# needs. With threads, main() runs on a thread of its own, so it can start
+# threads and wait for them.
+#
+# Emscripten's stacks are 64 KiB by default, for main() and each thread. They
+# are 1 MiB here, Windows' default and the smaller of the other platforms
+# Game Bits builds on, so code that fits there fits here. Each thread gets the
+# same as main(), as std::thread takes no size. Wasm keeps most locals on a
+# stack of its own, so this one holds less than a native stack does.
+#
+# Emscripten warns that with threads, memory that grows slows JavaScript's
+# access to it. Programs here spend their time in wasm, which it doesn't slow.
+function(gb_set_web_program_properties NAME)
+  if (EMSCRIPTEN)
+    target_link_options(${NAME} PRIVATE
+      -sNODERAWFS=1
+      -sEXIT_RUNTIME=1
+      -sALLOW_MEMORY_GROWTH=1
+      -sSTACK_SIZE=1MB
+    )
+    if (GB_WEB_THREADS)
+      target_link_options(${NAME} PRIVATE
+        -sPROXY_TO_PTHREAD
+        -Wno-pthreads-mem-growth
+      )
+    endif()
   endif()
 endfunction()
 
@@ -235,6 +280,7 @@ endfunction()
 function(gb_add_test NAME)
   add_executable(${NAME}_test ${${NAME}_TEST_SOURCE})
   gb_embed_manifest(${NAME}_test)
+  gb_set_web_program_properties(${NAME}_test)
 
   if(DEFINED ${NAME}_TEST_FBS)
     string(REGEX REPLACE "_" "/" ${NAME}_TEST_FBS_PREFIX ${NAME})
@@ -271,7 +317,9 @@ function(gb_add_test NAME)
     set_target_properties(${NAME}_test PROPERTIES FOLDER Tests)
   endif()
 
-  add_test(${NAME}_test ${NAME}_test)
+  # Naming the target, rather than a file, runs the test through the
+  # toolchain's emulator (Node, in a web build) when cross-compiling.
+  add_test(NAME ${NAME}_test COMMAND ${NAME}_test)
 endfunction()
 
 function(gb_add_library NAME)

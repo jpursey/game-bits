@@ -11,8 +11,9 @@ function(gb_external_libraries)
   # Only from the Vulkan SDK (VULKAN_SDK is set by its installer on Windows,
   # and by its setup-env.sh on Linux), as the code needs a newer Vulkan than
   # Linux distributions package. A VULKAN_SDK without an SDK fails configure,
-  # rather than quietly leaving out the Vulkan libraries.
-  if(DEFINED ENV{VULKAN_SDK})
+  # rather than quietly leaving out the Vulkan libraries. A web build leaves
+  # them out whether or not it is set.
+  if(DEFINED ENV{VULKAN_SDK} AND NOT EMSCRIPTEN)
     find_package(Vulkan REQUIRED)
     add_library(Vulkan INTERFACE IMPORTED)
     target_link_libraries(Vulkan INTERFACE Vulkan::Vulkan)
