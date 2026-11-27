@@ -6,6 +6,7 @@
 #include "gb/cli/cli_command_line.h"
 
 #include <cstdint>
+#include <initializer_list>
 #include <limits>
 #include <string>
 #include <string_view>
@@ -1273,16 +1274,21 @@ const CliFlag<std::string_view> kGoal = {
     .name = "goal", .short_name = 'g', .default_value = "all"};
 const CliFlag<std::string_view> kKey = {.name = "key", .optional = false};
 
-// The program's flags and commands are all added, as a class member's
-// initializer lists don't outlive its constructor.
+// The program's own lists have static storage, as a braced list written in a
+// class member's initializer is destroyed when the constructor returns.
+const std::initializer_list<CliAnyFlag> kPartsFlags = {&kQuiet};
+const std::initializer_list<const CliCommand*> kPartsCommands = {&kAdd};
+
 class CliAddedTest : public CliCommandLineRunTest {
  protected:
-  const std::vector<CliAnyFlag> added_flags_ = {&kQuiet, &kGoal, &kVerbose};
-  const std::vector<const CliCommand*> added_commands_ = {&kAdd, &kStatus,
+  const std::vector<CliAnyFlag> added_flags_ = {&kGoal, &kVerbose};
+  const std::vector<const CliCommand*> added_commands_ = {&kStatus,
                                                           &kCliHelpCommand};
   const CliCommand program_ = {
       .name = "parts",
+      .flags = kPartsFlags,
       .added_flags = added_flags_,
+      .commands = kPartsCommands,
       .added_commands = added_commands_,
       .run = RunNothing,
   };

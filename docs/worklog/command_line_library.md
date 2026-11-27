@@ -114,9 +114,11 @@ A program with nothing in its context calls `RunCommandLine(&kProgram, args)`.
   command, as a span doesn't extend an array's life as an initializer list
   does. gb_cli treats them everywhere as if they followed `flags` and
   `commands`: parsing, reading values, validating definitions, and help. A
-  command that is a class member gives all of its flags and subcommands this
-  way, as the arrays of its initializer lists don't outlive the constructor,
-  and can't have arguments or constraints, which have no added form.
+  command made at run time may still have braced lists if it is a local, or
+  copies of lists with static storage
+  (`const std::initializer_list<CliAnyFlag> kCoreFlags = {...};`) anywhere.
+  Only a braced list written where a class member is initialized dangles, as
+  its array is destroyed when the constructor returns.
 - **Flags:** a `CliFlag<T>` has a long name (`--name`), an optional short name
   (`-n`), a value name shown in help (defaulting to the name), help, choices,
   a default, and validators. Flags are optional by default, as arguments are

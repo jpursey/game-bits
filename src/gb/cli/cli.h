@@ -65,7 +65,13 @@ namespace gb {
 //
 // A command made at run time, from parts of the program that each have their
 // own flags or subcommands, gives them in its `added_flags` and
-// `added_commands` instead (see CliCommand).
+// `added_commands` instead (see CliCommand). Its other lists may be braced
+// lists if it is a local, which keeps their arrays as long as it is in scope,
+// or copies of lists with static storage
+// (`const std::initializer_list<CliAnyFlag> kCoreFlags = {...};`). A braced
+// list written where a class member is initialized is destroyed when the
+// constructor returns, so a command that is a class member uses only the
+// latter.
 //
 // Definitions with lists can't be constexpr (see internal::CliNotConstexpr), so
 // they are initialized when the program starts, not at compile time. A
@@ -271,14 +277,8 @@ struct CliCommand {
   // as if they followed `flags`. The caller keeps their array alive as long as
   // the command, as a span doesn't extend its life as an initializer list
   // does. The flags themselves are definitions with static storage, as any
-  // others.
-  //
-  // A command that is a class member can't use its initializer lists, whose
-  // arrays are destroyed when the constructor that initializes it returns. It
-  // gives its flags and subcommands in `added_flags` and `added_commands`, and
-  // can't have arguments or constraints. A class whose command spans its own
-  // members must not be copied or moved, as the copy's spans would still
-  // point into the original.
+  // others. A class holding both a command and the arrays it spans must not be
+  // copied or moved, as the copy's spans would still point into the original.
   absl::Span<const CliAnyFlag> added_flags;
 
   // The command's positional arguments, in order. If the command has
