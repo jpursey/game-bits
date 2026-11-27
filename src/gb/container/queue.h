@@ -107,17 +107,16 @@ class Queue {
   // Represents a chunk of storage for the queue, with its elements directly
   // after it in the same allocation. Buckets are stored in a circular linked
   // list.
-  //
-  // A bucket is aligned for its elements, so they start aligned right after
-  // it.
-  struct alignas(std::max({alignof(Type), alignof(void*),
-                           alignof(size_type)})) Bucket {
+  struct Bucket {
     Bucket() = default;
 
     // True if this bucket can be pushed to at the front. This is set to true
     // when front_ consumes the first element, and is cleared when back_ points
     // to the first element.
-    bool can_push = false;
+    //
+    // Its alignment makes the bucket aligned for its elements, so they start
+    // aligned right after it.
+    alignas(Type) bool can_push = false;
 
     // How many elements this bucket can hold.
     size_type capacity = 0;
