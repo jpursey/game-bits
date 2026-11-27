@@ -22,6 +22,143 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
+## Programs in the browser
+
+- **Layers:** build, base, game, sdl, pilot, tools, templates
+- **Size:** large
+- **Feature workflow:** yes
+- **Depends on:** *Web platform*
+- **Background:** [Web platform](worklog/web_platform.md), whose *The web
+  port* records the decisions this follows
+
+A web build makes programs for Node, so nothing built on `gb_game` or SDL runs
+in a browser yet. Make a windowed program (`gb_add_win_executable`) a page: its
+HTML, JavaScript, and WebAssembly, with SDL's window as the page's canvas, and
+keyboard and mouse input from it.
+- The game loop stays a blocking loop, with JSPI: where `Game` waits for the
+  next frame, the web's wait returns to the browser until its next animation
+  frame, which is also what paces frames there. `Game::Run()` returns and
+  cleans up as it does on any platform.
+- Run a program in a headless browser with a pilot script, as
+  `tools/run-program.sh` does on Linux, and bring the frames it saves and its
+  log back out of the browser. Chromium and Playwright are in cloud sessions
+  already. SDL's tests that need a browser's video driver run this way too.
+- A program's arguments come from the page's address or its script, as there
+  is no command line.
+- In a build with threads, a thread started from the browser's main thread
+  doesn't run until that thread returns to the browser, unless a pool of them
+  was made at startup (`-sPTHREAD_POOL_SIZE`), and waiting on the main thread
+  spins. Decide the pool's size, and say what a program must not wait for.
+- `templates/sdl` builds for the web and shows its window. Nothing can draw
+  with `gb_render` until *WebGPU render backend*.
+
+## WebGPU render backend
+
+- **Layers:** build, render, imgui, examples, CI
+- **Size:** large
+- **Feature workflow:** yes
+- **Depends on:** *Programs in the browser*
+- **Background:** [Web platform](worklog/web_platform.md);
+  `gb/render/render_backend.h`; `gb/render/vulkan`;
+  [issue 4](https://github.com/jpursey/game-bits/issues/4)
+
+`gb_render` draws only with Vulkan, which no browser has. Add a WebGPU backend
+(`gb_render_webgpu`) beside it, on Dawn's bindings for Emscripten (the
+`emdawnwebgpu` port, the only supported ones), so render-check and ImGui draw
+in a browser. WebGPU is in Chrome on Windows, macOS, and Android, Firefox on
+Windows and Apple-silicon Macs, and Safari 26, but only partly on Linux.
+- Shaders: a browser takes only WGSL, where the build makes SPIR-V from GLSL
+  with `glslc`. Convert it when building. Tint (Dawn's compiler) reads SPIR-V
+  and splits GLSL's combined image samplers, but has to be built, as nothing
+  ships it. Naga installs with Rust's `cargo`, and needs the samplers split
+  first, with `spirv-opt` from the Vulkan SDK. Either is a new dependency of
+  the build, to decide first.
+- What WebGPU lacks that `gb_render` has: wireframe fill (`RasterMode::kLine`),
+  clamp to border, 4-bit textures (`kRgba4`), and drawing many indirect draws
+  in one call, which is one call per draw there. Indirect draws with a first
+  instance are an optional feature (`indirect-first-instance`). Multisampling
+  is 1 or 4 samples only.
+- The backend's waits (for a device, and for a frame read back for the pilot's
+  saved frames) block with JSPI, so `RenderBackend` doesn't change.
+- Check it as the Vulkan backend is: render-check's scripts, run in a headless
+  browser in sessions and CI. Chromium needs flags to make a WebGPU device
+  with no GPU (SwiftShader), which nobody has tried here.
+- The same code builds against Dawn on Windows and Linux, which has prebuilt
+  releases. That would let the backend be debugged outside a browser, but is
+  another dependency, so decide whether it is worth it.
+
+## Files on the web
+
+- **Layers:** build, file, resource
+- **Size:** medium
+- **Feature workflow:** yes
+- **Depends on:** *Programs in the browser*
+- **Background:** [Web platform](worklog/web_platform.md);
+  `gb/file/local_file_protocol.h`
+
+A program in a browser has no files: `LocalFileProtocol` there sees only an
+empty file system in memory, so a program can't load its assets or keep
+anything. Give a program its assets, either packed with it when it is built
+or fetched from beside its page when opened, and somewhere to save that is
+still there the next time (the browser's private file storage). Loading must
+not need threads, as a build without them is the default. An asset fetched
+from the network arrives later, where every read in `gb_file` returns at
+once, so decide whether assets are all loaded before `main()` or a read can
+wait with JSPI.
+
+## Web demos
+
+- **Layers:** build, CI, examples
+- **Size:** medium
+- **Feature workflow:** no
+- **Depends on:** *WebGPU render backend*, *Files on the web*, *Block-world
+  and ImGui shaders compiled by the build*
+- **Background:** [Web platform](worklog/web_platform.md)
+
+Show Game Bits running without building it. Host block-world and render-check
+from the repository with GitHub Pages, built and published by a workflow on
+each push to `main`, and linked from README.md. Also package a program as a
+Claude artifact, to share by its link: a page of at most 16 MB with each file
+beside it at most 15 MB, built without threads, as an artifact isn't
+cross-origin isolated. Block-world's assets and a release build's size decide
+whether it fits.
+
+## Jobs on the web
+
+- **Layers:** thread, job
+- **Size:** large
+- **Feature workflow:** yes
+- **Depends on:** *Web platform*
+- **Background:** [Web platform](worklog/web_platform.md); *Linux threads and
+  fibers*
+
+The only job system, `FiberJobSystem`, needs fibers, which the web doesn't
+have, so a program that runs jobs can't run there. Neither example does yet.
+Emscripten has fibers of its own, built on what JSPI is built on, for a build
+with threads. A build without threads has neither, so jobs there would have to
+run on the thread that waits for them. Design both before starting: a program
+written against `JobSystem` should run in either build.
+
+## Abseil and GoogleTest update
+
+- **Layers:** third_party, build
+- **Size:** medium
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Web platform](worklog/web_platform.md)
+
+Abseil's and GoogleTest's submodules are from September 2024. Update both to
+their current releases, and fix what changes for the code that uses them.
+- Abseil's headers use Emscripten's old version macros, which Emscripten 7
+  deprecates, so a web build turns `-Wno-deprecated-pragma` on for every
+  target. Remove that once the headers no longer need it.
+- The pinned Abseil can't symbolize a stack trace on the web, and says so once
+  in every test program, as it needs an Emscripten option that no longer
+  exists.
+
+This changes the Abseil that projects built on Game Bits see, so it needs a
+follow-up in each of them.
+
 ## Contracts own their contexts
 
 - **Layers:** base, resource, render
