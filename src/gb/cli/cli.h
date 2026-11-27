@@ -276,7 +276,9 @@ struct CliCommand {
   // A command that is a class member can't use its initializer lists, whose
   // arrays are destroyed when the constructor that initializes it returns. It
   // gives its flags and subcommands in `added_flags` and `added_commands`, and
-  // can't have arguments or constraints.
+  // can't have arguments or constraints. A class whose command spans its own
+  // members must not be copied or moved, as the copy's spans would still
+  // point into the original.
   absl::Span<const CliAnyFlag> added_flags;
 
   // The command's positional arguments, in order. If the command has

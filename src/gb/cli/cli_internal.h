@@ -70,7 +70,7 @@ class CliJoinedList {
       return *this;
     }
     bool operator==(const Iterator& other) const {
-      return index_ == other.index_;
+      return list_ == other.list_ && index_ == other.index_;
     }
 
    private:

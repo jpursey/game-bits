@@ -417,8 +417,8 @@ platform-specific.
   to compile.
 - A command's added flags and commands are spans, whose arrays the program
   must keep alive as long as the command.
-- A flag must be in its command's `flags` or `added_flags` to be read. `Get()` CHECKs if it
-  isn't, which any test of the command finds.
+- A flag must be in its command's `flags` or `added_flags` to be read.
+  `Get()` CHECKs if it isn't, which any test of the command finds.
 - The value types are listed five times: the `static_assert`s in `CliFlag` and
   `CliArg`, `CliAnyFlag`, `CliAnyArg`, and `CliValue`. A new type also needs a
   `ParseText()` overload in `cli_internal.cc` (or it fails to compile), and an
