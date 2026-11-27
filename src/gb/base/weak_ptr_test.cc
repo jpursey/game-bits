@@ -166,7 +166,7 @@ class MultipleBases final : public FirstBase,
 
 TEST(WeakPtrDeathTest, WeakPtrToBaseClassAtDifferentAddress) {
   MultipleBases instance;
-  EXPECT_DEATH(WeakPtr<SecondBase>{&instance}, "same address");
+  EXPECT_DEATH_IF_SUPPORTED(WeakPtr<SecondBase>{&instance}, "same address");
 }
 
 TEST(WeakPtrTest, LockIsNullOnceInvalidateStarts) {

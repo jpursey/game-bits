@@ -156,7 +156,8 @@ TEST(FunctionHookTest, LeavesFunctionNotLoadedNull) {
   EXPECT_TRUE(calls.empty());
 }
 
-// Aliases, as template argument lists can't be passed to EXPECT_DEATH.
+// Aliases, as template argument lists can't be passed to
+// EXPECT_DEATH_IF_SUPPORTED.
 using AddRecordHook = FunctionHook<&g_add, RecordHook>;
 using AddDoubleHook = FunctionHook<&g_add, DoubleHook>;
 using NotLoadedRecordHook = FunctionHook<&g_not_loaded, RecordHook>;
@@ -164,11 +165,11 @@ using NotLoadedStubHook = FunctionHook<&g_not_loaded, StubHook>;
 
 TEST(FunctionHookDeathTest, SameHookTwice) {
   AddDoubleHook hook;
-  EXPECT_DEATH(AddDoubleHook(), "Only one FunctionHook");
+  EXPECT_DEATH_IF_SUPPORTED(AddDoubleHook(), "Only one FunctionHook");
 }
 
 TEST(FunctionHookDeathTest, DestroyedOutOfOrder) {
-  EXPECT_DEATH(
+  EXPECT_DEATH_IF_SUPPORTED(
       {
         std::vector<std::string> calls;
         auto inner = std::make_unique<AddRecordHook>("inner", &calls);
@@ -179,7 +180,7 @@ TEST(FunctionHookDeathTest, DestroyedOutOfOrder) {
 }
 
 TEST(FunctionHookDeathTest, HookLeftNullDestroyedOutOfOrder) {
-  EXPECT_DEATH(
+  EXPECT_DEATH_IF_SUPPORTED(
       {
         std::vector<std::string> calls;
         auto inner = std::make_unique<NotLoadedRecordHook>("inner", &calls);

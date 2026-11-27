@@ -476,7 +476,7 @@ TEST_F(MeshTest, FailSet) {
 }
 
 TEST_F(MeshTest, DeleteWhileEditing) {
-  EXPECT_DEATH(
+  EXPECT_DEATH_IF_SUPPORTED(
       {
         CreateSystem();
         auto material_type = CreateMaterialType({});

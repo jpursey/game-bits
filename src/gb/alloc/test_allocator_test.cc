@@ -68,7 +68,7 @@ TEST(TestAllocatorTest, MisalignedMemoryIsInvalid) {
 TEST(TestAllocatorDeathTest, FreeUnknownPointer) {
   TestAllocator allocator;
   int value = 0;
-  EXPECT_DEATH(allocator.Free(&value), "");
+  EXPECT_DEATH_IF_SUPPORTED(allocator.Free(&value), "");
 }
 
 }  // namespace

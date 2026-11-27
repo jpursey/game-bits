@@ -469,7 +469,7 @@ TEST_F(MeshPoolTest, FailedGrowFails) {
 }
 
 TEST_F(MeshPoolTest, DestroyPoolBeforeMeshFails) {
-  EXPECT_DEATH(
+  EXPECT_DEATH_IF_SUPPORTED(
       {
         ResourcePtr<MeshPool> pool = render_system_->CreateMeshPool(
             vertex_type_, IndexType::kUint16, 8, 12);
@@ -489,9 +489,9 @@ TEST_F(MeshPoolTest, GetDrawOutOfRangeFails) {
   ASSERT_NE(pool, nullptr);
   auto mesh = pool->CreateMesh<Vector3>(kCubeVertices, kCubeTriangles);
   ASSERT_NE(mesh, nullptr);
-  EXPECT_DEATH(mesh->GetDraw(-1, 1), "first_triangle >= 0");
-  EXPECT_DEATH(mesh->GetDraw(10, 3), "triangle_count_");
-  EXPECT_DEATH(mesh->GetDraw(-1), "draw_index >= 0");
+  EXPECT_DEATH_IF_SUPPORTED(mesh->GetDraw(-1, 1), "first_triangle >= 0");
+  EXPECT_DEATH_IF_SUPPORTED(mesh->GetDraw(10, 3), "triangle_count_");
+  EXPECT_DEATH_IF_SUPPORTED(mesh->GetDraw(-1), "draw_index >= 0");
 }
 
 TEST_F(MeshPoolTest, CreateAndDestroyFromManyThreads) {

@@ -132,8 +132,8 @@ TEST_F(RenderBufferViewTest, ResizeOutOfRangeDies) {
   auto view = render_buffer.Edit();
   ASSERT_NE(view, nullptr);
   view->Resize(kCapacity);
-  EXPECT_DEATH(view->Resize(kCapacity + 1), "new_size <= ");
-  EXPECT_DEATH(view->Resize(-1), "new_size >= 0");
+  EXPECT_DEATH_IF_SUPPORTED(view->Resize(kCapacity + 1), "new_size <= ");
+  EXPECT_DEATH_IF_SUPPORTED(view->Resize(-1), "new_size >= 0");
 }
 
 }  // namespace

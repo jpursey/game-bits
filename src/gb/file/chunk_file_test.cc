@@ -1110,8 +1110,8 @@ TEST_F(ChunkFileTest, ChunkTypeInStdHashSet) {
 }
 
 TEST_F(ChunkFileTest, ChunkWriterTooLargeDies) {
-  EXPECT_DEATH(ChunkWriter::New<int64_t>(kChunkTypeBar, 1, 300'000'000),
-               "too large");
+  EXPECT_DEATH_IF_SUPPORTED(
+      ChunkWriter::New<int64_t>(kChunkTypeBar, 1, 300'000'000), "too large");
 }
 
 TEST_F(ChunkFileTest, ReadChunkFileVersionZeroIsCorrupt) {

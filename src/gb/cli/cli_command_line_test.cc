@@ -1391,20 +1391,21 @@ TEST(ParseCommandLineDeathTest, InvalidProgram) {
       .flags = {&kVerbose, &kVerbose},
   };
   const std::vector<std::string_view> args = {};
-  EXPECT_DEATH(ParseCommandLine(&kInvalid, args).status().IgnoreError(),
-               "duplicate flag");
+  EXPECT_DEATH_IF_SUPPORTED(
+      ParseCommandLine(&kInvalid, args).status().IgnoreError(),
+      "duplicate flag");
 }
 
 TEST(ParseCommandLineDeathTest, GetOutsideCommandPath) {
   const std::vector<std::string_view> args = {"status"};
   absl::StatusOr<CliCommandLine> command_line = ParseCommandLine(&kTool, args);
   ASSERT_TRUE(command_line.ok()) << command_line.status();
-  EXPECT_DEATH(command_line->Get(kForce), "doesn't belong");
-  EXPECT_DEATH(command_line->Get(kName), "doesn't belong");
+  EXPECT_DEATH_IF_SUPPORTED(command_line->Get(kForce), "doesn't belong");
+  EXPECT_DEATH_IF_SUPPORTED(command_line->Get(kName), "doesn't belong");
 
   // Not belonging is the mistake reported, even with the wrong accessor.
-  EXPECT_DEATH(command_line->Get(kDefine), "doesn't belong");
-  EXPECT_DEATH(command_line->GetAll(kOutput), "doesn't belong");
+  EXPECT_DEATH_IF_SUPPORTED(command_line->Get(kDefine), "doesn't belong");
+  EXPECT_DEATH_IF_SUPPORTED(command_line->GetAll(kOutput), "doesn't belong");
 }
 
 TEST(ParseCommandLineDeathTest, GetForRepeatedFlag) {
@@ -1412,7 +1413,7 @@ TEST(ParseCommandLineDeathTest, GetForRepeatedFlag) {
   absl::StatusOr<CliCommandLine> command_line =
       ParseCommandLine(&kCompiler, args);
   ASSERT_TRUE(command_line.ok()) << command_line.status();
-  EXPECT_DEATH(command_line->Get(kInclude), "needs GetAll");
+  EXPECT_DEATH_IF_SUPPORTED(command_line->Get(kInclude), "needs GetAll");
 }
 
 TEST(ParseCommandLineDeathTest, GetAllForFlagThatIsNotRepeated) {
@@ -1420,7 +1421,7 @@ TEST(ParseCommandLineDeathTest, GetAllForFlagThatIsNotRepeated) {
   absl::StatusOr<CliCommandLine> command_line =
       ParseCommandLine(&kConvert, args);
   ASSERT_TRUE(command_line.ok()) << command_line.status();
-  EXPECT_DEATH(command_line->GetAll(kOutput), "isn't repeated");
+  EXPECT_DEATH_IF_SUPPORTED(command_line->GetAll(kOutput), "isn't repeated");
 }
 
 TEST(ParseCommandLineDeathTest, GetAllOutsideCommandPath) {
@@ -1428,7 +1429,7 @@ TEST(ParseCommandLineDeathTest, GetAllOutsideCommandPath) {
   absl::StatusOr<CliCommandLine> command_line =
       ParseCommandLine(&kConvert, args);
   ASSERT_TRUE(command_line.ok()) << command_line.status();
-  EXPECT_DEATH(command_line->GetAll(kDefine), "doesn't belong");
+  EXPECT_DEATH_IF_SUPPORTED(command_line->GetAll(kDefine), "doesn't belong");
 }
 
 TEST(ParseCommandLineDeathTest, GetAllForHelp) {
@@ -1436,14 +1437,14 @@ TEST(ParseCommandLineDeathTest, GetAllForHelp) {
   absl::StatusOr<CliCommandLine> command_line =
       ParseCommandLine(&kCompiler, args);
   ASSERT_TRUE(command_line.ok()) << command_line.status();
-  EXPECT_DEATH(command_line->GetAll(kDefine), "asks for help");
+  EXPECT_DEATH_IF_SUPPORTED(command_line->GetAll(kDefine), "asks for help");
 }
 
 TEST(ParseCommandLineDeathTest, GetForHelp) {
   const std::vector<std::string_view> args = {"-v", "--help"};
   absl::StatusOr<CliCommandLine> command_line = ParseCommandLine(&kTool, args);
   ASSERT_TRUE(command_line.ok()) << command_line.status();
-  EXPECT_DEATH(command_line->Get(kVerbose), "asks for help");
+  EXPECT_DEATH_IF_SUPPORTED(command_line->Get(kVerbose), "asks for help");
 }
 
 }  // namespace

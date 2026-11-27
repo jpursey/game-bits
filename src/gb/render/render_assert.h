@@ -43,7 +43,7 @@ namespace internal {
 // RenderSystem sets whether they are enabled, so they are enabled after it:
 //
 //   SetRenderAssertEnabled(true);
-//   EXPECT_DEATH(draw_list.SetMesh(nullptr), "mesh != nullptr");
+//   EXPECT_DEATH_IF_SUPPORTED(draw_list.SetMesh(nullptr), "mesh != nullptr");
 #ifdef NDEBUG
 #define RENDER_ASSERT(condition) ((void)0)
 #else  // NDEBUG

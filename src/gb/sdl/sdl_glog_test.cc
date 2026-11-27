@@ -69,16 +69,21 @@ TEST(SdlGLogTest, VerboseIsVLogLevelOne) {
       ElementsAre(IsMessage(absl::LogSeverity::kInfo, "SDL(app) shown")));
 }
 
+// EXPECT_DEBUG_DEATH exists only where GoogleTest has death tests, so this
+// spells out what it checks in each build.
 TEST(SdlGLogTest, CriticalIsDebugFatal) {
   LogRecorder log_recorder;
-  EXPECT_DEBUG_DEATH(SdlToGLog(nullptr, SDL_LOG_CATEGORY_APPLICATION,
-                               SDL_LOG_PRIORITY_CRITICAL, "critical"),
-                     "SDL\\(app\\) critical");
 #ifdef NDEBUG
+  SdlToGLog(nullptr, SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_CRITICAL,
+            "critical");
   EXPECT_THAT(
       log_recorder.TakeMessages(),
       ElementsAre(IsMessage(absl::LogSeverity::kError, "SDL(app) critical")));
-#endif
+#else   // NDEBUG
+  EXPECT_DEATH_IF_SUPPORTED(SdlToGLog(nullptr, SDL_LOG_CATEGORY_APPLICATION,
+                                      SDL_LOG_PRIORITY_CRITICAL, "critical"),
+                            "SDL\\(app\\) critical");
+#endif  // NDEBUG
 }
 
 TEST(SdlGLogTest, Categories) {

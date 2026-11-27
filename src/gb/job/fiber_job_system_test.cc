@@ -967,7 +967,7 @@ TEST(FiberJobSystemDeathTest, DestroyTimesOut) {
   if (!SupportsFibers()) {
     GTEST_SKIP();
   }
-  EXPECT_DEATH(
+  EXPECT_DEATH_IF_SUPPORTED(
       {
         FakeClock clock;
         absl::Notification never_notified;

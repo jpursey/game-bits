@@ -539,12 +539,12 @@ TEST(QueueTest, VectorOfQueuesMovesQueues) {
 TEST(QueueDeathTest, PushToFullQueueThatCannotGrow) {
   Queue<int> queue(1, 0);
   queue.push(1);
-  EXPECT_DEATH(queue.push(2), "full");
+  EXPECT_DEATH_IF_SUPPORTED(queue.push(2), "full");
 }
 
 TEST(QueueDeathTest, PushToZeroCapacityQueueThatCannotGrow) {
   Queue<int> queue(0, 0);
-  EXPECT_DEATH(queue.push(1), "full");
+  EXPECT_DEATH_IF_SUPPORTED(queue.push(1), "full");
 }
 
 // Checks queues against std::deque through long runs of pushes and pops, so

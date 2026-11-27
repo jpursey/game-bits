@@ -74,8 +74,9 @@ TEST(ProfilePointTest, FindUnknownPoint) {
 
 TEST(ProfilePointTest, SameNameWithAnotherKindDies) {
   ProfilePoint point(ProfilePoint::Kind::kScope, "PointTest/Kind");
-  EXPECT_DEATH(ProfilePoint(ProfilePoint::Kind::kCall, "PointTest/Kind"),
-               "registered with another kind");
+  EXPECT_DEATH_IF_SUPPORTED(
+      ProfilePoint(ProfilePoint::Kind::kCall, "PointTest/Kind"),
+      "registered with another kind");
 }
 
 // Tests that record points in a Profiler.

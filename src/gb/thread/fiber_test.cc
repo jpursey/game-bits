@@ -548,8 +548,8 @@ TEST_F(FiberSwitchCallbacksTest, SettingAnotherSetDies) {
       .on_suspend = IgnoreSuspend,
       .on_resume = IgnoreResume,
   };
-  EXPECT_DEATH(SetFiberSwitchCallbacks(&kIgnoreSwitches),
-               "one set of fiber switch callbacks");
+  EXPECT_DEATH_IF_SUPPORTED(SetFiberSwitchCallbacks(&kIgnoreSwitches),
+                            "one set of fiber switch callbacks");
 }
 
 TEST_F(FiberSwitchCallbacksTest, MissingCallbackDies) {
@@ -558,7 +558,7 @@ TEST_F(FiberSwitchCallbacksTest, MissingCallbackDies) {
   static constexpr FiberSwitchCallbacks kNoResume = {
       .on_suspend = IgnoreSuspend,
   };
-  EXPECT_DEATH(SetFiberSwitchCallbacks(&kNoResume), "both");
+  EXPECT_DEATH_IF_SUPPORTED(SetFiberSwitchCallbacks(&kNoResume), "both");
 }
 
 TEST_F(FiberTest, FiberName) {

@@ -208,7 +208,8 @@ TEST_F(ProfileTimerTest, EndingOuterTimerFirstDies) {
   std::optional<ProfileScope<"TimerTest/First">> first;
   first.emplace();
   ProfileScope<"TimerTest/Second"> second;
-  EXPECT_DEATH(first.reset(), "must end on the fiber it started on");
+  EXPECT_DEATH_IF_SUPPORTED(first.reset(),
+                            "must end on the fiber it started on");
 }
 
 // A fiber times a scope and counts on one thread, switches away, and does the
@@ -745,8 +746,8 @@ TEST_F(ProfileTimerSwitchTest, SwitchingInFrameDies) {
   CreateSwitchingFiber(+[](void* user_data) {
     SwitchBack(*static_cast<SwitchingFiber*>(user_data));
   });
-  EXPECT_DEATH(RunFiberThread(fiber_, RunFiberInFrame),
-               "can't span a fiber switch");
+  EXPECT_DEATH_IF_SUPPORTED(RunFiberThread(fiber_, RunFiberInFrame),
+                            "can't span a fiber switch");
 }
 
 // A thread main that runs the fiber on a Profiler named "worker", joined to
@@ -862,8 +863,9 @@ TEST_F(ProfileTimerThreadlessSwitchTest, FrameResumedWithoutProfilerDies) {
     SwitchBack(fiber);
   });
   RunFiberThread(fiber_, RunFiberJoined);
-  EXPECT_DEATH(RunFiberThread(fiber_, RunWithoutProfiler),
-               "must resume on a thread joined to the frame's main Profiler");
+  EXPECT_DEATH_IF_SUPPORTED(
+      RunFiberThread(fiber_, RunWithoutProfiler),
+      "must resume on a thread joined to the frame's main Profiler");
 }
 
 // The profiler's cost per frame counts the frame's own points, and not those
@@ -910,8 +912,8 @@ TEST_F(ProfileTimerSwitchTest, EndingTimerOnAnotherFiberDies) {
     g_other_fiber_scope.reset();
     SwitchBack(*static_cast<SwitchingFiber*>(user_data));
   });
-  EXPECT_DEATH(RunFiberThread(fiber_, RunFiberWithOpenScope),
-               "must end on the fiber it started on");
+  EXPECT_DEATH_IF_SUPPORTED(RunFiberThread(fiber_, RunFiberWithOpenScope),
+                            "must end on the fiber it started on");
 }
 
 // A thread main that runs the fiber inside an idle timer.
@@ -927,8 +929,8 @@ TEST_F(ProfileTimerSwitchTest, SwitchInIdleTimerDies) {
   CreateSwitchingFiber(+[](void* user_data) {
     SwitchBack(*static_cast<SwitchingFiber*>(user_data));
   });
-  EXPECT_DEATH(RunFiberThread(fiber_, RunFiberInIdleTimer),
-               "can't switch in an idle timer");
+  EXPECT_DEATH_IF_SUPPORTED(RunFiberThread(fiber_, RunFiberInIdleTimer),
+                            "can't switch in an idle timer");
 }
 
 TEST(ProfileTimerNoProfilerTest, JobIgnoredWithoutProfiler) {
