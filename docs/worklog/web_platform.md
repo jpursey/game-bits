@@ -174,9 +174,9 @@ bool SupportsThreads();
   false. `gb_test` depends on `gb_thread` for that, both in tier 0. About 90
   of Game Bits' 3,500 tests do, in 13 of the 22 test programs, most of them in
   `gb_profile_test`, `gb_test_test`, `gb_message_test`, and `gb_thread_test`.
-  A test without the line that starts a thread stops at a
-  `CHECK`, so a missing one is found the first time the test runs in a build
-  without threads, which CI does.
+  A test without the line that starts a thread stops at a `CHECK`, so a
+  missing one is found the first time the test runs in a build without
+  threads, which CI does.
 
 **Brittleness:** a program that starts a thread works on every other platform
 and fails in a web build without threads. The `CHECK`s make that failure name
@@ -255,8 +255,8 @@ Depends on: nothing.
 
 - `tools/install-emsdk.sh`.
 - The root `CMakeLists.txt` and `GameBitsTargetCommands.cmake`:
-  `GB_WEB_THREADS`, the flags in [Build](#build), `add_test(NAME ... COMMAND ...)`, and no Vulkan
-  on the web.
+  `GB_WEB_THREADS`, the flags in [Build](#build),
+  `add_test(NAME ... COMMAND ...)`, and no Vulkan on the web.
 - CLAUDE.md: a Web section with the install, configure, build, and test
   commands, saying which libraries don't build yet.
 - The libraries that don't compile for the web yet still don't, so a web build
