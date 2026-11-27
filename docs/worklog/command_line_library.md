@@ -95,7 +95,10 @@ A program with nothing in its context calls `RunCommandLine(&kProgram, args)`.
   with designated initializers, with static storage. Its lists are initializer
   lists, so a definition holds pointers into constant data, and definitions
   refer to each other only by address. A definition must not be a temporary or
-  a local copied elsewhere.
+  a local copied elsewhere. Each list has a type of its own (`CliFlags`,
+  `CliArgs`, `CliCommands`, `CliChoices`, `CliValidators<T>`,
+  `CliConstraints`), so a list can also be defined on its own, with static
+  storage, and shared by definitions.
 - **Not constexpr:** each definition with lists holds an
   `internal::CliNotConstexpr` member, so a `constexpr` definition fails to
   compile (see Deliberate choices). Definitions are initialized at startup,
@@ -115,10 +118,9 @@ A program with nothing in its context calls `RunCommandLine(&kProgram, args)`.
   does. gb_cli treats them everywhere as if they followed `flags` and
   `commands`: parsing, reading values, validating definitions, and help. A
   command made at run time may still have braced lists if it is a local, or
-  copies of lists with static storage
-  (`const std::initializer_list<CliAnyFlag> kCoreFlags = {...};`) anywhere.
-  Only a braced list written where a class member is initialized dangles, as
-  its array is destroyed when the constructor returns.
+  copies of lists with static storage (`const gb::CliFlags kCoreFlags =
+  {...};`) anywhere. Only a braced list written where a class member is
+  initialized dangles, as its array is destroyed when the constructor returns.
 - **Flags:** a `CliFlag<T>` has a long name (`--name`), an optional short name
   (`-n`), a value name shown in help (defaulting to the name), help, choices,
   a default, and validators. Flags are optional by default, as arguments are
@@ -386,7 +388,7 @@ platform-specific.
 
 | File | What |
 |---|---|
-| `cli.h` | The definitions (`CliCommand`, `CliFlag`, `CliArg`, `CliChoice`, `CliValidator`, `CliAnyFlag`, `CliAnyArg`) and `ValidateCliCommand()` |
+| `cli.h` | The definitions (`CliCommand`, `CliFlag`, `CliArg`, `CliChoice`, `CliValidator`, `CliAnyFlag`, `CliAnyArg`), their list types (`CliFlags`, `CliArgs`, `CliCommands`, `CliChoices`, `CliValidators<T>`, `CliConstraints`), and `ValidateCliCommand()` |
 | `cli_validators.h` | The common validators |
 | `cli_path.h` | `kConstraintCliFileSystem`, `kConstraintCliFileProtocol`, and the path validators |
 | `cli_command_line.h` | `CliCommandLine`, `ParseCommandLine()`, `kConstraintCliWriter`, `kConstraintCliHelpWidth`, `kConstraintCliUsageError`, and `CliContract` |

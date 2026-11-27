@@ -5,7 +5,6 @@
 
 #include "gb/cli/cli.h"
 
-#include <initializer_list>
 #include <string_view>
 #include <type_traits>
 #include <variant>
@@ -30,7 +29,7 @@ namespace {
 //==============================================================================
 
 template <typename T>
-absl::Status ValidateChoices(std::initializer_list<CliChoice> choices) {
+absl::Status ValidateChoices(CliChoices choices) {
   if (choices.size() == 0) {
     return absl::OkStatus();
   }
@@ -58,8 +57,7 @@ absl::Status ValidateChoices(std::initializer_list<CliChoice> choices) {
 }
 
 template <typename T>
-absl::Status ValidateValidators(
-    std::initializer_list<const CliValidator<T>*> validators) {
+absl::Status ValidateValidators(CliValidators<T> validators) {
   for (const CliValidator<T>* validator : validators) {
     if (validator == nullptr) {
       return absl::InvalidArgumentError("has a null validator");

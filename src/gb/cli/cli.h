@@ -59,17 +59,18 @@ namespace gb {
 // flag may also be a bool.
 //
 // Definitions must be `const` with static storage: at namespace scope, or
-// `static` within a function. Their lists are initializer lists, which point
-// into constant data, so a definition that is a temporary or a local, or a copy
-// of one, is left pointing at nothing once it goes out of scope.
+// `static` within a function. Their lists are initializer lists (CliFlags,
+// CliCommands, and so on), which point into constant data, so a definition that
+// is a temporary or a local, or a copy of one, is left pointing at nothing once
+// it goes out of scope. A list may also be defined on its own, with static
+// storage, and shared by definitions: `const gb::CliFlags kCoreFlags = {...};`.
 //
 // A command made at run time, from parts of the program that each have their
 // own flags or subcommands, gives them in its `added_flags` and
 // `added_commands` instead (see CliCommand). Its other lists may be braced
 // lists if it is a local, which keeps their arrays as long as it is in scope,
-// or copies of lists with static storage
-// (`const std::initializer_list<CliAnyFlag> kCoreFlags = {...};`). A braced
-// list written where a class member is initialized is destroyed when the
+// or copies of lists with static storage, such as `kCoreFlags`. A braced list
+// written where a class member is initialized is destroyed when the
 // constructor returns, so a command that is a class member uses only the
 // latter.
 //
@@ -94,6 +95,9 @@ struct CliNotConstexpr {
 };
 
 }  // namespace internal
+
+// The context constraints a validator or command lists.
+using CliConstraints = std::initializer_list<const ContextConstraint*>;
 
 // Validates a flag's or argument's value. This is a definition, which a flag or
 // argument lists by address, as a command lists its flags. Common ones are in
@@ -125,12 +129,16 @@ struct CliValidator {
   // or kInOptional), and point to constants, as the GB_CONTEXT_CONSTRAINT
   // macros define. Parsing fails if the context doesn't meet them, once a
   // command with a flag or argument using this validator is reached.
-  std::initializer_list<const ContextConstraint*> constraints;
+  CliConstraints constraints;
 
   // Leave unset. This is here only to prevent the definition from being
   // constexpr.
   internal::CliNotConstexpr not_constexpr;
 };
+
+// The validators a flag or argument lists.
+template <typename T>
+using CliValidators = std::initializer_list<const CliValidator<T>*>;
 
 // One value a string flag or argument accepts, when it lists its choices.
 struct CliChoice {
@@ -141,6 +149,9 @@ struct CliChoice {
   // Help for the value.
   std::string_view help;
 };
+
+// The choices a string flag or argument lists.
+using CliChoices = std::initializer_list<CliChoice>;
 
 // A flag: `--name value`, `--name=value`, or `-n value`.
 //
@@ -187,13 +198,13 @@ struct CliFlag {
 
   // The values a string flag accepts, if it only accepts some. Each must be
   // unique. Only a string flag can have choices.
-  std::initializer_list<CliChoice> choices;
+  CliChoices choices;
 
   // The value if the flag isn't given, if any. This is not validated.
   std::optional<T> default_value;
 
   // Validators for the value, run in order until one fails.
-  std::initializer_list<const CliValidator<T>*> validators;
+  CliValidators<T> validators;
 
   // Leave unset. This is here only to prevent the definition from being
   // constexpr.
@@ -222,7 +233,7 @@ struct CliArg {
 
   // The values a string argument accepts, if it only accepts some. Each must
   // be unique. Only a string argument can have choices.
-  std::initializer_list<CliChoice> choices;
+  CliChoices choices;
 
   // The value if the argument isn't given, if any. Only an optional argument
   // can be left out, so a required argument's default is never used. This is
@@ -230,7 +241,7 @@ struct CliArg {
   std::optional<T> default_value;
 
   // Validators for the value, run in order until one fails.
-  std::initializer_list<const CliValidator<T>*> validators;
+  CliValidators<T> validators;
 
   // Leave unset. This is here only to prevent the definition from being
   // constexpr.
@@ -246,6 +257,16 @@ using CliAnyFlag =
 // `{&kInput, &kCount}`.
 using CliAnyArg = std::variant<const CliArg<std::string_view>*,
                                const CliArg<int64_t>*, const CliArg<double>*>;
+
+// The flags a command lists.
+using CliFlags = std::initializer_list<CliAnyFlag>;
+
+// The positional arguments a command lists.
+using CliArgs = std::initializer_list<CliAnyArg>;
+
+// The subcommands a command lists.
+struct CliCommand;
+using CliCommands = std::initializer_list<const CliCommand*>;
 
 // A command: the program itself, or one of its subcommands, named by a bare
 // word on the command line (`program build`).
@@ -270,7 +291,7 @@ struct CliCommand {
 
   // The command's flags. Their names must be unique among this command's flags
   // and those of the commands above it.
-  std::initializer_list<CliAnyFlag> flags;
+  CliFlags flags;
 
   // More flags, given when the command is made at run time, such as those of
   // a part of the program the command combines with others. They are treated
@@ -283,10 +304,10 @@ struct CliCommand {
 
   // The command's positional arguments, in order. If the command has
   // subcommands, these are given before the subcommand's name.
-  std::initializer_list<CliAnyArg> args;
+  CliArgs args;
 
   // The command's subcommands.
-  std::initializer_list<const CliCommand*> commands;
+  CliCommands commands;
 
   // More subcommands, given when the command is made at run time, treated as
   // if they followed `commands`. The caller keeps their array alive as long as
@@ -297,7 +318,7 @@ struct CliCommand {
   // adds (see ContextConstraint). Those of the commands above it apply too.
   // These point to constants, as the GB_CONTEXT_CONSTRAINT macros define:
   // `{&kConstraintFileSystem}`.
-  std::initializer_list<const ContextConstraint*> constraints;
+  CliConstraints constraints;
 
   // Runs the command with the values given on the command line, returning
   // whether it succeeded. `context` is the context the command line was parsed

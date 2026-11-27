@@ -6,7 +6,6 @@
 #include "gb/cli/cli_command_line.h"
 
 #include <cstdint>
-#include <initializer_list>
 #include <limits>
 #include <string>
 #include <string_view>
@@ -1276,8 +1275,8 @@ const CliFlag<std::string_view> kKey = {.name = "key", .optional = false};
 
 // The program's own lists have static storage, as a braced list written in a
 // class member's initializer is destroyed when the constructor returns.
-const std::initializer_list<CliAnyFlag> kPartsFlags = {&kQuiet};
-const std::initializer_list<const CliCommand*> kPartsCommands = {&kAdd};
+const CliFlags kPartsFlags = {&kQuiet};
+const CliCommands kPartsCommands = {&kAdd};
 
 class CliAddedTest : public CliCommandLineRunTest {
  protected:

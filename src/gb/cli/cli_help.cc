@@ -8,7 +8,6 @@
 #include <algorithm>
 #include <charconv>
 #include <cstdint>
-#include <initializer_list>
 #include <optional>
 #include <string_view>
 #include <type_traits>
@@ -80,7 +79,7 @@ struct Entry {
   std::vector<std::string> paragraphs;
 
   // The values the entry accepts, if it lists them.
-  std::initializer_list<CliChoice> choices;
+  CliChoices choices;
 };
 
 // A titled list of entries.
@@ -182,7 +181,7 @@ std::vector<Entry> GetEntries(internal::CliJoinedList<CliAnyFlag> flags) {
   return entries;
 }
 
-std::vector<Entry> GetEntries(std::initializer_list<CliAnyArg> args) {
+std::vector<Entry> GetEntries(CliArgs args) {
   std::vector<Entry> entries;
   for (const CliAnyArg& arg : args) {
     entries.push_back(
