@@ -595,6 +595,23 @@ TEST(QueueTest, MatchesDeque) {
   }
 }
 
+// An element that holds a queue of its own type, so Type is incomplete where
+// Queue<Type> is declared.
+struct TreeNode {
+  int value = 0;
+  Queue<TreeNode> children{1};
+};
+
+TEST(QueueTest, ElementHoldsQueueOfItsOwnType) {
+  TreeNode root;
+  root.children.push({1});
+  root.children.front().children.push({2});
+  ASSERT_EQ(root.children.size(), 1);
+  EXPECT_EQ(root.children.front().value, 1);
+  ASSERT_EQ(root.children.front().children.size(), 1);
+  EXPECT_EQ(root.children.front().children.front().value, 2);
+}
+
 // An element aligned to more than a pointer.
 struct alignas(16) Aligned16 {
   int value;

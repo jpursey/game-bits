@@ -137,12 +137,14 @@ class Queue {
       return reinterpret_cast<Type*>(this + 1) + index;
     }
   };
-  static_assert(std::is_trivially_destructible_v<Bucket>,
-                "Buckets have their memory freed and are never destructed");
 
-  // True if a bucket needs more alignment than std::malloc() guarantees.
-  static inline constexpr bool kOverAligned = alignof(Bucket) >
-                                              alignof(std::max_align_t);
+  // True if a bucket needs more alignment than std::malloc() guarantees. This
+  // is a function rather than a constant so Type may be incomplete wherever
+  // Queue<Type> is declared, as it is for an element that holds a queue of
+  // its own type.
+  static constexpr bool IsOverAligned() {
+    return alignof(Bucket) > alignof(std::max_align_t);
+  }
 
   // Represents a position in the queue.
   struct Position {
@@ -203,16 +205,19 @@ class Queue {
 
 template <typename Type>
 typename Queue<Type>::Bucket* Queue<Type>::NewBucket(size_type capacity) {
+  static_assert(std::is_trivially_destructible_v<Bucket>,
+                "Buckets have their memory freed and are never destructed");
   if (capacity == 0) {
     return nullptr;
   }
   const size_type size = sizeof(Bucket) + sizeof(Type) * capacity;
   void* memory;
-  if constexpr (kOverAligned) {
+  if constexpr (IsOverAligned()) {
     memory = internal::AllocAligned(size, alignof(Bucket));
   } else {
     memory = std::malloc(size);
   }
+  CHECK(memory != nullptr) << "Queue failed to allocate a bucket";
   Bucket* bucket = new (memory) Bucket;
   bucket->capacity = capacity;
   bucket->next = bucket->prev = bucket;
@@ -222,7 +227,7 @@ typename Queue<Type>::Bucket* Queue<Type>::NewBucket(size_type capacity) {
 
 template <typename Type>
 void Queue<Type>::FreeBucket(Bucket* bucket) {
-  if constexpr (kOverAligned) {
+  if constexpr (IsOverAligned()) {
     internal::FreeAligned(bucket);
   } else {
     std::free(bucket);
