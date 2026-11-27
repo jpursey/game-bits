@@ -33,8 +33,8 @@ This is a CMake project, starting at the root. The directory structure is as fol
   CMake/        -- Custom CMake rules used by all Game Bits modules in src/
   tools/        -- Scripts used while developing, such as running a program
                    and capturing its window
-  docs/         -- The shared workflow, feature plans (worklog/), and the
-                   backlog
+  docs/         -- The shared workflow, feature plans (worklog/), designs for
+                   projects of several features (designs/), and the backlog
 ```
 
 ## Commands
