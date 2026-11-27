@@ -173,7 +173,7 @@ Entry GetEntry(const CliCommand* command) {
           .paragraphs = std::move(paragraphs)};
 }
 
-std::vector<Entry> GetEntries(std::initializer_list<CliAnyFlag> flags) {
+std::vector<Entry> GetEntries(internal::CliJoinedList<CliAnyFlag> flags) {
   std::vector<Entry> entries;
   for (const CliAnyFlag& flag : flags) {
     entries.push_back(
@@ -192,7 +192,7 @@ std::vector<Entry> GetEntries(std::initializer_list<CliAnyArg> args) {
 }
 
 std::vector<Entry> GetEntries(
-    std::initializer_list<const CliCommand*> commands) {
+    internal::CliJoinedList<const CliCommand*> commands) {
   std::vector<Entry> entries;
   for (const CliCommand* command : commands) {
     entries.push_back(GetEntry(command));
@@ -307,7 +307,7 @@ std::string FormatCliHelp(absl::Span<const CliCommand* const> path, int width) {
   std::string usage =
       absl::StrCat("Usage: ", internal::GetCliUsagePath(path), " [<flags>]");
   internal::AppendCliArgUsage(command, &usage);
-  if (command->commands.size() != 0) {
+  if (!internal::GetCliCommands(command).empty()) {
     absl::StrAppend(&usage,
                     command->run != nullptr ? " [<command>]" : " <command>");
   }
@@ -323,15 +323,16 @@ std::string FormatCliHelp(absl::Span<const CliCommand* const> path, int width) {
     });
   }
   sections.push_back(
-      {.title = "Commands:", .entries = GetEntries(command->commands)});
-  sections.push_back(
-      {.title = "Flags:", .entries = GetEntries(command->flags)});
+      {.title = "Commands:",
+       .entries = GetEntries(internal::GetCliCommands(command))});
+  sections.push_back({.title = "Flags:",
+                      .entries = GetEntries(internal::GetCliFlags(command))});
   sections.back().entries.push_back(GetEntry(internal::kCliHelpFlag));
   for (int i = static_cast<int>(path.size()) - 2; i >= 0; --i) {
     sections.push_back({
         .title = absl::StrCat("Flags for ",
                               internal::GetCliPathName(path.first(i + 1)), ":"),
-        .entries = GetEntries(path[i]->flags),
+        .entries = GetEntries(internal::GetCliFlags(path[i])),
     });
   }
 

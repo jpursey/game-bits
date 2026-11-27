@@ -184,6 +184,20 @@ void AppendConstraints(const Definition& definition,
 // Shared functions
 //==============================================================================
 
+CliJoinedList<CliAnyFlag> GetCliFlags(const CliCommand* command) {
+  return CliJoinedList<CliAnyFlag>(
+      absl::Span<const CliAnyFlag>(command->flags.begin(),
+                                   command->flags.size()),
+      command->added_flags);
+}
+
+CliJoinedList<const CliCommand*> GetCliCommands(const CliCommand* command) {
+  return CliJoinedList<const CliCommand*>(
+      absl::Span<const CliCommand* const>(command->commands.begin(),
+                                          command->commands.size()),
+      command->added_commands);
+}
+
 CliFlagFields GetCliFlagFields(const CliAnyFlag& flag) {
   return std::visit([](const auto* typed) { return GetFields(*typed); }, flag);
 }

@@ -14,6 +14,7 @@
 #include <variant>
 
 #include "absl/status/status.h"
+#include "absl/types/span.h"
 #include "gb/base/validated_context.h"
 
 namespace gb {
@@ -61,6 +62,10 @@ namespace gb {
 // `static` within a function. Their lists are initializer lists, which point
 // into constant data, so a definition that is a temporary or a local, or a copy
 // of one, is left pointing at nothing once it goes out of scope.
+//
+// A command made at run time, from parts of the program that each have their
+// own flags or subcommands, gives them in its `added_flags` and
+// `added_commands` instead (see CliCommand).
 //
 // Definitions with lists can't be constexpr (see internal::CliNotConstexpr), so
 // they are initialized when the program starts, not at compile time. A
@@ -261,12 +266,29 @@ struct CliCommand {
   // and those of the commands above it.
   std::initializer_list<CliAnyFlag> flags;
 
+  // More flags, given when the command is made at run time, such as those of
+  // a part of the program the command combines with others. They are treated
+  // as if they followed `flags`. The caller keeps their array alive as long as
+  // the command, as a span doesn't extend its life as an initializer list
+  // does. The flags themselves are definitions with static storage, as any
+  // others.
+  //
+  // A command that is a class member gives all its flags and subcommands in
+  // `added_flags` and `added_commands`: the arrays of its initializer lists
+  // are destroyed when the constructor that initializes it returns.
+  absl::Span<const CliAnyFlag> added_flags;
+
   // The command's positional arguments, in order. If the command has
   // subcommands, these are given before the subcommand's name.
   std::initializer_list<CliAnyArg> args;
 
   // The command's subcommands.
   std::initializer_list<const CliCommand*> commands;
+
+  // More subcommands, given when the command is made at run time, treated as
+  // if they followed `commands`. The caller keeps their array alive as long as
+  // the command, as with `added_flags`.
+  absl::Span<const CliCommand* const> added_commands;
 
   // The values the command's run function needs from the context, and those it
   // adds (see ContextConstraint). Those of the commands above it apply too.

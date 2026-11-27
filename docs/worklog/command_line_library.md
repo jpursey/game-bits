@@ -107,6 +107,15 @@ A program with nothing in its context calls `RunCommandLine(&kProgram, args)`.
   help rather than `argv[0]`. A command with subcommands may also have
   required arguments, given before the subcommand's name (`oz3dsk <image>
   format`). A command with no run function writes its help when it is run.
+- **Added flags and commands:** a program made of separate parts, each with
+  flags or subcommands of its own, makes its command at run time, giving the
+  parts' flags in `added_flags` and their subcommands in `added_commands`.
+  These are `absl::Span`s, whose arrays the program keeps alive as long as the
+  command, as a span doesn't extend an array's life as an initializer list
+  does. gb_cli treats them everywhere as if they followed `flags` and
+  `commands`: parsing, reading values, validating definitions, and help. A
+  command that is a class member gives all of its flags and subcommands this
+  way, as the arrays of its initializer lists don't outlive the constructor.
 - **Flags:** a `CliFlag<T>` has a long name (`--name`), an optional short name
   (`-n`), a value name shown in help (defaulting to the name), help, choices,
   a default, and validators. Flags are optional by default, as arguments are
@@ -381,7 +390,7 @@ platform-specific.
 | `cli_help.h` | `kCliHelpCommand` and `FormatCliHelp()` |
 | `cli_writer.h` | `CliText`, `CliWriter`, and `WriteCliText()` |
 | `run_command_line.h` | `RunCommandLine()` and `GetMainArgs()` |
-| `cli_internal.h` | Private to `gb_cli` and its tests: the fields every flag or argument has, parsing a value, gathering validators' constraints, and `GetCliPathName()` |
+| `cli_internal.h` | Private to `gb_cli` and its tests: the fields every flag or argument has, parsing a value, gathering validators' constraints, a command's flags and subcommands with those added (`GetCliFlags()`, `GetCliCommands()`), and `GetCliPathName()` |
 | `fake_cli_writer.h` | `FakeCliWriter`, which keeps what is written, for `gb_cli`'s tests |
 
 - **Value types:** the types are a fixed set, so a command's lists are
@@ -405,7 +414,9 @@ platform-specific.
 - A definition must be static data. One built as a local and copied out leaves
   its lists dangling. `constexpr`, which would silently break on MSVC, fails
   to compile.
-- A flag must be in its command's `flags` to be read. `Get()` CHECKs if it
+- A command's added flags and commands are spans, whose arrays the program
+  must keep alive as long as the command.
+- A flag must be in its command's `flags` or `added_flags` to be read. `Get()` CHECKs if it
   isn't, which any test of the command finds.
 - The value types are listed five times: the `static_assert`s in `CliFlag` and
   `CliArg`, `CliAnyFlag`, `CliAnyArg`, and `CliValue`. A new type also needs a

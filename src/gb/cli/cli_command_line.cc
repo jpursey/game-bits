@@ -200,9 +200,11 @@ absl::Status CliParser::ParseFlag(absl::Span<const std::string_view> args,
 absl::Status CliParser::ParseWord(std::string_view word) {
   const CliCommand* command = path_.back();
   const int arg_count = static_cast<int>(command->args.size());
-  if (help_command_given_ || (command->commands.size() != 0 &&
-                              !positional_only_ && next_arg_ == arg_count)) {
-    for (const CliCommand* subcommand : command->commands) {
+  const internal::CliJoinedList<const CliCommand*> subcommands =
+      internal::GetCliCommands(command);
+  if (help_command_given_ ||
+      (!subcommands.empty() && !positional_only_ && next_arg_ == arg_count)) {
+    for (const CliCommand* subcommand : subcommands) {
       if (subcommand->name != word) {
         continue;
       }
@@ -239,7 +241,7 @@ absl::Status CliParser::ParseWord(std::string_view word) {
 absl::Status CliParser::ValidateContext() {
   std::vector<ContextConstraint> constraints;
   for (const CliCommand* command : path_) {
-    for (const CliAnyFlag& flag : command->flags) {
+    for (const CliAnyFlag& flag : internal::GetCliFlags(command)) {
       internal::AppendCliValidatorConstraints(flag, &constraints);
     }
     for (const CliAnyArg& arg : command->args) {
@@ -266,7 +268,7 @@ absl::Status CliParser::ValidateComplete() const {
     }
   }
   for (const CliCommand* path_command : path_) {
-    for (const CliAnyFlag& flag : path_command->flags) {
+    for (const CliAnyFlag& flag : internal::GetCliFlags(path_command)) {
       const internal::CliFlagFields fields = internal::GetCliFlagFields(flag);
       if (!fields.optional && !values_.contains(fields.definition)) {
         return Error(absl::StrCat("missing \"--", fields.name, "\""));
@@ -281,7 +283,7 @@ const CliAnyFlag* CliParser::FindFlag(std::string_view name) const {
     return &kHelpFlag;
   }
   for (const CliCommand* command : path_) {
-    for (const CliAnyFlag& flag : command->flags) {
+    for (const CliAnyFlag& flag : internal::GetCliFlags(command)) {
       if (internal::GetCliFlagFields(flag).name == name) {
         return &flag;
       }
@@ -295,7 +297,7 @@ const CliAnyFlag* CliParser::FindFlag(char short_name) const {
     return &kHelpFlag;
   }
   for (const CliCommand* command : path_) {
-    for (const CliAnyFlag& flag : command->flags) {
+    for (const CliAnyFlag& flag : internal::GetCliFlags(command)) {
       if (internal::GetCliFlagFields(flag).short_name == short_name) {
         return &flag;
       }
@@ -431,7 +433,7 @@ absl::Span<const internal::CliValue> CliCommandLine::Find(
 
 bool CliCommandLine::IsInPath(const void* definition) const {
   for (const CliCommand* command : path_) {
-    for (const CliAnyFlag& flag : command->flags) {
+    for (const CliAnyFlag& flag : internal::GetCliFlags(command)) {
       if (internal::GetCliFlagFields(flag).definition == definition) {
         return true;
       }

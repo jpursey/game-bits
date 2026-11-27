@@ -22,37 +22,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Command line flags added at run time
-
-- **Layers:** cli
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Requested by:** OZ-3 *App structure*
-- **Background:** [Command line library](worklog/command_line_library.md)
-
-A `CliCommand`'s flags, arguments, subcommands, and constraints are each a
-`std::initializer_list`, so a command defined with braced lists at namespace
-scope keeps their arrays alive: C++ extends the life of a braced list's array
-only when it initializes an `initializer_list`. An `absl::Span` there would
-dangle once the definition ends, which clang reports with `-Wdangling`. So a
-command's flags are fixed where it is written, and a program made of separate
-parts can't combine their flags into one command at run time, such as a shared
-core with flags of its own and an interchangeable part (a front end) with
-others. Listing every part's flags in each command that combines them instead
-means every command changes whenever a part's flags do.
-
-Add a field to `CliCommand` for flags given at run time, such as
-`absl::Span<const CliAnyFlag> added_flags`, whose array the caller keeps alive
-as long as the command. gb_cli treats them wherever it treats `flags`: parsing,
-reading their values (`CliCommandLine::Get`), validating their names as unique
-among the command's flags and those of the commands above it, and help, which
-lists them with the command's other flags. A `CliCommand` can already be made
-at run time (its `not_constexpr` field rules out only `constexpr`), so a
-program then makes its command from its parts. Existing commands don't change.
-Only flags are added: nothing needs arguments or subcommands given at run time
-yet.
-
 ## Contracts own their contexts
 
 - **Layers:** base, resource, render
