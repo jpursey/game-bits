@@ -273,9 +273,10 @@ struct CliCommand {
   // does. The flags themselves are definitions with static storage, as any
   // others.
   //
-  // A command that is a class member gives all its flags and subcommands in
-  // `added_flags` and `added_commands`: the arrays of its initializer lists
-  // are destroyed when the constructor that initializes it returns.
+  // A command that is a class member can't use its initializer lists, whose
+  // arrays are destroyed when the constructor that initializes it returns. It
+  // gives its flags and subcommands in `added_flags` and `added_commands`, and
+  // can't have arguments or constraints.
   absl::Span<const CliAnyFlag> added_flags;
 
   // The command's positional arguments, in order. If the command has

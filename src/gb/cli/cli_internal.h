@@ -88,14 +88,15 @@ class CliJoinedList {
 
   Iterator begin() const { return Iterator(this, 0); }
   Iterator end() const { return Iterator(this, size()); }
-  int size() const { return static_cast<int>(first_.size() + second_.size()); }
   bool empty() const { return size() == 0; }
+
+ private:
+  int size() const { return static_cast<int>(first_.size() + second_.size()); }
   const T& operator[](int index) const {
     const int first_size = static_cast<int>(first_.size());
     return index < first_size ? first_[index] : second_[index - first_size];
   }
 
- private:
   absl::Span<const T> first_;
   absl::Span<const T> second_;
 };

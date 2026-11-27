@@ -1288,7 +1288,7 @@ class CliAddedTest : public CliCommandLineRunTest {
   };
 };
 
-TEST_F(CliAddedTest, FlagsAndAddedFlags) {
+TEST_F(CliCommandLineRunTest, FlagsAndAddedFlags) {
   const std::vector<CliAnyFlag> flags = {&kGoal};
   const std::vector<const CliCommand*> commands = {&kStatus};
   const CliCommand program = {
@@ -1355,7 +1355,7 @@ TEST_F(CliAddedTest, UnknownCommand) {
               StartsWith("parts: unknown command \"remote\""));
 }
 
-TEST_F(CliAddedTest, MissingRequiredAddedFlag) {
+TEST_F(CliCommandLineRunTest, MissingRequiredAddedFlag) {
   const std::vector<CliAnyFlag> flags = {&kKey};
   const CliCommand program = {.name = "prog", .added_flags = flags};
   EXPECT_EQ(ParseError(&program, {}), "prog: missing \"--key\"");
@@ -1364,7 +1364,7 @@ TEST_F(CliAddedTest, MissingRequiredAddedFlag) {
   EXPECT_THAT(command_line->Get(kKey), Optional(std::string_view("k")));
 }
 
-TEST_F(CliAddedTest, AddedFlagValidatorsReadTheContext) {
+TEST_F(CliCommandLineRunTest, AddedFlagValidatorsReadTheContext) {
   const std::vector<CliAnyFlag> flags = {&kDepth};
   const CliCommand program = {.name = "prog", .added_flags = flags};
 

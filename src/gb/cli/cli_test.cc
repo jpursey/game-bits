@@ -516,12 +516,12 @@ TEST(ValidateCliCommandTest, DuplicateAddedFlag) {
 
 TEST(ValidateCliCommandTest, DuplicateShortNameFromParentAddedFlag) {
   static const CliFlag<bool> kOther = {.name = "other", .short_name = 'a'};
-  static const CliCommand kOtherSub = {.name = "sub", .flags = {&kOther}};
+  static const CliCommand kShortSub = {.name = "sub", .flags = {&kOther}};
   const std::vector<CliAnyFlag> flags = {&kAlpha};
   const CliCommand program = {
       .name = "prog",
       .added_flags = flags,
-      .commands = {&kOtherSub},
+      .commands = {&kShortSub},
   };
   EXPECT_EQ(ValidateCliCommand(&program).message(),
             "prog sub: duplicate flag \"-a\"");
