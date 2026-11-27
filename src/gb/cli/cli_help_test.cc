@@ -184,6 +184,44 @@ TEST(FormatCliHelpTest, InheritedFlags) {
             "  -v, --verbose  Writes more.\n");
 }
 
+TEST(FormatCliHelpTest, AddedFlagsAndCommands) {
+  static const CliFlag<bool> kDryRun = {
+      .name = "dry-run",
+      .short_name = 'n',
+      .help = "Writes what it would do.",
+  };
+  const std::vector<CliAnyFlag> flags = {&kDryRun};
+  const std::vector<const CliCommand*> commands = {&kStatus, &kCliHelpCommand};
+  const CliCommand program = {
+      .name = "tool",
+      .flags = {&kVerbose},
+      .added_flags = flags,
+      .commands = {&kRemote},
+      .added_commands = commands,
+  };
+  EXPECT_EQ(GetHelp(&program, {"--help"}),
+            "Usage: tool [<flags>] <command>\n"
+            "\n"
+            "Commands:\n"
+            "  remote         Manages remotes.\n"
+            "  status\n"
+            "  help           Writes help for a command.\n"
+            "\n"
+            "Flags:\n"
+            "  -v, --verbose  Writes more.\n"
+            "  -n, --dry-run  Writes what it would do.\n"
+            "  -h, --help     Writes help for this command.\n");
+  EXPECT_EQ(GetHelp(&program, {"status", "--help"}),
+            "Usage: tool status [<flags>]\n"
+            "\n"
+            "Flags:\n"
+            "  -h, --help     Writes help for this command.\n"
+            "\n"
+            "Flags for tool:\n"
+            "  -v, --verbose  Writes more.\n"
+            "  -n, --dry-run  Writes what it would do.\n");
+}
+
 TEST(FormatCliHelpTest, HelpCommand) {
   EXPECT_EQ(GetHelp(&kTool, {"help", "remote", "add"}),
             GetHelp(&kTool, {"remote", "add", "--help"}));

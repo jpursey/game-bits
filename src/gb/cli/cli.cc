@@ -5,7 +5,6 @@
 
 #include "gb/cli/cli.h"
 
-#include <initializer_list>
 #include <string_view>
 #include <type_traits>
 #include <variant>
@@ -30,7 +29,7 @@ namespace {
 //==============================================================================
 
 template <typename T>
-absl::Status ValidateChoices(std::initializer_list<CliChoice> choices) {
+absl::Status ValidateChoices(CliChoices choices) {
   if (choices.size() == 0) {
     return absl::OkStatus();
   }
@@ -58,8 +57,7 @@ absl::Status ValidateChoices(std::initializer_list<CliChoice> choices) {
 }
 
 template <typename T>
-absl::Status ValidateValidators(
-    std::initializer_list<const CliValidator<T>*> validators) {
+absl::Status ValidateValidators(CliValidators<T> validators) {
   for (const CliValidator<T>* validator : validators) {
     if (validator == nullptr) {
       return absl::InvalidArgumentError("has a null validator");
@@ -176,7 +174,7 @@ absl::Status CliCommandValidator::Validate(const CliCommand* command) {
     return status;
   }
   absl::flat_hash_set<std::string_view> names;
-  for (const CliCommand* subcommand : command->commands) {
+  for (const CliCommand* subcommand : internal::GetCliCommands(command)) {
     if (subcommand != nullptr && !names.insert(subcommand->name).second) {
       return Error(
           absl::StrCat("duplicate command \"", subcommand->name, "\""));
@@ -197,7 +195,7 @@ absl::Status CliCommandValidator::ValidateFlags() const {
   absl::flat_hash_set<std::string_view> names;
   absl::flat_hash_set<char> short_names;
   for (int i = 0; i + 1 < static_cast<int>(path_.size()); ++i) {
-    for (const CliAnyFlag& flag : path_[i]->flags) {
+    for (const CliAnyFlag& flag : internal::GetCliFlags(path_[i])) {
       const internal::CliFlagFields fields = internal::GetCliFlagFields(flag);
       names.insert(fields.name);
       if (fields.short_name != 0) {
@@ -206,7 +204,7 @@ absl::Status CliCommandValidator::ValidateFlags() const {
     }
   }
 
-  for (const CliAnyFlag& flag : path_.back()->flags) {
+  for (const CliAnyFlag& flag : internal::GetCliFlags(path_.back())) {
     const internal::CliFlagFields fields = internal::GetCliFlagFields(flag);
     if (fields.name.empty()) {
       return Error("flag has no name");
@@ -273,7 +271,7 @@ absl::Status CliCommandValidator::ValidateArgs() const {
     if (fields.optional) {
       // A command's subcommand follows its arguments, so it must always take
       // the same number of words for them.
-      if (path_.back()->commands.size() != 0) {
+      if (!internal::GetCliCommands(path_.back()).empty()) {
         return Error(absl::StrCat("optional argument <", fields.name,
                                   "> is in a command with commands"));
       }

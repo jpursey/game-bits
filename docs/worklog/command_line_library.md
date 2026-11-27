@@ -95,7 +95,10 @@ A program with nothing in its context calls `RunCommandLine(&kProgram, args)`.
   with designated initializers, with static storage. Its lists are initializer
   lists, so a definition holds pointers into constant data, and definitions
   refer to each other only by address. A definition must not be a temporary or
-  a local copied elsewhere.
+  a local copied elsewhere. Each list has a type of its own (`CliFlags`,
+  `CliArgs`, `CliCommands`, `CliChoices`, `CliValidators<T>`,
+  `CliConstraints`), so a list can also be defined on its own, with static
+  storage, and shared by definitions.
 - **Not constexpr:** each definition with lists holds an
   `internal::CliNotConstexpr` member, so a `constexpr` definition fails to
   compile (see Deliberate choices). Definitions are initialized at startup,
@@ -107,6 +110,17 @@ A program with nothing in its context calls `RunCommandLine(&kProgram, args)`.
   help rather than `argv[0]`. A command with subcommands may also have
   required arguments, given before the subcommand's name (`oz3dsk <image>
   format`). A command with no run function writes its help when it is run.
+- **Added flags and commands:** a program made of separate parts, each with
+  flags or subcommands of its own, makes its command at run time, giving the
+  parts' flags in `added_flags` and their subcommands in `added_commands`.
+  These are `absl::Span`s, whose arrays the program keeps alive as long as the
+  command, as a span doesn't extend an array's life as an initializer list
+  does. gb_cli treats them everywhere as if they followed `flags` and
+  `commands`: parsing, reading values, validating definitions, and help. A
+  command made at run time may still have braced lists if it is a local, or
+  copies of lists with static storage (`const gb::CliFlags kCoreFlags =
+  {...};`) anywhere. Only a braced list written where a class member is
+  initialized dangles, as its array is destroyed when the constructor returns.
 - **Flags:** a `CliFlag<T>` has a long name (`--name`), an optional short name
   (`-n`), a value name shown in help (defaulting to the name), help, choices,
   a default, and validators. Flags are optional by default, as arguments are
@@ -374,14 +388,14 @@ platform-specific.
 
 | File | What |
 |---|---|
-| `cli.h` | The definitions (`CliCommand`, `CliFlag`, `CliArg`, `CliChoice`, `CliValidator`, `CliAnyFlag`, `CliAnyArg`) and `ValidateCliCommand()` |
+| `cli.h` | The definitions (`CliCommand`, `CliFlag`, `CliArg`, `CliChoice`, `CliValidator`, `CliAnyFlag`, `CliAnyArg`), their list types (`CliFlags`, `CliArgs`, `CliCommands`, `CliChoices`, `CliValidators<T>`, `CliConstraints`), and `ValidateCliCommand()` |
 | `cli_validators.h` | The common validators |
 | `cli_path.h` | `kConstraintCliFileSystem`, `kConstraintCliFileProtocol`, and the path validators |
 | `cli_command_line.h` | `CliCommandLine`, `ParseCommandLine()`, `kConstraintCliWriter`, `kConstraintCliHelpWidth`, `kConstraintCliUsageError`, and `CliContract` |
 | `cli_help.h` | `kCliHelpCommand` and `FormatCliHelp()` |
 | `cli_writer.h` | `CliText`, `CliWriter`, and `WriteCliText()` |
 | `run_command_line.h` | `RunCommandLine()` and `GetMainArgs()` |
-| `cli_internal.h` | Private to `gb_cli` and its tests: the fields every flag or argument has, parsing a value, gathering validators' constraints, and `GetCliPathName()` |
+| `cli_internal.h` | Private to `gb_cli` and its tests: the fields every flag or argument has, parsing a value, gathering validators' constraints, a command's flags and subcommands with those added (`GetCliFlags()`, `GetCliCommands()`), and `GetCliPathName()` |
 | `fake_cli_writer.h` | `FakeCliWriter`, which keeps what is written, for `gb_cli`'s tests |
 
 - **Value types:** the types are a fixed set, so a command's lists are
@@ -405,8 +419,10 @@ platform-specific.
 - A definition must be static data. One built as a local and copied out leaves
   its lists dangling. `constexpr`, which would silently break on MSVC, fails
   to compile.
-- A flag must be in its command's `flags` to be read. `Get()` CHECKs if it
-  isn't, which any test of the command finds.
+- A command's added flags and commands are spans, whose arrays the program
+  must keep alive as long as the command.
+- A flag must be in its command's `flags` or `added_flags` to be read.
+  `Get()` CHECKs if it isn't, which any test of the command finds.
 - The value types are listed five times: the `static_assert`s in `CliFlag` and
   `CliArg`, `CliAnyFlag`, `CliAnyArg`, and `CliValue`. A new type also needs a
   `ParseText()` overload in `cli_internal.cc` (or it fails to compile), and an

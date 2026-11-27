@@ -7,7 +7,6 @@
 
 #include <cmath>
 #include <cstdint>
-#include <initializer_list>
 #include <variant>
 #include <vector>
 
@@ -110,8 +109,7 @@ absl::Status ParseText(std::string_view text, double* value) {
 }
 
 // Validates that `text` is one of `choices`, if there are any.
-absl::Status ValidateChoice(std::string_view text,
-                            std::initializer_list<CliChoice> choices) {
+absl::Status ValidateChoice(std::string_view text, CliChoices choices) {
   if (choices.size() == 0 ||
       absl::c_any_of(choices, [text](const CliChoice& choice) {
         return choice.name == text;
@@ -127,10 +125,9 @@ absl::Status ValidateChoice(std::string_view text,
 }
 
 template <typename T>
-absl::StatusOr<CliValue> ParseValue(
-    ValidatedContext* context, std::string_view text,
-    std::initializer_list<CliChoice> choices,
-    std::initializer_list<const CliValidator<T>*> validators) {
+absl::StatusOr<CliValue> ParseValue(ValidatedContext* context,
+                                    std::string_view text, CliChoices choices,
+                                    CliValidators<T> validators) {
   T value = {};
   absl::Status status = ParseText(text, &value);
   if (!status.ok()) {
@@ -183,6 +180,15 @@ void AppendConstraints(const Definition& definition,
 //==============================================================================
 // Shared functions
 //==============================================================================
+
+CliJoinedList<CliAnyFlag> GetCliFlags(const CliCommand* command) {
+  return CliJoinedList<CliAnyFlag>(command->flags, command->added_flags);
+}
+
+CliJoinedList<const CliCommand*> GetCliCommands(const CliCommand* command) {
+  return CliJoinedList<const CliCommand*>(command->commands,
+                                          command->added_commands);
+}
 
 CliFlagFields GetCliFlagFields(const CliAnyFlag& flag) {
   return std::visit([](const auto* typed) { return GetFields(*typed); }, flag);

@@ -57,6 +57,57 @@ struct CliArgFields {
   bool optional = false;
 };
 
+// Two lists iterated as one: the items of `first`, then those of `second`.
+// This holds spans, so the lists must outlive it.
+template <typename T>
+class CliJoinedList {
+ public:
+  class Iterator {
+   public:
+    const T& operator*() const { return (*list_)[index_]; }
+    Iterator& operator++() {
+      ++index_;
+      return *this;
+    }
+    bool operator==(const Iterator& other) const {
+      return list_ == other.list_ && index_ == other.index_;
+    }
+
+   private:
+    friend class CliJoinedList;
+
+    Iterator(const CliJoinedList* list, int index)
+        : list_(list), index_(index) {}
+
+    const CliJoinedList* list_;
+    int index_;
+  };
+
+  CliJoinedList(absl::Span<const T> first, absl::Span<const T> second)
+      : first_(first), second_(second) {}
+
+  Iterator begin() const { return Iterator(this, 0); }
+  Iterator end() const { return Iterator(this, size()); }
+  bool empty() const { return size() == 0; }
+
+ private:
+  int size() const { return static_cast<int>(first_.size() + second_.size()); }
+  const T& operator[](int index) const {
+    const int first_size = static_cast<int>(first_.size());
+    return index < first_size ? first_[index] : second_[index - first_size];
+  }
+
+  absl::Span<const T> first_;
+  absl::Span<const T> second_;
+};
+
+// Returns all of a command's flags: its `flags`, then its `added_flags`.
+CliJoinedList<CliAnyFlag> GetCliFlags(const CliCommand* command);
+
+// Returns all of a command's subcommands: its `commands`, then its
+// `added_commands`.
+CliJoinedList<const CliCommand*> GetCliCommands(const CliCommand* command);
+
 CliFlagFields GetCliFlagFields(const CliAnyFlag& flag);
 CliArgFields GetCliArgFields(const CliAnyArg& arg);
 

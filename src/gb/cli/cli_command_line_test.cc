@@ -1263,6 +1263,125 @@ TEST(ParseCommandLineTest, NotAChoice) {
 }
 
 //==============================================================================
+// Added flags and commands
+//
+// A program made at run time from parts, as added flags and commands are for:
+// a part's flags and commands are added to those the program has itself.
+//==============================================================================
+
+const CliFlag<std::string_view> kGoal = {
+    .name = "goal", .short_name = 'g', .default_value = "all"};
+const CliFlag<std::string_view> kKey = {.name = "key", .optional = false};
+
+// The program's own lists have static storage, as a braced list written in a
+// class member's initializer is destroyed when the constructor returns.
+const CliFlags kPartsFlags = {&kQuiet};
+const CliCommands kPartsCommands = {&kAdd};
+
+class CliAddedTest : public CliCommandLineRunTest {
+ protected:
+  const std::vector<CliAnyFlag> added_flags_ = {&kGoal, &kVerbose};
+  const std::vector<const CliCommand*> added_commands_ = {&kStatus,
+                                                          &kCliHelpCommand};
+  const CliCommand program_ = {
+      .name = "parts",
+      .flags = kPartsFlags,
+      .added_flags = added_flags_,
+      .commands = kPartsCommands,
+      .added_commands = added_commands_,
+      .run = RunNothing,
+  };
+};
+
+TEST_F(CliCommandLineRunTest, FlagsAndAddedFlags) {
+  const std::vector<CliAnyFlag> flags = {&kGoal};
+  const std::vector<const CliCommand*> commands = {&kStatus};
+  const CliCommand program = {
+      .name = "parts",
+      .flags = {&kQuiet},
+      .added_flags = flags,
+      .commands = {&kAdd},
+      .added_commands = commands,
+  };
+  absl::StatusOr<CliCommandLine> command_line =
+      Parse(&program, {"-q", "status", "--goal", "lib"});
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_EQ(command_line->GetCommand(), &kStatus);
+  EXPECT_TRUE(command_line->Get(kQuiet));
+  EXPECT_THAT(command_line->Get(kGoal), Optional(std::string_view("lib")));
+  command_line = Parse(&program, {"add", "origin"});
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_EQ(command_line->GetCommand(), &kAdd);
+}
+
+TEST_F(CliAddedTest, AddedFlags) {
+  absl::StatusOr<CliCommandLine> command_line =
+      Parse(&program_, {"-q", "--goal=lib", "-v"});
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_TRUE(command_line->Get(kQuiet));
+  EXPECT_THAT(command_line->Get(kGoal), Optional(std::string_view("lib")));
+  EXPECT_TRUE(command_line->Get(kVerbose));
+}
+
+TEST_F(CliAddedTest, AddedFlagNotGiven) {
+  absl::StatusOr<CliCommandLine> command_line = Parse(&program_, {});
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->Get(kGoal), Optional(std::string_view("all")));
+  EXPECT_FALSE(command_line->Get(kVerbose));
+}
+
+TEST_F(CliAddedTest, AddedFlagAfterSubcommand) {
+  absl::StatusOr<CliCommandLine> command_line =
+      Parse(&program_, {"add", "origin", "-g", "lib", "-f"});
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_EQ(command_line->GetCommand(), &kAdd);
+  EXPECT_THAT(command_line->Get(kGoal), Optional(std::string_view("lib")));
+  EXPECT_TRUE(command_line->Get(kForce));
+}
+
+TEST_F(CliAddedTest, AddedCommand) {
+  absl::StatusOr<CliCommandLine> command_line =
+      Parse(&program_, {"status", "-v"});
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->GetCommandPath(), ElementsAre(&program_, &kStatus));
+  EXPECT_TRUE(command_line->Get(kVerbose));
+}
+
+TEST_F(CliAddedTest, AddedHelpCommand) {
+  absl::StatusOr<CliCommandLine> command_line =
+      Parse(&program_, {"help", "status"});
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(RunForHelp(*command_line),
+              StartsWith("Usage: parts status [<flags>]\n"));
+}
+
+TEST_F(CliAddedTest, UnknownCommand) {
+  EXPECT_THAT(Parse(&program_, {"remote"}).status().message(),
+              StartsWith("parts: unknown command \"remote\""));
+}
+
+TEST_F(CliCommandLineRunTest, MissingRequiredAddedFlag) {
+  const std::vector<CliAnyFlag> flags = {&kKey};
+  const CliCommand program = {.name = "prog", .added_flags = flags};
+  EXPECT_EQ(ParseError(&program, {}), "prog: missing \"--key\"");
+  absl::StatusOr<CliCommandLine> command_line = Parse(&program, {"--key", "k"});
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  EXPECT_THAT(command_line->Get(kKey), Optional(std::string_view("k")));
+}
+
+TEST_F(CliCommandLineRunTest, AddedFlagValidatorsReadTheContext) {
+  const std::vector<CliAnyFlag> flags = {&kDepth};
+  const CliCommand program = {.name = "prog", .added_flags = flags};
+
+  // The added flag's validator needs Settings, though "--depth" isn't given.
+  EXPECT_TRUE(absl::IsFailedPrecondition(Parse(&program, {}).status()));
+  Settings settings = {.level = 5};
+  context_.SetPtr<Settings>(&settings);
+  EXPECT_THAT(Parse(&program, {"--depth", "6"}).status().message(),
+              StartsWith("prog: \"--depth\": 6 is more than level 5."));
+}
+
+//==============================================================================
 // Programming errors
 //==============================================================================
 

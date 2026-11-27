@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <string_view>
+#include <vector>
 
 #include "absl/status/status.h"
 #include "gb/base/validated_context.h"
@@ -472,6 +473,89 @@ TEST(ValidateCliCommandTest, RequiredAfterOptional) {
                                       .args = {&kOptional, &kRequired}};
   EXPECT_EQ(ValidateCliCommand(&kProgram).message(),
             "prog: required argument <required> follows an optional one");
+}
+
+//==============================================================================
+// Added flags and commands
+//
+// These commands are made at run time, as added flags and commands are for.
+//==============================================================================
+
+TEST(ValidateCliCommandTest, ValidWithAddedFlagsAndCommands) {
+  static const CliFlag<bool> kBeta = {.name = "beta", .short_name = 'b'};
+  const std::vector<CliAnyFlag> flags = {&kBeta};
+  const std::vector<const CliCommand*> commands = {&kOtherSub};
+  const CliCommand program = {
+      .name = "prog",
+      .flags = {&kAlpha},
+      .added_flags = flags,
+      .commands = {&kSub},
+      .added_commands = commands,
+  };
+  EXPECT_TRUE(ValidateCliCommand(&program).ok());
+}
+
+TEST(ValidateCliCommandTest, InvalidAddedFlag) {
+  static const CliFlag<bool> kNoName = {};
+  const std::vector<CliAnyFlag> flags = {&kNoName};
+  const CliCommand program = {.name = "prog", .added_flags = flags};
+  EXPECT_EQ(ValidateCliCommand(&program).message(), "prog: flag has no name");
+}
+
+TEST(ValidateCliCommandTest, DuplicateAddedFlag) {
+  static const CliFlag<std::string_view> kAlphaValue = {.name = "alpha"};
+  const std::vector<CliAnyFlag> flags = {&kAlphaValue};
+  const CliCommand program = {
+      .name = "prog",
+      .flags = {&kAlpha},
+      .added_flags = flags,
+  };
+  EXPECT_EQ(ValidateCliCommand(&program).message(),
+            "prog: duplicate flag \"--alpha\"");
+}
+
+TEST(ValidateCliCommandTest, DuplicateShortNameFromParentAddedFlag) {
+  static const CliFlag<bool> kOther = {.name = "other", .short_name = 'a'};
+  static const CliCommand kShortSub = {.name = "sub", .flags = {&kOther}};
+  const std::vector<CliAnyFlag> flags = {&kAlpha};
+  const CliCommand program = {
+      .name = "prog",
+      .added_flags = flags,
+      .commands = {&kShortSub},
+  };
+  EXPECT_EQ(ValidateCliCommand(&program).message(),
+            "prog sub: duplicate flag \"-a\"");
+}
+
+TEST(ValidateCliCommandTest, InvalidAddedCommand) {
+  static const CliCommand kDash = {.name = "-sub"};
+  const std::vector<const CliCommand*> commands = {&kDash};
+  const CliCommand program = {.name = "prog", .added_commands = commands};
+  EXPECT_EQ(ValidateCliCommand(&program).message(),
+            "prog -sub: command name starts with \"-\"");
+}
+
+TEST(ValidateCliCommandTest, DuplicateAddedCommand) {
+  static const CliCommand kSubAgain = {.name = "sub"};
+  const std::vector<const CliCommand*> commands = {&kSubAgain};
+  const CliCommand program = {
+      .name = "prog",
+      .commands = {&kSub},
+      .added_commands = commands,
+  };
+  EXPECT_EQ(ValidateCliCommand(&program).message(),
+            "prog: duplicate command \"sub\"");
+}
+
+TEST(ValidateCliCommandTest, OptionalArgsAndAddedCommands) {
+  const std::vector<const CliCommand*> commands = {&kSub};
+  const CliCommand program = {
+      .name = "prog",
+      .args = {&kOptional},
+      .added_commands = commands,
+  };
+  EXPECT_EQ(ValidateCliCommand(&program).message(),
+            "prog: optional argument <optional> is in a command with commands");
 }
 
 }  // namespace
