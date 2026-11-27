@@ -90,6 +90,10 @@ beside it 15 MB.
   where `wasm_` would name the processor and `emscripten_` the toolchain.
 - `GB_WEB_THREADS` is the CMake option for a build with threads.
 - `SupportsThreads()` follows `SupportsFibers()` in `gb/thread/fiber.h`.
+- `GB_SKIP_WITHOUT_THREADS()` is the line that skips a test where there are
+  no threads. `GB_REQUIRE_THREADS()` reads as if it failed the test, and
+  `GB_THREADED_TEST()`, in place of `TEST()`, would need a form for each of
+  GoogleTest's (`TEST_F`, `TEST_P`).
 - Build trees are `out/build/web-Debug` and `out/build/web-threads-Debug`,
   beside `linux-clang-Debug`.
 
@@ -140,10 +144,11 @@ there are death tests and skips it elsewhere, so every `EXPECT_DEATH` becomes
 that. `EXPECT_DEBUG_DEATH`, used in two files, has no such form, so those
 tests are compiled only where `GTEST_HAS_DEATH_TEST` is defined.
 
-SDL's web video driver needs a browser, so a test that starts SDL's video
-subsystem fails under Node (`gb_pilot_sdl_test` does). Whether SDL's dummy
-video driver serves those tests under Node is to confirm. If not, they run
-only once *Programs in the browser* can run tests in a browser.
+SDL's web video driver needs a browser, so a test that makes a window fails
+under Node (two of `gb_pilot_sdl_test`'s do). SDL's dummy video driver serves
+them: with `SDL_VIDEODRIVER=dummy` in the environment, which a Node program
+sees, every SDL test passes. `gb_add_test` sets it for each test in a web
+build. SDL's real web driver is first used by *Programs in the browser*.
 
 ### Threads
 
@@ -164,9 +169,13 @@ bool SupportsThreads();
   none.
 - A mutex or a condition variable works in a build without threads, as there
   is nothing to wait for.
-- A test that starts a thread is skipped in a build without them. How (a line
-  at the top of each such test, or a fixture) is settled in its CL, from how
-  many there are.
+- A test that starts a thread begins with `GB_SKIP_WITHOUT_THREADS();`
+  (`gb/test/thread_tester.h`), which skips it where `SupportsThreads()` is
+  false. `gb_test` depends on `gb_thread` for that, both in tier 0. About 90 of Game Bits' 3,500 tests do, in 13 of the 22 test programs,
+  most of them in `gb_profile_test`, `gb_test_test`, `gb_message_test`, and
+  `gb_thread_test`. A test without the line that starts a thread stops at a
+  `CHECK`, so a missing one is found the first time the test runs in a build
+  without threads, which CI does.
 
 **Brittleness:** a program that starts a thread works on every other platform
 and fails in a web build without threads. The `CHECK`s make that failure name
@@ -199,9 +208,11 @@ that is more.
 
 ### To confirm
 
-A trial build with Emscripten 7.0.1, with the fixes below patched in roughly,
-found what CL2 to CL8 fix. With threads, 19 of the 22 test programs passed
-under Node. Recorded here as it was found:
+Trial builds with Emscripten 7.0.1, with and without threads, and with the
+fixes below patched in roughly, found what CL2 to CL8 fix. With threads, 19 of
+the 22 test programs passed under Node, and only the five tests below failed.
+Without threads, everything compiled, and the tests that failed were those
+five and the ones that start threads. Recorded here as it was found:
 - Every third-party library builds as it is: Abseil, RE2, GoogleTest,
   FlatBuffers (and `flatc`, which the build ran under Node), glm, libccd, and
   SDL2.
@@ -218,7 +229,13 @@ under Node. Recorded here as it was found:
   isn't UTF-8 with U+FFFD in place of its bad bytes, so it is listed. (CL6)
 - `CommonProtocolTest.ReadOnlyFile` fails, as it does on Linux as root, which
   the trial ran as. (CL6 checks it as an ordinary user.)
-- `gb_pilot_sdl_test` stops at `screen is not defined`. (CL8)
+- `LocalFileProtocolTest.CreateWithRootPath` fails without threads only.
+  (CL6)
+- `gb_pilot_sdl_test` stops at `screen is not defined`, in the two tests that
+  resize a window. All 23 pass with `SDL_VIDEODRIVER=dummy`. (CL8)
+- Without threads, `gb_job_test` doesn't link: `FiberJobSystem`'s semaphore
+  (from `concurrentqueue`) calls `sem_timedwait()`, which Emscripten only has
+  with threads. (CL7)
 - Emscripten's default stack is 64 KiB, for `main()` and each thread. Nothing
   overflowed it, but nothing deep was looked for. (CL1)
 - Abseil reports "Symbolization unavailable" once in every test program: the
@@ -327,7 +344,9 @@ Depends on: CL1 to CL6.
 - `SupportsThreads()` and `web_thread.cc`, as in [Threads](#threads).
 - The `CHECK`s in `ThreadMessageDispatcher`, `ThreadTester`, and
   `FakeJobSystem`.
-- Tests that start threads are skipped in a build without them.
+- `GB_SKIP_WITHOUT_THREADS()`, at the top of each test that starts a thread.
+- `FiberJobSystem` is left out of a build without threads, where it can't
+  link, and `gb_job_test`'s tests of it with it.
 
 **Verify**
 - Standard checks.
@@ -338,17 +357,16 @@ Depends on: CL1 to CL6.
   null and `GetMaxConcurrency()` is 1.
 - Web with threads: every test program still passes.
 
-### CL8 [ ] sdl, pilot: SDL's tests under Node
+### CL8 [ ] build: SDL's tests under Node
 
 Depends on: CL1, CL2.
 
-- `gb_sdl_test` and `gb_pilot_sdl_test` use SDL's dummy video driver under
-  Node, if it serves them. Otherwise they aren't registered with `ctest` on
-  the web, and the backlog's *Programs in the browser* says to run them there.
+- `gb_add_test` sets `SDL_VIDEODRIVER=dummy` for each test in a web build.
 
 **Verify**
 - Standard checks.
-- Web: both pass, or are left out, with and without threads.
+- Web: `gb_sdl_test` and `gb_pilot_sdl_test` pass under `ctest`, with and
+  without threads.
 
 ### CL9 [ ] CI: web builds
 
