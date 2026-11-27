@@ -156,8 +156,7 @@ TEST(FunctionHookTest, LeavesFunctionNotLoadedNull) {
   EXPECT_TRUE(calls.empty());
 }
 
-// Aliases, as template argument lists can't be passed to
-// EXPECT_DEATH_IF_SUPPORTED.
+// Aliases, as template argument lists can't be passed to a macro.
 using AddRecordHook = FunctionHook<&g_add, RecordHook>;
 using AddDoubleHook = FunctionHook<&g_add, DoubleHook>;
 using NotLoadedRecordHook = FunctionHook<&g_not_loaded, RecordHook>;
