@@ -22,25 +22,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Web demos
-
-- **Layers:** build, CI, examples
-- **Size:** medium
-- **Feature workflow:** yes
-- **Depends on:** *WebGPU render backend*, *Files on the web*
-- **Background:** [Web support](designs/web_support.md)
-
-Show Game Bits running without building it. Host block-world and render-check
-from the repository with GitHub Pages, built and published by a workflow on
-each push to `main`, and linked from README.md. Also package a program as a
-Claude artifact, to share by its link: a page of at most 16 MB with each file
-beside it at most 15 MB, built without threads, as an artifact isn't
-cross-origin isolated. Block-world's assets and a release build's size decide
-whether it fits. Block-world's shaders are compiled by a hand-run Windows
-script, and it has never been built with clang, so this compiles them in the
-build (the block-world half of *Block-world and ImGui shaders compiled by the
-build*) and fixes what clang rejects (most of *Block-world on Linux*).
-
 ## Contracts own their contexts
 
 - **Layers:** base, resource, render
@@ -156,44 +137,43 @@ alone provides, so these, which are Linux's own, go in `linux_` files, as
 `gb/base`'s process memory does, with the build choosing them on Linux, and
 their tests named the same way.
 
-## Block-world and ImGui shaders compiled by the build
+## ImGui shaders compiled by the build
 
-- **Layers:** CI, imgui, examples
+- **Layers:** CI, imgui
 - **Size:** small
 - **Feature workflow:** no
-- **Depends on:** nothing
+- **Depends on:** *Web demos*
 - **Background:** `gb_embed_shader` in `CMake/GameBitsTargetCommands.cmake`,
   as render-check uses it; `assets/shaders/build-shaders.bat`; the shaders
   pasted into `gb/imgui/gen_imgui_shaders.cc` and `web_imgui_shaders.cc`
 
-Block-world's shaders are compiled by a hand-run script into `.spv` files it
-loads at run time, so a fresh checkout or worktree has none until the script is
-run, and an edited shader is easy to leave stale. gb_imgui's are compiled by
-hand, their SPIR-V pasted into `gen_imgui_shaders.cc` and their WGSL into
-`web_imgui_shaders.cc`. Compile both with `gb_embed_shader`, as render-check
-does, and remove the script.
+gb_imgui's shaders are compiled by hand, their SPIR-V pasted into
+`gen_imgui_shaders.cc` and their WGSL into `web_imgui_shaders.cc`. Compile
+them with `gb_embed_shader`, as render-check does, and remove
+`assets/shaders/build-shaders.bat`, which only they need once block-world's
+shaders are compiled by the build ([Web demos](worklog/web_demos.md)'s CL1,
+which does block-world's half of this item).
 
-CI builds block-world, and every project that links gb_imgui (including its
-unit tests, which draw with the test backend) would then need `glslc`. Every CI
-job already has it, as each installs the Vulkan SDK, `glslc` included, with
-`.github/actions/vulkan-sdk` ([Graphics on Linux](worklog/linux_graphics.md)).
+Every project that links gb_imgui (including its unit tests, which draw with
+the test backend) would then need `glslc`, and `spirv-opt` and `naga` in a web
+build. Every CI job has `glslc`, as each but the web ones installs the Vulkan
+SDK with `.github/actions/vulkan-sdk` ([Graphics on
+Linux](worklog/linux_graphics.md)); the web jobs would need it, and `naga`,
+too.
 
 ## Block-world on Linux
 
 - **Layers:** CI, examples
 - **Size:** small
 - **Feature workflow:** no
-- **Depends on:** *Block-world and ImGui shaders compiled by the build*
-- **Background:** [Graphics on Linux](worklog/linux_graphics.md)
+- **Depends on:** nothing
+- **Background:** [Web demos](worklog/web_demos.md), whose CL1 and CL2 do
+  this
 
-Block-world builds and runs only on Windows, where everything else built on
-Game Bits' graphics libraries also runs on Linux. Its code has nothing
-Windows-specific, but its shaders are compiled by a Windows batch file, and it
-has never been built on Linux. Build it there, add it to CI on Linux beside
-render-check (`build-render-check-linux`), and update CLAUDE.md and README.md,
-which say it doesn't build there. On lavapipe it is far too slow to play, but
-its scripts can still run in CI, checking that it draws with no validation
-errors.
+Block-world builds and runs only on Windows today. *Web demos* builds it on
+Linux, where it compiles with clang unchanged and draws on lavapipe once its
+shaders are compiled by the build (its CL1), and adds it to CI there (its
+CL2). This item comes out with that CL2.
 
 ## Devcontainers for projects built on Game Bits
 
