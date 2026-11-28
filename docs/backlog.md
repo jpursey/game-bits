@@ -22,23 +22,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Files on the web
-
-- **Layers:** build, file, resource
-- **Size:** medium
-- **Feature workflow:** yes
-- **Depends on:** *Programs in the browser*
-- **Background:** [Web support](designs/web_support.md);
-  `gb/file/local_file_protocol.h`
-
-A program in a browser has no files: `LocalFileProtocol` there sees only an
-empty file system in memory, so a program can't load its assets. Pack a
-program's assets with it when it is built, with a CMake command that names
-them, so they are there before `main()` and every read in `gb_file` returns
-at once, as it does elsewhere. Loading must not need threads. A Claude
-artifact allows 15 MB for each file beside its page, so say what happens to
-assets that are bigger.
-
 ## Web demos
 
 - **Layers:** build, CI, examples
@@ -379,6 +362,23 @@ limit of 60 on a 144 Hz display runs every second or third display frame.
 Check it by hand on a display faster than 60 Hz, as headless Chromium only
 has 60.
 
+## Asset packages over 15 MB
+
+- **Layers:** build
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** *Files on the web*
+- **Background:** [Files on the web](worklog/files_on_the_web.md)
+
+`gb_pack_assets()` packs a page's assets into one `<name>.data`, and only warns
+when it is over 15 MB, which a Claude artifact allows for each file beside its
+page. Split them into packages of at most 15 MB each instead, by running
+Emscripten's file packager once for each from the build, with each package's
+loader given to the page with `--pre-js`, so a page can have any amount. A
+single file over 15 MB still can't be beside an artifact, so say what happens
+to one (such as failing the build, or splitting the file and joining it as it
+loads).
+
 ## Stacks of a hung page
 
 - **Layers:** tools
@@ -417,7 +417,7 @@ the browser, which these tests don't need.
 - **Feature workflow:** yes
 - **Depends on:** nothing
 - **Background:** [Web support](designs/web_support.md), which leaves it
-  out; *Files on the web*
+  out; [Files on the web](worklog/files_on_the_web.md)
 
 What a program in a browser writes is kept in memory, and gone when its page
 is closed. Keep it in the browser's private file storage, so a saved game or
