@@ -74,7 +74,6 @@ void SdlTemplate::CleanUp() {
   pilot_sdl_.reset();
   if (window_ != nullptr) {
     SDL_DestroyWindow(window_);
-    window_ = nullptr;
   }
   SDL_Quit();
 }
@@ -117,7 +116,6 @@ bool SdlTemplate::HandleEvent(const SDL_Event& event) {
 
 bool Run(gb::ValidatedContext& context,
          const gb::CliCommandLine& command_line) {
-  // Null without --pilot, so the game gets the user's input.
   absl::StatusOr<std::unique_ptr<gb::Pilot>> pilot =
       gb::CreateCliPilot(context, command_line);
   if (!pilot.ok()) {

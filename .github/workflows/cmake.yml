@@ -169,7 +169,7 @@ jobs:
 
   # Each template is its own project, as a new project copied from it is, so it
   # builds the Game Bits libraries it uses itself, with GB_DIR set to the
-  # checkout. They build in Release, on each platform.
+  # checkout.
   build-templates:
     name: build-templates-${{ matrix.os }}
     runs-on: ${{ matrix.runner }}

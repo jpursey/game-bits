@@ -22,10 +22,9 @@ The resulting executable is written to the template's `bin/` directory.
 Both templates also build for the web, on Linux. The [cli](cli) template is a
 program that runs under Node with the machine's own files, environment, and
 arguments, as it does on any other platform. This needs the Emscripten SDK,
-installed with
-Game Bits' `tools/install-emsdk.sh` (see "Building for the web" in Game Bits'
-README.md), and its environment in the shell. From the copied directory, with
-`GB_DIR` set:
+installed with Game Bits' `tools/install-emsdk.sh` (see "Building for the web"
+in Game Bits' README.md), and its environment in the shell. From the copied
+directory, with `GB_DIR` set:
 
 ```
 source ~/emsdk/emsdk_env.sh
@@ -75,8 +74,7 @@ $GB_DIR/tools/run-program.sh --exe bin/sdl_template.html --steps 'hide window; w
   - **[cli](cli)**: This template is the most minimal and has nothing but 
     logging initialization in a command line application.
   - **[sdl](sdl)**: This template is a bare bones game: a `gb::Game` with an
-    SDL window, which logs the input it gets, and quits on Escape. It takes the
-    pilot flags, and builds for the web as a page.
+    SDL window, which logs the input it gets, and quits on Escape.
 
 ## Examples
 
