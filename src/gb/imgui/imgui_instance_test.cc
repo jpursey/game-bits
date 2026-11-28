@@ -23,6 +23,7 @@
 #include "gb/render/material.h"
 #include "gb/render/render_system.h"
 #include "gb/render/render_test.h"
+#include "gb/render/sampler_options.h"
 #include "gb/render/test_render_backend.h"
 #include "gb/render/texture.h"
 #include "gb/render/texture_array.h"
@@ -228,6 +229,25 @@ TEST_F(ImGuiInstanceTest, LoadFontsOnlyOnce) {
   ASSERT_TRUE(instance->LoadFonts());
   EXPECT_EQ(ImGui::GetIO().Fonts->TexID, material);
   EXPECT_EQ(material->GetMaterialBindingData()->GetTexture(0), font_texture);
+}
+
+// The font atlas is sampled without filtering and clamped to its edge, which
+// every backend has (WebGPU has no clamp to a border color). ImGui's texture
+// coordinates stay within the atlas, so this draws as clamping to a border
+// would.
+TEST_F(ImGuiInstanceTest, FontTextureClampsToItsEdge) {
+  auto instance = CreateInstance();
+  ASSERT_NE(instance, nullptr);
+  ASSERT_TRUE(instance->LoadFonts());
+  auto* material = static_cast<Material*>(ImGui::GetIO().Fonts->TexID);
+  ASSERT_NE(material, nullptr);
+  const Texture* font_texture =
+      material->GetMaterialBindingData()->GetTexture(0);
+  ASSERT_NE(font_texture, nullptr);
+  const SamplerOptions& options = font_texture->GetSamplerOptions();
+  EXPECT_EQ(options.address_mode, SamplerAddressMode::kClampEdge);
+  EXPECT_FALSE(options.filter);
+  EXPECT_FALSE(options.mipmap);
 }
 
 TEST_F(ImGuiInstanceTest, AddTexture) {
