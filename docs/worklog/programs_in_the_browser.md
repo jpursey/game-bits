@@ -112,15 +112,17 @@ A page is linked with:
   flag to run JSPI in Node 24 (`--experimental-wasm-jspi`, without which it
   aborts as it loads).
 - `-sENVIRONMENT=web`, without `-sNODERAWFS`, so its file system is in memory.
+  With threads, Emscripten adds `worker` itself.
 - `-sEXIT_RUNTIME=1`, `-sALLOW_MEMORY_GROWTH=1`, and `-sSTACK_SIZE=1MB`, as a
-  program for Node has.
-- `-sINVOKE_RUN=0` and `-sEXPORTED_RUNTIME_METHODS=FS,callMain`, so the shell
-  starts `main()` once the files are in place, and a tool can read files back
-  after it exits.
+  program for Node has, from `gb_set_web_executable_properties()`, which both
+  call.
+- `-sEXPORTED_RUNTIME_METHODS=FS`, so the shell can write files before
+  `main()`, and a tool can read files back after it exits.
 
 A web build with threads makes pages too, built with `-pthread` as everything
 there is, but without `-sPROXY_TO_PTHREAD`, as SDL's window must be on the
-browser's main thread. Nothing checks them (see *Threads in the browser*).
+browser's main thread. Nothing checks them beyond linking (see *Threads in the
+browser*).
 
 The shell is a page with a canvas whose id is `canvas` (SDL's driver uses
 `#canvas`) and a script that sets Emscripten's `Module` before the program's
@@ -128,16 +130,15 @@ script loads:
 - `arguments`: every `arg` in the page's query string, in order
   (`URLSearchParams.getAll('arg')`). An address holds any text, encoded, so
   there is no quoting to get wrong. `thisProgram` is the page's name.
-- `print` and `printErr`: `console.log` and `console.error`, so stdout and
-  stderr stay apart.
-- `onRuntimeInitialized`: writes each file in `globalThis.gbFiles`, if a tool
-  set it (a map from a path to its text or bytes), into the file system,
-  creating its folders, then calls `callMain(arguments)`.
+- `preRun`: writes each file in `globalThis.gbFiles`, if a tool set it (a map
+  from a path to its text or bytes), into the file system, creating its
+  folders, before Emscripten starts `main()`.
 - `onExit` and `onAbort`: set `globalThis.gbExit` to the exit code, or to the
   abort's message, so a tool knows the program has stopped and how.
 
-Nothing else: no styling beyond a black background and a canvas without a
-border, no status text, no fullscreen button. A tool reads files back after
+Emscripten's own defaults send stdout to `console.log` and stderr to
+`console.error`, so they stay apart. Nothing else: no styling beyond a black
+background, no status text, no fullscreen button. A tool reads files back after
 the program exits with `Module.FS`, from its own script, so the shell has no
 part in it.
 
@@ -284,8 +285,10 @@ the same options:
   --enable-features=Vulkan --use-vulkan=swiftshader`), so the next feature
   needs nothing more.
 - The script is put in the page's file system at `/pilot/script.txt` through
-  `gbFiles`, and the page is given `--pilot /pilot/script.txt --pilot-output
-  /pilot/out`, after `--arguments`, in its address.
+  `gbFiles`, with an empty `/pilot/out/.keep` so the output folder exists
+  (see [To confirm](#to-confirm)), and the page is given `--pilot
+  /pilot/script.txt --pilot-output /pilot/out`, after `--arguments`, in its
+  address.
 - Console messages go to `<out-dir>/stdout.txt`, and console errors and page
   errors to `stderr.txt`, so the log's summary is printed as it is for a
   program.
@@ -294,8 +297,8 @@ the same options:
   `--timeout-secs` the run fails with the page's state left as it was.
   There are no thread stacks to save: a page's stack could be read through
   Chrome's debugger, which is the backlog's *Stacks of a hung page*.
-- After the program exits, every file in `/pilot/out` is copied to
-  `<out-dir>` with `Module.FS`, from the tool's script.
+- After the program exits, every file in `/pilot/out` but `.keep` is copied
+  to `<out-dir>` with `Module.FS`, from the tool's script.
 - `--press-keys "<key>..."` presses each key (by Playwright's names, such as
   `Escape`) with the real keyboard, once the page has run for a second, and
   runs the program without a script, as a pilot drops the user's input. It is
@@ -358,11 +361,23 @@ with the WebGPU flags:
   (CL2, CL3)
 - SDL: as in [SDL](#sdl). (CL5)
 
+Settled by CL1, with the spike rebuilt as a page by
+`gb_set_web_page_properties()` and opened with Playwright:
+- `templates/sdl` links as a page with `-sJSPI` and `-pthread`, in a web
+  build with threads (Emscripten adds `worker` to `-sENVIRONMENT=web` for
+  threads' workers), and without warnings in either build.
+- The shell writes `gbFiles` in `preRun`, and Emscripten starts `main()`
+  itself, with JSPI, with the page's arguments.
+- `onAbort` sets `gbExit` to the abort's message ("native code called
+  abort()" for a failed `CHECK`), and the page error is still reported.
+- Once the program has stopped, any error from the file system (such as
+  listing a folder that isn't there) aborts the page, as Emscripten's error
+  calls `strerror()` in the runtime that has exited. Reading files and folders
+  that exist works. So the tool gives the page a file in its output folder
+  (`/pilot/out/.keep`), which makes the folder exist however the program
+  ends, and reads only what it lists there. (CL4)
+
 Not checked:
-- A page in a web build with threads: that it links with `-sJSPI` and
-  `-pthread`. (CL1)
-- `onAbort` setting `gbExit`: the spike saw the abort only as a page error.
-  (CL1)
 - A 144 Hz display, which headless Chromium doesn't have: the figures above
   are reasoned from the 60 Hz ones. (Checked by hand in *Web demos*.)
 - A page as a Claude artifact. The design's findings say JSPI and pointer lock
@@ -374,7 +389,7 @@ Not checked:
 
 ## CLs
 
-### CL1 [ ] build: windowed programs are pages
+### CL1 [x] build: windowed programs are pages
 
 Depends on: *Web platform* CL1.
 

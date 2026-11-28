@@ -1,0 +1,58 @@
+<!doctype html>
+<!--
+  Copyright (c) 2026 John Pursey
+
+  Use of this source code is governed by an MIT-style License that can be found
+  in the LICENSE file or at https://opensource.org/licenses/MIT.
+
+  The page every windowed Game Bits program is in a web build (see
+  gb_set_web_page_properties). SDL's window is its canvas.
+
+  - Each "arg" in the page's address is one of main()'s arguments, in order:
+    <name>.html?arg=--pilot&arg=/pilot/script.txt
+  - stdout goes to the console as messages, and stderr as errors.
+  - A tool can give the program files before main() by setting
+    globalThis.gbFiles to a map from each path to its text or bytes, before the
+    page loads. Their folders are created.
+  - Once the program has stopped, globalThis.gbExit is its exit code, or the
+    message it aborted with (a string). A tool reads files back after that
+    through Module.FS, but only files and folders it knows are there (such as
+    a folder it gave a file in), as an error from the file system once the
+    program has stopped aborts the page.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Game Bits</title>
+<style>
+  html, body { margin: 0; background: #000; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="canvas" tabindex="-1"></canvas>
+<script>
+  var Module = {
+    canvas: document.getElementById('canvas'),
+    thisProgram:
+        location.pathname.split('/').pop().replace(/\.html$/, '') || 'program',
+    arguments: new URLSearchParams(location.search).getAll('arg'),
+    preRun: () => {
+      const files = globalThis.gbFiles || {};
+      for (const path in files) {
+        Module.FS.mkdirTree(path.substring(0, path.lastIndexOf('/')));
+        Module.FS.writeFile(path, files[path]);
+      }
+    },
+    onExit: (code) => {
+      globalThis.gbExit = code;
+    },
+    onAbort: (what) => {
+      globalThis.gbExit = String(what);
+    },
+  };
+</script>
+{{{ SCRIPT }}}
+</body>
+</html>

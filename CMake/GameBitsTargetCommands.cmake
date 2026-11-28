@@ -20,8 +20,10 @@
 ##  Target_TEST_LIBS    Additional external libraries for this unit test target
 ##
 ## Every executable these define, and any other given gb_set_target_properties,
-## embeds the Game Bits manifest on Windows (see gb_embed_manifest), and in a
-## web build is a program for Node (see gb_set_web_program_properties).
+## embeds the Game Bits manifest on Windows (see gb_embed_manifest). In a web
+## build, a windowed one (gb_add_win_executable) is a page for a browser (see
+## gb_set_web_page_properties), and any other is a program for Node (see
+## gb_set_web_program_properties).
 ###############################################################################
 
 # -Wcharacter-conversion (between char8_t, char16_t, and char32_t) is new in
@@ -39,7 +41,12 @@ function(gb_set_target_properties NAME)
   get_target_property(_type ${NAME} TYPE)
   if (_type STREQUAL "EXECUTABLE")
     gb_embed_manifest(${NAME})
-    gb_set_web_program_properties(${NAME})
+    get_target_property(_windowed ${NAME} WIN32_EXECUTABLE)
+    if (_windowed)
+      gb_set_web_page_properties(${NAME})
+    else()
+      gb_set_web_program_properties(${NAME})
+    endif()
   endif()
   # Implicit conversion warnings are off for every target that uses Game Bits,
   # primarily for Abseil and other third-party headers. Clang's are the
@@ -130,11 +137,9 @@ function(gb_embed_manifest NAME)
   endif()
 endfunction()
 
-# In a web build, makes an executable a program for Node (node <name>.js), as a
-# command line program is on any other platform: it uses the machine's own
-# files and environment, exits with main()'s result, and its memory grows as it
-# needs. With threads, main() runs on a thread of its own, so it can start
-# threads and wait for them.
+# In a web build, gives an executable what every web executable has, whether a
+# program for Node or a page: it exits with main()'s result, its memory grows as
+# it needs, and its stacks are 1 MiB.
 #
 # Emscripten's stacks are 64 KiB by default, for main() and each thread. They
 # are 1 MiB here, Windows' default and the smaller of the other platforms
@@ -144,20 +149,58 @@ endfunction()
 #
 # Emscripten warns that with threads, memory that grows slows JavaScript's
 # access to it. Programs here spend their time in wasm, which it doesn't slow.
-function(gb_set_web_program_properties NAME)
+function(gb_set_web_executable_properties NAME)
   if (EMSCRIPTEN)
     target_link_options(${NAME} PRIVATE
-      -sNODERAWFS=1
       -sEXIT_RUNTIME=1
       -sALLOW_MEMORY_GROWTH=1
       -sSTACK_SIZE=1MB
     )
     if (GB_WEB_THREADS)
-      target_link_options(${NAME} PRIVATE
-        -sPROXY_TO_PTHREAD
-        -Wno-pthreads-mem-growth
-      )
+      target_link_options(${NAME} PRIVATE -Wno-pthreads-mem-growth)
     endif()
+  endif()
+endfunction()
+
+# In a web build, makes an executable a program for Node (node <name>.js), as a
+# command line program is on any other platform: it uses the machine's own
+# files and environment (see also gb_set_web_executable_properties). With
+# threads, main() runs on a thread of its own, so it can start threads and wait
+# for them.
+function(gb_set_web_program_properties NAME)
+  if (EMSCRIPTEN)
+    gb_set_web_executable_properties(${NAME})
+    target_link_options(${NAME} PRIVATE -sNODERAWFS=1)
+    if (GB_WEB_THREADS)
+      target_link_options(${NAME} PRIVATE -sPROXY_TO_PTHREAD)
+    endif()
+  endif()
+endfunction()
+
+# In a web build, makes a windowed executable a page for a browser:
+# <name>.html, beside its <name>.js and <name>.wasm, from Game Bits' shell
+# (CMake/GameBitsShell.html), which says what the page takes. Its file system
+# is in memory (see also gb_set_web_executable_properties). It is linked with
+# JSPI, so main() can wait for the browser (see gb/base/frame_wait.h), which a
+# program for Node can't, as Node needs a flag to run JSPI. FS is exported, so
+# the shell can write files before main() and a tool can read them back after
+# it returns. A target that exports more runtime methods of its own lists FS
+# among them, as Emscripten keeps only the last -sEXPORTED_RUNTIME_METHODS.
+#
+# With threads, main() stays on the browser's main thread, which SDL's window
+# needs.
+function(gb_set_web_page_properties NAME)
+  if (EMSCRIPTEN)
+    gb_set_web_executable_properties(${NAME})
+    set(_shell "${GB_DIR}/CMake/GameBitsShell.html")
+    set_target_properties(${NAME} PROPERTIES SUFFIX ".html")
+    set_property(TARGET ${NAME} APPEND PROPERTY LINK_DEPENDS "${_shell}")
+    target_link_options(${NAME} PRIVATE
+      "SHELL:--shell-file \"${_shell}\""
+      -sJSPI
+      -sENVIRONMENT=web
+      -sEXPORTED_RUNTIME_METHODS=FS
+    )
   endif()
 endfunction()
 
