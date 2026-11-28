@@ -25,10 +25,10 @@ The project is done when:
 
 | Feature | Status | Plan |
 |---|---|---|
-| Web platform | In progress | [worklog](../worklog/web_platform.md) |
+| Web platform | Every CL merged | [worklog](../worklog/web_platform.md) |
 | Programs in the browser | In progress | [worklog](../worklog/programs_in_the_browser.md) |
 | WebGPU render backend | In progress | [worklog](../worklog/webgpu_render_backend.md) |
-| Files on the web | Not started | [backlog](../backlog.md#files-on-the-web) |
+| Files on the web | In progress | [worklog](../worklog/files_on_the_web.md) |
 | Web demos | Not started | [backlog](../backlog.md#web-demos) |
 
 Each depends on the one above it, apart from *Files on the web*, which only
@@ -116,6 +116,13 @@ Out, each a backlog item where it is worth doing later:
   narrower than 32 bits, each a backlog item. A change to the API instead
   needs the user's approval (see
   [How the project is run](#how-the-project-is-run)).
+- **A page's assets are one file beside it.** A program names its assets in
+  CMake (`gb_pack_assets()`), and a web build packs them into `<name>.data`,
+  which the page fetches before `main()` into its file system, so every read
+  returns at once, without threads, and nothing in `gb_file` changes. Building
+  them into the `.wasm` instead would grow it by their size, against the
+  15 MB a Claude artifact allows each file. On Windows and Linux the command
+  only checks that the assets are there.
 - **Names:** `web_` is the prefix for files that are the web's own, beside
   `win_`, `posix_`, `linux_`, and `gen_`. It names the platform, as the
   others do, where `wasm_` would name the processor and `emscripten_` the
@@ -190,7 +197,12 @@ is approved until the project is done:
 
 What only the user can do:
 - Approve each change to the `game-bits` cloud environment, which installs
-  the SDKs sessions build with.
+  the SDKs sessions build with. It installs the Emscripten SDK, and
+  `spirv-opt` with the Vulkan SDK. It doesn't install `naga`, which takes
+  three minutes to build: a session that converts shaders installs it for
+  itself.
+- Say when each feature is complete, which is when its worklog's plan becomes
+  a summary.
 - Turn GitHub Pages on for the repository, for *Web demos*.
 - Open a demo in a browser on a real GPU. Sessions and CI draw with a
   software one (SwiftShader), which shows what is drawn but not how fast.
@@ -209,13 +221,16 @@ Changes outside the web's own files, as they are planned and then merged.
 | `SupportsThreads()` is added, and code that needs a thread checks it | Web platform | [71](https://github.com/jpursey/game-bits/pull/71) |
 | `AllocAligned()` allows an alignment smaller than a pointer in `gen_aligned_memory.cc` | Web platform | [66](https://github.com/jpursey/game-bits/pull/66) |
 | Tests that need a file name that isn't UTF-8 are skipped where there is none | Web platform | [69](https://github.com/jpursey/game-bits/pull/69) |
-| CI builds and tests the web builds (`build-web`, `build-web-threads`) | Web platform | |
+| CI builds and tests the web builds (`build-web`, `build-web-threads`), and Checks say when a session builds them too | Web platform | [73](https://github.com/jpursey/game-bits/pull/73) |
+| `tools/run-program.sh` reports a program's timeout as it does a page's | Programs in the browser | [78](https://github.com/jpursey/game-bits/pull/78) |
 | `Game`'s loops call the frame wait each frame, which does nothing outside a page | Programs in the browser | |
 | `templates/sdl` becomes a `gb::Game` that takes the pilot flags | Programs in the browser | |
 | CI builds the templates on Windows and Linux (`build-templates`) | Programs in the browser | |
-| `tools/install-vulkan-sdk.sh` also installs `spirv-opt` | WebGPU render backend | |
+| `tools/install-vulkan-sdk.sh` also installs `spirv-opt`, and `gb_wgsl_bindings_test` runs on every platform | WebGPU render backend | [79](https://github.com/jpursey/game-bits/pull/79) |
 | gb_imgui's font atlas is clamped to its edge, not to a transparent border, which draws the same pixels | WebGPU render backend | |
 | render-check chooses its backend through an interface of its own (`RenderCheckBackend`) | WebGPU render backend | |
+| `gb_pack_assets()` checks that each named asset is there | Files on the web | |
+| `templates/sdl` reads a file from its `assets` folder as it starts | Files on the web | |
 | Block-world's shaders are compiled by the build | Web demos | |
 
 ## Findings
