@@ -22,20 +22,27 @@ namespace gb {
 // The class provides a framework for the most basic game loop. It provides
 // support for a fixed or variable frame rate game loop.
 //
+// In a browser page, the browser's animation frames pace frames to the
+// display, and kKeyMaxFps doesn't apply: the clock is read, but never slept
+// on. There, Run() must be called from code that main() runs, not from a
+// callback the browser makes (see WaitForNextFrame() in gb/base/frame_wait.h).
+//
 // With a Pilot in its context, the game runs the pilot's frames instead (see
 // Pilot for the phases of a run): it stops once the pilot is done, calls
 // BeginFrame() and EndFrame() around each Update(), and passes the pilot's
 // delta time to every Update() without waiting on real time, so the clock and
-// max frame rate are unused. Run() returns false if the run failed, or if the
-// game stopped before the pilot was done. The rest of what a piloted program
-// does (input, the window, and saving frames) is left to the parts of the
-// program that handle each.
+// max frame rate are unused. In a browser page, it returns to the browser
+// between frames, so the page stays responsive. Run() returns false if the run
+// failed, or if the game stopped before the pilot was done. The rest of what a
+// piloted program does (input, the window, and saving frames) is left to the
+// parts of the program that handle each.
 //
 // This class is thread-safe.
 class Game {
  public:
   // Maximum frame rate that the game will run at. This can be set to zero to
   // run at an unlimited frame rate. By default, games are limited to 60 FPS.
+  // In a browser page, the display paces frames instead.
   static inline constexpr const char* kKeyMaxFps = "max_fps";
   static inline constexpr int kDefaultMaxFps = 60;
   static GB_CONTEXT_CONSTRAINT_NAMED_DEFAULT(kConstraintMaxFps, kInOptional,
@@ -94,7 +101,7 @@ class Game {
   // that CleanUp() will get called no matter what value is returned.
   virtual bool Init(const std::vector<std::string_view>& args) { return true; }
 
-  // Updates the game no faster than the max frame rate. Update should return
+  // Updates the game once a frame (see kKeyMaxFps). Update should return
   // true to indicate the game should continue, and false if the game should
   // exit.
   virtual bool Update(absl::Duration delta_time) { return true; }

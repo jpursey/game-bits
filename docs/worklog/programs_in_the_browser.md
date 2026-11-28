@@ -370,6 +370,12 @@ with the WebGPU flags:
   page error reports, without `onExit`. (CL1, CL4)
 - Frame waits and limits: as in [Frame wait](#frame-wait) and [Game](#game).
   (CL2, CL3)
+- `Game` itself, in a scratch page built as a project against this
+  repository (a windowed `Game` with `kKeyMaxFps` at 60 and a clock that
+  records its reads and sleeps), in headless Chromium 158: 300 frames at 60.1
+  frames a second over 3 runs, 17 to 37 us a frame from the loop's read of the
+  clock after the wait to the end of `Update()`, and no sleeps. With a
+  `FakePilot`, 2000 piloted frames took 40 to 46 ms. (CL3)
 - SDL: as in [SDL](#sdl). (CL5)
 
 Settled by CL1, with the spike rebuilt as a page by
@@ -436,7 +442,7 @@ Depends on: *Web platform* CL4.
 - Web: `gb_base_test` passes, so a Node program links the JSPI functions
   without JSPI.
 
-### CL3 [ ] game: loops wait for the next frame
+### CL3 [x] game: loops wait for the next frame
 
 Depends on: CL2.
 
