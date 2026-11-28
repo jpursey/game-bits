@@ -656,6 +656,19 @@ with `tools/run-program.sh`:
   buffers in whole 4-byte words, so a write that isn't 4-byte aligned (such as
   a single `uint16_t` index) needs the bytes around it. A `kStaticWrite`
   buffer still writes each change at once.
+- WebGPU makes an invalid object, not none, for a texture or buffer beyond the
+  device's limits, so `CreateTexture()` and `CreateBuffer()` never return
+  null. The backend checks sizes against the device's limits first, and
+  fails creation with its own error: a 300-layer array fails on SwiftShader
+  (256 layers), with no WebGPU error after it.
+- Resources register their changes through `WebGpuPendingWrite`, whose base
+  class adds and removes the registration, so a resource only marks and
+  writes. `WritePending()` is given the frame's command encoder as well as
+  the queue, for the later CLs whose updates are commands (a mesh pool's
+  `Grow()` copy, a new render target's clear). The queue's writes land before
+  every command in the frame, so a CL that adds commands which must come
+  before a write (a copy into a grown buffer, then a write into it) orders
+  them itself.
 
 Settled by CL2:
 - gb_imgui's font atlas clamped to its edge draws what clamping to a
@@ -744,7 +757,7 @@ Depends on: CL1.
 - The WGSL is what CL1's steps give for the GLSL now (the CL says the
   commands), and Chromium accepts it, as in CL1.
 
-### CL3 [~] render: the WebGPU backend clears a frame
+### CL3 [x] render: the WebGPU backend clears a frame
 
 Depends on: *Programs in the browser* CL1 and CL4, *Web platform* CL6.
 

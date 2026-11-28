@@ -27,6 +27,20 @@ std::unique_ptr<WebGpuRenderBuffer> WebGpuRenderBuffer::Create(
   const int64_t gpu_bytes =
       std::max(AlignUp(int64_t{value_size} * capacity, kWriteAlignment),
                kWriteAlignment);
+  // WebGPU makes an invalid buffer, rather than none, for a size beyond its
+  // limits, so the size is checked here.
+  const wgpu::Limits& limits = backend->GetLimits();
+  int64_t max_bytes = static_cast<int64_t>(limits.maxBufferSize);
+  if (usage & wgpu::BufferUsage::Storage) {
+    max_bytes = std::min(
+        max_bytes, static_cast<int64_t>(limits.maxStorageBufferBindingSize));
+  }
+  if (gpu_bytes > max_bytes) {
+    LOG(ERROR) << "A buffer of " << gpu_bytes
+               << " bytes is beyond the WebGPU device's limit of " << max_bytes;
+    return nullptr;
+  }
+
   wgpu::BufferDescriptor descriptor;
   descriptor.usage = usage | wgpu::BufferUsage::CopyDst;
   descriptor.size = static_cast<uint64_t>(gpu_bytes);

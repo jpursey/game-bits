@@ -47,12 +47,14 @@ class WebGpuTexels final : public WebGpuPendingWrite {
     wgpu::TextureDimension dimension = wgpu::TextureDimension::e2D;
     int width = 0;
     int height = 0;
+
     // The depth of a volume, the layers of an array, or 1.
     int depth = 1;
   };
 
   // Creates the texels. Returns null, having logged why, if the format can't
-  // be held yet (kRgba4, and kDepth, which only render targets have).
+  // be held yet (kRgba4, and kDepth, which only render targets have), or the
+  // size is beyond the device's limits.
   //
   // `backend` must outlive this.
   static std::unique_ptr<WebGpuTexels> Create(WebGpuBackend* backend,

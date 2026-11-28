@@ -84,6 +84,7 @@ bool WebGpuBackend::Init() {
   if (!InitDevice() || !InitSurface()) {
     return false;
   }
+  UpdateFrameSize();
   context_.SetPtr<WebGpuBackend>(this);
   return true;
 }
@@ -105,6 +106,11 @@ bool WebGpuBackend::InitDevice() {
       nullptr, wgpu::CallbackMode::WaitAnyOnly,
       [this, &adapter_error](wgpu::RequestAdapterStatus status,
                              wgpu::Adapter adapter, wgpu::StringView message) {
+        // A request cancelled after its wait timed out runs once the
+        // instance is released, when nothing it captured is left.
+        if (status == wgpu::RequestAdapterStatus::CallbackCancelled) {
+          return;
+        }
         if (status == wgpu::RequestAdapterStatus::Success) {
           adapter_ = std::move(adapter);
         } else {
@@ -163,6 +169,11 @@ bool WebGpuBackend::InitDevice() {
       &device_descriptor, wgpu::CallbackMode::WaitAnyOnly,
       [this, &device_error](wgpu::RequestDeviceStatus status,
                             wgpu::Device device, wgpu::StringView message) {
+        // A request cancelled after its wait timed out runs once the
+        // instance is released, when nothing it captured is left.
+        if (status == wgpu::RequestDeviceStatus::CallbackCancelled) {
+          return;
+        }
         if (status == wgpu::RequestDeviceStatus::Success) {
           device_ = std::move(device);
         } else {
@@ -176,6 +187,7 @@ bool WebGpuBackend::InitDevice() {
     LOG(ERROR) << "No WebGPU device: " << device_error;
     return false;
   }
+  device_.GetLimits(&limits_);
   queue_ = device_.GetQueue();
   return true;
 }
@@ -270,8 +282,8 @@ bool WebGpuBackend::CanFilter(RenderInternal, TextureFormat format) const {
     case TextureFormat::kRgba8:
     case TextureFormat::kRg8:
     case TextureFormat::kR8:
-    case TextureFormat::kRgba4:
       return true;
+    case TextureFormat::kRgba4:
     case TextureFormat::kDepth:
       return false;
   }
@@ -414,6 +426,10 @@ void WebGpuBackend::SetDefaultBindings(RenderInternal, const DefaultBindings&) {
 }
 
 bool WebGpuBackend::BeginFrame(RenderInternal, absl::Span<RenderPass* const>) {
+  return UpdateFrameSize();
+}
+
+bool WebGpuBackend::UpdateFrameSize() {
   int width = 0;
   int height = 0;
   if (emscripten_get_canvas_element_size(canvas_selector_.c_str(), &width,
@@ -424,6 +440,8 @@ bool WebGpuBackend::BeginFrame(RenderInternal, absl::Span<RenderPass* const>) {
     return false;
   }
   if (width <= 0 || height <= 0) {
+    LOG_FIRST_N(WARNING, 1) << "The canvas \"" << canvas_selector_
+                            << "\" has no size, so no frame is drawn";
     return false;
   }
   bool resized = false;
@@ -577,6 +595,10 @@ void WebGpuBackend::DoEndFrame(const wgpu::Buffer& read_buffer,
   } else {
     LOG(ERROR) << "Failed to get the canvas's texture ("
                << static_cast<int>(canvas.status) << ")";
+
+    // The next frame configures the canvas again.
+    absl::MutexLock lock(&frame_mutex_);
+    frame_dimensions_ = {0, 0};
   }
   if (read_buffer != nullptr) {
     wgpu::TexelCopyBufferInfo destination;

@@ -24,6 +24,23 @@ std::unique_ptr<WebGpuTexels> WebGpuTexels::Create(
     return nullptr;
   }
 
+  // WebGPU makes an invalid texture, rather than none, for a size beyond its
+  // limits, so they are checked here.
+  const wgpu::Limits& limits = backend->GetLimits();
+  const bool is_3d = properties.dimension == wgpu::TextureDimension::e3D;
+  const int64_t max_size =
+      is_3d ? limits.maxTextureDimension3D : limits.maxTextureDimension2D;
+  const int64_t max_depth =
+      is_3d ? limits.maxTextureDimension3D : limits.maxTextureArrayLayers;
+  if (properties.width > max_size || properties.height > max_size ||
+      properties.depth > max_depth) {
+    LOG(ERROR) << "A texture of " << properties.width << "x"
+               << properties.height << "x" << properties.depth
+               << " is beyond the WebGPU device's limits (" << max_size << "x"
+               << max_size << "x" << max_depth << ")";
+    return nullptr;
+  }
+
   wgpu::TextureDescriptor descriptor;
   descriptor.usage =
       wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;

@@ -138,6 +138,7 @@ class WebGpuBackend final : public RenderBackend {
   //----------------------------------------------------------------------------
 
   const wgpu::Device& GetDevice() const { return device_; }
+  const wgpu::Limits& GetLimits() const { return limits_; }
   const wgpu::Queue& GetQueue() const { return queue_; }
 
   // Adds `bytes` (which may be negative) to GetAllocatedBytes().
@@ -235,6 +236,10 @@ class WebGpuBackend final : public RenderBackend {
   // Logs that `what` isn't supported by the backend yet.
   void LogUnsupported(std::string_view what) const;
 
+  // Reads the canvas's size, and resizes the frame if it changed. Returns false
+  // if the canvas has no size, or it can't be read.
+  bool UpdateFrameSize();
+
   // Configures the canvas, and makes the frame's textures, for a frame of the
   // size.
   void ResizeFrame(int width, int height);
@@ -260,6 +265,7 @@ class WebGpuBackend final : public RenderBackend {
   wgpu::Instance instance_;
   wgpu::Adapter adapter_;
   wgpu::Device device_;
+  wgpu::Limits limits_;
   wgpu::Queue queue_;
   wgpu::Surface surface_;
 
