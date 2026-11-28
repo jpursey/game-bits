@@ -234,13 +234,13 @@ submissions around them: a write made after frame N is submitted doesn't
 change what frame N reads. So the Vulkan backend's per-frame copies of
 `kPerFrame` resources, its host buffers, and its garbage collector all go:
 - **Buffers** (`WebGpuRenderBuffer`, one class for vertices, indices,
-  constants, and storage): one GPU buffer, and a CPU copy unless it is
-  `kStaticWrite`. `Set()`, `SetRange()`, `Clear()`, and `Edit()` change the
-  CPU copy and mark the range, and each frame that is ended writes the marked
-  ranges with `WriteBuffer()`. A `kStaticWrite` buffer writes at once with
-  `WriteBuffer()`, so its partial writes always succeed (Vulkan's can fail
-  while the buffer is in use). Volatility only decides whether there is a CPU
-  copy. Storage buffers have `Storage | Indirect | CopyDst` usage, so a
+  constants, and storage): one GPU buffer, and a CPU copy, which keeps the
+  bytes around a write that isn't 4-byte aligned, as `WriteBuffer()` writes
+  whole 4-byte words. `Set()`, `SetRange()`, `Clear()`, and `Edit()` change
+  the CPU copy and mark the range, and each frame that is ended writes the
+  marked ranges with `WriteBuffer()`. A `kStaticWrite` buffer writes at once
+  with `WriteBuffer()`, so its partial writes always succeed (Vulkan's can
+  fail while the buffer is in use). Storage buffers have `Storage | Indirect | CopyDst` usage, so a
   storage buffer of `MeshDraw` can be drawn from.
 - **Textures** (`WebGpuTexture`, `WebGpuTextureArray`, `WebGpuVolumeTexture`,
   sharing `WebGpuTexels`, as the Vulkan ones share `VulkanTexels`): one GPU
@@ -634,6 +634,28 @@ Settled by CL1, with Game Bits' own CMake and tools:
   same SPIR-V bytes, as before CL1.
 - `tools/install-naga.sh` and `tools/install-vulkan-sdk.sh` install `naga`
   and `spirv-opt` in an empty folder.
+Settled by CL3, with a scratch page (a `Game` with an SDL window, the pilot
+flags, and a `RenderSystem` on `WebGpuBackend`, clearing to (32, 32, 48)) run
+with `tools/run-program.sh`:
+- The bindings link into a test program run under Node, and
+  `gb_render_webgpu_test` passes there: nothing in them touches WebGPU until
+  it is called. They need C++20 (`std::type_identity`), which the build has.
+- The frame reads back as (99, 99, 120) everywhere, the sRGB encoding of the
+  clear color, as Vulkan's swap chain gives.
+- The pilot's `resize 640 360` (`SDL_SetWindowSize()`) resizes the canvas; the
+  next frame reconfigures the canvas and reads back 640 by 360.
+- Creating and destroying a hundred 64 KiB textures and storage buffers a
+  frame for 300 frames: `GetAllocatedBytes()` went from 65,548 to 13,172,748
+  within a frame and back to 65,548, with no WebGPU errors.
+- With every object released by the backend's destructor, the page exits with
+  the program's code.
+- A context constraint's default is kept as the type it is written in, so the
+  canvas selector's is `std::string("#canvas")`: a bare `"#canvas"` is a
+  `const char*`, which `GetValue<std::string>()` doesn't find.
+- Every buffer keeps a CPU copy, `kStaticWrite` ones too: WebGPU writes
+  buffers in whole 4-byte words, so a write that isn't 4-byte aligned (such as
+  a single `uint16_t` index) needs the bytes around it. A `kStaticWrite`
+  buffer still writes each change at once.
 
 Settled by CL2:
 - gb_imgui's font atlas clamped to its edge draws what clamping to a
@@ -656,12 +678,7 @@ Not checked:
 - `kRgba4` expanded, mip levels written with `WriteTexture()`, texture arrays
   beyond 256 layers where an adapter allows them. (CL5)
 - `Destroy()` freeing memory promptly, so render-check's GPU bytes stay level
-  in `instances.txt`. (CL3, CL8)
-- The canvas resized by `SDL_SetWindowSize()` and the surface reconfigured.
-  (CL3)
-- Linking the bindings into a test program run under Node, for
-  `gb_render_webgpu_test`. If it doesn't link, the pure functions' tests move
-  into a library without the port. (CL3)
+  in `instances.txt`. (CL8)
 - How long render-check's scripts take on SwiftShader, against
   `run-program.sh`'s timeout. (CL8)
 - Installing `naga` in CI, and its cache. (CL9)
