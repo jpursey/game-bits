@@ -5,6 +5,7 @@
 
 if (WIN32)
   set(gb_base_internal_SOURCE
+    gen_frame_wait.cc
     win_aligned_memory.cc
     win_local_time.cc
     win_platform.cc win_platform.h
@@ -23,6 +24,7 @@ elseif (EMSCRIPTEN)
     gen_aligned_memory.cc
     gen_process_memory.cc
     gen_stdio_file.cc
+    web_frame_wait.cc
     web_local_time.cc
     web_sleep.cc
   )
@@ -35,6 +37,7 @@ elseif (EMSCRIPTEN)
 else()
   set(gb_base_internal_SOURCE
     gen_aligned_memory.cc
+    gen_frame_wait.cc
     gen_local_time.cc
     gen_sleep.cc
     gen_stdio_file.cc
@@ -63,6 +66,7 @@ set(gb_base_SOURCE
   embedded_data.h
   fake_clock.h
   flags.h
+  frame_wait.h
   function_hook.h
   init_logging.cc init_logging.h
   local_time.h
@@ -87,6 +91,7 @@ set(gb_base_TEST_SOURCE
   context_test.cc
   embedded_data_test.cc
   flags_test.cc
+  frame_wait_test.cc
   function_hook_test.cc
   init_logging_test.cc
   log_file_test.cc
