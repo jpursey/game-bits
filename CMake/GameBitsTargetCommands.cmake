@@ -320,6 +320,12 @@ function(gb_add_test NAME)
   # Naming the target, rather than a file, runs the test through the
   # toolchain's emulator (Node, in a web build) when cross-compiling.
   add_test(NAME ${NAME}_test COMMAND ${NAME}_test)
+
+  # SDL's web video driver needs a browser, so a test that resizes a window
+  # fails under Node. SDL's dummy video driver serves it instead.
+  if (EMSCRIPTEN)
+    set_property(TEST ${NAME}_test APPEND PROPERTY ENVIRONMENT SDL_VIDEODRIVER=dummy)
+  endif()
 endfunction()
 
 function(gb_add_library NAME)
