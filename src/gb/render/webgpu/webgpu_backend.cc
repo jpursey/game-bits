@@ -13,10 +13,14 @@
 
 #include "absl/log/log.h"
 #include "absl/memory/memory.h"
+#include "gb/render/webgpu/webgpu_binding_layout.h"
 #include "gb/render/webgpu/webgpu_format.h"
 #include "gb/render/webgpu/webgpu_render_buffer.h"
+#include "gb/render/webgpu/webgpu_render_pipeline.h"
+#include "gb/render/webgpu/webgpu_shader_code.h"
 #include "gb/render/webgpu/webgpu_texture.h"
 #include "gb/render/webgpu/webgpu_texture_array.h"
+#include "gb/render/webgpu/webgpu_view.h"
 #include "gb/render/webgpu/webgpu_volume_texture.h"
 
 namespace gb {
@@ -29,6 +33,13 @@ constexpr wgpu::TextureFormat kCanvasFormat = wgpu::TextureFormat::RGBA8Unorm;
 constexpr wgpu::TextureFormat kFrameFormat =
     wgpu::TextureFormat::RGBA8UnormSrgb;
 constexpr wgpu::TextureFormat kDepthFormat = wgpu::TextureFormat::Depth32Float;
+
+// What the frame's pipelines draw into.
+constexpr WebGpuPassKind kFrameKind = {
+    .color_format = kFrameFormat,
+    .depth_format = kDepthFormat,
+    .sample_count = WebGpuBackend::kSampleCount,
+};
 
 // Rows of a texture copied to a buffer are this many bytes apart, at least.
 constexpr int kCopyRowAlignment = 256;
@@ -221,6 +232,37 @@ bool WebGpuBackend::Wait(const wgpu::Future& future,
   return false;
 }
 
+bool WebGpuBackend::CreateInErrorScope(std::string_view what,
+                                       absl::FunctionRef<void()> create) const {
+  device_.PushErrorScope(wgpu::ErrorFilter::Validation);
+  create();
+  std::string error;
+  bool failed = false;
+  wgpu::Future future = device_.PopErrorScope(
+      wgpu::CallbackMode::WaitAnyOnly,
+      [&error, &failed](wgpu::PopErrorScopeStatus status, wgpu::ErrorType type,
+                        wgpu::StringView message) {
+        // A scope cancelled after its wait timed out runs once the instance is
+        // released, when nothing it captured is left.
+        if (status == wgpu::PopErrorScopeStatus::CallbackCancelled) {
+          return;
+        }
+        if (status != wgpu::PopErrorScopeStatus::Success ||
+            type != wgpu::ErrorType::NoError) {
+          failed = true;
+          error = std::string_view(message);
+        }
+      });
+  if (!Wait(future, what)) {
+    return false;
+  }
+  if (failed) {
+    LOG(ERROR) << "Failed to create " << what << ": " << error;
+    return false;
+  }
+  return true;
+}
+
 bool WebGpuBackend::ValidateSamplerOptions(
     const SamplerOptions& options) const {
   if (options.address_mode == SamplerAddressMode::kClampBorder) {
@@ -338,17 +380,20 @@ RenderTarget* WebGpuBackend::CreateRenderTarget(RenderInternal, ResourceEntry,
   return nullptr;
 }
 
-std::unique_ptr<ShaderCode> WebGpuBackend::CreateShaderCode(RenderInternal,
-                                                            const void*,
-                                                            int64_t) {
-  LogUnsupported("shader code");
-  return nullptr;
+std::unique_ptr<ShaderCode> WebGpuBackend::CreateShaderCode(
+    RenderInternal, const void* code, int64_t code_size) {
+  if (!ValidateThread("Creating shader code")) {
+    return nullptr;
+  }
+  return WebGpuShaderCode::Create(this, code, code_size);
 }
 
 std::unique_ptr<BindingLayout> WebGpuBackend::CreateBindingLayout(
-    RenderInternal, absl::Span<const Binding>) {
-  LogUnsupported("binding layouts");
-  return nullptr;
+    RenderInternal, absl::Span<const Binding> bindings) {
+  if (!ValidateThread("Creating a binding layout")) {
+    return nullptr;
+  }
+  return WebGpuBindingLayout::Create(this, bindings);
 }
 
 std::unique_ptr<RenderPass> WebGpuBackend::CreatePass(RenderInternal,
@@ -358,19 +403,28 @@ std::unique_ptr<RenderPass> WebGpuBackend::CreatePass(RenderInternal,
   return nullptr;
 }
 
-std::unique_ptr<RenderView> WebGpuBackend::CreateView(RenderInternal,
-                                                      RenderPass*,
-                                                      BindingLayout*, int) {
-  LogUnsupported("views");
-  return nullptr;
+std::unique_ptr<RenderView> WebGpuBackend::CreateView(
+    RenderInternal, RenderPass* pass, BindingLayout* binding_layout,
+    int view_order) {
+  if (!ValidateThread("Creating a view")) {
+    return nullptr;
+  }
+  return WebGpuView::Create(
+      pass, static_cast<WebGpuBindingLayout*>(binding_layout), view_order);
 }
 
 std::unique_ptr<RenderPipeline> WebGpuBackend::CreatePipeline(
-    RenderInternal, BindingLayout*, const VertexType*,
-    absl::Span<const Binding>, ShaderCode*, ShaderCode*,
-    const MaterialConfig&) {
-  LogUnsupported("pipelines");
-  return nullptr;
+    RenderInternal, BindingLayout* binding_layout,
+    const VertexType* vertex_type, absl::Span<const Binding> bindings,
+    ShaderCode* vertex_shader, ShaderCode* fragment_shader,
+    const MaterialConfig& config) {
+  if (!ValidateThread("Creating a pipeline")) {
+    return nullptr;
+  }
+  return WebGpuRenderPipeline::Create(
+      this, static_cast<WebGpuBindingLayout*>(binding_layout), vertex_type,
+      bindings, static_cast<WebGpuShaderCode*>(vertex_shader),
+      static_cast<WebGpuShaderCode*>(fragment_shader), config, kFrameKind);
 }
 
 std::unique_ptr<RenderBuffer> WebGpuBackend::CreateVertexBuffer(
@@ -497,15 +551,47 @@ void WebGpuBackend::DestroyFrameTextures() {
   frame_texture_.Destroy();
 }
 
-void WebGpuBackend::Draw(RenderInternal, RenderView*, RenderPipeline*,
-                         BindingData*, BindingData*, RenderBuffer*,
-                         RenderBuffer*) {
-  // Nothing can be drawn yet, as no view or pipeline can be created.
+void WebGpuBackend::Draw(RenderInternal, RenderView* view,
+                         RenderPipeline* pipeline, BindingData* material_data,
+                         BindingData* instance_data, RenderBuffer* vertices,
+                         RenderBuffer* indices) {
+  frame_draws_[view->GetOrder()].push_back({
+      .view = static_cast<WebGpuView*>(view),
+      .pipeline = static_cast<WebGpuRenderPipeline*>(pipeline),
+      .material_data = static_cast<WebGpuBindingData*>(material_data),
+      .instance_data = static_cast<WebGpuBindingData*>(instance_data),
+      .vertices = static_cast<WebGpuRenderBuffer*>(vertices),
+      .indices = static_cast<WebGpuRenderBuffer*>(indices),
+  });
 }
 
 void WebGpuBackend::Draw(RenderInternal, RenderView*,
                          absl::Span<const DrawCommand>) {
-  // Nothing can be drawn yet, as no view can be created.
+  LOG_FIRST_N(ERROR, 1)
+      << "The WebGPU backend doesn't support draw lists yet, so they draw "
+         "nothing";
+}
+
+void WebGpuBackend::EncodeDraws(const wgpu::RenderPassEncoder& pass) {
+  for (const auto& [order, draws] : frame_draws_) {
+    for (const FrameDraw& draw : draws) {
+      // A pipeline that failed to be made for the frame (which was logged)
+      // draws nothing.
+      const wgpu::RenderPipeline pipeline = draw.pipeline->Get(kFrameKind);
+      if (pipeline == nullptr) {
+        continue;
+      }
+      pass.SetPipeline(pipeline);
+      pass.SetBindGroup(0,
+                        draw.view->GetWebGpuViewBindingData()->GetBindGroup());
+      pass.SetBindGroup(1, draw.material_data->GetBindGroup());
+      pass.SetBindGroup(2, draw.instance_data->GetBindGroup());
+      pass.SetVertexBuffer(0, draw.vertices->GetBuffer());
+      pass.SetIndexBuffer(draw.indices->GetBuffer(), wgpu::IndexFormat::Uint16);
+      pass.DrawIndexed(static_cast<uint32_t>(draw.indices->GetSize()));
+    }
+  }
+  frame_draws_.clear();
 }
 
 void WebGpuBackend::EndFrame(RenderInternal) { DoEndFrame(nullptr, 0); }
@@ -578,6 +664,7 @@ void WebGpuBackend::DoEndFrame(const wgpu::Buffer& read_buffer,
   pass_descriptor.colorAttachments = &color;
   pass_descriptor.depthStencilAttachment = &depth;
   wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&pass_descriptor);
+  EncodeDraws(pass);
   pass.End();
 
   // The canvas has a new texture after every return to the browser, so it is

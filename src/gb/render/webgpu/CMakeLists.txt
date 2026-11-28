@@ -5,11 +5,16 @@
 
 set(gb_render_webgpu_SOURCE
   webgpu_backend.cc webgpu_backend.h
+  webgpu_binding_data.cc webgpu_binding_data.h
+  webgpu_binding_layout.cc webgpu_binding_layout.h
   webgpu_format.cc webgpu_format.h
   webgpu_render_buffer.cc webgpu_render_buffer.h
+  webgpu_render_pipeline.cc webgpu_render_pipeline.h
+  webgpu_shader_code.cc webgpu_shader_code.h
   webgpu_texels.cc webgpu_texels.h
   webgpu_texture.cc webgpu_texture.h
   webgpu_texture_array.cc webgpu_texture_array.h
+  webgpu_view.cc webgpu_view.h
   webgpu_volume_texture.cc webgpu_volume_texture.h
 )
 
@@ -18,7 +23,9 @@ set(gb_render_webgpu_TEST_SOURCE
 )
 
 set(gb_render_webgpu_DEPS
+  absl::flat_hash_map
   absl::flat_hash_set
+  absl::function_ref
   absl::log
   absl::memory
   absl::span

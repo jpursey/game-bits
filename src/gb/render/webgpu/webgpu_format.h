@@ -46,6 +46,22 @@ inline constexpr int64_t AlignUp(int64_t value, int64_t alignment) {
 }
 
 //==============================================================================
+// Vertices
+//==============================================================================
+
+// A vertex attribute's WebGPU format, and its size in bytes. Attributes are
+// packed one after another, as the Vulkan backend packs them.
+struct WebGpuVertexFormat {
+  wgpu::VertexFormat format = wgpu::VertexFormat(0);
+  int size = 0;
+};
+
+// Returns the WebGPU format of a vertex attribute. The format is undefined
+// (zero) for a 3-channel 8 or 16-bit value, as WebGPU has no 3-channel vertex
+// formats narrower than 32 bits, but the size is still the value's.
+WebGpuVertexFormat GetWebGpuVertexFormat(ShaderValue value);
+
+//==============================================================================
 // Bindings
 //==============================================================================
 

@@ -41,6 +41,8 @@ class WebGpuRenderBuffer final : public RenderBuffer,
 
   ~WebGpuRenderBuffer() override;
 
+  const wgpu::Buffer& GetBuffer() const { return buffer_; }
+
   void WritePending(const wgpu::Queue& queue,
                     const wgpu::CommandEncoder& encoder) override;
 

@@ -8,12 +8,15 @@
 
 #include <atomic>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "absl/base/thread_annotations.h"
 #include "absl/container/flat_hash_set.h"
+#include "absl/functional/function_ref.h"
 #include "absl/synchronization/mutex.h"
 #include "absl/types/span.h"
 #include "gb/base/validated_context.h"
@@ -23,8 +26,13 @@
 
 namespace gb {
 
-// WebGpuPendingWrite and WebGpuBackend refer to each other.
+// WebGpuPendingWrite and WebGpuBackend refer to each other, and the backend
+// refers to the resources it draws with, which refer to it.
 class WebGpuBackend;
+class WebGpuBindingData;
+class WebGpuRenderBuffer;
+class WebGpuRenderPipeline;
+class WebGpuView;
 
 //==============================================================================
 // WebGpuPendingWrite
@@ -144,6 +152,15 @@ class WebGpuBackend final : public RenderBackend {
   // Adds `bytes` (which may be negative) to GetAllocatedBytes().
   void AddAllocatedBytes(int64_t bytes) { allocated_bytes_ += bytes; }
 
+  // Calls `create`, which creates WebGPU objects, within a validation error
+  // scope, and waits for the scope. Returns false, having logged the browser's
+  // message, if `create` made an error. `what` names what was created.
+  //
+  // This returns to the browser while it waits, so it is for creation, not for
+  // each frame.
+  bool CreateInErrorScope(std::string_view what,
+                          absl::FunctionRef<void()> create) const;
+
   //----------------------------------------------------------------------------
   // RenderBackend
   //----------------------------------------------------------------------------
@@ -252,6 +269,9 @@ class WebGpuBackend final : public RenderBackend {
   // into it, with rows `read_row_bytes` apart.
   void DoEndFrame(const wgpu::Buffer& read_buffer, int read_row_bytes);
 
+  // Encodes the frame's draws, in view order, into the frame's pass.
+  void EncodeDraws(const wgpu::RenderPassEncoder& pass);
+
   // Writes every pending change to the GPU, with `encoder` for commands.
   void WritePending(const wgpu::CommandEncoder& encoder);
 
@@ -285,6 +305,19 @@ class WebGpuBackend final : public RenderBackend {
 
   // Used only on the main thread, as the resources are.
   absl::flat_hash_set<WebGpuPendingWrite*> pending_writes_;
+
+  // A mesh drawn in the frame.
+  struct FrameDraw {
+    WebGpuView* view;
+    WebGpuRenderPipeline* pipeline;
+    WebGpuBindingData* material_data;
+    WebGpuBindingData* instance_data;
+    WebGpuRenderBuffer* vertices;
+    WebGpuRenderBuffer* indices;
+  };
+
+  // The frame's draws, by view order, from BeginFrame() until the frame ends.
+  std::map<int, std::vector<FrameDraw>> frame_draws_;
 };
 
 }  // namespace gb
