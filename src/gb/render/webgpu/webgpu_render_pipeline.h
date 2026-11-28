@@ -90,8 +90,8 @@ class WebGpuRenderPipeline final : public RenderPipeline {
   const MaterialConfig config_;
   int vertex_size_ = 0;
   std::vector<wgpu::VertexAttribute> vertex_attributes_;
-  std::shared_ptr<const WebGpuBindingSetLayout> material_layout_;
-  std::shared_ptr<const WebGpuBindingSetLayout> instance_layout_;
+  std::shared_ptr<WebGpuBindingDataFactory> material_factory_;
+  std::shared_ptr<WebGpuBindingDataFactory> instance_factory_;
   wgpu::PipelineLayout pipeline_layout_;
 
   absl::Mutex mutex_;

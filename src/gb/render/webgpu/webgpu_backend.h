@@ -306,14 +306,16 @@ class WebGpuBackend final : public RenderBackend {
   // Used only on the main thread, as the resources are.
   absl::flat_hash_set<WebGpuPendingWrite*> pending_writes_;
 
-  // A mesh drawn in the frame.
+  // A mesh drawn in the frame. It holds what it draws with, so what it was
+  // drawn from may be destroyed before the frame ends.
   struct FrameDraw {
-    WebGpuView* view;
-    WebGpuRenderPipeline* pipeline;
-    WebGpuBindingData* material_data;
-    WebGpuBindingData* instance_data;
-    WebGpuRenderBuffer* vertices;
-    WebGpuRenderBuffer* indices;
+    wgpu::RenderPipeline pipeline;
+    wgpu::BindGroup view_group;
+    wgpu::BindGroup material_group;
+    wgpu::BindGroup instance_group;
+    wgpu::Buffer vertices;
+    wgpu::Buffer indices;
+    uint32_t index_count = 0;
   };
 
   // The frame's draws, by view order, from BeginFrame() until the frame ends.

@@ -66,8 +66,9 @@ WebGpuRenderBuffer::WebGpuRenderBuffer(WebGpuBackend* backend,
   GetBackend()->AddAllocatedBytes(gpu_bytes_);
 }
 
+// The buffer is released rather than destroyed, as a draw in the frame may
+// still hold it.
 WebGpuRenderBuffer::~WebGpuRenderBuffer() {
-  buffer_.Destroy();
   GetBackend()->AddAllocatedBytes(-gpu_bytes_);
 }
 

@@ -555,13 +555,25 @@ void WebGpuBackend::Draw(RenderInternal, RenderView* view,
                          RenderPipeline* pipeline, BindingData* material_data,
                          BindingData* instance_data, RenderBuffer* vertices,
                          RenderBuffer* indices) {
+  // A pipeline that can't be made for the frame (which was logged) draws
+  // nothing.
+  wgpu::RenderPipeline frame_pipeline =
+      static_cast<WebGpuRenderPipeline*>(pipeline)->Get(kFrameKind);
+  if (frame_pipeline == nullptr) {
+    return;
+  }
   frame_draws_[view->GetOrder()].push_back({
-      .view = static_cast<WebGpuView*>(view),
-      .pipeline = static_cast<WebGpuRenderPipeline*>(pipeline),
-      .material_data = static_cast<WebGpuBindingData*>(material_data),
-      .instance_data = static_cast<WebGpuBindingData*>(instance_data),
-      .vertices = static_cast<WebGpuRenderBuffer*>(vertices),
-      .indices = static_cast<WebGpuRenderBuffer*>(indices),
+      .pipeline = std::move(frame_pipeline),
+      .view_group = static_cast<WebGpuView*>(view)
+                        ->GetWebGpuViewBindingData()
+                        ->GetBindGroup(),
+      .material_group =
+          static_cast<WebGpuBindingData*>(material_data)->GetBindGroup(),
+      .instance_group =
+          static_cast<WebGpuBindingData*>(instance_data)->GetBindGroup(),
+      .vertices = static_cast<WebGpuRenderBuffer*>(vertices)->GetBuffer(),
+      .indices = static_cast<WebGpuRenderBuffer*>(indices)->GetBuffer(),
+      .index_count = static_cast<uint32_t>(indices->GetSize()),
   });
 }
 
@@ -575,20 +587,13 @@ void WebGpuBackend::Draw(RenderInternal, RenderView*,
 void WebGpuBackend::EncodeDraws(const wgpu::RenderPassEncoder& pass) {
   for (const auto& [order, draws] : frame_draws_) {
     for (const FrameDraw& draw : draws) {
-      // A pipeline that failed to be made for the frame (which was logged)
-      // draws nothing.
-      const wgpu::RenderPipeline pipeline = draw.pipeline->Get(kFrameKind);
-      if (pipeline == nullptr) {
-        continue;
-      }
-      pass.SetPipeline(pipeline);
-      pass.SetBindGroup(0,
-                        draw.view->GetWebGpuViewBindingData()->GetBindGroup());
-      pass.SetBindGroup(1, draw.material_data->GetBindGroup());
-      pass.SetBindGroup(2, draw.instance_data->GetBindGroup());
-      pass.SetVertexBuffer(0, draw.vertices->GetBuffer());
-      pass.SetIndexBuffer(draw.indices->GetBuffer(), wgpu::IndexFormat::Uint16);
-      pass.DrawIndexed(static_cast<uint32_t>(draw.indices->GetSize()));
+      pass.SetPipeline(draw.pipeline);
+      pass.SetBindGroup(0, draw.view_group);
+      pass.SetBindGroup(1, draw.material_group);
+      pass.SetBindGroup(2, draw.instance_group);
+      pass.SetVertexBuffer(0, draw.vertices);
+      pass.SetIndexBuffer(draw.indices, wgpu::IndexFormat::Uint16);
+      pass.DrawIndexed(draw.index_count);
     }
   }
   frame_draws_.clear();

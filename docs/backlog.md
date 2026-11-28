@@ -710,6 +710,21 @@ A pass has at most one color target. Deferred shading, and writing normals or
 motion beside color for later passes, need several, each a fragment shader
 output, with blend state per target.
 
+## Texel regions shared by the render backends
+
+- **Layers:** render, render_vulkan, render_webgpu
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** *WebGPU render backend*
+- **Background:** [WebGPU render backend](worklog/webgpu_render_backend.md)
+
+`VulkanTexels` and `WebGpuTexels` each have their own `Region` of texels,
+the union of two regions, and the copy of a region between buffers whose rows
+and slices are spaced differently. Move them into `gb_render`, beside
+`GetTextureSizeInBytes()`, and have both backends use them. A refactor of the
+Vulkan backend with no change in behavior, checked by the existing tests and
+render-check's frames.
+
 ## Floating point render targets
 
 - **Layers:** render, render_vulkan

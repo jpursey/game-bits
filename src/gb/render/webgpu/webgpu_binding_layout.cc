@@ -13,20 +13,20 @@ namespace gb {
 
 std::unique_ptr<WebGpuBindingLayout> WebGpuBindingLayout::Create(
     WebGpuBackend* backend, absl::Span<const Binding> bindings) {
-  std::shared_ptr<const WebGpuBindingSetLayout> view_layout;
+  std::shared_ptr<WebGpuBindingDataFactory> view_factory;
   if (!backend->CreateInErrorScope("a binding layout", [&] {
-        view_layout =
-            WebGpuBindingSetLayout::Create(backend, BindingSet::kView, bindings);
+        view_factory =
+            WebGpuBindingDataFactory::Create(backend, BindingSet::kView, bindings);
       }) ||
-      view_layout == nullptr) {
+      view_factory == nullptr) {
     return nullptr;
   }
   return absl::WrapUnique(
-      new WebGpuBindingLayout(backend, bindings, std::move(view_layout)));
+      new WebGpuBindingLayout(bindings, std::move(view_factory)));
 }
 
 std::unique_ptr<WebGpuBindingData> WebGpuBindingLayout::CreateViewBindingData() {
-  return WebGpuBindingData::Create(backend_, nullptr, view_layout_);
+  return view_factory_->NewBindingData(nullptr);
 }
 
 }  // namespace gb

@@ -27,23 +27,19 @@ class WebGpuBindingLayout final : public BindingLayout {
   static std::unique_ptr<WebGpuBindingLayout> Create(
       WebGpuBackend* backend, absl::Span<const Binding> bindings);
 
-  const WebGpuBindingSetLayout* GetViewLayout() const {
-    return view_layout_.get();
+  const WebGpuBindingDataFactory* GetViewFactory() const {
+    return view_factory_.get();
   }
 
   // Creates the binding data of a view, or returns null having logged why.
   std::unique_ptr<WebGpuBindingData> CreateViewBindingData();
 
  private:
-  WebGpuBindingLayout(WebGpuBackend* backend,
-                      absl::Span<const Binding> bindings,
-                      std::shared_ptr<const WebGpuBindingSetLayout> view_layout)
-      : BindingLayout(bindings),
-        backend_(backend),
-        view_layout_(std::move(view_layout)) {}
+  WebGpuBindingLayout(absl::Span<const Binding> bindings,
+                      std::shared_ptr<WebGpuBindingDataFactory> view_factory)
+      : BindingLayout(bindings), view_factory_(std::move(view_factory)) {}
 
-  WebGpuBackend* const backend_;
-  const std::shared_ptr<const WebGpuBindingSetLayout> view_layout_;
+  const std::shared_ptr<WebGpuBindingDataFactory> view_factory_;
 };
 
 }  // namespace gb

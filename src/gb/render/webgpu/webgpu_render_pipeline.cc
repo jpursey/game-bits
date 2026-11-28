@@ -117,17 +117,17 @@ bool WebGpuRenderPipeline::Init(WebGpuBindingLayout* binding_layout,
   }
 
   return backend_->CreateInErrorScope("a pipeline's layout", [&] {
-    material_layout_ = WebGpuBindingSetLayout::Create(
+    material_factory_ = WebGpuBindingDataFactory::Create(
         backend_, BindingSet::kMaterial, bindings);
-    instance_layout_ = WebGpuBindingSetLayout::Create(
+    instance_factory_ = WebGpuBindingDataFactory::Create(
         backend_, BindingSet::kInstance, bindings);
-    if (material_layout_ == nullptr || instance_layout_ == nullptr) {
+    if (material_factory_ == nullptr || instance_factory_ == nullptr) {
       return;
     }
     const wgpu::BindGroupLayout layouts[] = {
-        binding_layout->GetViewLayout()->layout,
-        material_layout_->layout,
-        instance_layout_->layout,
+        binding_layout->GetViewFactory()->GetBindGroupLayout(),
+        material_factory_->GetBindGroupLayout(),
+        instance_factory_->GetBindGroupLayout(),
     };
     wgpu::PipelineLayoutDescriptor descriptor;
     descriptor.bindGroupLayoutCount = 3;
@@ -234,17 +234,17 @@ wgpu::RenderPipeline WebGpuRenderPipeline::CreatePipeline(
 }
 
 std::unique_ptr<BindingData> WebGpuRenderPipeline::CreateMaterialBindingData() {
-  return WebGpuBindingData::Create(backend_, this, material_layout_);
+  return material_factory_->NewBindingData(this);
 }
 
 std::unique_ptr<BindingData> WebGpuRenderPipeline::CreateInstanceBindingData() {
-  return WebGpuBindingData::Create(backend_, this, instance_layout_);
+  return instance_factory_->NewBindingData(this);
 }
 
 bool WebGpuRenderPipeline::ValidateInstanceBindingData(
     BindingData* binding_data) {
-  return static_cast<WebGpuBindingData*>(binding_data)->GetLayout() ==
-         instance_layout_.get();
+  return static_cast<WebGpuBindingData*>(binding_data)->GetFactory() ==
+         instance_factory_.get();
 }
 
 }  // namespace gb
