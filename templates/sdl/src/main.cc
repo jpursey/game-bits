@@ -95,6 +95,10 @@ bool SdlTemplate::HandleEvent(const SDL_Event& event) {
     case SDL_QUIT:
       return false;
     case SDL_KEYDOWN:
+      // A held key repeats, which this skips, so each key down is one press.
+      if (event.key.repeat != 0) {
+        break;
+      }
       LOG(INFO) << "Key down: " << SDL_GetKeyName(event.key.keysym.sym);
       if (event.key.keysym.sym == SDLK_ESCAPE) {
         return false;

@@ -67,7 +67,10 @@ $GB_DIR/tools/run-program.sh --exe bin/sdl_template --steps 'hide window; wait 3
 $GB_DIR/tools/run-program.sh --exe bin/sdl_template.html --steps 'hide window; wait 30; key A; resize 640 360; wait 2'
 ```
 
-`src/gb/pilot/script/pilot_script.h` in Game Bits lists the steps.
+`src/gb/pilot/script/pilot_script.h` in Game Bits lists the steps. The template
+draws nothing, so a `save` step fails until it does. Running a page needs
+Playwright and its Chromium where Node finds them (`npm install playwright`,
+then `npx playwright install chromium`).
 
 ## Templates
 

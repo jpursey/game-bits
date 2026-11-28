@@ -215,6 +215,11 @@ jobs:
           cmake --build "templates/$template/out/build/ci" --target "${template}_template"
         done
 
+    - name: Run the sdl template with a pilot script
+      if: runner.os == 'Linux'
+      working-directory: ${{github.workspace}}
+      run: tools/run-program.sh --exe templates/sdl/bin/sdl_template --steps "hide window; wait 30; key A; resize 640 360; wait 2" --out-dir out/run/sdl_template
+
   # Linux builds every library with clang. Debug runs render asserts and death
   # tests, and Release compiles asserts out, as the Windows release job does.
   # The tests run in a virtual X server, so SDL's window tests use its X11
