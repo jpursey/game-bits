@@ -358,7 +358,8 @@ EndFrame:    write marked buffers, textures, and mesh pools; clear new render
   anyway for presentation), with `RenderAttachment | CopyDst` usage. The
   frame is drawn into a multisampled `rgba8unorm-srgb` texture, resolved into
   the frame texture, also `rgba8unorm-srgb` (with `CopySrc` usage), which is
-  copied into the canvas byte for byte (WebGPU copies between formats that differ only in sRGB).
+  copied into the canvas byte for byte (WebGPU copies between formats that
+  differ only in sRGB).
   Shaders write linear color, which the sRGB targets encode, the clear color
   is given as Vulkan gives it (each channel over 255), and `kRgba8Srgb`
   textures are read decoded, so the bytes are Vulkan's. Resolving straight
@@ -541,8 +542,9 @@ class RenderCheckBackend {
 
 ### Tools and CI
 
-- `tools/install-vulkan-sdk.sh` also extracts `bin/spirv-opt` (6.5 MB), so every machine with Game Bits' Vulkan SDK has it. CI's
-  cache key already hashes the script, so CI picks it up.
+- `tools/install-vulkan-sdk.sh` also extracts `bin/spirv-opt` (6.5 MB), so
+  every machine with Game Bits' Vulkan SDK has it. CI's cache key already
+  hashes the script, so CI picks it up.
 - `tools/install-naga.sh <dir> <version>` runs `cargo install naga-cli
   --version <version> --locked --root <dir>` (about three minutes), and says
   to put `<dir>/bin` on the `PATH`. The version is `30.0.2`, set once in
