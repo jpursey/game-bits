@@ -671,7 +671,7 @@ each depend on CL4, and can run at the same time; CL7 follows CL5, whose
 textures render targets are. CL8 needs every one before it, and CL9 needs
 CL8.
 
-### CL1 [~] build: shaders converted to WGSL in a web build
+### CL1 [x] build: shaders converted to WGSL in a web build
 
 Depends on: *Web platform* CL1.
 
