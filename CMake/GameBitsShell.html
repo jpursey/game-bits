@@ -27,7 +27,7 @@
 <title>Game Bits</title>
 <style>
   html, body { margin: 0; background: #000; }
-  canvas { display: block; border: 0; }
+  canvas { display: block; }
 </style>
 </head>
 <body>
@@ -37,18 +37,12 @@
     canvas: document.getElementById('canvas'),
     thisProgram: location.pathname.split('/').pop().replace(/\.html$/, ''),
     arguments: new URLSearchParams(location.search).getAll('arg'),
-    print: (text) => console.log(text),
-    printErr: (text) => console.error(text),
-    onRuntimeInitialized: () => {
+    preRun: () => {
       const files = globalThis.gbFiles || {};
       for (const path in files) {
-        const folder = path.substring(0, path.lastIndexOf('/'));
-        if (folder !== '') {
-          Module.FS.mkdirTree(folder);
-        }
+        Module.FS.mkdirTree(path.substring(0, path.lastIndexOf('/')));
         Module.FS.writeFile(path, files[path]);
       }
-      Module.callMain(Module.arguments);
     },
     onExit: (code) => {
       globalThis.gbExit = code;

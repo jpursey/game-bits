@@ -111,18 +111,18 @@ A page is linked with:
   [Frame wait](#frame-wait)). Only pages have it: a program for Node needs a
   flag to run JSPI in Node 24 (`--experimental-wasm-jspi`, without which it
   aborts as it loads).
-- `-sENVIRONMENT=web` (`web,worker` with threads), without `-sNODERAWFS`, so
-  its file system is in memory.
+- `-sENVIRONMENT=web`, without `-sNODERAWFS`, so its file system is in memory.
+  With threads, Emscripten adds `worker` itself.
 - `-sEXIT_RUNTIME=1`, `-sALLOW_MEMORY_GROWTH=1`, and `-sSTACK_SIZE=1MB`, as a
-  program for Node has.
-- `-sINVOKE_RUN=0` and `-sEXPORTED_RUNTIME_METHODS=FS,callMain`, so the shell
-  starts `main()` once the files are in place, and a tool can read files back
-  after it exits.
+  program for Node has, from `gb_set_web_executable_properties()`, which both
+  call.
+- `-sEXPORTED_RUNTIME_METHODS=FS`, so the shell can write files before
+  `main()`, and a tool can read files back after it exits.
 
 A web build with threads makes pages too, built with `-pthread` as everything
-there is, and `-sENVIRONMENT=web,worker` for its threads' workers, but
-without `-sPROXY_TO_PTHREAD`, as SDL's window must be on the browser's main
-thread. Nothing checks them beyond linking (see *Threads in the browser*).
+there is, but without `-sPROXY_TO_PTHREAD`, as SDL's window must be on the
+browser's main thread. Nothing checks them beyond linking (see *Threads in the
+browser*).
 
 The shell is a page with a canvas whose id is `canvas` (SDL's driver uses
 `#canvas`) and a script that sets Emscripten's `Module` before the program's
@@ -130,16 +130,15 @@ script loads:
 - `arguments`: every `arg` in the page's query string, in order
   (`URLSearchParams.getAll('arg')`). An address holds any text, encoded, so
   there is no quoting to get wrong. `thisProgram` is the page's name.
-- `print` and `printErr`: `console.log` and `console.error`, so stdout and
-  stderr stay apart.
-- `onRuntimeInitialized`: writes each file in `globalThis.gbFiles`, if a tool
-  set it (a map from a path to its text or bytes), into the file system,
-  creating its folders, then calls `callMain(arguments)`.
+- `preRun`: writes each file in `globalThis.gbFiles`, if a tool set it (a map
+  from a path to its text or bytes), into the file system, creating its
+  folders, before Emscripten starts `main()`.
 - `onExit` and `onAbort`: set `globalThis.gbExit` to the exit code, or to the
   abort's message, so a tool knows the program has stopped and how.
 
-Nothing else: no styling beyond a black background and a canvas without a
-border, no status text, no fullscreen button. A tool reads files back after
+Emscripten's own defaults send stdout to `console.log` and stderr to
+`console.error`, so they stay apart. Nothing else: no styling beyond a black
+background, no status text, no fullscreen button. A tool reads files back after
 the program exits with `Module.FS`, from its own script, so the shell has no
 part in it.
 
@@ -365,8 +364,10 @@ with the WebGPU flags:
 Settled by CL1, with the spike rebuilt as a page by
 `gb_set_web_page_properties()` and opened with Playwright:
 - `templates/sdl` links as a page with `-sJSPI` and `-pthread`, in a web
-  build with threads, with `-sENVIRONMENT=web,worker` (a thread's worker needs
-  the second), and without warnings in either build.
+  build with threads (Emscripten adds `worker` to `-sENVIRONMENT=web` for
+  threads' workers), and without warnings in either build.
+- The shell writes `gbFiles` in `preRun`, and Emscripten starts `main()`
+  itself, with JSPI, with the page's arguments.
 - `onAbort` sets `gbExit` to the abort's message ("native code called
   abort()" for a failed `CHECK`), and the page error is still reported.
 - Once the program has stopped, any error from the file system (such as
