@@ -17,6 +17,30 @@ cmake --build out/build/x64-Debug
 
 The resulting executable is written to the template's `bin/` directory.
 
+## Building for the web
+
+The [cli](cli) template also builds for the web, on Linux, as a program that
+runs under Node with the machine's own files, environment, and arguments, as it
+does on any other platform. This needs the Emscripten SDK, installed with
+Game Bits' `tools/install-emsdk.sh` (see "Building for the web" in Game Bits'
+README.md), and its environment in the shell. From the copied directory, with
+`GB_DIR` set:
+
+```
+source ~/emsdk/emsdk_env.sh
+emcmake cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -S . -B out/build/web-Debug
+cmake --build out/build/web-Debug
+"$EMSDK_NODE" bin/cli_template.js
+```
+
+The program is `bin/cli_template.js`, beside its `bin/cli_template.wasm`, and
+is run with the Node that comes with the SDK (`EMSDK_NODE`), which is the one
+`ctest` runs Game Bits' tests with. Add `-DGB_WEB_THREADS=ON` to the configure command (in a build tree of
+its own, such as `out/build/web-threads-Debug`) for a program that can start
+threads. Each build writes its program to the same `bin/`, replacing the
+other's. The first build in each tree is a full build of the Game Bits
+libraries, about two minutes on 4 cores.
+
 ## Templates
 
   - **[cli](cli)**: This template is the most minimal and has nothing but 

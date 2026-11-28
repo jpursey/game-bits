@@ -265,10 +265,30 @@ Recorded here as it was found:
 - (CL6) With one thread, `GetCpuTopology()` has one core that can't be pinned,
   and `PlaceThreads()` places one unpinned thread (or as many as asked for),
   as on any platform that can't pin threads. Creating them is what fails.
+- (CL9) `templates/cli` builds for the web as it is, with and without
+  threads, configured with `emcmake cmake` and `-DGB_DIR`, or `GB_DIR` in the
+  environment, and needs no change of its own or in Game Bits' CMake. Its
+  `bin/cli_template.js` runs under Node, the SDK's 24.19 and the container's
+  22.23 alike, and writes the same log line, to stderr, and exits 0, as the
+  Linux build, with no arguments, with `--help`, with `--bogus`, and with
+  several. The template takes no arguments and reads no file, so a temporary
+  `main()` that printed its arguments, read the file its first argument named
+  (absolute, or relative to the working directory), and returned 2 without an
+  argument and 3 for a missing file, was built in all three trees, and printed
+  and returned the same in each, and saw the same `HOME`. Both web trees write
+  to the template's one `bin/`, as Debug and Release do on other platforms, so
+  each build replaces the other's program. The first build of each is a full
+  build of Game Bits' libraries (715 steps, about 100 seconds on 4 cores).
+  All of this was checked again on `main` with CL7 and *Programs in the
+  browser*'s CL1, which changed how a program for Node is linked, with the
+  same results.
+- (CL9) `emsdk_env.sh` puts the SDK's Node on the PATH only where there is no
+  `node` already, so `node` can be another Node, while `emcmake` gives CMake
+  the SDK's (`EMSDK_NODE`) as the emulator `ctest` runs tests with. The docs
+  run a program with `"$EMSDK_NODE"`, which is the same Node as `ctest`'s.
 
 Not yet checked:
 - A build on a Windows machine.
-- `templates/cli` built for the web. (CL9)
 
 ## CLs
 
@@ -396,7 +416,7 @@ Depends on: CL1 to CL7.
   with both new jobs.
 - A second run takes the SDK from the cache.
 
-### CL9 [ ] templates, docs: a command line program on the web
+### CL9 [x] templates, docs: a command line program on the web
 
 Depends on: CL8.
 
