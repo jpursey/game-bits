@@ -389,7 +389,7 @@ Not checked:
 
 ## CLs
 
-### CL1 [~] build: windowed programs are pages
+### CL1 [x] build: windowed programs are pages
 
 Depends on: *Web platform* CL1.
 

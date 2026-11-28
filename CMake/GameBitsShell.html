@@ -35,7 +35,8 @@
 <script>
   var Module = {
     canvas: document.getElementById('canvas'),
-    thisProgram: location.pathname.split('/').pop().replace(/\.html$/, ''),
+    thisProgram:
+        location.pathname.split('/').pop().replace(/\.html$/, '') || 'program',
     arguments: new URLSearchParams(location.search).getAll('arg'),
     preRun: () => {
       const files = globalThis.gbFiles || {};

@@ -183,7 +183,9 @@ endfunction()
 # is in memory (see also gb_set_web_executable_properties). It is linked with
 # JSPI, so main() can wait for the browser (see gb/base/frame_wait.h), which a
 # program for Node can't, as Node needs a flag to run JSPI. FS is exported, so
-# a tool can read files back after main() returns.
+# the shell can write files before main() and a tool can read them back after
+# it returns. A target that exports more runtime methods of its own lists FS
+# among them, as Emscripten keeps only the last -sEXPORTED_RUNTIME_METHODS.
 #
 # With threads, main() stays on the browser's main thread, which SDL's window
 # needs.
