@@ -90,8 +90,7 @@ is_page=false
 if [[ "$exe" == *.html ]]; then
   is_page=true
 fi
-if [[ "$is_page" == true && ! -f "$exe" ]] ||
-    [[ "$is_page" == false && ! -x "$exe" ]]; then
+if [[ ! -f "$exe" ]] || [[ "$is_page" == false && ! -x "$exe" ]]; then
   fail "$exe is not built."
 fi
 if [[ -n "$script" && -n "$steps" ]]; then
@@ -123,11 +122,9 @@ fi
 # Full paths, as the program runs in its own working directory.
 mkdir -p "$out_dir"
 out_dir="$(realpath "$out_dir")"
-if [[ -n "$press_keys" ]]; then
-  script=""
-elif [[ -n "$script" ]]; then
+if [[ -n "$script" ]]; then
   script="$(realpath "$script")"
-else
+elif [[ -z "$press_keys" ]]; then
   script="$out_dir/steps.txt"
   steps="${steps:-hide window; wait 30; save frame}"
   printf '%s\n' "${steps//;/$'\n'}" > "$script"
@@ -188,6 +185,7 @@ else
       elif ((now_us >= deadline_us)); then
         pid="$(cat "$work/pid")"
         if kill -0 "$pid" 2> /dev/null; then
+          touch "$work/timed-out"
           exec "$tools_dir/dump-stacks.sh" "$pid" > "$stacks" 2>&1
         fi
       fi
@@ -200,19 +198,19 @@ fi
 failure=""
 if [[ -e "$work/timed-out" ]]; then
   failure="$name was still running $timeout_secs seconds after it started."
-elif [[ -e "$stacks" ]]; then
-  echo "Saved thread stacks to $stacks"
-  pid="$(cat "$work/pid")"
-  kill -9 "$pid" 2> /dev/null || true
+  if [[ -e "$stacks" ]]; then
+    echo "Saved thread stacks to $stacks"
+    pid="$(cat "$work/pid")"
+    kill -9 "$pid" 2> /dev/null || true
 
-  # xvfb-run ends its X server once the program is gone.
-  for _ in $(seq 50); do
-    if ! kill -0 "$pid" 2> /dev/null; then
-      break
-    fi
-    sleep 0.1
-  done
-  failure="$name was still running $timeout_secs seconds after it started."
+    # xvfb-run ends its X server once the program is gone.
+    for _ in $(seq 50); do
+      if ! kill -0 "$pid" 2> /dev/null; then
+        break
+      fi
+      sleep 0.1
+    done
+  fi
 elif [[ $status -ne 0 ]]; then
   failure="$name exited with code $status."
 fi
