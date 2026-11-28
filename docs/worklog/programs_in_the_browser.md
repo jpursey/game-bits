@@ -322,7 +322,9 @@ The template becomes the smallest `Game` with an SDL window: render-check's
 flags (`gb_cli`, `gb_pilot_script`), its `Game` makes the window and a
 `PilotSdl` in `Init()`, and `Update()` reads SDL's events, returning false on
 `SDL_QUIT` or Escape. Its loop is `Game`'s, so it gets the frame wait. On
-Windows and Linux it behaves as now, apart from Escape and the flags.
+Windows and Linux it behaves as now, apart from Escape and the flags. As
+nothing builds either template in CI today, the CL that rewrites it adds a
+job that builds both on Windows and Linux.
 
 The orchestrator's design kept the template's own loop. It becomes a `Game`
 because a pilot script is the only way to drive a page from a session, and
@@ -453,12 +455,18 @@ Depends on: CL1 to CL4.
   `tools/run-program.sh`.
 - A cross-platform change: the template is a `Game` with the pilot flags, and
   Escape quits it.
+- CI: nothing builds either template today. A `build-templates` job, on
+  Windows and Linux (a matrix, as `build-render-check` is), builds
+  `templates/cli` and `templates/sdl` in Release, each as its own project with
+  `-DGB_DIR` set to the checkout, as `build-block-world` builds block-world.
+  CLAUDE.md's Cloud sessions lists the job.
 
 **Verify**
-- Standard checks, and the template builds on Linux (Windows in CI's builds,
-  if one builds it; otherwise left for the user), and runs there with
+- Standard checks, and the template builds on Linux and runs there with
   `tools/run-program.sh --steps 'hide window; wait 30; key A; resize 640 360;
   wait 2'`, exiting cleanly.
+- A `workflow_dispatch` run of the CMake workflow on the PR's branch passes,
+  with `build-templates` building both templates on Windows and Linux.
 - Web: the template builds as a page, and the same steps pass in the headless
   browser, with the pilot's summary in its log. A script whose step fails
   (`expect error "none" 1`) fails the run, and `--press-keys Escape` ends it
@@ -471,7 +479,8 @@ Depends on: CL1 to CL4.
 Depends on: CL5, *Web platform* CL8.
 
 - `.github/actions/playwright`, and `PLAYWRIGHT_VERSION` in `cmake.yml`.
-- A `build-web-template` job: builds `templates/sdl` for the web (in Debug,
+- A `build-web-template` job, beside CL5's `build-templates`, which builds
+  the templates natively: it builds `templates/sdl` for the web (in Debug,
   with `.github/actions/emsdk`), and runs it with `tools/run-program.sh`: the
   steps from CL5, a failing script (expected to fail), and `--press-keys
   Escape`. It uploads `out/run/sdl_template` as an artifact.
