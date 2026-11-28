@@ -7,6 +7,11 @@ if(TARGET Vulkan)
   add_subdirectory(vulkan)
 endif()
 
+# The WebGPU backend draws in a browser, so only a web build has it.
+if (EMSCRIPTEN)
+  add_subdirectory(webgpu)
+endif()
+
 set(gb_render_SOURCE
   binding.h
   binding_data.h
