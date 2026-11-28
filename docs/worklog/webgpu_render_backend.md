@@ -635,6 +635,19 @@ Settled by CL1, with Game Bits' own CMake and tools:
 - `tools/install-naga.sh` and `tools/install-vulkan-sdk.sh` install `naga`
   and `spirv-opt` in an empty folder.
 
+Settled by CL2:
+- gb_imgui's font atlas clamped to its edge draws what clamping to a
+  transparent border drew. render-check's seven scripts, run on Linux with
+  each, saved 34 frames that are byte for byte the same, apart from the
+  process memory figure in 16 of them, which differs as much between two runs
+  of the same build.
+- The SPIR-V pasted into gb_imgui and `glslc`'s output for
+  `assets/shaders/imgui_shader.*` today differ only in a generator version, a
+  struct's name, and the order of decorations, so the WGSL converted from the
+  GLSL is the same shader. naga converts `texture()` of an array's layer by
+  truncating it to an integer, where GLSL rounds it, which gb_imgui's whole
+  layer numbers don't notice.
+
 Settled by CL3, with a scratch page (a `Game` with an SDL window, the pilot
 flags, and a `RenderSystem` on `WebGpuBackend`, clearing to (32, 32, 48)) run
 with `tools/run-program.sh`:
@@ -670,19 +683,6 @@ with `tools/run-program.sh`:
   every command in the frame, so a CL that adds commands which must come
   before a write (a copy into a grown buffer, then a write into it) orders
   them itself.
-
-Settled by CL2:
-- gb_imgui's font atlas clamped to its edge draws what clamping to a
-  transparent border drew. render-check's seven scripts, run on Linux with
-  each, saved 34 frames that are byte for byte the same, apart from the
-  process memory figure in 16 of them, which differs as much between two runs
-  of the same build.
-- The SPIR-V pasted into gb_imgui and `glslc`'s output for
-  `assets/shaders/imgui_shader.*` today differ only in a generator version, a
-  struct's name, and the order of decorations, so the WGSL converted from the
-  GLSL is the same shader. naga converts `texture()` of an array's layer by
-  truncating it to an integer, where GLSL rounds it, which gb_imgui's whole
-  layer numbers don't notice.
 
 Not checked:
 - A real GPU: Chrome on Windows (whose canvas prefers `bgra8unorm`) with the
