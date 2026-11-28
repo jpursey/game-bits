@@ -19,6 +19,7 @@
 #include "gb/image/pixel.h"
 #include "gb/test/log_error_guard.h"
 #include "gb/test/log_recorder.h"
+#include "gb/test/thread_tester.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
@@ -1003,6 +1004,7 @@ TEST_F(StepPilotTest, ExpectedErrorsInLaterFramesPass) {
 }
 
 TEST_F(StepPilotTest, ExpectedErrorOnAnotherThreadPasses) {
+  GB_SKIP_WITHOUT_THREADS();
   StepPilot pilot;
   pilot.AddSteps({PilotExpectErrorStep{.text = "edited", .max_frames = 2},
                   PilotWaitStep{.frames = 2}});
@@ -1147,6 +1149,7 @@ TEST_F(StepPilotTest, OneErrorMeetsEveryExpectationItMatches) {
 //------------------------------------------------------------------------------
 
 TEST_F(StepPilotTest, ErrorLoggedOnAnotherThreadFailsTheRun) {
+  GB_SKIP_WITHOUT_THREADS();
   StepPilot pilot;
   pilot.AddSteps({PilotWaitStep{.frames = 3}});
   RunFrame(&pilot);

@@ -1747,6 +1747,7 @@ TEST(ReadConfigFromTextTest, RoundTripKeywordKeys) {
 }
 
 TEST(ReadConfigFromTextTest, ReadOnSeveralThreads) {
+  GB_SKIP_WITHOUT_THREADS();
   const TextConfigFlag kReadFlags[] = {TextConfigFlag::kIdentifiers,
                                        TextConfigFlag::kSingleQuotes,
                                        TextConfigFlag::kComments};

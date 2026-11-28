@@ -61,6 +61,7 @@ TEST(SleepTest, WakesWithinTimerTick) {
 }
 
 TEST(SleepTest, SleepsOnSeveralThreadsAtOnce) {
+  GB_SKIP_WITHOUT_THREADS();
   // Threads sleep for different durations, so any thread woken by another's
   // timer would wake early.
   const int kThreadCount = 4;

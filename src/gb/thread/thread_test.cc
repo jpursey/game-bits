@@ -13,6 +13,7 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/synchronization/notification.h"
+#include "gb/test/thread_tester.h"
 #include "gtest/gtest.h"
 
 namespace gb {
@@ -26,6 +27,16 @@ class ThreadTest : public ::testing::Test {
 
 TEST_F(ThreadTest, GetMaxConcurrencyIsGreaterThanZero) {
   EXPECT_GT(GetMaxConcurrency(), 0);
+}
+
+// Unlike the tests that start a thread, this runs in every build, so it fails
+// if SupportsThreads() is wrong either way.
+TEST_F(ThreadTest, SupportsThreadsWhereCreateThreadWorks) {
+  Thread thread = CreateThread(0, 0, nullptr, +[](void* user_data) {});
+  EXPECT_EQ(SupportsThreads(), thread != nullptr);
+  if (thread != nullptr) {
+    JoinThread(thread);
+  }
 }
 
 TEST_F(ThreadTest, ThreadAffinitiesAreUniqueAndNonZero) {
@@ -43,6 +54,7 @@ TEST_F(ThreadTest, ThreadAffinitiesAreUniqueAndNonZero) {
 }
 
 TEST_F(ThreadTest, CreateThreadWithNoAffinityNoStackSize) {
+  GB_SKIP_WITHOUT_THREADS();
   struct State {
     State() = default;
     std::atomic<int> counter = 0;
@@ -59,6 +71,7 @@ TEST_F(ThreadTest, CreateThreadWithNoAffinityNoStackSize) {
 }
 
 TEST_F(ThreadTest, CreateThreadWithAffinityNoStackSize) {
+  GB_SKIP_WITHOUT_THREADS();
   auto affinities = GetHardwareThreadAffinities();
   if (affinities.empty()) {
     return;
@@ -79,6 +92,7 @@ TEST_F(ThreadTest, CreateThreadWithAffinityNoStackSize) {
 }
 
 TEST_F(ThreadTest, CreateThreadWithNoAffinityWithStackSize) {
+  GB_SKIP_WITHOUT_THREADS();
   struct State {
     State() = default;
     std::atomic<int> counter = 0;
@@ -95,6 +109,7 @@ TEST_F(ThreadTest, CreateThreadWithNoAffinityWithStackSize) {
 }
 
 TEST_F(ThreadTest, CreateThreadWithAffinityWithStackSize) {
+  GB_SKIP_WITHOUT_THREADS();
   auto affinities = GetHardwareThreadAffinities();
   if (affinities.empty()) {
     return;
@@ -129,6 +144,7 @@ void SetAffinity(void* user_data) {
 }
 
 TEST_F(ThreadTest, SetThisThreadAffinityPinsTheThread) {
+  GB_SKIP_WITHOUT_THREADS();
   auto affinities = GetHardwareThreadAffinities();
   if (affinities.empty()) {
     GTEST_SKIP() << "Threads cannot be pinned on this platform";
@@ -142,6 +158,7 @@ TEST_F(ThreadTest, SetThisThreadAffinityPinsTheThread) {
 }
 
 TEST_F(ThreadTest, SetThisThreadAffinityFailsForZero) {
+  GB_SKIP_WITHOUT_THREADS();
   SetAffinityState state;
   Thread thread = CreateThread(0, 0, &state, SetAffinity);
   ASSERT_NE(thread, nullptr);
@@ -151,6 +168,7 @@ TEST_F(ThreadTest, SetThisThreadAffinityFailsForZero) {
 }
 
 TEST_F(ThreadTest, ThreadIsActiveUntilJoined) {
+  GB_SKIP_WITHOUT_THREADS();
   Thread thread = CreateThread(0, 0, nullptr, +[](void* user_data) {});
   ASSERT_NE(thread, nullptr);
   EXPECT_EQ(GetActiveThreadCount(), 1);
@@ -159,6 +177,7 @@ TEST_F(ThreadTest, ThreadIsActiveUntilJoined) {
 }
 
 TEST_F(ThreadTest, DetachThreadRemainsActiveUntilNotRunning) {
+  GB_SKIP_WITHOUT_THREADS();
   struct State {
     State() = default;
     absl::Notification thread_started;
@@ -189,6 +208,7 @@ TEST_F(ThreadTest, GetThisThreadIsNullForMainThread) {
 }
 
 TEST_F(ThreadTest, GetThisThreadWorksInThread) {
+  GB_SKIP_WITHOUT_THREADS();
   struct State {
     State() = default;
     std::atomic<Thread> thread = nullptr;
@@ -204,6 +224,7 @@ TEST_F(ThreadTest, GetThisThreadWorksInThread) {
 }
 
 TEST_F(ThreadTest, ThreadName) {
+  GB_SKIP_WITHOUT_THREADS();
   Thread thread = CreateThread(0, 0, nullptr, +[](void* user_data) {});
   ASSERT_NE(thread, nullptr);
   SetThreadName(thread, "Test");
@@ -212,6 +233,7 @@ TEST_F(ThreadTest, ThreadName) {
 }
 
 TEST_F(ThreadTest, LongThreadNameIsTrimmed) {
+  GB_SKIP_WITHOUT_THREADS();
   Thread thread = CreateThread(0, 0, nullptr, +[](void* user_data) {});
   ASSERT_NE(thread, nullptr);
   SetThreadName(thread, std::string(200, 'a'));
@@ -222,6 +244,7 @@ TEST_F(ThreadTest, LongThreadNameIsTrimmed) {
 }
 
 TEST_F(ThreadTest, ThreadNameIsOnlyTheGivenText) {
+  GB_SKIP_WITHOUT_THREADS();
   Thread thread = CreateThread(0, 0, nullptr, +[](void* user_data) {});
   ASSERT_NE(thread, nullptr);
   const std::string text = "Test" + std::string(200, 'b');
@@ -261,6 +284,7 @@ TEST_F(ThreadTest, ThisThreadCyclesAreZeroWhenUnsupported) {
 }
 
 TEST_F(ThreadTest, ThisThreadCyclesCountWorkButNotWaiting) {
+  GB_SKIP_WITHOUT_THREADS();
   if (!GetThreadCapabilities().IsSet(ThreadCapability::kCycles)) {
     GTEST_SKIP() << "Thread cycles are not supported on this platform";
   }

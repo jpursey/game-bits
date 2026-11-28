@@ -112,6 +112,7 @@ TEST(WeakPtrTest, WeakScopeDeletedBeforeWeakPtr) {
 }
 
 TEST(WeakPtrTest, InvalidateBlocksOnLock) {
+  GB_SKIP_WITHOUT_THREADS();
   ThreadTester tester;
   auto instance = std::make_unique<DerivedClass>(42);
   WeakPtr<DerivedClass> ptr(instance.get());
@@ -170,6 +171,7 @@ TEST(WeakPtrDeathTest, WeakPtrToBaseClassAtDifferentAddress) {
 }
 
 TEST(WeakPtrTest, LockIsNullOnceInvalidateStarts) {
+  GB_SKIP_WITHOUT_THREADS();
   auto instance = std::make_unique<DerivedClass>(42);
   WeakPtr<DerivedClass> ptr(instance.get());
   WeakLock<DerivedClass> lock = ptr.Lock();
@@ -206,6 +208,7 @@ TEST(WeakPtrTest, WeakConstPtr) {
 }
 
 TEST(WeakPtrTest, ThreadAbuse) {
+  GB_SKIP_WITHOUT_THREADS();
   ThreadTester tester;
   auto instance = std::make_unique<DerivedClass>(42);
   WeakPtr<DerivedClass> ptr(instance.get());
