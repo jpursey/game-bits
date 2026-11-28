@@ -791,7 +791,7 @@ Depends on: *Programs in the browser* CL1 and CL4, *Web platform* CL6.
   isn't visible to the page; CL8's `instances.txt` run is the check that it
   doesn't grow.
 
-### CL4 [ ] render: shaders, bindings, and pipelines draw quads
+### CL4 [~] render: shaders, bindings, and pipelines draw quads
 
 Depends on: CL1, CL3.
 
