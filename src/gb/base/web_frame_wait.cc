@@ -3,26 +3,29 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "gb/base/frame_wait.h"
-
 #include <emscripten.h>
+
+#include "gb/base/frame_wait.h"
 
 namespace gb {
 namespace {
 
 // These link in any web build, but can only be called where the program was
 // linked with JSPI (as a page is), which emscripten_has_asyncify() says.
+//
+// The JavaScript uses function expressions, not arrows, as clang-format splits
+// `=>` into `= >`.
 
 EM_ASYNC_JS(void, AwaitAnimationFrame, (), {
-  await new Promise(resolve => requestAnimationFrame(resolve));
+  await new Promise(function(resolve) { requestAnimationFrame(resolve); });
 });
 
 // A message posted to a MessageChannel arrives in the browser's next task,
 // without the 4 ms that browsers clamp a nested setTimeout(0) to.
 EM_ASYNC_JS(void, AwaitMessage, (), {
-  await new Promise(resolve => {
+  await new Promise(function(resolve) {
     const channel = new MessageChannel();
-    channel.port1.onmessage = () => {
+    channel.port1.onmessage = function() {
       channel.port1.close();
       resolve();
     };

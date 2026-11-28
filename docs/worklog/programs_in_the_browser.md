@@ -349,6 +349,12 @@ with the WebGPU flags:
   without it and 2 with `-sJSPI`. Without JSPI, Node 24 runs the program;
   with it, Node aborts as it loads unless given `--experimental-wasm-jspi`.
   (CL2)
+- `web_frame_wait.cc` itself, in a scratch page linked with `-sJSPI` in
+  headless Chromium 158: 300 calls to `WaitForNextFrame()` took 5.0 s (60.0 to
+  60.2 a second, each returning true), and 2000 calls to
+  `YieldBetweenFrames()` took 36 to 38 ms (18 to 19 us each). The same page
+  linked without JSPI, and the same program under Node 24, did neither: 300
+  calls returned false in 0.1 ms. (CL2)
 - Arguments from the query string reach `main()`, files given before `main()`
   are read (the pilot script), files the program writes are read back with
   `Module.FS` after it exits, and exit codes arrive in `onExit`: 0, 1 for a
