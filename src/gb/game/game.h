@@ -23,7 +23,9 @@ namespace gb {
 // support for a fixed or variable frame rate game loop.
 //
 // In a browser page, the browser's animation frames pace frames to the
-// display, and kKeyMaxFps doesn't apply.
+// display, and kKeyMaxFps doesn't apply: the clock is read, but never slept
+// on. There, Run() must be called from code that main() runs, not from a
+// callback the browser makes (see WaitForNextFrame() in gb/base/frame_wait.h).
 //
 // With a Pilot in its context, the game runs the pilot's frames instead (see
 // Pilot for the phases of a run): it stops once the pilot is done, calls
