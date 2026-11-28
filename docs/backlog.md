@@ -22,34 +22,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Programs in the browser
-
-- **Layers:** build, base, game, sdl, pilot, tools, templates
-- **Size:** large
-- **Feature workflow:** yes
-- **Depends on:** *Web platform*
-- **Background:** [Web support](designs/web_support.md), the design this is part
-  of; [Web platform](worklog/web_platform.md)
-
-A web build makes programs for Node, so nothing built on `gb_game` or SDL runs
-in a browser yet. Make a windowed program (`gb_add_win_executable`) a page: its
-HTML, JavaScript, and WebAssembly, with SDL's window as the page's canvas, and
-keyboard and mouse input from it.
-- The game loop stays a blocking loop, with JSPI: where `Game` waits for the
-  next frame, the web's wait returns to the browser until its next animation
-  frame, which is also what paces frames there. `Game::Run()` returns and
-  cleans up as it does on any platform.
-- Run a program in a headless browser with a pilot script, as
-  `tools/run-program.sh` does on Linux, and bring the frames it saves and its
-  log back out of the browser. Chromium and Playwright are in cloud sessions
-  already. SDL's tests that need a browser's video driver run this way too.
-- A program's arguments come from the page's address or its script, as there
-  is no command line.
-- A program in a browser is built without threads (see *Threads in the
-  browser*).
-- `templates/sdl` builds for the web and shows its window. Nothing can draw
-  with `gb_render` until *WebGPU render backend*.
-
 ## WebGPU render backend
 
 - **Layers:** build, render, imgui, examples, CI
@@ -352,6 +324,55 @@ threaded program work there.
   first visit. A Claude artifact can't have them at all.
 - Run a threaded program's pilot scripts in the headless browser, from a
   server that sends the headers.
+
+## Frame limits in a browser
+
+- **Layers:** base, game
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** *Programs in the browser*
+- **Background:** [Programs in the browser](worklog/programs_in_the_browser.md)
+
+In a page, the display paces `Game`'s frames, and `kKeyMaxFps` doesn't apply:
+the loop's limit sleeps, and a sleep in a page without threads spins on the
+browser's main thread, so a 60 Hz display ran at 43 to 60 frames a second
+with nearly every frame spent spinning. A program on a 144 Hz display runs at
+144. Limit frames there in whole display frames instead: wait for animation
+frames until the next frame is due (within about half a display frame), so a
+limit of 60 on a 144 Hz display runs every second or third display frame.
+Check it by hand on a display faster than 60 Hz, as headless Chromium only
+has 60.
+
+## Stacks of a hung page
+
+- **Layers:** tools
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** *Programs in the browser*
+- **Background:** `tools/run-program.sh`, `tools/run-page.js`
+
+When a program on Linux is still running at its timeout, `run-program.sh`
+saves the stack of each of its threads, showing where it is stuck. A page that
+times out saves nothing. Chrome's debugger can pause a page and give its call
+stack, WebAssembly functions included, by name in a Debug build (the DevTools
+protocol's `Debugger.pause`, through Playwright's CDP session). Save that
+stack to `hang-stacks.txt` before ending the page.
+
+## SDL tests in the browser
+
+- **Layers:** build, sdl, pilot
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** *Programs in the browser*
+- **Background:** [Web platform](worklog/web_platform.md), whose tests use
+  SDL's dummy video driver under Node
+
+SDL's tests run under Node with SDL's dummy video driver, so SDL's real web
+driver (the canvas, resizing it, and its events) is only checked by running
+`templates/sdl` in a headless browser. Also run `gb_sdl_test` and
+`gb_pilot_sdl_test` as pages, from `ctest`, through `tools/run-program.sh`'s
+page mode, in the web CI jobs. GoogleTest's `main()` runs without returning to
+the browser, which these tests don't need.
 
 ## Saved files on the web
 
