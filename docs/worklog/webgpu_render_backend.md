@@ -240,8 +240,8 @@ change what frame N reads. So the Vulkan backend's per-frame copies of
   the CPU copy and mark the range, and each frame that is ended writes the
   marked ranges with `WriteBuffer()`. A `kStaticWrite` buffer writes at once
   with `WriteBuffer()`, so its partial writes always succeed (Vulkan's can
-  fail while the buffer is in use). Storage buffers have `Storage | Indirect | CopyDst` usage, so a
-  storage buffer of `MeshDraw` can be drawn from.
+  fail while the buffer is in use). Storage buffers have `Storage | Indirect |
+  CopyDst` usage, so a storage buffer of `MeshDraw` can be drawn from.
 - **Textures** (`WebGpuTexture`, `WebGpuTextureArray`, `WebGpuVolumeTexture`,
   sharing `WebGpuTexels`, as the Vulkan ones share `VulkanTexels`): one GPU
   texture, and a CPU copy unless `kStaticWrite`. Updates mark regions, and each
