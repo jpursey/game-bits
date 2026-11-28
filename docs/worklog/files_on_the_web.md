@@ -53,7 +53,9 @@ the command as [Examples](#examples) describes.
   - Packed files can be written, renamed, and deleted, like any file in a
     page, until the page closes (keeping them is *Saved files on the web*).
   - If `<name>.data` can't be fetched (such as a page copied without it),
-    the browser's console shows the error, and `main()` never starts.
+    the browser's console shows the error, and `main()` never starts. The
+    shell sets `gbExit` to the error's message, so `tools/run-program.sh`
+    fails the run at once, as for an abort.
 - Assets of more than 15 MB in all: configuring warns that the page's
   `<name>.data` can't be beside a Claude artifact's page, which allows 15 MB
   a file. The page still builds, and works from a web server (GitHub Pages
@@ -61,7 +63,8 @@ the command as [Examples](#examples) describes.
   backlog's *Asset packages over 15 MB*.
 - `CMake/GameBitsShell.html` keeps working with a package: its `preRun`, which
   writes a tool's `gbFiles`, becomes a list, as Emscripten's package loader
-  adds its own step to it.
+  adds its own step to it. A page that can't start its program (its package
+  can't be fetched) ends with `gbExit` set to the error's message.
 
 ## Design
 
@@ -141,8 +144,8 @@ function(gb_pack_assets TARGET FOLDER)
 
 **Brittleness:**
 - `<name>.data` must be served beside the page. A page copied or published
-  without it never starts `main()`, with only a console error. A tool running
-  it waits for its timeout. *Web demos* publishes the page's folder whole.
+  without it never starts `main()`, with only a console error, which a tool
+  running it reports at once. *Web demos* publishes the page's folder whole.
 - A program must find its assets folder by name, in or above its current
   folder, or open it relative to its current folder with that folder being
   the project's root. A program that opens assets relative to its executable
@@ -159,6 +162,13 @@ not a function") and leaves the packed files out. `preRun` becomes a list with
 the shell's function in it, which Emscripten accepts as well. The shell's step
 runs first, then the package's, so a tool's `gbFiles` must not name a packed
 file (the tools only write `/pilot`).
+
+The package's loader fetches it with nothing to catch a failure, so a failed
+fetch is a promise rejection nothing handles, and the program never starts.
+Until Emscripten calls `onRuntimeInitialized`, just before `main()`, the shell
+takes such a rejection as the program's end, and sets `gbExit` to its message
+(such as "Error: 404: http://localhost/tiny.data"), which `tools/run-page.js`
+reports as an abort. After that, rejections are left to the browser, as now.
 
 ### Choosing how to pack
 
@@ -268,7 +278,8 @@ headless Chromium 158:
   it is the same for both forms. `<name>.js` grew by 6.5 KB with the
   package's loader. (CL1)
 - A page whose `<name>.data` was missing logged "404" as a page error, and
-  `main()` never started, so the run ended at its timeout. (CL1)
+  `main()` never started, so the run ended at its timeout. CL1's shell ends
+  such a run in a second instead, with the error's message.
 - The page's current folder is `/`. (CL1)
 - With Game Bits' own web build, a prototype of `gb_pack_assets()` in a
   scratch project (a `gb_add_win_executable()` linking `gb_file`, `gb_image`,
@@ -282,6 +293,36 @@ headless Chromium 158:
   took 37 to 56 ms. The Debug `.wasm` was 13 MB. (CL1)
 - Touching a packed file relinked the page in 0.9 s; a build with no change
   did nothing. (CL1)
+
+Settled by CL1, with the command and shell in the repository:
+- Configuring fails, with a message naming the path, for a path that isn't
+  there, an absolute path or one with `..`, no paths, a folder that isn't
+  there, a target that isn't defined, a folder named `tmp`, and two folders
+  named `assets` for one target. Packing the same folder twice is allowed.
+- A file named `at@name.txt` and a folder named `with space` are packed and
+  read back by their names.
+- A build with no change does nothing; touching a packed file relinks the
+  page; adding a file to a packed folder reconfigures (Ninja's glob check)
+  and relinks it. Removing one, or adding one older than the page (`cp -p`),
+  changes no file the page depends on, so the command also keeps a list of
+  the packed files in the build tree (`<target>_packed_assets.txt`), written
+  only when it changes, which the page depends on too. With it, both relink
+  the page, and its `.data` follows.
+- Paths that overlap (a folder, and a file in it, or a folder named twice)
+  are counted once toward the 15 MB, as the packager packs them once. A path
+  written with backslashes is checked as if written with `/`, so
+  `..\other` fails on every platform.
+- A page of 15,500,000 bytes of assets warns as it configures, and builds.
+- A page with no assets, and one with assets, both still get the tool's
+  `gbFiles` (the pilot script), and a program for Node that calls
+  `gb_pack_assets()` gets no `.data` and reads the files on disk.
+- The spike above, rebuilt with the repository's command and shell, passes
+  as before. Built with threads, it links, and ran the same in the page
+  runner (which serves cross-origin isolation headers).
+- The shell takes any promise rejection nothing handles before `main()` as
+  the program's end, as nothing else in a page's start leaves one. A tool's
+  `gbFiles` can't name a packed file: the packager's step then fails, and
+  the program doesn't start.
 
 Not checked:
 - A page and its `<name>.data` as a Claude artifact. The design's findings say
@@ -297,15 +338,15 @@ Not checked:
 
 ## CLs
 
-### CL1 [ ] build: gb_pack_assets
+### CL1 [x] build: gb_pack_assets
 
 Depends on: *Programs in the browser* CL1.
 
 - `GameBitsTargetCommands.cmake`: `gb_pack_assets()`, as in
   [gb_pack_assets](#gb_pack_assets). The file's header comment lists it.
-- `CMake/GameBitsShell.html`: `preRun` is a list, as in
-  [The shell](#the-shell), and its comment says a page's packed assets are in
-  its file system before `main()`.
+- `CMake/GameBitsShell.html`: `preRun` is a list, and a failed fetch of the
+  package before `main()` sets `gbExit`, as in [The shell](#the-shell). Its
+  comment says a page's packed assets are in its file system before `main()`.
 - CLAUDE.md's Build system: a bullet for `gb_pack_assets()`, beside
   `gb_embed_data()`. Its Web section: a page's assets are in `<name>.data`
   beside it.
@@ -354,7 +395,7 @@ Depends on: CL1, *Programs in the browser* CL5 and CL6.
 - Web: the template builds as a page with `sdl_template.data` beside it, and
   the same steps pass in the headless browser, with the file's text in
   `stdout.txt` or `stderr.txt`. With `sdl_template.data` moved away, the run
-  fails (at its timeout).
+  fails at once, with the 404 in its log.
 - A `workflow_dispatch` run of the CMake workflow on the PR's branch passes,
   with `build-templates` on Windows and Linux and the template's page run in
   `build-web-template`, which now checks its assets too.
