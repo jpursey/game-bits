@@ -341,6 +341,33 @@ limit of 60 on a 144 Hz display runs every second or third display frame.
 Check it by hand on a display faster than 60 Hz, as headless Chromium only
 has 60.
 
+The loop's frame limit state goes wrong where the platform paced a frame:
+`GameLoop()` still advances `next_time` by the frame's share of the limit each
+frame, but doesn't sleep. On a display faster than the limit, `next_time` runs
+further ahead of the clock every frame, and never resets, as frames are never
+late. That is harmless while nothing waits for it, but a limit that does would
+wait as long as it has run ahead. Reset it from the frame's time when the frame
+was paced.
+
+## Delta time after a stall
+
+- **Layers:** game
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Programs in the browser](worklog/programs_in_the_browser.md)
+
+`Game` passes `Update()` the whole time since the last frame, however long
+that was. In a page, the browser stops animation frames while the page's tab
+is hidden, so the first frame after it is shown again gets the whole time it
+was hidden, possibly minutes, as one delta, and physics and timers jump by
+it. A native program has the same after any stall, such as while a window is
+dragged on Windows, or a debugger is stopped at a breakpoint. The fix should be
+one rule for every platform, in `Game`'s loop: such as limiting the delta a
+frame gets, or starting a frame after a long gap as the loop already does after
+a slow one. It changes what `Game` does everywhere, so it needs the user's
+approval.
+
 ## Asset packages over 15 MB
 
 - **Layers:** build

@@ -377,6 +377,15 @@ with the WebGPU flags:
   clock after the wait to the end of `Update()`, and no sleeps. With a
   `FakePilot`, 2000 piloted frames took 40 to 46 ms. (CL3)
 - SDL: as in [SDL](#sdl). (CL5)
+- `templates/sdl` itself, as a `Game`, built against this repository, in
+  headless Chromium 158 through `tools/run-program.sh`: the steps `hide
+  window; wait 30; key A; click 200 100; resize 640 360; wait 2` passed, with
+  the key, the click at 200,100, and both window sizes in its log, as on
+  Linux. `expect error "none" 1` failed the run with code 1, and
+  `--press-keys Escape` ended it with code 0. With Playwright's own keyboard
+  and mouse and no pilot, the canvas was 1280x720, and a click at 300,200 and
+  the B and Escape keys reached it, Escape ending it with code 0. While a
+  piloted run waited after `resize 640 360`, the canvas was 640x360. (CL5)
 
 Settled by CL1, with the spike rebuilt as a page by
 `gb_set_web_page_properties()` and opened with Playwright:
@@ -477,7 +486,7 @@ Depends on: CL1.
   (`--timeout-secs 5`).
 - Linux: `render-check`'s scripts still pass as before.
 
-### CL5 [ ] templates: templates/sdl as a Game, in the browser
+### CL5 [x] templates: templates/sdl as a Game, in the browser
 
 Depends on: CL1 to CL4.
 
