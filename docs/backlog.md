@@ -142,7 +142,7 @@ their tests named the same way.
 - **Layers:** CI, imgui
 - **Size:** small
 - **Feature workflow:** no
-- **Depends on:** *Web demos*
+- **Depends on:** nothing
 - **Background:** `gb_embed_shader` in `CMake/GameBitsTargetCommands.cmake`,
   as render-check uses it; `assets/shaders/build-shaders.bat`; the shaders
   pasted into `gb/imgui/gen_imgui_shaders.cc` and `web_imgui_shaders.cc`
@@ -150,9 +150,9 @@ their tests named the same way.
 gb_imgui's shaders are compiled by hand, their SPIR-V pasted into
 `gen_imgui_shaders.cc` and their WGSL into `web_imgui_shaders.cc`. Compile
 them with `gb_embed_shader`, as render-check does, and remove
-`assets/shaders/build-shaders.bat`, which only they need once block-world's
-shaders are compiled by the build ([Web demos](worklog/web_demos.md)'s CL1,
-which does block-world's half of this item).
+`assets/shaders/build-shaders.bat`, which only they need, as block-world's
+shaders are compiled by the build ([Web demos](worklog/web_demos.md)'s CL1
+did that half of this item).
 
 Every project that links gb_imgui (including its unit tests, which draw with
 the test backend) would then need `glslc`, and `spirv-opt` and `naga` in a web

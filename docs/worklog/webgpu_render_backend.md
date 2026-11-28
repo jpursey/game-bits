@@ -527,8 +527,12 @@ class RenderCheckBackend {
   with validation on, `ImGui_ImplSDL2_InitForVulkan`, VMA's total, and
   multi-draw.
 - `webgpu_render_check_backend.cc`: `WebGpuBackend`,
-  `ImGui_ImplSDL2_InitForOther`, `GetAllocatedBytes()`, and no multi-draw.
-  `OnEvent()` does nothing.
+  `ImGui_ImplSDL2_InitForOpenGL(window, nullptr)`, `GetAllocatedBytes()`, and
+  no multi-draw. `OnEvent()` does nothing. Game Bits' copy of ImGui's SDL
+  backend has no `InitForOther()` (newer ImGui does), and its
+  `InitForOpenGL()` only calls the same shared `ImGui_ImplSDL2_Init()`,
+  ignoring its context, where `InitForVulkan()` asserts that SDL has Vulkan,
+  which a web build's SDL doesn't. A comment there says why.
 - `CMakeLists.txt` picks the file and the backend library with `if
   (EMSCRIPTEN)`, as Game Bits' modules pick platform files, and embeds the
   same shaders (as WGSL in a web build).
