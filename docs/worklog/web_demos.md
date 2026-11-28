@@ -257,9 +257,8 @@ it adds it in one place.
 
 What the owner does once: in the repository's Settings, Pages, set "Build and
 deployment" to "GitHub Actions". The repository is public, so Pages needs no
-paid plan. Until then the workflow fails at its deploy step, so it is added
-with the README link only once the owner has, or the job is skipped while the
-`github-pages` environment doesn't exist.
+paid plan. Until then the workflow would fail at its deploy step, so CL6
+starts only once the owner has done it.
 
 README.md gains a "Try it in a browser" section near the top, with the two
 links, what a browser needs (Chrome 137 or later on Windows, macOS, or
