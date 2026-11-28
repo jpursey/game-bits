@@ -62,8 +62,6 @@ void Game::GameLoop() {
   absl::Time next_time = last_time + min_delta_time;
   absl::Duration delta_time;
   do {
-    // Where the platform paces frames (in a browser page), the display paces
-    // them, and the loop doesn't limit them as well.
     const bool paced = WaitForNextFrame();
     absl::Time now = clock_->Now();
     absl::Duration time_remaining = next_time - now;
@@ -78,7 +76,8 @@ void Game::GameLoop() {
         next_time = now;
       }
     } else if (!paced) {
-      // We have extra time on our hands, so wait until the frame is due.
+      // We have extra time on our hands, so wait until the frame is due, unless
+      // the platform paced it (as in a browser page).
       clock_->SleepUntil(next_time);
       now = clock_->Now();
     }
