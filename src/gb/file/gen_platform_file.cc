@@ -56,9 +56,8 @@ fs::path Utf8ToLocalPath(std::string_view path) {
   return fs::path(path, fs::path::generic_format);
 }
 
-// Names are bytes that aren't checked, so a byte that can't start a UTF-8
-// character is accepted.
-fs::path GetNonUtf8Name() { return fs::path(std::string(1, '\xFF')); }
+// GetNonUtf8Name() is in posix_platform_file.cc and web_platform_file.cc, as
+// the web has no such name.
 
 //------------------------------------------------------------------------------
 // Allowed names

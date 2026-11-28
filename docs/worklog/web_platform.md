@@ -178,10 +178,26 @@ Recorded here as it was found:
   clock says its time has passed. (CL4)
 - `LocalFileProtocolTest.ListSkipsNonUtf8Names` fails: Node gives a name that
   isn't UTF-8 with U+FFFD in place of its bad bytes, so it is listed. (CL5)
+  - CL5: a name created with a byte that isn't UTF-8 is written as U+FFFD
+    too, so the web has no name that can't be converted. `GetNonUtf8Name()`
+    is empty there, and the two tests that use it,
+    `CreateWithNonUtf8RootPath` and `ListSkipsNonUtf8Names`, are skipped.
 - `CommonProtocolTest.ReadOnlyFile` fails, as it does on Linux as root, which
   the trial ran as. (CL5 checks it as an ordinary user.)
+  - CL5: it passes as an ordinary user, with and without threads, and still
+    fails as root, as on Linux. Node and Emscripten set and report
+    permissions as Linux does, so nothing changes for it.
 - `LocalFileProtocolTest.CreateWithRootPath` fails without threads only.
   (CL5)
+  - CL5: not reproduced on `main`. It passes in both web builds, as an
+    ordinary user and as root, in the whole program, alone, and under
+    `ctest`, with `TMPDIR` unset or ending in `/`, and linked with the old
+    64 KiB stack. Nothing changes for it.
+- As an ordinary user, `CopyFolderKeepsAttributes` and `MoveKeepsAttributes`
+  leave a folder in the temp folder after each run, and log that it couldn't
+  be deleted: the folders they make read-only can't have their files
+  removed. This happens on Linux too, so it isn't the web's. (Found by CL5;
+  the backlog's *Temp roots with read-only folders deleted*.)
 - `gb_pilot_sdl_test` stops at `screen is not defined`, in the two tests that
   resize a window. All 23 pass with `SDL_VIDEODRIVER=dummy`. (CL7)
 - Without threads, `gb_job_test` doesn't link: `FiberJobSystem`'s semaphore
@@ -271,7 +287,7 @@ Depends on: CL1, CL2.
 - Standard checks.
 - Web: `gb_base_test` passes with threads.
 
-### CL5 [ ] file: local files under Node
+### CL5 [~] file: local files under Node
 
 Depends on: CL1, CL2.
 
