@@ -352,9 +352,10 @@ with the WebGPU flags:
 - `web_frame_wait.cc` itself, in a scratch page linked with `-sJSPI` in
   headless Chromium 158: 300 calls to `WaitForNextFrame()` took 5.0 s (60.0 to
   60.2 a second, each returning true), and 2000 calls to
-  `YieldBetweenFrames()` took 36 to 38 ms (18 to 19 us each). The same page
-  linked without JSPI, and the same program under Node 24, did neither: 300
-  calls returned false in 0.1 ms. (CL2)
+  `YieldBetweenFrames()` took 35 to 52 ms (18 to 26 us each). The same page
+  linked without JSPI, and the same program under Node 24, with or without
+  JSPI (`--experimental-wasm-jspi`), did neither: 300 calls returned false in
+  0.2 ms, as there is no `requestAnimationFrame` there. (CL2)
 - Arguments from the query string reach `main()`, files given before `main()`
   are read (the pilot script), files the program writes are read back with
   `Module.FS` after it exits, and exit codes arrive in `onExit`: 0, 1 for a
@@ -402,7 +403,7 @@ Depends on: *Web platform* CL1.
 - Web with threads: `templates/sdl` links.
 - Web: `ctest` passes as before, so tests are still programs for Node.
 
-### CL2 [~] base: the frame wait
+### CL2 [x] base: the frame wait
 
 Depends on: *Web platform* CL4.
 

@@ -11,7 +11,9 @@ namespace gb {
 namespace {
 
 // These link in any web build, but can only be called where the program was
-// linked with JSPI (as a page is), which emscripten_has_asyncify() says.
+// linked with JSPI (as a page is), which emscripten_has_asyncify() says, and
+// where the browser's frames are (in a page, not under Node), which
+// HasBrowserFrames() says.
 //
 // The JavaScript uses function expressions, not arrows, as clang-format splits
 // `=>` into `= >`.
@@ -27,13 +29,19 @@ EM_ASYNC_JS(void, AwaitMessage, (), {
     const channel = new MessageChannel();
     channel.port1.onmessage = function() {
       channel.port1.close();
+      channel.port2.close();
       resolve();
     };
     channel.port2.postMessage(null);
   });
 });
 
-bool CanWait() { return emscripten_has_asyncify() != 0; }
+EM_JS(bool, HasBrowserFrames, (), {
+  return typeof requestAnimationFrame == 'function' &&
+         typeof MessageChannel == 'function';
+});
+
+bool CanWait() { return emscripten_has_asyncify() != 0 && HasBrowserFrames(); }
 
 }  // namespace
 
