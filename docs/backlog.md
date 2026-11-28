@@ -22,43 +22,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## WebGPU render backend
-
-- **Layers:** build, render, imgui, examples, CI
-- **Size:** large
-- **Feature workflow:** yes
-- **Depends on:** *Programs in the browser*
-- **Background:** [Web support](designs/web_support.md);
-  `gb/render/render_backend.h`; `gb/render/vulkan`;
-  [issue 4](https://github.com/jpursey/game-bits/issues/4)
-
-`gb_render` draws only with Vulkan, which no browser has. Add a WebGPU backend
-(`gb_render_webgpu`) beside it, on Dawn's bindings for Emscripten (the
-`emdawnwebgpu` port, the only supported ones), so render-check and ImGui draw
-in a browser. WebGPU is in Chrome on Windows, macOS, and Android, Firefox on
-Windows and Apple-silicon Macs, and Safari 26, but only partly on Linux.
-- Shaders: a browser takes only WGSL, where the build makes SPIR-V from GLSL
-  with `glslc`. Convert it when building. Tint (Dawn's compiler) reads SPIR-V
-  and splits GLSL's combined image samplers, but has to be built, as nothing
-  ships it. Naga installs with Rust's `cargo`, and needs the samplers split
-  first, with `spirv-opt` from the Vulkan SDK. Try both on render-check's
-  shaders and pick one, as a tool only a web build runs. gb_imgui's shaders
-  are SPIR-V pasted into `imgui_instance.cc`, so their WGSL is pasted beside
-  them.
-- What WebGPU lacks that `gb_render` has: wireframe fill (`RasterMode::kLine`),
-  clamp to border (which gb_imgui uses), 4-bit textures (`kRgba4`), and
-  drawing many indirect draws in one call, which is one call per draw there.
-  Indirect draws with a first instance are an optional feature
-  (`indirect-first-instance`). Multisampling is 1 or 4 samples only.
-  `RenderBackend` and `gb_render`'s API don't change for these: the backend
-  does each another way where it can, and otherwise fails to create, with an
-  error.
-- The backend's waits (for a device, and for a frame read back for the pilot's
-  saved frames) block with JSPI, so `RenderBackend` doesn't change.
-- Check it as the Vulkan backend is: render-check's scripts, run in a headless
-  browser in sessions and CI. Chromium makes a WebGPU device with no GPU, on
-  SwiftShader, with the flags in the design's Findings.
-
 ## Files on the web
 
 - **Layers:** build, file, resource
@@ -223,7 +186,9 @@ their tests named the same way.
 Block-world's shaders are compiled by a hand-run script into `.spv` files it
 loads at run time, so a fresh checkout or worktree has none until the script is
 run, and an edited shader is easy to leave stale. gb_imgui's are compiled by
-hand and their bytes pasted into `imgui_instance.cc`. Compile both with
+hand and their bytes pasted into `imgui_instance.cc` (into
+`gen_imgui_shaders.cc` once *WebGPU render backend*'s CL2 lands, with their
+WGSL pasted beside them in `web_imgui_shaders.cc`). Compile both with
 `gb_embed_shader`, as render-check does, and remove the script.
 
 CI builds block-world, and every project that links gb_imgui (including its
@@ -324,6 +289,77 @@ threaded program work there.
   first visit. A Claude artifact can't have them at all.
 - Run a threaded program's pilot scripts in the headless browser, from a
   server that sends the headers.
+- `WebGpuBackend` only touches WebGPU on the browser's main thread, and its
+  factory methods fail on any other ([WebGPU render
+  backend](worklog/webgpu_render_backend.md)). Resources created on another
+  thread need their WebGPU objects made on the main thread, such as at the
+  next `EndFrame()`.
+
+## Clamp to border on the web
+
+- **Layers:** build, render
+- **Size:** medium
+- **Feature workflow:** no
+- **Depends on:** *WebGPU render backend*
+- **Background:** [WebGPU render backend](worklog/webgpu_render_backend.md),
+  The gaps
+
+WebGPU has no clamp to border, so `WebGpuBackend` fails to create a texture
+with `SamplerAddressMode::kClampBorder`. Nothing in Game Bits uses it, but a
+shadow map sampled with a white border is a common use. Emulate it: sample
+clamped to the edge, and replace the result with the border color where the
+coordinates are outside the texture. The sampler's options aren't known when
+the shader is converted, so the shader needs to be told per binding (such as
+with a constant the backend adds), which makes this more than a conversion
+step.
+
+## Wireframe on the web
+
+- **Layers:** render
+- **Size:** medium
+- **Feature workflow:** no
+- **Depends on:** *WebGPU render backend*
+- **Background:** [WebGPU render backend](worklog/webgpu_render_backend.md),
+  The gaps
+
+WebGPU has no wireframe fill, so `WebGpuBackend` fails to create a pipeline
+with `RasterMode::kLine`. Nothing in Game Bits uses it. Emulate it by drawing
+a line list, with each mesh's triangles turned into their three edges in an
+index buffer of their own, kept beside the triangles'. Mesh pools and indirect
+draws would need the same for every range, which may be reason to leave them
+failing.
+
+## Multi-draw on the web
+
+- **Layers:** render
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** *WebGPU render backend*
+- **Background:** [WebGPU render backend](worklog/webgpu_render_backend.md),
+  Mesh pools and indirect draws
+
+`WebGpuBackend` draws each indirect draw with a call of its own. Dawn has a
+`multi-draw-indirect` feature that draws many in one call, which Chromium
+doesn't expose to pages yet (SwiftShader in headless Chromium 158 doesn't
+report it). When browsers do, use it where the device has it, as
+`VulkanBackend` uses `multiDrawIndirect`, and report it in
+`IsMultiDrawSupported()`.
+
+## Three-channel narrow vertex values on the web
+
+- **Layers:** render
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** *WebGPU render backend*
+- **Background:** [WebGPU render backend](worklog/webgpu_render_backend.md),
+  Pipelines
+
+WebGPU has no vertex formats of three 8 or 16-bit channels, so
+`WebGpuBackend` fails to create a pipeline whose vertex type has a
+`ShaderValue` such as `kI8Norm3` or `kU16Vec3`. Nothing in Game Bits uses
+them. Where the value isn't the vertex's last, it can be read with the
+four-channel format, whose extra channel the shader ignores; the last one
+can't, as it would read past the vertex. Do that, and say what remains.
 
 ## Frame limits in a browser
 
