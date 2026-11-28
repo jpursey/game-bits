@@ -124,8 +124,8 @@ async function run(options, programArgs, stdout, stderr) {
 
     const query = new URLSearchParams(args.map((arg) => ['arg', arg]));
     const started = Date.now();
-    await page.goto(`${kOrigin}/${encodeURIComponent(path.basename(pagePath))}` +
-                    `?${query}`);
+    const name = encodeURIComponent(path.basename(pagePath));
+    await page.goto(`${kOrigin}/${name}?${query}`);
     if (options['press-keys'] !== undefined) {
       await page.waitForTimeout(kPressKeysDelayMs);
       for (const key of options['press-keys'].split(/\s+/).filter(Boolean)) {
