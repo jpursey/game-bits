@@ -206,14 +206,10 @@ bool ImGuiInstance::Init() {
     return false;
   }
 #else
-  const absl::Span<const uint8_t> vertex_bytes =
-      internal::GetImGuiVertexShaderCode();
-  const absl::Span<const uint8_t> fragment_bytes =
-      internal::GetImGuiFragmentShaderCode();
-  auto vertex_code = render_system->CreateShaderCode(
-      vertex_bytes.data(), static_cast<int64_t>(vertex_bytes.size()));
-  auto fragment_code = render_system->CreateShaderCode(
-      fragment_bytes.data(), static_cast<int64_t>(fragment_bytes.size()));
+  auto vertex_code =
+      render_system->CreateShaderCode(internal::GetImGuiVertexShaderCode());
+  auto fragment_code =
+      render_system->CreateShaderCode(internal::GetImGuiFragmentShaderCode());
 #endif
 
   auto* vertex_shader = render_system->CreateShader(
