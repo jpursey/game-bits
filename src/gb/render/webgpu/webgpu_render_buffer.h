@@ -25,7 +25,8 @@ namespace gb {
 // next frame ends.
 //
 // This class is thread-compatible.
-class WebGpuRenderBuffer final : public RenderBuffer, public WebGpuPendingWrite {
+class WebGpuRenderBuffer final : public RenderBuffer,
+                                 public WebGpuPendingWrite {
  public:
   // Creates a buffer of `capacity` values of `value_size` bytes, for `usage`
   // (to which CopyDst is added). Returns null, having logged why, if it can't

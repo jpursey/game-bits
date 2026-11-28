@@ -172,10 +172,9 @@ class WebGpuBackend final : public RenderBackend {
       const VertexType* vertex_type, absl::Span<const Binding> bindings,
       ShaderCode* vertex_shader, ShaderCode* fragment_shader,
       const MaterialConfig& config) override;
-  std::unique_ptr<RenderBuffer> CreateVertexBuffer(RenderInternal,
-                                                   DataVolatility volatility,
-                                                   int vertex_size,
-                                                   int vertex_capacity) override;
+  std::unique_ptr<RenderBuffer> CreateVertexBuffer(
+      RenderInternal, DataVolatility volatility, int vertex_size,
+      int vertex_capacity) override;
   std::unique_ptr<RenderBuffer> CreateIndexBuffer(RenderInternal,
                                                   DataVolatility volatility,
                                                   int index_capacity) override;

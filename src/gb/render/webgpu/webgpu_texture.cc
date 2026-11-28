@@ -20,8 +20,8 @@ WebGpuTexture* WebGpuTexture::Create(ResourceEntry entry,
   if (texels == nullptr) {
     return nullptr;
   }
-  return new WebGpuTexture(std::move(entry), volatility, width, height,
-                           options, format, std::move(texels));
+  return new WebGpuTexture(std::move(entry), volatility, width, height, options,
+                           format, std::move(texels));
 }
 
 WebGpuTexture::WebGpuTexture(ResourceEntry entry, DataVolatility volatility,

@@ -88,9 +88,7 @@ class WebGpuTexels final : public WebGpuPendingWrite {
   WebGpuTexels(WebGpuBackend* backend, DataVolatility volatility,
                const Properties& properties, wgpu::Texture texture);
 
-  Region GetWholeRegion() const {
-    return {0, 0, 0, width_, height_, depth_};
-  }
+  Region GetWholeRegion() const { return {0, 0, 0, width_, height_, depth_}; }
   int64_t GetLayerSize() const {
     return int64_t{width_} * height_ * texel_size_;
   }

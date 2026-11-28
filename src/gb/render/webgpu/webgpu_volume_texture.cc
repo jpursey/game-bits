@@ -26,12 +26,14 @@ WebGpuVolumeTexture* WebGpuVolumeTexture::Create(
                                  depth, options, format, std::move(texels));
 }
 
-WebGpuVolumeTexture::WebGpuVolumeTexture(
-    ResourceEntry entry, DataVolatility volatility, int width, int height,
-    int depth, const SamplerOptions& options, TextureFormat format,
-    std::unique_ptr<WebGpuTexels> texels)
-    : VolumeTexture(std::move(entry), volatility, width, height, depth,
-                    options, format),
+WebGpuVolumeTexture::WebGpuVolumeTexture(ResourceEntry entry,
+                                         DataVolatility volatility, int width,
+                                         int height, int depth,
+                                         const SamplerOptions& options,
+                                         TextureFormat format,
+                                         std::unique_ptr<WebGpuTexels> texels)
+    : VolumeTexture(std::move(entry), volatility, width, height, depth, options,
+                    format),
       texels_(std::move(texels)) {}
 
 bool WebGpuVolumeTexture::DoClear(int x, int y, int z, int width, int height,

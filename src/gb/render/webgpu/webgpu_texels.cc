@@ -148,8 +148,7 @@ void WebGpuTexels::MarkPending(const Region& region) {
   }
   Region& pending = *pending_;
   const int x1 = std::max(pending.x + pending.width, region.x + region.width);
-  const int y1 =
-      std::max(pending.y + pending.height, region.y + region.height);
+  const int y1 = std::max(pending.y + pending.height, region.y + region.height);
   const int z1 = std::max(pending.z + pending.depth, region.z + region.depth);
   pending.x = std::min(pending.x, region.x);
   pending.y = std::min(pending.y, region.y);
@@ -187,8 +186,7 @@ void WebGpuTexels::WriteRegion(const wgpu::Queue& queue, const Region& region,
 
   // The data ends with the region's last texel.
   const int64_t data_size =
-      ((int64_t{region.depth - 1} * slice_height + region.height - 1) *
-           stride +
+      ((int64_t{region.depth - 1} * slice_height + region.height - 1) * stride +
        region.width) *
       texel_size_;
   queue.WriteTexture(&destination, texels, static_cast<size_t>(data_size),

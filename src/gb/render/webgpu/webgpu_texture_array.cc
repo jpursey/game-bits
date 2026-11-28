@@ -9,10 +9,12 @@
 
 namespace gb {
 
-WebGpuTextureArray* WebGpuTextureArray::Create(
-    ResourceEntry entry, WebGpuBackend* backend, DataVolatility volatility,
-    int count, int width, int height, const SamplerOptions& options,
-    TextureFormat format) {
+WebGpuTextureArray* WebGpuTextureArray::Create(ResourceEntry entry,
+                                               WebGpuBackend* backend,
+                                               DataVolatility volatility,
+                                               int count, int width, int height,
+                                               const SamplerOptions& options,
+                                               TextureFormat format) {
   auto texels = WebGpuTexels::Create(
       backend, volatility,
       {.format = format, .width = width, .height = height, .depth = count});

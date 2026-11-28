@@ -171,8 +171,7 @@ bool WebGpuBackend::InitDevice() {
          wgpu::StringView message) {
         if (reason != wgpu::DeviceLostReason::Destroyed &&
             reason != wgpu::DeviceLostReason::CallbackCancelled) {
-          LOG(ERROR) << "The WebGPU device was lost: "
-                     << ToStringView(message);
+          LOG(ERROR) << "The WebGPU device was lost: " << ToStringView(message);
         }
       });
 
@@ -390,8 +389,8 @@ std::unique_ptr<RenderBuffer> WebGpuBackend::CreateVertexBuffer(
   if (!ValidateThread("Creating a vertex buffer")) {
     return nullptr;
   }
-  return WebGpuRenderBuffer::Create(this, wgpu::BufferUsage::Vertex,
-                                    volatility, vertex_size, vertex_capacity);
+  return WebGpuRenderBuffer::Create(this, wgpu::BufferUsage::Vertex, volatility,
+                                    vertex_size, vertex_capacity);
 }
 
 std::unique_ptr<RenderBuffer> WebGpuBackend::CreateIndexBuffer(
@@ -432,17 +431,17 @@ void WebGpuBackend::SetClearColor(RenderInternal, Pixel color) {
                   color.a / 255.0};
 }
 
-void WebGpuBackend::SetDefaultBindings(RenderInternal,
-                                       const DefaultBindings&) {}
+void WebGpuBackend::SetDefaultBindings(RenderInternal, const DefaultBindings&) {
+}
 
-bool WebGpuBackend::BeginFrame(RenderInternal,
-                               absl::Span<RenderPass* const>) {
+bool WebGpuBackend::BeginFrame(RenderInternal, absl::Span<RenderPass* const>) {
   int width = 0;
   int height = 0;
   if (emscripten_get_canvas_element_size(canvas_selector_.c_str(), &width,
-                                         &height) != EMSCRIPTEN_RESULT_SUCCESS) {
-    LOG(ERROR) << "Failed to read the size of the canvas \""
-               << canvas_selector_ << "\"";
+                                         &height) !=
+      EMSCRIPTEN_RESULT_SUCCESS) {
+    LOG(ERROR) << "Failed to read the size of the canvas \"" << canvas_selector_
+               << "\"";
     return false;
   }
   if (width <= 0 || height <= 0) {
