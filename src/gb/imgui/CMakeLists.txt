@@ -3,12 +3,21 @@
 ## Use of this source code is governed by an MIT-style License that can be found
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
+# The shaders, in the code each platform's render backend takes.
+if (EMSCRIPTEN)
+  set(gb_imgui_internal_SOURCE web_imgui_shaders.cc)
+else()
+  set(gb_imgui_internal_SOURCE gen_imgui_shaders.cc)
+endif()
+
 add_subdirectory(sdl)
 
 set(gb_imgui_SOURCE
+  ${gb_imgui_internal_SOURCE}
   gb_imconfig.h
   imgui_instance.cc imgui_instance.h
   imgui_pilot_hooks.cc imgui_pilot_hooks.h
+  imgui_shaders.h
   imgui_types.h
   ${GB_THIRD_PARTY_DIR}/imgui/imgui.cpp
   ${GB_THIRD_PARTY_DIR}/imgui/imgui.h

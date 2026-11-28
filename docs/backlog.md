@@ -163,16 +163,15 @@ their tests named the same way.
 - **Feature workflow:** no
 - **Depends on:** nothing
 - **Background:** `gb_embed_shader` in `CMake/GameBitsTargetCommands.cmake`,
-  as render-check uses it; `assets/shaders/build-shaders.bat`; the SPIR-V
-  pasted into `gb/imgui/imgui_instance.cc`
+  as render-check uses it; `assets/shaders/build-shaders.bat`; the shaders
+  pasted into `gb/imgui/gen_imgui_shaders.cc` and `web_imgui_shaders.cc`
 
 Block-world's shaders are compiled by a hand-run script into `.spv` files it
 loads at run time, so a fresh checkout or worktree has none until the script is
 run, and an edited shader is easy to leave stale. gb_imgui's are compiled by
-hand and their bytes pasted into `imgui_instance.cc` (into
-`gen_imgui_shaders.cc` once *WebGPU render backend*'s CL2 lands, with their
-WGSL pasted beside them in `web_imgui_shaders.cc`). Compile both with
-`gb_embed_shader`, as render-check does, and remove the script.
+hand, their SPIR-V pasted into `gen_imgui_shaders.cc` and their WGSL into
+`web_imgui_shaders.cc`. Compile both with `gb_embed_shader`, as render-check
+does, and remove the script.
 
 CI builds block-world, and every project that links gb_imgui (including its
 unit tests, which draw with the test backend) would then need `glslc`. Every CI
