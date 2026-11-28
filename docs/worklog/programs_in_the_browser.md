@@ -442,7 +442,7 @@ Depends on: CL2.
   frames a second with `kKeyMaxFps` at 60, under 0.1 ms a frame after the
   wait, and a piloted run of 2000 frames in under a second.
 
-### CL4 [ ] tools: run a page in a headless browser
+### CL4 [~] tools: run a page in a headless browser
 
 Depends on: CL1.
 
