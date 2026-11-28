@@ -23,7 +23,8 @@
 ## embeds the Game Bits manifest on Windows (see gb_embed_manifest). In a web
 ## build, a windowed one (gb_add_win_executable) is a page for a browser (see
 ## gb_set_web_page_properties), and any other is a program for Node (see
-## gb_set_web_program_properties).
+## gb_set_web_program_properties). A program's assets, the files it reads at
+## run time, are named with gb_pack_assets, which packs them with a page.
 ###############################################################################
 
 # -Wcharacter-conversion (between char8_t, char16_t, and char32_t) is new in
@@ -369,6 +370,138 @@ function(gb_embed_shader TARGET FILE HEADER NAME)
     COMMENT "Compiling ${FILE} to WGSL for ${TARGET}"
     VERBATIM)
   gb_embed_data(${TARGET} "${_output}" "${HEADER}" "${NAME}")
+endfunction()
+
+# Names files a program reads at run time, its assets, so that they are there
+# on every platform:
+#
+#   gb_pack_assets(<target> <folder> <path>...)
+#
+# For example, gb_pack_assets(block_world "${GB_DIR}/assets" fonts textures)
+# packs the fonts and textures folders in Game Bits' assets folder.
+#  <folder>  The folder the program finds its assets in, relative to the
+#            current source directory or absolute.
+#  <path>    A file or folder in <folder> to pack, relative to it, with no "..".
+#            A folder packs everything in it.
+#
+# Call it after the target is defined. It may be called again for the same
+# target, with more paths or other folders, but not with two folders of the
+# same name. Configuring fails if a path isn't there, on every platform.
+#
+# In a web build, a page (see gb_set_web_page_properties) has them in its file
+# system before main(), at /<folder's name>/<path>, and its current folder is
+# /. So a program that finds its assets folder by name in or above its current
+# folder finds it in a page too, as it does on Windows and Linux when run from
+# its project's root or from GB_BIN_DIR. They are packed into <name>.data,
+# beside the page, which must be served with it. The page is linked again
+# whenever a packed file changes, or one is added to or removed from a packed
+# folder. The folder's name can't be one the page's file system already has at
+# its root (dev, home, proc, or tmp), or pilot, which tools/run-page.js uses.
+#
+# Everywhere else, including a program for Node in a web build, the program
+# reads them where they are, and this does nothing more.
+#
+# Configuring warns if a page's assets are more than 15 MB in all, as a Claude
+# artifact allows no more for any file beside its page.
+function(gb_pack_assets TARGET FOLDER)
+  if (NOT TARGET ${TARGET})
+    message(FATAL_ERROR "gb_pack_assets: ${TARGET} is not a target")
+  endif()
+  if (ARGC LESS 3)
+    message(FATAL_ERROR "gb_pack_assets: no assets are named for ${TARGET}")
+  endif()
+  get_filename_component(_folder "${FOLDER}" ABSOLUTE)
+  if (NOT IS_DIRECTORY "${_folder}")
+    message(FATAL_ERROR "gb_pack_assets: ${_folder} is not a folder")
+  endif()
+  get_filename_component(_name "${_folder}" NAME)
+  if (_name MATCHES "^(dev|home|proc|tmp|pilot)$")
+    message(FATAL_ERROR
+      "gb_pack_assets: a page's file system already has a folder named "
+      "\"${_name}\", so ${_folder} can't be packed")
+  endif()
+  get_target_property(_packed ${TARGET} GB_PACKED_FOLDER_${_name})
+  if (_packed AND NOT _packed STREQUAL _folder)
+    message(FATAL_ERROR
+      "gb_pack_assets: ${TARGET} packs ${_packed} already, which would be the "
+      "same folder as ${_folder} in a page")
+  endif()
+  set_property(TARGET ${TARGET} PROPERTY GB_PACKED_FOLDER_${_name} "${_folder}")
+
+  foreach(_path IN LISTS ARGN)
+    file(TO_CMAKE_PATH "${_path}" _path)
+    if (IS_ABSOLUTE "${_path}" OR _path MATCHES "(^|/)\\.\\.(/|$)")
+      message(FATAL_ERROR
+        "gb_pack_assets: \"${_path}\" must be a path in ${_folder}, relative "
+        "to it")
+    endif()
+    if (NOT EXISTS "${_folder}/${_path}")
+      message(FATAL_ERROR "gb_pack_assets: ${_folder}/${_path} is not there")
+    endif()
+  endforeach()
+
+  # Only a page, which gb_set_web_page_properties names <name>.html, packs.
+  get_target_property(_suffix ${TARGET} SUFFIX)
+  if (NOT _suffix STREQUAL ".html")
+    return()
+  endif()
+  get_target_property(_packed_files ${TARGET} GB_PACKED_FILES)
+  if (NOT _packed_files)
+    set(_packed_files "")
+  endif()
+  foreach(_path IN LISTS ARGN)
+    file(TO_CMAKE_PATH "${_path}" _path)
+    set(_source "${_folder}/${_path}")
+    if (IS_DIRECTORY "${_source}")
+      file(GLOB_RECURSE _files CONFIGURE_DEPENDS "${_source}/*")
+    else()
+      set(_files "${_source}")
+    endif()
+    list(APPEND _packed_files ${_files})
+
+    # Emscripten reads "@" as the separator between where a file is and where
+    # it goes, and "@@" as an "@" in either.
+    string(REPLACE "@" "@@" _from "${_source}")
+    string(REPLACE "@" "@@" _to "/${_name}/${_path}")
+    target_link_options(${TARGET} PRIVATE
+      "SHELL:--preload-file \"${_from}@${_to}\"")
+  endforeach()
+  list(REMOVE_DUPLICATES _packed_files)
+  set_property(TARGET ${TARGET} PROPERTY GB_PACKED_FILES "${_packed_files}")
+
+  # The page depends on each packed file, and on a list of them, which is
+  # written only when it changes, so removing a file (or adding one older than
+  # the page) relinks it too.
+  set(_list_file "${CMAKE_CURRENT_BINARY_DIR}/${TARGET}_packed_assets.txt")
+  string(REPLACE ";" "\n" _list_text "${_packed_files}\n")
+  set(_old_list_text "")
+  if (EXISTS "${_list_file}")
+    file(READ "${_list_file}" _old_list_text)
+  endif()
+  if (NOT _list_text STREQUAL _old_list_text)
+    file(WRITE "${_list_file}" "${_list_text}")
+  endif()
+  set_property(TARGET ${TARGET} APPEND PROPERTY LINK_DEPENDS
+    "${_list_file}" ${_packed_files})
+
+  # A Claude artifact allows 15 MB for each file beside its page. Warned by the
+  # call that goes over it.
+  get_target_property(_before ${TARGET} GB_PACKED_BYTES)
+  if (NOT _before)
+    set(_before 0)
+  endif()
+  set(_bytes 0)
+  foreach(_file IN LISTS _packed_files)
+    file(SIZE "${_file}" _size)
+    math(EXPR _bytes "${_bytes} + ${_size}")
+  endforeach()
+  set_property(TARGET ${TARGET} PROPERTY GB_PACKED_BYTES ${_bytes})
+  if (_before LESS_EQUAL 15000000 AND _bytes GREATER 15000000)
+    message(WARNING
+      "gb_pack_assets: ${TARGET}'s assets are ${_bytes} bytes, so its "
+      "${TARGET}.data is more than the 15 MB a Claude artifact allows beside "
+      "its page. It still works from a web server.")
+  endif()
 endfunction()
 
 function(gb_add_test NAME)

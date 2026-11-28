@@ -13,12 +13,17 @@
   - stdout goes to the console as messages, and stderr as errors.
   - A tool can give the program files before main() by setting
     globalThis.gbFiles to a map from each path to its text or bytes, before the
-    page loads. Their folders are created.
+    page loads. Their folders are created. A tool can't give a file the page
+    packs, as the program then fails to start.
+  - The program's assets (see gb_pack_assets) are in its file system before
+    main(), fetched from <name>.data beside the page.
   - Once the program has stopped, globalThis.gbExit is its exit code, or the
-    message it aborted with (a string). A tool reads files back after that
-    through Module.FS, but only files and folders it knows are there (such as
-    a folder it gave a file in), as an error from the file system once the
-    program has stopped aborts the page.
+    message it aborted with (a string). If the page can't start the program,
+    such as when <name>.data can't be fetched, gbExit is the error's
+    message. A tool reads files back after that through Module.FS, but only
+    files and folders it knows are there (such as a folder it gave a file in),
+    as an error from the file system once the program has stopped aborts the
+    page.
 -->
 <html lang="en">
 <head>
@@ -33,17 +38,30 @@
 <body>
 <canvas id="canvas" tabindex="-1"></canvas>
 <script>
+  // Before main(), a failed fetch of the page's assets is a promise nothing
+  // handles, and the program never starts, so it is the program's end. Nothing
+  // else in a page's start is a promise left unhandled, so any is taken as one.
+  function gbFailedToStart(event) {
+    if (globalThis.gbExit === undefined) {
+      globalThis.gbExit = String(event.reason);
+    }
+  }
+  addEventListener('unhandledrejection', gbFailedToStart);
   var Module = {
     canvas: document.getElementById('canvas'),
     thisProgram:
         location.pathname.split('/').pop().replace(/\.html$/, '') || 'program',
     arguments: new URLSearchParams(location.search).getAll('arg'),
-    preRun: () => {
+    // A list, as the loader of the page's assets adds a step of its own.
+    preRun: [() => {
       const files = globalThis.gbFiles || {};
       for (const path in files) {
         Module.FS.mkdirTree(path.substring(0, path.lastIndexOf('/')));
         Module.FS.writeFile(path, files[path]);
       }
+    }],
+    onRuntimeInitialized: () => {
+      removeEventListener('unhandledrejection', gbFailedToStart);
     },
     onExit: (code) => {
       globalThis.gbExit = code;
