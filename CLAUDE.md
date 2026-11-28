@@ -195,7 +195,7 @@ node out/build/web-Debug/src/gb/parse/gb_parse_test.js --gtest_filter=LexerTest.
 
 Configuring takes about 150 seconds, mostly Emscripten compiling CMake's feature checks, and a full build about 15 minutes on 4 cores. A program is `<name>.js`, beside its `<name>.wasm`, which `node` runs with the machine's own files and environment, and ctest runs each test that way. A web build leaves out `gb_render_vulkan` and `gb_render_vulkan_sdl`, `gb_job`, which needs fibers, and `gb_profile`, which needs the x86 timestamp counter (`cpu_ticks.h`, left out of `gb_thread` with it).
 
-Until the rest of the Web platform feature (`docs/worklog/web_platform.md`) is done, some libraries and tests don't compile for the web yet, so a full web build fails. Build the test programs that do compile by name (`gb_collide_test`, `gb_config_test`, `gb_game_test`, `gb_image_test`, `gb_message_test`, `gb_parse_test`, `gb_pilot_script_test`, `gb_resource_test`, and `gb_test_test`), and run only those with `ctest -R`. In a build without threads, the tests that start threads fail.
+Until the rest of the Web platform feature (`docs/worklog/web_platform.md`) is done, some libraries and tests don't compile for the web yet, so a full web build fails. Build the test programs that do compile by name (`gb_base_test`, `gb_collide_test`, `gb_config_test`, `gb_game_test`, `gb_image_test`, `gb_message_test`, `gb_parse_test`, `gb_pilot_script_test`, `gb_resource_test`, and `gb_test_test`), and run only those with `ctest -R`. In a build without threads, the tests that start threads fail.
 
 ### Checks
 
