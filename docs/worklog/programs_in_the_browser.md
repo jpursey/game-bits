@@ -396,7 +396,7 @@ Depends on: *Web platform* CL1.
 - Web with threads: `templates/sdl` links.
 - Web: `ctest` passes as before, so tests are still programs for Node.
 
-### CL2 [ ] base: the frame wait
+### CL2 [~] base: the frame wait
 
 Depends on: *Web platform* CL4.
 
