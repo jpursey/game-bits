@@ -29,7 +29,7 @@ The project is done when:
 | Programs in the browser | In progress | [worklog](../worklog/programs_in_the_browser.md) |
 | WebGPU render backend | In progress | [worklog](../worklog/webgpu_render_backend.md) |
 | Files on the web | In progress | [worklog](../worklog/files_on_the_web.md) |
-| Web demos | Not started | [backlog](../backlog.md#web-demos) |
+| Web demos | In progress | [worklog](../worklog/web_demos.md) |
 
 Each depends on the one above it, apart from *Files on the web*, which only
 needs *Programs in the browser*. A feature's row changes in the PR that starts
@@ -185,8 +185,8 @@ is approved until the project is done:
   - changes how shared code works, where a fix to a defect in it, or moving a
     platform's part into a platform file, doesn't count;
   - adds a dependency: a submodule, an SDK, or a tool the build runs, beyond
-    the Emscripten SDK, the shader tools above, and the browser CI runs
-    pages in;
+    the Emscripten SDK, the shader tools above, the browser CI runs
+    pages in, and GitHub's own actions for publishing to Pages;
   - takes something listed as in scope out of it, or the reverse.
 - **Smaller cross-platform changes go ahead,** and are listed below with
   their PRs, for the user to read afterwards.
@@ -203,7 +203,13 @@ What only the user can do:
   itself.
 - Say when each feature is complete, which is when its worklog's plan becomes
   a summary.
-- Turn GitHub Pages on for the repository, for *Web demos*.
+- Turn GitHub Pages on for the repository, for *Web demos*: in its Settings,
+  under Pages, set "Build and deployment" to "GitHub Actions". The workflow
+  that publishes the demos is added once that is done.
+- Say yes to each demo published as a Claude artifact, which is private
+  until shared.
+- Try block-world's mouse look in a real browser: holding the right button
+  locks the pointer, which a headless browser can't check.
 - Open a demo in a browser on a real GPU. Sessions and CI draw with a
   software one (SwiftShader), which shows what is drawn but not how fast.
 - Run block-world on Windows after its shaders change, as CLAUDE.md's Checks
@@ -223,15 +229,17 @@ Changes outside the web's own files, as they are planned and then merged.
 | Tests that need a file name that isn't UTF-8 are skipped where there is none | Web platform | [69](https://github.com/jpursey/game-bits/pull/69) |
 | CI builds and tests the web builds (`build-web`, `build-web-threads`), and Checks say when a session builds them too | Web platform | [73](https://github.com/jpursey/game-bits/pull/73) |
 | `tools/run-program.sh` reports a program's timeout as it does a page's | Programs in the browser | [78](https://github.com/jpursey/game-bits/pull/78) |
-| `Game`'s loops call the frame wait each frame, which does nothing outside a page | Programs in the browser | |
 | `templates/sdl` becomes a `gb::Game` that takes the pilot flags | Programs in the browser | |
 | CI builds the templates on Windows and Linux (`build-templates`) | Programs in the browser | |
 | `tools/install-vulkan-sdk.sh` also installs `spirv-opt`, and `gb_wgsl_bindings_test` runs on every platform | WebGPU render backend | [79](https://github.com/jpursey/game-bits/pull/79) |
-| gb_imgui's font atlas is clamped to its edge, not to a transparent border, which draws the same pixels | WebGPU render backend | |
 | render-check chooses its backend through an interface of its own (`RenderCheckBackend`) | WebGPU render backend | |
 | `gb_pack_assets()` checks that each named asset is there | Files on the web | |
 | `templates/sdl` reads a file from its `assets` folder as it starts | Files on the web | |
-| Block-world's shaders are compiled by the build | Web demos | |
+| Block-world's shaders are compiled by the build, with `gb_embed_shader()` | Web demos | |
+| CI builds block-world on Linux and runs its scripts (`build-block-world-linux`) | Web demos | |
+| Block-world chooses its backend through an interface of its own (`BlockWorldBackend`) | Web demos | |
+| gb_imgui's font atlas is clamped to its edge, not to a transparent border, which draws the same pixels | WebGPU render backend | [83](https://github.com/jpursey/game-bits/pull/83) |
+| `Game`'s loops call the frame wait each frame, which does nothing outside a page | Programs in the browser | [80](https://github.com/jpursey/game-bits/pull/80) |
 
 ## Findings
 
@@ -275,6 +283,14 @@ Changes outside the web's own files, as they are planned and then merged.
     only exits once the backend has released them all.
   - SwiftShader allows 256 layers in a texture array, where `gb_render`
     allows 2048.
+- **Block-world** builds with clang as it is, with no errors or warnings,
+  and both its scripts pass on Linux on lavapipe once its shaders are
+  compiled. With only its backend swapped for one that draws nothing, it
+  builds for the web and its script's steps pass in headless Chromium: it
+  uses no threads and no `gb_job`. Its Release `.wasm` was 2.1 MB (0.8 MB
+  compressed) and its assets 2.7 MB.
+- **SDL's canvas follows its CSS size,** so a page whose canvas is sized to
+  the browser window gets a window of that size, and resize events with it.
 - **A web CI job** takes about 8 minutes. Installing the Emscripten SDK takes
   about 15 seconds, and 5 from the cache (463 MB).
 - **Trial builds** of the libraries are recorded in
