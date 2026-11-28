@@ -182,6 +182,9 @@ Recorded here as it was found:
     too, so the web has no name that can't be converted. `GetNonUtf8Name()`
     is empty there, and the two tests that use it,
     `CreateWithNonUtf8RootPath` and `ListSkipsNonUtf8Names`, are skipped.
+    A name that isn't UTF-8, made by another program, is listed with U+FFFD
+    in it rather than skipped, and that name doesn't open it. Nothing under
+    Node can tell it apart, as Node has replaced the bytes.
 - `CommonProtocolTest.ReadOnlyFile` fails, as it does on Linux as root, which
   the trial ran as. (CL5 checks it as an ordinary user.)
   - CL5: it passes as an ordinary user, with and without threads, and still
@@ -192,7 +195,13 @@ Recorded here as it was found:
   - CL5: not reproduced on `main`. It passes in both web builds, as an
     ordinary user and as root, in the whole program, alone, and under
     `ctest`, with `TMPDIR` unset or ending in `/`, and linked with the old
-    64 KiB stack. Nothing changes for it.
+    64 KiB stack. The trial ran each test in its own process, four at once,
+    which `gb_file_test` isn't safe for, on any platform: its temporary
+    folders are named from `std::rand()`, which isn't seeded, so every
+    process picks the same names. Eight `CreateWithRootPath` processes at
+    once fail on Linux too, one in eight failing to create its folder. Nothing
+    changes for it here (the backlog's *Unique temporary folders in file
+    tests*).
 - As an ordinary user, `CopyFolderKeepsAttributes` and `MoveKeepsAttributes`
   leave a folder in the temp folder after each run, and log that it couldn't
   be deleted: the folders they make read-only can't have their files

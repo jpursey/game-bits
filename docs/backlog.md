@@ -749,6 +749,21 @@ folder on every run. Either the deletion gives each read-only folder write
 permission before removing what is in it, or the tests clear the attribute
 before they end.
 
+## Unique temporary folders in file tests
+
+- **Layers:** file
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Web platform](worklog/web_platform.md)'s To confirm
+
+`local_file_protocol_test.cc`'s `GetUnusedTempPath()` names folders from
+`GenerateAlphaTestString()`, on `std::rand()`, which nothing seeds. So every
+`gb_file_test` process picks the same names in the same order, and two run at
+once (such as one test per process, in parallel) race to create the same
+folder, and one fails. Naming them as `LocalFileProtocol`'s unique roots are
+named, from `std::random_device`, would make them safe to run at once.
+
 ## Typed values in gb_base
 
 - **Layers:** base, cli, pilot

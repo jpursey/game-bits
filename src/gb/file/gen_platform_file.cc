@@ -56,9 +56,6 @@ fs::path Utf8ToLocalPath(std::string_view path) {
   return fs::path(path, fs::path::generic_format);
 }
 
-// GetNonUtf8Name() is in posix_platform_file.cc and web_platform_file.cc, as
-// the web has no such name.
-
 //------------------------------------------------------------------------------
 // Allowed names
 //
