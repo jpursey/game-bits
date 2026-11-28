@@ -634,6 +634,7 @@ Settled by CL1, with Game Bits' own CMake and tools:
   same SPIR-V bytes, as before CL1.
 - `tools/install-naga.sh` and `tools/install-vulkan-sdk.sh` install `naga`
   and `spirv-opt` in an empty folder.
+
 Settled by CL3, with a scratch page (a `Game` with an SDL window, the pilot
 flags, and a `RenderSystem` on `WebGpuBackend`, clearing to (32, 32, 48)) run
 with `tools/run-program.sh`:
