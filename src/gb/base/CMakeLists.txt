@@ -13,9 +13,24 @@ if (WIN32)
     win_stdio_file.cc
   )
   set(gb_base_internal_TEST_SOURCE
+    local_time_test.cc
     process_memory_test.cc
     win_manifest_test.cc
     win_platform_test.cc
+  )
+elseif (EMSCRIPTEN)
+  set(gb_base_internal_SOURCE
+    gen_aligned_memory.cc
+    gen_process_memory.cc
+    gen_stdio_file.cc
+    web_local_time.cc
+    web_sleep.cc
+  )
+
+  # local_time_test.cc checks against std::chrono::current_zone(), which
+  # Emscripten's standard library doesn't have.
+  set(gb_base_internal_TEST_SOURCE
+    web_local_time_test.cc
   )
 else()
   set(gb_base_internal_SOURCE
@@ -24,11 +39,14 @@ else()
     gen_sleep.cc
     gen_stdio_file.cc
   )
+  set(gb_base_internal_TEST_SOURCE
+    local_time_test.cc
+  )
 
   # Process memory is read from /proc, which is Linux's alone.
   if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
     list(APPEND gb_base_internal_SOURCE linux_process_memory.cc)
-    set(gb_base_internal_TEST_SOURCE process_memory_test.cc)
+    list(APPEND gb_base_internal_TEST_SOURCE process_memory_test.cc)
   else()
     list(APPEND gb_base_internal_SOURCE gen_process_memory.cc)
   endif()
@@ -71,7 +89,6 @@ set(gb_base_TEST_SOURCE
   flags_test.cc
   function_hook_test.cc
   init_logging_test.cc
-  local_time_test.cc
   log_file_test.cc
   platform_requirements_test.cc
   scoped_call_test.cc

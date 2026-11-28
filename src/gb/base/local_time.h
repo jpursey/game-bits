@@ -12,10 +12,10 @@ namespace gb {
 
 // Returns the user's local time zone, as the operating system reports it.
 //
-// Use this rather than absl::LocalTimeZone(), which is UTC on Windows, where
-// there is no zoneinfo database for it to load the zone from. On Windows, the
-// zone returned is the current offset from UTC, so it is off by the daylight
-// saving change for times on the other side of one.
+// Use this rather than absl::LocalTimeZone(), which is UTC on Windows and in a
+// browser, where there is no zoneinfo database for it to load the zone from.
+// On Windows and the web, the zone returned is the current offset from UTC, so
+// it is off by the daylight saving change for times on the other side of one.
 absl::TimeZone GetLocalTimeZone();
 
 }  // namespace gb
