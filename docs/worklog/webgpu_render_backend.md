@@ -635,13 +635,24 @@ Settled by CL1, with Game Bits' own CMake and tools:
 - `tools/install-naga.sh` and `tools/install-vulkan-sdk.sh` install `naga`
   and `spirv-opt` in an empty folder.
 
+Settled by CL2:
+- gb_imgui's font atlas clamped to its edge draws what clamping to a
+  transparent border drew. render-check's seven scripts, run on Linux with
+  each, saved 34 frames that are byte for byte the same, apart from the
+  process memory figure in 16 of them, which differs as much between two runs
+  of the same build.
+- The SPIR-V pasted into gb_imgui and `glslc`'s output for
+  `assets/shaders/imgui_shader.*` today differ only in a generator version, a
+  struct's name, and the order of decorations, so the WGSL converted from the
+  GLSL is the same shader. naga converts `texture()` of an array's layer by
+  truncating it to an integer, where GLSL rounds it, which gb_imgui's whole
+  layer numbers don't notice.
+
 Not checked:
 - A real GPU: Chrome on Windows (whose canvas prefers `bgra8unorm`) with the
   canvas configured as `rgba8unorm`, and whether its sRGB resolve differs
   from SwiftShader's. The copy is right either way. (The owner, by hand, after
   CL8.)
-- gb_imgui's `kClampEdge` drawing the same frames as `kClampBorder` on Vulkan.
-  (CL2)
 - `kRgba4` expanded, mip levels written with `WriteTexture()`, texture arrays
   beyond 256 layers where an adapter allows them. (CL5)
 - `Destroy()` freeing memory promptly, so render-check's GPU bytes stay level
@@ -697,7 +708,7 @@ Depends on: *Web platform* CL1.
 - `tools/install-naga.sh` and the new `install-vulkan-sdk.sh` run in a clean
   folder in a cloud session.
 
-### CL2 [ ] imgui: font atlas clamped to its edge, and WGSL shaders
+### CL2 [x] imgui: font atlas clamped to its edge, and WGSL shaders
 
 Depends on: CL1.
 

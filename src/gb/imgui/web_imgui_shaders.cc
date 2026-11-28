@@ -81,7 +81,8 @@ fn main(@location(0) inPosition: vec2<f32>, @location(2) inColor: vec4<f32>, @lo
 }
 )wgsl";
 
-constexpr std::string_view kImGuiFragmentShaderWgsl = R"wgsl(struct SamplerInfo {
+constexpr std::string_view kImGuiFragmentShaderWgsl =
+    R"wgsl(struct SamplerInfo {
     m_index: f32,
 }
 
