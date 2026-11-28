@@ -286,19 +286,15 @@ Recorded here as it was found:
   `node` already, so `node` can be another Node, while `emcmake` gives CMake
   the SDK's (`EMSDK_NODE`) as the emulator `ctest` runs tests with. The docs
   run a program with `"$EMSDK_NODE"`, which is the same Node as `ctest`'s.
-
-- In CI (CL8), each web job takes about 8 minutes on GitHub's 4-core
-  runner, well within the time the slowest existing job takes. In a cloud session, on
-  4 cores, configuring takes about 3 minutes and a full build (849 steps)
-  about 3 more, for each of the two builds. Installing the SDK cold
-  takes about 15 seconds, saving it to the cache included (463 MB
-  compressed), and restoring it about 5. The runner has CMake, Ninja, and an
-  older Node on its `PATH` already, so the web jobs install nothing else.
-- `emsdk_env.sh` puts the SDK's Node on the `PATH` only where there is no
-  `node` there already, as on a GitHub runner and in a cloud session, but
-  sets `EMSDK_NODE` to it either way. Emscripten's toolchain names the SDK's
-  Node itself as CMake's emulator, so `ctest` runs every test with it, as any
-  user and whatever is on the `PATH`. (CL8)
+  (CL8: a GitHub runner has an older Node on its `PATH` too, and `ctest`
+  runs every test with the SDK's there as well, as any user.)
+- In CI (CL8), each web job takes about 8 minutes on GitHub's 4-core runner,
+  well within the time the slowest existing job takes. In a cloud session, on
+  4 cores, configuring takes 2.5 to 3 minutes and a full build (849 steps) 3
+  to 5 more, for each of the two builds. Installing the SDK cold takes about
+  15 seconds, saving it to the cache included (463 MB compressed), and
+  restoring it about 5. The runner has CMake, Ninja, and an older Node on its
+  `PATH` already, so the web jobs install nothing else.
 - Emscripten compiles the system libraries a build needs into its own cache
   inside the SDK. In a cloud session the SDK in `/opt/emsdk` is root's, so a
   web build configures and builds as root, and only its tests run as the
