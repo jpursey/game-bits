@@ -193,9 +193,9 @@ ctest --test-dir out/build/web-Debug --output-on-failure -R gb_parse_test
 node out/build/web-Debug/src/gb/parse/gb_parse_test.js --gtest_filter=LexerTest.*
 ```
 
-Configuring takes about 150 seconds, mostly Emscripten compiling CMake's feature checks, and a full build about 15 minutes on 4 cores. A program is `<name>.js`, beside its `<name>.wasm`, which `node` runs with the machine's own files and environment, and ctest runs each test that way. A web build leaves out `gb_render_vulkan` and `gb_render_vulkan_sdl`, `gb_job`, which needs fibers, and `gb_profile`, which needs the x86 timestamp counter (`cpu_ticks.h`, left out of `gb_thread` with it).
+Configuring takes about 150 seconds, mostly Emscripten compiling CMake's feature checks, and a full build about 15 minutes on 4 cores. A program is `<name>.js`, beside its `<name>.wasm`, which `node` runs with the machine's own files and environment, and ctest runs each test that way. SDL's web video driver needs a browser, so ctest runs each test with `SDL_VIDEODRIVER=dummy`. A test that resizes a window (in `gb_pilot_sdl_test`) needs it set by hand under `node` too: `SDL_VIDEODRIVER=dummy node out/build/web-Debug/src/gb/pilot/sdl/gb_pilot_sdl_test.js`. A web build leaves out `gb_render_vulkan` and `gb_render_vulkan_sdl`, `gb_job`, which needs fibers, and `gb_profile`, which needs the x86 timestamp counter (`cpu_ticks.h`, left out of `gb_thread` with it).
 
-The whole tree builds for the web, with and without threads, and every test program passes under ctest, apart from two failures that the rest of the Web platform feature (`docs/worklog/web_platform.md`) fixes: `LocalFileProtocolTest.ListSkipsNonUtf8Names` in `gb_file_test`, and `gb_pilot_sdl_test`'s two tests that resize a window, which pass with `SDL_VIDEODRIVER=dummy` in the environment. In a build without threads, the tests that start threads are skipped.
+The whole tree builds for the web, with and without threads, and every test program passes under ctest. In a build without threads, the tests that start threads are skipped.
 
 ### Checks
 

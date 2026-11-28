@@ -232,7 +232,9 @@ Recorded here as it was found:
   removed. This happens on Linux too, so it isn't the web's. (Found by CL5;
   the backlog's *Temp roots with read-only folders deleted*.)
 - `gb_pilot_sdl_test` stops at `screen is not defined`, in the two tests that
-  resize a window. All 23 pass with `SDL_VIDEODRIVER=dummy`. (CL7)
+  resize a window. All 23 pass with `SDL_VIDEODRIVER=dummy`. (CL7 sets it for
+  every test `ctest` runs in a web build: `gb_sdl_test` and `gb_pilot_sdl_test`
+  pass, with and without threads.)
 - Without threads, `gb_job_test` doesn't link: `FiberJobSystem`'s semaphore
   (from `concurrentqueue`) calls `sem_timedwait()`, which Emscripten only has
   with threads. (`gb_job` is left out.)
@@ -365,7 +367,7 @@ Depends on: CL1 to CL5.
   null and `GetMaxConcurrency()` is 1.
 - Web with threads: every test program still passes.
 
-### CL7 [ ] build: SDL's tests under Node
+### CL7 [x] build: SDL's tests under Node
 
 Depends on: CL1, CL2.
 
