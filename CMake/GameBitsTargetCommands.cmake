@@ -302,7 +302,8 @@ function(gb_embed_shader TARGET FILE HEADER NAME)
   endif()
 
   # naga can only write a texture and its sampler on one binding without
-  # validation, so the WGSL is validated once its bindings are numbered.
+  # validation, so the WGSL is validated once its bindings are numbered, by
+  # converting it again (which, unlike validating alone, prints nothing).
   set(_output "${_base}.wgsl")
   set(_script "${GB_DIR}/CMake/GameBitsWgslBindings.cmake")
   add_custom_command(

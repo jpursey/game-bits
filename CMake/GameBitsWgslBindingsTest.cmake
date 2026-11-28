@@ -13,34 +13,41 @@
 
 file(MAKE_DIRECTORY "${DIR}")
 
-# Renumbers `input` and fails unless the result is `expected`.
-function(expect_bindings NAME INPUT EXPECTED)
+# Renumbers `input` with the script, setting `result` to its exit code,
+# `error` to what it wrote to stderr, and `output` to the WGSL it wrote.
+function(run_script NAME INPUT)
   file(WRITE "${DIR}/${NAME}.in.wgsl" "${INPUT}")
+  file(REMOVE "${DIR}/${NAME}.out.wgsl")
   execute_process(
     COMMAND "${CMAKE_COMMAND}" "-DINPUT=${DIR}/${NAME}.in.wgsl"
       "-DOUTPUT=${DIR}/${NAME}.out.wgsl" -P "${SCRIPT}"
     RESULT_VARIABLE _result
+    OUTPUT_QUIET
     ERROR_VARIABLE _error)
-  if (NOT _result EQUAL 0)
-    message(SEND_ERROR "${NAME}: the script failed: ${_error}")
-    return()
+  set(_output "")
+  if (EXISTS "${DIR}/${NAME}.out.wgsl")
+    file(READ "${DIR}/${NAME}.out.wgsl" _output)
   endif()
-  file(READ "${DIR}/${NAME}.out.wgsl" _output)
-  if (NOT _output STREQUAL "${EXPECTED}")
+  set(result "${_result}" PARENT_SCOPE)
+  set(error "${_error}" PARENT_SCOPE)
+  set(output "${_output}" PARENT_SCOPE)
+endfunction()
+
+# Fails unless renumbering `input` gives `expected`.
+function(expect_bindings NAME INPUT EXPECTED)
+  run_script(${NAME} "${INPUT}")
+  if (NOT result EQUAL 0)
+    message(SEND_ERROR "${NAME}: the script failed: ${error}")
+  elseif (NOT output STREQUAL "${EXPECTED}")
     message(SEND_ERROR
-      "${NAME}: expected\n${EXPECTED}\nbut the script wrote\n${_output}")
+      "${NAME}: expected\n${EXPECTED}\nbut the script wrote\n${output}")
   endif()
 endfunction()
 
 # Fails unless renumbering `input` fails.
 function(expect_failure NAME INPUT)
-  file(WRITE "${DIR}/${NAME}.in.wgsl" "${INPUT}")
-  execute_process(
-    COMMAND "${CMAKE_COMMAND}" "-DINPUT=${DIR}/${NAME}.in.wgsl"
-      "-DOUTPUT=${DIR}/${NAME}.out.wgsl" -P "${SCRIPT}"
-    RESULT_VARIABLE _result
-    OUTPUT_QUIET ERROR_QUIET)
-  if (_result EQUAL 0)
+  run_script(${NAME} "${INPUT}")
+  if (result EQUAL 0)
     message(SEND_ERROR "${NAME}: the script succeeded, but should have failed")
   endif()
 endfunction()

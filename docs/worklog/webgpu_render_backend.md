@@ -103,7 +103,8 @@ command, so a project's CMake doesn't change:
 glslc -Werror -MD -MF <out>.d -o <out>.spv <in>
 spirv-opt --split-combined-image-sampler <out>.spv -o <out>.split.spv
 naga --validate 0 <out>.split.spv <out>.raw.wgsl
-cmake -DIN=<out>.raw.wgsl -DOUT=<out>.bound.wgsl -P GameBitsWgslBindings.cmake
+cmake -DINPUT=<out>.raw.wgsl -DOUTPUT=<out>.bound.wgsl \
+  -P GameBitsWgslBindings.cmake
 naga <out>.bound.wgsl <out>.wgsl
 ```
 
@@ -127,8 +128,9 @@ shader declares, so `pass_mist.frag` (only binding 1) and `pass_water.frag`
 and its sampler on one binding, `GameBitsWgslBindings.cmake` renumbers each
 `@binding(n)` by the type of the `var` that follows it (`sampler` or
 `sampler_comparison`, or anything else), and `naga` reads the result back,
-validating it, and writes it out again. The script is about 30 lines of
-CMake, so the conversion needs no tool beyond those the design names.
+validating it, and writes it out again (which, unlike validating alone,
+prints nothing). The script is about 30 lines of CMake, so the conversion
+needs no tool beyond those the design names.
 
 What else the conversion does, checked on render-check's shaders:
 - `naga` flips `gl_Position.y` (its default, `--keep-coordinate-space`
