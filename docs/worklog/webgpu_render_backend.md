@@ -727,7 +727,7 @@ Depends on: CL1.
 - The WGSL is what CL1's steps give for the GLSL now (the CL says the
   commands), and Chromium accepts it, as in CL1.
 
-### CL3 [ ] render: the WebGPU backend clears a frame
+### CL3 [~] render: the WebGPU backend clears a frame
 
 Depends on: *Programs in the browser* CL1 and CL4, *Web platform* CL6.
 
