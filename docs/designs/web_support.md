@@ -25,15 +25,15 @@ The project is done when:
 
 | Feature | Status | Plan |
 |---|---|---|
-| Web platform | In progress (CL1 to CL3 of 9 merged) | [worklog](../worklog/web_platform.md) |
-| Programs in the browser | Not started | [backlog](../backlog.md#programs-in-the-browser) |
-| WebGPU render backend | Not started | [backlog](../backlog.md#webgpu-render-backend) |
+| Web platform | In progress | [worklog](../worklog/web_platform.md) |
+| Programs in the browser | In progress | [worklog](../worklog/programs_in_the_browser.md) |
+| WebGPU render backend | In progress | [worklog](../worklog/webgpu_render_backend.md) |
 | Files on the web | Not started | [backlog](../backlog.md#files-on-the-web) |
 | Web demos | Not started | [backlog](../backlog.md#web-demos) |
 
 Each depends on the one above it, apart from *Files on the web*, which only
 needs *Programs in the browser*. A feature's row changes in the PR that starts
-or finishes it.
+or finishes it, and its worklog's CL marks say how far it is.
 
 ## Scope
 
@@ -98,15 +98,24 @@ Out, each a backlog item where it is worth doing later:
 - **SDL2 stays.** The pinned 2.32.10 builds for the web as it is. Neither SDL2
   nor SDL3 supports drawing from any thread but the browser's main one, so
   `main()` runs there.
+- **The display paces frames in a page.** A `Game`'s loop waits for the
+  browser's next frame (`gb/base/frame_wait.h`), which is when the browser
+  shows what was drawn, so the game's frame rate limit is ignored there
+  (*Frame limits in a browser*). A piloted run doesn't wait: it hands control
+  back to the browser between frames and carries on at once. Neither call
+  does anything on Windows, on Linux, or under Node.
 - **WebGPU for drawing.** `RenderBackend` is already abstract, and ImGui draws
   through it. WebGL 2 has no storage buffers, which `gb_render` needs. The
   bindings are Dawn's for Emscripten (the `emdawnwebgpu` port), which come
   with the Emscripten SDK at a version it pins.
 - **`RenderBackend` and `gb_render`'s API don't change for the web.** What
-  WebGPU can't do (wireframe fill, clamp to border, drawing many indirect
-  draws in one call) the backend does another way where it can, and otherwise
-  fails to create, with an error. A change to the API instead needs the
-  user's approval (see [How the project is run](#how-the-project-is-run)).
+  WebGPU can't do, the backend does another way where it can: indirect draws
+  are one call each, 4-bit color textures are expanded, and a depth target is
+  sampled through a copy. Otherwise creating the resource fails, with an
+  error: clamp to border, wireframe fill, and 3-channel vertex values
+  narrower than 32 bits, each a backlog item. A change to the API instead
+  needs the user's approval (see
+  [How the project is run](#how-the-project-is-run)).
 - **Names:** `web_` is the prefix for files that are the web's own, beside
   `win_`, `posix_`, `linux_`, and `gen_`. It names the platform, as the
   others do, where `wasm_` would name the processor and `emscripten_` the
@@ -131,13 +140,18 @@ releases have its libraries only, so it would have to be built.
 A texture and its sampler can't share a binding in WGSL. `spirv-opt` can
 renumber them (`--resolve-binding-conflicts`), but it moves every later
 binding up by one for each sampler a shader declares, so two shaders of one
-pipeline that declare different bindings would disagree. *WebGPU render
-backend*'s plan settles a numbering that depends only on a binding's own
-number (such as the texture at twice its number and the sampler one after).
+pipeline that declare different bindings would disagree. So a binding's WGSL
+number depends only on its own GLSL number `n`: a sampler is at `2n + 1`, and
+everything else at `2n`. `naga` converts without validating, which leaves a
+texture and its sampler on one binding, a CMake script
+(`CMake/GameBitsWgslBindings.cmake`) renumbers them, and `naga` reads the
+result back, which validates it. `gb_embed_shader` runs all of it, so a
+project's CMake doesn't change.
 
-gb_imgui's shaders are SPIR-V pasted into `imgui_instance.cc`. Their WGSL is
-pasted beside them, which changes nothing for a project that links
-`gb_imgui`, where compiling them in the build would make each need `glslc`.
+gb_imgui's shaders are SPIR-V pasted into its source. Their WGSL is pasted
+into a web file of its own (`web_imgui_shaders.cc`), which changes nothing for
+a project that links `gb_imgui`, where compiling them in the build would make
+each need `glslc`.
 
 ## How the project is run
 
@@ -170,6 +184,9 @@ is approved until the project is done:
 - **Smaller cross-platform changes go ahead,** and are listed below with
   their PRs, for the user to read afterwards.
 - **The session reports** when a feature finishes, and when it is stopped.
+- **Agents share the account's usage limit.** When it runs out, every agent
+  stops until it resets, and the session then tells each to carry on from
+  what it pushed. So an agent commits and pushes its work in progress often.
 
 What only the user can do:
 - Approve each change to the `game-bits` cloud environment, which installs
@@ -189,9 +206,16 @@ Changes outside the web's own files, as they are planned and then merged.
 | `gb_add_test` registers tests as `add_test(NAME ... COMMAND ...)` | Web platform | [63](https://github.com/jpursey/game-bits/pull/63) |
 | `EXPECT_DEATH` becomes `EXPECT_DEATH_IF_SUPPORTED` in every test | Web platform | [62](https://github.com/jpursey/game-bits/pull/62) |
 | `Queue`'s buckets take their elements' alignment, and allocate aligned for elements aligned to more than `std::malloc()` gives | Web platform | [64](https://github.com/jpursey/game-bits/pull/64) |
-| `SupportsThreads()` is added, and code that needs a thread checks it | Web platform | |
-| `AllocAligned()` allows an alignment smaller than a pointer in `gen_aligned_memory.cc` | Web platform | |
-| Tests that need a file name that isn't UTF-8 are skipped where there is none | Web platform | |
+| `SupportsThreads()` is added, and code that needs a thread checks it | Web platform | [71](https://github.com/jpursey/game-bits/pull/71) |
+| `AllocAligned()` allows an alignment smaller than a pointer in `gen_aligned_memory.cc` | Web platform | [66](https://github.com/jpursey/game-bits/pull/66) |
+| Tests that need a file name that isn't UTF-8 are skipped where there is none | Web platform | [69](https://github.com/jpursey/game-bits/pull/69) |
+| CI builds and tests the web builds (`build-web`, `build-web-threads`) | Web platform | |
+| `Game`'s loops call the frame wait each frame, which does nothing outside a page | Programs in the browser | |
+| `templates/sdl` becomes a `gb::Game` that takes the pilot flags | Programs in the browser | |
+| CI builds the templates on Windows and Linux (`build-templates`) | Programs in the browser | |
+| `tools/install-vulkan-sdk.sh` also installs `spirv-opt` | WebGPU render backend | |
+| gb_imgui's font atlas is clamped to its edge, not to a transparent border, which draws the same pixels | WebGPU render backend | |
+| render-check chooses its backend through an interface of its own (`RenderCheckBackend`) | WebGPU render backend | |
 | Block-world's shaders are compiled by the build | Web demos | |
 
 ## Findings
@@ -224,5 +248,19 @@ Changes outside the web's own files, as they are planned and then merged.
 - **The Emscripten SDK's cache is root's** where root installed it, so a build
   run as another user fails to link. Sessions build as root and run tests as
   an ordinary user.
+- **WebGPU in headless Chromium,** found while planning the render backend:
+  - Resolving a multisampled frame straight into an sRGB view of the canvas's
+    texture left linear values in the canvas on SwiftShader. Resolving into
+    an sRGB texture and copying that to the canvas gives Vulkan's bytes.
+  - The canvas has a new, transparent texture after every return to the
+    browser, so a frame is drawn whole elsewhere and copied in at its end.
+  - A depth texture can't be sampled as GLSL's `sampler2D` converts, and
+    depth can't be resolved, so each depth target has an `r32float` copy.
+  - A page's runtime stays alive while any WebGPU object is held, so the page
+    only exits once the backend has released them all.
+  - SwiftShader allows 256 layers in a texture array, where `gb_render`
+    allows 2048.
+- **A web CI job** takes about 8 minutes. Installing the Emscripten SDK takes
+  about 15 seconds, and 5 from the cache (463 MB).
 - **Trial builds** of the libraries are recorded in
   [Web platform](../worklog/web_platform.md).
