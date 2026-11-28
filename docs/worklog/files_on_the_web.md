@@ -134,9 +134,10 @@ function(gb_pack_assets TARGET FOLDER)
   `tools/run-page.js` uses; configuring fails if it is.
 - The total is summed with `file(SIZE)` as it configures, which is exactly the
   size of `<name>.data`, as the packager adds nothing between files.
-- Cost: none on Windows and Linux beyond configuring. In a web build, packing
-  2.7 MB took less than a second of the link (see [To confirm](#to-confirm)),
-  and loading it delays `main()` by the time to fetch it.
+- Cost: none on Windows and Linux beyond configuring. In a web build, a page
+  whose 2.7 MB of assets changed relinked in 0.9 s in Debug (see [To
+  confirm](#to-confirm)), and loading them delays `main()` by the time to
+  fetch them.
 
 **Brittleness:**
 - `<name>.data` must be served beside the page. A page copied or published
@@ -269,6 +270,18 @@ headless Chromium 158:
 - A page whose `<name>.data` was missing logged "404" as a page error, and
   `main()` never started, so the run ended at its timeout. (CL1)
 - The page's current folder is `/`. (CL1)
+- With Game Bits' own web build, a prototype of `gb_pack_assets()` in a
+  scratch project (a `gb_add_win_executable()` linking `gb_file`, `gb_image`,
+  and `gb_cli`, Debug, with the shell's `preRun` as a list) packed
+  `"${GB_DIR}/assets"`'s `fonts` and `textures/block.png` (30 files,
+  2,665,844 bytes, the sum configuring printed). Its page found `/assets` by
+  name from `/` as block-world does, and through a `LocalFileProtocol` rooted
+  there listed all 30 files, read each with the size `GetPathInfo()` gave,
+  loaded the PNG with `LoadImage()` (256x256), and wrote a new file. A
+  `CreateCliFileSystem()` read `assets/fonts/...` relative to `/`. All of it
+  took 37 to 56 ms. The Debug `.wasm` was 13 MB. (CL1)
+- Touching a packed file relinked the page in 0.9 s; a build with no change
+  did nothing. (CL1)
 
 Not checked:
 - A page and its `<name>.data` as a Claude artifact. The design's findings say
