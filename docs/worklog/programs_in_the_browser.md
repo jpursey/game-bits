@@ -515,7 +515,7 @@ Depends on: CL1 to CL4.
 - SDL in a page, as [SDL](#sdl) lists, with the template's log: window and
   canvas size, resize, keys and mouse.
 
-### CL6 [ ] CI: the template in a headless browser
+### CL6 [~] CI: the template in a headless browser
 
 Depends on: CL5, *Web platform* CL8.
 

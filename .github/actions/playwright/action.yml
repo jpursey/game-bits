@@ -1,0 +1,44 @@
+# Installs Playwright at the workflow's PLAYWRIGHT_VERSION, with the Chromium it
+# runs pages in, cached between runs, and sets up the job's later steps to use
+# it: require('playwright') finds it (through NODE_PATH), and it finds its
+# browser (through PLAYWRIGHT_BROWSERS_PATH). Chromium is installed as its
+# headless shell only, which is what chromium.launch() runs headless, so the
+# cache doesn't hold a full browser too. The libraries Chromium needs are
+# installed on every run, as they are the runner's, not the cache's. It runs on
+# Linux.
+name: Playwright
+description: Installs Playwright and the Chromium it runs pages in.
+
+runs:
+  using: composite
+  steps:
+  - name: Restore Playwright
+    id: cache
+    uses: actions/cache/restore@v6
+    with:
+      path: ~/playwright
+      key: playwright-${{ runner.os }}-${{ env.PLAYWRIGHT_VERSION }}
+
+  - name: Use Playwright
+    shell: bash
+    run: |
+      echo "NODE_PATH=$HOME/playwright/node_modules" >> $GITHUB_ENV
+      echo "PLAYWRIGHT_BROWSERS_PATH=$HOME/playwright/browsers" >> $GITHUB_ENV
+
+  - name: Install Playwright
+    if: steps.cache.outputs.cache-hit != 'true'
+    shell: bash
+    run: npm install --prefix ~/playwright --no-save "playwright@$PLAYWRIGHT_VERSION"
+
+  # Downloads the browser only if the cache didn't have it, and installs the
+  # libraries it needs either way.
+  - name: Install Chromium
+    shell: bash
+    run: ~/playwright/node_modules/.bin/playwright install --with-deps --only-shell chromium
+
+  - name: Cache Playwright
+    if: steps.cache.outputs.cache-hit != 'true'
+    uses: actions/cache/save@v6
+    with:
+      path: ~/playwright
+      key: ${{ steps.cache.outputs.cache-primary-key }}

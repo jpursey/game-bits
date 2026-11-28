@@ -13,11 +13,14 @@ on:
 
 # The Vulkan SDK every job but the web ones builds with (see
 # .github/actions/vulkan-sdk), which the devcontainer
-# (.devcontainer/devcontainer.json) also installs, and the Emscripten SDK the
-# web jobs build with (see .github/actions/emsdk).
+# (.devcontainer/devcontainer.json) also installs, the Emscripten SDK the web
+# jobs build with (see .github/actions/emsdk), and the Playwright that runs
+# pages in headless Chromium (see .github/actions/playwright), which is the
+# version cloud sessions have.
 env:
   VULKAN_SDK_VERSION: 1.4.363.1
   EMSDK_VERSION: 7.0.1
+  PLAYWRIGHT_VERSION: 1.63.0
 
 # A newer run for the same branch cancels one still in progress.
 concurrency:
@@ -27,8 +30,8 @@ concurrency:
 # Every job runs at once: build-windows-release, build-windows-debug,
 # build-block-world (Windows, Release), build-render-check-windows and
 # build-render-check-linux (Release), build-templates-windows and
-# build-templates-linux (Release), build-linux-debug, build-linux-release,
-# build-web, and build-web-threads.
+# build-templates-linux (Release), build-web-template, build-linux-debug,
+# build-linux-release, build-web, and build-web-threads.
 jobs:
   build-windows:
     name: build-windows-${{ matrix.config }}
@@ -219,6 +222,71 @@ jobs:
       if: runner.os == 'Linux'
       working-directory: ${{github.workspace}}
       run: tools/run-program.sh --exe templates/sdl/bin/sdl_template --steps "hide window; wait 30; key A; resize 640 360; wait 2" --out-dir out/run/sdl_template
+
+  # The sdl template is built for the web, as a page, and run in headless
+  # Chromium: a script that passes, one that is expected to fail, and real key
+  # presses. Each run's log is in the job's output if it fails, and all of them
+  # are uploaded.
+  build-web-template:
+    name: build-web-template
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        submodules: "recursive"
+
+    - name: Install packages
+      run: sudo tools/install-linux-packages.sh
+
+    - name: Install the Emscripten SDK
+      uses: ./.github/actions/emsdk
+
+    - name: Install Playwright
+      uses: ./.github/actions/playwright
+
+    - name: Build the sdl template for the web
+      working-directory: ${{github.workspace}}
+      run: |
+        emcmake cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug "-DGB_DIR=$PWD" -S templates/sdl -B templates/sdl/out/build/web
+        cmake --build templates/sdl/out/build/web --target sdl_template
+
+    - name: Run the page with a script
+      working-directory: ${{github.workspace}}
+      run: tools/run-program.sh --exe templates/sdl/bin/sdl_template.html --steps "hide window; wait 30; key A; click 200 100; resize 640 360; wait 2" --out-dir out/run/sdl_template/steps
+
+    - name: Run the page with a script that fails
+      working-directory: ${{github.workspace}}
+      run: |
+        if tools/run-program.sh --exe templates/sdl/bin/sdl_template.html --steps 'hide window; wait 2; expect error "none" 1' --out-dir out/run/sdl_template/failing; then
+          echo "The run should have failed."
+          exit 1
+        fi
+        grep "Pilot run failed" out/run/sdl_template/failing/stderr.txt
+
+    - name: Run the page with key presses
+      working-directory: ${{github.workspace}}
+      run: |
+        tools/run-program.sh --exe templates/sdl/bin/sdl_template.html --press-keys "A Escape" --out-dir out/run/sdl_template/keys
+        grep "Key down: Escape" out/run/sdl_template/keys/stderr.txt
+
+    - name: Show the pages' logs
+      if: failure()
+      working-directory: ${{github.workspace}}
+      run: |
+        for log in out/run/sdl_template/*/stderr.txt; do
+          echo "::group::$log"
+          cat "$log"
+          echo "::endgroup::"
+        done
+
+    - name: Upload the pages' logs
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: sdl-template-web
+        path: out/run/sdl_template/
+        if-no-files-found: ignore
 
   # Linux builds every library with clang. Debug runs render asserts and death
   # tests, and Release compiles asserts out, as the Windows release job does.
