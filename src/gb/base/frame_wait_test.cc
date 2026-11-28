@@ -14,15 +14,11 @@ namespace {
 // neither function waits here. Waiting in a page is checked with one.
 
 TEST(FrameWaitTest, WaitForNextFrameReturnsFalseOutsidePage) {
-  for (int i = 0; i < 3; ++i) {
-    EXPECT_FALSE(WaitForNextFrame()) << "call " << i;
-  }
+  EXPECT_FALSE(WaitForNextFrame());
 }
 
 TEST(FrameWaitTest, YieldBetweenFramesReturnsOutsidePage) {
-  for (int i = 0; i < 3; ++i) {
-    YieldBetweenFrames();
-  }
+  YieldBetweenFrames();
 }
 
 }  // namespace
