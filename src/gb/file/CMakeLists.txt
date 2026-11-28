@@ -18,9 +18,17 @@ if (WIN32)
     win_local_file_system_test.cc
   )
 else()
-  set(gb_file_internal_SOURCE
-    gen_platform_file.cc
-  )
+  if (EMSCRIPTEN)
+    set(gb_file_internal_SOURCE
+      gen_platform_file.cc
+      web_platform_file.cc
+    )
+  else()
+    set(gb_file_internal_SOURCE
+      gen_platform_file.cc
+      linux_platform_file.cc
+    )
+  endif()
   set(gb_file_internal_TEST_SOURCE
     gen_local_file_protocol_test.cc
   )

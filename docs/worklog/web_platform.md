@@ -202,10 +202,35 @@ Recorded here as it was found:
   catch-up stops after 2 ms.)
 - `LocalFileProtocolTest.ListSkipsNonUtf8Names` fails: Node gives a name that
   isn't UTF-8 with U+FFFD in place of its bad bytes, so it is listed. (CL5)
+  - CL5: a name created with a byte that isn't UTF-8 is written as U+FFFD
+    too, so the web has no name that can't be converted. `GetNonUtf8Name()`
+    is empty there, and the two tests that use it,
+    `CreateWithNonUtf8RootPath` and `ListSkipsNonUtf8Names`, are skipped.
+    A name that isn't UTF-8, made by another program, is listed with U+FFFD
+    in it rather than skipped, and that name doesn't open it. Nothing under
+    Node can tell it apart, as Node has replaced the bytes.
 - `CommonProtocolTest.ReadOnlyFile` fails, as it does on Linux as root, which
   the trial ran as. (CL5 checks it as an ordinary user.)
+  - CL5: it passes as an ordinary user, with and without threads, and still
+    fails as root, as on Linux. Node and Emscripten set and report
+    permissions as Linux does, so nothing changes for it.
 - `LocalFileProtocolTest.CreateWithRootPath` fails without threads only.
   (CL5)
+  - CL5: not reproduced on `main`. It passes in both web builds, as an
+    ordinary user and as root, in the whole program, alone, and under
+    `ctest`, with `TMPDIR` unset or ending in `/`, and linked with the old
+    64 KiB stack. The trial ran each test in its own process, four at once,
+    which `gb_file_test` isn't safe for, on any platform: its temporary
+    folders are named from `std::rand()`, which isn't seeded, so every
+    process picks the same names. Eight `CreateWithRootPath` processes at
+    once fail on Linux too, one in eight failing to create its folder. Nothing
+    changes for it here (the backlog's *Unique temporary folders in file
+    tests*).
+- As an ordinary user, `CopyFolderKeepsAttributes` and `MoveKeepsAttributes`
+  leave a folder in the temp folder after each run, and log that it couldn't
+  be deleted: the folders they make read-only can't have their files
+  removed. This happens on Linux too, so it isn't the web's. (Found by CL5;
+  the backlog's *Temp roots with read-only folders deleted*.)
 - `gb_pilot_sdl_test` stops at `screen is not defined`, in the two tests that
   resize a window. All 23 pass with `SDL_VIDEODRIVER=dummy`. (CL7)
 - Without threads, `gb_job_test` doesn't link: `FiberJobSystem`'s semaphore
@@ -295,7 +320,7 @@ Depends on: CL1, CL2.
 - Standard checks.
 - Web: `gb_base_test` passes with threads.
 
-### CL5 [ ] file: local files under Node
+### CL5 [x] file: local files under Node
 
 Depends on: CL1, CL2.
 

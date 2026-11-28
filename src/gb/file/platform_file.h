@@ -37,8 +37,8 @@ std::string LocalPathToUtf8(const std::filesystem::path& path);
 std::filesystem::path Utf8ToLocalPath(std::string_view path);
 
 // Returns a file name that the operating system accepts but that can't be
-// converted to UTF-8, so no UTF-8 path can name it. Tests use it to check how
-// such names are handled.
+// converted to UTF-8, so no UTF-8 path can name it, or an empty path if there
+// is no such name. Tests use it to check how such names are handled.
 std::filesystem::path GetNonUtf8Name();
 
 //------------------------------------------------------------------------------

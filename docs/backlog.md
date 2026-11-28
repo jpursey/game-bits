@@ -732,6 +732,38 @@ which also has `Cancel()` and `Invoke()`. Switch Game Bits' own uses to
 Removing `ScopedCall` breaks every project that uses it, so each one switches
 first, and it is removed once they have.
 
+## Temp roots with read-only folders deleted
+
+- **Layers:** file
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Web platform](worklog/web_platform.md)'s To confirm
+
+On Linux and the web, as an ordinary user, a `LocalFileProtocol` that deletes
+its root when it is destroyed (as `CreateTemp()` does) can't delete a
+read-only folder in it with files, as POSIX lets nothing be removed from one.
+It logs an error and leaves the folder behind. In `gb_file_test`,
+`CopyFolderKeepsAttributes` and `MoveKeepsAttributes` leave one in the temp
+folder on every run. Either the deletion gives each read-only folder write
+permission before removing what is in it, or the tests clear the attribute
+before they end.
+
+## Unique temporary folders in file tests
+
+- **Layers:** file
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [Web platform](worklog/web_platform.md)'s To confirm
+
+`local_file_protocol_test.cc`'s `GetUnusedTempPath()` names folders from
+`GenerateAlphaTestString()`, on `std::rand()`, which nothing seeds. So every
+`gb_file_test` process picks the same names in the same order, and two run at
+once (such as one test per process, in parallel) race to create the same
+folder, and one fails. Naming them as `LocalFileProtocol`'s unique roots are
+named, from `std::random_device`, would make them safe to run at once.
+
 ## Typed values in gb_base
 
 - **Layers:** base, cli, pilot
