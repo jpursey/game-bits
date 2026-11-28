@@ -12,6 +12,7 @@
 #   tools/run-program.sh --exe <path> [--script <file> | --steps <steps>]
 #                        [--arguments <arguments>] [--out-dir <dir>]
 #                        [--working-directory <dir>] [--timeout-secs <seconds>]
+#   tools/run-program.sh --exe <name>.html [--press-keys "<key>..."] ...
 #
 # The program must take the pilot flags (--pilot and --pilot-output, from
 # gb_pilot_script), and runs the script by itself: src/gb/pilot/script/
@@ -35,6 +36,17 @@
 # current directory, as <name>.png. The program's stdout and stderr (the log)
 # are saved there too. At the end, the frames this run saved, the log's errors,
 # and the run's summary are printed.
+#
+# A page (a windowed program in a web build, <name>.html) is run the same way,
+# in headless Chromium by tools/run-page.js, with Playwright. Its folder is
+# served from localhost, its arguments are given in its address, and the script
+# is put in its file system, which is in memory, so --working-directory can't
+# be given. Its console's messages and errors are its stdout and stderr, and
+# the files it saves are copied out once it has stopped. A page that aborts
+# exits with code 134, and one still running at the timeout is ended without
+# saving its stacks. Instead of a script, --press-keys presses each key (by
+# Playwright's names, such as Escape) with the real keyboard once the page has
+# run for a second, which a pilot would ignore, so the page runs without one.
 
 set -euo pipefail
 
@@ -46,6 +58,7 @@ arguments=""
 out_dir=""
 working_directory=""
 timeout_secs=60
+press_keys=""
 
 fail() {
   echo "$1" >&2
@@ -64,6 +77,7 @@ while [[ $# -gt 0 ]]; do
     --out-dir) out_dir="$2" ;;
     --working-directory) working_directory="$2" ;;
     --timeout-secs) timeout_secs="$2" ;;
+    --press-keys) press_keys="$2" ;;
     *) fail "Unknown option $1." ;;
   esac
   shift 2
@@ -72,18 +86,36 @@ done
 if [[ -z "$exe" ]]; then
   fail "--exe is required."
 fi
-if [[ ! -x "$exe" ]]; then
+is_page=false
+if [[ "$exe" == *.html ]]; then
+  is_page=true
+fi
+if [[ ! -f "$exe" ]] || [[ "$is_page" == false && ! -x "$exe" ]]; then
   fail "$exe is not built."
 fi
 if [[ -n "$script" && -n "$steps" ]]; then
   fail "Give --script or --steps, not both."
+fi
+if [[ -n "$press_keys" ]]; then
+  if [[ -z "${press_keys// /}" ]]; then
+    fail "--press-keys needs a key."
+  fi
+  if [[ "$is_page" == false ]]; then
+    fail "--press-keys is only for a page."
+  fi
+  if [[ -n "$script" || -n "$steps" ]]; then
+    fail "Give --press-keys or a script, not both."
+  fi
+fi
+if [[ "$is_page" == true && -n "$working_directory" ]]; then
+  fail "A page's working directory is in its own file system."
 fi
 if [[ ! "$timeout_secs" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
   fail "--timeout-secs must be a number of seconds."
 fi
 timeout_us="$(awk -v secs="$timeout_secs" 'BEGIN { printf "%d", secs * 1000000 }')"
 exe="$(realpath "$exe")"
-name="$(basename "$exe")"
+name="$(basename "$exe" .html)"
 out_dir="${out_dir:-out/run/$name}"
 working_directory="${working_directory:-$PWD}"
 if [[ ! -d "$working_directory" ]]; then
@@ -95,7 +127,7 @@ mkdir -p "$out_dir"
 out_dir="$(realpath "$out_dir")"
 if [[ -n "$script" ]]; then
   script="$(realpath "$script")"
-else
+elif [[ -z "$press_keys" ]]; then
   script="$out_dir/steps.txt"
   steps="${steps:-hide window; wait 30; save frame}"
   printf '%s\n' "${steps//;/$'\n'}" > "$script"
@@ -119,52 +151,72 @@ log="$out_dir/stderr.txt"
 stacks="$out_dir/hang-stacks.txt"
 rm -f "$stacks"
 
-# The program runs as a descendant of this subshell, which becomes gdb (through
-# dump-stacks.sh) if the program times out: where ptrace is limited to a
-# process's descendants (as Ubuntu's Yama does by default), only an ancestor can
-# read its stacks. The subshell's polling can't be replaced by a command that
-# waits with a timeout, as that command would be the program's parent. The
-# program writes its own process ID to $work/pid, as xvfb-run runs it in a shell
-# of its own, and the timeout counts from then.
 status=0
-(
+if [[ "$is_page" == true ]]; then
+  # run-page.js ends the browser itself at the timeout. It writes the log, which
+  # is emptied first in case it fails before it can.
+  : > "$out_dir/stdout.txt"
+  : > "$log"
+  page_args=(--page "$exe" --out-dir "$out_dir" --timeout-secs "$timeout_secs"
+    --timeout-file "$work/timed-out")
+  if [[ -n "$script" ]]; then
+    page_args+=(--script "$script")
+  else
+    page_args+=(--press-keys "$press_keys")
+  fi
   xvfb-run -a -s "-screen 0 1920x1080x24" \
-    bash -c 'cd "$2" && echo $$ > "$1" && exec "${@:5}" > "$3" 2> "$4"' \
-    -- "$work/pid" "$working_directory" "$out_dir/stdout.txt" "$log" \
-    "$exe" "${program_args[@]}" --pilot "$script" --pilot-output "$out_dir" &
-  runner=$!
-  deadline_us=""
-  while [[ -n "$(jobs -rp)" ]]; do
-    now_us="${EPOCHREALTIME/[.,]/}"
-    if [[ -z "$deadline_us" ]]; then
-      if [[ -s "$work/pid" ]]; then
-        deadline_us=$((now_us + timeout_us))
+    node "$tools_dir/run-page.js" "${page_args[@]}" -- "${program_args[@]}" ||
+    status=$?
+else
+  # The program runs as a descendant of this subshell, which becomes gdb
+  # (through dump-stacks.sh) if the program times out: where ptrace is limited
+  # to a process's descendants (as Ubuntu's Yama does by default), only an
+  # ancestor can read its stacks. The subshell's polling can't be replaced by a
+  # command that waits with a timeout, as that command would be the program's
+  # parent. The program writes its own process ID to $work/pid, as xvfb-run runs
+  # it in a shell of its own, and the timeout counts from then.
+  (
+    xvfb-run -a -s "-screen 0 1920x1080x24" \
+      bash -c 'cd "$2" && echo $$ > "$1" && exec "${@:5}" > "$3" 2> "$4"' \
+      -- "$work/pid" "$working_directory" "$out_dir/stdout.txt" "$log" \
+      "$exe" "${program_args[@]}" --pilot "$script" --pilot-output "$out_dir" &
+    runner=$!
+    deadline_us=""
+    while [[ -n "$(jobs -rp)" ]]; do
+      now_us="${EPOCHREALTIME/[.,]/}"
+      if [[ -z "$deadline_us" ]]; then
+        if [[ -s "$work/pid" ]]; then
+          deadline_us=$((now_us + timeout_us))
+        fi
+      elif ((now_us >= deadline_us)); then
+        pid="$(cat "$work/pid")"
+        if kill -0 "$pid" 2> /dev/null; then
+          touch "$work/timed-out"
+          exec "$tools_dir/dump-stacks.sh" "$pid" > "$stacks" 2>&1
+        fi
       fi
-    elif ((now_us >= deadline_us)); then
-      pid="$(cat "$work/pid")"
-      if kill -0 "$pid" 2> /dev/null; then
-        exec "$tools_dir/dump-stacks.sh" "$pid" > "$stacks" 2>&1
-      fi
-    fi
-    sleep 0.1
-  done
-  wait "$runner"
-) || status=$?
+      sleep 0.1
+    done
+    wait "$runner"
+  ) || status=$?
+fi
 
 failure=""
-if [[ -e "$stacks" ]]; then
-  echo "Saved thread stacks to $stacks"
-  pid="$(cat "$work/pid")"
-  kill -9 "$pid" 2> /dev/null || true
-
-  # xvfb-run ends its X server once the program is gone.
-  for _ in $(seq 50); do
-    if ! kill -0 "$pid" 2> /dev/null; then
-      break
-    fi
-    sleep 0.1
-  done
+if [[ -e "$work/timed-out" ]]; then
   failure="$name was still running $timeout_secs seconds after it started."
+  if [[ -e "$stacks" ]]; then
+    echo "Saved thread stacks to $stacks"
+    pid="$(cat "$work/pid")"
+    kill -9 "$pid" 2> /dev/null || true
+
+    # xvfb-run ends its X server once the program is gone.
+    for _ in $(seq 50); do
+      if ! kill -0 "$pid" 2> /dev/null; then
+        break
+      fi
+      sleep 0.1
+    done
+  fi
 elif [[ $status -ne 0 ]]; then
   failure="$name exited with code $status."
 fi

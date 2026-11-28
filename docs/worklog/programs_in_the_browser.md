@@ -277,9 +277,12 @@ Left as limits, none of which this feature's programs need:
 
 `tools/run-program.sh` runs a page when `--exe` names a `.html` file, with
 the same options:
-- It serves the page's folder from localhost on a free port (Node's `http`,
-  with `.wasm` as `application/wasm`), and opens the page in Chromium with
-  Playwright, headless, under `xvfb-run -a`, with the flags that give WebGPU a
+- It opens the page in Chromium with Playwright, headless, under `xvfb-run
+  -a`, at `http://localhost/<name>.html`, which Playwright answers itself
+  with the files in the page's folder (`context.route()`), so no server or
+  port is needed. They are sent with cross-origin isolation headers, which a
+  page built with threads will need and one without doesn't notice. Chromium
+  is started with the flags that give WebGPU a
   device on SwiftShader (`--enable-unsafe-webgpu --use-angle=swiftshader
   --enable-unsafe-swiftshader --ignore-gpu-blocklist --enable-gpu
   --enable-features=Vulkan --use-vulkan=swiftshader`), so the next feature
@@ -294,11 +297,12 @@ the same options:
   program.
 - It waits for `gbExit`. An exit code is the run's; an abort is a failure
   (code 134, as a program that aborts gets on Linux), with its message. After
-  `--timeout-secs` the run fails with the page's state left as it was.
+  `--timeout-secs`, counted from opening the page, the run fails.
   There are no thread stacks to save: a page's stack could be read through
   Chrome's debugger, which is the backlog's *Stacks of a hung page*.
-- After the program exits, every file in `/pilot/out` but `.keep` is copied
-  to `<out-dir>` with `Module.FS`, from the tool's script.
+- Once the program has stopped, or the run has timed out, every file in
+  `/pilot/out` but `.keep` is copied to `<out-dir>` with `Module.FS`, one at
+  a time, so frames saved before a hang or an abort still come back.
 - `--press-keys "<key>..."` presses each key (by Playwright's names, such as
   `Escape`) with the real keyboard, once the page has run for a second, and
   runs the program without a script, as a pilot drops the user's input. It is
@@ -449,7 +453,7 @@ Depends on: CL2.
   frames a second with `kKeyMaxFps` at 60, under 0.1 ms a frame after the
   wait, and a piloted run of 2000 frames in under a second.
 
-### CL4 [ ] tools: run a page in a headless browser
+### CL4 [x] tools: run a page in a headless browser
 
 Depends on: CL1.
 
