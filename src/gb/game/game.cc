@@ -6,6 +6,7 @@
 #include "gb/game/game.h"
 
 #include "absl/log/log.h"
+#include "gb/base/frame_wait.h"
 
 namespace gb {
 
@@ -40,6 +41,7 @@ bool Game::PilotLoop() {
     pilot_->BeginFrame();
     running = Update(pilot_->GetDeltaTime());
     pilot_->EndFrame();
+    YieldBetweenFrames();
   }
   if (!pilot_->IsDone()) {
     LOG(ERROR) << "The game stopped before its pilot was done.";
@@ -60,6 +62,9 @@ void Game::GameLoop() {
   absl::Time next_time = last_time + min_delta_time;
   absl::Duration delta_time;
   do {
+    // Where the platform paces frames (in a browser page), the display paces
+    // them, and the loop doesn't limit them as well.
+    const bool paced = WaitForNextFrame();
     absl::Time now = clock_->Now();
     absl::Duration time_remaining = next_time - now;
     if (time_remaining < absl::ZeroDuration()) {
@@ -72,7 +77,7 @@ void Game::GameLoop() {
       if (time_remaining < -absl::Milliseconds(1)) {
         next_time = now;
       }
-    } else {
+    } else if (!paced) {
       // We have extra time on our hands, so wait until the frame is due.
       clock_->SleepUntil(next_time);
       now = clock_->Now();

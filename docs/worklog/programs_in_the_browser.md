@@ -432,7 +432,7 @@ Depends on: *Web platform* CL4.
 - Web: `gb_base_test` passes, so a Node program links the JSPI functions
   without JSPI.
 
-### CL3 [ ] game: loops wait for the next frame
+### CL3 [~] game: loops wait for the next frame
 
 Depends on: CL2.
 
