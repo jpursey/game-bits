@@ -1326,6 +1326,7 @@ TEST(ContextTest, MoveAssignToSelf) {
 }
 
 TEST(ContextTest, ThreadAbuse) {
+  GB_SKIP_WITHOUT_THREADS();
   Context parent;
   Context context;
   ThreadTester tester;

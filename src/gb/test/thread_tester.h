@@ -18,14 +18,32 @@
 #include "absl/container/flat_hash_map.h"
 #include "absl/synchronization/mutex.h"
 #include "absl/synchronization/notification.h"
+#include "gb/thread/thread.h"
+#include "gtest/gtest.h"
 
 namespace gb {
+
+// Skips the current test where threads can't be created (see SupportsThreads()
+// in gb/thread/thread.h). A test that starts a thread, directly or through the
+// code it tests, puts this as its first line. A fixture whose every test does
+// may put it in SetUp() instead, as long as the fixture doesn't construct a
+// ThreadTester or anything else that starts a thread before SetUp() runs.
+#define GB_SKIP_WITHOUT_THREADS()                                  \
+  do {                                                             \
+    if (!gb::SupportsThreads()) {                                  \
+      GTEST_SKIP() << "This test needs threads, which this build " \
+                      "doesn't have";                              \
+    }                                                              \
+  } while (false)
 
 // This class is used to simplify thread-safety tests.
 //
 // An instance of ThreadTester can be instantiated directly in a test or a test
 // framework to support management of multiple threads which run concurrently,
 // but are completed by the end of the test.
+//
+// This needs threads: it CHECK-fails on construction where SupportsThreads() is
+// false, so a test using it starts with GB_SKIP_WITHOUT_THREADS().
 class ThreadTester {
  public:
   // A test function does work, and then returns true on success or false if the
@@ -38,7 +56,7 @@ class ThreadTester {
     kSuccess,
   };
 
-  ThreadTester() = default;
+  ThreadTester();
   ThreadTester(const ThreadTester&) = delete;
   ThreadTester& operator=(const ThreadTester&) = delete;
   ~ThreadTester();

@@ -20,6 +20,7 @@ namespace gb {
 namespace {
 
 TEST(ResourceThreadTest, ThreadAbuse) {
+  GB_SKIP_WITHOUT_THREADS();
   auto system = ResourceSystem::Create();
   ASSERT_NE(system, nullptr);
 
@@ -116,6 +117,7 @@ TEST(ResourceThreadTest, ThreadAbuse) {
 }
 
 TEST(ResourceThreadTest, ReleaseLastReferencesConcurrently) {
+  GB_SKIP_WITHOUT_THREADS();
   TestResource::Counts counts;
   auto system = ResourceSystem::Create();
   ASSERT_NE(system, nullptr);

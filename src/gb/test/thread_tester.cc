@@ -5,6 +5,7 @@
 
 #include "gb/test/thread_tester.h"
 
+#include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
@@ -27,6 +28,12 @@ void ThreadTester::RunFunction(const std::string& name,
   result_info.success = result_info.success && success;
   result_info.running -= 1;
   success_ = success_ && success;
+}
+
+ThreadTester::ThreadTester() {
+  CHECK(SupportsThreads())
+      << "ThreadTester needs threads, which this build doesn't have. A test "
+         "that uses it starts with GB_SKIP_WITHOUT_THREADS().";
 }
 
 ThreadTester::~ThreadTester() {

@@ -788,6 +788,7 @@ TEST(ConfigReaderTest, MovedFromReaderKeepsItsRead) {
 }
 
 TEST(ConfigReaderTest, ReadersOfOneReadOnManyThreads) {
+  GB_SKIP_WITHOUT_THREADS();
   const Config config = Parse("{a: 1, b: 2}");
   const ConfigReader reader(&config);
   ThreadTester tester;

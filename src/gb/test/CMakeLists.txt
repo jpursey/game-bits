@@ -28,6 +28,7 @@ set(gb_test_DEPS
   absl::str_format
   absl::strings
   absl::synchronization
+  gb_thread
   gtest
 )
 

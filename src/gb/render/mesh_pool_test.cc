@@ -495,6 +495,7 @@ TEST_F(MeshPoolTest, GetDrawOutOfRangeFails) {
 }
 
 TEST_F(MeshPoolTest, CreateAndDestroyFromManyThreads) {
+  GB_SKIP_WITHOUT_THREADS();
   constexpr int kThreadCount = 4;
   constexpr int kMeshesPerThread = 500;
   constexpr int kLiveMeshesPerThread = 10;

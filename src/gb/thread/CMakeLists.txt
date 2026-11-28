@@ -25,8 +25,17 @@ else()
   set(gb_thread_internal_SOURCE
     gen_cpu_topology.cc
     gen_fiber.cc
-    gen_thread.cc
   )
+
+  # A web build without threads can't create any.
+  if (EMSCRIPTEN AND NOT GB_WEB_THREADS)
+    list(APPEND gb_thread_internal_SOURCE web_thread.cc)
+    set(gb_thread_internal_TEST_SOURCE
+      web_thread_test.cc
+    )
+  else()
+    list(APPEND gb_thread_internal_SOURCE gen_thread.cc)
+  endif()
   set(gb_thread_internal_DEPS
     absl::no_destructor
     absl::strings
@@ -87,6 +96,7 @@ set(gb_thread_TEST_DEPS
   absl::log
   absl::synchronization
   gb_base
+  gb_test
 )
 
 gb_add_library(gb_thread)

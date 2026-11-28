@@ -203,6 +203,7 @@ TEST(MessageSystemTest, SystemSendMessagePollingDispatcher) {
 }
 
 TEST(MessageSystemTest, SystemSendMessageThreadDispatcher) {
+  GB_SKIP_WITHOUT_THREADS();
   ThreadTester tester;
   int call_count = 0;
   MessageEndpointId result_from = kNoMessageEndpointId;
@@ -272,6 +273,7 @@ TEST(MessageSystemTest, EndpointSendMessagePollingDispatcher) {
 }
 
 TEST(MessageSystemTest, EndpointSendMessageThreadDispatcher) {
+  GB_SKIP_WITHOUT_THREADS();
   ThreadTester tester;
   int call_count = 0;
   MessageEndpointId result_from = kNoMessageEndpointId;
@@ -334,6 +336,7 @@ TEST(MessageSystemTest, UpdateMessageInPollingDispatchAfterSystemDestruction) {
 }
 
 TEST(MessageSystemTest, DeleteMessageInThreadDispatchefterSystemDestruction) {
+  GB_SKIP_WITHOUT_THREADS();
   Counts counts;
   TestMessage message(&counts);
   ThreadTester tester;
@@ -363,6 +366,7 @@ TEST(MessageSystemTest, DeleteMessageInThreadDispatchefterSystemDestruction) {
 }
 
 TEST(MessageSystemTest, DeleteMessageInThreadDispatchefterCancel) {
+  GB_SKIP_WITHOUT_THREADS();
   Counts counts;
   TestMessage message(&counts);
   ThreadTester tester;
@@ -1160,6 +1164,7 @@ TEST(MessageSystemTest, SendMessageInsideHandlerWithPollingDispatcher) {
 }
 
 TEST(MessageSystemTest, CreateEndpointInsideHandlerWithThreadDispatcher) {
+  GB_SKIP_WITHOUT_THREADS();
   Counts counts;
   ThreadTester tester;
   ThreadMessageDispatcher dispatcher;
@@ -1195,6 +1200,7 @@ TEST(MessageSystemTest, CreateEndpointInsideHandlerWithThreadDispatcher) {
 }
 
 TEST(MessageSystemTest, DestroyEndpointInsideHandlerWithThreadDispatcher) {
+  GB_SKIP_WITHOUT_THREADS();
   Counts counts;
   ThreadTester tester;
   ThreadMessageDispatcher dispatcher;
@@ -1221,6 +1227,7 @@ TEST(MessageSystemTest, DestroyEndpointInsideHandlerWithThreadDispatcher) {
 }
 
 TEST(MessageSystemTest, AddRemoveChannelInsideHandlerWithThreadDispatcher) {
+  GB_SKIP_WITHOUT_THREADS();
   Counts counts;
   ThreadTester tester;
   ThreadMessageDispatcher dispatcher;
@@ -1254,6 +1261,7 @@ TEST(MessageSystemTest, AddRemoveChannelInsideHandlerWithThreadDispatcher) {
 }
 
 TEST(MessageSystemTest, SendMessageInsideHandlerWithThreadDispatcher) {
+  GB_SKIP_WITHOUT_THREADS();
   Counts counts;
   ThreadTester tester;
   ThreadMessageDispatcher dispatcher;
@@ -1279,6 +1287,7 @@ TEST(MessageSystemTest, SendMessageInsideHandlerWithThreadDispatcher) {
 }
 
 TEST(MessageSystemTest, RemoveEndpointFromOtherThread) {
+  GB_SKIP_WITHOUT_THREADS();
   std::atomic<int> value = 0;
   ThreadTester tester;
   auto message_system = MessageSystem::Create();
@@ -1320,6 +1329,7 @@ TEST(MessageSystemTest, RemoveEndpointFromSubscribedEndpoint) {
 }
 
 TEST(MessageSystemTest, RemoveEndpointOnThreadWhileDispatchingToSubscribers) {
+  GB_SKIP_WITHOUT_THREADS();
   std::atomic<int> value = 0;
   ThreadTester tester;
   auto message_system = MessageSystem::Create();

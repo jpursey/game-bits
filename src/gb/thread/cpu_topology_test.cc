@@ -8,6 +8,7 @@
 #include <cstdint>
 
 #include "absl/container/flat_hash_set.h"
+#include "gb/test/thread_tester.h"
 #include "gb/thread/cpu_topology_internal.h"
 #include "gb/thread/thread.h"
 #include "gtest/gtest.h"
@@ -82,6 +83,7 @@ TEST(CpuTopologyTest, HardwareThreadTopologyHasACorePerHardwareThread) {
 }
 
 TEST(CpuTopologyTest, ThreadOnEachCoreHasItsClass) {
+  GB_SKIP_WITHOUT_THREADS();
   for (const CpuCore& core : GetCpuTopology().cores) {
     int core_class = -1;
     Thread thread = CreateThread(core.affinity, 0, &core_class, ReadCoreClass);

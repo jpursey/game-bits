@@ -55,6 +55,12 @@ int GetMaxConcurrency();
 // This function is thread-safe.
 absl::Span<const uint64_t> GetHardwareThreadAffinities();
 
+// Returns true if threads can be created. This is false only in a web build
+// without threads, where CreateThread() logs an error and returns null.
+//
+// This function is thread-safe.
+bool SupportsThreads();
+
 // Creates a new thread and starts it running.
 //
 // 'affinity' determines the requested hardware affinity for the thread. If the

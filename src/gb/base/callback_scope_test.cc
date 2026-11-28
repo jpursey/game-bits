@@ -126,6 +126,7 @@ TEST(CallbackScopeTest, CallbackWorksFallbackWorksWithDefault) {
 }
 
 TEST(CallbackScopeTest, CallbackDeletedWithMultipleThreads) {
+  GB_SKIP_WITHOUT_THREADS();
   auto scope = std::make_unique<CallbackScope>();
   auto count = std::make_unique<std::atomic<int>>(0);
   ThreadTester tester;
@@ -148,6 +149,7 @@ TEST(CallbackScopeTest, CallbackDeletedWithMultipleThreads) {
 }
 
 TEST(CallbackScopeTest, CallbackScopeDestructorWaits) {
+  GB_SKIP_WITHOUT_THREADS();
   auto scope = std::make_unique<CallbackScope>();
   auto other_callback = scope->New<bool()>([]() { return true; }, false);
   std::atomic<bool> destroyed = false;

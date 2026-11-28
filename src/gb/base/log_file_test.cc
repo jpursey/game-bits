@@ -125,6 +125,7 @@ TEST_F(LogFileTest, ReplacesExistingFile) {
 }
 
 TEST_F(LogFileTest, WritesWholeLinesFromManyThreads) {
+  GB_SKIP_WITHOUT_THREADS();
   constexpr int kThreadCount = 8;
   constexpr int kMessageCount = 100;
   LogFile log_file(path_, absl::LogSeverityAtLeast::kInfo);

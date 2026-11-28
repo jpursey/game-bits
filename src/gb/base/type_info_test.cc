@@ -108,6 +108,7 @@ TEST(TypeKeyTest, SetTypeName) {
 }
 
 TEST(TypeKeyTest, SetTypeNameThreadAbuse) {
+  GB_SKIP_WITHOUT_THREADS();
   struct TestType {};
 
   // The name is set before the loops start, so "get" never sees it unset.

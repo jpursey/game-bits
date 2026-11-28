@@ -10,6 +10,7 @@
 
 #include "absl/log/log.h"
 #include "absl/strings/str_cat.h"
+#include "gb/test/thread_tester.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
@@ -75,6 +76,7 @@ TEST(LogRecorderTest, RecordersAreIndependent) {
 }
 
 TEST(LogRecorderTest, RecordsOtherThreads) {
+  GB_SKIP_WITHOUT_THREADS();
   LogRecorder log_recorder;
   std::thread thread([] { LOG(INFO) << "Thread info"; });
   thread.join();

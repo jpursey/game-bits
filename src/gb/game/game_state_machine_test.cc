@@ -2112,6 +2112,7 @@ TEST_F(GameStateMachineTest, StatesShutDownCleanlyAtStateMachineDestruction) {
 }
 
 TEST_F(GameStateMachineTest, ThreadAbuse) {
+  GB_SKIP_WITHOUT_THREADS();
   state_machine_->Register<TopStateA>();
   state_machine_->Register<TopStateB>();
   state_machine_->Register<DefaultState>();

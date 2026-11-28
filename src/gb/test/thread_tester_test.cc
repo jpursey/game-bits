@@ -16,6 +16,7 @@ TEST(ThreadTesterTest, MaxConcurrency) {
 }
 
 TEST(ThreadTesterTest, RunSucceeds) {
+  GB_SKIP_WITHOUT_THREADS();
   std::atomic<bool> done = false;
   ThreadTester tester;
   tester.Run("test", [&done]() {
@@ -28,6 +29,7 @@ TEST(ThreadTesterTest, RunSucceeds) {
 }
 
 TEST(ThreadTesterTest, RunFails) {
+  GB_SKIP_WITHOUT_THREADS();
   ThreadTester tester;
   tester.Run("test", []() { return false; });
   EXPECT_FALSE(tester.Complete()) << tester.GetResultString();
@@ -35,6 +37,7 @@ TEST(ThreadTesterTest, RunFails) {
 }
 
 TEST(ThreadTesterTest, RunMultiple) {
+  GB_SKIP_WITHOUT_THREADS();
   std::atomic<int> count = 0;
   ThreadTester tester;
   auto func = [&count]() {
@@ -48,6 +51,7 @@ TEST(ThreadTesterTest, RunMultiple) {
 }
 
 TEST(ThreadTesterTest, RunMultipleOneFailure) {
+  GB_SKIP_WITHOUT_THREADS();
   std::atomic<int> count = 0;
   ThreadTester tester;
   auto func = [&count]() { return ++count != 2; };
@@ -58,6 +62,7 @@ TEST(ThreadTesterTest, RunMultipleOneFailure) {
 }
 
 TEST(ThreadTesterTest, RunWaits) {
+  GB_SKIP_WITHOUT_THREADS();
   std::atomic<bool> done = false;
   ThreadTester tester;
   tester.Run("test", [&done, &tester]() {
@@ -76,6 +81,7 @@ TEST(ThreadTesterTest, RunWaits) {
 }
 
 TEST(ThreadTesterTest, RunThenSignalSucceeds) {
+  GB_SKIP_WITHOUT_THREADS();
   ThreadTester tester;
   tester.RunThenSignal(1, "test", []() { return true; });
   tester.Wait(1);
@@ -84,6 +90,7 @@ TEST(ThreadTesterTest, RunThenSignalSucceeds) {
 }
 
 TEST(ThreadTesterTest, RunThenSignalFails) {
+  GB_SKIP_WITHOUT_THREADS();
   ThreadTester tester;
   tester.RunThenSignal(1, "test", []() { return false; });
   tester.Wait(1);
@@ -92,6 +99,7 @@ TEST(ThreadTesterTest, RunThenSignalFails) {
 }
 
 TEST(ThreadTesterTest, RunThenSignalAlreadySignaled) {
+  GB_SKIP_WITHOUT_THREADS();
   ThreadTester tester;
   tester.RunThenSignal(1, "test", [&tester]() {
     tester.Wait(2);
@@ -104,6 +112,7 @@ TEST(ThreadTesterTest, RunThenSignalAlreadySignaled) {
 }
 
 TEST(ThreadTesterTest, RunThenSignalTwiceOnSameSignal) {
+  GB_SKIP_WITHOUT_THREADS();
   ThreadTester tester;
   tester.RunThenSignal(1, "a", []() { return true; });
   tester.RunThenSignal(1, "b", []() { return true; });
@@ -113,6 +122,7 @@ TEST(ThreadTesterTest, RunThenSignalTwiceOnSameSignal) {
 }
 
 TEST(ThreadTesterTest, RunLoopSucceeds) {
+  GB_SKIP_WITHOUT_THREADS();
   ThreadTester tester;
   std::atomic<int> id = 0;
   std::atomic<int> count = 0;
@@ -140,6 +150,7 @@ TEST(ThreadTesterTest, RunLoopSucceeds) {
 }
 
 TEST(ThreadTesterTest, RunLoopFails) {
+  GB_SKIP_WITHOUT_THREADS();
   ThreadTester tester;
   std::atomic<int> count = 0;
   auto func = [&count]() {
@@ -156,6 +167,7 @@ TEST(ThreadTesterTest, RunLoopFails) {
 }
 
 TEST(ThreadTesterTest, WaitForLoopCount) {
+  GB_SKIP_WITHOUT_THREADS();
   ThreadTester tester;
   std::atomic<int> count = 0;
   tester.RunLoop(100, "test", [&count]() {
@@ -168,6 +180,7 @@ TEST(ThreadTesterTest, WaitForLoopCount) {
 }
 
 TEST(ThreadTesterTest, WaitForLoopCountAcrossThreads) {
+  GB_SKIP_WITHOUT_THREADS();
   ThreadTester tester;
   std::atomic<int> count = 0;
   auto func = [&count]() {
@@ -182,6 +195,7 @@ TEST(ThreadTesterTest, WaitForLoopCountAcrossThreads) {
 }
 
 TEST(ThreadTesterTest, WaitForLoopCountMultipleWaiters) {
+  GB_SKIP_WITHOUT_THREADS();
   ThreadTester tester;
   tester.RunLoop(100, "loop", []() { return true; });
   tester.Run("wait", [&tester]() {
@@ -194,6 +208,7 @@ TEST(ThreadTesterTest, WaitForLoopCountMultipleWaiters) {
 }
 
 TEST(ThreadTesterTest, WaitForLoopCountNotReached) {
+  GB_SKIP_WITHOUT_THREADS();
   ThreadTester tester;
   tester.RunLoop(100, "test", []() { return false; });
 
@@ -204,6 +219,7 @@ TEST(ThreadTesterTest, WaitForLoopCountNotReached) {
 }
 
 TEST(ThreadTesterTest, WaitForLoopCountUnknownLoop) {
+  GB_SKIP_WITHOUT_THREADS();
   ThreadTester tester;
   tester.Run("test", []() { return true; });
   EXPECT_FALSE(tester.WaitForLoopCount("test", 1, absl::ZeroDuration()));
@@ -211,6 +227,7 @@ TEST(ThreadTesterTest, WaitForLoopCountUnknownLoop) {
 }
 
 TEST(ThreadTesterTest, MultipleNamedThreadsSuccess) {
+  GB_SKIP_WITHOUT_THREADS();
   ThreadTester tester;
   tester.RunThenSignal(100, "a", [&tester]() {
     tester.Wait(1);
@@ -240,6 +257,7 @@ TEST(ThreadTesterTest, MultipleNamedThreadsSuccess) {
 }
 
 TEST(ThreadTesterTest, MultipleNamedThreadsOneFailure) {
+  GB_SKIP_WITHOUT_THREADS();
   ThreadTester tester;
   tester.Run("a", [] { return true; });
   tester.Run("b", [] { return false; });

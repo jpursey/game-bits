@@ -9,6 +9,7 @@
 
 #include "absl/log/log.h"
 #include "gb/test/log_recorder.h"
+#include "gb/test/thread_tester.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest-spi.h"
 #include "gtest/gtest.h"
@@ -114,6 +115,7 @@ TEST(LogErrorGuardTest, LowerSeverityFailsTest) {
 }
 
 TEST(LogErrorGuardTest, ErrorOnOtherThreadFailsOnDestroyingThread) {
+  GB_SKIP_WITHOUT_THREADS();
   // EXPECT_NONFATAL_FAILURE only intercepts failures on this thread.
   EXPECT_NONFATAL_FAILURE(
       {
