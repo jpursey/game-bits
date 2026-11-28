@@ -129,7 +129,7 @@ and its sampler on one binding, `GameBitsWgslBindings.cmake` renumbers each
 `@binding(n)` by the type of the `var` that follows it (`sampler` or
 `sampler_comparison`, or anything else), and `naga` reads the result back,
 validating it, and writes it out again (which, unlike validating alone,
-prints nothing). The script is about 30 lines of CMake, so the conversion
+prints nothing). The script is about 50 lines of CMake, so the conversion
 needs no tool beyond those the design names.
 
 What else the conversion does, checked on render-check's shaders:

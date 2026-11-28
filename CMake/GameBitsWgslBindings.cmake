@@ -35,6 +35,11 @@ while (1)
   endif()
   set(_number "${CMAKE_MATCH_1}")
   set(_type "${CMAKE_MATCH_3}")
+  if (_type STREQUAL "binding_array")
+    # An array of textures or samplers, which WebGPU doesn't have.
+    message(FATAL_ERROR "${INPUT}: binding ${_number} is an array of "
+      "resources, which WebGPU can't bind")
+  endif()
   math(EXPR _number "2 * ${_number}")
   if (_type STREQUAL "sampler" OR _type STREQUAL "sampler_comparison")
     math(EXPR _number "${_number} + 1")

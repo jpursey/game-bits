@@ -236,8 +236,8 @@ ${_declaration}
   endif()
 endfunction()
 
-# Compiles a GLSL shader to SPIR-V and builds it into a target, as
-# gb_embed_data does with a file:
+# Compiles a GLSL shader for the render backend (SPIR-V, or WGSL in a web
+# build) and builds it into a target, as gb_embed_data does with a file:
 #
 #   gb_embed_shader(<target> <file> <header> <name>)
 #
@@ -292,7 +292,8 @@ function(gb_embed_shader TARGET FILE HEADER NAME)
   if (NOT GB_SPIRV_OPT_EXECUTABLE)
     message(FATAL_ERROR
       "gb_embed_shader: spirv-opt was not found in the Vulkan SDK or on the "
-      "PATH, which a web build needs (see tools/install-vulkan-sdk.sh)")
+      "PATH, which a web build needs. tools/install-vulkan-sdk.sh installs it, "
+      "so a Vulkan SDK it installed before it did needs installing again.")
   endif()
   find_program(GB_NAGA_EXECUTABLE naga)
   if (NOT GB_NAGA_EXECUTABLE)
@@ -317,7 +318,10 @@ function(gb_embed_shader TARGET FILE HEADER NAME)
     COMMAND "${CMAKE_COMMAND}" "-DINPUT=${_base}.raw.wgsl"
       "-DOUTPUT=${_base}.bound.wgsl" -P "${_script}"
     COMMAND "${GB_NAGA_EXECUTABLE}" "${_base}.bound.wgsl" "${_output}"
-    DEPENDS "${_input}" "${_script}"
+    BYPRODUCTS "${_base}.spv" "${_base}.split.spv" "${_base}.raw.wgsl"
+      "${_base}.bound.wgsl"
+    DEPENDS "${_input}" "${_script}" "${Vulkan_GLSLC_EXECUTABLE}"
+      "${GB_SPIRV_OPT_EXECUTABLE}" "${GB_NAGA_EXECUTABLE}"
     DEPFILE "${_output}.d"
     COMMENT "Compiling ${FILE} to WGSL for ${TARGET}"
     VERBATIM)
