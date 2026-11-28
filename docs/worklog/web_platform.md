@@ -180,19 +180,26 @@ Recorded here as it was found:
   Node, it does: the program sees the machine's `TZ`, and loads its zoneinfo
   from the machine's files, or `/etc/localtime` without `TZ`. Without the
   machine's files and environment, as in a browser, it is UTC, while the C
-  library's `localtime_r()`, which reads JavaScript's `Date`, has the zone.
-  `web_local_time.cc` takes the current offset from `localtime_r()`, as
-  Windows does, and `web_local_time_test.cc` checks it against `Date`.)
+  library's `localtime_r()`, which takes its offsets from JavaScript's `Date`,
+  has the zone: headless Chrome shows both. `web_local_time.cc` takes the
+  current offset from `localtime_r()`, as Windows does, and
+  `web_local_time_test.cc` checks it against `Date`.)
 - `SleepTest.SleepsOnSeveralThreadsAtOnce` fails: a sleep ends before the
   clock says its time has passed. (CL4: `absl::Now()` reads
   `CLOCK_REALTIME`, which is `Date.now()`, in whole milliseconds, made
   nanoseconds in a double, so each reading is also off by up to about 128 ns.
   `absl::SleepFor()` wakes by `performance.now()`, to the microsecond. A sleep
   of 1 ms that lasted 1.08 ms by `performance.now()` often reads as 999.936
-  us. It fails on any thread, and without threads. `web_sleep.cc` sleeps on in
-  100 us steps until `absl::Now()` says the time has passed, and
-  `PreciseSleepUntil()` doesn't spin there, as it couldn't wake closer to a
-  clock that moves once a millisecond.)
+  us. It fails on any thread, and without threads, where Emscripten's sleep
+  spins on `performance.now()`. `web_sleep.cc` sleeps on in 100 us steps until
+  `absl::Now()` says the time has passed, and `PreciseSleepUntil()` doesn't
+  spin there, as it couldn't wake closer to a clock that moves once a
+  millisecond. Two things remain for later features. In a build without
+  threads, Emscripten's own sleep spins, so `PreciseSleepFor()`'s "without
+  spinning" doesn't hold there until a program in a browser waits by
+  returning to it (*Programs in the browser*). And a browser that coarsens
+  `Date.now()` beyond 2 ms could still make a sleep read short, as the
+  catch-up stops after 2 ms.)
 - `LocalFileProtocolTest.ListSkipsNonUtf8Names` fails: Node gives a name that
   isn't UTF-8 with U+FFFD in place of its bad bytes, so it is listed. (CL5)
 - `CommonProtocolTest.ReadOnlyFile` fails, as it does on Linux as root, which
@@ -273,7 +280,7 @@ Depends on: nothing.
   their alignment.
 - Web: `gb_container_test` and `gb_render_test` pass (with CL1 and CL2).
 
-### CL4 [~] base: gb_base on the web
+### CL4 [x] base: gb_base on the web
 
 Depends on: CL1, CL2.
 
