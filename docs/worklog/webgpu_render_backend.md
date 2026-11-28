@@ -47,8 +47,9 @@ through a small interface of its own. Nothing else changes there.
 - Limits that are lower than `gb_render`'s, each failing creation with an
   error: a texture array has at most the device's `maxTextureArrayLayers`
   (256 on SwiftShader; `gb_render` allows 2048), a binding index is at most
-  499 (`kMaxBindingIndex` is 1023), and a pipeline has at most 8 constants
-  bindings across its three sets.
+  499 (`kMaxBindingIndex` is 1023), and a pipeline has at most the device's
+  `maxUniformBuffersPerShaderStage` constants bindings in each stage, across
+  its three sets (12 by default).
 - `CreateShaderCode()` takes WGSL text, which `gb_embed_shader` makes in a web
   build. A shader with an error fails to create, with the browser's message.
 - Every WebGPU error the browser reports is logged as an error, so a pilot run
@@ -295,7 +296,9 @@ the stages of the binding's `shader_types`:
   `minUniformBufferOffsetAlignment` (256), with as many slots as fit
   `maxUniformBufferBindingSize` (64 KiB). Its bind group's entries are at its
   slot's offset, so it needs no dynamic offset. Constants are written into
-  their slot, so changing them never changes the bind group.
+  their slot, so changing them never changes the bind group. A slot never
+  moves, and buffers never grow: a factory with no free slot adds a buffer,
+  so no bind group is ever made again for its constants.
 - `WebGpuBindingData` holds one bind group, made again at `EndFrame()` when a
   texture or storage buffer binding changed, or when the object behind one was
   replaced (a render target resized), which each resource marks with a
@@ -303,8 +306,9 @@ the stages of the binding's `shader_types`:
   storage buffer is bound to its `DefaultBindings` resource.
 - Limits, each failing the layout or pipeline with an error: a binding index
   above 499 (WebGPU numbers bindings below `maxBindingsPerBindGroup`, 1000),
-  and more constants bindings in a stage than the device allows
-  (`maxUniformBuffersPerShaderStage`, 12).
+  and more constants bindings in a stage, across a pipeline's three sets,
+  than the device allows (`maxUniformBuffersPerShaderStage`, 12 by default),
+  which `WebGpuRenderPipeline` counts before WebGPU sees the layout.
 
 **Brittleness:** the numbering is computed in two places, the CMake script
 and `WebGpuBindingLayout`, which must agree. A unit test of the backend's
@@ -698,7 +702,11 @@ change each frame) run with `tools/run-program.sh`:
 - Each binding data's bind group points at its own slot in its factory's
   uniform buffer, so constants need no dynamic offset, which the plan had.
   The limit on constants bindings is then WebGPU's per-stage uniform buffer
-  limit (12), not the 8 dynamic uniform buffers a pipeline layout allows.
+  limit (12 by default), not the 8 dynamic uniform buffers a pipeline layout
+  allows. A pipeline over it fails to create with the backend's own error
+  naming the limit. A slot never moves and a factory's buffers never grow
+  (it adds another), so a bind group is never made again for its constants;
+  CL5's texture and storage buffer bindings are what will make them again.
 - A draw holds the handles it draws with (pipeline, bind groups, buffers)
   until the frame is encoded, so what it was drawn from may be destroyed
   before the frame ends, as render-check's recreated instances are. For that,

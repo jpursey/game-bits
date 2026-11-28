@@ -5,6 +5,7 @@
 
 #include "gb/render/webgpu/webgpu_render_pipeline.h"
 
+#include <algorithm>
 #include <cmath>
 #include <utility>
 
@@ -114,6 +115,27 @@ bool WebGpuRenderPipeline::Init(WebGpuBindingLayout* binding_layout,
     attribute.shaderLocation = static_cast<uint32_t>(location);
     ++location;
     offset += format.size;
+  }
+
+  // WebGPU would refuse the layout too, but with a message that doesn't say
+  // which limit it is.
+  const int max_uniform_buffers =
+      static_cast<int>(backend_->GetLimits().maxUniformBuffersPerShaderStage);
+  for (const ShaderType shader_type :
+       {ShaderType::kVertex, ShaderType::kFragment}) {
+    const int count = static_cast<int>(std::count_if(
+        bindings.begin(), bindings.end(),
+        [shader_type](const Binding& binding) {
+          return binding.binding_type == BindingType::kConstants &&
+                 binding.shader_types.IsSet(shader_type);
+        }));
+    if (count > max_uniform_buffers) {
+      LOG(ERROR) << "A pipeline has " << count
+                 << " constants bindings in one shader stage, beyond the "
+                    "WebGPU device's limit of "
+                 << max_uniform_buffers;
+      return false;
+    }
   }
 
   return backend_->CreateInErrorScope("a pipeline's layout", [&] {
