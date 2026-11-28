@@ -362,8 +362,9 @@ class RenderSystem final {
   //
   // The shader code specified must be in the form the render backend used by
   // the render system takes: SPIR-V for the Vulkan backend, and WGSL text for
-  // the WebGPU backend. gb_embed_shader (see CMake/GameBitsTargetCommands.cmake)
-  // builds a shader into the program in the form its build's backend takes.
+  // the WebGPU backend. gb_embed_shader (see
+  // CMake/GameBitsTargetCommands.cmake) builds a shader into the program in the
+  // form its build's backend takes.
   //
   // Returns null if the shader code could not be created.
   std::unique_ptr<ShaderCode> CreateShaderCode(const void* code,

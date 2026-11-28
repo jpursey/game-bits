@@ -280,7 +280,7 @@ the stages of the binding's `shader_types`:
 
 | Binding | WGSL bindings | Layout entry |
 |---|---|---|
-| `kConstants` at `n` | `2n` | uniform buffer, dynamic offset |
+| `kConstants` at `n` | `2n` | uniform buffer |
 | `kStorageBuffer` at `n` | `2n` | read-only storage buffer |
 | `kTexture` at `n` | `2n`, `2n + 1` | `float` 2D texture, `filtering` sampler |
 | `kTextureArray` at `n` | `2n`, `2n + 1` | `float` 2D array texture, `filtering` sampler |
@@ -293,9 +293,9 @@ the stages of the binding's `shader_types`:
 - Constants work as in Vulkan's `VulkanBindingDataFactory`: binding data
   takes a slot in a group's uniform buffers, aligned to
   `minUniformBufferOffsetAlignment` (256), with as many slots as fit
-  `maxUniformBufferBindingSize` (64 KiB), and is bound with a dynamic offset.
-  Constants are written into their slot, so changing them never changes the
-  bind group.
+  `maxUniformBufferBindingSize` (64 KiB). Its bind group's entries are at its
+  slot's offset, so it needs no dynamic offset. Constants are written into
+  their slot, so changing them never changes the bind group.
 - `WebGpuBindingData` holds one bind group, made again at `EndFrame()` when a
   texture or storage buffer binding changed, or when the object behind one was
   replaced (a render target resized), which each resource marks with a
@@ -303,8 +303,8 @@ the stages of the binding's `shader_types`:
   storage buffer is bound to its `DefaultBindings` resource.
 - Limits, each failing the layout or pipeline with an error: a binding index
   above 499 (WebGPU numbers bindings below `maxBindingsPerBindGroup`, 1000),
-  and more than 8 constants bindings in a pipeline
-  (`maxDynamicUniformBuffersPerPipelineLayout`).
+  and more constants bindings in a stage than the device allows
+  (`maxUniformBuffersPerShaderStage`, 12).
 
 **Brittleness:** the numbering is computed in two places, the CMake script
 and `WebGpuBindingLayout`, which must agree. A unit test of the backend's
@@ -683,6 +683,36 @@ with `tools/run-program.sh`:
   every command in the frame, so a CL that adds commands which must come
   before a write (a copy into a grown buffer, then a write into it) orders
   them itself.
+
+Settled by CL4, with a scratch page drawing render-check's quads section
+(`quad.vert`, `quad.frag`, its constants, and 10 quads whose instance constants
+change each frame) run with `tools/run-program.sh`:
+- The quads are where render-check's Linux `instances.txt` frames have them,
+  none culled. With the frame term of their color held at 0, as render-check's
+  is until its grid is recreated, the area of the 10 quads is the same, pixel
+  for pixel, as render-check's `start.png`. With it advancing, each quad's
+  color changes from frame to frame.
+- A material type with `RasterMode::kLine`, and WGSL with an error, each fail
+  at creation with an error (the browser's message, for the shader), and the
+  run logs no uncaptured WebGPU error.
+- Each binding data's bind group points at its own slot in its factory's
+  uniform buffer, so constants need no dynamic offset, which the plan had.
+  The limit on constants bindings is then WebGPU's per-stage uniform buffer
+  limit (12), not the 8 dynamic uniform buffers a pipeline layout allows.
+- A draw holds the handles it draws with (pipeline, bind groups, buffers)
+  until the frame is encoded, so what it was drawn from may be destroyed
+  before the frame ends, as render-check's recreated instances are. For that,
+  a render buffer is released rather than destroyed, and its memory is freed
+  once nothing holds it. `WebGpuTexels` still destroys its texture, which
+  nothing binds yet; CL5, which binds them, releases it the same way. A slot
+  freed in a frame may be taken and written by
+  new binding data before the frame ends; only a draw of destroyed binding
+  data sees it.
+- Vertex attributes are packed as Vulkan's are. WebGPU needs each attribute's
+  offset to be a multiple of 4 (or of its size, if smaller), and the vertex's
+  size a multiple of 4, so a vertex type that packs otherwise fails to create
+  its pipeline, with WebGPU's message. gb_imgui's and render-check's vertex
+  types pack to whole 4-byte values.
 
 Not checked:
 - A real GPU: Chrome on Windows (whose canvas prefers `bgra8unorm`) with the

@@ -380,8 +380,9 @@ RenderTarget* WebGpuBackend::CreateRenderTarget(RenderInternal, ResourceEntry,
   return nullptr;
 }
 
-std::unique_ptr<ShaderCode> WebGpuBackend::CreateShaderCode(
-    RenderInternal, const void* code, int64_t code_size) {
+std::unique_ptr<ShaderCode> WebGpuBackend::CreateShaderCode(RenderInternal,
+                                                            const void* code,
+                                                            int64_t code_size) {
   if (!ValidateThread("Creating shader code")) {
     return nullptr;
   }

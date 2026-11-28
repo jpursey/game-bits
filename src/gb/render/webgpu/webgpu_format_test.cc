@@ -103,10 +103,10 @@ TEST(WebGpuFormatTest, ThreeChannelNarrowVertexFormatsAreUndefined) {
     ShaderValue value;
     int size;
   } kCases[] = {
-      {ShaderValue::kI8Norm3, 3},  {ShaderValue::kI16Norm3, 6},
-      {ShaderValue::kU8Norm3, 3},  {ShaderValue::kU16Norm3, 6},
-      {ShaderValue::kI8Vec3, 3},   {ShaderValue::kI16Vec3, 6},
-      {ShaderValue::kU8Vec3, 3},   {ShaderValue::kU16Vec3, 6},
+      {ShaderValue::kI8Norm3, 3}, {ShaderValue::kI16Norm3, 6},
+      {ShaderValue::kU8Norm3, 3}, {ShaderValue::kU16Norm3, 6},
+      {ShaderValue::kI8Vec3, 3},  {ShaderValue::kI16Vec3, 6},
+      {ShaderValue::kU8Vec3, 3},  {ShaderValue::kU16Vec3, 6},
   };
   for (const auto& test_case : kCases) {
     const WebGpuVertexFormat format = GetWebGpuVertexFormat(test_case.value);

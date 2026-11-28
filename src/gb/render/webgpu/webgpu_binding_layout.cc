@@ -14,10 +14,12 @@ namespace gb {
 std::unique_ptr<WebGpuBindingLayout> WebGpuBindingLayout::Create(
     WebGpuBackend* backend, absl::Span<const Binding> bindings) {
   std::shared_ptr<WebGpuBindingDataFactory> view_factory;
-  if (!backend->CreateInErrorScope("a binding layout", [&] {
-        view_factory =
-            WebGpuBindingDataFactory::Create(backend, BindingSet::kView, bindings);
-      }) ||
+  if (!backend->CreateInErrorScope(
+          "a binding layout",
+          [&] {
+            view_factory = WebGpuBindingDataFactory::Create(
+                backend, BindingSet::kView, bindings);
+          }) ||
       view_factory == nullptr) {
     return nullptr;
   }
@@ -25,7 +27,8 @@ std::unique_ptr<WebGpuBindingLayout> WebGpuBindingLayout::Create(
       new WebGpuBindingLayout(bindings, std::move(view_factory)));
 }
 
-std::unique_ptr<WebGpuBindingData> WebGpuBindingLayout::CreateViewBindingData() {
+std::unique_ptr<WebGpuBindingData>
+WebGpuBindingLayout::CreateViewBindingData() {
   return view_factory_->NewBindingData(nullptr);
 }
 

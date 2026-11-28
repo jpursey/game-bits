@@ -59,8 +59,7 @@ class WebGpuBindingDataFactory final
       absl::Span<const gb::Binding> bindings);
 
   WebGpuBindingDataFactory(const WebGpuBindingDataFactory&) = delete;
-  WebGpuBindingDataFactory& operator=(const WebGpuBindingDataFactory&) =
-      delete;
+  WebGpuBindingDataFactory& operator=(const WebGpuBindingDataFactory&) = delete;
   ~WebGpuBindingDataFactory();
 
   BindingSet GetSet() const { return set_; }

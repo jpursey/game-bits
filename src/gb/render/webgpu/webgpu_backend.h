@@ -81,12 +81,13 @@ class WebGpuPendingWrite {
 // Every WebGPU error the browser reports is logged as an error.
 //
 // Writes to a resource are ordered with the frames around them: a change made
-// after a frame ends is seen by the next frame, not the one ended. A resource
-// releases its GPU memory when it is destroyed, which is safe because every
-// command is recorded and submitted within EndFrame().
+// after a frame ends is seen by the next frame, not the one ended. What is
+// drawn may be destroyed before the frame ends, as the frame holds what it
+// draws with until it is submitted.
 //
-// A WGSL shader written by hand for CreateShaderCode() numbers its bindings as
-// GetWgslBinding() (gb/render/webgpu/webgpu_format.h) says.
+// A WGSL shader written by hand for CreateShaderCode() puts each binding in the
+// group of its BindingSet (0 for kView, 1 for kMaterial, 2 for kInstance), at
+// the binding number GetWgslBinding() (gb/render/webgpu/webgpu_format.h) gives.
 //
 // This class meets the thread-safety standards required by all RenderBackend
 // derived classes. WebGPU objects belong to the browser's main thread, so in a

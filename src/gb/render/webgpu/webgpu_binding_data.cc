@@ -10,8 +10,8 @@
 #include <utility>
 
 #include "absl/log/log.h"
-#include "absl/synchronization/mutex.h"
 #include "absl/memory/memory.h"
+#include "absl/synchronization/mutex.h"
 #include "gb/render/webgpu/webgpu_format.h"
 
 namespace gb {
@@ -151,9 +151,9 @@ std::unique_ptr<WebGpuBindingData> WebGpuBindingDataFactory::NewBindingData(
     }
     return nullptr;
   }
-  return absl::WrapUnique(new WebGpuBindingData(
-      backend_, pipeline, shared_from_this(), slot, std::move(buffer),
-      std::move(bind_group)));
+  return absl::WrapUnique(
+      new WebGpuBindingData(backend_, pipeline, shared_from_this(), slot,
+                            std::move(buffer), std::move(bind_group)));
 }
 
 std::optional<WebGpuBindingDataFactory::Slot>
@@ -221,7 +221,8 @@ bool WebGpuBindingData::Validate(int index, TypeKey* type) const {
   if (index < 0 || index >= static_cast<int>(factory_->GetBindings().size())) {
     return false;
   }
-  const WebGpuBindingDataFactory::Binding& slot = factory_->GetBindings()[index];
+  const WebGpuBindingDataFactory::Binding& slot =
+      factory_->GetBindings()[index];
   switch (slot.binding_type) {
     case BindingType::kNone:
       return false;
@@ -244,14 +245,16 @@ bool WebGpuBindingData::ValidateDataType(int index,
   if (index < 0 || index >= static_cast<int>(factory_->GetBindings().size())) {
     return false;
   }
-  const WebGpuBindingDataFactory::Binding& slot = factory_->GetBindings()[index];
+  const WebGpuBindingDataFactory::Binding& slot =
+      factory_->GetBindings()[index];
   return slot.binding_type == BindingType::kStorageBuffer &&
          slot.data_type->GetType() == type->GetType();
 }
 
 void WebGpuBindingData::DoSet(int index, const void* value) {
   // Only constants bindings can be made so far.
-  const WebGpuBindingDataFactory::Binding& slot = factory_->GetBindings()[index];
+  const WebGpuBindingDataFactory::Binding& slot =
+      factory_->GetBindings()[index];
   if (slot.binding_type != BindingType::kConstants) {
     return;
   }
@@ -268,7 +271,8 @@ void WebGpuBindingData::DoSet(int index, const void* value) {
 }
 
 void WebGpuBindingData::DoGet(int index, void* value) const {
-  const WebGpuBindingDataFactory::Binding& slot = factory_->GetBindings()[index];
+  const WebGpuBindingDataFactory::Binding& slot =
+      factory_->GetBindings()[index];
   if (slot.binding_type != BindingType::kConstants) {
     return;
   }
