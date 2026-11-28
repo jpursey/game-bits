@@ -22,8 +22,9 @@ file(READ "${INPUT}" _text)
 
 # naga writes each binding as "@group(g) @binding(n) " followed by a line
 # "var<...> name: type". The type's first word says whether it is a sampler.
-set(_binding
-  "@binding\\(([0-9]+)\\)[ \t\r\n]*var(<[^>]*>)?[ \t]+[A-Za-z0-9_]+[ \t]*:[ \t]*([A-Za-z0-9_]+)")
+string(CONCAT _binding
+  "@binding\\(([0-9]+)\\)[ \t\r\n]*"
+  "var(<[^>]*>)?[ \t]+[A-Za-z0-9_]+[ \t]*:[ \t]*([A-Za-z0-9_]+)")
 
 set(_output "")
 set(_count 0)

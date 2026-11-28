@@ -5,9 +5,9 @@
 # in the LICENSE file or at https://opensource.org/licenses/MIT.
 
 # Installs naga, the shader converter a web build of Game Bits converts each
-# shader to WGSL with (see gb_embed_shader in CMake/GameBitsTargetCommands.cmake).
-# It builds naga-cli from source with Rust's cargo, which must be installed,
-# taking about three minutes.
+# shader to WGSL with (see gb_embed_shader in
+# CMake/GameBitsTargetCommands.cmake). It builds naga-cli from source with
+# Rust's cargo, which must be installed, taking about three minutes.
 #
 # Usage:
 #   tools/install-naga.sh <dir> <version>

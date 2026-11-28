@@ -115,8 +115,12 @@ fn main_1() {
 
 # A binding and its var on one line is numbered too.
 expect_bindings(one_line
-  "@group(1) @binding(3) var s: sampler;\n@group(1) @binding(3) var t: texture_2d<f32>;\n"
-  "@group(1) @binding(7) var s: sampler;\n@group(1) @binding(6) var t: texture_2d<f32>;\n")
+"@group(1) @binding(3) var s: sampler;
+@group(1) @binding(3) var t: texture_2d<f32>;
+"
+"@group(1) @binding(7) var s: sampler;
+@group(1) @binding(6) var t: texture_2d<f32>;
+")
 
 # A shader without bindings is unchanged.
 expect_bindings(no_bindings
