@@ -1,0 +1,128 @@
+## Copyright (c) 2026 John Pursey
+##
+## Use of this source code is governed by an MIT-style License that can be found
+## in the LICENSE file or at https://opensource.org/licenses/MIT.
+
+###############################################################################
+## Tests GameBitsWgslBindings.cmake, as ctest's gb_wgsl_bindings_test
+##
+## Run with cmake -P, with these set:
+##  SCRIPT  GameBitsWgslBindings.cmake
+##  DIR     A folder to write the test's files in
+###############################################################################
+
+file(MAKE_DIRECTORY "${DIR}")
+
+# Renumbers `input` and fails unless the result is `expected`.
+function(expect_bindings NAME INPUT EXPECTED)
+  file(WRITE "${DIR}/${NAME}.in.wgsl" "${INPUT}")
+  execute_process(
+    COMMAND "${CMAKE_COMMAND}" "-DINPUT=${DIR}/${NAME}.in.wgsl"
+      "-DOUTPUT=${DIR}/${NAME}.out.wgsl" -P "${SCRIPT}"
+    RESULT_VARIABLE _result
+    ERROR_VARIABLE _error)
+  if (NOT _result EQUAL 0)
+    message(SEND_ERROR "${NAME}: the script failed: ${_error}")
+    return()
+  endif()
+  file(READ "${DIR}/${NAME}.out.wgsl" _output)
+  if (NOT _output STREQUAL "${EXPECTED}")
+    message(SEND_ERROR
+      "${NAME}: expected\n${EXPECTED}\nbut the script wrote\n${_output}")
+  endif()
+endfunction()
+
+# Fails unless renumbering `input` fails.
+function(expect_failure NAME INPUT)
+  file(WRITE "${DIR}/${NAME}.in.wgsl" "${INPUT}")
+  execute_process(
+    COMMAND "${CMAKE_COMMAND}" "-DINPUT=${DIR}/${NAME}.in.wgsl"
+      "-DOUTPUT=${DIR}/${NAME}.out.wgsl" -P "${SCRIPT}"
+    RESULT_VARIABLE _result
+    OUTPUT_QUIET ERROR_QUIET)
+  if (_result EQUAL 0)
+    message(SEND_ERROR "${NAME}: the script succeeded, but should have failed")
+  endif()
+endfunction()
+
+# Each kind of binding naga writes, in several sets, as it writes them: the
+# binding's attributes on one line, and its var on the next.
+expect_bindings(every_kind
+"struct ViewData {
+    s_pixel_to_clip: vec4<f32>,
+}
+
+@group(0) @binding(0)
+var<uniform> unnamed: ViewData;
+@group(1) @binding(0)
+var tex_sampler: sampler;
+@group(1) @binding(0)
+var tex_image: texture_2d<f32>;
+@group(1) @binding(1)
+var tex_array_image: texture_2d_array<f32>;
+@group(1) @binding(1)
+var tex_array_sampler: sampler;
+@group(1) @binding(2)
+var volume_image: texture_3d<f32>;
+@group(1) @binding(2)
+var volume_sampler: sampler;
+@group(1) @binding(3)
+var<storage> colors: QuadColors;
+@group(2) @binding(1)
+var<storage, read> offsets: Offsets;
+@group(2) @binding(12)
+var shadow_sampler: sampler_comparison;
+@group(2) @binding(12)
+var shadow_image: texture_depth_2d;
+
+fn main_1() {
+    let c = textureSample(tex_image, tex_sampler, vec2(0f));
+    return;
+}
+"
+"struct ViewData {
+    s_pixel_to_clip: vec4<f32>,
+}
+
+@group(0) @binding(0)
+var<uniform> unnamed: ViewData;
+@group(1) @binding(1)
+var tex_sampler: sampler;
+@group(1) @binding(0)
+var tex_image: texture_2d<f32>;
+@group(1) @binding(2)
+var tex_array_image: texture_2d_array<f32>;
+@group(1) @binding(3)
+var tex_array_sampler: sampler;
+@group(1) @binding(4)
+var volume_image: texture_3d<f32>;
+@group(1) @binding(5)
+var volume_sampler: sampler;
+@group(1) @binding(6)
+var<storage> colors: QuadColors;
+@group(2) @binding(2)
+var<storage, read> offsets: Offsets;
+@group(2) @binding(25)
+var shadow_sampler: sampler_comparison;
+@group(2) @binding(24)
+var shadow_image: texture_depth_2d;
+
+fn main_1() {
+    let c = textureSample(tex_image, tex_sampler, vec2(0f));
+    return;
+}
+")
+
+# A binding and its var on one line is numbered too.
+expect_bindings(one_line
+  "@group(1) @binding(3) var s: sampler;\n@group(1) @binding(3) var t: texture_2d<f32>;\n"
+  "@group(1) @binding(7) var s: sampler;\n@group(1) @binding(6) var t: texture_2d<f32>;\n")
+
+# A shader without bindings is unchanged.
+expect_bindings(no_bindings
+  "@fragment\nfn main() {\n    return;\n}\n"
+  "@fragment\nfn main() {\n    return;\n}\n")
+
+# A binding not followed by a var can't be numbered, so the script fails
+# rather than leave it as it was.
+expect_failure(no_var "@group(0) @binding(0)\nfn f() {}\n")

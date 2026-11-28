@@ -5,7 +5,8 @@
 # in the LICENSE file or at https://opensource.org/licenses/MIT.
 
 # Installs the parts of LunarG's Vulkan SDK for Linux that Game Bits builds and
-# runs with: the headers, the loader, the validation layer, and glslc. The full
+# runs with: the headers, the loader, the validation layer, glslc, and
+# spirv-opt (which a web build converts shaders to WGSL with). The full
 # SDK is 1.9 GB unpacked, mostly shader compilers and tools Game Bits doesn't
 # use; these parts are about 450 MB, nearly all of it the validation layer.
 #
@@ -38,6 +39,7 @@ curl -fsSL "${url}" | tar -xJ -C "${dir}" \
   "${sdk}/lib/VulkanLoader" \
   "${sdk}/lib/libVkLayer_khronos_validation.so" \
   "${sdk}/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json" \
-  "${sdk}/bin/glslc"
+  "${sdk}/bin/glslc" \
+  "${sdk}/bin/spirv-opt"
 echo "Installed the Vulkan SDK ${version} in ${dir}/${version}."
 echo "Source ${dir}/${version}/setup-env.sh to use it."

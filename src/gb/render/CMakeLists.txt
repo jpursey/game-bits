@@ -132,3 +132,12 @@ set(gb_render_testing_DEPS
 )
 
 gb_add_library(gb_render_testing)
+
+# gb_embed_shader's numbering of WGSL bindings in a web build, which the WebGPU
+# backend's layouts must match. It runs with CMake alone, so it is tested on
+# every platform.
+add_test(NAME gb_wgsl_bindings_test
+  COMMAND "${CMAKE_COMMAND}"
+    "-DSCRIPT=${GB_DIR}/CMake/GameBitsWgslBindings.cmake"
+    "-DDIR=${CMAKE_CURRENT_BINARY_DIR}/gb_wgsl_bindings_test"
+    -P "${GB_DIR}/CMake/GameBitsWgslBindingsTest.cmake")
