@@ -12,7 +12,9 @@ namespace gb::internal {
 
 namespace {
 
-// SPIR-V compiled from assets/shaders/imgui_shader.vert and .frag with glslc.
+// SPIR-V compiled from assets/shaders/imgui_shader.vert and .frag with an
+// older glslc. Today's glslc gives the same code, apart from its generator
+// version, a struct's name, and the order of decorations.
 constexpr uint8_t kImGuiVertexShaderData[] = {
     0x03, 0x02, 0x23, 0x07, 0x00, 0x00, 0x01, 0x00, 0x08, 0x00, 0x0d, 0x00,
     0x2e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x11, 0x00, 0x02, 0x00,

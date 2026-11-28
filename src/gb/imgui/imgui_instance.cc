@@ -25,6 +25,7 @@
 #include "gb/render/mesh_view.h"
 #include "gb/render/render_system.h"
 #include "gb/render/render_view.h"
+#include "gb/render/sampler_options.h"
 #include "gb/render/texture.h"
 #include "gb/render/texture_array.h"
 
@@ -192,6 +193,7 @@ bool ImGuiInstance::Init() {
   }
 
 // Enable to debug or change the shaders from source in the BlockWorld example.
+// This loads SPIR-V, so it is for Vulkan only, not a web build.
 #if 0
   auto vertex_code =
       render_system->LoadShaderCode("asset:/shaders/imgui_shader.vert.spv");

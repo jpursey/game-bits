@@ -17,7 +17,7 @@ namespace {
 // gb_embed_shader converts a shader in a web build (see
 // CMake/GameBitsTargetCommands.cmake), with trailing spaces removed:
 //
-//   glslc imgui_shader.vert -o vert.spv
+//   glslc -Werror imgui_shader.vert -o vert.spv
 //   spirv-opt --split-combined-image-sampler vert.spv -o vert.split.spv
 //   naga --validate 0 vert.split.spv vert.raw.wgsl
 //   cmake -DINPUT=vert.raw.wgsl -DOUTPUT=vert.bound.wgsl

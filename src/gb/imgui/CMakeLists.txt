@@ -3,14 +3,14 @@
 ## Use of this source code is governed by an MIT-style License that can be found
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-add_subdirectory(sdl)
-
 # The shaders, in the code each platform's render backend takes.
 if (EMSCRIPTEN)
   set(gb_imgui_internal_SOURCE web_imgui_shaders.cc)
 else()
   set(gb_imgui_internal_SOURCE gen_imgui_shaders.cc)
 endif()
+
+add_subdirectory(sdl)
 
 set(gb_imgui_SOURCE
   ${gb_imgui_internal_SOURCE}
