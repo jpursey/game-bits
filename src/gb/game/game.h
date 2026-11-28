@@ -34,10 +34,9 @@ namespace gb {
 // max frame rate are unused. After each frame it calls YieldBetweenFrames(),
 // which in a browser page returns to the browser, so the page stays responsive
 // while the frames run as fast as they can. Run() returns false if the run
-// failed, or if the
-// game stopped before the pilot was done. The rest of what a piloted program
-// does (input, the window, and saving frames) is left to the parts of the
-// program that handle each.
+// failed, or if the game stopped before the pilot was done. The rest of what a
+// piloted program does (input, the window, and saving frames) is left to the
+// parts of the program that handle each.
 //
 // This class is thread-safe.
 class Game {
