@@ -199,6 +199,13 @@ Configuring takes about 3 minutes, mostly Emscripten compiling CMake's feature c
 
 The whole tree builds for the web, with and without threads, and every test program passes under ctest. In a build without threads, the tests that start threads are skipped.
 
+A web build converts each shader `gb_embed_shader` embeds to WGSL, which WebGPU takes, with `spirv-opt` from the Vulkan SDK (which `tools/install-vulkan-sdk.sh` installs, so source its `setup-env.sh` here too) and `naga`, which Rust's `cargo` builds (about three minutes). `tools/install-naga.sh` installs it, once, and its `bin` goes on the PATH. Game Bits' own build embeds no shaders, so only a project that does (such as render-check) needs them:
+
+```
+tools/install-naga.sh ~/naga 30.0.2
+export PATH=~/naga/bin:$PATH
+```
+
 ### Checks
 
 Every change is checked as follows:
@@ -266,7 +273,7 @@ If removal fails with "Permission denied", git has already unregistered the work
 - New source and test files must be added to their module's `CMakeLists.txt` (`<target>_SOURCE` and `<target>_TEST_SOURCE`) or they will not be compiled.
 - Defining `<target>_TEST_SOURCE` automatically creates a `<target>_test` executable that links GoogleTest/GoogleMock and registers a ctest test of the same name.
 - `gb_embed_data(<target> <file> <header> <name>)` builds a file's bytes into a target as a `gb::EmbeddedData` (see `gb/base/embedded_data.h`), for data the program needs with nothing to open at run time.
-- `gb_embed_shader(<target> <file> <header> <name>)` does the same for a GLSL shader, compiled to SPIR-V with `glslc` from the Vulkan SDK, for `RenderSystem::CreateShaderCode()`. render-check's shaders are built this way; block-world's and gb_imgui's are not yet (see the backlog).
+- `gb_embed_shader(<target> <file> <header> <name>)` does the same for a GLSL shader, compiled to SPIR-V with `glslc` from the Vulkan SDK, for `RenderSystem::CreateShaderCode()`. In a web build, it embeds WGSL converted from the SPIR-V instead (see Web above), with GLSL's binding `n` at WGSL binding `2n + 1` for a sampler and `2n` for anything else; `gb_wgsl_bindings_test` tests that numbering on every platform. render-check's shaders are built this way; block-world's and gb_imgui's are not yet (see the backlog).
 - `<target>_DEPS` is for other CMake targets in the build (including `absl::*`); `<target>_LIBS` is for external libraries (Vulkan).
 - On Windows, every executable these commands define embeds `CMake/GameBits.manifest`, which makes its code page UTF-8, so `main()`'s arguments are UTF-8. A DLL gets its host's code page, so nothing else relies on it: code converts to and from UTF-16 when it calls Windows (see README.md).
 - A module picks its platform implementations (see C++ style in the workflow) in an `if (WIN32) ... else() ... endif()` block at the top of its `CMakeLists.txt`, which sets `<target>_internal_SOURCE` and `<target>_internal_TEST_SOURCE` for the main lists to include, as in `src/gb/base/CMakeLists.txt`.

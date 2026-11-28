@@ -279,15 +279,15 @@ ${_declaration}
   endif()
 endfunction()
 
-# Compiles a GLSL shader to SPIR-V and builds it into a target, as
-# gb_embed_data does with a file:
+# Compiles a GLSL shader for the render backend (SPIR-V, or WGSL in a web
+# build) and builds it into a target, as gb_embed_data does with a file:
 #
 #   gb_embed_shader(<target> <file> <header> <name>)
 #
 # For example, gb_embed_shader(render_check shaders/quad.vert
 # shaders/quad_vert.h kQuadVertexShader) lets the target include
 # "shaders/quad_vert.h", which declares the gb::EmbeddedData kQuadVertexShader,
-# whose bytes are the SPIR-V to pass to RenderSystem::CreateShaderCode().
+# whose bytes are the shader code to pass to RenderSystem::CreateShaderCode().
 #  <file>    The shader, relative to the current source directory. Its extension
 #            (.vert, .frag, .comp, ...) gives its stage.
 #  <header>  As for gb_embed_data.
@@ -297,6 +297,14 @@ endfunction()
 # the build fails on any error or warning in it. It is compiled with glslc,
 # found in the Vulkan SDK or on the PATH, which only a project that calls this
 # needs.
+#
+# In a web build, the embedded code is WGSL, which WebGPU takes, converted from
+# the SPIR-V with spirv-opt, from the Vulkan SDK (tools/install-vulkan-sdk.sh),
+# and naga, on the PATH (tools/install-naga.sh). spirv-opt splits each combined
+# image sampler into a texture and a sampler, and naga converts the result to
+# WGSL. A texture and its sampler can't share a binding in WGSL, so GLSL's
+# binding n is WGSL's binding 2n + 1 for a sampler, and 2n for anything else
+# (see GameBitsWgslBindings.cmake), which the WebGPU backend expects.
 function(gb_embed_shader TARGET FILE HEADER NAME)
   # FindVulkan has usually found it already. The hint is for CMake before 3.19,
   # whose FindVulkan doesn't look for it.
@@ -307,15 +315,58 @@ function(gb_embed_shader TARGET FILE HEADER NAME)
   endif()
 
   get_filename_component(_input "${FILE}" ABSOLUTE)
-  string(REGEX REPLACE "\\.h$" ".spv" _output
+  string(REGEX REPLACE "\\.h$" "" _base
     "${CMAKE_CURRENT_BINARY_DIR}/${TARGET}_shaders/${HEADER}")
+  if (NOT EMSCRIPTEN)
+    set(_output "${_base}.spv")
+    add_custom_command(
+      OUTPUT "${_output}"
+      COMMAND "${Vulkan_GLSLC_EXECUTABLE}" -Werror -MD -MF "${_output}.d"
+        -o "${_output}" "${_input}"
+      DEPENDS "${_input}"
+      DEPFILE "${_output}.d"
+      COMMENT "Compiling ${FILE} for ${TARGET}"
+      VERBATIM)
+    gb_embed_data(${TARGET} "${_output}" "${HEADER}" "${NAME}")
+    return()
+  endif()
+
+  find_program(GB_SPIRV_OPT_EXECUTABLE spirv-opt HINTS "$ENV{VULKAN_SDK}/bin")
+  if (NOT GB_SPIRV_OPT_EXECUTABLE)
+    message(FATAL_ERROR
+      "gb_embed_shader: spirv-opt was not found in the Vulkan SDK or on the "
+      "PATH, which a web build needs. tools/install-vulkan-sdk.sh installs it, "
+      "so a Vulkan SDK it installed before it did needs installing again.")
+  endif()
+  find_program(GB_NAGA_EXECUTABLE naga)
+  if (NOT GB_NAGA_EXECUTABLE)
+    message(FATAL_ERROR
+      "gb_embed_shader: naga was not found on the PATH, which a web build "
+      "needs (see tools/install-naga.sh)")
+  endif()
+
+  # naga can only write a texture and its sampler on one binding without
+  # validation, so the WGSL is validated once its bindings are numbered, by
+  # converting it again (which, unlike validating alone, prints nothing).
+  set(_output "${_base}.wgsl")
+  set(_script "${GB_DIR}/CMake/GameBitsWgslBindings.cmake")
   add_custom_command(
     OUTPUT "${_output}"
     COMMAND "${Vulkan_GLSLC_EXECUTABLE}" -Werror -MD -MF "${_output}.d"
-      -o "${_output}" "${_input}"
-    DEPENDS "${_input}"
+      -MT "${_output}" -o "${_base}.spv" "${_input}"
+    COMMAND "${GB_SPIRV_OPT_EXECUTABLE}" --split-combined-image-sampler
+      "${_base}.spv" -o "${_base}.split.spv"
+    COMMAND "${GB_NAGA_EXECUTABLE}" --validate 0 "${_base}.split.spv"
+      "${_base}.raw.wgsl"
+    COMMAND "${CMAKE_COMMAND}" "-DINPUT=${_base}.raw.wgsl"
+      "-DOUTPUT=${_base}.bound.wgsl" -P "${_script}"
+    COMMAND "${GB_NAGA_EXECUTABLE}" "${_base}.bound.wgsl" "${_output}"
+    BYPRODUCTS "${_base}.spv" "${_base}.split.spv" "${_base}.raw.wgsl"
+      "${_base}.bound.wgsl"
+    DEPENDS "${_input}" "${_script}" "${Vulkan_GLSLC_EXECUTABLE}"
+      "${GB_SPIRV_OPT_EXECUTABLE}" "${GB_NAGA_EXECUTABLE}"
     DEPFILE "${_output}.d"
-    COMMENT "Compiling ${FILE} for ${TARGET}"
+    COMMENT "Compiling ${FILE} to WGSL for ${TARGET}"
     VERBATIM)
   gb_embed_data(${TARGET} "${_output}" "${HEADER}" "${NAME}")
 endfunction()

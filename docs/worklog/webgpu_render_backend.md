@@ -103,7 +103,8 @@ command, so a project's CMake doesn't change:
 glslc -Werror -MD -MF <out>.d -o <out>.spv <in>
 spirv-opt --split-combined-image-sampler <out>.spv -o <out>.split.spv
 naga --validate 0 <out>.split.spv <out>.raw.wgsl
-cmake -DIN=<out>.raw.wgsl -DOUT=<out>.bound.wgsl -P GameBitsWgslBindings.cmake
+cmake -DINPUT=<out>.raw.wgsl -DOUTPUT=<out>.bound.wgsl \
+  -P GameBitsWgslBindings.cmake
 naga <out>.bound.wgsl <out>.wgsl
 ```
 
@@ -127,8 +128,9 @@ shader declares, so `pass_mist.frag` (only binding 1) and `pass_water.frag`
 and its sampler on one binding, `GameBitsWgslBindings.cmake` renumbers each
 `@binding(n)` by the type of the `var` that follows it (`sampler` or
 `sampler_comparison`, or anything else), and `naga` reads the result back,
-validating it, and writes it out again. The script is about 30 lines of
-CMake, so the conversion needs no tool beyond those the design names.
+validating it, and writes it out again (which, unlike validating alone,
+prints nothing). The script is about 50 lines of CMake, so the conversion
+needs no tool beyond those the design names.
 
 What else the conversion does, checked on render-check's shaders:
 - `naga` flips `gl_Position.y` (its default, `--keep-coordinate-space`
@@ -620,6 +622,19 @@ instance (`pool.vert`, `storage.frag`). It read each back and checked pixels.
   layers, 1000 bindings per group. A 257-layer array is refused. (CL5)
 - The canvas's preferred format on SwiftShader is `rgba8unorm`. (CL3)
 
+Settled by CL1, with Game Bits' own CMake and tools:
+- `gb_embed_shader` in a web build converted render-check's 14 shaders, and
+  Chromium's `createShaderModule()` accepted each with no errors in
+  `getCompilationInfo()`. Each was byte for byte the WGSL the experiments
+  above drew with.
+- `glslc -MT` names the WGSL as the depfile's target, so a shader is
+  converted again when a file it `#include`s changes, as it is compiled again
+  in a native build.
+- A native build's shaders are unchanged: the same `glslc` command, and the
+  same SPIR-V bytes, as before CL1.
+- `tools/install-naga.sh` and `tools/install-vulkan-sdk.sh` install `naga`
+  and `spirv-opt` in an empty folder.
+
 Not checked:
 - A real GPU: Chrome on Windows (whose canvas prefers `bgra8unorm`) with the
   canvas configured as `rgba8unorm`, and whether its sRGB resolve differs
@@ -656,7 +671,7 @@ each depend on CL4, and can run at the same time; CL7 follows CL5, whose
 textures render targets are. CL8 needs every one before it, and CL9 needs
 CL8.
 
-### CL1 [ ] build: shaders converted to WGSL in a web build
+### CL1 [x] build: shaders converted to WGSL in a web build
 
 Depends on: *Web platform* CL1.
 
@@ -672,10 +687,10 @@ Depends on: *Web platform* CL1.
 
 **Verify**
 - Standard checks (the CMake change touches every platform's configure).
-- A ctest (`gb_wgsl_bindings_test`, registered in a web build and on Linux,
-  running `cmake -P` on WGSL fixtures and comparing the output) covers a
-  texture, an array, a volume, constants, a storage buffer, several sets, and
-  a `var` split over two lines as `naga` writes it.
+- A ctest (`gb_wgsl_bindings_test`, registered on every platform, as it
+  needs only CMake, running `cmake -P` on WGSL fixtures and comparing the
+  output) covers a texture, an array, a volume, constants, a storage buffer,
+  several sets, and a `var` split over two lines as `naga` writes it.
 - A scratch CMake project embedding render-check's 14 shaders in a web build
   builds, and each WGSL is accepted by Chromium's `createShaderModule()` with
   no errors in `getCompilationInfo()`, checked with a Playwright snippet.
