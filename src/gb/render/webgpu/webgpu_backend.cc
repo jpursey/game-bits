@@ -8,12 +8,12 @@
 #include <emscripten/html5.h>
 #include <emscripten/threading.h>
 
-#include <cstring>
 #include <utility>
 #include <vector>
 
 #include "absl/log/log.h"
 #include "absl/memory/memory.h"
+#include "gb/render/webgpu/webgpu_format.h"
 #include "gb/render/webgpu/webgpu_render_buffer.h"
 #include "gb/render/webgpu/webgpu_texture.h"
 #include "gb/render/webgpu/webgpu_texture_array.h"
@@ -35,10 +35,6 @@ constexpr int kCopyRowAlignment = 256;
 
 constexpr uint64_t kWaitTimeoutNs =
     uint64_t{WebGpuBackend::kWaitTimeoutSecs} * 1'000'000'000;
-
-std::string_view ToStringView(wgpu::StringView text) {
-  return std::string_view(text);
-}
 
 wgpu::Texture CreateFrameTexture(const wgpu::Device& device,
                                  wgpu::TextureFormat format, int width,
@@ -76,24 +72,10 @@ WebGpuBackend::WebGpuBackend(ValidatedContext context)
       canvas_selector_(context_.GetValue<std::string>(kKeyCanvasSelector)) {}
 
 WebGpuBackend::~WebGpuBackend() {
-  // A page whose program returns still holding WebGPU objects never exits, so
-  // each is released here, the device and instance last.
-  if (frame_color_ != nullptr) {
-    frame_color_.Destroy();
-    frame_depth_.Destroy();
-    frame_texture_.Destroy();
-  }
-  frame_color_ = nullptr;
-  frame_depth_ = nullptr;
-  frame_texture_ = nullptr;
+  DestroyFrameTextures();
   if (surface_ != nullptr) {
     surface_.Unconfigure();
   }
-  surface_ = nullptr;
-  queue_ = nullptr;
-  device_ = nullptr;
-  adapter_ = nullptr;
-  instance_ = nullptr;
   LOG_IF(ERROR, !context_.Complete())
       << "WebGpuBackend's context is not complete";
 }
@@ -126,7 +108,7 @@ bool WebGpuBackend::InitDevice() {
         if (status == wgpu::RequestAdapterStatus::Success) {
           adapter_ = std::move(adapter);
         } else {
-          adapter_error = ToStringView(message);
+          adapter_error = std::string_view(message);
         }
       });
   if (!Wait(adapter_future, "a WebGPU adapter")) {
@@ -163,7 +145,7 @@ bool WebGpuBackend::InitDevice() {
   device_descriptor.SetUncapturedErrorCallback(
       [](const wgpu::Device&, wgpu::ErrorType type, wgpu::StringView message) {
         LOG(ERROR) << "WebGPU error (" << static_cast<int>(type)
-                   << "): " << ToStringView(message);
+                   << "): " << std::string_view(message);
       });
   device_descriptor.SetDeviceLostCallback(
       wgpu::CallbackMode::AllowSpontaneous,
@@ -171,7 +153,8 @@ bool WebGpuBackend::InitDevice() {
          wgpu::StringView message) {
         if (reason != wgpu::DeviceLostReason::Destroyed &&
             reason != wgpu::DeviceLostReason::CallbackCancelled) {
-          LOG(ERROR) << "The WebGPU device was lost: " << ToStringView(message);
+          LOG(ERROR) << "The WebGPU device was lost: "
+                     << std::string_view(message);
         }
       });
 
@@ -183,7 +166,7 @@ bool WebGpuBackend::InitDevice() {
         if (status == wgpu::RequestDeviceStatus::Success) {
           device_ = std::move(device);
         } else {
-          device_error = ToStringView(message);
+          device_error = std::string_view(message);
         }
       });
   if (!Wait(device_future, "a WebGPU device")) {
@@ -226,6 +209,15 @@ bool WebGpuBackend::Wait(const wgpu::Future& future,
   return false;
 }
 
+bool WebGpuBackend::ValidateSamplerOptions(
+    const SamplerOptions& options) const {
+  if (options.address_mode == SamplerAddressMode::kClampBorder) {
+    LOG(ERROR) << "WebGPU has no clamp to border: use kClampEdge";
+    return false;
+  }
+  return true;
+}
+
 bool WebGpuBackend::ValidateThread(std::string_view what) const {
   if (emscripten_is_main_runtime_thread()) {
     return true;
@@ -244,22 +236,17 @@ void WebGpuBackend::LogUnsupported(std::string_view what) const {
 // Pending writes
 //------------------------------------------------------------------------------
 
-void WebGpuBackend::AddPendingWrite(WebGpuPendingWrite* write) {
-  absl::MutexLock lock(&pending_mutex_);
-  pending_writes_.insert(write);
+WebGpuPendingWrite::~WebGpuPendingWrite() {
+  backend_->pending_writes_.erase(this);
 }
 
-void WebGpuBackend::RemovePendingWrite(WebGpuPendingWrite* write) {
-  absl::MutexLock lock(&pending_mutex_);
-  pending_writes_.erase(write);
+void WebGpuPendingWrite::MarkPendingWrite() {
+  backend_->pending_writes_.insert(this);
 }
 
-void WebGpuBackend::WritePending() {
-  // The lock is held while writing, so a resource can't be destroyed on
-  // another thread as it is written.
-  absl::MutexLock lock(&pending_mutex_);
+void WebGpuBackend::WritePending(const wgpu::CommandEncoder& encoder) {
   for (WebGpuPendingWrite* write : pending_writes_) {
-    write->WritePending(queue_);
+    write->WritePending(queue_, encoder);
   }
   pending_writes_.clear();
 }
@@ -299,11 +286,8 @@ Texture* WebGpuBackend::CreateTexture(RenderInternal, ResourceEntry entry,
                                       DataVolatility volatility, int width,
                                       int height, const SamplerOptions& options,
                                       TextureFormat format) {
-  if (!ValidateThread("Creating a texture")) {
-    return nullptr;
-  }
-  if (options.address_mode == SamplerAddressMode::kClampBorder) {
-    LOG(ERROR) << "WebGPU has no clamp to border: use kClampEdge";
+  if (!ValidateThread("Creating a texture") ||
+      !ValidateSamplerOptions(options)) {
     return nullptr;
   }
   return WebGpuTexture::Create(std::move(entry), this, volatility, width,
@@ -314,11 +298,8 @@ TextureArray* WebGpuBackend::CreateTextureArray(
     RenderInternal, ResourceEntry entry, DataVolatility volatility, int count,
     int width, int height, const SamplerOptions& options,
     TextureFormat format) {
-  if (!ValidateThread("Creating a texture array")) {
-    return nullptr;
-  }
-  if (options.address_mode == SamplerAddressMode::kClampBorder) {
-    LOG(ERROR) << "WebGPU has no clamp to border: use kClampEdge";
+  if (!ValidateThread("Creating a texture array") ||
+      !ValidateSamplerOptions(options)) {
     return nullptr;
   }
   return WebGpuTextureArray::Create(std::move(entry), this, volatility, count,
@@ -329,11 +310,8 @@ VolumeTexture* WebGpuBackend::CreateVolumeTexture(
     RenderInternal, ResourceEntry entry, DataVolatility volatility, int width,
     int height, int depth, const SamplerOptions& options,
     TextureFormat format) {
-  if (!ValidateThread("Creating a volume texture")) {
-    return nullptr;
-  }
-  if (options.address_mode == SamplerAddressMode::kClampBorder) {
-    LOG(ERROR) << "WebGPU has no clamp to border: use kClampEdge";
+  if (!ValidateThread("Creating a volume texture") ||
+      !ValidateSamplerOptions(options)) {
     return nullptr;
   }
   return WebGpuVolumeTexture::Create(std::move(entry), this, volatility, width,
@@ -399,7 +377,8 @@ std::unique_ptr<RenderBuffer> WebGpuBackend::CreateIndexBuffer(
     return nullptr;
   }
   return WebGpuRenderBuffer::Create(this, wgpu::BufferUsage::Index, volatility,
-                                    sizeof(uint16_t), index_capacity);
+                                    GetIndexSize(IndexType::kUint16),
+                                    index_capacity);
 }
 
 std::unique_ptr<RenderBuffer> WebGpuBackend::CreateStorageBuffer(
@@ -473,11 +452,7 @@ void WebGpuBackend::ResizeFrame(int width, int height) {
   config.alphaMode = wgpu::CompositeAlphaMode::Opaque;
   surface_.Configure(&config);
 
-  if (frame_color_ != nullptr) {
-    frame_color_.Destroy();
-    frame_depth_.Destroy();
-    frame_texture_.Destroy();
-  }
+  DestroyFrameTextures();
   frame_color_ =
       CreateFrameTexture(device_, kFrameFormat, width, height, kSampleCount,
                          wgpu::TextureUsage::RenderAttachment);
@@ -487,6 +462,21 @@ void WebGpuBackend::ResizeFrame(int width, int height) {
   frame_texture_ = CreateFrameTexture(
       device_, kFrameFormat, width, height, 1,
       wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::CopySrc);
+  frame_color_view_ = frame_color_.CreateView();
+  frame_depth_view_ = frame_depth_.CreateView();
+  frame_texture_view_ = frame_texture_.CreateView();
+}
+
+void WebGpuBackend::DestroyFrameTextures() {
+  if (frame_color_ == nullptr) {
+    return;
+  }
+  frame_color_view_ = nullptr;
+  frame_depth_view_ = nullptr;
+  frame_texture_view_ = nullptr;
+  frame_color_.Destroy();
+  frame_depth_.Destroy();
+  frame_texture_.Destroy();
 }
 
 void WebGpuBackend::Draw(RenderInternal, RenderView*, RenderPipeline*,
@@ -504,8 +494,8 @@ void WebGpuBackend::EndFrame(RenderInternal) { DoEndFrame(nullptr, 0); }
 
 std::unique_ptr<Image> WebGpuBackend::EndFrameAndReadImage(RenderInternal) {
   const FrameDimensions frame = DoGetFrameDimensions();
-  const int row_bytes = (frame.width * 4 + kCopyRowAlignment - 1) /
-                        kCopyRowAlignment * kCopyRowAlignment;
+  const int row_bytes =
+      static_cast<int>(AlignUp(int64_t{frame.width} * 4, kCopyRowAlignment));
   const int64_t buffer_size = int64_t{row_bytes} * frame.height;
   wgpu::BufferDescriptor descriptor;
   descriptor.usage = wgpu::BufferUsage::MapRead | wgpu::BufferUsage::CopyDst;
@@ -522,7 +512,7 @@ std::unique_ptr<Image> WebGpuBackend::EndFrameAndReadImage(RenderInternal) {
           mapped = true;
         } else {
           LOG(ERROR) << "Failed to map the frame read back: "
-                     << ToStringView(message);
+                     << std::string_view(message);
         }
       });
   if (!Wait(future, "the frame to be read back") || !mapped) {
@@ -536,10 +526,9 @@ std::unique_ptr<Image> WebGpuBackend::EndFrameAndReadImage(RenderInternal) {
   auto image = std::make_unique<Image>(frame.width, frame.height);
   Pixel* dst = image->Edit().ModifyPixels();
   for (int y = 0; y < frame.height; ++y) {
-    std::memcpy(dst + int64_t{y} * frame.width, src + int64_t{y} * row_bytes,
-                int64_t{frame.width} * 4);
-    for (int x = 0; x < frame.width; ++x) {
-      dst[int64_t{y} * frame.width + x].a = 255;
+    const uint8_t* row = src + int64_t{y} * row_bytes;
+    for (int x = 0; x < frame.width; ++x, row += 4, ++dst) {
+      *dst = Pixel(row[0], row[1], row[2]);
     }
   }
   buffer.Unmap();
@@ -549,20 +538,20 @@ std::unique_ptr<Image> WebGpuBackend::EndFrameAndReadImage(RenderInternal) {
 
 void WebGpuBackend::DoEndFrame(const wgpu::Buffer& read_buffer,
                                int read_row_bytes) {
-  WritePending();
   const FrameDimensions frame = DoGetFrameDimensions();
   const wgpu::Extent3D frame_size = {static_cast<uint32_t>(frame.width),
                                      static_cast<uint32_t>(frame.height), 1};
 
   wgpu::CommandEncoder encoder = device_.CreateCommandEncoder();
+  WritePending(encoder);
   wgpu::RenderPassColorAttachment color;
-  color.view = frame_color_.CreateView();
-  color.resolveTarget = frame_texture_.CreateView();
+  color.view = frame_color_view_;
+  color.resolveTarget = frame_texture_view_;
   color.loadOp = wgpu::LoadOp::Clear;
   color.storeOp = wgpu::StoreOp::Discard;
   color.clearValue = clear_color_;
   wgpu::RenderPassDepthStencilAttachment depth;
-  depth.view = frame_depth_.CreateView();
+  depth.view = frame_depth_view_;
   depth.depthLoadOp = wgpu::LoadOp::Clear;
   depth.depthStoreOp = wgpu::StoreOp::Discard;
   depth.depthClearValue = 1.0f;

@@ -12,6 +12,7 @@
 #include <string>
 #include <string_view>
 
+#include "absl/base/thread_annotations.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/synchronization/mutex.h"
 #include "absl/types/span.h"
@@ -22,24 +23,40 @@
 
 namespace gb {
 
+// WebGpuPendingWrite and WebGpuBackend refer to each other.
+class WebGpuBackend;
+
 //==============================================================================
 // WebGpuPendingWrite
 //==============================================================================
 
-// A resource whose changes are written to the GPU as the next frame ends. It
-// registers itself with WebGpuBackend::AddPendingWrite() as it changes, and
-// removes itself with RemovePendingWrite() when destroyed.
+// A resource of the backend with changes to write to the GPU as the next frame
+// ends. A subclass calls MarkPendingWrite() as it changes, and the backend
+// calls WritePending() once as the frame ends. The registration ends then, or
+// when this is destroyed.
 class WebGpuPendingWrite {
  public:
   WebGpuPendingWrite(const WebGpuPendingWrite&) = delete;
   WebGpuPendingWrite& operator=(const WebGpuPendingWrite&) = delete;
 
-  // Writes the changes to the GPU with `queue`, ahead of the frame's commands.
-  virtual void WritePending(const wgpu::Queue& queue) = 0;
+  // Writes the changes to the GPU: with `queue` for writes, which come before
+  // the frame's commands, and with `encoder` for commands, which come before
+  // the frame's passes.
+  virtual void WritePending(const wgpu::Queue& queue,
+                            const wgpu::CommandEncoder& encoder) = 0;
 
  protected:
-  WebGpuPendingWrite() = default;
-  ~WebGpuPendingWrite() = default;
+  // `backend` must outlive this.
+  explicit WebGpuPendingWrite(WebGpuBackend* backend) : backend_(backend) {}
+  ~WebGpuPendingWrite();
+
+  WebGpuBackend* GetBackend() const { return backend_; }
+
+  // Registers this to be written as the next frame ends, if it isn't already.
+  void MarkPendingWrite();
+
+ private:
+  WebGpuBackend* const backend_;
 };
 
 //==============================================================================
@@ -66,7 +83,8 @@ class WebGpuPendingWrite {
 // This class meets the thread-safety standards required by all RenderBackend
 // derived classes. WebGPU objects belong to the browser's main thread, so in a
 // web build with threads, a factory method called on another thread logs an
-// error and returns null.
+// error and returns null, and the resources it makes are used only on the main
+// thread too.
 class WebGpuBackend final : public RenderBackend {
  public:
   //----------------------------------------------------------------------------
@@ -124,13 +142,6 @@ class WebGpuBackend final : public RenderBackend {
 
   // Adds `bytes` (which may be negative) to GetAllocatedBytes().
   void AddAllocatedBytes(int64_t bytes) { allocated_bytes_ += bytes; }
-
-  // Registers `write` to be written as the next frame ends, if it isn't
-  // already. It must call RemovePendingWrite() before it is destroyed.
-  //
-  // These are thread-safe.
-  void AddPendingWrite(WebGpuPendingWrite* write);
-  void RemovePendingWrite(WebGpuPendingWrite* write);
 
   //----------------------------------------------------------------------------
   // RenderBackend
@@ -199,6 +210,8 @@ class WebGpuBackend final : public RenderBackend {
   std::unique_ptr<Image> EndFrameAndReadImage(RenderInternal) override;
 
  private:
+  friend class WebGpuPendingWrite;
+
   explicit WebGpuBackend(ValidatedContext context);
 
   bool Init();
@@ -215,6 +228,10 @@ class WebGpuBackend final : public RenderBackend {
 
   FrameDimensions DoGetFrameDimensions() const;
 
+  // Returns true if WebGPU can sample with `options`, logging why not if it
+  // can't.
+  bool ValidateSamplerOptions(const SamplerOptions& options) const;
+
   // Logs that `what` isn't supported by the backend yet.
   void LogUnsupported(std::string_view what) const;
 
@@ -222,19 +239,24 @@ class WebGpuBackend final : public RenderBackend {
   // size.
   void ResizeFrame(int width, int height);
 
+  // Releases the frame's textures, if there are any.
+  void DestroyFrameTextures();
+
   // Writes the pending changes, then encodes and submits the frame, copying it
   // into the canvas. If `read_buffer` is not null, the frame is also copied
   // into it, with rows `read_row_bytes` apart.
   void DoEndFrame(const wgpu::Buffer& read_buffer, int read_row_bytes);
 
-  // Writes every pending change to the GPU.
-  void WritePending();
+  // Writes every pending change to the GPU, with `encoder` for commands.
+  void WritePending(const wgpu::CommandEncoder& encoder);
 
   ValidatedContext context_;
   const std::string canvas_selector_;
   std::atomic<int64_t> allocated_bytes_ = 0;
 
-  // Destroyed in the reverse order, the instance last.
+  // Released in the reverse order, the instance last, as the backend is
+  // destroyed: a page whose program returns still holding WebGPU objects never
+  // exits.
   wgpu::Instance instance_;
   wgpu::Adapter adapter_;
   wgpu::Device device_;
@@ -246,15 +268,17 @@ class WebGpuBackend final : public RenderBackend {
   wgpu::Texture frame_color_;
   wgpu::Texture frame_depth_;
   wgpu::Texture frame_texture_;
+  wgpu::TextureView frame_color_view_;
+  wgpu::TextureView frame_depth_view_;
+  wgpu::TextureView frame_texture_view_;
 
   wgpu::Color clear_color_ = {0, 0, 0, 1};
 
   mutable absl::Mutex frame_mutex_;
   FrameDimensions frame_dimensions_ ABSL_GUARDED_BY(frame_mutex_) = {0, 0};
 
-  absl::Mutex pending_mutex_;
-  absl::flat_hash_set<WebGpuPendingWrite*> pending_writes_
-      ABSL_GUARDED_BY(pending_mutex_);
+  // Used only on the main thread, as the resources are.
+  absl::flat_hash_set<WebGpuPendingWrite*> pending_writes_;
 };
 
 }  // namespace gb

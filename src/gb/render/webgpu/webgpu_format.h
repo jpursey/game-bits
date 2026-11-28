@@ -27,11 +27,23 @@ wgpu::TextureFormat GetWebGpuFormat(TextureFormat format);
 // kRgba4, and otherwise GetTexelSize().
 int GetWebGpuTexelSize(TextureFormat format);
 
+// Returns the size in bytes of a texture's texels as the GPU holds them.
+inline int64_t GetWebGpuTextureSizeInBytes(TextureFormat format, int width,
+                                           int height, int depth = 1) {
+  return int64_t{width} * height * depth * GetWebGpuTexelSize(format);
+}
+
 // Expands kRgba4 texels to the RGBA8Unorm texels the GPU holds: each 4-bit
 // channel `v` becomes `v * 17`, so 0 stays 0 and 15 becomes 255, and a shader
 // reads the same value it would from a 4-bit channel. `out` holds 4 bytes for
 // each texel.
 void ExpandRgba4(absl::Span<const uint16_t> texels, uint8_t* out);
+
+// Returns `value` rounded up to a multiple of `alignment`, as WebGPU's copies
+// and writes need.
+inline constexpr int64_t AlignUp(int64_t value, int64_t alignment) {
+  return (value + alignment - 1) / alignment * alignment;
+}
 
 //==============================================================================
 // Bindings

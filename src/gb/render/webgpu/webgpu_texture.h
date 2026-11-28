@@ -26,8 +26,6 @@ class WebGpuTexture final : public Texture {
                                const SamplerOptions& options,
                                TextureFormat format);
 
-  const WebGpuTexels& GetTexels() const { return *texels_; }
-
  protected:
   bool DoClear(int x, int y, int width, int height, const void* texel) override;
   bool DoSet(int x, int y, int width, int height, const void* texels,

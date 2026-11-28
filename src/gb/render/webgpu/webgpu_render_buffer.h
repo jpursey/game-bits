@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "gb/render/render_buffer.h"
@@ -22,7 +23,8 @@ namespace gb {
 // keeps the bytes around a write that isn't 4-byte aligned, as WebGPU writes
 // buffers in whole 4-byte words. A kStaticWrite buffer writes each change to
 // the GPU at once. Any other marks the bytes it changes, and writes them as the
-// next frame ends.
+// next frame ends: changes in one frame are written as the one range that holds
+// them all.
 //
 // This class is thread-compatible.
 class WebGpuRenderBuffer final : public RenderBuffer,
@@ -39,9 +41,8 @@ class WebGpuRenderBuffer final : public RenderBuffer,
 
   ~WebGpuRenderBuffer() override;
 
-  const wgpu::Buffer& GetBuffer() const { return buffer_; }
-
-  void WritePending(const wgpu::Queue& queue) override;
+  void WritePending(const wgpu::Queue& queue,
+                    const wgpu::CommandEncoder& encoder) override;
 
  protected:
   bool DoClear(int offset, int size) override;
@@ -62,15 +63,19 @@ class WebGpuRenderBuffer final : public RenderBuffer,
   // Writes the changed bytes, widened to whole 4-byte words, to the GPU.
   void WriteRange(const wgpu::Queue& queue, int64_t begin, int64_t end);
 
-  WebGpuBackend* const backend_;
+  // A range of bytes in the buffer.
+  struct Range {
+    int64_t begin = 0;
+    int64_t end = 0;
+  };
+
   wgpu::Buffer buffer_;
   const int64_t gpu_bytes_;
 
   // The CPU copy, as large as the GPU buffer, and the bytes of it changed
-  // since the GPU was last written (none if begin is not below end).
+  // since the GPU was last written.
   std::vector<uint8_t> data_;
-  int64_t pending_begin_ = 0;
-  int64_t pending_end_ = 0;
+  std::optional<Range> pending_;
 };
 
 }  // namespace gb

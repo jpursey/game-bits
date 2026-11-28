@@ -20,7 +20,8 @@ namespace gb {
 // Holds the texels of a texture, texture array, or volume texture: its GPU
 // texture, and unless it is kStaticWrite, a CPU copy, which Get() and editing
 // read. A kStaticWrite texture writes each change to the GPU at once. Any
-// other marks the region it changes, and writes it as the next frame ends.
+// other marks the region it changes, and writes it as the next frame ends:
+// changes in one frame are written as the one region that holds them all.
 //
 // Regions are in three dimensions. In a 2D texture, z is zero and depth one; in
 // a texture array, z is the layer.
@@ -60,8 +61,6 @@ class WebGpuTexels final : public WebGpuPendingWrite {
 
   ~WebGpuTexels();
 
-  const wgpu::Texture& GetTexture() const { return texture_; }
-
   // Sets every texel in a region to the texel.
   bool Clear(const Region& region, const void* texel);
 
@@ -82,7 +81,8 @@ class WebGpuTexels final : public WebGpuPendingWrite {
   void* EditBegin();
   void EditEnd(bool modified);
 
-  void WritePending(const wgpu::Queue& queue) override;
+  void WritePending(const wgpu::Queue& queue,
+                    const wgpu::CommandEncoder& encoder) override;
 
  private:
   WebGpuTexels(WebGpuBackend* backend, DataVolatility volatility,
@@ -90,7 +90,7 @@ class WebGpuTexels final : public WebGpuPendingWrite {
 
   Region GetWholeRegion() const { return {0, 0, 0, width_, height_, depth_}; }
   int64_t GetLayerSize() const {
-    return int64_t{width_} * height_ * texel_size_;
+    return GetTextureSizeInBytes(format_, width_, height_);
   }
 
   // Marks a region of the CPU copy to be written as the next frame ends.
@@ -101,7 +101,6 @@ class WebGpuTexels final : public WebGpuPendingWrite {
   void WriteRegion(const wgpu::Queue& queue, const Region& region,
                    const void* texels, int stride, int slice_height);
 
-  WebGpuBackend* const backend_;
   const TextureFormat format_;
   const int width_;
   const int height_;

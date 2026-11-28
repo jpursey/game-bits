@@ -43,46 +43,42 @@ std::unique_ptr<WebGpuTexels> WebGpuTexels::Create(
 
 WebGpuTexels::WebGpuTexels(WebGpuBackend* backend, DataVolatility volatility,
                            const Properties& properties, wgpu::Texture texture)
-    : backend_(backend),
+    : WebGpuPendingWrite(backend),
       format_(properties.format),
       width_(properties.width),
       height_(properties.height),
       depth_(properties.depth),
       texel_size_(GetTexelSize(properties.format)),
-      gpu_bytes_(int64_t{properties.width} * properties.height *
-                 properties.depth * GetWebGpuTexelSize(properties.format)),
+      gpu_bytes_(
+          GetWebGpuTextureSizeInBytes(properties.format, properties.width,
+                                      properties.height, properties.depth)),
       texture_(std::move(texture)) {
   if (volatility != DataVolatility::kStaticWrite) {
     texels_.resize(GetLayerSize() * depth_);
   }
-  backend_->AddAllocatedBytes(gpu_bytes_);
+  GetBackend()->AddAllocatedBytes(gpu_bytes_);
 }
 
 WebGpuTexels::~WebGpuTexels() {
-  backend_->RemovePendingWrite(this);
   texture_.Destroy();
-  backend_->AddAllocatedBytes(-gpu_bytes_);
+  GetBackend()->AddAllocatedBytes(-gpu_bytes_);
 }
 
 bool WebGpuTexels::Clear(const Region& region, const void* texel) {
   if (texels_.empty()) {
     std::vector<uint8_t> texels(GetTextureSizeInBytes(
         format_, region.width, region.height, region.depth));
-    const int64_t size = static_cast<int64_t>(texels.size());
-    for (int64_t i = 0; i < size; i += texel_size_) {
-      std::memcpy(texels.data() + i, texel, texel_size_);
-    }
-    WriteRegion(backend_->GetQueue(), region, texels.data(), region.width,
+    FillTexels(format_, texel, region.width * region.height * region.depth,
+               texels.data());
+    WriteRegion(GetBackend()->GetQueue(), region, texels.data(), region.width,
                 region.height);
     return true;
   }
   for (int z = region.z; z < region.z + region.depth; ++z) {
     for (int y = region.y; y < region.y + region.height; ++y) {
-      uint8_t* row = texels_.data() + z * GetLayerSize() +
-                     (int64_t{y} * width_ + region.x) * texel_size_;
-      for (int x = 0; x < region.width; ++x) {
-        std::memcpy(row + x * texel_size_, texel, texel_size_);
-      }
+      FillTexels(format_, texel, region.width,
+                 texels_.data() + z * GetLayerSize() +
+                     (int64_t{y} * width_ + region.x) * texel_size_);
     }
   }
   MarkPending(region);
@@ -92,7 +88,7 @@ bool WebGpuTexels::Clear(const Region& region, const void* texel) {
 bool WebGpuTexels::Set(const Region& region, const void* texels, int stride,
                        int slice_height) {
   if (texels_.empty()) {
-    WriteRegion(backend_->GetQueue(), region, texels, stride, slice_height);
+    WriteRegion(GetBackend()->GetQueue(), region, texels, stride, slice_height);
     return true;
   }
   const uint8_t* src = static_cast<const uint8_t*>(texels);
@@ -143,7 +139,7 @@ void WebGpuTexels::EditEnd(bool modified) {
 void WebGpuTexels::MarkPending(const Region& region) {
   if (!pending_.has_value()) {
     pending_ = region;
-    backend_->AddPendingWrite(this);
+    MarkPendingWrite();
     return;
   }
   Region& pending = *pending_;
@@ -158,7 +154,8 @@ void WebGpuTexels::MarkPending(const Region& region) {
   pending.depth = z1 - pending.z;
 }
 
-void WebGpuTexels::WritePending(const wgpu::Queue& queue) {
+void WebGpuTexels::WritePending(const wgpu::Queue& queue,
+                                const wgpu::CommandEncoder&) {
   if (!pending_.has_value()) {
     return;
   }

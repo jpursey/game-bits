@@ -28,8 +28,6 @@ class WebGpuTextureArray final : public TextureArray {
                                     const SamplerOptions& options,
                                     TextureFormat format);
 
-  const WebGpuTexels& GetTexels() const { return *texels_; }
-
  protected:
   bool DoClear(int index, const void* texel) override;
   bool DoSet(int index, const void* texels) override;

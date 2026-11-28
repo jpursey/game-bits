@@ -28,8 +28,6 @@ class WebGpuVolumeTexture final : public VolumeTexture {
                                      const SamplerOptions& options,
                                      TextureFormat format);
 
-  const WebGpuTexels& GetTexels() const { return *texels_; }
-
  protected:
   bool DoClear(int x, int y, int z, int width, int height, int depth,
                const void* texel) override;
