@@ -35,11 +35,11 @@ cmake --build out/build/web-Debug
 
 The program is `bin/cli_template.js`, beside its `bin/cli_template.wasm`, and
 is run with the Node that comes with the SDK (`EMSDK_NODE`), which is the one
-`ctest` runs Game Bits' tests with. Add `-DGB_WEB_THREADS=ON` to the configure command (in a build tree of
-its own, such as `out/build/web-threads-Debug`) for a program that can start
-threads. Each build writes its program to the same `bin/`, replacing the
-other's. The first build in each tree is a full build of the Game Bits
-libraries, about two minutes on 4 cores.
+`ctest` runs Game Bits' tests with. Add `-DGB_WEB_THREADS=ON` to the configure
+command (in a build tree of its own, such as `out/build/web-threads-Debug`)
+for a program that can start threads. Each build writes its program to the
+same `bin/`, replacing the other's. The first build in each tree is a full
+build of the Game Bits libraries, about two minutes on 4 cores.
 
 ## Templates
 
