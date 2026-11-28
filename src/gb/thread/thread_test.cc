@@ -11,8 +11,10 @@
 #include <string_view>
 #include <thread>
 
+#include "absl/base/log_severity.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/synchronization/notification.h"
+#include "gb/test/log_recorder.h"
 #include "gb/test/thread_tester.h"
 #include "gtest/gtest.h"
 
@@ -32,10 +34,13 @@ TEST_F(ThreadTest, GetMaxConcurrencyIsGreaterThanZero) {
 // Unlike the tests that start a thread, this runs in every build, so it fails
 // if SupportsThreads() is wrong either way.
 TEST_F(ThreadTest, SupportsThreadsWhereCreateThreadWorks) {
+  LogRecorder recorder(absl::LogSeverityAtLeast::kError);
   Thread thread = CreateThread(0, 0, nullptr, +[](void* user_data) {});
   EXPECT_EQ(SupportsThreads(), thread != nullptr);
   if (thread != nullptr) {
     JoinThread(thread);
+  } else {
+    EXPECT_EQ(recorder.TakeMessages().size(), 1);
   }
 }
 

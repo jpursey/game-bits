@@ -14,7 +14,8 @@ namespace gb {
 
 //==============================================================================
 // A web build without threads has only the program's own thread, which
-// CreateThread() did not create, so there is never a Thread to act on.
+// CreateThread() did not create, so there is never a Thread to act on. A web
+// build with threads uses gen_thread.cc instead.
 //==============================================================================
 
 void SetThreadVerboseLogging(bool) {}

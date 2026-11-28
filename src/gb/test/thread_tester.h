@@ -26,7 +26,8 @@ namespace gb {
 // Skips the current test where threads can't be created (see SupportsThreads()
 // in gb/thread/thread.h). A test that starts a thread, directly or through the
 // code it tests, puts this as its first line. A fixture whose every test does
-// may put it in SetUp() instead.
+// may put it in SetUp() instead, as long as the fixture doesn't construct a
+// ThreadTester or anything else that starts a thread before SetUp() runs.
 #define GB_SKIP_WITHOUT_THREADS()                                  \
   do {                                                             \
     if (!gb::SupportsThreads()) {                                  \
