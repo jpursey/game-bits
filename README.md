@@ -267,8 +267,8 @@ files that use Game Bits and have Vulkan installed.
 A program can compile its GLSL shaders in its build, and build them into
 itself, with `gb_embed_shader` (see
 [CMake/GameBitsTargetCommands.cmake](CMake/GameBitsTargetCommands.cmake)), as
-RenderCheck does. It compiles them with `glslc` from the Vulkan SDK, which only
-a program that calls it needs.
+RenderCheck and BlockWorld do. It compiles them with `glslc` from the Vulkan
+SDK, which only a program that calls it needs.
 
 ### Emscripten
 

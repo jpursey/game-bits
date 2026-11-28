@@ -112,7 +112,7 @@ gb_embed_shader(block_world shaders/block_pool.vert shaders/block_pool_vert.h
   kBlockPoolVertexShader)
 ```
 
-- `WorldResources::Create()` makes its shader code with
+- `WorldResources::InitGraphics()` makes its shader code with
   `CreateShaderCode(kBlockVertexShader.GetBytes())` and so on, in place of
   `LoadShaderCode("asset:/shaders/block.vert.spv")`. In a web build the same
   names hold WGSL (*WebGPU render backend*'s CL1).
