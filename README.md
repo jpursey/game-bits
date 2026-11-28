@@ -35,9 +35,10 @@ principles:
    support becomes widespread.
 
 *  *Platform independent:* Game Bits is developed on Windows and also builds on
-   Linux, and everything is built with cross-platform support in mind. All
-   dependencies on libraries other than the standard C/C++ library are
-   relegated to platform specific implementations of a generic interface.
+   Linux and for the web, and everything is built with cross-platform support
+   in mind. All dependencies on libraries other than the standard C/C++
+   library are relegated to platform specific implementations of a generic
+   interface.
 
 *  *Multithreaded:* Game Bits libraries are designed with explicit thread
    guarantees, and most are intended to be used in multithreaded contexts.
@@ -195,9 +196,12 @@ While Game Bits code is designed to be cross platform, it is mainly developed
 and maintained on Windows with Visual Studio 2022, building with CMake and the
 Ninja generator. It also builds and passes its tests on Linux with clang, and
 the RenderCheck example and the templates build there too, though BlockWorld
-doesn't yet. CMake 3.15 or later is required; the copy that ships with Visual
-Studio is what is normally used. On Windows, programs using Game Bits require
-Windows 10 version 1903 or later, and older versions are not supported.
+doesn't yet. On Linux, it also builds for the web with Emscripten, where its
+tests and command line programs run under Node (see
+[Building for the web](#building-for-the-web)). CMake 3.15 or later is
+required; the copy that ships with Visual Studio is what is normally used. On
+Windows, programs using Game Bits require Windows 10 version 1903 or later, and
+older versions are not supported.
 
 Game Bits works only in UTF-8 (of which ASCII is a part): every `char` string
 it takes or returns, including paths and command line arguments, is UTF-8.
@@ -266,13 +270,29 @@ itself, with `gb_embed_shader` (see
 RenderCheck does. It compiles them with `glslc` from the Vulkan SDK, which only
 a program that calls it needs.
 
+### Emscripten
+
+If you are not building for the web, Emscripten is not required. Otherwise, the
+[Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html)
+must be installed separately, on Linux (Emscripten also runs on Windows, but
+only Linux is checked). The SDK should be the version Game Bits is built and
+tested with, 7.0.1, as Emscripten's releases change what it compiles.
+
+[tools/install-emsdk.sh](tools/install-emsdk.sh) installs it, with the Node it
+runs programs and tests with (about 1.6 GB in all), and sourcing its
+`emsdk_env.sh` sets up its environment, in each shell (see
+[Building for the web](#building-for-the-web)). That puts `emcmake` on the PATH,
+and sets `EMSDK_NODE` to the SDK's Node, which is also put on the PATH where
+there is no `node` there already.
+
 ## Building
 
 Game Bits can be built directly from its own CMakeLists.txt file, or more
 commonly as part of another CMake driven application project. Either way, the
 build uses CMake with the Ninja generator and, on Windows, the Visual Studio
 2022 toolchain (both the MSVC and LLVM clang-cl compilers are supported). On
-Linux it uses clang (see [CLAUDE.md](CLAUDE.md) for the commands).
+Linux it uses clang (see [CLAUDE.md](CLAUDE.md) for the commands), and for the
+web, Emscripten (see [Building for the web](#building-for-the-web)).
 
 If you have your own project (as is most likely), you can start from one of the
 [templates](templates) sub-directories: copy it to a new location, and define
@@ -348,6 +368,61 @@ Debug test binaries link the non-redistributable debug CRT, which is not on the
 PATH by default and must be added before the tests will run. See
 [CLAUDE.md](CLAUDE.md) for that and the rest of the command line build, test,
 and formatting commands.
+
+### Building for the web
+
+On Linux, Game Bits also builds for the web with Emscripten, compiled to
+WebAssembly. The Emscripten SDK (see [Emscripten](#emscripten)) is installed
+once, and each shell that builds or runs a web build sources its
+`emsdk_env.sh`:
+
+```
+tools/install-emsdk.sh ~/emsdk 7.0.1
+source ~/emsdk/emsdk_env.sh
+```
+
+`emcmake` configures a build with Emscripten's toolchain, which is then built
+and tested with the same commands as any other build:
+
+```
+emcmake cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -S . -B out/build/web-Debug
+cmake --build out/build/web-Debug
+ctest --test-dir out/build/web-Debug --output-on-failure
+```
+
+A web build is one of two kinds, and one build can't be both:
+- Without threads, the default. This runs anywhere, including on a page served
+  without any special headers, but a program can't start a thread
+  (`SupportsThreads()` in [gb/thread/thread.h](src/gb/thread/thread.h) is
+  false), and the tests that start one are skipped.
+- With threads (`-DGB_WEB_THREADS=ON`, in a build tree of its own, such as
+  `out/build/web-threads-Debug`). This tests code that uses threads as
+  WebAssembly, but in a browser it only runs on a page served with
+  cross-origin isolation headers.
+
+A web build leaves out the libraries the web can't support: `gb_render_vulkan`
+and `gb_render_vulkan_sdl`, as there is no Vulkan in a browser, `gb_job`, which
+needs fibers, and `gb_profile`, which needs the x86 timestamp counter. Tests
+that need what the web doesn't have, such as death tests, are skipped there.
+
+Each test, and each program defined with `gb_add_executable`, is a program for
+Node: `<name>.js` beside its `<name>.wasm`, which runs under Node with the
+machine's own files, environment, and command line, as on any other platform.
+`ctest` runs each test that way, with the SDK's Node (`EMSDK_NODE`), and a
+program is run the same way:
+
+```
+"$EMSDK_NODE" out/build/web-Debug/src/gb/parse/gb_parse_test.js --gtest_filter=LexerTest.*
+```
+
+As on Linux, run the tests as an ordinary user, not as root. The
+[cli template](templates/cli) builds for the web the same way (see
+[templates/README.md](templates/README.md#building-for-the-web)).
+
+A windowed program (`gb_add_win_executable`) is a page for a browser instead,
+`<name>.html` beside its `.js` and `.wasm`. Programs in a browser, with a
+window, input, and drawing, are still being added: see
+[Web support](docs/designs/web_support.md).
 
 ### Running the BlockWorld example
 

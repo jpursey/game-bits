@@ -16,8 +16,9 @@
 # <dir>, which is emsdk's own checkout. Running this again on an existing <dir>
 # updates the checkout, so newer versions are known, and installs and activates
 # <version> beside any others already there. Source <dir>/emsdk_env.sh in each
-# shell that builds or runs Game Bits for the web. It puts emcc, emcmake, and
-# Node on the PATH.
+# shell that builds or runs Game Bits for the web. It puts emcc and emcmake on
+# the PATH, and sets EMSDK_NODE to the SDK's Node, which it also puts on the
+# PATH only where there is no node there already.
 
 set -euo pipefail
 
