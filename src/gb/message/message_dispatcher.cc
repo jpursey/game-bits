@@ -11,6 +11,7 @@
 #include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "gb/message/message_system.h"
+#include "gb/thread/thread.h"
 
 namespace gb {
 
@@ -82,6 +83,9 @@ void PollingMessageDispatcher::Update() {
 //------------------------------------------------------------------------------
 
 ThreadMessageDispatcher::ThreadMessageDispatcher() {
+  CHECK(SupportsThreads())
+      << "ThreadMessageDispatcher needs threads, which this build doesn't "
+         "have. Use PollingMessageDispatcher instead.";
   thread_ = std::thread([this]() { ProcessMessages(); });
 }
 

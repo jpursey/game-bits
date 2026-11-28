@@ -308,7 +308,7 @@ Depends on: CL1, CL2.
 - Standard checks.
 - Web: `gb_file_test` and `gb_cli_test` pass, run as an ordinary user.
 
-### CL6 [ ] thread, test, message: builds without threads
+### CL6 [~] thread, test, message: builds without threads
 
 Depends on: CL1 to CL5.
 

@@ -187,6 +187,8 @@ absl::Span<const uint64_t> GetHardwareThreadAffinities() {
   return s_affinities;
 }
 
+bool SupportsThreads() { return true; }
+
 Thread CreateThread(uint64_t affinity, uint32_t stack_size, void* user_data,
                     ThreadMain thread_main) {
   Thread thread = new ThreadType(user_data, thread_main);

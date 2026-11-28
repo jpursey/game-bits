@@ -119,6 +119,9 @@ class PollingMessageDispatcher : public MessageDispatcher {
 // pressure, it also may be faster, as the worker thread is notified as soon as
 // a new message arrives. However, this dispatcher does require that all
 // handlers that are called be thread-safe.
+//
+// This needs threads: it CHECK-fails on construction where SupportsThreads() is
+// false (see gb/thread/thread.h).
 class ThreadMessageDispatcher : public MessageDispatcher {
  public:
   ThreadMessageDispatcher();

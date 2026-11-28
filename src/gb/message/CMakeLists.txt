@@ -31,6 +31,7 @@ set(gb_message_DEPS
   absl::memory
   absl::synchronization
   gb_base
+  gb_thread
 )
 
 gb_add_library(gb_message)
