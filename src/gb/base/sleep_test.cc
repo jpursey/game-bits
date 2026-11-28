@@ -27,7 +27,7 @@ TEST(SleepTest, SleepsAtLeastDuration) {
   EXPECT_LT(elapsed, duration + absl::Seconds(1));
 }
 
-TEST(SleepTest, EverySleepLastsAtLeastDurationByNow) {
+TEST(SleepTest, EachShortSleepLastsAtLeastDuration) {
   // absl::Now() can be coarser than the clock a sleep wakes by, as it is on the
   // web, so a sleep that is long enough by its own clock can still look short.
   const int kSleepCount = 10;

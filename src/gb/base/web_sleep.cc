@@ -27,7 +27,8 @@ void PreciseSleepFor(absl::Duration duration) {
   }
   const absl::Time end = absl::Now() + duration;
   absl::SleepFor(duration);
-  for (absl::Duration caught_up; caught_up < kMaxCatchUp && absl::Now() < end;
+  for (absl::Duration caught_up = absl::ZeroDuration();
+       caught_up < kMaxCatchUp && absl::Now() < end;
        caught_up += kCatchUpStep) {
     absl::SleepFor(kCatchUpStep);
   }
