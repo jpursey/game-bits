@@ -27,6 +27,21 @@ TEST(SleepTest, SleepsAtLeastDuration) {
   EXPECT_LT(elapsed, duration + absl::Seconds(1));
 }
 
+TEST(SleepTest, EverySleepLastsAtLeastDurationByNow) {
+  // absl::Now() can be coarser than the clock a sleep wakes by, as it is on the
+  // web, so a sleep that is long enough by its own clock can still look short.
+  const int kSleepCount = 10;
+  for (const absl::Duration duration :
+       {absl::Milliseconds(1), absl::Microseconds(1500)}) {
+    for (int i = 0; i < kSleepCount; ++i) {
+      const absl::Time start = absl::Now();
+      PreciseSleepFor(duration);
+      EXPECT_GE(absl::Now() - start, duration)
+          << "sleep " << i << " of " << duration;
+    }
+  }
+}
+
 TEST(SleepTest, WakesWithinTimerTick) {
   // Were they only woken at the system timer's tick, each of these short
   // sleeps would take a whole 15.6 ms tick, once the first has lined them up

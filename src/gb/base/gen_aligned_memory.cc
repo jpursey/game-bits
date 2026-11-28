@@ -3,6 +3,7 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
+#include <cstddef>
 #include <cstdlib>
 #include <limits>
 
@@ -11,6 +12,12 @@
 namespace gb::internal {
 
 void* AllocAligned(size_t size, size_t align) {
+  // std::malloc() already aligns to std::max_align_t, and not every
+  // std::aligned_alloc() takes an alignment smaller than a pointer.
+  if (align <= alignof(std::max_align_t)) {
+    return std::malloc(size);
+  }
+
   // std::aligned_alloc() needs the size to be a multiple of the alignment, and
   // rounding up must not wrap around.
   if (size > std::numeric_limits<size_t>::max() - (align - 1)) {
