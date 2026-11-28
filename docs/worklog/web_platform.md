@@ -296,7 +296,7 @@ Depends on: CL1, CL2.
 - Standard checks.
 - Web: `gb_base_test` passes with threads.
 
-### CL5 [~] file: local files under Node
+### CL5 [x] file: local files under Node
 
 Depends on: CL1, CL2.
 

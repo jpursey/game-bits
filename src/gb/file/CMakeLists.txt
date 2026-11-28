@@ -19,14 +19,16 @@ if (WIN32)
   )
 else()
   if (EMSCRIPTEN)
-    set(gb_file_name_SOURCE web_platform_file.cc)
+    set(gb_file_internal_SOURCE
+      gen_platform_file.cc
+      web_platform_file.cc
+    )
   else()
-    set(gb_file_name_SOURCE posix_platform_file.cc)
+    set(gb_file_internal_SOURCE
+      gen_platform_file.cc
+      linux_platform_file.cc
+    )
   endif()
-  set(gb_file_internal_SOURCE
-    gen_platform_file.cc
-    ${gb_file_name_SOURCE}
-  )
   set(gb_file_internal_TEST_SOURCE
     gen_local_file_protocol_test.cc
   )
