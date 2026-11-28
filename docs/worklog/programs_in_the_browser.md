@@ -477,7 +477,7 @@ Depends on: CL1.
   (`--timeout-secs 5`).
 - Linux: `render-check`'s scripts still pass as before.
 
-### CL5 [ ] templates: templates/sdl as a Game, in the browser
+### CL5 [~] templates: templates/sdl as a Game, in the browser
 
 Depends on: CL1 to CL4.
 

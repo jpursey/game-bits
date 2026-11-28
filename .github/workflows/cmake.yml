@@ -26,7 +26,8 @@ concurrency:
 
 # Every job runs at once: build-windows-release, build-windows-debug,
 # build-block-world (Windows, Release), build-render-check-windows and
-# build-render-check-linux (Release), build-linux-debug, build-linux-release,
+# build-render-check-linux (Release), build-templates-windows and
+# build-templates-linux (Release), build-linux-debug, build-linux-release,
 # build-web, and build-web-threads.
 jobs:
   build-windows:
@@ -165,6 +166,54 @@ jobs:
         name: render-check-frames
         path: out/run/
         if-no-files-found: ignore
+
+  # Each template is its own project, as a new project copied from it is, so it
+  # builds the Game Bits libraries it uses itself, with GB_DIR set to the
+  # checkout. They build in Release, on each platform.
+  build-templates:
+    name: build-templates-${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows
+            runner: windows-latest
+          - os: linux
+            runner: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        submodules: "recursive"
+
+    - name: Install packages
+      if: runner.os == 'Linux'
+      run: sudo tools/install-linux-packages.sh
+
+    - name: Install the Vulkan SDK
+      uses: ./.github/actions/vulkan-sdk
+
+    - name: Build the templates on Windows
+      if: runner.os == 'Windows'
+      shell: cmd
+      working-directory: ${{github.workspace}}
+      run: |
+        for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSPATH=%%i"
+        call "%VSPATH%\VC\Auxiliary\Build\vcvars64.bat" || exit /b 1
+        for %%t in (cli sdl) do (
+          cmake -G Ninja -DCMAKE_BUILD_TYPE=Release "-DGB_DIR=%CD%" -S templates/%%t -B templates/%%t/out/build/ci || exit /b 1
+          cmake --build templates/%%t/out/build/ci --target %%t_template || exit /b 1
+        )
+
+    - name: Build the templates on Linux
+      if: runner.os == 'Linux'
+      working-directory: ${{github.workspace}}
+      run: |
+        for template in cli sdl; do
+          cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ "-DGB_DIR=$PWD" -S "templates/$template" -B "templates/$template/out/build/ci"
+          cmake --build "templates/$template/out/build/ci" --target "${template}_template"
+        done
 
   # Linux builds every library with clang. Debug runs render asserts and death
   # tests, and Release compiles asserts out, as the Windows release job does.
