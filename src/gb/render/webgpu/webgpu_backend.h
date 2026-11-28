@@ -77,7 +77,8 @@ class WebGpuBackend final : public RenderBackend {
   static inline constexpr const char* kKeyCanvasSelector = "CanvasSelector";
   static GB_CONTEXT_CONSTRAINT_NAMED_DEFAULT(kConstraintCanvasSelector,
                                              kInOptional, std::string,
-                                             kKeyCanvasSelector, "#canvas");
+                                             kKeyCanvasSelector,
+                                             std::string("#canvas"));
 
   // SCOPED: This backend instance.
   static GB_CONTEXT_CONSTRAINT(kConstraintBackend, kScoped, WebGpuBackend);
@@ -212,6 +213,8 @@ class WebGpuBackend final : public RenderBackend {
   // Returns true if WebGPU can be used on this thread, logging why `what`
   // fails if not.
   bool ValidateThread(std::string_view what) const;
+
+  FrameDimensions DoGetFrameDimensions() const;
 
   // Logs that `what` isn't supported by the backend yet.
   void LogUnsupported(std::string_view what) const;

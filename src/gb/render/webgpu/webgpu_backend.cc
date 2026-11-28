@@ -200,7 +200,7 @@ bool WebGpuBackend::InitDevice() {
 
 bool WebGpuBackend::InitSurface() {
   wgpu::EmscriptenSurfaceSourceCanvasHTMLSelector canvas;
-  canvas.selector = canvas_selector_;
+  canvas.selector = std::string_view(canvas_selector_);
   wgpu::SurfaceDescriptor descriptor;
   descriptor.nextInChain = &canvas;
   surface_ = instance_.CreateSurface(&descriptor);
@@ -270,6 +270,10 @@ void WebGpuBackend::WritePending() {
 //------------------------------------------------------------------------------
 
 FrameDimensions WebGpuBackend::GetFrameDimensions(RenderInternal) const {
+  return DoGetFrameDimensions();
+}
+
+FrameDimensions WebGpuBackend::DoGetFrameDimensions() const {
   absl::MutexLock lock(&frame_mutex_);
   return frame_dimensions_;
 }
@@ -500,7 +504,7 @@ void WebGpuBackend::Draw(RenderInternal, RenderView*,
 void WebGpuBackend::EndFrame(RenderInternal) { DoEndFrame(nullptr, 0); }
 
 std::unique_ptr<Image> WebGpuBackend::EndFrameAndReadImage(RenderInternal) {
-  const FrameDimensions frame = GetFrameDimensions({});
+  const FrameDimensions frame = DoGetFrameDimensions();
   const int row_bytes = (frame.width * 4 + kCopyRowAlignment - 1) /
                         kCopyRowAlignment * kCopyRowAlignment;
   const int64_t buffer_size = int64_t{row_bytes} * frame.height;
@@ -547,7 +551,7 @@ std::unique_ptr<Image> WebGpuBackend::EndFrameAndReadImage(RenderInternal) {
 void WebGpuBackend::DoEndFrame(const wgpu::Buffer& read_buffer,
                                int read_row_bytes) {
   WritePending();
-  const FrameDimensions frame = GetFrameDimensions({});
+  const FrameDimensions frame = DoGetFrameDimensions();
   const wgpu::Extent3D frame_size = {static_cast<uint32_t>(frame.width),
                                      static_cast<uint32_t>(frame.height), 1};
 
