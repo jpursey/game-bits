@@ -112,19 +112,32 @@ Out, each a backlog item where it is worth doing later:
   others do, where `wasm_` would name the processor and `emscripten_` the
   toolchain.
 
-## To decide
+## Shaders
 
-- **The shader converter.** A browser takes only WGSL, and the build makes
-  SPIR-V. Tint (Dawn's compiler) converts it and splits GLSL's combined image
-  samplers, but nothing ships it, so it has to be built. Naga installs with
-  Rust's `cargo`, and needs the samplers split first, with `spirv-opt` from
-  the Vulkan SDK. Either is a tool only a web build runs, at a pinned
-  version, installed by a script in `tools/`. *WebGPU render backend*'s plan
-  tries both on render-check's shaders and picks one.
-- **gb_imgui's shaders** are SPIR-V pasted into `imgui_instance.cc`. The web
-  needs them as WGSL. Pasting the converted WGSL beside them changes nothing
-  for a project that links `gb_imgui`, where compiling them in the build
-  would make each need `glslc`.
+A browser takes only WGSL, and the build makes SPIR-V from GLSL with `glslc`.
+A web build converts each shader's SPIR-V to WGSL with two tools, which only a
+web build runs:
+- `spirv-opt`, from the Vulkan SDK, splits each of GLSL's combined image
+  samplers into a texture and a sampler
+  (`--split-combined-image-sampler`). WGSL has no combined ones.
+- `naga` (`naga-cli`, installed with Rust's `cargo` at a pinned version)
+  converts the result to WGSL.
+
+Every shader of render-check, block-world, and gb_imgui (19 in all) converts
+this way, and Chromium's WebGPU accepts each result. Tint, Dawn's own
+compiler, also converts SPIR-V, but nothing ships it as a tool: Dawn's
+releases have its libraries only, so it would have to be built.
+
+A texture and its sampler can't share a binding in WGSL. `spirv-opt` can
+renumber them (`--resolve-binding-conflicts`), but it moves every later
+binding up by one for each sampler a shader declares, so two shaders of one
+pipeline that declare different bindings would disagree. *WebGPU render
+backend*'s plan settles a numbering that depends only on a binding's own
+number (such as the texture at twice its number and the sampler one after).
+
+gb_imgui's shaders are SPIR-V pasted into `imgui_instance.cc`. Their WGSL is
+pasted beside them, which changes nothing for a project that links
+`gb_imgui`, where compiling them in the build would make each need `glslc`.
 
 ## How the project is run
 
@@ -151,7 +164,8 @@ is approved until the project is done:
   - changes how shared code works, where a fix to a defect in it, or moving a
     platform's part into a platform file, doesn't count;
   - adds a dependency: a submodule, an SDK, or a tool the build runs, beyond
-    the Emscripten SDK and the shader converter above;
+    the Emscripten SDK, the shader tools above, and the browser CI runs
+    pages in;
   - takes something listed as in scope out of it, or the reverse.
 - **Smaller cross-platform changes go ahead,** and are listed below with
   their PRs, for the user to read afterwards.
@@ -197,5 +211,18 @@ Changes outside the web's own files, as they are planned and then merged.
   the same features as Chrome on Windows.
 - **WebGPU in browsers:** Chrome on Windows, macOS, and Android; Firefox on
   Windows and Apple-silicon Macs; Safari 26. Linux is partial.
+- **A blocking loop, SDL2, and WebGPU together** were checked with one small
+  page outside the repository, built with `-sJSPI` and
+  `--use-port=emdawnwebgpu` against the SDL2 that a web build makes, and run
+  in headless Chromium as above. A loop of 90 frames that waited for
+  `requestAnimationFrame` each frame ran at 57 frames a second, `SDL_PollEvent`
+  delivered key presses and mouse moves, and a frame copied from the canvas's
+  texture to a buffer read back exactly what the shader drew. The waits for
+  the adapter, the device, and the read back were `wgpuInstanceWaitAny()` with
+  a timeout, which needs the instance's `TimedWaitAny` feature. Emscripten
+  7.0.1's bindings are Dawn's release of 5 November 2026.
+- **The Emscripten SDK's cache is root's** where root installed it, so a build
+  run as another user fails to link. Sessions build as root and run tests as
+  an ordinary user.
 - **Trial builds** of the libraries are recorded in
   [Web platform](../worklog/web_platform.md).
