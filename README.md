@@ -275,8 +275,9 @@ a program that calls it needs.
 If you are not building for the web, Emscripten is not required. Otherwise, the
 [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html)
 must be installed separately, on Linux (Emscripten also runs on Windows, but
-only Linux is checked). The SDK should be the version Game Bits is built and
-tested with, 7.0.1, as Emscripten's releases change what it compiles.
+only Linux is checked). The SDK should be the version CI builds and tests with
+(`EMSDK_VERSION` in [.github/workflows/cmake.yml](.github/workflows/cmake.yml)),
+as Emscripten's releases change what it compiles.
 
 [tools/install-emsdk.sh](tools/install-emsdk.sh) installs it, with the Node it
 runs programs and tests with (about 1.6 GB in all), and sourcing its
