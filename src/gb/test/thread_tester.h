@@ -27,12 +27,12 @@ namespace gb {
 // in gb/thread/thread.h). A test that starts a thread, directly or through the
 // code it tests, puts this as its first line. A fixture whose every test does
 // may put it in SetUp() instead.
-#define GB_SKIP_WITHOUT_THREADS()                                   \
-  do {                                                              \
-    if (!gb::SupportsThreads()) {                                   \
-      GTEST_SKIP() << "This test needs threads, which this build "  \
-                      "doesn't have";                               \
-    }                                                               \
+#define GB_SKIP_WITHOUT_THREADS()                                  \
+  do {                                                             \
+    if (!gb::SupportsThreads()) {                                  \
+      GTEST_SKIP() << "This test needs threads, which this build " \
+                      "doesn't have";                              \
+    }                                                              \
   } while (false)
 
 // This class is used to simplify thread-safety tests.

@@ -223,6 +223,21 @@ Recorded here as it was found:
 - Abseil reports "Symbolization unavailable" once in every test program: the
   pinned copy needs an Emscripten option that was removed in 4.0.14. It is
   harmless. (*Abseil and GoogleTest update*)
+- (CL6) Running each test in its own process without threads found 61 tests
+  that start a thread, which now begin with `GB_SKIP_WITHOUT_THREADS()`: 9 in
+  `gb_base_test`, 2 in `gb_config_test`, 1 in `gb_game_test`, 10 in
+  `gb_message_test`, 2 in `gb_pilot_test`, 1 in `gb_render_test`, 2 in
+  `gb_resource_test`, 20 in `gb_test_test`, and 14 in `gb_thread_test`. Four
+  of `gb_thread_test`'s start a thread only where threads can be pinned or
+  their cycles counted, so they passed without threads already, but take the
+  line too. `ThreadTesterTest.MaxConcurrency` still runs.
+- (CL6) Apart from `ThreadMessageDispatcher` and `ThreadTester`, nothing a web
+  build builds starts a thread outside its tests: the others that do,
+  `FiberJobSystem` and `FakeJobSystem`, are in `gb_job`, which a web build
+  leaves out.
+- (CL6) With one thread, `GetCpuTopology()` has one core that can't be pinned,
+  and `PlaceThreads()` places one unpinned thread (or as many as asked for),
+  as on any platform that can't pin threads. Creating them is what fails.
 
 Not yet checked:
 - A build on a Windows machine.
@@ -308,7 +323,7 @@ Depends on: CL1, CL2.
 - Standard checks.
 - Web: `gb_file_test` and `gb_cli_test` pass, run as an ordinary user.
 
-### CL6 [~] thread, test, message: builds without threads
+### CL6 [x] thread, test, message: builds without threads
 
 Depends on: CL1 to CL5.
 

@@ -195,7 +195,7 @@ node out/build/web-Debug/src/gb/parse/gb_parse_test.js --gtest_filter=LexerTest.
 
 Configuring takes about 150 seconds, mostly Emscripten compiling CMake's feature checks, and a full build about 15 minutes on 4 cores. A program is `<name>.js`, beside its `<name>.wasm`, which `node` runs with the machine's own files and environment, and ctest runs each test that way. A web build leaves out `gb_render_vulkan` and `gb_render_vulkan_sdl`, `gb_job`, which needs fibers, and `gb_profile`, which needs the x86 timestamp counter (`cpu_ticks.h`, left out of `gb_thread` with it).
 
-Until the rest of the Web platform feature (`docs/worklog/web_platform.md`) is done, some libraries and tests don't compile for the web yet, so a full web build fails. Build the test programs that do compile by name (`gb_base_test`, `gb_collide_test`, `gb_config_test`, `gb_game_test`, `gb_image_test`, `gb_message_test`, `gb_parse_test`, `gb_pilot_script_test`, `gb_resource_test`, and `gb_test_test`), and run only those with `ctest -R`. In a build without threads, the tests that start threads fail.
+The whole tree builds for the web, with and without threads, and every test program passes under ctest, apart from two failures that the rest of the Web platform feature (`docs/worklog/web_platform.md`) fixes: `LocalFileProtocolTest.ListSkipsNonUtf8Names` in `gb_file_test`, and `gb_pilot_sdl_test`'s two tests that resize a window, which pass with `SDL_VIDEODRIVER=dummy` in the environment. In a build without threads, the tests that start threads are skipped.
 
 ### Checks
 
@@ -281,6 +281,7 @@ These add to the C++ style in the workflow.
 - Include order: the file's own header first, then C/C++ standard headers in angle brackets, then third-party and Game Bits headers in quotes (`"absl/..."`, `"gtest/gtest.h"`, `"gb/..."`), with blank lines between groups.
 - Unit tests live next to the code they test as `<file>_test.cc`, are written with GoogleTest/GoogleMock inside `namespace gb { namespace { ... } }`, and use the shared helpers in `gb_test` (`src/gb/test`) for threading and other cross-cutting test support.
 - Death tests use `EXPECT_DEATH_IF_SUPPORTED` (or `ASSERT_DEATH_IF_SUPPORTED`), not `EXPECT_DEATH`, which GoogleTest defines only where it has death tests (not on the web). `EXPECT_DEBUG_DEATH` has no such form, so it goes inside `#ifdef GTEST_HAS_DEATH_TEST`, unless the test checks more in a release build than that the statement survives: then the test splits on `NDEBUG` instead, running the statement and its checks in release and `EXPECT_DEATH_IF_SUPPORTED` in debug (as `sdl_glog_test.cc` does).
+- A test that starts a thread, directly or through the code it tests (such as a `ThreadTester` or a `ThreadMessageDispatcher`), begins with `GB_SKIP_WITHOUT_THREADS();` (`gb/test/thread_tester.h`), which skips it where `SupportsThreads()` is false: in a web build without threads. A fixture whose every test starts one may put it in `SetUp()` instead. Without it, the test stops at a `CHECK` in such a build, or aborts in the standard library if it constructs a `std::thread` itself.
 - C++20, built with both MSVC and clang-cl.
 
 ## Skills
