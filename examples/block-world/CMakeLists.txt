@@ -81,5 +81,11 @@ set(block_world_DEPS
 )
 
 gb_add_win_executable(block_world)
+gb_embed_shader(block_world shaders/block.vert shaders/block_vert.h
+  kBlockVertexShader)
+gb_embed_shader(block_world shaders/block.frag shaders/block_frag.h
+  kBlockFragmentShader)
+gb_embed_shader(block_world shaders/block_pool.vert shaders/block_pool_vert.h
+  kBlockPoolVertexShader)
 
 set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT block_world)

@@ -438,10 +438,10 @@ cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -S examples/block-world -B examples/bloc
 cmake --build examples/block-world/out/build/x64-Debug
 ```
 
-The resulting executable is written to `bin/block_world.exe`. In order to run
-it, you must first build the required shaders, by running the
-[assets/shaders/build-shaders.bat](assets/shaders/build-shaders.bat) file
-(it requires `glslc` from the Vulkan SDK to be on the PATH).
+The resulting executable is written to `bin/block_world.exe`. Its shaders are
+compiled by the build and built into it, with `glslc` from the Vulkan SDK. It
+reads its fonts and textures from the `assets` folder, which it finds in or
+above the folder it is run from.
 
 It starts at the title, or in the state `--state` names (`--state PlayState`
 starts playing straight away). It also runs pilot scripts, such as

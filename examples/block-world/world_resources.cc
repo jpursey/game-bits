@@ -13,6 +13,9 @@
 // Game includes
 #include "block.h"
 #include "scene_types.h"
+#include "shaders/block_frag.h"
+#include "shaders/block_pool_vert.h"
+#include "shaders/block_vert.h"
 
 WorldResources::WorldResources(gb::ValidatedContext context)
     : context_(std::move(context)) {}
@@ -35,23 +38,23 @@ bool WorldResources::InitGraphics() {
   auto* render_system = context_.GetPtr<gb::RenderSystem>();
 
   auto vertex_shader_code =
-      render_system->LoadShaderCode("asset:/shaders/block.vert.spv");
+      render_system->CreateShaderCode(kBlockVertexShader.GetBytes());
   if (vertex_shader_code == nullptr) {
-    LOG(ERROR) << "Failed to load vertex shader";
+    LOG(ERROR) << "Failed to create vertex shader";
     return false;
   }
 
   auto fragment_shader_code =
-      render_system->LoadShaderCode("asset:/shaders/block.frag.spv");
+      render_system->CreateShaderCode(kBlockFragmentShader.GetBytes());
   if (fragment_shader_code == nullptr) {
-    LOG(ERROR) << "Failed to load fragment shader";
+    LOG(ERROR) << "Failed to create fragment shader";
     return false;
   }
 
   auto pool_vertex_shader_code =
-      render_system->LoadShaderCode("asset:/shaders/block_pool.vert.spv");
+      render_system->CreateShaderCode(kBlockPoolVertexShader.GetBytes());
   if (pool_vertex_shader_code == nullptr) {
-    LOG(ERROR) << "Failed to load pool vertex shader";
+    LOG(ERROR) << "Failed to create pool vertex shader";
     return false;
   }
 

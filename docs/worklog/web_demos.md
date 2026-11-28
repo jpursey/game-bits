@@ -367,7 +367,7 @@ CL1 has merged, and runs beside the rest. CL3 waits for *WebGPU render
 backend*'s CL8, CL5 for CL3, and CL6 and CL7 for CL3 and *WebGPU render
 backend*'s CL9.
 
-### CL1 [ ] examples: block-world's shaders compiled by the build
+### CL1 [x] examples: block-world's shaders compiled by the build
 
 Depends on: nothing.
 
