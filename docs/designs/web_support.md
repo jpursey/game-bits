@@ -25,7 +25,7 @@ The project is done when:
 
 | Feature | Status | Plan |
 |---|---|---|
-| Web platform | Planned | [worklog](../worklog/web_platform.md) |
+| Web platform | In progress (CL1 to CL3 of 9 merged) | [worklog](../worklog/web_platform.md) |
 | Programs in the browser | Not started | [backlog](../backlog.md#programs-in-the-browser) |
 | WebGPU render backend | Not started | [backlog](../backlog.md#webgpu-render-backend) |
 | Files on the web | Not started | [backlog](../backlog.md#files-on-the-web) |
@@ -172,9 +172,9 @@ Changes outside the web's own files, as they are planned and then merged.
 
 | Change | Feature | PR |
 |---|---|---|
-| `gb_add_test` registers tests as `add_test(NAME ... COMMAND ...)` | Web platform | |
-| `EXPECT_DEATH` becomes `EXPECT_DEATH_IF_SUPPORTED` in every test | Web platform | |
-| `Queue`'s buckets take their elements' alignment | Web platform | |
+| `gb_add_test` registers tests as `add_test(NAME ... COMMAND ...)` | Web platform | [63](https://github.com/jpursey/game-bits/pull/63) |
+| `EXPECT_DEATH` becomes `EXPECT_DEATH_IF_SUPPORTED` in every test | Web platform | [62](https://github.com/jpursey/game-bits/pull/62) |
+| `Queue`'s buckets take their elements' alignment, and allocate aligned for elements aligned to more than `std::malloc()` gives | Web platform | [64](https://github.com/jpursey/game-bits/pull/64) |
 | `SupportsThreads()` is added, and code that needs a thread checks it | Web platform | |
 | `AllocAligned()` allows an alignment smaller than a pointer in `gen_aligned_memory.cc` | Web platform | |
 | Tests that need a file name that isn't UTF-8 are skipped where there is none | Web platform | |
