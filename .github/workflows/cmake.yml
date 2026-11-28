@@ -11,10 +11,13 @@ on:
       - '**.md'
   workflow_dispatch:
 
-# The Vulkan SDK every job builds with (see .github/actions/vulkan-sdk), which
-# the devcontainer (.devcontainer/devcontainer.json) also installs.
+# The Vulkan SDK every job but the web ones builds with (see
+# .github/actions/vulkan-sdk), which the devcontainer
+# (.devcontainer/devcontainer.json) also installs, and the Emscripten SDK the
+# web jobs build with (see .github/actions/emsdk).
 env:
   VULKAN_SDK_VERSION: 1.4.363.1
+  EMSDK_VERSION: 7.0.1
 
 # A newer run for the same branch cancels one still in progress.
 concurrency:
@@ -23,8 +26,8 @@ concurrency:
 
 # Every job runs at once: build-windows-release, build-windows-debug,
 # build-block-world (Windows, Release), build-render-check-windows and
-# build-render-check-linux (Release), build-linux-debug, and
-# build-linux-release.
+# build-render-check-linux (Release), build-linux-debug, build-linux-release,
+# build-web, and build-web-threads.
 jobs:
   build-windows:
     name: build-windows-${{ matrix.config }}
@@ -199,3 +202,37 @@ jobs:
         cmake -G Ninja -DCMAKE_BUILD_TYPE=$GB_BUILD_TYPE -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -S . -B out/build/ci
         cmake --build out/build/ci
         xvfb-run -a ctest --test-dir out/build/ci --output-on-failure
+
+  # The web builds, without threads and with them, build every library with
+  # Emscripten in Debug, and run the tests under Node. They need no Vulkan SDK,
+  # and nothing from tools/install-linux-packages.sh: the runner already has
+  # CMake and Ninja, and SDL is built for the web, without the system's
+  # windowing headers.
+  build-web:
+    name: build-${{ matrix.config }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - config: web
+            threads: "OFF"
+          - config: web-threads
+            threads: "ON"
+
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        submodules: "recursive"
+
+    - name: Install the Emscripten SDK
+      uses: ./.github/actions/emsdk
+
+    - name: Build and test Game Bits
+      working-directory: ${{github.workspace}}
+      env:
+        GB_WEB_THREADS: ${{ matrix.threads }}
+      run: |
+        emcmake cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DGB_WEB_THREADS=$GB_WEB_THREADS -S . -B out/build/ci
+        cmake --build out/build/ci
+        ctest --test-dir out/build/ci --output-on-failure

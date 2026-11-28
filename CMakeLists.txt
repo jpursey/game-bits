@@ -54,7 +54,15 @@ endif()
 # with code compiled with it. Game Bits' libraries pass it on, so a project's
 # own targets that use them get it too (see gb_set_target_properties). Any
 # other target in a project needs it added by the project.
+#
+# Abseil's headers use Emscripten's old version macros, which Emscripten 7
+# deprecates, so -Wno-deprecated-pragma is on for everything built here too,
+# third-party code included, which would otherwise warn in every file that
+# includes them. Abseil's own targets turn the warning back on, so it is added
+# to them again after their own options (see below). Game Bits' libraries pass
+# it on as they do -pthread.
 if (EMSCRIPTEN)
+  add_compile_options(-Wno-deprecated-pragma)
   option(GB_WEB_THREADS "Build for the web with threads" OFF)
   if (GB_WEB_THREADS)
     add_compile_options(-pthread)
@@ -99,6 +107,27 @@ set(CMAKE_SKIP_INSTALL_RULES TRUE)
 
 set(ABSL_PROPAGATE_CXX_STD ON)
 add_subdirectory("${GB_THIRD_PARTY_DIR}/abseil-cpp")
+
+# Adds -Wno-deprecated-pragma to every target that compiles in DIR and the
+# directories below it, after the targets' own options. It is a SHELL: group,
+# as CMake drops an option a target already has (here from
+# add_compile_options), keeping only the first.
+function(gb_web_no_deprecated_pragma DIR)
+  get_property(targets DIRECTORY "${DIR}" PROPERTY BUILDSYSTEM_TARGETS)
+  foreach(target ${targets})
+    get_target_property(type ${target} TYPE)
+    if (NOT type STREQUAL "INTERFACE_LIBRARY")
+      target_compile_options(${target} PRIVATE "SHELL:-Wno-deprecated-pragma")
+    endif()
+  endforeach()
+  get_property(subdirs DIRECTORY "${DIR}" PROPERTY SUBDIRECTORIES)
+  foreach(subdir ${subdirs})
+    gb_web_no_deprecated_pragma("${subdir}")
+  endforeach()
+endfunction()
+if (EMSCRIPTEN)
+  gb_web_no_deprecated_pragma("${GB_THIRD_PARTY_DIR}/abseil-cpp")
+endif()
 
 ####### re2
 

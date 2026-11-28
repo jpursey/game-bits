@@ -286,6 +286,26 @@ Recorded here as it was found:
   `node` already, so `node` can be another Node, while `emcmake` gives CMake
   the SDK's (`EMSDK_NODE`) as the emulator `ctest` runs tests with. The docs
   run a program with `"$EMSDK_NODE"`, which is the same Node as `ctest`'s.
+  (CL8: a GitHub runner has an older Node on its `PATH` too, and `ctest`
+  runs every test with the SDK's there as well, as any user.)
+- In CI (CL8), each web job takes about 8 minutes on GitHub's 4-core runner,
+  well within the time the slowest existing job takes. In a cloud session, on
+  4 cores, configuring takes 2.5 to 3 minutes and a full build (849 steps) 3
+  to 5 more, for each of the two builds. Installing the SDK cold takes about
+  15 seconds, saving it to the cache included (463 MB compressed), and
+  restoring it about 5. The runner has CMake, Ninja, and an older Node on its
+  `PATH` already, so the web jobs install nothing else.
+- Emscripten compiles the system libraries a build needs into its own cache
+  inside the SDK. In a cloud session the SDK in `/opt/emsdk` is root's, so a
+  web build configures and builds as root, and only its tests run as the
+  ordinary user. CI caches the SDK as it was installed, before a build adds
+  to it. (CL8)
+- Abseil's deprecated-macro warnings (`-Wdeprecated-pragma`) were still
+  printed for every file of third-party code that includes Abseil, about 550
+  in each web build, which wasn't built with `-Wno-deprecated-pragma`, so a
+  web job's log was mostly warnings. CL8 turns it off for everything a web
+  build of Game Bits compiles, in the root `CMakeLists.txt`, until the
+  backlog's *Abseil and GoogleTest update*.
 
 Not yet checked:
 - A build on a Windows machine.
@@ -398,7 +418,7 @@ Depends on: CL1, CL2.
 - Web: `gb_sdl_test` and `gb_pilot_sdl_test` pass under `ctest`, with and
   without threads.
 
-### CL8 [ ] CI: web builds
+### CL8 [x] CI: web builds
 
 Depends on: CL1 to CL7.
 
@@ -406,10 +426,12 @@ Depends on: CL1 to CL7.
 - `build-web` and `build-web-threads` jobs, which build in Debug and run
   `ctest` as an ordinary user.
 - The `game-bits` cloud environment's setup script installs the SDK with
-  `tools/install-emsdk.sh` (proposed to the user, as it is outside the
-  repository).
+  `tools/install-emsdk.sh`, in `/opt/emsdk` (done outside the repository, by
+  the session running the project, before this CL).
 - CLAUDE.md: Cloud sessions lists the jobs and the SDK's place, and Checks say
   when a change is also checked in a web build.
+- The root `CMakeLists.txt` turns off `-Wdeprecated-pragma` for third-party
+  code in a web build too, so a job's log isn't mostly Abseil's warnings.
 
 **Verify**
 - A `workflow_dispatch` run of the CMake workflow on the PR's branch passes,

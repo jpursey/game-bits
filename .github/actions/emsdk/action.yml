@@ -1,0 +1,44 @@
+# Installs the Emscripten SDK at the workflow's EMSDK_VERSION, cached between
+# runs, and sets up the job's later steps to use it as its emsdk_env.sh would:
+# EMSDK, EMSDK_NODE, and the SDK's directories on PATH, which put emcmake there.
+# It runs on Linux, and needs the repository checked out first.
+name: Emscripten SDK
+description: Installs the Emscripten SDK and sets up the job to use it.
+
+runs:
+  using: composite
+  steps:
+  - name: Restore the Emscripten SDK
+    id: cache
+    uses: actions/cache/restore@v6
+    with:
+      path: ~/emsdk
+      key: emsdk-${{ runner.os }}-${{ env.EMSDK_VERSION }}-${{ hashFiles('tools/install-emsdk.sh') }}
+
+  - name: Install the Emscripten SDK
+    if: steps.cache.outputs.cache-hit != 'true'
+    shell: bash
+    run: tools/install-emsdk.sh ~/emsdk "$EMSDK_VERSION"
+
+  # Saved right after it is installed, rather than when the job ends, so the
+  # cache holds only the install, not the libraries the build later compiles
+  # into Emscripten's own cache inside the SDK.
+  - name: Cache the Emscripten SDK
+    if: steps.cache.outputs.cache-hit != 'true'
+    uses: actions/cache/save@v6
+    with:
+      path: ~/emsdk
+      key: ${{ steps.cache.outputs.cache-primary-key }}
+
+  - name: Use the Emscripten SDK
+    shell: bash
+    run: |
+      EMSDK_QUIET=1 source ~/emsdk/emsdk_env.sh
+      # Each line of GITHUB_PATH goes in front of PATH, so they are written in
+      # reverse to keep emsdk_env.sh's order.
+      tr ':' '\n' <<< "$PATH" | while read -r dir; do
+        case "$dir" in "$EMSDK" | "$EMSDK"/*) echo "$dir" ;; esac
+      done | tac >> $GITHUB_PATH
+      for name in EMSDK EMSDK_NODE; do
+        echo "$name=${!name}" >> $GITHUB_ENV
+      done
