@@ -39,6 +39,13 @@ const kBrowserArgs = [
 // request with the file of the same name in the page's folder.
 const kOrigin = 'http://localhost';
 
+// Cross-origin isolation, which a page built with threads needs for its
+// shared memory, and which a page without them doesn't notice.
+const kHeaders = {
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Embedder-Policy': 'require-corp',
+};
+
 // The exit code of a program that aborted, as on Linux (128 + SIGABRT).
 const kAbortExitCode = 134;
 
@@ -88,6 +95,49 @@ async function copyOutput(page, outDir) {
   }
 }
 
+// Returns the file in `folder` that `url` names, or undefined if there is none.
+function findFile(folder, url) {
+  let file;
+  try {
+    file = path.join(folder, decodeURIComponent(new URL(url).pathname));
+  } catch (error) {
+    return undefined;
+  }
+  if (!file.startsWith(folder + path.sep) || !fs.existsSync(file) ||
+      !fs.statSync(file).isFile()) {
+    return undefined;
+  }
+  return file;
+}
+
+// Opens the page at `address`, presses the keys --press-keys gives, and waits
+// for the program to stop, all within --timeout-secs. Returns what the shell
+// set gbExit to, or undefined if the program was still running at the end.
+async function waitForExit(page, address, options) {
+  const deadline = Date.now() + Number(options['timeout-secs']) * 1000;
+  const remainingMs = () => Math.max(1, deadline - Date.now());
+  try {
+    await page.goto(address, {timeout: remainingMs()});
+    if (options['press-keys'] !== undefined) {
+      await page.waitForTimeout(kPressKeysDelayMs);
+      for (const key of options['press-keys'].split(/\s+/).filter(Boolean)) {
+        await page.keyboard.press(key);
+      }
+    }
+
+    // The exit code is wrapped, as 0 would read as not stopped.
+    const stopped = await page.waitForFunction(() => {
+      return globalThis.gbExit !== undefined && {result: globalThis.gbExit};
+    }, null, {timeout: remainingMs()});
+    return (await stopped.jsonValue()).result;
+  } catch (error) {
+    if (!(error instanceof errors.TimeoutError)) {
+      throw error;
+    }
+    return undefined;
+  }
+}
+
 async function run(options, programArgs, stdout, stderr) {
   const pagePath = path.resolve(options['page']);
   const folder = path.dirname(pagePath);
@@ -103,12 +153,11 @@ async function run(options, programArgs, stdout, stderr) {
   try {
     const context = await browser.newContext();
     await context.route(`${kOrigin}/**`, (route) => {
-      const name = new URL(route.request().url()).pathname;
-      const file = path.join(folder, decodeURIComponent(name));
-      if (!file.startsWith(folder + path.sep) || !fs.existsSync(file)) {
+      const file = findFile(folder, route.request().url());
+      if (file === undefined) {
         return route.fulfill({status: 404});
       }
-      return route.fulfill({path: file});
+      return route.fulfill({path: file, headers: kHeaders});
     });
     const page = await context.newPage();
     page.on('console', (message) => {
@@ -123,39 +172,28 @@ async function run(options, programArgs, stdout, stderr) {
     }, files);
 
     const query = new URLSearchParams(args.map((arg) => ['arg', arg]));
-    const started = Date.now();
     const name = encodeURIComponent(path.basename(pagePath));
-    await page.goto(`${kOrigin}/${name}?${query}`);
-    if (options['press-keys'] !== undefined) {
-      await page.waitForTimeout(kPressKeysDelayMs);
-      for (const key of options['press-keys'].split(/\s+/).filter(Boolean)) {
-        await page.keyboard.press(key);
-      }
+    const result = await waitForExit(page, `${kOrigin}/${name}?${query}`,
+                                     options);
+    if (result === undefined) {
+      fs.writeFileSync(options['timeout-file'], '');
+    } else if (typeof result !== 'number') {
+      fs.writeSync(stderr, `Aborted: ${result}\n`);
     }
 
-    // The exit code is wrapped, as 0 would read as not stopped.
-    const timeoutMs = Number(options['timeout-secs']) * 1000;
-    let stopped;
-    try {
-      stopped = await page.waitForFunction(() => {
-        return globalThis.gbExit !== undefined && {result: globalThis.gbExit};
-      }, null, {timeout: Math.max(1, timeoutMs - (Date.now() - started))});
-    } catch (error) {
-      if (!(error instanceof errors.TimeoutError)) {
-        throw error;
+    // Frames saved before a timeout or an abort are copied too, as they show
+    // how far the run got.
+    if (options['script'] !== undefined) {
+      try {
+        await copyOutput(page, options['out-dir']);
+      } catch (error) {
+        fs.writeSync(stderr, `Saved files could not be copied: ${error}\n`);
       }
-      fs.writeFileSync(options['timeout-file'], '');
+    }
+    if (result === undefined) {
       return 1;
     }
-    const {result} = await stopped.jsonValue();
-    if (options['script'] !== undefined) {
-      await copyOutput(page, options['out-dir']);
-    }
-    if (typeof result !== 'number') {
-      fs.writeSync(stderr, `Aborted: ${result}\n`);
-      return kAbortExitCode;
-    }
-    return result;
+    return typeof result === 'number' ? result : kAbortExitCode;
   } finally {
     await browser.close();
   }

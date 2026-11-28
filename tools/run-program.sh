@@ -97,6 +97,9 @@ if [[ -n "$script" && -n "$steps" ]]; then
   fail "Give --script or --steps, not both."
 fi
 if [[ -n "$press_keys" ]]; then
+  if [[ -z "${press_keys// /}" ]]; then
+    fail "--press-keys needs a key."
+  fi
   if [[ "$is_page" == false ]]; then
     fail "--press-keys is only for a page."
   fi
@@ -150,7 +153,10 @@ rm -f "$stacks"
 
 status=0
 if [[ "$is_page" == true ]]; then
-  # run-page.js ends the browser itself at the timeout.
+  # run-page.js ends the browser itself at the timeout. It writes the log, which
+  # is emptied first in case it fails before it can.
+  : > "$out_dir/stdout.txt"
+  : > "$log"
   page_args=(--page "$exe" --out-dir "$out_dir" --timeout-secs "$timeout_secs"
     --timeout-file "$work/timed-out")
   if [[ -n "$script" ]]; then
